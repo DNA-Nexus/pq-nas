@@ -3168,7 +3168,7 @@
   "external.upload.size_modified": "Size: {size} • Modified: {modified}",
   "external.upload.choice": "Choice",
   "external.upload.keep_existing": "Keep existing",
-  "external.upload.keep_existing_desc": "Skip this upload and keep the file already stored in PQ-NAS.",
+  "external.upload.keep_existing_desc": "Skip this upload and keep the file already stored in DNA-Nexus.",
   "external.upload.replace_with_new": "Replace with new",
   "external.upload.replace_with_new_desc": "Upload this file and preserve the old one as a version.",
   "external.upload.apply_all_conflicts": "Use this choice for all remaining conflicts in this upload"
