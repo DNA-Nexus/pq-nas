@@ -581,7 +581,7 @@ function openAllocModal(fp, curUser) {
             try {
                 await refreshAllocPreview();
             } catch (e) {
-                setAllocError("Failed to refresh pool preview: " + (e?.message || e));
+                setAllocError(tr("admin.users.pool_preview_refresh_failed", { error: e?.message || e }, "Failed to refresh pool preview: " + (e?.message || e)));
             }
         };
 
@@ -594,14 +594,14 @@ function openAllocModal(fp, curUser) {
         try {
             await refreshAllocPreview();
         } catch (e) {
-            setAllocError("Failed to load pool preview: " + (e?.message || e));
+            setAllocError(tr("admin.users.pool_preview_load_failed", { error: e?.message || e }, "Failed to load pool preview: " + (e?.message || e)));
         }
 
         gbInp.focus();
         gbInp.select();
 
     })().catch(e => {
-        setAllocError("Failed to load pools: " + (e?.message || e));
+        setAllocError(tr("admin.users.pools_load_failed", { error: e?.message || e }, "Failed to load pools: " + (e?.message || e)));
     });
 }
 
@@ -697,7 +697,7 @@ function openMigrateModal(fp, curUser) {
             poolHint.textContent = s?.hint || "—";
         };
     })().catch(e => {
-        setMigrateError("Failed to load pools: " + (e?.message || e));
+        setMigrateError(tr("admin.users.pools_load_failed", { error: e?.message || e }, "Failed to load pools: " + (e?.message || e)));
     });
 }
 
@@ -1375,7 +1375,7 @@ async function submitMigrationFromModal() {
         await pollMigrationJob(jobId, fp);
     } catch (e) {
         setMigrateError(String(e?.message || e));
-        setMsg("Error: " + (e?.message || e));
+        setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
     }
 }
 
@@ -1465,7 +1465,7 @@ async function submitCleanupOldCopy(fp) {
         note: tr(
             "admin.users.cleanup_confirm_note",
             null,
-            "This deletes the old user subtree from the old pool. The currently active pool is protected."
+            tr("admin.users.cleanup_confirm_note", null, "This deletes the old user subtree from the old pool. The currently active pool is protected.")
         ),
         confirmText: tr("admin.users.delete_old_copy", null, "Delete old copy"),
         cancelText: tr("admin.users.cancel", null, "Cancel"),
@@ -1494,7 +1494,7 @@ async function submitCleanupOldCopy(fp) {
         await pollCleanupJob(jobId, fp);
     } catch (e) {
         showToast(tr("admin.users.cleanup_failed_detail", { error: e?.message || e }, "Cleanup failed: " + (e?.message || e)), 15000);
-        setMsg("Error: " + (e?.message || e));
+        setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
     }
 }
 
@@ -1575,7 +1575,7 @@ async function submitAllocationFromModal() {
         setMsg(isAllocated ? tr("admin.users.storage_updated", null, "Storage updated") : tr("admin.users.allocated", null, "Allocated"));
     } catch (e) {
         setAllocError(String(e?.message || e));
-        setMsg("Error: " + (e?.message || e));
+        setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
     }
 }
 
@@ -2129,7 +2129,7 @@ window.addEventListener("load", async () => {
             );
         } catch (e) {
             const msg = tr("admin.users.upload_failed", { error: e?.message || e }, "Upload failed: " + (e?.message || e));
-            setMsg("Error: " + (e?.message || e));
+            setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
             showToast(msg, 15000);
         } finally {
             $("avatar_file").value = "";

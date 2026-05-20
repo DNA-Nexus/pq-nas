@@ -3455,5 +3455,8 @@
   "admin.dna.data_dir_line": "Datakansio: {value}",
   "admin.theme.applied": "Teema otettu käyttöön",
   "admin.theme.saved": "Teema tallennettu",
-  "admin.theme.theme_value": "Teema: {theme}"
+  "admin.theme.theme_value": "Teema: {theme}",
+  "admin.users.pool_preview_refresh_failed": "Poolin esikatselun päivitys epäonnistui: {error}",
+  "admin.users.pool_preview_load_failed": "Poolin esikatselun lataus epäonnistui: {error}",
+  "admin.users.pools_load_failed": "Poolien lataus epäonnistui: {error}"
 }

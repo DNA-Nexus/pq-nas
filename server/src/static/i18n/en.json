@@ -3438,5 +3438,8 @@
   "admin.dna.data_dir_line": "Data dir: {value}",
   "admin.theme.applied": "Theme applied",
   "admin.theme.saved": "Theme saved",
-  "admin.theme.theme_value": "Theme: {theme}"
+  "admin.theme.theme_value": "Theme: {theme}",
+  "admin.users.pool_preview_refresh_failed": "Failed to refresh pool preview: {error}",
+  "admin.users.pool_preview_load_failed": "Failed to load pool preview: {error}",
+  "admin.users.pools_load_failed": "Failed to load pools: {error}"
 }
