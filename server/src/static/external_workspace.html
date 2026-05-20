@@ -17,7 +17,7 @@
     <script defer src="/static/external_workspace_image_preview.js?v=external-image-preview-i18n-1"></script>
 
     <script defer src="/static/external_workspace_pdf_preview.js?v=external-pdf-preview-i18n-1"></script>
-    <script defer src="/static/external_workspace.js?v=external-main-20260520-upload-conflict-fi-1"></script>
+    <script defer src="/static/external_workspace.js?v=external-main-i18n-3"></script>
     <script defer src="/static/external_workspace_selection_properties.js?v=external-selection-properties-i18n-1"></script>
 </head>
 <body>
@@ -56,7 +56,7 @@
                         <span data-i18n="external.files.title">Workspace files</span>
                         <span class="pill readonly externalRolePill" id="externalRolePill">Role: —</span>
                     </h1>
-                    <p class="sub" id="fileSub">After login, files you can access will appear here.</p>
+                    <p class="sub" id="fileSub" data-i18n="external.files.after_login">After login, files you can access will appear here.</p>
                 </div>
                 <div class="externalWorkspaceHeaderActions" id="externalWorkspaceHeaderActions"></div>
             </div>
@@ -68,14 +68,14 @@
                     <span class="toolbarBadge" id="topReadyBadge" data-i18n="external.status.ready">ready</span>
                     <button class="btn secondary" id="btnUp" type="button" data-i18n="external.action.up">⬆ Up</button>
                     <button class="btn secondary" id="btnViewMode" type="button" title="Toggle grid/list view" data-i18n="external.view.list" data-i18n-title="external.view.toggle">List</button>
-                    <button class="btn secondary" id="btnDirsFirst" type="button" title="Keep folders first" data-i18n="external.view.dirs">☷ Dirs</button>
-                    <select class="input toolbarSelect" id="sortMode" title="Sort files">
-                        <option value="name-asc">Name ↑</option>
-                        <option value="name-desc">Name ↓</option>
-                        <option value="mtime-desc">Modified ↓</option>
-                        <option value="mtime-asc">Modified ↑</option>
-                        <option value="size-desc">Size ↓</option>
-                        <option value="size-asc">Size ↑</option>
+                    <button class="btn secondary" id="btnDirsFirst" type="button" title="Keep folders first" data-i18n="external.view.dirs" data-i18n-title="external.view.keep_folders_first">☷ Dirs</button>
+                    <select class="input toolbarSelect" id="sortMode" title="Sort files" data-i18n-title="external.sort.title">
+                        <option value="name-asc" data-i18n="external.sort.name_asc">Name ↑</option>
+                        <option value="name-desc" data-i18n="external.sort.name_desc">Name ↓</option>
+                        <option value="mtime-desc" data-i18n="external.sort.modified_desc">Modified ↓</option>
+                        <option value="mtime-asc" data-i18n="external.sort.modified_asc">Modified ↑</option>
+                        <option value="size-desc" data-i18n="external.sort.size_desc">Size ↓</option>
+                        <option value="size-asc" data-i18n="external.sort.size_asc">Size ↑</option>
                     </select>
                     <button class="btn secondary" id="btnReload" type="button" data-i18n="common.refresh">Refresh</button>
                 </div>
@@ -83,28 +83,28 @@
                 <div class="toolbarGroup hidden" id="editorTools">
                     <!-- Kept in DOM for existing JS handlers, but hidden from the top bar.
                          Upload and New folder are available from the right-click menu. -->
-                    <button class="btn secondary hidden" id="btnToggleUpload" type="button" hidden>Upload</button>
-                    <input class="input hidden" id="newFolderName" placeholder="New folder name" autocomplete="off" hidden>
-                    <button class="btn hidden" id="btnNewFolder" type="button" hidden>New folder</button>
+                    <button class="btn secondary hidden" id="btnToggleUpload" type="button" hidden data-i18n="external.upload.action">Upload</button>
+                    <input class="input hidden" id="newFolderName" placeholder="New folder name" data-i18n-placeholder="external.new_folder.placeholder" autocomplete="off" hidden>
+                    <button class="btn hidden" id="btnNewFolder" type="button" hidden data-i18n="external.menu.new_folder">New folder</button>
                 </div>
             </div>
 
             <div class="breadcrumbs" id="breadcrumbs"></div>
 
             <div class="uploadBox hidden" id="uploadBox">
-                <strong>Upload files</strong>
+                <strong data-i18n="external.upload.files_title">Upload files</strong>
                 <input type="file" id="uploadFile" multiple>
                 <input type="file" id="uploadFolderFile" multiple webkitdirectory directory hidden>
                 <div class="row">
-                    <button class="btn" id="btnUpload" type="button">Upload to current folder</button>
+                    <button class="btn" id="btnUpload" type="button" data-i18n="external.upload.to_current_folder">Upload to current folder</button>
                 </div>
                 <div class="small">
-                    Select files or drag & drop files/folders into the file area. Upload and folder creation require editor access.
+                    <span data-i18n="external.upload.help">Select files or drag & drop files/folders into the file area. Upload and folder creation require editor access.</span>
                 </div>
             </div>
 
             <div class="files" id="files">
-                <div class="empty">Sign in to browse this workspace.</div>
+                <div class="empty" data-i18n="external.files.sign_in_to_browse">Sign in to browse this workspace.</div>
             </div>
 
             <div class="externalWorkspaceFooter" id="externalWorkspaceFooter">
@@ -120,10 +120,10 @@
     <div class="propsCard" role="dialog" aria-modal="true" aria-labelledby="propsTitle">
         <div class="propsHead">
             <div>
-                <div id="propsTitle" class="propsTitle">Properties</div>
+                <div id="propsTitle" class="propsTitle" data-i18n="external.menu.properties">Properties</div>
                 <div id="propsPath" class="propsPath mono">/</div>
             </div>
-            <button id="propsClose" class="btn secondary" type="button">Close</button>
+            <button id="propsClose" class="btn secondary" type="button" data-i18n="external.modal.close">Close</button>
         </div>
         <div id="propsBody" class="propsBody"></div>
     </div>
@@ -133,12 +133,12 @@
     <div class="textPreviewCard" role="dialog" aria-modal="true" aria-labelledby="textPreviewTitle">
         <div class="textPreviewHead">
             <div>
-                <div id="textPreviewTitle" class="textPreviewTitle">Text preview</div>
+                <div id="textPreviewTitle" class="textPreviewTitle" data-i18n="external.preview.title">Text preview</div>
                 <div id="textPreviewPath" class="textPreviewPath mono">/</div>
             </div>
-            <button id="textPreviewClose" class="btn secondary" type="button">Close</button>
+            <button id="textPreviewClose" class="btn secondary" type="button" data-i18n="external.modal.close">Close</button>
         </div>
-        <div id="textPreviewMeta" class="textPreviewMeta">Loading…</div>
+        <div id="textPreviewMeta" class="textPreviewMeta" data-i18n="common.loading">Loading…</div>
         <pre id="textPreviewBody" class="textPreviewBody mono"></pre>
     </div>
 </div>
@@ -148,14 +148,14 @@
     <div id="textEditCard" class="textEditCard" role="dialog" aria-modal="true" aria-labelledby="textEditTitle">
         <div id="textEditHead" class="textEditHead">
             <div>
-                <div id="textEditTitle" class="textEditTitle">Edit text file</div>
+                <div id="textEditTitle" class="textEditTitle" data-i18n="external.textedit.title">Edit text file</div>
                 <div id="textEditPath" class="textEditPath mono">/</div>
             </div>
-            <button id="textEditClose" class="btn secondary" type="button" aria-label="Close">Close</button>
+            <button id="textEditClose" class="btn secondary" type="button" aria-label="Close" data-i18n="external.modal.close" data-i18n-aria-label="external.modal.close">Close</button>
         </div>
 
         <div class="textEditInfoWrap">
-            <div id="textEditInfo" class="textEditInfo">Ready.</div>
+            <div id="textEditInfo" class="textEditInfo" data-i18n="external.status.ready_sentence">Ready.</div>
             <div id="textEditStatus" class="textEditStatus"></div>
         </div>
 
@@ -164,8 +164,8 @@
         </div>
 
         <div class="textEditFoot">
-            <button id="textEditReloadBtn" class="btn secondary" type="button">Reload</button>
-            <button id="textEditFindToggleBtn" class="btn secondary" type="button">Find</button>
+            <button id="textEditReloadBtn" class="btn secondary" type="button" data-i18n="external.textedit.reload">Reload</button>
+            <button id="textEditFindToggleBtn" class="btn secondary" type="button" data-i18n="external.textedit.find">Find</button>
 
             <div id="textEditFindBar" class="textEditFindBar hidden">
                 <input id="textEditFindInput" class="textEditFindInput mono" type="text" placeholder="Find…" aria-label="Find text">

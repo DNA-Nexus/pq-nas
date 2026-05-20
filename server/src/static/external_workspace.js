@@ -772,10 +772,10 @@ html[data-theme="bright"] .externalDialogInput{
         } catch (_) {}
 
         setUploadModalProgress({
-            title: "Cancelling upload",
-            sub: "Stopping the current transfer…",
-            text: "Cancelling…",
-            meta: "Already uploaded files remain stored.",
+            title: tr("external.upload.cancelling_title", null, "Cancelling upload"),
+            sub: tr("external.upload.stopping_transfer", null, "Stopping the current transfer…"),
+            text: tr("external.upload.cancelling_short", null, "Cancelling…"),
+            meta: tr("external.upload.already_uploaded_remain", null, "Already uploaded files remain stored."),
             pct: 100,
             done: false
         });
@@ -1290,7 +1290,12 @@ html[data-theme="bright"] .externalDialogInput{
                     done: true
                 });
 
-                setStatus(cancelled ? "Upload cancelled." : `Upload failed: ${msg}`, "bad");
+                setStatus(
+                    cancelled
+                        ? tr("external.upload.cancelled_status", null, "Upload cancelled.")
+                        : tr("external.upload.failed_status", { error: msg }, `Upload failed: ${msg}`),
+                    "bad"
+                );
 
                 try { await loadFiles(currentPath); } catch (_) {}
                 uploadCancelRequested = false;
@@ -1857,7 +1862,9 @@ html[data-theme="bright"] .externalDialogInput{
                 openBtn.classList.remove("hidden");
                 openBtn.style.display = "";
                 openBtn.disabled = false;
-                openBtn.textContent = item.isDir ? "Open folder" : "Open original";
+                openBtn.textContent = item.isDir
+                    ? tr("external.menu.open_folder", null, "Open folder")
+                    : tr("external.menu.open_original", null, "Open original");
             }
         }
     }
@@ -1926,12 +1933,12 @@ html[data-theme="bright"] .externalDialogInput{
         else if (item.size) bits.push(fmtSize(item.size));
 
         if (j.mime) bits.push(String(j.mime));
-        if (j.mtime_epoch) bits.push("Modified " + fmtUnixLocal(j.mtime_epoch));
-        else if (item.mtime) bits.push("Modified " + fmtUnixLocal(item.mtime));
+        if (j.mtime_epoch) bits.push(tr("external.preview.modified", { time: fmtUnixLocal(j.mtime_epoch) }, "Modified " + fmtUnixLocal(j.mtime_epoch)));
+        else if (item.mtime) bits.push(tr("external.preview.modified", { time: fmtUnixLocal(item.mtime) }, "Modified " + fmtUnixLocal(item.mtime)));
 
         if (j.sha256) bits.push("SHA-256 " + String(j.sha256).slice(0, 16) + "…");
 
-        if (textPreviewMeta) textPreviewMeta.textContent = bits.join(" · ") || "Text file";
+        if (textPreviewMeta) textPreviewMeta.textContent = bits.join(" · ") || tr("external.preview.text_file", null, "Text file");
         if (textPreviewBody) textPreviewBody.textContent = body;
     }
 
