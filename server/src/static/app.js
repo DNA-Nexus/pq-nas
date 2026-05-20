@@ -3104,6 +3104,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     async function loadActivity() {
         if (!activityList) return;
 
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
+                await window.PQNAS_I18N.ready();
+            }
+        } catch (_) {}
+
         if (activityStatus) activityStatus.textContent = tr("common.loading", null, "Loading…");
 
         try {
