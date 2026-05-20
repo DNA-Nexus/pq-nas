@@ -3178,5 +3178,15 @@
   "settings.profile.avatar_upload_failed_title": "Avatarin lähetys epäonnistui",
   "settings.profile.remove_avatar_title": "Poistetaanko avatar?",
   "settings.profile.remove_avatar_confirm": "Poista avatar",
-  "settings.profile.remove_avatar_cancel": "Peruuta"
+  "settings.profile.remove_avatar_cancel": "Peruuta",
+  "external.common.unknown": "tuntematon",
+  "external.upload.existing_file": "Olemassa oleva tiedosto",
+  "external.upload.new_file": "Uusi tiedosto",
+  "external.upload.size_modified": "Koko: {size} • Muokattu: {modified}",
+  "external.upload.choice": "Valinta",
+  "external.upload.keep_existing": "Säilytä nykyinen",
+  "external.upload.keep_existing_desc": "Ohita tämä lähetys ja säilytä PQ-NASissa jo oleva tiedosto.",
+  "external.upload.replace_with_new": "Korvaa uudella",
+  "external.upload.replace_with_new_desc": "Lähetä tämä tiedosto ja säilytä vanha tiedosto versiona.",
+  "external.upload.apply_all_conflicts": "Käytä tätä valintaa kaikkiin tämän lähetyksen jäljellä oleviin ristiriitoihin"
 }

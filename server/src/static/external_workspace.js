@@ -1047,10 +1047,11 @@ html[data-theme="bright"] .externalDialogInput{
             backdrop.id = "externalUploadConflictBackdrop";
             backdrop.className = "externalUploadConflictBackdrop";
 
-            const existingSize = existing && existing.size_bytes != null ? fmtSize(existing.size_bytes) : "unknown";
-            const existingMtime = existing && existing.mtime_epoch != null ? fmtConflictDate(existing.mtime_epoch) : "unknown";
-            const newSize = file && file.size != null ? fmtSize(file.size) : "unknown";
-            const newMtime = file && file.lastModified ? new Date(file.lastModified).toLocaleString() : "unknown";
+            const unknownText = tr("external.common.unknown", null, "unknown");
+            const existingSize = existing && existing.size_bytes != null ? fmtSize(existing.size_bytes) : unknownText;
+            const existingMtime = existing && existing.mtime_epoch != null ? fmtConflictDate(existing.mtime_epoch) : unknownText;
+            const newSize = file && file.size != null ? fmtSize(file.size) : unknownText;
+            const newMtime = file && file.lastModified ? new Date(file.lastModified).toLocaleString() : unknownText;
 
             backdrop.innerHTML = `
                 <div class="externalUploadConflictCard" role="dialog" aria-modal="true">
@@ -1063,25 +1064,25 @@ html[data-theme="bright"] .externalDialogInput{
                     </div>
                     <div class="externalUploadConflictBody">
                         <div class="externalUploadConflictGrid">
-                            <div><b>Existing file</b></div>
-                            <div>Size: ${existingSize} • Modified: ${existingMtime}</div>
-                            <div><b>New file</b></div>
-                            <div>Size: ${newSize} • Modified: ${newMtime}</div>
-                            <div><b>Choice</b></div>
+                            <div><b>${escapeHtml(tr("external.upload.existing_file", null, "Existing file"))}</b></div>
+                            <div>${escapeHtml(tr("external.upload.size_modified", { size: existingSize, modified: existingMtime }, `Size: ${existingSize} • Modified: ${existingMtime}`))}</div>
+                            <div><b>${escapeHtml(tr("external.upload.new_file", null, "New file"))}</b></div>
+                            <div>${escapeHtml(tr("external.upload.size_modified", { size: newSize, modified: newMtime }, `Size: ${newSize} • Modified: ${newMtime}`))}</div>
+                            <div><b>${escapeHtml(tr("external.upload.choice", null, "Choice"))}</b></div>
                             <div class="externalUploadConflictChoices">
                                 <label>
                                     <input type="radio" name="externalUploadConflictChoice" value="keep_old" checked>
-                                    <span><b>Keep existing</b><br><small>Skip this upload and keep the file already stored in PQ-NAS.</small></span>
+                                    <span><b>${escapeHtml(tr("external.upload.keep_existing", null, "Keep existing"))}</b><br><small>${escapeHtml(tr("external.upload.keep_existing_desc", null, "Skip this upload and keep the file already stored in PQ-NAS."))}</small></span>
                                 </label>
                                 <label>
                                     <input type="radio" name="externalUploadConflictChoice" value="replace">
-                                    <span><b>Replace with new</b><br><small>Upload this file and preserve the old one as a version.</small></span>
+                                    <span><b>${escapeHtml(tr("external.upload.replace_with_new", null, "Replace with new"))}</b><br><small>${escapeHtml(tr("external.upload.replace_with_new_desc", null, "Upload this file and preserve the old one as a version."))}</small></span>
                                 </label>
                             </div>
                             <div></div>
                             <label class="externalUploadConflictApplyAll">
                                 <input type="checkbox" id="externalUploadConflictApplyAll">
-                                Use this choice for all remaining conflicts in this upload
+                                ${escapeHtml(tr("external.upload.apply_all_conflicts", null, "Use this choice for all remaining conflicts in this upload"))}
                             </label>
                         </div>
                     </div>
