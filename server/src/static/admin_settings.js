@@ -310,9 +310,12 @@
         const l = normalizeLanguage(lang);
         if (languageSelect) languageSelect.value = l;
 
-        const label = l === "fi"
-            ? tr("admin.language.finnish", null, "🇫🇮 Suomi")
-            : tr("admin.language.english", null, "🇬🇧 English");
+        const label =
+            l === "fi"
+                ? tr("admin.language.finnish", null, "🇫🇮 Suomi")
+                : (l === "zh"
+                    ? tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文")
+                    : tr("admin.language.english", null, "🇬🇧 English"));
 
         if (languagePill) {
             setSimplePill(languagePill, "info", tr("admin.language.pill", null, "Language"), label);
@@ -339,7 +342,15 @@
             }
         } catch (_) {}
 
-        showToast("ok", tr("admin.language.applied", null, "Language applied"), l === "fi" ? "🇫🇮 Suomi" : "🇬🇧 English");
+        showToast(
+            "ok",
+            tr("admin.language.applied", null, "Language applied"),
+            l === "fi"
+                ? tr("admin.language.finnish", null, "🇫🇮 Suomi")
+                : (l === "zh"
+                    ? tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文")
+                    : tr("admin.language.english", null, "🇬🇧 English"))
+        );
     }
 
     // ---------------------------
