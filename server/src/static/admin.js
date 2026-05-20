@@ -4,6 +4,14 @@
     const badge = document.getElementById("roleBadge");
     const refreshBtn = document.getElementById("refreshBtn");
 
+    function tr(key, vars, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, vars || null, fallback);
+        }
+        return String(fallback ?? key);
+    }
+
     function setBadge(role) {
         if (!badge) return;
         if (role === "admin") {
@@ -45,7 +53,7 @@
             setBadge(null);
             if (pre) pre.textContent = txt.length > 4000 ? (txt.slice(0, 4000) + "\n…(truncated)…") : txt;
         } catch (e) {
-            if (status) status.textContent = "Failed to load /api/v4/me";
+            if (status) status.textContent = tr("shell.status.failed_load_me", null, "Failed to load /api/v4/me");
             if (pre) pre.textContent = String(e && e.stack ? e.stack : e);
             setBadge(null);
         }
