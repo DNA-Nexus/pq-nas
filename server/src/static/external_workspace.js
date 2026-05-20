@@ -2282,7 +2282,7 @@ html[data-theme="bright"] .externalDialogInput{
             textEditArea.value = "";
             textEditArea.readOnly = true;
         }
-        setTextEditStatus("Loading…");
+        setTextEditStatus(tr("common.loading", null, "Loading…"));
 
         openTextEditorModal();
 
@@ -2303,8 +2303,10 @@ html[data-theme="bright"] .externalDialogInput{
         }
 
         const bytes = j.bytes != null ? Number(j.bytes) : new Blob([text]).size;
-        if (textEditInfo) textEditInfo.textContent = `${fmtSize(bytes)} · ${j.mime || "text"} · editable`;
-        setTextEditStatus("Ready.", "good");
+        if (textEditInfo) {
+            textEditInfo.textContent = `${fmtSize(bytes)} · ${j.mime || tr("external.textedit.mime_text", null, "text")} · ${tr("external.textedit.editable", null, "editable")}`;
+        }
+        setTextEditStatus(tr("external.status.ready_sentence", null, "Ready."), "good");
         syncTextEditDirty();
         updateTextEditorFind();
     }
@@ -2333,7 +2335,7 @@ html[data-theme="bright"] .externalDialogInput{
 
     async function saveTextEditor() {
         if (!canEdit) {
-            setTextEditStatus("This workspace session is view-only.", "bad");
+            setTextEditStatus(tr("external.readonly", null, "This workspace session is view-only."), "bad");
             return;
         }
         if (!textEditState || !textEditArea) return;
@@ -2341,7 +2343,7 @@ html[data-theme="bright"] .externalDialogInput{
         const rel = normalizeRelPath(textEditState.rel);
         const text = textEditArea.value;
 
-        setTextEditStatus("Saving…");
+        setTextEditStatus(tr("external.textedit.saving", null, "Saving…"));
         if (textEditSaveBtn) textEditSaveBtn.disabled = true;
 
         const body = {
@@ -2363,7 +2365,7 @@ html[data-theme="bright"] .externalDialogInput{
         textEditState.mtimeEpoch = Number(j.mtime_epoch || j.new_mtime_epoch || textEditState.mtimeEpoch || 0);
         textEditState.sha256 = j.sha256 || j.new_sha256 || j.digest_hex || textEditState.sha256 || "";
 
-        setTextEditStatus("Saved.", "good");
+        setTextEditStatus(tr("external.textedit.saved", null, "Saved."), "good");
         syncTextEditDirty();
         await loadFiles(currentPath);
     }
@@ -2449,16 +2451,20 @@ html[data-theme="bright"] .externalDialogInput{
         const name = item.name || basenameFromPath(rel);
         const isDirHint = !!item.isDir;
 
-        if (propsTitle) propsTitle.textContent = isDirHint ? "Folder properties" : "File properties";
+        if (propsTitle) {
+            propsTitle.textContent = isDirHint
+                ? tr("external.props.folder_properties", null, "Folder properties")
+                : tr("external.props.file_properties", null, "File properties");
+        }
         if (propsPath) propsPath.textContent = "/" + rel;
         if (propsBody) propsBody.innerHTML = "";
 
-        addPropsRow("Name", name);
-        addPropsRow("Type", isDirHint ? "Folder" : "File");
-        addPropsRow("Path", "/" + rel, { copy:true });
-        if (!isDirHint) addPropsRow("Size", fmtSize(item.size || 0));
-        if (item.mtime) addPropsRow("Modified", fmtUnixLocal(item.mtime));
-        addPropsRow("Details", "Loading…");
+        addPropsRow(tr("external.props.name", null, "Name"), name);
+        addPropsRow(tr("external.props.type", null, "Type"), isDirHint ? tr("external.props.folder", null, "Folder") : tr("external.props.file", null, "File"));
+        addPropsRow(tr("external.props.path", null, "Path"), "/" + rel, { copy:true });
+        if (!isDirHint) addPropsRow(tr("external.props.size", null, "Size"), fmtSize(item.size || 0));
+        if (item.mtime) addPropsRow(tr("external.props.modified", null, "Modified"), fmtUnixLocal(item.mtime));
+        addPropsRow(tr("external.props.details", null, "Details"), tr("common.loading", null, "Loading…"));
 
         openPropsModal();
 
@@ -2477,10 +2483,10 @@ html[data-theme="bright"] .externalDialogInput{
         propsBody.innerHTML = "";
 
         if (!st || !st.ok) {
-            addPropsRow("Name", name);
-            addPropsRow("Type", isDirHint ? "Folder" : "File");
-            addPropsRow("Path", "/" + rel, { copy:true });
-            addPropsRow("Error", st && (st.message || st.error) ? `${st.error || "error"}: ${st.message || ""}`.trim() : "Failed to load properties");
+            addPropsRow(tr("external.props.name", null, "Name"), name);
+            addPropsRow(tr("external.props.type", null, "Type"), isDirHint ? tr("external.props.folder", null, "Folder") : tr("external.props.file", null, "File"));
+            addPropsRow(tr("external.props.path", null, "Path"), "/" + rel, { copy:true });
+            addPropsRow(tr("external.props.error", null, "Error"), st && (st.message || st.error) ? `${st.error || "error"}: ${st.message || ""}`.trim() : tr("external.props.failed_load", null, "Failed to load properties"));
             return;
         }
 
@@ -2488,26 +2494,33 @@ html[data-theme="bright"] .externalDialogInput{
         const isFile = st.type === "file";
 
         if (propsTitle) {
-            propsTitle.textContent = isDir ? "Folder properties" : (isFile ? "File properties" : "Item properties");
+            propsTitle.textContent = isDir
+                ? tr("external.props.folder_properties", null, "Folder properties")
+                : (isFile ? tr("external.props.file_properties", null, "File properties") : tr("external.props.item_properties", null, "Item properties"));
         }
         if (propsPath) propsPath.textContent = st.path_norm || ("/" + rel);
 
-        addPropsRow("Name", st.name || name);
-        addPropsRow("Type", isDir ? "Folder" : (isFile ? "File" : "Other"));
-        addPropsRow("Path", st.path_norm || ("/" + rel), { copy:true });
-        addPropsRow("Workspace ID", st.workspace_id || workspaceId, { copy:true });
+        addPropsRow(tr("external.props.name", null, "Name"), st.name || name);
+        addPropsRow(tr("external.props.type", null, "Type"), isDir ? tr("external.props.folder", null, "Folder") : (isFile ? tr("external.props.file", null, "File") : tr("external.props.other", null, "Other")));
+        addPropsRow(tr("external.props.path", null, "Path"), st.path_norm || ("/" + rel), { copy:true });
+        addPropsRow(tr("external.props.workspace_id", null, "Workspace ID"), st.workspace_id || workspaceId, { copy:true });
 
         if (st.mode_octal) {
             const rwx = permsFromOctal(st.mode_octal);
-            addPropsRow("Permissions", rwx ? `${st.mode_octal} (${rwx})` : st.mode_octal);
+            addPropsRow(tr("external.props.permissions", null, "Permissions"), rwx ? `${st.mode_octal} (${rwx})` : st.mode_octal);
         }
 
-        if (st.mtime_epoch) addPropsRow("Modified", fmtUnixLocal(st.mtime_epoch));
+        if (st.mtime_epoch) addPropsRow(tr("external.props.modified", null, "Modified"), fmtUnixLocal(st.mtime_epoch));
 
         if (isFile) {
-            if (st.bytes != null) addPropsRow("Size", fmtSize(st.bytes));
-            if (st.mime) addPropsRow("MIME", st.mime);
-            if (typeof st.is_text === "boolean") addPropsRow("Looks like text", st.is_text ? "Yes" : "No");
+            if (st.bytes != null) addPropsRow(tr("external.props.size", null, "Size"), fmtSize(st.bytes));
+            if (st.mime) addPropsRow(tr("external.props.mime", null, "MIME"), st.mime);
+            if (typeof st.is_text === "boolean") {
+                addPropsRow(
+                    tr("external.props.looks_like_text", null, "Looks like text"),
+                    st.is_text ? tr("common.yes", null, "Yes") : tr("common.no", null, "No")
+                );
+            }
 
             const kEl = document.createElement("div");
             kEl.className = "k";
@@ -2556,7 +2569,7 @@ html[data-theme="bright"] .externalDialogInput{
                         btnCopy.disabled = false;
                     })
                     .catch((e) => {
-                        line.textContent = `Error: ${String(e && e.message ? e.message : e)}`;
+                        line.textContent = tr("external.props.error_with_value", { error: String(e && e.message ? e.message : e) }, `Error: ${String(e && e.message ? e.message : e)}`);
                         line.style.opacity = "0.85";
                     });
             }
@@ -2565,17 +2578,17 @@ html[data-theme="bright"] .externalDialogInput{
         if (isDir) {
             if (st.children) {
                 const parts = [];
-                if (st.children.files != null) parts.push(`${st.children.files} files`);
-                if (st.children.dirs != null) parts.push(`${st.children.dirs} folders`);
-                if (st.children.other != null && st.children.other !== 0) parts.push(`${st.children.other} other`);
-                addPropsRow("Children", parts.join(", "));
+                if (st.children.files != null) parts.push(tr("external.props.files_count", { count: st.children.files }, `${st.children.files} files`));
+                if (st.children.dirs != null) parts.push(tr("external.props.folders_count", { count: st.children.dirs }, `${st.children.dirs} folders`));
+                if (st.children.other != null && st.children.other !== 0) parts.push(tr("external.props.other_count", { count: st.children.other }, `${st.children.other} other`));
+                addPropsRow(tr("external.props.children", null, "Children"), parts.join(", "));
             }
 
-            if (st.bytes_recursive != null) addPropsRow("Size (recursive)", fmtSize(st.bytes_recursive));
-            if (st.recursive_scanned_entries != null) addPropsRow("Scanned entries", String(st.recursive_scanned_entries));
-            if (typeof st.recursive_complete === "boolean") addPropsRow("Scan complete", st.recursive_complete ? "Yes" : "No");
-            if (st.scan_cap != null) addPropsRow("Scan cap", String(st.scan_cap));
-            if (st.time_cap_ms != null) addPropsRow("Time cap", `${st.time_cap_ms} ms`);
+            if (st.bytes_recursive != null) addPropsRow(tr("external.props.size_recursive", null, "Size (recursive)"), fmtSize(st.bytes_recursive));
+            if (st.recursive_scanned_entries != null) addPropsRow(tr("external.props.scanned_entries", null, "Scanned entries"), String(st.recursive_scanned_entries));
+            if (typeof st.recursive_complete === "boolean") addPropsRow(tr("external.props.scan_complete", null, "Scan complete"), st.recursive_complete ? tr("common.yes", null, "Yes") : tr("common.no", null, "No"));
+            if (st.scan_cap != null) addPropsRow(tr("external.props.scan_cap", null, "Scan cap"), String(st.scan_cap));
+            if (st.time_cap_ms != null) addPropsRow(tr("external.props.time_cap", null, "Time cap"), `${st.time_cap_ms} ms`);
         }
 
         {
@@ -3537,7 +3550,7 @@ resetMarqueeVisual();
         if (!item) return;
         if (item.isDir) {
             clearSelection();
-            loadFiles(item.rel).catch((e) => setStatus(`Open folder failed: ${e.message || e}`, "bad"));
+            loadFiles(item.rel).catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
             return;
         }
         const pdfPreview = window.PQNAS_EXTERNAL_PDF_PREVIEW;
@@ -4371,7 +4384,7 @@ resetMarqueeVisual();
 
         const rowDir = ev.target.closest(".fileRow[data-dir]");
         if (rowDir) {
-            loadFiles(rowDir.dataset.dir || "").catch((e) => setStatus(`Open folder failed: ${e.message || e}`, "bad"));
+            loadFiles(rowDir.dataset.dir || "").catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
             return;
         }
 
@@ -4497,7 +4510,7 @@ resetMarqueeVisual();
 
         if (action === "open") {
             if (item.isDir) {
-                loadFiles(item.rel).catch((e) => setStatus(`Open folder failed: ${e.message || e}`, "bad"));
+                loadFiles(item.rel).catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
             } else {
                 window.open(downloadUrl(item.rel), "_blank", "noopener");
             }
@@ -4514,7 +4527,7 @@ resetMarqueeVisual();
         }
 
         if (action === "properties") {
-            showProperties(item).catch((e) => setStatus(`Properties failed: ${e.message || e}`, "bad"));
+            showProperties(item).catch((e) => setStatus(tr("external.properties_failed", { error: e.message || e }, `Properties failed: ${e.message || e}`), "bad"));
             return;
         }
 
@@ -5070,7 +5083,7 @@ resetMarqueeVisual();
         const row = ev.target.closest("[data-path]");
         if (!row || row.disabled) return;
         loadPickerFolder(row.dataset.path || "").catch((e) => {
-            if (extPickerStatus) extPickerStatus.textContent = `Open folder failed: ${e.message || e}`;
+            if (extPickerStatus) extPickerStatus.textContent = tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`);
         });
     });
 
@@ -5078,7 +5091,7 @@ resetMarqueeVisual();
         const crumb = ev.target.closest("[data-path]");
         if (!crumb) return;
         loadPickerFolder(crumb.dataset.path || "").catch((e) => {
-            if (extPickerStatus) extPickerStatus.textContent = `Open folder failed: ${e.message || e}`;
+            if (extPickerStatus) extPickerStatus.textContent = tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`);
         });
     });
 

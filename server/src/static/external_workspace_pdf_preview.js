@@ -253,7 +253,7 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
         root.setAttribute("aria-hidden", "true");
 
         root.innerHTML = `
-            <div class="externalPdfPreviewCard" role="dialog" aria-modal="true" aria-label="PDF preview">
+            <div class="externalPdfPreviewCard" role="dialog" aria-modal="true" aria-label="${escapeHtml(tr("external.pdf_preview.title", null, "PDF preview"))}">
                 <div class="externalPdfPreviewHead">
                     <div>
                         <div class="externalPdfPreviewTitle">${escapeHtml(tr("external.pdf_preview.title", null, "PDF preview"))}</div>
