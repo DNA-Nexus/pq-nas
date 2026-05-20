@@ -521,7 +521,6 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
                 } catch (e) {
                     setBadge("err", tr("admin.apps.error", null, "error"));
                     statusLine.textContent = String(e && e.message ? e.message : e);
-                    alert(String(e && e.message ? e.message : e));
                 } finally {
                     saveBtn.disabled = false;
                 }

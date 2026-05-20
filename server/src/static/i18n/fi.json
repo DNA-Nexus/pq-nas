@@ -3169,5 +3169,14 @@
   "common.saved_dot": "Tallennettu.",
   "common.updated_dot": "Päivitetty.",
   "common.deleting_ellipsis": "Poistetaan…",
-  "common.deleted_dot": "Poistettu."
+  "common.deleted_dot": "Poistettu.",
+  "pqshare.confirm.title": "Vahvista toiminto",
+  "pqshare.confirm.ok": "OK",
+  "pqshare.unlock.reset_confirm_title": "Nollataanko tämän selaimen avain?",
+  "shell.dialog.title": "DNA-Nexus",
+  "shell.dialog.ok": "OK",
+  "settings.profile.avatar_upload_failed_title": "Avatarin lähetys epäonnistui",
+  "settings.profile.remove_avatar_title": "Poistetaanko avatar?",
+  "settings.profile.remove_avatar_confirm": "Poista avatar",
+  "settings.profile.remove_avatar_cancel": "Peruuta"
 }

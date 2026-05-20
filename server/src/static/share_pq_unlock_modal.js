@@ -271,6 +271,70 @@
         });
     }
 
+
+    function showPqsuConfirmModal(opts = {}) {
+        injectStyle();
+
+        return new Promise((resolve) => {
+            const options = opts || {};
+            const backdrop = document.createElement("div");
+            backdrop.className = "pqsu-backdrop";
+
+            backdrop.innerHTML = `
+              <div class="pqsu-modal" role="dialog" aria-modal="true" aria-labelledby="pqsu-confirm-title">
+                <div class="pqsu-head">
+                  <div class="pqsu-eyebrow">${escapeHtml(tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share"))}</div>
+                  <h2 id="pqsu-confirm-title" class="pqsu-title">${escapeHtml(options.title || tr("pqshare.confirm.title", null, "Confirm action"))}</h2>
+                </div>
+                <div class="pqsu-body">
+                  <div class="pqsu-lead">${escapeHtml(options.message || "")}</div>
+                  <div class="pqsu-actions">
+                    <button id="pqsu-confirm-cancel" class="pqsu-btn pqsu-btn-secondary" type="button">
+                      ${escapeHtml(options.cancelText || tr("admin.common.cancel", null, "Cancel"))}
+                    </button>
+                    <button id="pqsu-confirm-ok" class="pqsu-btn pqsu-btn-danger" type="button">
+                      ${escapeHtml(options.confirmText || tr("pqshare.confirm.ok", null, "OK"))}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            document.body.appendChild(backdrop);
+
+            const cancelBtn = backdrop.querySelector("#pqsu-confirm-cancel");
+            const okBtn = backdrop.querySelector("#pqsu-confirm-ok");
+
+            const finish = (value) => {
+                document.removeEventListener("keydown", onKey, true);
+                backdrop.remove();
+                resolve(!!value);
+            };
+
+            const onKey = (e) => {
+                if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    finish(false);
+                }
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    finish(true);
+                }
+            };
+
+            document.addEventListener("keydown", onKey, true);
+            backdrop.addEventListener("click", (e) => {
+                if (e.target === backdrop) finish(false);
+            });
+            cancelBtn?.addEventListener("click", () => finish(false));
+            okBtn?.addEventListener("click", () => finish(true));
+
+            setTimeout(() => cancelBtn?.focus(), 0);
+        });
+    }
+
     async function ensureUnlocked({ preferredAlg = "ML-KEM-768", purpose = "open" } = {}) {
         if (!window.PqShareKeysV1) {
             throw new Error(tr("pqshare.error.key_helper_missing", null, "PQ key helper not loaded"));
@@ -295,11 +359,16 @@
             }
 
             if (result.action === "reset") {
-                const ok = window.confirm(tr(
-                    "pqshare.unlock.reset_confirm",
-                    null,
-                    "Reset this browser's local device key?\n\nThis will remove the existing local key for this browser. Older shares encrypted to the old key will no longer open here."
-                ));
+                const ok = await showPqsuConfirmModal({
+                    title: tr("pqshare.unlock.reset_confirm_title", null, "Reset this browser key?"),
+                    message: tr(
+                        "pqshare.unlock.reset_confirm",
+                        null,
+                        "Reset this browser's local device key?\n\nThis will remove the existing local key for this browser. Older shares encrypted to the old key will no longer open here."
+                    ),
+                    confirmText: tr("pqshare.unlock.reset_key", null, "Reset this browser key"),
+                    cancelText: tr("admin.common.cancel", null, "Cancel")
+                });
                 if (ok) {
                     window.PqShareKeysV1.resetLocalIdentity(alg);
                 }

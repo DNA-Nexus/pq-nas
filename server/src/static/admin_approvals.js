@@ -468,7 +468,6 @@ function render() {
                 await refresh();
                 setMsg(tr("admin.approvals.saved", null, "Saved"));
             } catch (e) {
-                alert(tr("admin.approvals.failed", { error: e.message }, "Failed: " + e.message));
                 setMsg(tr("admin.approvals.error", { error: e.message }, "Error: " + e.message));
             }
         });

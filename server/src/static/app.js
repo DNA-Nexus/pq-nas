@@ -46,6 +46,194 @@
         return fallback || key;
     }
 
+
+    function injectShellDialogCss() {
+        if (document.getElementById("shellDialogCss")) return;
+
+        const style = document.createElement("style");
+        style.id = "shellDialogCss";
+        style.textContent = `
+.shellDialogBackdrop{
+    position:fixed;
+    inset:0;
+    z-index:100000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background:rgba(0,0,0,0.55);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+}
+.shellDialogCard{
+    width:min(560px, calc(100vw - 24px));
+    border:1px solid var(--border2, rgba(120,120,120,0.45));
+    border-radius:18px;
+    background:linear-gradient(180deg, var(--panel2, #f8f8f8), var(--panel, #eeeeee));
+    box-shadow:0 18px 70px rgba(0,0,0,0.42);
+    color:var(--fg, #111);
+    overflow:hidden;
+}
+.shellDialogHead{
+    padding:14px 16px;
+    border-bottom:1px solid var(--border2, rgba(120,120,120,0.35));
+    background:rgba(0,0,0,0.08);
+}
+.shellDialogTitle{
+    font-weight:950;
+    letter-spacing:.2px;
+    font-size:16px;
+}
+.shellDialogBody{
+    padding:16px;
+    color:var(--fg, #111);
+    line-height:1.5;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+}
+.shellDialogFoot{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:12px 16px;
+    border-top:1px solid var(--border2, rgba(120,120,120,0.35));
+    background:rgba(0,0,0,0.08);
+}
+.shellDialogBtn{
+    border:1px solid var(--border2, rgba(120,120,120,0.45));
+    border-radius:14px;
+    padding:9px 14px;
+    font:inherit;
+    font-weight:850;
+    color:var(--fg, #111);
+    background:linear-gradient(180deg, rgba(255,255,255,0.20), rgba(0,0,0,0.04));
+    cursor:pointer;
+}
+.shellDialogBtn.secondary{ opacity:.90; }
+.shellDialogBtn.danger{
+    border-color:rgba(var(--fail-rgb, 180,40,40),0.48);
+    background:rgba(var(--fail-rgb, 180,40,40),0.14);
+}
+html[data-theme="bright"] .shellDialogBackdrop{ background:rgba(0,0,0,0.30); }
+html[data-theme="bright"] .shellDialogCard{
+    background:linear-gradient(180deg, #ffffff, #f2f4f7) !important;
+    border-color:rgba(70,80,95,0.32) !important;
+    color:#111827 !important;
+    box-shadow:0 22px 80px rgba(0,0,0,0.28) !important;
+}
+html[data-theme="bright"] .shellDialogHead,
+html[data-theme="bright"] .shellDialogFoot{
+    background:rgba(15,23,42,0.045) !important;
+    border-color:rgba(70,80,95,0.22) !important;
+}
+html[data-theme="bright"] .shellDialogTitle,
+html[data-theme="bright"] .shellDialogBody,
+html[data-theme="bright"] .shellDialogBtn{
+    color:#111827 !important;
+}
+html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38); }
+`;
+        document.head.appendChild(style);
+    }
+
+    function openShellDialog(opts = {}) {
+        injectShellDialogCss();
+
+        return new Promise((resolve) => {
+            const options = opts || {};
+            const alertOnly = !!options.alertOnly;
+
+            const modal = document.createElement("div");
+            modal.className = "shellDialogBackdrop";
+            modal.setAttribute("role", "dialog");
+            modal.setAttribute("aria-modal", "true");
+
+            const card = document.createElement("div");
+            card.className = "shellDialogCard";
+
+            const head = document.createElement("div");
+            head.className = "shellDialogHead";
+
+            const title = document.createElement("div");
+            title.className = "shellDialogTitle";
+            title.textContent = options.title || tr("shell.dialog.title", null, "DNA-Nexus");
+
+            head.appendChild(title);
+
+            const body = document.createElement("div");
+            body.className = "shellDialogBody";
+            body.textContent = options.message || "";
+
+            const foot = document.createElement("div");
+            foot.className = "shellDialogFoot";
+
+            const spacer = document.createElement("div");
+            spacer.style.flex = "1 1 auto";
+            foot.appendChild(spacer);
+
+            let cancelBtn = null;
+            if (!alertOnly) {
+                cancelBtn = document.createElement("button");
+                cancelBtn.type = "button";
+                cancelBtn.className = "shellDialogBtn secondary";
+                cancelBtn.textContent = options.cancelText || tr("admin.common.cancel", null, "Cancel");
+                foot.appendChild(cancelBtn);
+            }
+
+            const okBtn = document.createElement("button");
+            okBtn.type = "button";
+            okBtn.className = options.danger ? "shellDialogBtn danger" : "shellDialogBtn";
+            okBtn.textContent = options.confirmText || tr("shell.dialog.ok", null, "OK");
+            foot.appendChild(okBtn);
+
+            card.appendChild(head);
+            card.appendChild(body);
+            card.appendChild(foot);
+            modal.appendChild(card);
+            document.body.appendChild(modal);
+
+            const finish = (value) => {
+                document.removeEventListener("keydown", onKey, true);
+                modal.remove();
+                resolve(!!value);
+            };
+
+            const onKey = (ev) => {
+                if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    finish(alertOnly ? true : false);
+                    return;
+                }
+
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    finish(true);
+                }
+            };
+
+            document.addEventListener("keydown", onKey, true);
+
+            modal.addEventListener("click", (ev) => {
+                if (ev.target === modal) finish(alertOnly ? true : false);
+            });
+
+            if (cancelBtn) cancelBtn.addEventListener("click", () => finish(false));
+            okBtn.addEventListener("click", () => finish(true));
+
+            window.setTimeout(() => okBtn.focus(), 0);
+        });
+    }
+
+    function openShellAlertDialog(opts = {}) {
+        return openShellDialog({ ...opts, alertOnly: true });
+    }
+
+    function openShellConfirmDialog(opts = {}) {
+        return openShellDialog(opts);
+    }
+
     function currentLanguageName() {
         try {
             if (window.PQNAS_I18N && typeof window.PQNAS_I18N.getLanguage === "function") {
@@ -2079,7 +2267,10 @@
                     renderUserSettings(result && result.note ? tr("settings.profile.avatar_uploaded_note", { note: result.note }, `Avatar uploaded. ${result.note}`) : tr("settings.profile.avatar_uploaded", null, "Avatar uploaded."), "ok");
                 } catch (e) {
                     const msg = tr("settings.profile.avatar_upload_failed", { error: String(e && e.message ? e.message : e) }, `Avatar upload failed: ${String(e && e.message ? e.message : e)}`);
-                    alert(msg);
+                    await openShellAlertDialog({
+                        title: tr("settings.profile.avatar_upload_failed_title", null, "Avatar upload failed"),
+                        message: msg
+                    });
                     renderUserSettings(msg, "err");
                 } finally {
                     avatarFileInput.value = "";
@@ -2090,7 +2281,14 @@
         const removeAvatarBtn = (homeContent || homeBlurb).querySelector("#userProfileRemoveAvatarBtn");
         if (removeAvatarBtn) {
             removeAvatarBtn.addEventListener("click", async () => {
-                if (!confirm(tr("settings.profile.remove_confirm", null, "Remove your avatar?"))) return;
+                const ok = await openShellConfirmDialog({
+                    title: tr("settings.profile.remove_avatar_title", null, "Remove avatar?"),
+                    message: tr("settings.profile.remove_confirm", null, "Remove your avatar?"),
+                    confirmText: tr("settings.profile.remove_avatar_confirm", null, "Remove avatar"),
+                    cancelText: tr("settings.profile.remove_avatar_cancel", null, "Cancel"),
+                    danger: true
+                });
+                if (!ok) return;
 
                 removeAvatarBtn.disabled = true;
                 removeAvatarBtn.textContent = tr("settings.profile.removing", null, "Removing…");

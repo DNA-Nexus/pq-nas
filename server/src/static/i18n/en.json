@@ -3152,5 +3152,14 @@
   "common.saved_dot": "Saved.",
   "common.updated_dot": "Updated.",
   "common.deleting_ellipsis": "Deleting…",
-  "common.deleted_dot": "Deleted."
+  "common.deleted_dot": "Deleted.",
+  "pqshare.confirm.title": "Confirm action",
+  "pqshare.confirm.ok": "OK",
+  "pqshare.unlock.reset_confirm_title": "Reset this browser key?",
+  "shell.dialog.title": "DNA-Nexus",
+  "shell.dialog.ok": "OK",
+  "settings.profile.avatar_upload_failed_title": "Avatar upload failed",
+  "settings.profile.remove_avatar_title": "Remove avatar?",
+  "settings.profile.remove_avatar_confirm": "Remove avatar",
+  "settings.profile.remove_avatar_cancel": "Cancel"
 }
