@@ -9,6 +9,16 @@
 
     const MAX_ITEMS = 200;
 
+
+    function tr(key, vars = null, fallback = "") {
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+                return window.PQNAS_I18N.t(key, vars, fallback || key);
+            }
+        } catch (_) {}
+        return fallback || key;
+    }
+
     function normalizeRelPath(p) {
         let v = String(p || "").trim().replaceAll("\\", "/");
         while (v.startsWith("/")) v = v.slice(1);
@@ -104,7 +114,7 @@
     function addRawJson(body, raw) {
         const kEl = document.createElement("div");
         kEl.className = "k";
-        kEl.textContent = "Details";
+        kEl.textContent = tr("external.selection.details", null, "Details");
 
         const vEl = document.createElement("div");
         vEl.className = "v";
@@ -113,7 +123,7 @@
         details.style.width = "100%";
 
         const summary = document.createElement("summary");
-        summary.textContent = "Raw JSON";
+        summary.textContent = tr("external.selection.raw_json", null, "Raw JSON");
         summary.style.cursor = "pointer";
         summary.style.userSelect = "none";
 
@@ -144,7 +154,7 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.dataset.action = "multi-properties";
-        btn.textContent = "Properties...";
+        btn.textContent = tr("external.menu.properties", null, "Properties...");
 
         const clearBtn = menu.querySelector('[data-action="multi-clear"]');
         if (clearBtn) {
@@ -164,20 +174,20 @@
 
         if (!modal || !body) return;
 
-        if (title) title.textContent = "Selection properties";
-        if (path) path.textContent = `${items.length} item(s)`;
+        if (title) title.textContent = tr("external.selection.title", null, "Selection properties");
+        if (path) path.textContent = tr("external.selection.item_count", { count: items.length }, `${items.length} item(s)`);
         body.innerHTML = "";
 
         openPropsModal();
 
         if (!items.length) {
-            addPropsRow(body, "Items", "0");
-            addPropsRow(body, "Complete", "No");
+            addPropsRow(body, tr("external.selection.items", null, "Items"), "0");
+            addPropsRow(body, tr("external.selection.complete", null, "Complete"), tr("common.no", null, "No"));
             return;
         }
 
-        addPropsRow(body, "Items", `${items.length}`);
-        addPropsRow(body, "Status", "Scanning selection...");
+        addPropsRow(body, tr("external.selection.items", null, "Items"), `${items.length}`);
+        addPropsRow(body, tr("external.selection.status", null, "Status"), tr("external.selection.scanning", null, "Scanning selection..."));
 
         let files = 0;
         let folders = 0;
@@ -244,17 +254,17 @@
 
         body.innerHTML = "";
 
-        addPropsRow(body, "Items", `${items.length}`);
-        addPropsRow(body, "Favorites", `${favorites}`);
-        addPropsRow(body, "Files", `${files}`);
-        addPropsRow(body, "Folders", `${folders}`);
-        addPropsRow(body, "Total size", fmtSize(totalBytes));
-        addPropsRow(body, "Complete", complete ? "Yes" : "No");
-        addPropsRow(body, "Max Items", `${MAX_ITEMS}`);
-        addPropsRow(body, "Dir scan time cap", dirScanTimeCap || "—");
-        addPropsRow(body, "Dir scan entry cap", dirScanEntryCap || "—");
+        addPropsRow(body, tr("external.selection.items", null, "Items"), `${items.length}`);
+        addPropsRow(body, tr("external.selection.favorites", null, "Favorites"), `${favorites}`);
+        addPropsRow(body, tr("external.selection.files", null, "Files"), `${files}`);
+        addPropsRow(body, tr("external.selection.folders", null, "Folders"), `${folders}`);
+        addPropsRow(body, tr("external.selection.total_size", null, "Total size"), fmtSize(totalBytes));
+        addPropsRow(body, tr("external.selection.complete", null, "Complete"), complete ? tr("common.yes", null, "Yes") : tr("common.no", null, "No"));
+        addPropsRow(body, tr("external.selection.max_items", null, "Max Items"), `${MAX_ITEMS}`);
+        addPropsRow(body, tr("external.selection.dir_scan_time_cap", null, "Dir scan time cap"), dirScanTimeCap || "—");
+        addPropsRow(body, tr("external.selection.dir_scan_entry_cap", null, "Dir scan entry cap"), dirScanEntryCap || "—");
 
-        if (errors) addPropsRow(body, "Errors", `${errors}`);
+        if (errors) addPropsRow(body, tr("external.selection.errors", null, "Errors"), `${errors}`);
 
         raw.summary = {
             items: items.length,
@@ -292,7 +302,7 @@
             const { body } = propsEls();
             if (body) {
                 body.innerHTML = "";
-                addPropsRow(body, "Error", String(e && e.message ? e.message : e));
+                addPropsRow(body, tr("external.selection.error", null, "Error"), String(e && e.message ? e.message : e));
             }
         });
     }, true);
