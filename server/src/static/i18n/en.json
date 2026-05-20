@@ -3511,5 +3511,13 @@
   "activity.msg.device_paired": "New device paired",
   "activity.msg.session_revoked_for": "{actor} revoked session for {target}",
   "activity.msg.session_revoked": "{actor} revoked a session",
-  "activity.msg.performed": "{actor} performed {type}"
+  "activity.msg.performed": "{actor} performed {type}",
+  "pqshare.keys.x25519_unsupported": "This browser does not support X25519 WebCrypto",
+  "external.path.empty": "Path cannot be empty.",
+  "external.path.forward_slashes": "Use forward slashes, not backslashes.",
+  "external.path.no_dot_segments": "Path cannot contain . or .. segments.",
+  "external.selection.use_context_menu_multi": "Use the context menu for multiple selected items.",
+  "external.selection.no_item_selected": "No item selected.",
+  "admin.settings.saving": "Saving…",
+  "admin.settings.error": "Error"
 }

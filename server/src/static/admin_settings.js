@@ -1788,7 +1788,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         ev.preventDefault();
         const sn = currentSnapshotsFromUi();
         btnSnapSave.disabled = true;
-        setSnapshotsPill("warn", "Saving…");
+        setSnapshotsPill("warn", tr("admin.settings.saving", null, "Saving…"));
         try {
             const j = await apiSettingsPost({ snapshots: sn });
 
@@ -1809,7 +1809,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         } catch (e) {
             console.error(e);
-            setSnapshotsPill("fail", "Error");
+            setSnapshotsPill("fail", tr("admin.settings.error", null, "Error"));
             showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
         } finally {
             btnSnapSave.disabled = false;

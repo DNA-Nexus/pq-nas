@@ -2979,13 +2979,13 @@ resetMarqueeVisual();
 
     function validateSimpleRelPathInput(pathText) {
         const v = normalizeRelPath(pathText);
-        if (!v) return { ok:false, message:"Path cannot be empty." };
-        if (v.includes("\\")) return { ok:false, message:"Use forward slashes, not backslashes." };
+        if (!v) return { ok:false, message:tr("external.path.empty", null, "Path cannot be empty.") };
+        if (v.includes("\\")) return { ok:false, message:tr("external.path.forward_slashes", null, "Use forward slashes, not backslashes.") };
 
         const parts = v.split("/").filter(Boolean);
         for (const part of parts) {
             if (part === "." || part === "..") {
-                return { ok:false, message:"Path cannot contain . or .. segments." };
+                return { ok:false, message:tr("external.path.no_dot_segments", null, "Path cannot contain . or .. segments.") };
             }
         }
 
@@ -3577,7 +3577,9 @@ resetMarqueeVisual();
     function openSelectedPrimary() {
         const items = selectedItems();
         if (items.length !== 1) {
-            setStatus(items.length ? "Use the context menu for multiple selected items." : "No item selected.");
+            setStatus(items.length
+                ? tr("external.selection.use_context_menu_multi", null, "Use the context menu for multiple selected items.")
+                : tr("external.selection.no_item_selected", null, "No item selected."));
             return;
         }
         openItem(items[0]);

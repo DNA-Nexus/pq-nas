@@ -358,16 +358,16 @@
     if (sidEl) sidEl.textContent = k ? ("k:" + k) : (st ? "st:(provided)" : "(missing k/st)");
 
     if (!body()) {
-    setPill(statusPill, "fail", "missing k");
-    setPill(mainPill, "fail", "error");
-    setText("Missing k (or st) in URL. Go back and start a new sign-in.");
+    setPill(statusPill, "fail", "tunniste puuttuu");
+    setPill(mainPill, "fail", "virhe");
+    setText("URL-osoitteesta puuttuu k tai st. Palaa takaisin ja aloita uusi kirjautuminen.");
     return;
 }
 
     async function pollOnce() {
     try {
-    setPill(statusPill, "warn", "checking…");
-    setText("Checking /api/v5/status…");
+    setPill(statusPill, "warn", "tarkistetaan…");
+    setText("Tarkistetaan hyväksynnän tilaa…");
 
     const r = await fetch("/api/v5/status", {
     method: "POST",
@@ -380,30 +380,30 @@
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || j.ok === false) {
-    setPill(statusPill, "fail", "error");
-    setPill(mainPill, "fail", "error");
-    setText(`Status error: ${j.message || j.error || ("HTTP " + r.status)}`);
+    setPill(statusPill, "fail", "virhe");
+    setPill(mainPill, "fail", "virhe");
+    setText(`Tilavirhe: ${j.message || j.error || ("HTTP " + r.status)}`);
     return;
 }
 
     if (j.state === "missing") {
-    setPill(statusPill, "fail", "missing");
-    setPill(mainPill, "fail", "missing");
-    setText("This sign-in request is no longer known by the server. Go back and start again.");
+    setPill(statusPill, "fail", "puuttuu");
+    setPill(mainPill, "fail", "puuttuu");
+    setText("Palvelin ei enää tunne tätä kirjautumispyyntöä. Palaa takaisin ja aloita uudelleen.");
     return;
 }
 
     if (j.state === "pending") {
-    setPill(statusPill, "warn", "pending");
-    setPill(mainPill, "warn", "pending");
-    setText("Waiting for admin approval…");
+    setPill(statusPill, "warn", "odottaa");
+    setPill(mainPill, "warn", "odottaa");
+    setText("Odotetaan ylläpitäjän hyväksyntää…");
     return;
 }
 
     if (j.state === "approved" || j.approved === true) {
-    setPill(statusPill, "ok", "approved");
-    setPill(mainPill, "ok", "approved");
-    setText("Approved ✔ Finalizing sign-in…");
+    setPill(statusPill, "ok", "hyväksytty");
+    setPill(mainPill, "ok", "hyväksytty");
+    setText("Hyväksytty ✔ Viimeistellään kirjautumista…");
 
     // Turn approval into a real cookie
     const cres = await fetch("/api/v5/consume", {
@@ -416,9 +416,9 @@
 
     const cj = await cres.json().catch(() => ({}));
     if (!cres.ok || cj.ok === false) {
-    setPill(statusPill, "fail", "cookie failed");
-    setPill(mainPill, "fail", "error");
-    setText(`Approved, but cookie set failed: ${cj.message || cj.error || ("HTTP " + cres.status)}`);
+    setPill(statusPill, "fail", "eväste epäonnistui");
+    setPill(mainPill, "fail", "virhe");
+    setText(`Hyväksytty, mutta evästeen asetus epäonnistui: ${cj.message || cj.error || ("HTTP " + cres.status)}`);
     return;
 }
 
@@ -429,9 +429,9 @@
 });
 
     if (!ping.ok) {
-    setPill(statusPill, "fail", "no cookie");
-    setPill(mainPill, "fail", "no cookie");
-    setText(`Consume OK, but cookie did not stick: HTTP ${ping.status}`);
+    setPill(statusPill, "fail", "ei evästettä");
+    setPill(mainPill, "fail", "ei evästettä");
+    setText(`Kirjautuminen hyväksyttiin, mutta eväste ei jäänyt voimaan: HTTP ${ping.status}`);
     return;
 }
 
@@ -440,13 +440,13 @@
 }
 
     // unknown state
-    setPill(statusPill, "warn", "waiting");
-    setPill(mainPill, "warn", "waiting");
-    setText("Waiting…");
+    setPill(statusPill, "warn", "odottaa");
+    setPill(mainPill, "warn", "odottaa");
+    setText("Odotetaan…");
 } catch (e) {
-    setPill(statusPill, "fail", "network");
-    setPill(mainPill, "fail", "network");
-    setText("Network error while checking approval status.");
+    setPill(statusPill, "fail", "verkko");
+    setPill(mainPill, "fail", "verkko");
+    setText("Verkkovirhe hyväksynnän tilaa tarkistettaessa.");
 }
 }
 

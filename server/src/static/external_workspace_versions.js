@@ -1733,7 +1733,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
     async function loadVersions() {
         state.loading = true;
-        setModalLoading("Loading versions…");
+        setModalLoading(tr("external.versions.loading", null, "Loading versions…"));
 
         try {
             state.versions = await fetchVersions();

@@ -3528,5 +3528,13 @@
   "activity.msg.device_paired": "Uusi laite liitetty",
   "activity.msg.session_revoked_for": "{actor} katkaisi kohteen {target} istunnon",
   "activity.msg.session_revoked": "{actor} katkaisi istunnon",
-  "activity.msg.performed": "{actor} suoritti tapahtuman {type}"
+  "activity.msg.performed": "{actor} suoritti tapahtuman {type}",
+  "pqshare.keys.x25519_unsupported": "Tämä selain ei tue X25519 WebCryptoa",
+  "external.path.empty": "Polku ei voi olla tyhjä.",
+  "external.path.forward_slashes": "Käytä kauttaviivoja, älä kenoviivoja.",
+  "external.path.no_dot_segments": "Polku ei voi sisältää .- tai ..-osia.",
+  "external.selection.use_context_menu_multi": "Käytä kontekstivalikkoa useille valituille kohteille.",
+  "external.selection.no_item_selected": "Kohdetta ei ole valittu.",
+  "admin.settings.saving": "Tallennetaan…",
+  "admin.settings.error": "Virhe"
 }

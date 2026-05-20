@@ -351,7 +351,7 @@
         }
 
         if (!(await supportsX25519())) {
-            throw new Error("This browser does not support X25519 WebCrypto");
+            throw new Error(tr("pqshare.keys.x25519_unsupported", null, "This browser does not support X25519 WebCrypto"));
         }
 
         const keyPair = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
