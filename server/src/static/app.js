@@ -1218,7 +1218,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return new Promise((resolve, reject) => {
             canvas.toBlob((blob) => {
                 if (!blob) {
-                    reject(new Error("avatar conversion failed"));
+                    reject(new Error(tr("settings.profile.avatar_conversion_failed", null, "avatar conversion failed")));
                     return;
                 }
                 resolve(blob);
@@ -1238,7 +1238,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             img.onerror = () => {
                 URL.revokeObjectURL(url);
-                reject(new Error("Could not read this image. Try PNG, JPEG, or WebP."));
+                reject(new Error(tr("settings.profile.avatar_read_failed", null, "Could not read this image. Try PNG, JPEG, or WebP.")));
             };
 
             img.src = url;
@@ -1246,7 +1246,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     }
 
     async function prepareAvatarUploadBlob(file) {
-        if (!file) throw new Error("No avatar file selected.");
+        if (!file) throw new Error(tr("settings.profile.no_avatar_selected", null, "No avatar file selected."));
 
         const originalMime = String(file.type || "").toLowerCase();
 
@@ -1263,7 +1263,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             return {
                 blob: file,
                 mime: originalMime,
-                note: `Using original image (${fmtBytesForAvatar(file.size)}).`
+                note: tr("settings.profile.using_original_image", { size: fmtBytesForAvatar(file.size) }, `Using original image (${fmtBytesForAvatar(file.size)}).`)
             };
         }
 
@@ -1273,7 +1273,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const srcH = img.naturalHeight || img.height || 0;
 
         if (!srcW || !srcH) {
-            throw new Error("Could not read image dimensions.");
+            throw new Error(tr("settings.profile.avatar_dims_failed", null, "Could not read image dimensions."));
         }
 
         const scale = Math.min(1, USER_AVATAR_MAX_DIM / Math.max(srcW, srcH));
@@ -1285,7 +1285,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         canvas.height = dstH;
 
         const ctx = canvas.getContext("2d", { alpha: false });
-        if (!ctx) throw new Error("Canvas is not available for avatar resize.");
+        if (!ctx) throw new Error(tr("settings.profile.canvas_unavailable", null, "Canvas is not available for avatar resize."));
 
         /*
           White background avoids black/transparent artifacts when PNGs are converted
@@ -2741,18 +2741,18 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         const msg = String(j.message || "");
 
                         if (r.status === 403 || err.includes("disabled") || msg.toLowerCase().includes("disabled")) {
-                            setWsSubtitleSafe("Waiting for admin approval");
-                            setBadge("warn", "waiting for admin");
+                            setWsSubtitleSafe(tr("shell.status.waiting_admin_approval", null, "Waiting for admin approval"));
+                            setBadge("warn", tr("shell.badge.waiting_admin", null, "waiting for admin"));
                             show(stateDisabled, true);
                         } else if (r.status === 401 || err.includes("unauthorized") || msg.toLowerCase().includes("unauthorized")) {
-                            setWsSubtitleSafe("Not signed in");
-                            setBadge("warn", "not signed in");
+                            setWsSubtitleSafe(tr("shell.status.not_signed_in", null, "Not signed in"));
+                            setBadge("warn", tr("shell.badge.not_signed_in", null, "not signed in"));
                             show(stateUnauth, true);
                             show(navLogin, true);
                             show(navPeople, false);
                         show(navUserSettings, false);
                         } else {
-                            setWsSubtitleSafe(`Error (${r.status || "?"})`);
+                            setWsSubtitleSafe(tr("shell.status.error_code", { code: r.status || "?" }, `Error (${r.status || "?"})`));
                             setBadge("err", "error");
                         }
                         return;
@@ -2760,7 +2760,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     const st = String(j.storage_state || "unallocated");
                     setBadge("ok", "");
-                    setWsSubtitleSafe(`Signed in · ${role} · storage: ${st}`);
+                    setWsSubtitleSafe(tr("shell.status.signed_in_role_storage", { role, storage: st }, `Signed in · ${role} · storage: ${st}`));
 
                     // Update installed apps list (only when signed in ok)
                     // NOTE: don't await; keep UI snappy and avoid blocking auth render
@@ -2790,8 +2790,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 show(navSettings, false);
                 show(navLogin, true);
 
-                setWsSubtitleSafe("Unexpected response from /api/v4/me");
-                setBadge("err", "unexpected response");
+                setWsSubtitleSafe(tr("shell.status.unexpected_me_response", null, "Unexpected response from /api/v4/me"));
+                setBadge("err", tr("shell.badge.unexpected_response", null, "unexpected response"));
 
                 if (out) {
                     const body = txt.length > 4000 ? (txt.slice(0, 4000) + "\n…(truncated)…") : txt;
@@ -2817,9 +2817,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 show(navSettings, false);
                 show(navLogin, true);
 
-                setWsSubtitleSafe("Network error");
-                setBadge("err", "network error");
-                if (statusLine) statusLine.textContent = "Failed to load /api/v4/me";
+                setWsSubtitleSafe(tr("shell.status.network_error", null, "Network error"));
+                setBadge("err", tr("shell.badge.network_error", null, "network error"));
+                if (statusLine) statusLine.textContent = tr("shell.status.failed_load_me", null, "Failed to load /api/v4/me");
                 if (out) out.textContent = String(e && e.stack ? e.stack : e);
             }
         }
@@ -2876,6 +2876,164 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return "•";
     }
 
+
+    function activityBasename(path) {
+        const s = String(path || "").replace(/\\/g, "/");
+        const parts = s.split("/").filter(Boolean);
+        return parts.length ? parts[parts.length - 1] : "";
+    }
+
+    function activityActorDisplay(ev) {
+        const actorKind = String(ev && ev.actor_kind || "user").toLowerCase();
+        const actorDeviceName = String(ev && ev.actor_device_name || "").trim();
+        const actorLabel = String(ev && ev.actor_label || "").trim();
+
+        if (actorLabel && actorLabel !== "Someone") return actorLabel;
+        if (actorKind === "device") return actorDeviceName || tr("activity.mobile_app", null, "Mobile app");
+        if (actorKind === "guest") return tr("activity.guest", null, "Guest");
+        if (actorKind === "system") return tr("activity.system", null, "System");
+        return tr("activity.someone", null, "Someone");
+    }
+
+    function activityTargetDisplay(ev) {
+        const name = String(ev && ev.target_name || "").trim();
+        if (name) return name;
+
+        const pathName = activityBasename(ev && ev.target_path);
+        if (pathName) return pathName;
+
+        const kind = String(ev && ev.target_kind || "").trim();
+        return kind ? activityTargetKindLabel(kind) : tr("activity.item", null, "item");
+    }
+
+    function activityRoleLabel(role) {
+        const r = String(role || "").trim().toLowerCase();
+        if (r === "viewer") return tr("activity.role.viewer", null, "viewer");
+        if (r === "editor") return tr("activity.role.editor", null, "editor");
+        if (r === "owner") return tr("activity.role.owner", null, "owner");
+        return String(role || "");
+    }
+
+    function activityTargetKindLabel(kind) {
+        const k = String(kind || "").trim().toLowerCase();
+        if (k === "file") return tr("activity.kind.file", null, "file");
+        if (k === "folder" || k === "dir") return tr("activity.kind.folder", null, "folder");
+        if (k === "dropzone") return tr("activity.kind.dropzone", null, "dropzone");
+        if (k === "member") return tr("activity.kind.member", null, "member");
+        if (k === "share") return tr("activity.kind.share", null, "share");
+        if (k === "session") return tr("activity.kind.session", null, "session");
+        if (k === "device") return tr("activity.kind.device", null, "device");
+        return String(kind || "");
+    }
+
+    function activityMessageFor(ev) {
+        const type = String(ev && ev.event_type || "");
+        const actor = activityActorDisplay(ev || {});
+        const target = activityTargetDisplay(ev || {});
+        const details = ev && ev.details && typeof ev.details === "object" ? ev.details : {};
+
+        if (type === "file.uploaded") {
+            return tr("activity.msg.file_uploaded", { actor, target }, "{actor} uploaded {target}");
+        }
+        if (type === "folder.created") {
+            return tr("activity.msg.folder_created", { actor, target }, "{actor} created folder {target}");
+        }
+        if (type === "file.moved") {
+            const fromPath = String(details.from_path || "").trim();
+            const toPath = String(details.to_path || "").trim();
+            if (fromPath) {
+                return tr("activity.msg.file_moved_from_to", {
+                    actor,
+                    from: fromPath,
+                    to: toPath || target
+                }, "{actor} moved {from} to {to}");
+            }
+            return tr("activity.msg.file_moved", { actor, target }, "{actor} moved {target}");
+        }
+        if (type === "file.copied") {
+            const fromPath = String(details.from_path || "").trim();
+            const toPath = String(details.to_path || "").trim();
+            if (fromPath) {
+                return tr("activity.msg.file_copied_from_to", {
+                    actor,
+                    from: fromPath,
+                    to: toPath || target
+                }, "{actor} copied {from} to {to}");
+            }
+            return tr("activity.msg.file_copied", { actor, target }, "{actor} copied {target}");
+        }
+        if (type === "file.trashed") {
+            return tr("activity.msg.file_trashed", { actor, target }, "{actor} moved {target} to Trash");
+        }
+        if (type === "file.restored") {
+            return tr("activity.msg.file_restored", { actor, target }, "{actor} restored {target}");
+        }
+        if (type === "file.purged") {
+            return tr("activity.msg.file_purged", { actor, target }, "{actor} permanently deleted {target}");
+        }
+        if (type === "file.locked") {
+            return tr("activity.msg.file_locked", { actor, target }, "{actor} locked {target}");
+        }
+        if (type === "file.unlocked") {
+            return tr("activity.msg.file_unlocked", { actor, target }, "{actor} unlocked {target}");
+        }
+        if (type === "file.lock_force_released") {
+            return tr("activity.msg.file_force_unlocked", { actor, target }, "{actor} force-unlocked {target}");
+        }
+        if (type === "share.created") {
+            return tr("activity.msg.share_created", { actor, target }, "{actor} created a share link for {target}");
+        }
+        if (type === "share.disabled") {
+            return tr("activity.msg.share_disabled", { actor, target }, "{actor} disabled a share link for {target}");
+        }
+        if (type === "dropzone.created") {
+            return tr("activity.msg.dropzone_created", { actor, target }, "{actor} created Drop Zone \"{target}\"");
+        }
+        if (type === "dropzone.disabled") {
+            return tr("activity.msg.dropzone_disabled", { actor, target }, "{actor} disabled Drop Zone \"{target}\"");
+        }
+        if (type === "dropzone.uploaded") {
+            const zone = String(details.dropzone_name || "").trim();
+            if (zone) {
+                return tr("activity.msg.dropzone_uploaded_named", { actor, target, zone }, "{actor} uploaded {target} through Drop Zone \"{zone}\"");
+            }
+            return tr("activity.msg.dropzone_uploaded", { actor, target }, "{actor} uploaded {target} through Drop Zone");
+        }
+        if (type === "workspace.member_role_changed") {
+            const oldRole = activityRoleLabel(details.old_role);
+            const newRole = activityRoleLabel(details.new_role);
+            if (oldRole && newRole) {
+                return tr("activity.msg.member_role_changed_from_to", {
+                    actor,
+                    target,
+                    oldRole,
+                    newRole
+                }, "{actor} changed {target}'s role from {oldRole} to {newRole}");
+            }
+            return tr("activity.msg.member_role_changed", { actor, target }, "{actor} changed {target}'s role");
+        }
+        if (type === "security.login_success") {
+            return tr("activity.msg.login_success", { actor }, "{actor} signed in");
+        }
+        if (type === "security.login_failed") {
+            return tr("activity.msg.login_failed", null, "Failed sign-in attempt");
+        }
+        if (type === "security.device_paired") {
+            return target && target !== tr("activity.item", null, "item")
+                ? tr("activity.msg.device_paired_named", { target }, "{target} paired as a new device")
+                : tr("activity.msg.device_paired", null, "New device paired");
+        }
+        if (type === "security.session_revoked") {
+            return target && target !== "session"
+                ? tr("activity.msg.session_revoked_for", { actor, target }, "{actor} revoked session for {target}")
+                : tr("activity.msg.session_revoked", { actor }, "{actor} revoked a session");
+        }
+
+        const serverMessage = String(ev && ev.message || "").trim();
+        if (serverMessage) return serverMessage;
+        return tr("activity.msg.performed", { actor, type }, "{actor} performed {type}");
+    }
+
     function renderActivityEvents(events) {
         if (!activityList) return;
 
@@ -2884,7 +3042,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (!Array.isArray(events) || events.length === 0) {
             const empty = document.createElement("div");
             empty.className = "activityEmpty";
-            empty.textContent = "No activity yet.";
+            empty.textContent = tr("activity.empty", null, "No activity yet.");
             activityList.appendChild(empty);
             return;
         }
@@ -2906,7 +3064,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             const msg = document.createElement("div");
             msg.className = "activityMsg";
-            msg.textContent = `${activityIconFor(ev.event_type)} ${String(ev.message || ev.event_type || "Activity")}`;
+            msg.textContent = `${activityIconFor(ev.event_type)} ${activityMessageFor(ev)}`;
             card.appendChild(msg);
 
             const metaBits = [];
@@ -2914,17 +3072,21 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             if (when) metaBits.push(when);
 
             if (actorKind === "device") {
-                metaBits.push(actorDeviceName ? `Mobile · ${actorDeviceName}` : "Mobile app");
+                metaBits.push(actorDeviceName
+                    ? tr("activity.mobile_device", { device: actorDeviceName }, `Mobile · ${actorDeviceName}`)
+                    : tr("activity.mobile_app", null, "Mobile app"));
             } else if (actorKind === "guest") {
-                metaBits.push(actorLabel && actorLabel !== "Someone" ? `Guest · ${actorLabel}` : "Guest / Drop Zone");
+                metaBits.push(actorLabel && actorLabel !== tr("activity.someone", null, "Someone")
+                    ? tr("activity.guest_named", { name: actorLabel }, `Guest · ${actorLabel}`)
+                    : tr("activity.guest_dropzone", null, "Guest / Drop Zone"));
             } else if (actorKind === "system") {
-                metaBits.push("System");
+                metaBits.push(tr("activity.system", null, "System"));
             }
 
             const targetPath = String(ev.target_path || "");
             if (targetPath) metaBits.push(targetPath);
 
-            const kind = String(ev.target_kind || "");
+            const kind = activityTargetKindLabel(ev.target_kind);
             const size = ev.details && typeof ev.details === "object" ? activityFmtBytes(ev.details.size_bytes) : "";
             if (kind || size) metaBits.push([kind, size].filter(Boolean).join(" · "));
 
@@ -2942,7 +3104,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     async function loadActivity() {
         if (!activityList) return;
 
-        if (activityStatus) activityStatus.textContent = "Loading…";
+        if (activityStatus) activityStatus.textContent = tr("common.loading", null, "Loading…");
 
         try {
             const r = await fetch("/api/v4/activity/list?limit=50", {
@@ -2961,18 +3123,18 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             if (activityStatus) {
                 activityStatus.textContent = events.length
-                    ? `${events.length} recent event${events.length === 1 ? "" : "s"}`
-                    : "No recent activity";
+                    ? tr("activity.recent_events", { count: events.length }, `${events.length} recent event${events.length === 1 ? "" : "s"}`)
+                    : tr("activity.no_recent", null, "No recent activity");
             }
         } catch (e) {
             activityList.replaceChildren();
 
             const err = document.createElement("div");
             err.className = "activityEmpty";
-            err.textContent = `Could not load activity: ${String(e && e.message ? e.message : e)}`;
+            err.textContent = tr("activity.load_failed", { error: String(e && e.message ? e.message : e) }, `Could not load activity: ${String(e && e.message ? e.message : e)}`);
             activityList.appendChild(err);
 
-            if (activityStatus) activityStatus.textContent = "Activity unavailable";
+            if (activityStatus) activityStatus.textContent = tr("activity.unavailable", null, "Activity unavailable");
         }
     }
 
@@ -2982,7 +3144,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         activityPane.style.display = hidden ? "none" : "";
         if (contentGrid) contentGrid.classList.toggle("noSidePane", hidden);
 
-        toggleActivityBtn.textContent = hidden ? "My Activity" : "Close Activity";
+        toggleActivityBtn.textContent = hidden
+            ? tr("activity.my_activity", null, "My Activity")
+            : tr("activity.close_activity", null, "Close Activity");
 
         if (!hidden) loadActivity();
 
