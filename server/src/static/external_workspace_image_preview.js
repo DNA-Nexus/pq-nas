@@ -27,6 +27,25 @@
         moved: false
     };
 
+
+    function tr(key, vars = null, fallback = "") {
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+                return window.PQNAS_I18N.t(key, vars, fallback || key);
+            }
+        } catch (_) {}
+        return fallback || key;
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? "" : s)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
     function normalizeRelPath(p) {
         let v = String(p || "").trim().replaceAll("\\", "/");
         while (v.startsWith("/")) v = v.slice(1);
@@ -263,15 +282,15 @@ html[data-theme="win_classic"] .externalImagePreviewBody{
         root.setAttribute("aria-hidden", "true");
 
         root.innerHTML = `
-            <div class="externalImagePreviewCard" role="dialog" aria-modal="true" aria-label="Image preview">
+            <div class="externalImagePreviewCard" role="dialog" aria-modal="true" aria-label="${escapeHtml(tr("external.image_preview.aria", null, "Image preview"))}">
                 <div class="externalImagePreviewHead">
                     <div>
-                        <div class="externalImagePreviewTitle">Image preview</div>
+                        <div class="externalImagePreviewTitle">${escapeHtml(tr("external.image_preview.title", null, "Image preview"))}</div>
                         <div class="externalImagePreviewPath mono">/</div>
                     </div>
                     <div class="externalImagePreviewActions"></div>
                 </div>
-                <div class="externalImagePreviewInfo">Loading…</div>
+                <div class="externalImagePreviewInfo">${escapeHtml(tr("common.loading", null, "Loading…"))}</div>
                 <div class="externalImagePreviewBody">
                     <img class="externalImagePreviewImg" alt="">
                 </div>
@@ -291,16 +310,16 @@ html[data-theme="win_classic"] .externalImagePreviewBody{
         const actions = root.querySelector(".externalImagePreviewActions");
         state.prevBtn = makeButton("‹");
         state.nextBtn = makeButton("›");
-        state.fitBtn = makeButton("Fit");
-        state.actualBtn = makeButton("Actual");
-        state.openBtn = makeButton("Open original");
-        const closeBtn = makeButton("Close");
+        state.fitBtn = makeButton(tr("external.preview.fit", null, "Fit"));
+        state.actualBtn = makeButton(tr("external.preview.actual", null, "Actual"));
+        state.openBtn = makeButton(tr("external.preview.open_original", null, "Open original"));
+        const closeBtn = makeButton(tr("external.modal.close", null, "Close"));
 
-        state.prevBtn.title = "Previous image";
-        state.nextBtn.title = "Next image";
-        state.fitBtn.title = "Fit image to window";
-        state.actualBtn.title = "Show actual image size";
-        state.openBtn.title = "Open original image in new tab";
+        state.prevBtn.title = tr("external.image_preview.previous", null, "Previous image");
+        state.nextBtn.title = tr("external.image_preview.next", null, "Next image");
+        state.fitBtn.title = tr("external.image_preview.fit_title", null, "Fit image to window");
+        state.actualBtn.title = tr("external.image_preview.actual_title", null, "Show actual image size");
+        state.openBtn.title = tr("external.image_preview.open_original_title", null, "Open original image in new tab");
 
         actions.appendChild(state.prevBtn);
         actions.appendChild(state.nextBtn);
@@ -426,13 +445,13 @@ html[data-theme="win_classic"] .externalImagePreviewBody{
 
         state.relPath = normalizeRelPath(item.rel);
 
-        if (state.title) state.title.textContent = "Image preview";
+        if (state.title) state.title.textContent = tr("external.image_preview.title", null, "Image preview");
         if (state.path) state.path.textContent = "/" + state.relPath;
-        if (state.info) state.info.textContent = "Loading…";
+        if (state.info) state.info.textContent = tr("common.loading", null, "Loading…");
 
         if (state.img) {
             state.img.removeAttribute("src");
-            state.img.alt = item.name || basenameFromPath(state.relPath) || "image";
+            state.img.alt = item.name || basenameFromPath(state.relPath) || tr("external.image_preview.image_alt", null, "image");
 
             state.img.onload = () => {
                 const { items, idx } = currentIndex();
@@ -444,7 +463,7 @@ html[data-theme="win_classic"] .externalImagePreviewBody{
             };
 
             state.img.onerror = () => {
-                if (state.info) state.info.textContent = "Failed to load image preview.";
+                if (state.info) state.info.textContent = tr("external.image_preview.failed", null, "Failed to load image preview.");
             };
 
             state.img.src = imageUrl(state.relPath);

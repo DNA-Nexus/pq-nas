@@ -24,6 +24,25 @@
         drag: null
     };
 
+
+    function tr(key, vars = null, fallback = "") {
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+                return window.PQNAS_I18N.t(key, vars, fallback || key);
+            }
+        } catch (_) {}
+        return fallback || key;
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? "" : s)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
     function normalizeRelPath(p) {
         let v = String(p || "").trim().replaceAll("\\", "/");
         while (v.startsWith("/")) v = v.slice(1);
@@ -237,14 +256,14 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
             <div class="externalPdfPreviewCard" role="dialog" aria-modal="true" aria-label="PDF preview">
                 <div class="externalPdfPreviewHead">
                     <div>
-                        <div class="externalPdfPreviewTitle">PDF preview</div>
+                        <div class="externalPdfPreviewTitle">${escapeHtml(tr("external.pdf_preview.title", null, "PDF preview"))}</div>
                         <div class="externalPdfPreviewPath mono">/</div>
                     </div>
                     <div class="externalPdfPreviewActions"></div>
                 </div>
-                <div class="externalPdfPreviewInfo">Loading…</div>
+                <div class="externalPdfPreviewInfo">${escapeHtml(tr("common.loading", null, "Loading…"))}</div>
                 <div class="externalPdfPreviewBody">
-                    <iframe class="externalPdfPreviewFrame" title="PDF preview"></iframe>
+                    <iframe class="externalPdfPreviewFrame" title="${escapeHtml(tr("external.pdf_preview.title", null, "PDF preview"))}"></iframe>
                 </div>
             </div>
         `;
@@ -262,12 +281,12 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
         const actions = root.querySelector(".externalPdfPreviewActions");
         state.prevBtn = makeButton("‹");
         state.nextBtn = makeButton("›");
-        state.openBtn = makeButton("Open original");
-        const closeBtn = makeButton("Close");
+        state.openBtn = makeButton(tr("external.preview.open_original", null, "Open original"));
+        const closeBtn = makeButton(tr("external.modal.close", null, "Close"));
 
-        state.prevBtn.title = "Previous PDF";
-        state.nextBtn.title = "Next PDF";
-        state.openBtn.title = "Open original PDF in new tab";
+        state.prevBtn.title = tr("external.pdf_preview.previous", null, "Previous PDF");
+        state.nextBtn.title = tr("external.pdf_preview.next", null, "Next PDF");
+        state.openBtn.title = tr("external.pdf_preview.open_original_title", null, "Open original PDF in new tab");
 
         actions.appendChild(state.prevBtn);
         actions.appendChild(state.nextBtn);
@@ -418,9 +437,9 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
 
         state.relPath = normalizeRelPath(item.rel);
 
-        if (state.title) state.title.textContent = "PDF preview";
+        if (state.title) state.title.textContent = tr("external.pdf_preview.title", null, "PDF preview");
         if (state.path) state.path.textContent = "/" + state.relPath;
-        if (state.info) state.info.textContent = basenameFromPath(state.relPath) || "PDF document";
+        if (state.info) state.info.textContent = basenameFromPath(state.relPath) || tr("external.pdf_preview.document", null, "PDF document");
 
         if (state.frame) {
             state.frame.removeAttribute("src");
@@ -430,12 +449,12 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
             .then(() => {
                 const { items, idx } = currentIndex();
                 const pos = idx >= 0 && items.length > 1 ? ` • ${idx + 1} / ${items.length}` : "";
-                if (state.info) state.info.textContent = `${basenameFromPath(state.relPath) || "PDF document"}${pos}`;
+                if (state.info) state.info.textContent = `${basenameFromPath(state.relPath) || tr("external.pdf_preview.document", null, "PDF document")}${pos}`;
                 updateNavButtons();
             })
             .catch((e) => {
                 if (e && e.name === "AbortError") return;
-                if (state.info) state.info.textContent = `PDF preview failed: ${e && e.message ? e.message : e}`;
+                if (state.info) state.info.textContent = tr("external.pdf_preview.failed", { error: e && e.message ? e.message : e }, `PDF preview failed: ${e && e.message ? e.message : e}`);
             });
 
         document.body.classList.add("externalPdfPreviewOpen");
