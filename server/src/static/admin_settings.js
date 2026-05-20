@@ -1166,16 +1166,16 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
     function tieringWarningsText(c) {
         const ws = Array.isArray(c?.warnings) ? c.warnings : [];
-        if (!ws.length) return "None";
+        if (!ws.length) return tr("admin.settings.none", null, "None");
 
         return ws.map(w => {
-            if (w === "usb_blocked") return "USB blocked";
-            if (w === "removable_blocked") return "Removable blocked";
-            if (w === "low_free_space") return "Low free space";
-            if (w === "not_mounted") return "Not mounted";
-            if (w === "not_writable") return "Not writable";
-            if (w === "statvfs_failed") return "Space unknown";
-            if (w === "missing_mount") return "Missing mount";
+            if (w === "usb_blocked") return tr("admin.settings.warn_usb_blocked", null, "USB blocked");
+            if (w === "removable_blocked") return tr("admin.settings.warn_removable_blocked", null, "Removable blocked");
+            if (w === "low_free_space") return tr("admin.settings.warn_low_free_space", null, "Low free space");
+            if (w === "not_mounted") return tr("admin.settings.warn_not_mounted", null, "Not mounted");
+            if (w === "not_writable") return tr("admin.settings.warn_not_writable", null, "Not writable");
+            if (w === "statvfs_failed") return tr("admin.settings.warn_space_unknown", null, "Space unknown");
+            if (w === "missing_mount") return tr("admin.settings.warn_missing_mount", null, "Missing mount");
             return String(w);
         }).join(", ");
     }
@@ -1189,7 +1189,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (!pools.length) {
             const opt = document.createElement("option");
             opt.value = "";
-            opt.textContent = "(no pools available)";
+            opt.textContent = tr("admin.settings.no_pools_available", null, "(no pools available)");
             tieringLandingPool.appendChild(opt);
             tieringLandingPool.disabled = true;
             return;
@@ -1221,9 +1221,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             opt.disabled = !eligible;
 
             if (eligible) {
-                opt.textContent = `${poolId} — ${mount} — ${freeTxt} free`;
+                opt.textContent = tr("admin.settings.pool_free_label", { pool: poolId, mount, free: freeTxt }, `${poolId} — ${mount} — ${freeTxt} free`);
             } else {
-                opt.textContent = `${poolId} — ${mount} — BLOCKED (${warnTxt})`;
+                opt.textContent = tr("admin.settings.pool_blocked_label", { pool: poolId, mount, warnings: warnTxt }, `${poolId} — ${mount} — BLOCKED (${warnTxt})`);
             }
 
             if (poolId === String(selectedPoolId || "")) {
@@ -1245,10 +1245,10 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const c = tieringCandidateByPoolId(tieringLandingPool?.value || "");
 
         if (!c) {
-            setSimplePill(tieringMountPill, "info", "Mount", "—");
-            setSimplePill(tieringSpacePill, "info", "Space", "—");
-            setSimplePill(tieringEligibilityPill, "warn", "Eligibility", "No selection");
-            setSimplePill(tieringWarnPill, "warn", "Warnings", "—");
+            setSimplePill(tieringMountPill, "info", tr("admin.settings.mount", null, "Mount"), "—");
+            setSimplePill(tieringSpacePill, "info", tr("admin.settings.space", null, "Space"), "—");
+            setSimplePill(tieringEligibilityPill, "warn", tr("admin.settings.eligibility", null, "Eligibility"), tr("admin.settings.no_selection", null, "No selection"));
+            setSimplePill(tieringWarnPill, "warn", tr("admin.settings.warnings", null, "Warnings"), "—");
             return;
         }
 
@@ -1258,18 +1258,18 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const eligible = !!c.eligible;
         const warnTxt = tieringWarningsText(c);
 
-        setSimplePill(tieringMountPill, "info", "Mount", mount);
-        setSimplePill(tieringSpacePill, "info", "Space", `${freeTxt} free / ${totalTxt} total`);
+        setSimplePill(tieringMountPill, "info", tr("admin.settings.mount", null, "Mount"), mount);
+        setSimplePill(tieringSpacePill, "info", tr("admin.settings.space", null, "Space"), tr("admin.settings.free_total", { free: freeTxt, total: totalTxt }, `${freeTxt} free / ${totalTxt} total`));
         setSimplePill(
             tieringEligibilityPill,
             eligible ? "ok" : "warn",
-            "Eligibility",
-            eligible ? "Eligible" : "Blocked"
+            tr("admin.settings.eligibility", null, "Eligibility"),
+            eligible ? tr("admin.settings.eligible", null, "Eligible") : tr("admin.settings.blocked", null, "Blocked")
         );
         setSimplePill(
             tieringWarnPill,
-            warnTxt === "None" ? "info" : "warn",
-            "Warnings",
+            warnTxt === tr("admin.settings.none", null, "None") ? "info" : "warn",
+            tr("admin.settings.warnings", null, "Warnings"),
             warnTxt
         );
     }
@@ -1290,25 +1290,25 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         updateTieringDetailPills();
 
         if (tieringPill) {
-            let txt = "Disabled";
+            let txt = tr("admin.settings.disabled", null, "Disabled");
             let kind = "warn";
 
             if (enabled) {
                 const c = tieringCandidateByPoolId(landingPoolId);
                 if (landingPoolId && c && c.eligible) {
-                    txt = `Enabled • ${landingPoolId}`;
+                    txt = tr("admin.settings.enabled_pool", { pool: landingPoolId }, `Enabled • ${landingPoolId}`);
                     kind = "ok";
                 } else if (landingPoolId) {
-                    txt = `Enabled • ${landingPoolId} (blocked)`;
+                    txt = tr("admin.settings.enabled_pool_blocked", { pool: landingPoolId }, `Enabled • ${landingPoolId} (blocked)`);
                     kind = "warn";
                 } else {
-                    txt = "Enabled • no pool";
+                    txt = tr("admin.settings.enabled_no_pool", null, "Enabled • no pool");
                     kind = "warn";
                 }
             }
 
             tieringPill.className = "pill " + kind;
-            tieringPill.innerHTML = `<span class="k">Tiering:</span> <span class="v">${escapeHtml(txt)}</span>`;
+            tieringPill.innerHTML = `<span class="k">${escapeHtml(tr("admin.settings.tiering", null, "Tiering:"))}</span> <span class="v">${escapeHtml(txt)}</span>`;
         }
     }
 
@@ -1350,7 +1350,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (dnaAlertsCliPath) dnaAlertsCliPath.value = cliPath;
         if (dnaAlertsDataDir) dnaAlertsDataDir.value = dataDir;
 
-        let txt = "Disabled";
+        let txt = tr("admin.settings.disabled", null, "Disabled");
         let kind = "warn";
         if (enabled) {
             if (recipient) {
@@ -1358,10 +1358,10 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
                     recipient.length > 48
                         ? `${recipient.slice(0, 48)}…`
                         : recipient;
-                txt = `Enabled • ${recipientShort}`;
+                txt = tr("admin.dna.enabled_for", { recipient: recipientShort }, `Enabled • ${recipientShort}`);
                 kind = "ok";
             } else {
-                txt = "Enabled • recipient missing";
+                txt = tr("admin.dna.enabled_recipient_missing", null, "Enabled • recipient missing");
                 kind = "warn";
             }
         }
@@ -1369,14 +1369,14 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (dnaAlertsPill) {
             dnaAlertsPill.className = "pill " + kind;
             dnaAlertsPill.innerHTML =
-                `<span class="k">DNA alerts:</span> <span class="v">${escapeHtml(txt)}</span>`;
+                `<span class="k">${escapeHtml(tr("admin.dna.alerts", null, "DNA alerts:"))}</span> <span class="v">${escapeHtml(txt)}</span>`;
         }
 
         if (dnaAlertsInfoPill) {
             const info = `${minLevel} • ${cliPath}`;
             dnaAlertsInfoPill.className = "pill info";
             dnaAlertsInfoPill.innerHTML =
-                `<span class="k">Route:</span> <span class="v">${escapeHtml(info)}</span>`;
+                `<span class="k">${escapeHtml(tr("admin.dna.route", null, "Route:"))}</span> <span class="v">${escapeHtml(info)}</span>`;
         }
     }
     function applyDnaIdentityToUi(j) {
@@ -1391,11 +1391,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         if (dnaAlertsIdentityPill) {
             const txt = exists
-                ? (fp ? `${fp.slice(0, 16)}…` : "Present")
-                : "Not created";
+                ? (fp ? `${fp.slice(0, 16)}…` : tr("admin.settings.present", null, "Present"))
+                : tr("admin.settings.not_created", null, "Not created");
             dnaAlertsIdentityPill.className = "pill " + (exists ? "ok" : "warn");
             dnaAlertsIdentityPill.innerHTML =
-                `<span class="k">PQ-NAS ID:</span><span class="v">${escapeHtml(txt)}</span>`;
+                `<span class="k">${escapeHtml(tr("admin.dna.pqnas_id", null, "PQ-NAS ID:"))}</span><span class="v">${escapeHtml(txt)}</span>`;
         }
 
         if (btnDnaAlertsCreateId) btnDnaAlertsCreateId.disabled = exists;
@@ -1502,7 +1502,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             console.error(e);
             setStatusPill("error", "error");
             setSimplePill(activeSizePill, "warn", "Active log", "—");
-            showToast("fail", "Failed to load settings", String(e.message || e));
+            showToast("fail", tr("admin.settings.load_failed", null, "Failed to load settings"), String(e.message || e));
         }
     }
 
@@ -1524,11 +1524,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             setStatusPill("warn", "saving…");
             try {
                 await apiSettingsPost({ audit_min_level: lvl });
-                showToast("ok", "Saved", `audit_min_level = ${lvl}`);
+                showToast("ok", tr("admin.common.saved", null, "Saved"), `audit_min_level = ${lvl}`);
                 await refreshAll();
             } catch (e) {
                 console.error(e);
-                showToast("fail", "Save failed", String(e.message || e));
+                showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
                 setStatusPill("error", "error");
             } finally {
                 btnSave.disabled = false;
@@ -1643,18 +1643,18 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         const t = currentTieringFromUi();
         if (t.enabled && !t.landing_pool_id) {
-            showToast("fail", "Invalid tiering", "Please select a landing pool or disable tiering.");
+            showToast("fail", tr("admin.settings.invalid_tiering", null, "Invalid tiering"), tr("admin.settings.select_landing_pool_or_disable", null, "Please select a landing pool or disable tiering."));
             return;
         }
 
         if (t.enabled) {
             const c = tieringCandidateByPoolId(t.landing_pool_id);
             if (!c) {
-                showToast("fail", "Invalid tiering", "Selected landing pool was not found.");
+                showToast("fail", tr("admin.settings.invalid_tiering", null, "Invalid tiering"), tr("admin.settings.landing_pool_not_found", null, "Selected landing pool was not found."));
                 return;
             }
             if (!c.eligible) {
-                showToast("fail", "Invalid tiering", `Selected landing pool is blocked: ${tieringWarningsText(c)}`);
+                showToast("fail", tr("admin.settings.invalid_tiering", null, "Invalid tiering"), tr("admin.settings.landing_pool_blocked", { warnings: tieringWarningsText(c) }, `Selected landing pool is blocked: ${tieringWarningsText(c)}`));
                 return;
             }
         }
@@ -1663,13 +1663,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "saving…");
         try {
             await apiSettingsPost({ tiering: t });
-            showToast("ok", "Saved", t.enabled
-                ? `Landing tier enabled • pool ${t.landing_pool_id}`
-                : "Landing tier disabled");
+            showToast("ok", tr("admin.common.saved", null, "Saved"), t.enabled
+                ? tr("admin.settings.landing_tier_enabled", { pool: t.landing_pool_id }, `Landing tier enabled • pool ${t.landing_pool_id}`)
+                : tr("admin.settings.landing_tier_disabled", null, "Landing tier disabled"));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnTieringSave.disabled = false;
@@ -1680,7 +1680,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         const v = clampU64(uploadSoftMax?.value);
         if (v == null) {
-            showToast("fail", "Invalid value", "transport_max_upload_bytes must be a positive integer (bytes).");
+            showToast("fail", tr("admin.settings.invalid_value", null, "Invalid value"), tr("admin.settings.transport_max_positive", null, "transport_max_upload_bytes must be a positive integer (bytes)."));
             return;
         }
 
@@ -1688,11 +1688,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "saving…");
         try {
             await apiSettingsPost({ transport_max_upload_bytes: v });
-            showToast("ok", "Saved", `Max upload = ${fmtBytes(v)} (${v} bytes)`);
+            showToast("ok", tr("admin.common.saved", null, "Saved"), tr("admin.settings.max_upload_saved", { size: fmtBytes(v), bytes: v }, `Max upload = ${fmtBytes(v)} (${v} bytes)`));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnUploadSave.disabled = false;
@@ -1706,11 +1706,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "saving…");
         try {
             await apiSettingsPost({ audit_retention: pol });
-            showToast("ok", "Saved", "Retention policy updated");
+            showToast("ok", tr("admin.common.saved", null, "Saved"), tr("admin.settings.retention_policy_updated", null, "Retention policy updated"));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnRetentionSave.disabled = false;
@@ -1727,11 +1727,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         try {
             const j = await apiPreviewPrune(pol);
             renderPreview(j);
-            showToast("ok", "Preview ready", `${(j.summary && j.summary.candidate_files) || 0} candidate file(s)`);
+            showToast("ok", tr("admin.settings.preview_ready", null, "Preview ready"), tr("admin.settings.candidate_files", { count: (j.summary && j.summary.candidate_files) || 0 }, `${(j.summary && j.summary.candidate_files) || 0} candidate file(s)`));
         } catch (e) {
             console.error(e);
             setSimplePill(retPreviewPill, "fail", "Preview", "error");
-            showToast("fail", "Preview failed", String(e.message || e));
+            showToast("fail", tr("admin.settings.preview_failed", null, "Preview failed"), String(e.message || e));
         } finally {
             btnRetentionPreview.disabled = false;
         }
@@ -1744,11 +1744,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             title: tr("admin.confirm.run_prune_title", null, "Run audit prune now?"),
             subtitle: tr("admin.confirm.run_prune_sub", null, "This deletes rotated audit archives according to the saved retention policy."),
             rows: [
-                { label: "Target", value: "Rotated audit archives only" },
-                { label: "Active log", value: "pqnas_audit.jsonl is never deleted", mono: true },
-                { label: "Policy", value: "Uses the currently saved retention policy" },
+                { label: tr("admin.settings.target", null, "Target"), value: tr("admin.settings.rotated_archives_only", null, "Rotated audit archives only") },
+                { label: tr("admin.settings.active_log", null, "Active log"), value: tr("admin.settings.active_log_never_deleted", null, "pqnas_audit.jsonl is never deleted"), mono: true },
+                { label: tr("admin.settings.policy", null, "Policy"), value: tr("admin.settings.uses_saved_retention_policy", null, "Uses the currently saved retention policy") },
             ],
-            note: "This is permanent for selected rotated archive files. Preview prune first if you want to review candidates.",
+            note: tr("admin.settings.prune_permanent_note", null, "This is permanent for selected rotated archive files. Preview prune first if you want to review candidates."),
             confirmText: tr("admin.audit.run_prune", null, "Run prune now"),
             cancelText: tr("admin.common.cancel", null, "Cancel"),
             warn: true,
@@ -1762,8 +1762,8 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             const j = await apiRunPrune();
             showToast(
                 "ok",
-                "Prune complete",
-                `Deleted ${(j.deleted_files || 0)} file(s) • freed ${fmtBytes(j.deleted_bytes || 0)}`
+                tr("admin.settings.prune_complete", null, "Prune complete"),
+                tr("admin.settings.prune_deleted_freed", { count: (j.deleted_files || 0), size: fmtBytes(j.deleted_bytes || 0) }, `Deleted ${(j.deleted_files || 0)} file(s) • freed ${fmtBytes(j.deleted_bytes || 0)}`)
             );
             const pol = currentRetentionPolicyFromUi();
             const pv = await apiPreviewPrune(pol);
@@ -1771,7 +1771,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         } catch (e) {
             console.error(e);
             setSimplePill(retPreviewPill, "fail", "Preview", "error");
-            showToast("fail", "Prune failed", String(e.message || e));
+            showToast("fail", tr("admin.settings.prune_failed", null, "Prune failed"), String(e.message || e));
         } finally {
             btnRetentionPrune.disabled = false;
         }
@@ -1805,12 +1805,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
                 : sn;
 
             applySnapshotsToUi(merged);
-            showToast("ok", "Saved", "Snapshots settings updated");
+            showToast("ok", tr("admin.common.saved", null, "Saved"), tr("admin.settings.snapshots_updated", null, "Snapshots settings updated"));
 
         } catch (e) {
             console.error(e);
             setSnapshotsPill("fail", "Error");
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
         } finally {
             btnSnapSave.disabled = false;
         }
@@ -1826,11 +1826,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             title: tr("admin.confirm.rotate_title", null, "Rotate audit log now?"),
             subtitle: tr("admin.confirm.rotate_sub", null, "This closes the current audit log and starts a fresh active log."),
             rows: [
-                { label: "Active log", value: "pqnas_audit.jsonl", mono: true },
-                { label: "Action", value: "Rename current log into timestamped archive" },
-                { label: "Chain", value: "Continuity preserved by rotate header" },
+                { label: tr("admin.settings.active_log", null, "Active log"), value: "pqnas_audit.jsonl", mono: true },
+                { label: tr("admin.settings.action", null, "Action"), value: tr("admin.settings.rename_current_log", null, "Rename current log into timestamped archive") },
+                { label: tr("admin.settings.chain", null, "Chain"), value: tr("admin.settings.continuity_preserved", null, "Continuity preserved by rotate header") },
             ],
-            note: "Already-written audit lines remain unchanged. New audit events will continue in the fresh log.",
+            note: tr("admin.settings.rotate_note", null, "Already-written audit lines remain unchanged. New audit events will continue in the fresh log."),
             confirmText: tr("admin.audit.rotate_now", null, "Rotate now"),
             cancelText: tr("admin.common.cancel", null, "Cancel"),
             warn: true,
@@ -1842,11 +1842,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         try {
             await apiRotateAudit();
-            showToast("ok", "Rotated", "New active audit log started");
+            showToast("ok", tr("admin.settings.rotated", null, "Rotated"), tr("admin.settings.new_active_log_started", null, "New active audit log started"));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Rotate failed", String(e.message || e));
+            showToast("fail", tr("admin.settings.rotate_failed", null, "Rotate failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnRotateNow.disabled = false;
@@ -1863,11 +1863,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const d = currentDnaAlertsFromUi();
 
         if (d.enabled && !d.recipient) {
-            showToast("fail", "Invalid DNA alerts", "Recipient is required when DNA alerts are enabled.");
+            showToast("fail", tr("admin.dna.invalid", null, "Invalid DNA alerts"), tr("admin.dna.recipient_required", null, "Recipient is required when DNA alerts are enabled."));
             return;
         }
         if (d.enabled && !d.cli_path) {
-            showToast("fail", "Invalid DNA alerts", "CLI path is required when DNA alerts are enabled.");
+            showToast("fail", tr("admin.dna.invalid", null, "Invalid DNA alerts"), tr("admin.dna.cli_required", null, "CLI path is required when DNA alerts are enabled."));
             return;
         }
 
@@ -1876,13 +1876,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "saving…");
         try {
             await apiSettingsPost({ dna_connect_alerts: d });
-            showToast("ok", "Saved", d.enabled
-                ? `DNA alerts enabled for ${d.recipient}`
-                : "DNA alerts disabled");
+            showToast("ok", tr("admin.common.saved", null, "Saved"), d.enabled
+                ? tr("admin.dna.enabled_for_full", { recipient: d.recipient }, `DNA alerts enabled for ${d.recipient}`)
+                : tr("admin.dna.disabled", null, "DNA alerts disabled"));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnDnaAlertsSave.disabled = false;
@@ -1895,11 +1895,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "creating DNA ID…");
         try {
             const j = await apiCreateDnaAlertIdentity();
-            showToast("ok", "PQ-NAS ID created", String(j.message || "DNA identity created"));
+            showToast("ok", tr("admin.dna.id_created", null, "PQ-NAS ID created"), String(j.message || tr("admin.dna.identity_created", null, "DNA identity created")));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Create ID failed", String(e.message || e));
+            showToast("fail", tr("admin.dna.create_id_failed", null, "Create ID failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             await refreshAll();
@@ -1912,16 +1912,17 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         try {
             const j = await apiGetDnaAlertIdentityInfo();
             const d = j.dna_connect_identity || {};
-            const text =
-                `Exists: ${d.exists ? "yes" : "no"}\n` +
-                `Name: ${d.name || "—"}\n` +
-                `Fingerprint: ${d.fingerprint || "—"}\n` +
-                `CLI: ${d.cli_path || "—"}\n` +
-                `Data dir: ${d.data_dir || "—"}`;
+            const text = [
+                tr("admin.dna.exists_line", { value: d.exists ? tr("admin.apps.yes", null, "yes") : tr("admin.apps.no", null, "no") }, `Exists: ${d.exists ? "yes" : "no"}`),
+                tr("admin.dna.name_line", { value: d.name || "—" }, `Name: ${d.name || "—"}`),
+                tr("admin.dna.fingerprint_line", { value: d.fingerprint || "—" }, `Fingerprint: ${d.fingerprint || "—"}`),
+                tr("admin.dna.cli_line", { value: d.cli_path || "—" }, `CLI: ${d.cli_path || "—"}`),
+                tr("admin.dna.data_dir_line", { value: d.data_dir || "—" }, `Data dir: ${d.data_dir || "—"}`)
+            ].join("\n");
             openDnaIdentityModal(text);
         } catch (e) {
             console.error(e);
-            showToast("fail", "Load ID info failed", String(e.message || e));
+            showToast("fail", tr("admin.dna.load_id_failed", null, "Load ID info failed"), String(e.message || e));
         }
     });
 
@@ -1932,11 +1933,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "sending contact request…");
         try {
             const j = await apiSendDnaAlertContactRequest();
-            showToast("ok", "Contact request sent", String(j.message || "Contact request sent"));
+            showToast("ok", tr("admin.dna.contact_request_sent", null, "Contact request sent"), String(j.message || tr("admin.dna.contact_request_sent", null, "Contact request sent")));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Contact request failed", String(e.message || e));
+            showToast("fail", tr("admin.dna.contact_request_failed", null, "Contact request failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnDnaAlertsSendRequest.disabled = false;
@@ -1947,11 +1948,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         const d = currentDnaAlertsFromUi();
         if (!d.enabled) {
-            showToast("fail", "DNA alerts disabled", "Enable DNA alerts before sending a test.");
+            showToast("fail", tr("admin.dna.disabled", null, "DNA alerts disabled"), tr("admin.dna.enable_before_test", null, "Enable DNA alerts before sending a test."));
             return;
         }
         if (!d.recipient || !d.cli_path || !d.data_dir) {
-            showToast("fail", "Incomplete DNA alerts settings", "Recipient, CLI path and DNA data directory are required.");
+            showToast("fail", tr("admin.dna.incomplete", null, "Incomplete DNA alerts settings"), tr("admin.dna.incomplete_detail", null, "Recipient, CLI path and DNA data directory are required."));
             return;
         }
 
@@ -1959,12 +1960,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "testing…");
         try {
             const j = await apiTestDnaAlert();
-            const detail = String(j.message || "Test alert sent");
-            showToast("ok", "Test sent", detail);
+            const detail = String(j.message || tr("admin.dna.test_alert_sent", null, "Test alert sent"));
+            showToast("ok", tr("admin.dna.test_sent", null, "Test sent"), detail);
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Test failed", String(e.message || e));
+            showToast("fail", tr("admin.dna.test_failed", null, "Test failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnDnaAlertsTest.disabled = false;
@@ -2004,7 +2005,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         ev.preventDefault();
         const t = normalizeTheme(themeSelect?.value || "dark");
         applyTheme(t);
-        showToast("ok", "Theme applied", `Theme: ${t}`);
+        showToast("ok", tr("admin.theme.applied", null, "Theme applied"), tr("admin.theme.theme_value", { theme: t }, `Theme: ${t}`));
     });
 
     btnThemeSave?.addEventListener("click", async (ev) => {
@@ -2013,9 +2014,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         try {
             const j = await apiSettingsPost({ ui_theme: t });
             applyTheme(j && j.ui_theme ? j.ui_theme : t);
-            showToast("ok", "Theme saved", `Theme: ${t}`);
+            showToast("ok", tr("admin.theme.saved", null, "Theme saved"), tr("admin.theme.theme_value", { theme: t }, `Theme: ${t}`));
         } catch (e) {
-            showToast("fail", "Save failed", String(e && e.message ? e.message : e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e && e.message ? e.message : e));
         }
     });
 
@@ -2039,11 +2040,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         try {
             await apiSettingsPost({ audit_rotation: pol });
-            showToast("ok", "Saved", "Rotation policy updated");
+            showToast("ok", tr("admin.common.saved", null, "Saved"), tr("admin.settings.rotation_policy_updated", null, "Rotation policy updated"));
             await refreshAll();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Save failed", String(e.message || e));
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
             setStatusPill("error", "error");
         } finally {
             btnRotatePolicySave.disabled = false;
