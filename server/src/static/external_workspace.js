@@ -181,8 +181,8 @@ let signedIn = false;
             btn.textContent = tr(key, null, fallback);
         };
 
-        set('#itemContextMenu [data-action="preview"]', "external.menu.open_edit_text", "Open / edit text?");
-        set('#itemContextMenu [data-action="download"]', "external.menu.download", "Download");
+        set('#itemContextMenu [data-action="preview"]', "external.menu.open_edit_text", tr("external.menu.open_edit_text", null, "Open / edit text?"));
+        set('#itemContextMenu [data-action="download"]', "external.menu.download", tr("external.menu.download", null, "Download"));
     }
 
     function setStatus(text, kind) {
@@ -3944,9 +3944,9 @@ resetMarqueeVisual();
             el.textContent = tr(key, null, fallback);
         };
 
-        set(extPickerClose, "external.modal.close", "Close");
-        set(extPickerCancel, "external.modal.cancel", "Cancel");
-        set(extPickerNewFolder, "external.picker.new_folder_here", "New folder here...");
+        set(extPickerClose, "external.modal.close", tr("external.modal.close", null, "Close"));
+        set(extPickerCancel, "external.modal.cancel", tr("external.modal.cancel", null, "Cancel"));
+        set(extPickerNewFolder, "external.picker.new_folder_here", tr("external.picker.new_folder_here", null, "New folder here..."));
     }
 
     function syncExternalItemContextDynamicLabels() {
@@ -3958,7 +3958,7 @@ resetMarqueeVisual();
             previewBtn.textContent = tr("external.menu.open_edit_text", null, "Open / edit text?");
         }
 
-        if (downloadBtn && downloadBtn.textContent.trim() === "Download") {
+        if (downloadBtn && (!downloadBtn.getAttribute("data-i18n") || downloadBtn.getAttribute("data-i18n") === "external.menu.download")) {
             downloadBtn.setAttribute("data-i18n", "external.menu.download");
             downloadBtn.textContent = tr("external.menu.download", null, "Download");
         }

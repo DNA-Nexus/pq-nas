@@ -144,7 +144,7 @@
     function adminLabel(label) {
         const s = String(label || "");
         const map = {
-            "Status": "admin.common.status",
+            status: "admin.common.status",
             "Persisted": "admin.common.persisted",
             "Runtime": "admin.common.runtime",
             "Policy": "admin.common.policy",
@@ -179,7 +179,7 @@
     function setSnapshotsPill(kind, text) {
         if (!snapPill) return;
         snapPill.className = "pill " + (kind || "");
-        snapPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("Status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text))}</span>`;
+        snapPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text))}</span>`;
     }
     function tpdOptionsHtml(selected) {
         const vals = [1,2,4,6,12,24];
@@ -242,7 +242,7 @@
     function setStatusPill(kind, text) {
         if (!statusPill) return;
         statusPill.className = "pill " + (kind || "");
-        statusPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("Status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text))}</span>`;
+        statusPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text))}</span>`;
     }
 
     function setSimplePill(el, kind, k, v) {
