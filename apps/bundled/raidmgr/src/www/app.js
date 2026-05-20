@@ -1278,17 +1278,19 @@ html[data-theme="bright"] .raidPromptInput{
     }
 
     function svgAddPreview({ poolLabel, poolDevLabel, newDevLabel, mode }) {
-        const title = mode === "raid1" ? "Mirror (RAID 1)" : "No redundancy (Single)";
+        const title = mode === "raid1"
+            ? tr("raidmgr.profile.raid1", null, "Mirror (RAID 1)")
+            : tr("raidmgr.profile.single", null, "No redundancy (Single)");
         const subtitle =
             mode === "raid1"
-                ? "Two copies across both drives (Btrfs converts data + metadata via balance)."
-                : "Adds the drive for capacity (no mirror).";
+                ? tr("raidmgr.add.subtitle_raid1", null, "Two copies across both drives (Btrfs converts data + metadata via balance).")
+                : tr("raidmgr.add.subtitle_single", null, "Adds the drive for capacity (no mirror).");
 
-        const left = poolDevLabel || "Drive in pool";
-        const right = newDevLabel || "Selected drive";
+        const left = poolDevLabel || tr("raidmgr.add.drive_in_pool", null, "Drive in pool");
+        const right = newDevLabel || tr("raidmgr.add.selected_drive", null, "Selected drive");
 
         return `
-<svg viewBox="0 0 920 180" width="100%" height="180" role="img" aria-label="Add drive visual preview"
+<svg viewBox="0 0 920 180" width="100%" height="180" role="img" aria-label="${esc(tr("raidmgr.add.svg_aria", null, "Add drive visual preview"))}"
      style="display:block; border-radius:16px;
             border:1px solid var(--raid-border, rgba(0,0,0,0.14));
             background:var(--raid-bg, rgba(0,0,0,0.05));">
@@ -1303,12 +1305,12 @@ html[data-theme="bright"] .raidPromptInput{
     </marker>
   </defs>
 
-  <text x="24" y="34" font-size="22" font-weight="800" fill="var(--fg)">Add drive to storage pool</text>
+  <text x="24" y="34" font-size="22" font-weight="800" fill="var(--fg)">${esc(tr("raidmgr.add.svg_title", null, "Add drive to storage pool"))}</text>
   <text x="24" y="60" font-size="14" fill="var(--fg)" opacity="0.75">${esc(poolLabel || "")}</text>
 
   <rect x="24" y="84" width="260" height="70" rx="16"
         fill="url(#g_add)" stroke="var(--raid-border, rgba(0,0,0,0.14))"/>
-  <text x="44" y="112" font-size="14" fill="var(--fg)" opacity="0.75">Drive in pool</text>
+  <text x="44" y="112" font-size="14" fill="var(--fg)" opacity="0.75">${esc(tr("raidmgr.add.drive_in_pool", null, "Drive in pool"))}</text>
   <text x="44" y="137" font-size="16" font-weight="700" fill="var(--fg)">${esc(left)}</text>
 
   <rect x="330" y="84" width="260" height="70" rx="16"
@@ -1317,12 +1319,12 @@ html[data-theme="bright"] .raidPromptInput{
   <rect x="330" y="84" width="260" height="8" rx="16"
         fill="var(--raid-accent, rgba(0,140,255,0.35))" opacity="0.95"/>
 
-  <text x="350" y="112" font-size="14" fill="var(--fg)" opacity="0.75">Protection level</text>
+  <text x="350" y="112" font-size="14" fill="var(--fg)" opacity="0.75">${esc(tr("raidmgr.add.protection_level", null, "Protection level"))}</text>
   <text x="350" y="137" font-size="18" font-weight="800" fill="var(--fg)">${esc(title)}</text>
 
   <rect x="636" y="84" width="260" height="70" rx="16"
         fill="url(#g_add)" stroke="var(--raid-border, rgba(0,0,0,0.14))"/>
-  <text x="656" y="112" font-size="14" fill="var(--fg)" opacity="0.75">Selected drive</text>
+  <text x="656" y="112" font-size="14" fill="var(--fg)" opacity="0.75">${esc(tr("raidmgr.add.selected_drive", null, "Selected drive"))}</text>
   <text x="656" y="137" font-size="16" font-weight="700" fill="var(--fg)">${esc(right)}</text>
 
   ${
@@ -1406,8 +1408,8 @@ html[data-theme="bright"] .raidPromptInput{
         ov.innerHTML = `
 <div class="uiDialog raidDialogShell compact">
   <div class="uiDialogHeader raidDialogHeader">
-    <div id="confirmTitle" style="font-weight:950;">Confirm storage pool change</div>
-    <button id="confirmCloseBtn" class="btn secondary" type="button">Close</button>
+    <div id="confirmTitle" style="font-weight:950;">${esc(tr("raidmgr.confirm.title", null, "Confirm storage pool change"))}</div>
+    <button id="confirmCloseBtn" class="btn secondary" type="button">${esc(tr("admin.common.close", null, "Close"))}</button>
   </div>
 
   <div id="confirmBody" class="raidDialogInnerCard" style="margin-top:10px; padding:12px;">
@@ -1428,7 +1430,7 @@ html[data-theme="bright"] .raidPromptInput{
     </details>
 
     <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
-      <button id="confirmCancelBtn" class="btn secondary" type="button">Cancel</button>
+      <button id="confirmCancelBtn" class="btn secondary" type="button">${esc(tr("raidmgr.action.cancel", null, "Cancel"))}</button>
       <button id="confirmOkBtn" class="btn danger" type="button">${esc(tr("raidmgr.action.apply_now", null, "Apply now"))}</button>
     </div>
   </div>
@@ -1459,22 +1461,36 @@ html[data-theme="bright"] .raidPromptInput{
 
             let summary = "";
             if (kind === "remove") {
-                summary =
-                    `You are about to remove a drive from the storage pool.\n` +
-                    `Pool: ${mnt}\n` +
-                    `Remove: ${o.remove_device || plan?.remove_device || "(drive)"}\n` +
-                    `This migrates data and can take a long time.`;
+                const removeDevice = o.remove_device || plan?.remove_device || tr("raidmgr.confirm.drive_placeholder", null, "(drive)");
+                summary = [
+                    tr("raidmgr.confirm.remove_intro", null, "You are about to remove a drive from the storage pool."),
+                    tr("raidmgr.confirm.pool_line", { mount: mnt }, `Pool: ${mnt}`),
+                    tr("raidmgr.confirm.remove_line", { device: removeDevice }, `Remove: ${removeDevice}`),
+                    tr("raidmgr.confirm.migrates_long_time", null, "This migrates data and can take a long time.")
+                ].join("\n");
             } else {
-                summary =
-                    `You are about to add a drive to the storage pool.\n` +
-                    `Pool: ${mnt}\n` +
-                    `Add: ${o.new_disk || plan?.new_disk || "(drive)"}\n` +
-                    `Protection: ${mode === "raid1" ? "Mirror (RAID 1)" : "No redundancy (Single)"}\n`;
+                const addDevice = o.new_disk || plan?.new_disk || tr("raidmgr.confirm.drive_placeholder", null, "(drive)");
+                const protection = mode === "raid1"
+                    ? tr("raidmgr.profile.raid1", null, "Mirror (RAID 1)")
+                    : tr("raidmgr.profile.single", null, "No redundancy (Single)");
 
-                if (plan?.force || o.force) summary += `\n⚠ WARNING: This will permanently erase the selected drive.`;
+                summary = [
+                    tr("raidmgr.confirm.add_intro", null, "You are about to add a drive to the storage pool."),
+                    tr("raidmgr.confirm.pool_line", { mount: mnt }, `Pool: ${mnt}`),
+                    tr("raidmgr.confirm.add_line", { device: addDevice }, `Add: ${addDevice}`),
+                    tr("raidmgr.confirm.protection_line", { protection }, `Protection: ${protection}`)
+                ].join("\n");
+
+                if (plan?.force || o.force) {
+                    summary += "\n\n" + tr("raidmgr.confirm.erase_warning", null, "⚠ WARNING: This will permanently erase the selected drive.");
+                }
             }
 
-            if (titleEl) titleEl.textContent = kind === "remove" ? "Confirm remove drive" : "Confirm add drive";
+            if (titleEl) {
+                titleEl.textContent = kind === "remove"
+                    ? tr("raidmgr.confirm.remove_title", null, "Confirm remove drive")
+                    : tr("raidmgr.confirm.add_title", null, "Confirm add drive");
+            }
 
             if (summaryEl) {
                 summaryEl.textContent = summary;
@@ -2092,8 +2108,8 @@ html[data-theme="bright"] .raidPromptInput{
         forceChk?.addEventListener("change", () => {
             if (!forceWarn) return;
             forceWarn.textContent = forceChk.checked
-                ? "WARNING: erase enabled — the selected drive may be wiped."
-                : "Keep OFF unless you are OK with wiping the selected drive.";
+                ? tr("raidmgr.add.erase_enabled_warning", null, "WARNING: erase enabled — the selected drive may be wiped.")
+                : tr("raidmgr.add.keep_off_unless_wipe_ok", null, "Keep OFF unless you are OK with wiping the selected drive.");
         });
 
         // ----- Remove-drive UI -----
@@ -2103,9 +2119,9 @@ html[data-theme="bright"] .raidPromptInput{
             const totalDevs = Number(parsed?.btrfs?.total_devices) || bdevs.length || 0;
 
             if (totalDevs <= 1) {
-                rmHost.innerHTML = `<div class="v" style="opacity:.8;">Cannot remove a drive: storage pool has ${totalDevs} drive(s). Add a second drive first.</div>`;
+                rmHost.innerHTML = `<div class="v" style="opacity:.8;">${esc(tr("raidmgr.remove.cannot_remove_one_drive", { count: totalDevs }, `Cannot remove a drive: storage pool has ${totalDevs} drive(s). Add a second drive first.`))}</div>`;
             } else if (!bdevs.length) {
-                rmHost.innerHTML = `<div class="v" style="opacity:.8;">No member drives found in discovery output.</div>`;
+                rmHost.innerHTML = `<div class="v" style="opacity:.8;">${esc(tr("raidmgr.remove.no_member_drives", null, "No member drives found in discovery output."))}</div>`;
             } else {
                 rmHost.innerHTML = `
   <div class="row" style="gap:10px; align-items:flex-start; margin-top:6px;">
@@ -2142,13 +2158,13 @@ html[data-theme="bright"] .raidPromptInput{
       </div>
 
       <div class="v" style="opacity:.75; margin-top:10px;">
-        Removing a drive migrates data off that drive and can take a long time.
+        ${esc(tr("raidmgr.remove.migrates_data_long_time", null, "Removing a drive migrates data off that drive and can take a long time."))}
       </div>
     </div>
 
     <div style="display:flex; flex-direction:column; gap:10px; flex:0 0 auto;">
-      <button class="btn" id="planRmBtn" type="button">Preview</button>
-      <button class="btn secondary" id="execRmBtn" type="button" disabled>Apply</button>
+      <button class="btn" id="planRmBtn" type="button">${esc(tr("raidmgr.action.preview", null, "Preview"))}</button>
+      <button class="btn secondary" id="execRmBtn" type="button" disabled>${esc(tr("raidmgr.action.apply", null, "Apply"))}</button>
     </div>
   </div>
 `;
@@ -2162,7 +2178,7 @@ html[data-theme="bright"] .raidPromptInput{
 
                 function updateRmViz() {
                     if (!rmViz) return;
-                    const poolLabel = mount ? `Storage pool: ${mount}` : "";
+                    const poolLabel = mount ? tr("raidmgr.pool.storage_pool_line", { mount }, `Storage pool: ${mount}`) : "";
                     const removeDev = String(rmSel?.value || "");
                     rmViz.innerHTML = svgRemovePreview({ poolLabel, removeDevLabel: removeDev });
                 }
@@ -2507,7 +2523,7 @@ html[data-theme="bright"] .raidPromptInput{
                     : null;
 
         if (!p || !p.summary) {
-            elx.textContent = "No topology info.";
+            elx.textContent = tr("raidmgr.topology.no_info", null, "No topology info.");
             return;
         }
 
@@ -4660,17 +4676,17 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
                 const editable = !!p?.is_editable_pool;
 
                 if (!editable) {
-                    showToast("info", "This volume is informational only in Pool Manager.", 2600);
+                    showToast("info", tr("raidmgr.pool.informational_only", null, "This volume is informational only in Pool Manager."), 2600);
                     return;
                 }
 
                 if (action === "apply-layout") {
                     try {
-                        showToast("info", "Planning layout changes…", 1200);
+                        showToast("info", tr("raidmgr.apply_layout.planning", null, "Planning layout changes…"), 1200);
 
                         const { r, j, txt } = await planPoolLayout(mount);
                         if (!r.ok || !j || j.ok !== true) {
-                            showToast("err", `Plan layout failed: ${prettyError(j, r, txt)}`, 5200);
+                            showToast("err", tr("raidmgr.apply_layout.plan_failed", { error: prettyError(j, r, txt) }, `Plan layout failed: ${prettyError(j, r, txt)}`), 5200);
                             return;
                         }
 
@@ -4678,7 +4694,7 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
                         const toRemove = Array.isArray(j.to_remove) ? j.to_remove : [];
 
                         if (!toAdd.length && !toRemove.length) {
-                            showToast("ok", "No layout changes to apply.", 2200);
+                            showToast("ok", tr("raidmgr.apply_layout.no_changes", null, "No layout changes to apply."), 2200);
                             return;
                         }
 
