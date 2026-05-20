@@ -528,16 +528,16 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
             row.actor_display ||
             row.actor_name_snapshot ||
             row.actor_fp ||
-            "Unknown"
+            tr("external.versions.unknown", null, "Unknown")
         );
     }
 
     function kindLabel(row) {
-        if (row && row.is_deleted_event) return "Deleted file snapshot";
-        if (row && row.event_kind === "overwrite_preserve") return "Before overwrite";
-        if (row && row.event_kind === "delete_preserve") return "Before delete";
-        if (row && row.event_kind === "restore_preserve") return "Before restore";
-        return String((row && row.event_kind) || "Version");
+        if (row && row.is_deleted_event) return tr("external.versions.deleted_snapshot", null, "Deleted file snapshot");
+        if (row && row.event_kind === "overwrite_preserve") return tr("external.versions.before_overwrite", null, "Before overwrite");
+        if (row && row.event_kind === "delete_preserve") return tr("external.versions.before_delete", null, "Before delete");
+        if (row && row.event_kind === "restore_preserve") return tr("external.versions.before_restore", null, "Before restore");
+        return String((row && row.event_kind) || tr("external.versions.version", null, "Version"));
     }
 
     function detailLine(row) {
@@ -578,11 +578,17 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
             .map((f) => String(f.actor_display || f.actor_name_snapshot || f.actor_fp || "").trim())
             .filter(Boolean);
 
-        if (names.length === 1) return `⭐ ${names[0]} flagged this version`;
-        if (names.length === 2) return `⭐ ${names[0]} and ${names[1]} flagged this version`;
-        if (names.length > 2) return `⭐ ${names[0]}, ${names[1]} and ${names.length - 2} more flagged this version`;
+        if (names.length === 1) {
+            return "⭐ " + tr("external.versions.flagged_by_one_name", { name: names[0] }, `${names[0]} flagged this version`);
+        }
+        if (names.length === 2) {
+            return "⭐ " + tr("external.versions.flagged_by_two_names", { a: names[0], b: names[1] }, `${names[0]} and ${names[1]} flagged this version`);
+        }
+        if (names.length > 2) {
+            return "⭐ " + tr("external.versions.flagged_by_many_names", { a: names[0], b: names[1], count: names.length - 2 }, `${names[0]}, ${names[1]} and ${names.length - 2} more flagged this version`);
+        }
 
-        return `⭐ Flagged by ${count} user${count === 1 ? "" : "s"}`;
+        return "⭐ " + tr("external.versions.flagged_by_count", { count }, `Flagged by ${count} user${count === 1 ? "" : "s"}`);
     }
 
     async function copyText(text) {
@@ -700,7 +706,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         titleEl = document.createElement("div");
         titleEl.className = "externalVersionsTitle";
         titleEl.id = "externalVersionsTitle";
-        titleEl.textContent = "File versions";
+        titleEl.textContent = tr("external.versions.title", null, "File versions");
 
         pathEl = document.createElement("div");
         pathEl.className = "externalVersionsPath mono";
@@ -722,7 +728,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         });
 
         const closeAfterTxt = document.createElement("span");
-        closeAfterTxt.textContent = "Close after restore";
+        closeAfterTxt.textContent = tr("external.versions.close_after_restore", null, "Close after restore");
 
         closeAfterWrap.appendChild(closeAfterRestoreCb);
         closeAfterWrap.appendChild(closeAfterTxt);
@@ -730,7 +736,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         refreshBtn = document.createElement("button");
         refreshBtn.type = "button";
         refreshBtn.className = "btn secondary";
-        refreshBtn.textContent = "Refresh";
+        refreshBtn.textContent = tr("common.refresh", null, "Refresh");
         refreshBtn.addEventListener("click", () => {
             loadVersions().catch((e) => {
                 setModalError(String(e && e.message ? e.message : e));
@@ -740,7 +746,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         closeBtn = document.createElement("button");
         closeBtn.type = "button";
         closeBtn.className = "btn secondary";
-        closeBtn.textContent = "Close";
+        closeBtn.textContent = tr("external.modal.close", null, "Close");
         closeBtn.addEventListener("click", close);
 
         headRightEl.appendChild(closeAfterWrap);
@@ -798,21 +804,23 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
     function setModalLoading(text) {
         if (!bodyEl) return;
-        setModalStatus(text || "Loading versions…", "warn");
+        const fallback = tr("external.versions.loading", null, "Loading versions…");
+        setModalStatus(text || fallback, "warn");
         bodyEl.innerHTML = "";
         const div = document.createElement("div");
         div.className = "externalVersionsEmpty";
-        div.textContent = text || "Loading versions…";
+        div.textContent = text || fallback;
         bodyEl.appendChild(div);
     }
 
     function setModalError(text) {
         if (!bodyEl) return;
-        setModalStatus(text || "Failed to load versions", "err");
+        const fallback = tr("external.versions.failed_load", null, "Failed to load versions");
+        setModalStatus(text || fallback, "err");
         bodyEl.innerHTML = "";
         const div = document.createElement("div");
         div.className = "externalVersionsEmpty err";
-        div.textContent = text || "Failed to load versions";
+        div.textContent = text || fallback;
         bodyEl.appendChild(div);
     }
 
@@ -852,11 +860,11 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
     async function openCompare(row) {
         if (!canComparePath(state.relPath)) {
-            setModalStatus("Compare is available for text-based files.", "err");
+            setModalStatus(tr("external.versions.compare_text_only", null, "Compare is available for text-based files."), "err");
             return;
         }
 
-        setModalStatus("Loading comparison…", "warn");
+        setModalStatus(tr("external.versions.loading_comparison", null, "Loading comparison…"), "warn");
 
         try {
             const [oldJ, curJ] = await Promise.all([
@@ -866,13 +874,13 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
             openSimpleCompareWindow({
                 path: state.relPath,
-                oldTitle: `Selected version • ${oldJ.created_at || row.created_at || ""}`,
-                newTitle: "Current file",
+                oldTitle: tr("external.versions.selected_version_with_date", { date: oldJ.created_at || row.created_at || "" }, `Selected version • ${oldJ.created_at || row.created_at || ""}`),
+                newTitle: tr("external.versions.current_file", null, "Current file"),
                 oldText: String(oldJ.text || ""),
                 newText: String(curJ.text || "")
             });
 
-            setModalStatus("Comparison opened.", "ok");
+            setModalStatus(tr("external.versions.comparison_opened", null, "Comparison opened."), "ok");
         } catch (e) {
             setModalStatus(String(e && e.message ? e.message : e), "err");
         }
@@ -1110,7 +1118,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const title = document.createElement("div");
         title.className = "externalVersionsTitle";
-        title.textContent = "Compare file version";
+        title.textContent = tr("external.versions.compare_title", null, "Compare file version");
 
         const path = document.createElement("div");
         path.className = "externalVersionsPath mono";
@@ -1133,7 +1141,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         });
 
         const syncTxt = document.createElement("span");
-        syncTxt.textContent = "Sync scroll";
+        syncTxt.textContent = tr("external.versions.sync_scroll", null, "Sync scroll");
 
         syncLabel.appendChild(syncCb);
         syncLabel.appendChild(syncTxt);
@@ -1150,7 +1158,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         });
 
         const hideTxt = document.createElement("span");
-        hideTxt.textContent = "Hide unchanged";
+        hideTxt.textContent = tr("external.versions.hide_unchanged", null, "Hide unchanged");
 
         hideLabel.appendChild(hideCb);
         hideLabel.appendChild(hideTxt);
@@ -1158,7 +1166,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         const closeBtn2 = document.createElement("button");
         closeBtn2.type = "button";
         closeBtn2.className = "btn secondary";
-        closeBtn2.textContent = "Close";
+        closeBtn2.textContent = tr("external.modal.close", null, "Close");
         closeBtn2.addEventListener("click", () => root.remove());
 
         actions.appendChild(syncLabel);
@@ -1201,8 +1209,8 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const paneHeadA = document.createElement("div");
         const paneHeadB = document.createElement("div");
-        paneHeadA.textContent = opts.oldTitle || "Selected version";
-        paneHeadB.textContent = opts.newTitle || "Current file";
+        paneHeadA.textContent = opts.oldTitle || tr("external.versions.selected_version", null, "Selected version");
+        paneHeadB.textContent = opts.newTitle || tr("external.versions.current_file", null, "Current file");
 
         for (const h of [paneHeadA, paneHeadB]) {
             h.style.position = "sticky";
@@ -1270,7 +1278,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
             if (row.kind === "skip") {
                 no.textContent = "";
                 mark.textContent = "⋯";
-                code.textContent = `${Number(row.count || 0)} unchanged line(s) hidden`;
+                code.textContent = tr("external.versions.unchanged_lines_hidden", { count: Number(row.count || 0) }, `${Number(row.count || 0)} unchanged line(s) hidden`);
                 code.style.fontStyle = "italic";
             } else if (isLeft) {
                 no.textContent = row.leftNo ? String(row.leftNo) : "";
@@ -1343,7 +1351,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const resizeHandle = document.createElement("div");
         resizeHandle.className = "externalCompareResizeHandle";
-        resizeHandle.title = "Resize";
+        resizeHandle.title = tr("external.versions.resize", null, "Resize");
         panel.appendChild(resizeHandle);
 
         root.appendChild(panel);
@@ -1495,7 +1503,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         if (!row || !row.version_id) return;
 
         const wasFlagged = !!row.flagged_by_me;
-        setModalStatus(wasFlagged ? "Removing flag…" : "Flagging version…", "warn");
+        setModalStatus(wasFlagged ? tr("external.versions.removing_flag", null, "Removing flag…") : tr("external.versions.flagging_version", null, "Flagging version…"), "warn");
 
         const r = await fetch(buildFlagUrl(wasFlagged), {
             method: "POST",
@@ -1513,11 +1521,11 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
             const msg = j && (j.message || j.error)
                 ? `${j.error || ""} ${j.message || ""}`.trim()
                 : `HTTP ${r.status}`;
-            throw new Error(msg || "flag update failed");
+            throw new Error(msg || tr("external.versions.flag_update_failed", null, "flag update failed"));
         }
 
         await loadVersions();
-        setModalStatus(wasFlagged ? "Flag removed." : "Version flagged.", "ok");
+        setModalStatus(wasFlagged ? tr("external.versions.flag_removed", null, "Flag removed.") : tr("external.versions.version_flagged", null, "Version flagged."), "ok");
     }
 
     async function fetchVersions() {
@@ -1533,7 +1541,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
             const msg = j && (j.message || j.error)
                 ? `${j.error || ""} ${j.message || ""}`.trim()
                 : `HTTP ${r.status}`;
-            throw new Error(msg || "failed to load versions");
+            throw new Error(msg || tr("external.versions.failed_load_lower", null, "failed to load versions"));
         }
 
         return Array.isArray(j.versions) ? j.versions : [];
@@ -1544,15 +1552,15 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         bodyEl.innerHTML = "";
 
         if (!state.versions.length) {
-            setModalStatus("No preserved versions for this file.");
+            setModalStatus(tr("external.versions.no_preserved", null, "No preserved versions for this file."));
             const div = document.createElement("div");
             div.className = "externalVersionsEmpty";
-            div.textContent = "No preserved versions for this file yet.";
+            div.textContent = tr("external.versions.no_preserved_yet", null, "No preserved versions for this file yet.");
             bodyEl.appendChild(div);
             return;
         }
 
-        setModalStatus(`${state.versions.length} version(s)`);
+        setModalStatus(tr("external.versions.count", { count: state.versions.length }, `${state.versions.length} version(s)`));
 
         const listEl = document.createElement("div");
         listEl.className = "externalVersionsList";
@@ -1591,11 +1599,13 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         const restoreBtn = document.createElement("button");
         restoreBtn.type = "button";
         restoreBtn.className = "btn";
-        restoreBtn.textContent = state.restoringVersionId === row.version_id ? "Restoring…" : "Restore";
+        restoreBtn.textContent = state.restoringVersionId === row.version_id
+            ? tr("external.versions.restoring", null, "Restoring…")
+            : tr("external.versions.restore", null, "Restore");
         restoreBtn.disabled = !!state.restoringVersionId || !(state.ctx && state.ctx.canWrite);
         restoreBtn.title = (state.ctx && state.ctx.canWrite)
-            ? "Restore this preserved version"
-            : "Restore requires editor access";
+            ? tr("external.versions.restore_title", null, "Restore this preserved version")
+            : tr("external.versions.restore_requires_editor", null, "Restore requires editor access");
         restoreBtn.addEventListener("click", () => {
             restoreVersion(row).catch((e) => {
                 setModalStatus(String(e && e.message ? e.message : e), "err");
@@ -1605,23 +1615,23 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         const copyBtn = document.createElement("button");
         copyBtn.type = "button";
         copyBtn.className = "btn secondary";
-        copyBtn.textContent = "Copy SHA";
+        copyBtn.textContent = tr("external.versions.copy_sha", null, "Copy SHA");
         copyBtn.disabled = !(row && row.sha256_hex);
         copyBtn.addEventListener("click", async () => {
             if (!row || !row.sha256_hex) return;
             const ok = await copyText(row.sha256_hex);
-            copyBtn.textContent = ok ? "Copied" : "Copy failed";
-            setTimeout(() => { copyBtn.textContent = "Copy SHA"; }, 1000);
+            copyBtn.textContent = ok ? tr("external.versions.copied", null, "Copied") : tr("external.versions.copy_failed", null, "Copy failed");
+            setTimeout(() => { copyBtn.textContent = tr("external.versions.copy_sha", null, "Copy SHA"); }, 1000);
         });
 
         const compareBtn = document.createElement("button");
         compareBtn.type = "button";
         compareBtn.className = "btn secondary";
-        compareBtn.textContent = "Compare";
+        compareBtn.textContent = tr("external.versions.compare", null, "Compare");
         compareBtn.disabled = !canComparePath(state.relPath);
         compareBtn.title = compareBtn.disabled
-            ? "Compare is available for text-based files"
-            : "Compare this version with the current file";
+            ? tr("external.versions.compare_text_only_short", null, "Compare is available for text-based files")
+            : tr("external.versions.compare_title_attr", null, "Compare this version with the current file");
         compareBtn.addEventListener("click", () => {
             openCompare(row).catch((e) => {
                 setModalStatus(String(e && e.message ? e.message : e), "err");
@@ -1631,8 +1641,8 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         const downloadBtn = document.createElement("button");
         downloadBtn.type = "button";
         downloadBtn.className = "btn secondary";
-        downloadBtn.textContent = "Download";
-        downloadBtn.title = "Download this preserved version without restoring it";
+        downloadBtn.textContent = tr("external.versions.download", null, "Download");
+        downloadBtn.title = tr("external.versions.download_title", null, "Download this preserved version without restoring it");
         downloadBtn.addEventListener("click", () => {
             const a = document.createElement("a");
             a.href = buildDownloadUrl(state.relPath, row.version_id);
@@ -1646,10 +1656,12 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         const flagBtn = document.createElement("button");
         flagBtn.type = "button";
         flagBtn.className = row.flagged_by_me ? "btn" : "btn secondary";
-        flagBtn.textContent = row.flagged_by_me ? "⭐ Unflag" : "☆ Flag";
+        flagBtn.textContent = row.flagged_by_me
+            ? tr("external.versions.unflag", null, "⭐ Unflag")
+            : tr("external.versions.flag", null, "☆ Flag");
         flagBtn.title = row.flagged_by_me
-            ? "Remove your flag from this version"
-            : "Flag this version so other workspace members can see it";
+            ? tr("external.versions.unflag_title", null, "Remove your flag from this version")
+            : tr("external.versions.flag_title", null, "Flag this version so other workspace members can see it");
         flagBtn.addEventListener("click", () => {
             toggleFlag(row).catch((e) => {
                 setModalStatus(String(e && e.message ? e.message : e), "err");
@@ -1662,9 +1674,11 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         deleteBtn.className = "btn secondary";
 
-        deleteBtn.textContent = state.deletingVersionId === row.version_id ? "Deleting…" : "Delete";
+        deleteBtn.textContent = state.deletingVersionId === row.version_id
+            ? tr("external.versions.deleting", null, "Deleting…")
+            : tr("external.versions.delete", null, "Delete");
 
-        deleteBtn.title = "Delete this preserved version permanently";
+        deleteBtn.title = tr("external.versions.delete_title_attr", null, "Delete this preserved version permanently");
 
         deleteBtn.disabled = !!state.restoringVersionId || !!state.deletingVersionId;
 
@@ -1915,7 +1929,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
         state.restoringVersionId = "";
         state.deletingVersionId = "";
 
-        titleEl.textContent = "File versions";
+        titleEl.textContent = tr("external.versions.title", null, "File versions");
         pathEl.textContent = "/" + state.relPath;
 
         if (closeAfterRestoreCb) {
