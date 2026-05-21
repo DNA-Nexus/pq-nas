@@ -300,8 +300,8 @@
             "uk-ua": "uk",
             "de-de": "de",
             "et-ee": "et",
-            "pl-pl": "pl"
-            "pl-pl": "es"
+            "pl-pl": "pl",
+            "es-es": "es"
         };
         const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl"]);
         const aliased = aliases[raw] || raw;
