@@ -3557,5 +3557,7 @@
   "settings.language.french": "🇫🇷 Francés",
   "settings.language.italian": "🇮🇹 Italiano",
   "admin.language.french": "🇫🇷 Francés",
-  "admin.language.italian": "🇮🇹 Italiano"
+  "admin.language.italian": "🇮🇹 Italiano",
+  "settings.language.turkish": "🇹🇷 Turco",
+  "admin.language.turkish": "🇹🇷 Turco"
 }

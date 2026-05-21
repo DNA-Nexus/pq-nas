@@ -307,6 +307,7 @@
             "fr-ca": "fr",
             "fr-ch": "fr",
             "it-it": "it",
+            "tr-tr": "tr",
             "it-ch": "it"
         };
         const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it"]);
