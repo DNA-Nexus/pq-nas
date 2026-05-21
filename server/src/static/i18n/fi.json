@@ -463,7 +463,7 @@
   "filemgr.versions.flagged_one": "⭐ {name} merkitsi tämän version",
   "filemgr.versions.flagged_two": "⭐ {name1} ja {name2} merkitsivät tämän version",
   "filemgr.versions.flagged_more": "⭐ {name1}, {name2} ja {count} muuta merkitsi tämän version",
-  "filemgr.versions.flagged_by": "⭐ Merkitty {count} käyttäjän toimesta",
+  "filemgr.versions.flagged_by": "⭐ {count} käyttäjää on merkinnyt tämän version{plural}",
   "filemgr.versions.restore": "Palauta",
   "filemgr.versions.restoring": "Palautetaan…",
   "filemgr.versions.copy_sha": "Kopioi SHA",

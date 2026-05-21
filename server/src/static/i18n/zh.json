@@ -3532,7 +3532,7 @@
   "filemgr.copy.confirm_note": "这会把选中的项目复制到目标文件夹。",
   "filemgr.copy.confirm_subtitle": "复制前请确认目标位置。",
   "filemgr.copy.confirm_title": "复制选中的项目？",
-  "filemgr.move.confirm_breaks_shares_warning": "警告：此次移动可能会使现有的基于路径的共享链接失效。",
+  "filemgr.move.confirm_breaks_shares_warning": "警告：此次移动会影响 {count} 个现有共享链接。\n\n{preview}{more}\n\n这些基于路径的共享链接在移动后将无法再找到内容。",
   "filemgr.move.confirm_button": "移动到这里",
   "filemgr.move.confirm_destination": "目标位置",
   "filemgr.move.confirm_items": "项目",

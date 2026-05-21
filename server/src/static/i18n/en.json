@@ -3531,7 +3531,7 @@
   "filemgr.copy.confirm_note": "This copies the selected items into the destination folder.",
   "filemgr.copy.confirm_subtitle": "Confirm the destination before copying.",
   "filemgr.copy.confirm_title": "Copy selected item(s)?",
-  "filemgr.move.confirm_breaks_shares_warning": "Warning: this move may break existing path-based share links.",
+  "filemgr.move.confirm_breaks_shares_warning": "Warning: this move affects {count} existing share link(s).\n\n{preview}{more}\n\nThose path-based share links will no longer find the moved content after the move.",
   "filemgr.move.confirm_button": "Move here",
   "filemgr.move.confirm_destination": "Destination",
   "filemgr.move.confirm_items": "Items",

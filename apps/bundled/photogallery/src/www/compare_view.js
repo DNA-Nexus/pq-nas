@@ -1,6 +1,22 @@
 (() => {
     "use strict";
 
+    function cvT(key, params, fallback) {
+        try {
+            const api = window.PQNAS_I18N;
+            if (api && typeof api.t === "function") {
+                return api.t(key, params || null, fallback);
+            }
+        } catch (_) {}
+
+        let out = String(fallback || key || "");
+        const p = params || {};
+        for (const name of Object.keys(p)) {
+            out = out.split(`{${name}}`).join(String(p[name]));
+        }
+        return out;
+    }
+
     window.PQNAS_PHOTOGALLERY = window.PQNAS_PHOTOGALLERY || {};
 
     let modal = null;
@@ -184,16 +200,16 @@
         modal.setAttribute("aria-hidden", "true");
 
         modal.innerHTML = `
-            <div class="compareViewCard" role="dialog" aria-modal="false" aria-label="Side by side image comparison">
+            <div class="compareViewCard" role="dialog" aria-modal="false" aria-label="${cvT("photogallery.compare.aria", null, "Side by side image comparison")}">
                 <div class="compareViewHead">
                     <div class="compareViewTitle">
-                        <strong>Compare side by side</strong>
+                        <strong>${cvT("photogallery.menu.compare_side_by_side", null, "Compare side by side")}</strong>
                         <span id="compareViewZoom" class="compareViewZoom">100%</span>
                     </div>
                     <div class="compareViewActions">
-                        <button id="compareViewReset" type="button" class="btn secondary">Reset</button>
-                        <button id="compareViewFit" type="button" class="btn secondary">Fit</button>
-                        <button id="compareViewClose" type="button" class="btn secondary">Close</button>
+                        <button id="compareViewReset" type="button" class="btn secondary">${cvT("photogallery.compare.reset", null, "Reset")}</button>
+                        <button id="compareViewFit" type="button" class="btn secondary">${cvT("photogallery.fit", null, "Fit")}</button>
+                        <button id="compareViewClose" type="button" class="btn secondary">${cvT("common.close", null, "Close")}</button>
                     </div>
                 </div>
 
@@ -214,7 +230,7 @@
                 </div>
 
                 <div class="compareViewHint">
-                    Mouse wheel zooms both images. Drag pans both images together.
+                    ${cvT("photogallery.compare.hint", null, "Mouse wheel zooms both images. Drag pans both images together.")}
                 </div>
             </div>
         `;
