@@ -3549,5 +3549,7 @@
   "settings.language.ukrainian": "🇺🇦 Ukrainska",
   "settings.language.german": "🇩🇪 Tyska",
   "settings.language.estonian": "🇪🇪 Estniska",
-  "admin.language.estonian": "🇪🇪 Estniska"
+  "admin.language.estonian": "🇪🇪 Estniska",
+  "settings.language.polish": "🇵🇱 Polska",
+  "admin.language.polish": "🇵🇱 Polska"
 }

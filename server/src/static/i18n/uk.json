@@ -3549,5 +3549,7 @@
   "settings.language.chinese_simplified": "🇨🇳 Спрощена китайська",
   "settings.language.german": "🇩🇪 Німецька",
   "settings.language.estonian": "🇪🇪 Естонська",
-  "admin.language.estonian": "🇪🇪 Естонська"
+  "admin.language.estonian": "🇪🇪 Естонська",
+  "settings.language.polish": "🇵🇱 Польська",
+  "admin.language.polish": "🇵🇱 Польська"
 }

@@ -299,9 +299,10 @@
             "zh-hans": "zh",
             "uk-ua": "uk",
             "de-de": "de",
-            "et-ee": "et"
+            "et-ee": "et",
+            "pl-pl": "pl"
         };
-        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et"]);
+        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl"]);
         const aliased = aliases[raw] || raw;
 
         if (allowed.has(aliased)) return aliased;
@@ -334,6 +335,7 @@
         if (l === "uk") return tr("admin.language.ukrainian", null, "🇺🇦 Українська");
         if (l === "de") return tr("admin.language.german", null, "🇩🇪 Deutsch");
         if (l === "et") return tr("admin.language.estonian", null, "🇪🇪 Eesti");
+        if (l === "pl") return tr("admin.language.polish", null, "🇵🇱 Polski");
         return tr("admin.language.english", null, "🇬🇧 English");
     }
 

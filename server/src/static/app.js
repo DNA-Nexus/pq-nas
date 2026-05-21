@@ -2208,6 +2208,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     <option value="et" ${activeLanguage === "et" ? "selected" : ""}>
                         ${escapeHtml(tr("settings.language.estonian", null, "🇪🇪 Eesti"))}
                     </option>
+                    <option value="pl" ${activeLanguage === "pl" ? "selected" : ""}>
+                        ${escapeHtml(tr("settings.language.polish", null, "🇵🇱 Polski"))}
+                    </option>
                 </select>
             </div>
 
