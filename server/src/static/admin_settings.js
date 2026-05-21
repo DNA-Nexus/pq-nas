@@ -302,13 +302,12 @@
             "et-ee": "et",
             "pl-pl": "pl",
             "es-es": "es",
-            "fr": "fr",
             "fr-fr": "fr",
-            "it-it": "it",
-            "it": "it",
             "fr-be": "fr",
             "fr-ca": "fr",
-            "fr-ch": "fr"
+            "fr-ch": "fr",
+            "it-it": "it",
+            "it-ch": "it"
         };
         const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it"]);
         const aliased = aliases[raw] || raw;
