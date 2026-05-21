@@ -19,6 +19,30 @@ struct CircleStackPost {
     std::time_t created_epoch = 0;
 };
 
+
+#include <sqlite3.h>
+
+static sqlite3* g_db = nullptr;
+
+static void cs_db_init() {
+    if (g_db) return;
+
+    if (sqlite3_open("circlestack.db", &g_db) != SQLITE_OK) {
+        fprintf(stderr, "CircleStack DB open failed\n");
+        return;
+    }
+
+    const char* sql =
+        "CREATE TABLE IF NOT EXISTS posts ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "text TEXT,"
+        "media_path TEXT,"
+        "created_epoch INTEGER"
+        ");";
+
+    sqlite3_exec(g_db, sql, nullptr, nullptr, nullptr);
+}
+
 std::vector<CircleStackPost> g_circle_stack_posts;
 int g_circle_stack_next_id = 1;
 
@@ -35,18 +59,34 @@ void register_circle_stack_routes(httplib::Server& server) {
             out["ok"] = true;
             out["posts"] = json::array();
 
-            for (auto it = g_circle_stack_posts.rbegin(); it != g_circle_stack_posts.rend(); ++it) {
-                json p;
-                p["id"] = it->id;
-                p["text"] = it->text;
-                p["created_epoch"] = static_cast<long long>(it->created_epoch);
+            
+cs_db_init();
 
-                if (!it->media_path.empty()) {
-                    p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(it->id);
-                }
+sqlite3_stmt* stmt = nullptr;
+sqlite3_prepare_v2(g_db,
+    "SELECT id, text, media_path, created_epoch FROM posts ORDER BY id DESC",
+    -1, &stmt, nullptr);
 
-                out["posts"].push_back(p);
-            }
+while (sqlite3_step(stmt) == SQLITE_ROW) {
+    json p;
+
+    int id = sqlite3_column_int(stmt, 0);
+    const char* text = (const char*)sqlite3_column_text(stmt, 1);
+    const char* media = (const char*)sqlite3_column_text(stmt, 2);
+    long long created = sqlite3_column_int64(stmt, 3);
+
+    p["id"] = id;
+    p["text"] = text ? text : "";
+    p["created_epoch"] = created;
+
+    if (media && media[0]) {
+        p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
+    }
+
+    out["posts"].push_back(p);
+}
+
+sqlite3_finalize(stmt);
 
             set_json(res, out);
         });
@@ -79,6 +119,21 @@ void register_circle_stack_routes(httplib::Server& server) {
             post.created_epoch = std::time(nullptr);
 
             g_circle_stack_posts.push_back(post);
+
+cs_db_init();
+
+sqlite3_stmt* stmt = nullptr;
+sqlite3_prepare_v2(g_db,
+    "INSERT INTO posts(text, media_path, created_epoch) VALUES(?,?,?)",
+    -1, &stmt, nullptr);
+
+sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
+sqlite3_bind_text(stmt, 2, media_path.c_str(), -1, SQLITE_TRANSIENT);
+sqlite3_bind_int64(stmt, 3, post.created_epoch);
+
+sqlite3_step(stmt);
+sqlite3_finalize(stmt);
+
 
             set_json(res, {{"ok", true}, {"id", post.id}});
         });
