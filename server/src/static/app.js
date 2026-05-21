@@ -2009,6 +2009,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const activeTheme = currentThemeName();
         const activeLanguage = currentLanguageName();
+
+        const langOption = (code, key, fallback) => `
+                    <option value="${code}" ${activeLanguage === code ? "selected" : ""}>${escapeHtml(fallback)}</option>`;
         if (!userProfile && !userProfileLoading && !userProfileError && authed) {
             loadUserProfile().then(() => {
                 if (currentView === "user_settings") renderUserSettings();
@@ -2187,40 +2190,18 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         font-weight:850;
                     "
                 >
-                    <option value="en" ${activeLanguage === "en" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.english", null, "🇬🇧 English"))}
-                    </option>
-                    <option value="fi" ${activeLanguage === "fi" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.finnish", null, "🇫🇮 Suomi"))}
-                    </option>
-                    <option value="zh" ${activeLanguage === "zh" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.chinese_simplified", null, "🇨🇳 简体中文"))}
-                    </option>
-                    <option value="sv" ${activeLanguage === "sv" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.swedish", null, "🇸🇪 Svenska"))}
-                    </option>
-                    <option value="uk" ${activeLanguage === "uk" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.ukrainian", null, "🇺🇦 Українська"))}
-                    </option>
-                    <option value="de" ${activeLanguage === "de" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.german", null, "🇩🇪 Deutsch"))}
-                    </option>
-                    <option value="et" ${activeLanguage === "et" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.estonian", null, "🇪🇪 Eesti"))}
-                    </option>
-                    <option value="pl" ${activeLanguage === "pl" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.polish", null, "🇵🇱 Polski"))}
-                    </option>
-                    <option value="es" ${activeLanguage === "es" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.spanish", null, "🇪🇸 Español"))}
-                    </option>
-                    <option value="fr" ${activeLanguage === "fr" ? "selected" : ""}>
-                        ${escapeHtml(tr("settings.language.french", null, "🇫🇷 Français"))}
-                    </option>
-                    <option value="it" ${activeLanguage === "it" ? "selected" : ""}>
-                    <option value="tr" data-i18n="settings.language.turkish">🇹🇷 Türkçe</option>
-                        ${escapeHtml(tr("settings.language.italian", null, "🇮🇹 Italiano"))}
-                    </option>
+                    ${langOption("en", "settings.language.english", "🇬🇧 English")}
+                    ${langOption("fi", "settings.language.finnish", "🇫🇮 Suomi")}
+                    ${langOption("zh", "settings.language.chinese_simplified", "🇨🇳 简体中文")}
+                    ${langOption("sv", "settings.language.swedish", "🇸🇪 Svenska")}
+                    ${langOption("uk", "settings.language.ukrainian", "🇺🇦 Українська")}
+                    ${langOption("de", "settings.language.german", "🇩🇪 Deutsch")}
+                    ${langOption("et", "settings.language.estonian", "🇪🇪 Eesti")}
+                    ${langOption("pl", "settings.language.polish", "🇵🇱 Polski")}
+                    ${langOption("es", "settings.language.spanish", "🇪🇸 Español")}
+                    ${langOption("fr", "settings.language.french", "🇫🇷 Français")}
+                    ${langOption("it", "settings.language.italian", "🇮🇹 Italiano")}
+                    ${langOption("tr", "settings.language.turkish", "🇹🇷 Türkçe")}
                 </select>
             </div>
 
