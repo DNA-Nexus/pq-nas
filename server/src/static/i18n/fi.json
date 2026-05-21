@@ -3536,5 +3536,9 @@
   "external.selection.use_context_menu_multi": "Käytä kontekstivalikkoa useille valituille kohteille.",
   "external.selection.no_item_selected": "Kohdetta ei ole valittu.",
   "admin.settings.saving": "Tallennetaan…",
-  "admin.settings.error": "Virhe"
+  "admin.settings.error": "Virhe",
+  "photogallery.compare.aria": "Kuvien rinnakkainen vertailu",
+  "photogallery.compare.reset": "Nollaa",
+  "photogallery.compare.hint": "Hiiren rulla zoomaa molempia kuvia. Vetäminen siirtää molempia kuvia yhdessä.",
+  "admin.language.chinese_simplified": "🇨🇳 Kiina (yksinkertaistettu)"
 }
