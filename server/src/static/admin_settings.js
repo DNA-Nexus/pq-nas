@@ -296,10 +296,14 @@
         const raw = String(lang || "").trim().toLowerCase().replace("_", "-");
         if (raw === "fi") return "fi";
         if (raw === "zh" || raw === "zh-cn" || raw === "zh-hans") return "zh";
+        if (raw === "sv") return "sv";
+        if (raw === "uk" || raw === "uk-ua") return "uk";
 
         const base = raw.split("-")[0];
         if (base === "fi") return "fi";
         if (base === "zh") return "zh";
+        if (base === "sv") return "sv";
+        if (base === "uk") return "uk";
 
         return "en";
     }
@@ -318,16 +322,20 @@
         return "en";
     }
 
+    function languageDisplayName(lang) {
+        const l = normalizeLanguage(lang);
+        if (l === "fi") return tr("admin.language.finnish", null, "🇫🇮 Suomi");
+        if (l === "zh") return tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文");
+        if (l === "sv") return tr("admin.language.swedish", null, "🇸🇪 Svenska");
+        if (l === "uk") return tr("admin.language.ukrainian", null, "🇺🇦 Українська");
+        return tr("admin.language.english", null, "🇬🇧 English");
+    }
+
     function updateLanguagePill(lang) {
         const l = normalizeLanguage(lang);
         if (languageSelect) languageSelect.value = l;
 
-        const label =
-            l === "fi"
-                ? tr("admin.language.finnish", null, "🇫🇮 Suomi")
-                : (l === "zh"
-                    ? tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文")
-                    : tr("admin.language.english", null, "🇬🇧 English"));
+        const label = languageDisplayName(l);
 
         if (languagePill) {
             setSimplePill(languagePill, "info", tr("admin.language.pill", null, "Language"), label);
@@ -357,11 +365,7 @@
         showToast(
             "ok",
             tr("admin.language.applied", null, "Language applied"),
-            l === "fi"
-                ? tr("admin.language.finnish", null, "🇫🇮 Suomi")
-                : (l === "zh"
-                    ? tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文")
-                    : tr("admin.language.english", null, "🇬🇧 English"))
+            languageDisplayName(l)
         );
     }
 

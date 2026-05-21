@@ -3542,5 +3542,6 @@
   "filemgr.move.confirm_unverified_warning": "Some selected items could not be checked against existing share links.",
   "admin.language.chinese_simplified": "🇨🇳 Chinese (Simplified)",
   "admin.language.swedish": "🇸🇪 Swedish",
+  "admin.language.ukrainian": "🇺🇦 Ukrainian",
   "settings.language.swedish": "🇸🇪 Swedish"
 }

@@ -3522,6 +3522,7 @@
   "admin.settings.error": "错误",
   "admin.language.chinese_simplified": "🇨🇳 简体中文",
   "admin.language.swedish": "🇸🇪 瑞典语",
+  "admin.language.ukrainian": "🇺🇦 乌克兰语",
   "photogallery.compare.aria": "并排图片比较",
   "photogallery.compare.reset": "重置",
   "photogallery.compare.hint": "鼠标滚轮会同时缩放两张图片。拖动会同时平移两张图片。",
