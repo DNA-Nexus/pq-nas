@@ -3553,5 +3553,7 @@
   "settings.language.polish": "🇵🇱 Polnisch",
   "settings.language.spanish": "🇪🇸 Spanisch",
   "admin.language.polish": "🇵🇱 Polnisch",
-  "admin.language.spanish": "🇪🇸 Spanisch"
+  "admin.language.spanish": "🇪🇸 Spanisch",
+  "settings.language.french": "🇫🇷 Französisch",
+  "admin.language.french": "🇫🇷 Französisch"
 }
