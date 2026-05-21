@@ -3555,5 +3555,7 @@
   "admin.language.polish": "🇵🇱 Polaco",
   "admin.language.spanish": "🇪🇸 Español",
   "settings.language.french": "🇫🇷 Francés",
-  "admin.language.french": "🇫🇷 Francés"
+  "settings.language.italian": "🇮🇹 Italiano",
+  "admin.language.french": "🇫🇷 Francés",
+  "admin.language.italian": "🇮🇹 Italiano"
 }

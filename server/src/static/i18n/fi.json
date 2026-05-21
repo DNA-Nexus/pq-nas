@@ -3555,5 +3555,7 @@
   "admin.language.polish": "🇵🇱 Puola",
   "admin.language.spanish": "🇪🇸 Espanja",
   "settings.language.french": "🇫🇷 Ranska",
-  "admin.language.french": "🇫🇷 Ranska"
+  "settings.language.italian": "🇮🇹 Italia",
+  "admin.language.french": "🇫🇷 Ranska",
+  "admin.language.italian": "🇮🇹 Italia"
 }

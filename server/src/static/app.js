@@ -2209,9 +2209,16 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         ${escapeHtml(tr("settings.language.estonian", null, "🇪🇪 Eesti"))}
                     </option>
                     <option value="pl" ${activeLanguage === "pl" ? "selected" : ""}>
-                    <option value="es" data-i18n="settings.language.spanish">🇪🇸 Español</option>
-                    <option value="fr" data-i18n="settings.language.french">🇫🇷 Français</option>
                         ${escapeHtml(tr("settings.language.polish", null, "🇵🇱 Polski"))}
+                    </option>
+                    <option value="es" ${activeLanguage === "es" ? "selected" : ""}>
+                        ${escapeHtml(tr("settings.language.spanish", null, "🇪🇸 Español"))}
+                    </option>
+                    <option value="fr" ${activeLanguage === "fr" ? "selected" : ""}>
+                        ${escapeHtml(tr("settings.language.french", null, "🇫🇷 Français"))}
+                    </option>
+                    <option value="it" ${activeLanguage === "it" ? "selected" : ""}>
+                        ${escapeHtml(tr("settings.language.italian", null, "🇮🇹 Italiano"))}
                     </option>
                 </select>
             </div>

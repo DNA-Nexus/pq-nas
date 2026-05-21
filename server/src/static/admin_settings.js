@@ -304,11 +304,13 @@
             "es-es": "es",
             "fr": "fr",
             "fr-fr": "fr",
+            "it-it": "it",
+            "it": "it",
             "fr-be": "fr",
             "fr-ca": "fr",
             "fr-ch": "fr"
         };
-        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl"]);
+        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it"]);
         const aliased = aliases[raw] || raw;
 
         if (allowed.has(aliased)) return aliased;
