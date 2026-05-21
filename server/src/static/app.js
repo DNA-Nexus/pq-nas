@@ -302,6 +302,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             if (homeBlurb) {
                 homeBlurb.style.display = "";
                 homeBlurb.classList.remove("appHostBlurb");
+
+                // Home/settings views must be scrollable again after app iframe mode.
+                homeBlurb.style.overflowY = "auto";
+                homeBlurb.style.overflowX = "hidden";
+                homeBlurb.style.maxHeight = "100%";
+                homeBlurb.style.minHeight = "0";
             }
 
             showHomeContent(true);
@@ -385,12 +391,52 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         host.innerHTML = html || "";
 
+        // Keep dynamic home/settings content inside the viewport.
+        // This prevents tall Settings pages from expanding the shell without a scrollbar.
+        host.style.overflowY = "auto";
+        host.style.overflowX = "hidden";
+        host.style.minHeight = "0";
+        host.style.paddingRight = "8px";
+        host.style.boxSizing = "border-box";
+        host.style.scrollbarGutter = "stable";
+        window.setTimeout(fitHomeContentToViewport, 0);
+
         const dock = document.getElementById("appFrameDock");
         if (dock && dock.parentElement !== homeBlurb) {
             homeBlurb.appendChild(dock);
         }
 
         return host;
+    }
+
+    function fitHomeContentToViewport() {
+        const host = document.getElementById("homeContent");
+        if (!host) return;
+
+        const rect = host.getBoundingClientRect();
+        const top = Math.max(0, rect.top || 0);
+        const available = Math.max(260, window.innerHeight - top - 18);
+
+        host.style.height = `${available}px`;
+        host.style.maxHeight = `${available}px`;
+        host.style.overflowY = "auto";
+        host.style.overflowX = "hidden";
+        host.style.minHeight = "0";
+        host.style.paddingRight = "8px";
+        host.style.boxSizing = "border-box";
+        host.style.scrollbarGutter = "stable";
+
+        if (homeBlurb) {
+            homeBlurb.style.overflow = "hidden";
+            homeBlurb.style.minHeight = "0";
+            homeBlurb.style.maxHeight = "none";
+        }
+
+        const mainHost = getMainHost();
+        if (mainHost) {
+            mainHost.style.overflow = "hidden";
+            mainHost.style.minHeight = "0";
+        }
     }
 
     function showHomeContent(on) {
@@ -1708,6 +1754,25 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         setMainHostMode("home");
         homeBlurb.classList.remove("appHostBlurb");
 
+        // Settings can be taller than the viewport. Keep the page shell fixed
+        // and let the main content area scroll.
+        {
+            const mainHost = getMainHost();
+            if (mainHost) {
+                mainHost.style.height = "calc(100vh - 0px)";
+                mainHost.style.maxHeight = "calc(100vh - 0px)";
+                mainHost.style.minHeight = "0";
+                mainHost.style.overflowY = "auto";
+                mainHost.style.overflowX = "hidden";
+            }
+
+            homeBlurb.style.height = "auto";
+            homeBlurb.style.maxHeight = "none";
+            homeBlurb.style.minHeight = "0";
+            homeBlurb.style.overflowY = "visible";
+            homeBlurb.style.overflowX = "hidden";
+        }
+
         const qrBlock = currentPairing ? `
         <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px; align-items:flex-start;">
             <img
@@ -2226,6 +2291,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             </div>
         </div>
     `);
+        fitHomeContentToViewport();
+
         const profileSaveBtn = (homeContent || homeBlurb).querySelector("#userProfileSaveBtn");
         if (profileSaveBtn) {
             profileSaveBtn.addEventListener("click", async () => {
@@ -3176,7 +3243,13 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             if (v === "0") hide = false;
         } catch {}
         setActivityHidden(hide);
-    })();
+        window.addEventListener("resize", () => {
+        if (currentView === "user_settings") {
+            fitHomeContentToViewport();
+        }
+    });
+
+})();
 
     if (toggleActivityBtn && activityPane) {
         toggleActivityBtn.addEventListener("click", () => {
