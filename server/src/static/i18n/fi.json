@@ -29,13 +29,13 @@
   "settings.language.desc": "Valitse tällä laitteella käytettävä DNA-Nexus-kieli.",
   "settings.language.id": "Kielen tunnus: {id}",
   "settings.language.saved": "Kieli tallennettu.",
-  "settings.language.english": "🇬🇧 English",
+  "settings.language.english": "🇬🇧 Englanti",
   "settings.language.finnish": "🇫🇮 Suomi",
   "admin.language.title": "Käyttöliittymän kieli",
   "admin.language.pill": "Kieli",
   "admin.language.desc": "Kieli tallennetaan tähän selaimeen ja se vaikuttaa heti DNA-Nexuksen sivuilla.",
   "admin.language.applied": "Kieli otettu käyttöön",
-  "admin.language.english": "🇬🇧 English",
+  "admin.language.english": "🇬🇧 Englanti",
   "admin.language.finnish": "🇫🇮 Suomi",
   "filemgr.title": "Tiedostonhallinta",
   "filemgr.location": "Sijainti",
@@ -3540,8 +3540,9 @@
   "photogallery.compare.aria": "Kuvien rinnakkainen vertailu",
   "photogallery.compare.reset": "Nollaa",
   "photogallery.compare.hint": "Hiiren rulla zoomaa molempia kuvia. Vetäminen siirtää molempia kuvia yhdessä.",
-  "admin.language.chinese_simplified": "🇨🇳 Kiina (yksinkertaistettu)",
+  "admin.language.chinese_simplified": "🇨🇳 Yksinkertaistettu kiina",
   "admin.language.swedish": "🇸🇪 Ruotsi",
   "admin.language.ukrainian": "🇺🇦 Ukraina",
-  "settings.language.swedish": "🇸🇪 Ruotsi"
+  "settings.language.swedish": "🇸🇪 Ruotsi",
+  "admin.language.german": "🇩🇪 Saksa"
 }

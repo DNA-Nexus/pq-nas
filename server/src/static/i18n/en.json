@@ -30,13 +30,13 @@
   "settings.language.id": "Language ID: {id}",
   "settings.language.saved": "Language saved.",
   "settings.language.english": "🇬🇧 English",
-  "settings.language.finnish": "🇫🇮 Suomi",
+  "settings.language.finnish": "🇫🇮 Finnish",
   "admin.language.title": "UI Language",
   "admin.language.pill": "Language",
   "admin.language.desc": "Language is saved in this browser and applies instantly across DNA-Nexus pages.",
   "admin.language.applied": "Language applied",
   "admin.language.english": "🇬🇧 English",
-  "admin.language.finnish": "🇫🇮 Suomi",
+  "admin.language.finnish": "🇫🇮 Finnish",
   "filemgr.title": "File Manager",
   "filemgr.location": "Location",
   "filemgr.my_files": "My files",
@@ -3540,8 +3540,9 @@
   "filemgr.move.confirm_subtitle": "Confirm the destination before moving.",
   "filemgr.move.confirm_title": "Move selected item(s)?",
   "filemgr.move.confirm_unverified_warning": "Some selected items could not be checked against existing share links.",
-  "admin.language.chinese_simplified": "🇨🇳 Chinese (Simplified)",
+  "admin.language.chinese_simplified": "🇨🇳 Simplified Chinese",
   "admin.language.swedish": "🇸🇪 Swedish",
   "admin.language.ukrainian": "🇺🇦 Ukrainian",
-  "settings.language.swedish": "🇸🇪 Swedish"
+  "settings.language.swedish": "🇸🇪 Swedish",
+  "admin.language.german": "🇩🇪 German"
 }
