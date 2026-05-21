@@ -287,8 +287,20 @@
     // Language (browser-local i18n)
     // ---------------------------
     function normalizeLanguage(lang) {
-        const raw = String(lang || "").trim().toLowerCase();
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.normalizeLanguage === "function") {
+                return window.PQNAS_I18N.normalizeLanguage(lang);
+            }
+        } catch (_) {}
+
+        const raw = String(lang || "").trim().toLowerCase().replace("_", "-");
         if (raw === "fi") return "fi";
+        if (raw === "zh" || raw === "zh-cn" || raw === "zh-hans") return "zh";
+
+        const base = raw.split("-")[0];
+        if (base === "fi") return "fi";
+        if (base === "zh") return "zh";
+
         return "en";
     }
 
