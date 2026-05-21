@@ -294,16 +294,20 @@
         } catch (_) {}
 
         const raw = String(lang || "").trim().toLowerCase().replace("_", "-");
-        if (raw === "fi") return "fi";
-        if (raw === "zh" || raw === "zh-cn" || raw === "zh-hans") return "zh";
-        if (raw === "sv") return "sv";
-        if (raw === "uk" || raw === "uk-ua") return "uk";
+        const aliases = {
+            "zh-cn": "zh",
+            "zh-hans": "zh",
+            "uk-ua": "uk",
+            "de-de": "de",
+            "et-ee": "et"
+        };
+        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et"]);
+        const aliased = aliases[raw] || raw;
 
-        const base = raw.split("-")[0];
-        if (base === "fi") return "fi";
-        if (base === "zh") return "zh";
-        if (base === "sv") return "sv";
-        if (base === "uk") return "uk";
+        if (allowed.has(aliased)) return aliased;
+
+        const base = aliased.split("-")[0];
+        if (allowed.has(base)) return base;
 
         return "en";
     }
@@ -328,6 +332,8 @@
         if (l === "zh") return tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文");
         if (l === "sv") return tr("admin.language.swedish", null, "🇸🇪 Svenska");
         if (l === "uk") return tr("admin.language.ukrainian", null, "🇺🇦 Українська");
+        if (l === "de") return tr("admin.language.german", null, "🇩🇪 Deutsch");
+        if (l === "et") return tr("admin.language.estonian", null, "🇪🇪 Eesti");
         return tr("admin.language.english", null, "🇬🇧 English");
     }
 

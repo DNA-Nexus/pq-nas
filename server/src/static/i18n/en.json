@@ -3544,5 +3544,10 @@
   "admin.language.swedish": "🇸🇪 Swedish",
   "admin.language.ukrainian": "🇺🇦 Ukrainian",
   "settings.language.swedish": "🇸🇪 Swedish",
-  "admin.language.german": "🇩🇪 German"
+  "admin.language.german": "🇩🇪 German",
+  "settings.language.chinese_simplified": "🇨🇳 Simplified Chinese",
+  "settings.language.ukrainian": "🇺🇦 Ukrainian",
+  "settings.language.german": "🇩🇪 German",
+  "settings.language.estonian": "🇪🇪 Estonian",
+  "admin.language.estonian": "🇪🇪 Estonian"
 }

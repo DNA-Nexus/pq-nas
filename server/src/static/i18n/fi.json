@@ -3544,5 +3544,10 @@
   "admin.language.swedish": "🇸🇪 Ruotsi",
   "admin.language.ukrainian": "🇺🇦 Ukraina",
   "settings.language.swedish": "🇸🇪 Ruotsi",
-  "admin.language.german": "🇩🇪 Saksa"
+  "admin.language.german": "🇩🇪 Saksa",
+  "settings.language.chinese_simplified": "🇨🇳 Yksinkertaistettu kiina",
+  "settings.language.ukrainian": "🇺🇦 Ukraina",
+  "settings.language.german": "🇩🇪 Saksa",
+  "settings.language.estonian": "🇪🇪 Viro",
+  "admin.language.estonian": "🇪🇪 Viro"
 }

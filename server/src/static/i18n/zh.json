@@ -3544,5 +3544,10 @@
   "filemgr.move.confirm_title": "移动选中的项目？",
   "filemgr.move.confirm_unverified_warning": "部分选中项目无法检查是否影响现有共享链接。",
   "settings.language.swedish": "🇸🇪 瑞典语",
-  "admin.language.german": "🇩🇪 德语"
+  "admin.language.german": "🇩🇪 德语",
+  "settings.language.chinese_simplified": "🇨🇳 简体中文",
+  "settings.language.ukrainian": "🇺🇦 乌克兰语",
+  "settings.language.german": "🇩🇪 德语",
+  "settings.language.estonian": "🇪🇪 爱沙尼亚语",
+  "admin.language.estonian": "🇪🇪 爱沙尼亚语"
 }
