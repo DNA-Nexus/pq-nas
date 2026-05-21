@@ -1,0 +1,84 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #101014;
+  color: #f4f4f5;
+}
+
+.cs-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.cs-header h1 {
+  margin: 0 0 6px;
+}
+
+.cs-header p {
+  margin: 0 0 24px;
+  color: #b8b8c0;
+}
+
+.cs-compose {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.cs-compose textarea,
+.cs-compose input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #33333d;
+  border-radius: 10px;
+  background: #181820;
+  color: #f4f4f5;
+  padding: 12px;
+}
+
+.cs-compose textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.cs-compose button {
+  justify-self: end;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #ff7a18;
+  color: #111;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-feed {
+  display: grid;
+  gap: 16px;
+}
+
+.cs-post,
+.cs-empty {
+  border: 1px solid #2c2c35;
+  border-radius: 16px;
+  background: #181820;
+  padding: 16px;
+}
+
+.cs-post-text {
+  white-space: pre-wrap;
+}
+
+.cs-post-media {
+  display: block;
+  max-width: 100%;
+  margin-top: 12px;
+  border-radius: 12px;
+}
+
+.cs-post-meta {
+  margin-top: 10px;
+  color: #92929e;
+  font-size: 12px;
+}

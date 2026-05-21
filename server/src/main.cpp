@@ -491,6 +491,7 @@ static bool reelstack_meta_remove_under_prefix_path_local(const std::string& sco
 
 //Echo stack
 #include "echo_stack_routes.h"
+#include "circle_stack_routes.h"
 #include "echo_stack_index.h"
 
 // activity
@@ -11223,6 +11224,7 @@ trash_service.set_restore_unindexer(
     };
 
     pqnas::register_echo_stack_routes(srv, echo_deps);
+    register_circle_stack_routes(srv);
     pqnas::GalleryAlbumRoutesDeps gallery_album_deps;
     gallery_album_deps.users = &users;
     gallery_album_deps.albums = &gallery_albums_index;

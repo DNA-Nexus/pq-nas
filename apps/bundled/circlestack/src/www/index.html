@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Circle Stack</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main class="cs-shell">
+    <header class="cs-header">
+      <h1 data-i18n="app.title"></h1>
+      <p data-i18n="app.tagline"></p>
+    </header>
+
+    <section class="cs-compose">
+      <textarea id="csText" data-i18n-placeholder="compose.placeholder"></textarea>
+      <input id="csMediaPath" data-i18n-placeholder="compose.mediaPath">
+      <button id="csPostButton" data-i18n="compose.post"></button>
+    </section>
+
+    <section id="csFeed" class="cs-feed"></section>
+  </main>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

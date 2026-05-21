@@ -1,0 +1,24 @@
+{
+  "id": "circlestack",
+  "name": "Circle Stack",
+  "version": "0.1.0",
+  "entry": "www/index.html",
+  "api_base": "/api/v4/circlestack",
+  "category": "social",
+  "surfaces": {
+    "desktop": { "enabled": true },
+    "launcher": { "enabled": true },
+    "sidebar": {
+      "enabled": true,
+      "user_pinnable": true,
+      "section": "social",
+      "label": "Circle Stack",
+      "order": 75
+    }
+  },
+  "icons": {
+    "default": "www/icon.svg",
+    "sidebar": "www/nav_icon.svg",
+    "nav": "www/nav_icon.svg"
+  }
+}
