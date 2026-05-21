@@ -3540,5 +3540,7 @@
   "photogallery.compare.aria": "Kuvien rinnakkainen vertailu",
   "photogallery.compare.reset": "Nollaa",
   "photogallery.compare.hint": "Hiiren rulla zoomaa molempia kuvia. Vetäminen siirtää molempia kuvia yhdessä.",
-  "admin.language.chinese_simplified": "🇨🇳 Kiina (yksinkertaistettu)"
+  "admin.language.chinese_simplified": "🇨🇳 Kiina (yksinkertaistettu)",
+  "admin.language.swedish": "🇸🇪 Ruotsi",
+  "settings.language.swedish": "🇸🇪 Ruotsi"
 }

@@ -3,7 +3,7 @@
 
     const KEY = "pqnas_lang";
     const DEFAULT_LANG = "en";
-    const LANGS = new Set(["en", "fi", "zh"]);
+    const LANGS = new Set(["en", "fi", "zh", "sv"]);
     const cache = new Map();
 
     let currentLang = DEFAULT_LANG;
