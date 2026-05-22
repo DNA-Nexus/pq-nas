@@ -988,10 +988,39 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             const sqlite3_int64 id = sqlite3_last_insert_rowid(g_db);
             sqlite3_finalize(st);
 
+            std::string actor_display = cs_short_fp(actor_fp);
+            std::string actor_avatar_url;
+
+            if (deps.users) {
+                auto u = deps.users->get(actor_fp);
+                if (u.has_value()) {
+                    if (!u->name.empty()) {
+                        actor_display = u->name;
+                    }
+                    actor_avatar_url = u->avatar_url;
+                }
+            }
+
+            json reply = {
+                {"id", id},
+                {"post_id", post_id},
+                {"actor_fp", actor_fp},
+                {"actor_fp_short", cs_short_fp(actor_fp)},
+                {"actor_display_name", actor_display},
+                {"actor_avatar_url", actor_avatar_url},
+                {"text", text},
+                {"created_epoch", (sqlite3_int64)std::time(nullptr)}
+            };
+
+            if (!media_path.empty()) {
+                reply["media_url"] = "/api/v4/circlestack/reply/media?id=" + std::to_string(id);
+            }
+
             set_json(res, {
                 {"ok", true},
                 {"id", id},
-                {"post_id", post_id}
+                {"post_id", post_id},
+                {"reply", reply}
             });
         });
 

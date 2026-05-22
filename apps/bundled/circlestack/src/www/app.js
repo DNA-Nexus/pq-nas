@@ -318,7 +318,16 @@ function csRenderReplies(post) {
   toggle.type = "button";
   toggle.textContent = replies.length ? `Reply (${replies.length})` : "Reply";
 
-  const composer = csRenderReplyComposer(post.id);
+  const updateReplyCount = () => {
+    toggle.textContent = replies.length ? `Reply (${replies.length})` : "Reply";
+  };
+
+  const composer = csRenderReplyComposer(post.id, (reply) => {
+    replies.push(reply);
+    list.appendChild(csRenderReply(reply));
+    updateReplyCount();
+    composer.hidden = true;
+  });
   composer.hidden = true;
 
   toggle.addEventListener("click", () => {
@@ -411,7 +420,7 @@ function csRenderReply(reply) {
   return row;
 }
 
-function csRenderReplyComposer(postId) {
+function csRenderReplyComposer(postId, onReplyCreated) {
   const box = document.createElement("div");
   box.className = "cs-reply-composer";
 
@@ -448,7 +457,16 @@ function csRenderReplyComposer(postId) {
 
     submit.disabled = true;
     try {
-      await csCreateReply(postId, text, media_path);
+      const reply = await csCreateReply(postId, text, media_path);
+
+      if (reply) {
+        textarea.value = "";
+        mediaInput.value = "";
+
+        if (typeof onReplyCreated === "function") {
+          onReplyCreated(reply);
+        }
+      }
     } finally {
       submit.disabled = false;
     }
@@ -469,14 +487,19 @@ function csRenderReplyComposer(postId) {
 }
 
 async function csCreateReply(postId, text, media_path) {
-  await fetch(`${CS_API}/posts/reply`, {
+  const res = await fetch(`${CS_API}/posts/reply`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ post_id: postId, text, media_path })
   });
 
-  await csLoadFeed();
+  if (!res.ok) {
+    return null;
+  }
+
+  const data = await res.json();
+  return data.reply || null;
 }
 
 
