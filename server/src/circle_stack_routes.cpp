@@ -1,28 +1,24 @@
 #include "circle_stack_routes.h"
+#include "storage_resolver.h"
 
 #include <nlohmann/json.hpp>
+#include <sqlite3.h>
 
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <vector>
 
 using json = nlohmann::json;
 
 namespace {
 
-struct CircleStackPost {
-    int id = 0;
-    std::string text;
-    std::string media_path;
-    std::time_t created_epoch = 0;
-};
-
-
-#include <sqlite3.h>
-
 static sqlite3* g_db = nullptr;
+
+void set_json(httplib::Response& res, const json& body) {
+    res.set_content(body.dump(), "application/json; charset=utf-8");
+}
 
 static void cs_db_init() {
     if (g_db) return;
@@ -41,60 +37,132 @@ static void cs_db_init() {
         ");";
 
     sqlite3_exec(g_db, sql, nullptr, nullptr, nullptr);
+    sqlite3_exec(g_db,
+        "ALTER TABLE posts ADD COLUMN owner_fp TEXT DEFAULT ''",
+        nullptr, nullptr, nullptr);
 }
 
-std::vector<CircleStackPost> g_circle_stack_posts;
-int g_circle_stack_next_id = 1;
+bool cs_path_has_no_symlink_components_below_root(
+    const std::filesystem::path& root,
+    const std::filesystem::path& target,
+    std::string* err
+) {
+    std::error_code ec;
 
-void set_json(httplib::Response& res, const json& body) {
-    res.set_content(body.dump(), "application/json; charset=utf-8");
+    const auto root_abs = std::filesystem::weakly_canonical(root, ec);
+    if (ec) {
+        if (err) *err = "root canonical failed: " + ec.message();
+        return false;
+    }
+
+    if (!std::filesystem::exists(target, ec)) {
+        if (err) *err = "target missing";
+        return false;
+    }
+
+    std::filesystem::path cur = root_abs;
+    const auto rel = std::filesystem::relative(target, root_abs, ec);
+    if (ec) {
+        if (err) *err = "relative failed: " + ec.message();
+        return false;
+    }
+
+    for (const auto& part : rel) {
+        cur /= part;
+
+        auto st = std::filesystem::symlink_status(cur, ec);
+        if (ec) {
+            if (err) *err = "symlink_status failed: " + ec.message();
+            return false;
+        }
+
+        if (std::filesystem::is_symlink(st)) {
+            if (err) *err = "symlink component rejected";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string cs_mime_for_path(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+
+    for (auto& c : ext) {
+        c = static_cast<char>(std::tolower(c));
+    }
+
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".webp") return "image/webp";
+    if (ext == ".gif") return "image/gif";
+
+    return "application/octet-stream";
 }
 
 } // namespace
 
-void register_circle_stack_routes(httplib::Server& server) {
+namespace pqnas {
+
+void register_circle_stack_routes(httplib::Server& server, const CircleStackRoutesDeps& deps) {
     server.Get("/api/v4/circlestack/feed",
-        [](const httplib::Request&, httplib::Response& res) {
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
             json out;
             out["ok"] = true;
             out["posts"] = json::array();
 
-            
-cs_db_init();
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT id, text, media_path, created_epoch, owner_fp "
+                "FROM posts ORDER BY id DESC",
+                -1, &stmt, nullptr);
 
-sqlite3_stmt* stmt = nullptr;
-sqlite3_prepare_v2(g_db,
-    "SELECT id, text, media_path, created_epoch FROM posts ORDER BY id DESC",
-    -1, &stmt, nullptr);
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                json p;
 
-while (sqlite3_step(stmt) == SQLITE_ROW) {
-    json p;
+                const int id = sqlite3_column_int(stmt, 0);
+                const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                const char* media = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+                const long long created = sqlite3_column_int64(stmt, 3);
 
-    int id = sqlite3_column_int(stmt, 0);
-    const char* text = (const char*)sqlite3_column_text(stmt, 1);
-    const char* media = (const char*)sqlite3_column_text(stmt, 2);
-    long long created = sqlite3_column_int64(stmt, 3);
+                p["id"] = id;
+                p["text"] = text ? text : "";
+                p["created_epoch"] = created;
 
-    p["id"] = id;
-    p["text"] = text ? text : "";
-    p["created_epoch"] = created;
+                if (media && media[0]) {
+                    p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
+                }
 
-    if (media && media[0]) {
-        p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
-    }
+                out["posts"].push_back(p);
+            }
 
-    out["posts"].push_back(p);
-}
-
-sqlite3_finalize(stmt);
-
+            sqlite3_finalize(stmt);
             set_json(res, out);
         });
 
     server.Post("/api/v4/circlestack/posts/create",
-        [](const httplib::Request& req, httplib::Response& res) {
-            json body;
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
 
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body;
             try {
                 body = json::parse(req.body);
             } catch (...) {
@@ -106,40 +174,62 @@ sqlite3_finalize(stmt);
             const std::string text = body.value("text", "");
             const std::string media_path = body.value("media_path", "");
 
+            if (!media_path.empty()) {
+                std::string rel_norm;
+                std::string norm_err;
+
+                if (!normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+                    res.status = 400;
+                    set_json(res, {{"ok", false}, {"error", "INVALID_MEDIA_PATH"}});
+                    return;
+                }
+            }
+
             if (text.empty() && media_path.empty()) {
                 res.status = 400;
                 set_json(res, {{"ok", false}, {"error", "empty_post"}});
                 return;
             }
 
-            CircleStackPost post;
-            post.id = g_circle_stack_next_id++;
-            post.text = text;
-            post.media_path = media_path;
-            post.created_epoch = std::time(nullptr);
+            const auto created_epoch = static_cast<long long>(std::time(nullptr));
 
-            g_circle_stack_posts.push_back(post);
+            cs_db_init();
 
-cs_db_init();
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "INSERT INTO posts(text, media_path, created_epoch, owner_fp) "
+                "VALUES(?,?,?,?)",
+                -1, &stmt, nullptr);
 
-sqlite3_stmt* stmt = nullptr;
-sqlite3_prepare_v2(g_db,
-    "INSERT INTO posts(text, media_path, created_epoch) VALUES(?,?,?)",
-    -1, &stmt, nullptr);
+            sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 2, media_path.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(stmt, 3, created_epoch);
+            sqlite3_bind_text(stmt, 4, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
 
-sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
-sqlite3_bind_text(stmt, 2, media_path.c_str(), -1, SQLITE_TRANSIENT);
-sqlite3_bind_int64(stmt, 3, post.created_epoch);
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                sqlite3_finalize(stmt);
+                res.status = 500;
+                set_json(res, {{"ok", false}, {"error", "db_insert_failed"}});
+                return;
+            }
 
-sqlite3_step(stmt);
-sqlite3_finalize(stmt);
+            const long long id = sqlite3_last_insert_rowid(g_db);
+            sqlite3_finalize(stmt);
 
-
-            set_json(res, {{"ok", true}, {"id", post.id}});
+            set_json(res, {{"ok", true}, {"id", id}});
         });
 
     server.Get("/api/v4/circlestack/media",
-        [](const httplib::Request& req, httplib::Response& res) {
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
             if (!req.has_param("id")) {
                 res.status = 400;
                 return;
@@ -147,21 +237,71 @@ sqlite3_finalize(stmt);
 
             const int id = std::atoi(req.get_param_value("id").c_str());
 
-            const CircleStackPost* found = nullptr;
-            for (const auto& p : g_circle_stack_posts) {
-                if (p.id == id) {
-                    found = &p;
-                    break;
-                }
+            cs_db_init();
+
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT media_path, owner_fp FROM posts WHERE id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+
+            std::string media_path;
+            std::string owner_fp;
+
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char* m = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                const char* o = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+                if (m) media_path = m;
+                if (o) owner_fp = o;
             }
 
-            if (!found || found->media_path.empty()) {
+            sqlite3_finalize(stmt);
+
+            if (media_path.empty()) {
                 res.status = 404;
                 return;
             }
 
-            // MVP only. Later: resolve via user's storage root + ACL check.
-            std::ifstream f(found->media_path, std::ios::binary);
+            if (owner_fp.empty()) {
+                res.status = 403;
+                return;
+            }
+
+            std::string rel_norm;
+            std::string norm_err;
+
+            if (!normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+                res.status = 400;
+                set_json(res, {{"ok", false}, {"error", "INVALID_MEDIA_PATH"}});
+                return;
+            }
+
+            if (!deps.users || !deps.user_dir_for_fp) {
+                res.status = 500;
+                return;
+            }
+
+            const std::filesystem::path owner_root =
+                deps.user_dir_for_fp(*deps.users, owner_fp);
+
+            const std::filesystem::path requested = owner_root / rel_norm;
+
+            if (!std::filesystem::exists(requested)) {
+                res.status = 404;
+                return;
+            }
+
+            std::string symlink_err;
+            if (!cs_path_has_no_symlink_components_below_root(
+                    owner_root, requested, &symlink_err)) {
+                res.status = 403;
+                set_json(res, {{"ok", false}, {"error", "SYMLINK_REJECTED"}});
+                return;
+            }
+
+            std::ifstream f(requested, std::ios::binary);
             if (!f) {
                 res.status = 404;
                 return;
@@ -170,6 +310,9 @@ sqlite3_finalize(stmt);
             std::stringstream ss;
             ss << f.rdbuf();
 
-            res.set_content(ss.str(), "image/jpeg");
+            const std::string mime = cs_mime_for_path(requested);
+            res.set_content(ss.str(), mime.c_str());
         });
 }
+
+} // namespace pqnas

@@ -11224,7 +11224,24 @@ trash_service.set_restore_unindexer(
     };
 
     pqnas::register_echo_stack_routes(srv, echo_deps);
-    register_circle_stack_routes(srv);
+
+    pqnas::CircleStackRoutesDeps circle_deps;
+    circle_deps.users = &users;
+    circle_deps.cookie_key = COOKIE_KEY;
+    circle_deps.user_dir_for_fp =
+        [](pqnas::UsersRegistry& users_ref, const std::string& fp_hex) {
+            return pqnas_user_dir_for_fp(users_ref, fp_hex);
+        };
+    circle_deps.require_user_auth_users_actor =
+        [&](const httplib::Request& req,
+            httplib::Response& res,
+            const unsigned char* cookie_key,
+            pqnas::UsersRegistry* users_ptr,
+            std::string* fp_hex,
+            std::string* role) -> bool {
+            return require_user_auth_users_actor(req, res, cookie_key, users_ptr, fp_hex, role);
+        };
+    pqnas::register_circle_stack_routes(srv, circle_deps);
     pqnas::GalleryAlbumRoutesDeps gallery_album_deps;
     gallery_album_deps.users = &users;
     gallery_album_deps.albums = &gallery_albums_index;
