@@ -450,12 +450,18 @@ document.addEventListener("click", (ev) => {
   csSetMediaPreview("");
 });
 
+
 async function csOpenIntroduceModal() {
-  const usersRes = await fetch("/api/v4/circlestack/users", {
-    credentials: "same-origin"
-  });
+  const peopleRes = await fetch("/api/v4/circlestack/people", { credentials: "same-origin" });
+  const peopleData = await peopleRes.json();
+
+  const usersRes = await fetch("/api/v4/circlestack/users", { credentials: "same-origin" });
   const usersData = await usersRes.json();
-  const users = (usersData.users || []).filter(u => !u.is_me);
+  const usersByFp = new Map((usersData.users || []).map(u => [u.fingerprint, u]));
+
+  const users = (peopleData.items || [])
+    .map(p => usersByFp.get(p.fp))
+    .filter(u => u && u.fingerprint && u.role !== "external");
 
   const backdrop = document.createElement("div");
   backdrop.className = "cs-modal-backdrop";
@@ -465,15 +471,12 @@ async function csOpenIntroduceModal() {
 
   modal.innerHTML = `
     <div class="cs-modal-title">Introduce people</div>
-    <div class="cs-modal-text">Pick two people to introduce.</div>
-
+    <div class="cs-modal-text">Pick two people you know.</div>
     <div class="cs-intro-grid">
       <select id="csIntroA"></select>
       <select id="csIntroB"></select>
     </div>
-
     <textarea id="csIntroMsg" placeholder="Optional message"></textarea>
-
     <div class="cs-modal-actions">
       <button class="cs-modal-cancel">Cancel</button>
       <button class="cs-modal-delete">Send</button>
@@ -484,9 +487,11 @@ async function csOpenIntroduceModal() {
   const selB = modal.querySelector("#csIntroB");
 
   for (const u of users) {
+    const label = csUserLabel(u.fingerprint, usersByFp);
+
     const optA = document.createElement("option");
     optA.value = u.fingerprint;
-    optA.textContent = (u.name && u.name !== u.fp_short) ? u.name : csElideFp(u.fingerprint);
+    optA.textContent = label;
     selA.appendChild(optA);
 
     const optB = optA.cloneNode(true);
@@ -494,7 +499,6 @@ async function csOpenIntroduceModal() {
   }
 
   const close = () => backdrop.remove();
-
   modal.querySelector(".cs-modal-cancel").onclick = close;
 
   modal.querySelector(".cs-modal-delete").onclick = async () => {
@@ -508,11 +512,7 @@ async function csOpenIntroduceModal() {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        person_a_fp: a,
-        person_b_fp: b,
-        message: msg
-      })
+      body: JSON.stringify({ person_a_fp: a, person_b_fp: b, message: msg })
     });
 
     close();
@@ -532,7 +532,28 @@ async function csLoadIntroductions() {
     credentials: "same-origin"
   });
   const data = await res.json();
-  const items = data.items || [];
+  
+const items = data.items || [];
+
+const peopleRes = await fetch("/api/v4/circlestack/people", { credentials: "same-origin" });
+const peopleData = await peopleRes.json();
+
+const merged = new Map();
+
+// circle ensin (vahvempi)
+for (const it of items) {
+  merged.set(it.fp, { fp: it.fp, source: "circle" });
+}
+
+// sitten people
+for (const it of (peopleData.items || [])) {
+  if (!merged.has(it.fp)) {
+    merged.set(it.fp, it);
+  }
+}
+
+const list = Array.from(merged.values());
+
 
   const usersRes = await fetch("/api/v4/circlestack/users", {
     credentials: "same-origin"
@@ -651,7 +672,28 @@ async function csOpenMyCircle() {
   `;
 
   const body = modal.querySelector("#csMyCircleBody");
-  const items = data.items || [];
+  
+const items = data.items || [];
+
+const peopleRes = await fetch("/api/v4/circlestack/people", { credentials: "same-origin" });
+const peopleData = await peopleRes.json();
+
+const merged = new Map();
+
+// circle ensin (vahvempi)
+for (const it of items) {
+  merged.set(it.fp, { fp: it.fp, source: "circle" });
+}
+
+// sitten people
+for (const it of (peopleData.items || [])) {
+  if (!merged.has(it.fp)) {
+    merged.set(it.fp, it);
+  }
+}
+
+const list = Array.from(merged.values());
+
 
   if (!items.length) {
     body.innerHTML = `<div class="cs-empty">Your circle is empty.</div>`;
@@ -662,8 +704,14 @@ async function csOpenMyCircle() {
       
 const name = csUserLabel(it.fp, usersByFp);
 
+const badge =
+    it.source === "circle" ? "Circle" :
+        it.source === "manual" ? "Manual" :
+            "Workspace";
+
 row.innerHTML = `
   <span>${name}</span>
+  <span class="cs-badge">${badge}</span>
   <button class="cs-circle-remove">Forget</button>
 `;
 
@@ -720,3 +768,151 @@ function csConfirmRemove(fp, name) {
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 }
+
+async function csOpenFindPeople() {
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-intro-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">Find people</div>
+    <div class="cs-modal-text">Search users and send contact requests.</div>
+    <div class="cs-modal-title" style="font-size:16px;margin-top:12px">Requests</div>
+    <div id="csContactRequests"></div>
+    <input id="csFindInput" placeholder="Search users..." />
+    <div id="csFindResults"></div>
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel">Close</button>
+    </div>
+  `;
+
+  const input = modal.querySelector("#csFindInput");
+  const results = modal.querySelector("#csFindResults");
+  const requestsBox = modal.querySelector("#csContactRequests");
+
+  async function loadRequests() {
+    const res = await fetch("/api/v4/circlestack/contact/requests", { credentials: "same-origin" });
+    const data = await res.json();
+    requestsBox.innerHTML = "";
+
+    const incoming = (data.incoming || []).filter(r => r.status === "pending");
+    const outgoing = (data.outgoing || []).filter(r => r.status === "pending");
+
+    if (!incoming.length && !outgoing.length) {
+      requestsBox.innerHTML = `<div class="cs-search-hint">No pending requests</div>`;
+      return;
+    }
+
+    for (const r of incoming) {
+      const row = document.createElement("div");
+      row.className = "cs-search-row";
+      row.innerHTML = `
+        <span>Incoming: ${csElideFp(r.from_fp)}</span>
+        <button type="button" data-act="accept">Accept</button>
+        <button type="button" data-act="reject">Reject</button>
+      `;
+      row.querySelectorAll("button").forEach(btn => {
+        btn.onclick = async () => {
+          await fetch("/api/v4/circlestack/contact/respond", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: r.id, action: btn.dataset.act })
+          });
+          await loadRequests();
+          await csUpdateFindPeopleBadge();
+        };
+      });
+      requestsBox.appendChild(row);
+    }
+
+    for (const r of outgoing) {
+      const row = document.createElement("div");
+      row.className = "cs-search-row";
+      row.innerHTML = `<span>Outgoing: ${csElideFp(r.to_fp)}</span><span>Pending</span>`;
+      requestsBox.appendChild(row);
+    }
+  }
+
+  loadRequests();
+  let timer = null;
+
+  input.oninput = () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+
+    if (q.length < 2) {
+      results.innerHTML = `<div class="cs-search-hint">Type at least 2 characters</div>`;
+      return;
+    }
+
+    timer = setTimeout(async () => {
+      const res = await fetch(`/api/v4/circlestack/search_users?q=${encodeURIComponent(q)}`, {
+        credentials: "same-origin"
+      });
+      const data = await res.json();
+
+      results.innerHTML = "";
+
+      for (const u of data.users || []) {
+        const row = document.createElement("div");
+        row.className = "cs-search-row cs-find-row";
+
+        const name = u.name || u.fp_short || u.fingerprint.slice(0, 8);
+
+        row.innerHTML = `
+          <span>${name}</span>
+          <button type="button">Send request</button>
+        `;
+
+        row.querySelector("button").onclick = async () => {
+          await fetch("/api/v4/circlestack/people/add", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fp: u.fingerprint })
+          });
+
+          row.innerHTML = `<span>${name}</span><span>✓ Request sent</span>`;
+          await loadRequests();
+        };
+
+        results.appendChild(row);
+      }
+    }, 250);
+  };
+
+  modal.querySelector(".cs-modal-cancel").onclick = () => backdrop.remove();
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  input.focus();
+}
+
+
+async function csUpdateFindPeopleBadge() {
+  const btn = document.getElementById("csFindPeopleBtn");
+  if (!btn) return;
+
+  btn.querySelector(".cs-badge-dot")?.remove();
+
+  const res = await fetch("/api/v4/circlestack/contact/requests", {
+    credentials: "same-origin"
+  });
+  const data = await res.json();
+  const incoming = (data.incoming || []).filter(r => r.status === "pending");
+
+  if (incoming.length > 0) {
+    const dot = document.createElement("span");
+    dot.className = "cs-badge-dot";
+    dot.textContent = incoming.length > 9 ? "9+" : String(incoming.length);
+    btn.appendChild(dot);
+  }
+}
+
+csUpdateFindPeopleBadge();
+
+document.getElementById("csFindPeopleBtn")
+  ?.addEventListener("click", csOpenFindPeople);
