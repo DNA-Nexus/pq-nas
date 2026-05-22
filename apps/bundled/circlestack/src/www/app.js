@@ -344,6 +344,106 @@ function csRenderReplies(post) {
   return wrap;
 }
 
+
+function csRenderReplyReactionBar(reply) {
+  const wrap = document.createElement("div");
+  wrap.className = "cs-reactions cs-reply-reactions";
+
+  const summaries = new Map(
+    (Array.isArray(reply.reactions) ? reply.reactions : [])
+      .map(r => [r.reaction, r])
+  );
+
+  const top = document.createElement("div");
+  top.className = "cs-reaction-top";
+
+  const summaryRow = document.createElement("div");
+  summaryRow.className = "cs-reaction-summary";
+
+  for (const reaction of CS_REACTIONS) {
+    const summary = summaries.get(reaction);
+    if (!summary || Number(summary.count || 0) <= 0) continue;
+
+    const count = Number(summary.count || 0);
+    const isMine = reply.my_reaction === reaction || summary.reacted_by_me === true;
+
+    const chip = document.createElement("button");
+    chip.className = "cs-reaction-chip";
+    if (isMine) chip.classList.add("is-active");
+    chip.type = "button";
+    chip.textContent = `${reaction} ${count}`;
+
+    const names = csReactionTitle(summary);
+    chip.title = names ? `${reaction} ${names}` : reaction;
+
+    chip.addEventListener("click", async () => {
+      await csReactToReply(reply.id, isMine ? "" : reaction);
+    });
+
+    summaryRow.appendChild(chip);
+  }
+
+  const picker = document.createElement("div");
+  picker.className = "cs-reaction-picker cs-reply-reaction-picker";
+
+  const trigger = document.createElement("button");
+  trigger.className = "cs-reaction-trigger";
+  trigger.type = "button";
+  trigger.textContent = reply.my_reaction ? `${reply.my_reaction} React` : "🙂 React";
+  trigger.title = "React to this reply";
+
+  const menu = document.createElement("div");
+  menu.className = "cs-reaction-menu";
+
+  for (const reaction of CS_REACTIONS) {
+    const isMine = reply.my_reaction === reaction;
+
+    const btn = document.createElement("button");
+    btn.className = "cs-reaction-menu-button";
+    if (isMine) btn.classList.add("is-active");
+    btn.type = "button";
+    btn.textContent = reaction;
+    btn.title = isMine ? "Remove reaction" : `React ${reaction}`;
+
+    btn.addEventListener("click", async () => {
+      await csReactToReply(reply.id, isMine ? "" : reaction);
+    });
+
+    menu.appendChild(btn);
+  }
+
+  picker.appendChild(trigger);
+  picker.appendChild(menu);
+
+  if (summaryRow.children.length > 0) {
+    top.appendChild(summaryRow);
+  }
+
+  top.appendChild(picker);
+  wrap.appendChild(top);
+
+  const peopleLine = csReactionPeopleLine(reply);
+  if (peopleLine) {
+    wrap.appendChild(peopleLine);
+  }
+
+  return wrap;
+}
+
+async function csReactToReply(replyId, reaction) {
+  if (!replyId) return;
+
+  await fetch(`${CS_API}/replies/react`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reply_id: replyId, reaction })
+  });
+
+  await csLoadFeed();
+}
+
+
 function csRenderReply(reply) {
   const row = document.createElement("div");
   row.className = "cs-reply";
@@ -433,6 +533,7 @@ function csRenderReply(reply) {
   content.className = "cs-reply-content";
   csFillReplyContent(content, reply);
   body.appendChild(content);
+  body.appendChild(csRenderReplyReactionBar(reply));
 
   row.appendChild(avatar);
   row.appendChild(body);

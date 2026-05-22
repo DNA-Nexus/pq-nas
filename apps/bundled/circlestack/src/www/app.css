@@ -1255,3 +1255,14 @@ body {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.cs-reply-reactions {
+  margin-top: 8px;
+}
+
+.cs-reply:hover .cs-reply-reaction-picker,
+.cs-reply-reaction-picker:hover,
+.cs-reply-reaction-picker:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}

@@ -152,6 +152,22 @@ static void cs_db_init() {
         "CREATE INDEX IF NOT EXISTS idx_post_replies_post_id "
         "ON post_replies(post_id, created_epoch)",
         nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS reply_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "reply_id INTEGER NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "reaction TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "UNIQUE(reply_id, actor_fp)"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_reply_reactions_reply_id "
+        "ON reply_reactions(reply_id)",
+        nullptr, nullptr, nullptr);
 }
 
 bool cs_path_has_no_symlink_components_below_root(
@@ -481,6 +497,97 @@ bool cs_actor_can_see_post(
 }
 
 
+
+json cs_load_reply_reactions(
+    sqlite3* db,
+    int reply_id,
+    const std::string& actor_fp,
+    const pqnas::CircleStackRoutesDeps& deps,
+    std::string* out_my_reaction
+) {
+    if (out_my_reaction) *out_my_reaction = "";
+
+    json by_reaction = json::object();
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT actor_fp, reaction, created_epoch "
+            "FROM reply_reactions "
+            "WHERE reply_id = ? "
+            "ORDER BY created_epoch ASC",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return json::array();
+    }
+
+    sqlite3_bind_int(st, 1, reply_id);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* actor_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        const char* reaction_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+
+        const std::string reactor_fp = actor_raw ? actor_raw : "";
+        const std::string reaction = reaction_raw ? reaction_raw : "";
+
+        if (reactor_fp.empty() || !cs_is_supported_reaction(reaction)) {
+            continue;
+        }
+
+        if (reactor_fp == actor_fp && out_my_reaction) {
+            *out_my_reaction = reaction;
+        }
+
+        if (!by_reaction.contains(reaction)) {
+            by_reaction[reaction] = {
+                {"reaction", reaction},
+                {"count", 0},
+                {"reacted_by_me", false},
+                {"people", json::array()}
+            };
+        }
+
+        by_reaction[reaction]["count"] =
+            by_reaction[reaction].value("count", 0) + 1;
+
+        if (reactor_fp == actor_fp) {
+            by_reaction[reaction]["reacted_by_me"] = true;
+        }
+
+        std::string display_name = cs_short_fp(reactor_fp);
+        std::string avatar_url;
+
+        if (deps.users) {
+            auto u = deps.users->get(reactor_fp);
+            if (u.has_value()) {
+                if (!u->name.empty()) {
+                    display_name = u->name;
+                }
+                avatar_url = u->avatar_url;
+            }
+        }
+
+        by_reaction[reaction]["people"].push_back({
+            {"fp", reactor_fp},
+            {"fp_short", cs_short_fp(reactor_fp)},
+            {"display_name", display_name},
+            {"avatar_url", avatar_url}
+        });
+    }
+
+    sqlite3_finalize(st);
+
+    json out = json::array();
+
+    const char* order[] = {"👍", "❤️", "😂", "😮", "👏", "🔥"};
+    for (const char* r : order) {
+        if (by_reaction.contains(r)) {
+            out.push_back(by_reaction[r]);
+        }
+    }
+
+    return out;
+}
+
+
 json cs_load_post_replies(
     sqlite3* db,
     int post_id,
@@ -524,6 +631,10 @@ json cs_load_post_replies(
             }
         }
 
+        std::string my_reaction;
+        json reactions = cs_load_reply_reactions(
+            db, id, viewer_fp, deps, &my_reaction);
+
         json r = {
             {"id", id},
             {"post_id", post_id},
@@ -533,7 +644,9 @@ json cs_load_post_replies(
             {"actor_avatar_url", avatar_url},
             {"text", text_raw ? text_raw : ""},
             {"created_epoch", created},
-            {"is_mine", actor_fp == viewer_fp}
+            {"is_mine", actor_fp == viewer_fp},
+            {"reactions", reactions},
+            {"my_reaction", my_reaction}
         };
 
         if (!media_path.empty()) {
@@ -1012,7 +1125,9 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"actor_avatar_url", actor_avatar_url},
                 {"text", text},
                 {"created_epoch", (sqlite3_int64)std::time(nullptr)},
-                {"is_mine", true}
+                {"is_mine", true},
+                {"reactions", json::array()},
+                {"my_reaction", ""}
             };
 
             if (!media_path.empty()) {
@@ -1024,6 +1139,157 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"id", id},
                 {"post_id", post_id},
                 {"reply", reply}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/replies/react",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_json"}});
+            }
+
+            const int reply_id = body.value("reply_id", 0);
+            const std::string reaction = body.value("reaction", "");
+
+            if (reply_id <= 0) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_reply_id"}});
+            }
+
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(g_db,
+                    "SELECT post_id FROM post_replies WHERE id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, reply_id);
+
+            int post_id = 0;
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                post_id = sqlite3_column_int(st, 0);
+            }
+
+            sqlite3_finalize(st);
+
+            if (post_id <= 0) {
+                res.status = 404;
+                return set_json(res, {{"ok", false}, {"error", "not_found"}});
+            }
+
+            std::string visibility_err;
+            if (!cs_actor_can_see_post(g_db, post_id, actor_fp, &visibility_err)) {
+                res.status = visibility_err == "not_found" ? 404 : 403;
+                return set_json(res, {{"ok", false}, {"error", visibility_err}});
+            }
+
+            if (reaction.empty()) {
+                if (sqlite3_prepare_v2(g_db,
+                        "DELETE FROM reply_reactions "
+                        "WHERE reply_id = ? AND actor_fp = ?",
+                        -1, &st, nullptr) != SQLITE_OK) {
+                    res.status = 500;
+                    return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+                }
+
+                sqlite3_bind_int(st, 1, reply_id);
+                sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+                const int rc = sqlite3_step(st);
+                sqlite3_finalize(st);
+
+                if (rc != SQLITE_DONE) {
+                    res.status = 500;
+                    return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+                }
+
+                return set_json(res, {
+                    {"ok", true},
+                    {"reply_id", reply_id},
+                    {"post_id", post_id},
+                    {"reaction", ""}
+                });
+            }
+
+            if (!cs_is_supported_reaction(reaction)) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "unsupported_reaction"}});
+            }
+
+            sqlite3_exec(g_db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+
+            if (sqlite3_prepare_v2(g_db,
+                    "DELETE FROM reply_reactions "
+                    "WHERE reply_id = ? AND actor_fp = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                sqlite3_exec(g_db, "ROLLBACK", nullptr, nullptr, nullptr);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, reply_id);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                sqlite3_exec(g_db, "ROLLBACK", nullptr, nullptr, nullptr);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
+
+            if (sqlite3_prepare_v2(g_db,
+                    "INSERT INTO reply_reactions "
+                    "(reply_id, actor_fp, reaction, created_epoch) "
+                    "VALUES (?, ?, ?, ?)",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                sqlite3_exec(g_db, "ROLLBACK", nullptr, nullptr, nullptr);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, reply_id);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, reaction.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                sqlite3_exec(g_db, "ROLLBACK", nullptr, nullptr, nullptr);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_insert_failed"}});
+            }
+
+            sqlite3_finalize(st);
+
+            if (sqlite3_exec(g_db, "COMMIT", nullptr, nullptr, nullptr) != SQLITE_OK) {
+                sqlite3_exec(g_db, "ROLLBACK", nullptr, nullptr, nullptr);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_commit_failed"}});
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"reply_id", reply_id},
+                {"post_id", post_id},
+                {"reaction", reaction}
             });
         });
 
@@ -1158,7 +1424,9 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"actor_avatar_url", actor_avatar_url},
                 {"text", text},
                 {"created_epoch", created_epoch},
-                {"is_mine", true}
+                {"is_mine", true},
+                {"reactions", cs_load_reply_reactions(g_db, id, actor_fp, deps, nullptr)},
+                {"my_reaction", ""}
             };
 
             if (!media_path.empty()) {
@@ -1233,6 +1501,24 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 res.status = 403;
                 return set_json(res, {{"ok", false}, {"error", "forbidden"}});
             }
+
+            if (sqlite3_prepare_v2(g_db,
+                    "DELETE FROM reply_reactions WHERE reply_id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, id);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
 
             if (sqlite3_prepare_v2(g_db,
                     "DELETE FROM post_replies WHERE id = ? AND actor_fp = ?",
@@ -1439,6 +1725,16 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 set_json(res, {{"ok", false}, {"error", "forbidden"}});
                 return;
             }
+
+            sqlite3_prepare_v2(g_db,
+                "DELETE FROM reply_reactions "
+                "WHERE reply_id IN (SELECT id FROM post_replies WHERE post_id=?)",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
 
             sqlite3_prepare_v2(g_db,
                 "DELETE FROM post_replies WHERE post_id=?",
