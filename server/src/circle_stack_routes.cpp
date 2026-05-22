@@ -1,4 +1,5 @@
 #include "circle_stack_routes.h"
+#include "activity_log.h"
 #include "storage_resolver.h"
 
 #include <nlohmann/json.hpp>
@@ -287,6 +288,147 @@ std::string cs_display_name_for_fp(
 
     return name;
 }
+
+
+void cs_record_circle_activity_best_effort(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& owner_fp,
+    const std::string& actor_fp,
+    const std::string& event_type,
+    const std::string& target_kind,
+    const std::string& target_name,
+    const std::string& message,
+    const json& details
+) {
+    if (!deps.users || !deps.user_dir_for_fp) return;
+    if (owner_fp.empty() || actor_fp.empty() || event_type.empty()) return;
+
+    std::filesystem::path user_root;
+    try {
+        user_root = deps.user_dir_for_fp(*deps.users, owner_fp);
+    } catch (...) {
+        return;
+    }
+
+    if (user_root.empty()) return;
+
+    pqnas::activity::ActivityEvent ev;
+    ev.owner_user_id = owner_fp;
+
+    ev.actor.user_id = actor_fp;
+    ev.actor.display_name = cs_display_name_for_fp(deps, actor_fp);
+    ev.actor.fingerprint_short = cs_short_fp(actor_fp);
+    ev.actor.kind = "user";
+
+    ev.event_type = event_type;
+    ev.scope_type = "social";
+    ev.target_kind = target_kind;
+    ev.target_name = target_name;
+    ev.message = message;
+    ev.details = details.is_object() ? details : json::object();
+
+    std::string activity_err;
+    (void)pqnas::activity::record_user_activity(user_root, ev, &activity_err);
+}
+
+std::string cs_post_owner_fp(sqlite3* db, int post_id) {
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT owner_fp FROM posts WHERE id = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return "";
+    }
+
+    sqlite3_bind_int(st, 1, post_id);
+
+    std::string out;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char* fp = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        out = fp ? fp : "";
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+void cs_record_post_mentions_activity_best_effort(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const json& mentions,
+    const std::string& actor_fp,
+    long long post_id
+) {
+    if (!mentions.is_array()) return;
+
+    std::set<std::string> seen;
+    const std::string actor_name = cs_display_name_for_fp(deps, actor_fp);
+
+    for (const auto& item : mentions) {
+        if (!item.is_string()) continue;
+
+        const std::string mentioned_fp = item.get<std::string>();
+        if (mentioned_fp.empty() || mentioned_fp == actor_fp) continue;
+        if (seen.count(mentioned_fp)) continue;
+        seen.insert(mentioned_fp);
+
+        cs_record_circle_activity_best_effort(
+            deps,
+            mentioned_fp,
+            actor_fp,
+            "circlestack.mentioned.post",
+            "post",
+            "Circle Stack post",
+            actor_name + " tagged you in a post",
+            json{
+                {"post_id", post_id},
+                {"app", "circlestack"}
+            }
+        );
+    }
+}
+
+void cs_record_reply_mentions_activity_best_effort(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const json& mentions,
+    const std::string& actor_fp,
+    const std::string& post_owner_fp,
+    long long post_id,
+    long long reply_id
+) {
+    if (!mentions.is_array()) return;
+
+    std::set<std::string> seen;
+    const std::string actor_name = cs_display_name_for_fp(deps, actor_fp);
+
+    for (const auto& item : mentions) {
+        if (!item.is_string()) continue;
+
+        const std::string mentioned_fp = item.get<std::string>();
+        if (mentioned_fp.empty() || mentioned_fp == actor_fp) continue;
+
+        // Avoid double activity spam when the post owner already receives
+        // "replied to your post".
+        if (!post_owner_fp.empty() && mentioned_fp == post_owner_fp) continue;
+
+        if (seen.count(mentioned_fp)) continue;
+        seen.insert(mentioned_fp);
+
+        cs_record_circle_activity_best_effort(
+            deps,
+            mentioned_fp,
+            actor_fp,
+            "circlestack.mentioned.reply",
+            "reply",
+            "Circle Stack reply",
+            actor_name + " tagged you in a reply",
+            json{
+                {"post_id", post_id},
+                {"reply_id", reply_id},
+                {"app", "circlestack"}
+            }
+        );
+    }
+}
+
 
 bool cs_open_people_db(sqlite3** out_db, std::string* err) {
     if (!out_db) return false;
@@ -1299,6 +1441,32 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return;
             }
 
+            const std::string actor_name = cs_display_name_for_fp(deps, actor_fp);
+
+            cs_record_circle_activity_best_effort(
+                deps,
+                actor_fp,
+                actor_fp,
+                "circlestack.post.created",
+                "post",
+                "Circle Stack post",
+                actor_name + " created a Circle Stack post",
+                json{
+                    {"post_id", id},
+                    {"visibility", visibility},
+                    {"has_media", !media_path.empty()},
+                    {"mention_count", mentions.is_array() ? mentions.size() : 0},
+                    {"app", "circlestack"}
+                }
+            );
+
+            cs_record_post_mentions_activity_best_effort(
+                deps,
+                mentions,
+                actor_fp,
+                id
+            );
+
             set_json(res, {{"ok", true}, {"id", id}});
         });
 
@@ -1354,6 +1522,8 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     {"error", visibility_err}
                 });
             }
+
+            const std::string post_owner_fp = cs_post_owner_fp(g_db, post_id);
 
             sqlite3_stmt* st = nullptr;
             if (sqlite3_prepare_v2(g_db,
@@ -1427,6 +1597,52 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             if (!media_path.empty()) {
                 reply["media_url"] = "/api/v4/circlestack/reply/media?id=" + std::to_string(id);
             }
+
+            const std::string actor_name = cs_display_name_for_fp(deps, actor_fp);
+
+            cs_record_circle_activity_best_effort(
+                deps,
+                actor_fp,
+                actor_fp,
+                "circlestack.reply.created",
+                "reply",
+                "Circle Stack reply",
+                actor_name + " replied to a Circle Stack post",
+                json{
+                    {"post_id", post_id},
+                    {"reply_id", id},
+                    {"has_media", !media_path.empty()},
+                    {"mention_count", mentions.is_array() ? mentions.size() : 0},
+                    {"app", "circlestack"}
+                }
+            );
+
+            if (!post_owner_fp.empty() && post_owner_fp != actor_fp) {
+                cs_record_circle_activity_best_effort(
+                    deps,
+                    post_owner_fp,
+                    actor_fp,
+                    "circlestack.reply.created",
+                    "reply",
+                    "Circle Stack reply",
+                    actor_name + " replied to your post",
+                    json{
+                        {"post_id", post_id},
+                        {"reply_id", id},
+                        {"has_media", !media_path.empty()},
+                        {"app", "circlestack"}
+                    }
+                );
+            }
+
+            cs_record_reply_mentions_activity_best_effort(
+                deps,
+                mentions,
+                actor_fp,
+                post_owner_fp,
+                post_id,
+                id
+            );
 
             set_json(res, {
                 {"ok", true},

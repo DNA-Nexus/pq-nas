@@ -2935,6 +2935,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return `${x.toFixed(digits)} ${units[i]}`;
     }
 
+    function activitySocialIcon() {
+        return String.fromCodePoint(0x1F465); // people busts
+    }
+
     function activityIconFor(type) {
         if (type === "share.created") return "🔗";
         if (type === "share.disabled") return "🚫";
@@ -2949,6 +2953,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (type === "security.session_revoked") return "⏻";
         if (String(type || "").startsWith("security.")) return "◇";
         if (String(type || "").startsWith("dropzone.")) return "↓";
+        if (String(type || "").startsWith("circlestack.")) return activitySocialIcon();
         return "•";
     }
 
@@ -3140,7 +3145,14 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             const msg = document.createElement("div");
             msg.className = "activityMsg";
-            msg.textContent = `${activityIconFor(ev.event_type)} ${activityMessageFor(ev)}`;
+
+            const evType = String(ev.event_type || "").trim();
+            const evMessage = activityMessageFor(ev);
+            const icon = evType.startsWith("circlestack.")
+                ? activitySocialIcon()
+                : activityIconFor(evType);
+
+            msg.textContent = `${icon} ${evMessage}`;
             card.appendChild(msg);
 
             const metaBits = [];
