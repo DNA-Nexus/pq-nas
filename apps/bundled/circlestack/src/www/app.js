@@ -55,6 +55,8 @@ function csRenderPost(post) {
     const img = document.createElement("img");
     img.className = "cs-post-media";
     img.src = post.media_url;
+    img.loading = "lazy";
+    img.decoding = "async";
     img.alt = "";
     el.appendChild(img);
   }
@@ -224,4 +226,226 @@ document.addEventListener("click", (ev) => {
   if (circleEl) {
     circleEl.hidden = btn.dataset.value !== "circle";
   }
+});
+
+async function csOpenMediaPicker() {
+  let cur = "";
+
+  return new Promise(async (resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "cs-modal-backdrop";
+
+    const card = document.createElement("div");
+    card.className = "cs-media-modal";
+
+    card.innerHTML = `
+      <div class="cs-media-head">
+        <div>
+          <div class="cs-modal-title">Choose media</div>
+          <div class="cs-media-path">/</div>
+        </div>
+        <button class="cs-media-close" type="button">×</button>
+      </div>
+      <div class="cs-media-body"></div>
+      <div class="cs-modal-actions">
+        <button class="cs-modal-cancel" type="button">Cancel</button>
+        <button class="cs-media-choose" type="button">Choose</button>
+      </div>
+    `;
+
+    const body = card.querySelector(".cs-media-body");
+    const pathEl = card.querySelector(".cs-media-path");
+    const chooseBtn = card.querySelector(".cs-media-choose");
+    let selectedPath = null;
+
+    const close = (val) => {
+      backdrop.remove();
+      resolve(val);
+    };
+
+    async function load(path) {
+      cur = path || "";
+      pathEl.textContent = "/" + cur;
+
+      const url = cur
+        ? `/api/v4/files/list?path=${encodeURIComponent(cur)}`
+        : "/api/v4/files/list";
+
+      body.textContent = "Loading…";
+
+      const res = await fetch(url, { credentials: "same-origin" });
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      body.textContent = "";
+
+      if (cur) {
+        const up = document.createElement("button");
+        up.className = "cs-media-item";
+        up.type = "button";
+        up.textContent = "← ..";
+        up.addEventListener("click", () => {
+          const parts = cur.split("/").filter(Boolean);
+          parts.pop();
+          load(parts.join("/"));
+        });
+        body.appendChild(up);
+      }
+
+      for (const it of items) {
+        if ((it.name || "").startsWith(".pqnas")) continue;
+        const isMedia = it.type === "dir" || /\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i.test(it.name || "");
+        if (!isMedia) continue;
+        const full = cur ? `${cur}/${it.name}` : it.name;
+        const isDir = it.type === "dir";
+
+        const row = document.createElement("button");
+        row.className = "cs-media-item";
+        row.type = "button";
+        row.textContent = "";
+
+        if (!isDir && csIsImagePath(full)) {
+          const thumb = document.createElement("img");
+          thumb.className = "cs-media-thumb is-loading";
+          thumb.src = csFileUrl(full);
+          thumb.alt = "";
+          thumb.addEventListener("load", () => thumb.classList.remove("is-loading"));
+          row.appendChild(thumb);
+        } else {
+          const icon = document.createElement("span");
+          icon.className = "cs-media-icon";
+          icon.textContent = isDir ? "📁" : "📄";
+          row.appendChild(icon);
+        }
+
+        const label = document.createElement("span");
+        label.textContent = it.name;
+        row.appendChild(label);
+
+        row.addEventListener("click", () => {
+          if (isDir) {
+            selectedPath = null;
+            load(full);
+            return;
+          }
+
+          selectedPath = full;
+          body.querySelectorAll(".cs-media-item").forEach(el => {
+            el.classList.remove("is-selected");
+          });
+          row.classList.add("is-selected");
+        });
+
+        row.addEventListener("dblclick", () => {
+          if (isDir) return;
+          close(full);
+        });
+
+        body.appendChild(row);
+      }
+    }
+
+    card.querySelector(".cs-media-close").addEventListener("click", () => close(null));
+    card.querySelector(".cs-modal-cancel").addEventListener("click", () => close(null));
+    chooseBtn.addEventListener("click", () => {
+      if (selectedPath) close(selectedPath);
+    });
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop) close(null);
+    });
+
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+
+    await load("");
+  });
+}
+
+document.addEventListener("click", async (ev) => {
+  if (!ev.target.closest("#csPickMedia")) return;
+
+  const picked = await csOpenMediaPicker();
+  if (!picked) return;
+
+  const mediaEl = document.getElementById("csMediaPath");
+  if (mediaEl) mediaEl.value = picked;
+  csSetMediaPreview(picked);
+});
+
+function csIsImagePath(path) {
+  return /\.(jpg|jpeg|png|webp|gif)$/i.test(path || "");
+}
+
+function csFileUrl(path) {
+  return `/api/v4/files/get?path=${encodeURIComponent(path || "")}`;
+}
+
+function csSetMediaPreview(path) {
+  const box = document.getElementById("csMediaPreview");
+  if (!box) return;
+
+  box.textContent = "";
+  if (!path || !csIsImagePath(path)) {
+    box.hidden = true;
+    return;
+  }
+
+  const img = document.createElement("img");
+  img.className = "cs-compose-preview-img is-loading";
+  img.src = csFileUrl(path);
+  img.alt = "";
+
+  img.addEventListener("load", () => {
+    img.classList.remove("is-loading");
+  });
+
+  const clear = document.createElement("button");
+  clear.className = "cs-media-clear";
+  clear.type = "button";
+  clear.textContent = "Remove image";
+
+  box.appendChild(img);
+  box.appendChild(clear);
+  box.hidden = false;
+}
+
+document.addEventListener("input", (ev) => {
+  if (ev.target && ev.target.id === "csMediaPath") {
+    csSetMediaPreview(ev.target.value.trim());
+  }
+});
+
+function csOpenImageLightbox(src) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-lightbox";
+  backdrop.innerHTML = `
+    <button class="cs-lightbox-close" type="button">×</button>
+    <img src="${src}" alt="">
+  `;
+
+  backdrop.addEventListener("click", () => {
+    backdrop.remove();
+  });
+
+  document.body.appendChild(backdrop);
+}
+
+document.addEventListener("click", (ev) => {
+  const img = ev.target.closest(".cs-compose-preview-img, .cs-post-media");
+  if (!img) return;
+  csOpenImageLightbox(img.src);
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  document.querySelector(".cs-lightbox")?.remove();
+});
+
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest(".cs-media-clear")) return;
+
+  const mediaEl = document.getElementById("csMediaPath");
+  if (mediaEl) mediaEl.value = "";
+
+  csSetMediaPreview("");
 });

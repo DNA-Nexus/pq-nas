@@ -14,7 +14,11 @@
 
     <section class="cs-compose">
       <textarea id="csText" data-i18n-placeholder="compose.placeholder"></textarea>
-      <input id="csMediaPath" data-i18n-placeholder="compose.mediaPath">
+      <div class="cs-media-row">
+        <input id="csMediaPath" data-i18n-placeholder="compose.mediaPath">
+        <button id="csPickMedia" type="button">Browse</button>
+      </div>
+      <div id="csMediaPreview" class="cs-media-preview" hidden></div>
 
       <div id="csVisibility" class="cs-visibility" data-value="public">
         <button type="button" class="cs-vis-option is-active" data-value="public">🌍 Public</button>
