@@ -1038,3 +1038,170 @@ body {
 .cs-reaction-menu-button.is-active {
   background: rgba(37,99,235,0.30);
 }
+
+.cs-replies {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.cs-reply-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cs-reply {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  padding: 9px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.cs-reply-avatar {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(147,197,253,0.35);
+  border-radius: 999px;
+  overflow: hidden;
+  padding: 0;
+  background: rgba(37,99,235,0.28);
+  color: #eff6ff;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cs-reply-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cs-reply-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.cs-reply-author {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #bfdbfe;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cs-reply-author:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.cs-reply-time {
+  color: rgba(255,255,255,0.38);
+  font-size: 11px;
+}
+
+.cs-reply-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: rgba(255,255,255,0.86);
+  line-height: 1.4;
+}
+
+.cs-reply-media {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 280px;
+  object-fit: cover;
+  margin-top: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  cursor: zoom-in;
+}
+
+.cs-reply-toggle {
+  justify-self: start;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.055);
+  color: rgba(255,255,255,0.74);
+  padding: 6px 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cs-reply-toggle:hover {
+  background: rgba(147,197,253,0.13);
+  border-color: rgba(147,197,253,0.36);
+  color: #dbeafe;
+}
+
+.cs-reply-composer {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.cs-reply-textarea {
+  width: 100%;
+  min-height: 74px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 10px;
+  background: #101014;
+  color: #f4f4f5;
+  padding: 10px;
+}
+
+.cs-reply-media-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cs-reply-media-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 10px;
+  background: #101014;
+  color: #f4f4f5;
+  padding: 9px 10px;
+}
+
+.cs-reply-browse,
+.cs-reply-submit {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 13px;
+  color: #f4f4f5;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cs-reply-browse {
+  background: rgba(255,255,255,0.10);
+}
+
+.cs-reply-submit {
+  background: #2563eb;
+}
+
+.cs-reply-submit:hover {
+  background: #1d4ed8;
+}
+
+.cs-reply-composer-bottom {
+  display: flex;
+  justify-content: flex-end;
+}

@@ -299,6 +299,187 @@ async function csReactToPost(postId, reaction) {
 }
 
 
+
+function csRenderReplies(post) {
+  const wrap = document.createElement("section");
+  wrap.className = "cs-replies";
+
+  const replies = Array.isArray(post.replies) ? post.replies : [];
+
+  const list = document.createElement("div");
+  list.className = "cs-reply-list";
+
+  for (const reply of replies) {
+    list.appendChild(csRenderReply(reply));
+  }
+
+  const toggle = document.createElement("button");
+  toggle.className = "cs-reply-toggle";
+  toggle.type = "button";
+  toggle.textContent = replies.length ? `Reply (${replies.length})` : "Reply";
+
+  const composer = csRenderReplyComposer(post.id);
+  composer.hidden = true;
+
+  toggle.addEventListener("click", () => {
+    composer.hidden = !composer.hidden;
+    if (!composer.hidden) {
+      composer.querySelector("textarea")?.focus();
+    }
+  });
+
+  wrap.appendChild(list);
+  wrap.appendChild(toggle);
+  wrap.appendChild(composer);
+
+  return wrap;
+}
+
+function csRenderReply(reply) {
+  const row = document.createElement("div");
+  row.className = "cs-reply";
+
+  const avatar = document.createElement("button");
+  avatar.className = "cs-reply-avatar";
+  avatar.type = "button";
+  avatar.title = "Open person card";
+
+  if (reply.actor_avatar_url) {
+    const img = document.createElement("img");
+    img.src = reply.actor_avatar_url;
+    img.alt = "";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = (reply.actor_display_name || "?").slice(0, 1).toUpperCase();
+  }
+
+  avatar.addEventListener("click", () => {
+    csOpenPersonCard(reply.actor_fp || "", {
+      display_name: reply.actor_display_name || "",
+      fp_short: reply.actor_fp_short || "",
+      avatar_url: reply.actor_avatar_url || ""
+    });
+  });
+
+  const body = document.createElement("div");
+  body.className = "cs-reply-body";
+
+  const head = document.createElement("div");
+  head.className = "cs-reply-head";
+
+  const name = document.createElement("button");
+  name.className = "cs-reply-author";
+  name.type = "button";
+  name.textContent = reply.actor_display_name || reply.actor_fp_short || "unknown";
+  name.addEventListener("click", () => {
+    csOpenPersonCard(reply.actor_fp || "", {
+      display_name: reply.actor_display_name || "",
+      fp_short: reply.actor_fp_short || "",
+      avatar_url: reply.actor_avatar_url || ""
+    });
+  });
+
+  const time = document.createElement("span");
+  time.className = "cs-reply-time";
+  time.textContent = reply.created_epoch
+    ? new Date(reply.created_epoch * 1000).toLocaleString()
+    : "";
+
+  head.appendChild(name);
+  head.appendChild(time);
+  body.appendChild(head);
+
+  if (reply.text) {
+    const text = document.createElement("div");
+    text.className = "cs-reply-text";
+    text.textContent = reply.text;
+    body.appendChild(text);
+  }
+
+  if (reply.media_url) {
+    const img = document.createElement("img");
+    img.className = "cs-reply-media";
+    img.src = reply.media_url;
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.alt = "";
+    body.appendChild(img);
+  }
+
+  row.appendChild(avatar);
+  row.appendChild(body);
+  return row;
+}
+
+function csRenderReplyComposer(postId) {
+  const box = document.createElement("div");
+  box.className = "cs-reply-composer";
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "cs-reply-textarea";
+  textarea.placeholder = "Write a reply...";
+
+  const mediaRow = document.createElement("div");
+  mediaRow.className = "cs-reply-media-row";
+
+  const mediaInput = document.createElement("input");
+  mediaInput.className = "cs-reply-media-input";
+  mediaInput.placeholder = "Optional image path";
+
+  const browse = document.createElement("button");
+  browse.className = "cs-reply-browse";
+  browse.type = "button";
+  browse.textContent = "Browse";
+
+  const submit = document.createElement("button");
+  submit.className = "cs-reply-submit";
+  submit.type = "button";
+  submit.textContent = "Send";
+
+  browse.addEventListener("click", async () => {
+    const picked = await csOpenMediaPicker();
+    if (picked) mediaInput.value = picked;
+  });
+
+  submit.addEventListener("click", async () => {
+    const text = textarea.value.trim();
+    const media_path = mediaInput.value.trim();
+    if (!text && !media_path) return;
+
+    submit.disabled = true;
+    try {
+      await csCreateReply(postId, text, media_path);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  mediaRow.appendChild(mediaInput);
+  mediaRow.appendChild(browse);
+
+  const bottom = document.createElement("div");
+  bottom.className = "cs-reply-composer-bottom";
+  bottom.appendChild(submit);
+
+  box.appendChild(textarea);
+  box.appendChild(mediaRow);
+  box.appendChild(bottom);
+
+  return box;
+}
+
+async function csCreateReply(postId, text, media_path) {
+  await fetch(`${CS_API}/posts/reply`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ post_id: postId, text, media_path })
+  });
+
+  await csLoadFeed();
+}
+
+
 function csRenderPost(post) {
   const el = document.createElement("article");
   el.className = "cs-post";
@@ -347,6 +528,7 @@ function csRenderPost(post) {
   }
 
   el.appendChild(csRenderReactionBar(post));
+  el.appendChild(csRenderReplies(post));
 
   const meta = document.createElement("div");
   meta.className = "cs-post-meta";
@@ -718,7 +900,7 @@ function csOpenImageLightbox(src) {
 }
 
 document.addEventListener("click", (ev) => {
-  const img = ev.target.closest(".cs-compose-preview-img, .cs-post-media");
+  const img = ev.target.closest(".cs-compose-preview-img, .cs-post-media, .cs-reply-media");
   if (!img) return;
   csOpenImageLightbox(img.src);
 });

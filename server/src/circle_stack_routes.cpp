@@ -136,6 +136,22 @@ static void cs_db_init() {
         "CREATE INDEX IF NOT EXISTS idx_post_reactions_post_id "
         "ON post_reactions(post_id)",
         nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS post_replies ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "post_id INTEGER NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "text TEXT NOT NULL DEFAULT '',"
+        "media_path TEXT NOT NULL DEFAULT '',"
+        "created_epoch INTEGER NOT NULL"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_post_replies_post_id "
+        "ON post_replies(post_id, created_epoch)",
+        nullptr, nullptr, nullptr);
 }
 
 bool cs_path_has_no_symlink_components_below_root(
@@ -464,6 +480,72 @@ bool cs_actor_can_see_post(
     return false;
 }
 
+
+json cs_load_post_replies(
+    sqlite3* db,
+    int post_id,
+    const pqnas::CircleStackRoutesDeps& deps
+) {
+    json replies = json::array();
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT id, actor_fp, text, media_path, created_epoch "
+            "FROM post_replies "
+            "WHERE post_id = ? "
+            "ORDER BY created_epoch ASC, id ASC",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return replies;
+    }
+
+    sqlite3_bind_int(st, 1, post_id);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const int id = sqlite3_column_int(st, 0);
+        const char* actor_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+        const char* text_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+        const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+        const sqlite3_int64 created = sqlite3_column_int64(st, 4);
+
+        const std::string actor_fp = actor_raw ? actor_raw : "";
+        const std::string media_path = media_raw ? media_raw : "";
+
+        std::string display_name = cs_short_fp(actor_fp);
+        std::string avatar_url;
+
+        if (deps.users) {
+            auto u = deps.users->get(actor_fp);
+            if (u.has_value()) {
+                if (!u->name.empty()) {
+                    display_name = u->name;
+                }
+                avatar_url = u->avatar_url;
+            }
+        }
+
+        json r = {
+            {"id", id},
+            {"post_id", post_id},
+            {"actor_fp", actor_fp},
+            {"actor_fp_short", cs_short_fp(actor_fp)},
+            {"actor_display_name", display_name},
+            {"actor_avatar_url", avatar_url},
+            {"text", text_raw ? text_raw : ""},
+            {"created_epoch", created}
+        };
+
+        if (!media_path.empty()) {
+            r["media_url"] = "/api/v4/circlestack/reply/media?id=" + std::to_string(id);
+        }
+
+        replies.push_back(r);
+    }
+
+    sqlite3_finalize(st);
+    return replies;
+}
+
+
 json cs_load_post_reactions(
     sqlite3* db,
     int post_id,
@@ -647,6 +729,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 p["reactions"] = cs_load_post_reactions(
                     g_db, id, actor_fp, deps, &my_reaction);
                 p["my_reaction"] = my_reaction;
+                p["replies"] = cs_load_post_replies(g_db, id, deps);
 
                 if (media && media[0]) {
                     p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
@@ -827,6 +910,91 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
 
             set_json(res, {{"ok", true}, {"id", id}});
         });
+
+    server.Post("/api/v4/circlestack/posts/reply",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_json"}});
+            }
+
+            const int post_id = body.value("post_id", 0);
+            const std::string text = body.value("text", "");
+            const std::string media_path = body.value("media_path", "");
+
+            if (post_id <= 0) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_post_id"}});
+            }
+
+            if (text.empty() && media_path.empty()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "empty_reply"}});
+            }
+
+            if (!media_path.empty()) {
+                std::string rel_norm;
+                std::string norm_err;
+
+                if (!normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+                    res.status = 400;
+                    return set_json(res, {{"ok", false}, {"error", "INVALID_MEDIA_PATH"}});
+                }
+            }
+
+            std::string visibility_err;
+            if (!cs_actor_can_see_post(g_db, post_id, actor_fp, &visibility_err)) {
+                res.status = visibility_err == "not_found" ? 404 : 403;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", visibility_err}
+                });
+            }
+
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(g_db,
+                    "INSERT INTO post_replies "
+                    "(post_id, actor_fp, text, media_path, created_epoch) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, post_id);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, text.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 4, media_path.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(st, 5, (sqlite3_int64)std::time(nullptr));
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_insert_failed"}});
+            }
+
+            const sqlite3_int64 id = sqlite3_last_insert_rowid(g_db);
+            sqlite3_finalize(st);
+
+            set_json(res, {
+                {"ok", true},
+                {"id", id},
+                {"post_id", post_id}
+            });
+        });
+
 
     server.Post("/api/v4/circlestack/posts/react",
         [&](const httplib::Request& req, httplib::Response& res) {
@@ -1009,6 +1177,15 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             }
 
             sqlite3_prepare_v2(g_db,
+                "DELETE FROM post_replies WHERE post_id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+
+            sqlite3_prepare_v2(g_db,
                 "DELETE FROM post_reactions WHERE post_id=?",
                 -1, &stmt, nullptr);
 
@@ -1034,6 +1211,106 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
 
             set_json(res, {{"ok", true}, {"deleted_id", id}});
         });
+
+    server.Get("/api/v4/circlestack/reply/media",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (!req.has_param("id")) {
+                res.status = 400;
+                return;
+            }
+
+            const int id = std::atoi(req.get_param_value("id").c_str());
+
+            cs_db_init();
+
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT post_id, media_path, actor_fp FROM post_replies WHERE id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+
+            int post_id = 0;
+            std::string media_path;
+            std::string reply_owner_fp;
+
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                post_id = sqlite3_column_int(stmt, 0);
+
+                const char* m = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                const char* o = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+
+                if (m) media_path = m;
+                if (o) reply_owner_fp = o;
+            }
+
+            sqlite3_finalize(stmt);
+
+            if (post_id <= 0 || media_path.empty() || reply_owner_fp.empty()) {
+                res.status = 404;
+                return;
+            }
+
+            std::string visibility_err;
+            if (!cs_actor_can_see_post(g_db, post_id, actor_fp, &visibility_err)) {
+                res.status = visibility_err == "not_found" ? 404 : 403;
+                return;
+            }
+
+            std::string rel_norm;
+            std::string norm_err;
+
+            if (!normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+                res.status = 400;
+                set_json(res, {{"ok", false}, {"error", "INVALID_MEDIA_PATH"}});
+                return;
+            }
+
+            if (!deps.users || !deps.user_dir_for_fp) {
+                res.status = 500;
+                return;
+            }
+
+            const std::filesystem::path owner_root =
+                deps.user_dir_for_fp(*deps.users, reply_owner_fp);
+
+            const std::filesystem::path requested = owner_root / rel_norm;
+
+            if (!std::filesystem::exists(requested)) {
+                res.status = 404;
+                return;
+            }
+
+            std::string symlink_err;
+            if (!cs_path_has_no_symlink_components_below_root(
+                    owner_root, requested, &symlink_err)) {
+                res.status = 403;
+                set_json(res, {{"ok", false}, {"error", "SYMLINK_REJECTED"}});
+                return;
+            }
+
+            std::ifstream f(requested, std::ios::binary);
+            if (!f) {
+                res.status = 404;
+                return;
+            }
+
+            std::stringstream ss;
+            ss << f.rdbuf();
+
+            const std::string mime = cs_mime_for_path(requested);
+            res.set_content(ss.str(), mime.c_str());
+        });
+
 
     server.Get("/api/v4/circlestack/media",
         [&](const httplib::Request& req, httplib::Response& res) {
