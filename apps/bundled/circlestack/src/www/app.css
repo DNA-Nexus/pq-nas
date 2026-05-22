@@ -484,3 +484,148 @@ body {
   background: rgba(248,113,113,0.18);
   color: #fecaca;
 }
+
+.cs-intro-toolbar {
+  margin: 0 0 18px;
+}
+
+#csIntroduceBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#csIntroduceBtn:hover {
+  background: #1d4ed8;
+}
+
+.cs-intro-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.cs-intro-modal select,
+.cs-intro-modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  border-radius: 10px;
+  padding: 10px;
+  background: #101014;
+  color: #f4f4f5;
+  border: 1px solid rgba(255,255,255,0.16);
+}
+
+.cs-intro-modal textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.cs-intro-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cs-modal.cs-intro-modal {
+  width: min(720px, calc(100vw - 32px)) !important;
+}
+
+.cs-intro-modal textarea {
+  width: 100% !important;
+  min-height: 110px;
+}
+
+.cs-intro-line {
+  font-size: 16px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cs-intro-from {
+  font-weight: 700;
+}
+
+.cs-intro-verb {
+  color: rgba(255,255,255,0.55);
+}
+
+.cs-intro-to {
+  font-weight: 600;
+  color: #c7d2fe;
+}
+
+.cs-intro-msg {
+  margin-top: 10px;
+  font-size: 14px;
+  font-style: italic;
+  color: rgba(255,255,255,0.68);
+}
+
+.cs-intro-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.cs-intro-actions button {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.cs-intro-actions button:first-child {
+  background: #22c55e;
+  color: #052e16;
+}
+
+.cs-intro-actions button:last-child {
+  background: rgba(255,255,255,0.09);
+  color: #e4e4e7;
+}
+
+#csMyCircleBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.cs-circle-row {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.cs-empty {
+  color: rgba(255,255,255,0.55);
+  padding: 12px 0;
+}
+
+.cs-circle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cs-circle-remove {
+  background: rgba(255,80,80,0.15);
+  color: #ff6b6b;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+}

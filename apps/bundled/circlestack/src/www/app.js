@@ -121,7 +121,7 @@ function csConfirmDelete() {
     backdrop.className = "cs-modal-backdrop";
 
     const modal = document.createElement("div");
-    modal.className = "cs-modal";
+    modal.className = "cs-modal cs-intro-modal";
 
     const title = document.createElement("div");
     title.className = "cs-modal-title";
@@ -201,7 +201,7 @@ async function csLoadUsers() {
     cb.value = u.fingerprint;
 
     const name = document.createElement("span");
-    name.textContent = u.name || u.fp_short;
+    name.textContent = u.name || (u.fingerprint ? u.fingerprint.slice(0, 16) : u.fp_short);
 
     row.appendChild(cb);
     row.appendChild(name);
@@ -449,3 +449,274 @@ document.addEventListener("click", (ev) => {
 
   csSetMediaPreview("");
 });
+
+async function csOpenIntroduceModal() {
+  const usersRes = await fetch("/api/v4/circlestack/users", {
+    credentials: "same-origin"
+  });
+  const usersData = await usersRes.json();
+  const users = (usersData.users || []).filter(u => !u.is_me);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-intro-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">Introduce people</div>
+    <div class="cs-modal-text">Pick two people to introduce.</div>
+
+    <div class="cs-intro-grid">
+      <select id="csIntroA"></select>
+      <select id="csIntroB"></select>
+    </div>
+
+    <textarea id="csIntroMsg" placeholder="Optional message"></textarea>
+
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel">Cancel</button>
+      <button class="cs-modal-delete">Send</button>
+    </div>
+  `;
+
+  const selA = modal.querySelector("#csIntroA");
+  const selB = modal.querySelector("#csIntroB");
+
+  for (const u of users) {
+    const optA = document.createElement("option");
+    optA.value = u.fingerprint;
+    optA.textContent = (u.name && u.name !== u.fp_short) ? u.name : csElideFp(u.fingerprint);
+    selA.appendChild(optA);
+
+    const optB = optA.cloneNode(true);
+    selB.appendChild(optB);
+  }
+
+  const close = () => backdrop.remove();
+
+  modal.querySelector(".cs-modal-cancel").onclick = close;
+
+  modal.querySelector(".cs-modal-delete").onclick = async () => {
+    const a = selA.value;
+    const b = selB.value;
+    const msg = modal.querySelector("#csIntroMsg").value;
+
+    if (!a || !b || a === b) return;
+
+    await fetch("/api/v4/circlestack/introductions/create", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person_a_fp: a,
+        person_b_fp: b,
+        message: msg
+      })
+    });
+
+    close();
+    csLoadIntroductions();
+  };
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+}
+
+document.getElementById("csIntroduceBtn")
+  ?.addEventListener("click", csOpenIntroduceModal);
+
+
+async function csLoadIntroductions() {
+  const res = await fetch("/api/v4/circlestack/introductions", {
+    credentials: "same-origin"
+  });
+  const data = await res.json();
+  const items = data.items || [];
+
+  const usersRes = await fetch("/api/v4/circlestack/users", {
+    credentials: "same-origin"
+  });
+  const usersData = await usersRes.json();
+  const users = usersData.users || [];
+  const me = users.find(u => u.is_me);
+  const meFp = me ? me.fingerprint : "";
+
+  const usersByFp = new Map(
+    users.map(u => [u.fingerprint, u])
+  );
+
+  let box = document.getElementById("csIntroductions");
+  if (!box) {
+    box = document.createElement("section");
+    box.id = "csIntroductions";
+    box.className = "cs-feed";
+    document.querySelector(".cs-shell").appendChild(box);
+  }
+
+  box.innerHTML = "";
+
+  for (const it of items) {
+    const el = document.createElement("div");
+    el.className = "cs-post";
+
+    const introducer = csUserLabel(it.introducer_fp, usersByFp);
+    const a = csUserLabel(it.person_a_fp, usersByFp);
+    const b = csUserLabel(it.person_b_fp, usersByFp);
+
+    el.innerHTML = `
+      <div class="cs-intro-line">
+        <span class="cs-intro-from">${introducer}</span>
+        <span class="cs-intro-verb">introduced</span>
+        <span class="cs-intro-to">${a} ↔ ${b}</span>
+      </div>
+      ${it.message ? `<div class="cs-intro-msg">"${it.message}"</div>` : ""}
+    `;
+
+    const canRespond =
+      it.status === "pending" &&
+      meFp &&
+      (meFp === it.person_a_fp || meFp === it.person_b_fp) &&
+      meFp !== it.introducer_fp;
+
+    if (canRespond) {
+      const actions = document.createElement("div");
+      actions.className = "cs-intro-actions";
+
+      const ok = document.createElement("button");
+      ok.textContent = "Accept";
+
+      const no = document.createElement("button");
+      no.textContent = "Dismiss";
+
+      ok.onclick = () => csRespondIntro(it.id, "accept");
+      no.onclick = () => csRespondIntro(it.id, "dismiss");
+
+      actions.appendChild(ok);
+      actions.appendChild(no);
+      el.appendChild(actions);
+    }
+
+    box.appendChild(el);
+  }
+}
+
+async function csRespondIntro(id, action) {
+  await fetch("/api/v4/circlestack/introductions/respond", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, action })
+  });
+
+  csLoadIntroductions();
+}
+
+document.addEventListener("DOMContentLoaded", csLoadIntroductions);
+
+
+function csUserLabel(fp, usersByFp) {
+  const u = usersByFp.get(fp);
+  if (u && u.name) return u.name;
+  if (u && u.fp_short) return u.fp_short;
+  return fp ? fp.slice(0, 16) : "unknown";
+}
+
+function csElideFp(fp) {
+  if (!fp) return "unknown";
+  if (fp.length <= 16) return fp;
+  return fp.slice(0, 8) + "…" + fp.slice(-6);
+}
+
+async function csOpenMyCircle() {
+  const usersRes = await fetch("/api/v4/circlestack/users", { credentials: "same-origin" });
+  const usersData = await usersRes.json();
+  const usersByFp = new Map((usersData.users || []).map(u => [u.fingerprint, u]));
+
+  const res = await fetch("/api/v4/circlestack/circle", { credentials: "same-origin" });
+  const data = await res.json();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-intro-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">My Circle</div>
+    <div class="cs-modal-body" id="csMyCircleBody"></div>
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel">Close</button>
+    </div>
+  `;
+
+  const body = modal.querySelector("#csMyCircleBody");
+  const items = data.items || [];
+
+  if (!items.length) {
+    body.innerHTML = `<div class="cs-empty">Your circle is empty.</div>`;
+  } else {
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "cs-circle-row";
+      
+const name = csUserLabel(it.fp, usersByFp);
+
+row.innerHTML = `
+  <span>${name}</span>
+  <button class="cs-circle-remove">Forget</button>
+`;
+
+row.querySelector("button").onclick = () => {
+  csConfirmRemove(it.fp, name);
+};
+
+      body.appendChild(row);
+    }
+  }
+
+  modal.querySelector(".cs-modal-cancel").onclick = () => backdrop.remove();
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+}
+
+document.getElementById("csMyCircleBtn")
+  ?.addEventListener("click", csOpenMyCircle);
+
+
+function csConfirmRemove(fp, name) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">Remove from Circle?</div>
+    <div class="cs-modal-text">
+      This will remove <b>${name}</b> from your circle.
+    </div>
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel">Cancel</button>
+      <button class="cs-modal-delete">Remove</button>
+    </div>
+  `;
+
+  modal.querySelector(".cs-modal-cancel").onclick = () => backdrop.remove();
+
+  modal.querySelector(".cs-modal-delete").onclick = async () => {
+    await fetch("/api/v4/circlestack/circle/remove", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fp })
+    });
+
+    backdrop.remove();
+    csOpenMyCircle(); // refresh
+  };
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+}

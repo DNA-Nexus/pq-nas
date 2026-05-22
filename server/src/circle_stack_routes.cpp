@@ -40,6 +40,36 @@ static void cs_db_init() {
     sqlite3_exec(g_db,
         "ALTER TABLE posts ADD COLUMN owner_fp TEXT DEFAULT ''",
         nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "ALTER TABLE posts ADD COLUMN visibility TEXT DEFAULT 'public'",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "ALTER TABLE posts ADD COLUMN circle_allow TEXT DEFAULT '[]'",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS circle_edges ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "created_epoch INTEGER,"
+        "user_a_fp TEXT,"
+        "user_b_fp TEXT,"
+        "source_intro_id INTEGER"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS introductions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "created_epoch INTEGER,"
+        "introducer_fp TEXT,"
+        "person_a_fp TEXT,"
+        "person_b_fp TEXT,"
+        "message TEXT,"
+        "status TEXT DEFAULT 'pending'"
+        ")",
+        nullptr, nullptr, nullptr);
 }
 
 bool cs_path_has_no_symlink_components_below_root(
@@ -442,6 +472,231 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             const std::string mime = cs_mime_for_path(requested);
             res.set_content(ss.str(), mime.c_str());
         });
-}
+server.Post("/api/v4/circlestack/introductions/create",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
 
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                return set_json(res, {{"ok", false}, {"error", "invalid json"}});
+            }
+
+            const std::string a = body.value("person_a_fp", "");
+            const std::string b = body.value("person_b_fp", "");
+            const std::string msg = body.value("message", "");
+
+            if (a.empty() || b.empty() || a == b) {
+                return set_json(res, {{"ok", false}, {"error", "invalid people"}});
+            }
+
+            const std::time_t now = std::time(nullptr);
+
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "INSERT INTO introductions (created_epoch, introducer_fp, person_a_fp, person_b_fp, message) "
+                "VALUES (?, ?, ?, ?, ?)",
+                -1, &st, nullptr);
+
+            sqlite3_bind_int64(st, 1, (sqlite3_int64)now);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, a.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 4, b.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 5, msg.c_str(), -1, SQLITE_TRANSIENT);
+
+            sqlite3_step(st);
+            sqlite3_finalize(st);
+
+            set_json(res, {{"ok", true}});
+        });
+
+
+    server.Get("/api/v4/circlestack/introductions",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json out = json::array();
+
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT id, created_epoch, introducer_fp, person_a_fp, person_b_fp, message, status "
+                "FROM introductions "
+                "WHERE introducer_fp = ? OR person_a_fp = ? OR person_b_fp = ? "
+                "ORDER BY created_epoch DESC",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                json row = {
+                    {"id", sqlite3_column_int64(st, 0)},
+                    {"created_epoch", sqlite3_column_int64(st, 1)},
+                    {"introducer_fp", (const char*)sqlite3_column_text(st, 2)},
+                    {"person_a_fp", (const char*)sqlite3_column_text(st, 3)},
+                    {"person_b_fp", (const char*)sqlite3_column_text(st, 4)},
+                    {"message", (const char*)sqlite3_column_text(st, 5)},
+                    {"status", (const char*)sqlite3_column_text(st, 6)}
+                };
+                out.push_back(row);
+            }
+
+            sqlite3_finalize(st);
+
+            set_json(res, {{"ok", true}, {"items", out}});
+        });
+
+
+    server.Post("/api/v4/circlestack/introductions/respond",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                return set_json(res, {{"ok", false}, {"error", "invalid json"}});
+            }
+
+            const int id = body.value("id", 0);
+            const std::string action = body.value("action", "");
+
+            if (id <= 0 || (action != "accept" && action != "dismiss")) {
+                return set_json(res, {{"ok", false}, {"error", "invalid input"}});
+            }
+
+            // tarkista että käyttäjä kuuluu tähän introon
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT person_a_fp, person_b_fp FROM introductions WHERE id = ?",
+                -1, &st, nullptr);
+
+            sqlite3_bind_int(st, 1, id);
+
+            std::string a, b;
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                a = (const char*)sqlite3_column_text(st, 0);
+                b = (const char*)sqlite3_column_text(st, 1);
+            }
+            sqlite3_finalize(st);
+
+            if (actor_fp != a && actor_fp != b) {
+                return set_json(res, {{"ok", false}, {"error", "not allowed"}});
+            }
+
+            if (action == "accept") {
+                sqlite3_stmt* st2 = nullptr;
+                sqlite3_prepare_v2(g_db,
+                    "INSERT INTO circle_edges (created_epoch, user_a_fp, user_b_fp, source_intro_id) VALUES (?, ?, ?, ?)",
+                    -1, &st2, nullptr);
+                sqlite3_bind_int64(st2, 1, (sqlite3_int64)std::time(nullptr));
+                sqlite3_bind_text(st2, 2, a.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(st2, 3, b.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(st2, 4, id);
+                sqlite3_step(st2);
+                sqlite3_finalize(st2);
+            }
+
+            sqlite3_prepare_v2(g_db,
+                "UPDATE introductions SET status = ? WHERE id = ?",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, action.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(st, 2, id);
+
+            sqlite3_step(st);
+            sqlite3_finalize(st);
+
+            set_json(res, {{"ok", true}});
+        });
+
+    server.Get("/api/v4/circlestack/circle",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+            json out = json::array();
+
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT user_a_fp, user_b_fp FROM circle_edges "
+                "WHERE user_a_fp = ? OR user_b_fp = ?",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                std::string a = (const char*)sqlite3_column_text(st, 0);
+                std::string b = (const char*)sqlite3_column_text(st, 1);
+                out.push_back({{"fp", a == actor_fp ? b : a}});
+            }
+
+            sqlite3_finalize(st);
+            set_json(res, {{"ok", true}, {"items", out}});
+        });
+
+    server.Post("/api/v4/circlestack/circle/remove",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                return set_json(res, {{"ok", false}, {"error", "invalid json"}});
+            }
+
+            const std::string other = body.value("fp", "");
+            if (other.empty()) {
+                return set_json(res, {{"ok", false}, {"error", "missing fp"}});
+            }
+
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "DELETE FROM circle_edges WHERE "
+                "(user_a_fp = ? AND user_b_fp = ?) OR "
+                "(user_a_fp = ? AND user_b_fp = ?)",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, other.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, other.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 4, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            sqlite3_step(st);
+            sqlite3_finalize(st);
+
+            set_json(res, {{"ok", true}});
+        });
+}
 } // namespace pqnas
