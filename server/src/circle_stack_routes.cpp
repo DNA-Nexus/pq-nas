@@ -484,6 +484,7 @@ bool cs_actor_can_see_post(
 json cs_load_post_replies(
     sqlite3* db,
     int post_id,
+    const std::string& viewer_fp,
     const pqnas::CircleStackRoutesDeps& deps
 ) {
     json replies = json::array();
@@ -531,7 +532,8 @@ json cs_load_post_replies(
             {"actor_display_name", display_name},
             {"actor_avatar_url", avatar_url},
             {"text", text_raw ? text_raw : ""},
-            {"created_epoch", created}
+            {"created_epoch", created},
+            {"is_mine", actor_fp == viewer_fp}
         };
 
         if (!media_path.empty()) {
@@ -729,7 +731,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 p["reactions"] = cs_load_post_reactions(
                     g_db, id, actor_fp, deps, &my_reaction);
                 p["my_reaction"] = my_reaction;
-                p["replies"] = cs_load_post_replies(g_db, id, deps);
+                p["replies"] = cs_load_post_replies(g_db, id, actor_fp, deps);
 
                 if (media && media[0]) {
                     p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
@@ -1009,7 +1011,8 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"actor_display_name", actor_display},
                 {"actor_avatar_url", actor_avatar_url},
                 {"text", text},
-                {"created_epoch", (sqlite3_int64)std::time(nullptr)}
+                {"created_epoch", (sqlite3_int64)std::time(nullptr)},
+                {"is_mine", true}
             };
 
             if (!media_path.empty()) {
@@ -1021,6 +1024,238 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"id", id},
                 {"post_id", post_id},
                 {"reply", reply}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/replies/update",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_json"}});
+            }
+
+            const int id = body.value("id", 0);
+            const std::string text = body.value("text", "");
+            const std::string media_path = body.value("media_path", "");
+
+            if (id <= 0) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_reply_id"}});
+            }
+
+            if (text.empty() && media_path.empty()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "empty_reply"}});
+            }
+
+            if (!media_path.empty()) {
+                std::string rel_norm;
+                std::string norm_err;
+
+                if (!normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+                    res.status = 400;
+                    return set_json(res, {{"ok", false}, {"error", "INVALID_MEDIA_PATH"}});
+                }
+            }
+
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(g_db,
+                    "SELECT post_id, actor_fp, created_epoch "
+                    "FROM post_replies WHERE id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, id);
+
+            int post_id = 0;
+            std::string reply_owner_fp;
+            sqlite3_int64 created_epoch = 0;
+
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                post_id = sqlite3_column_int(st, 0);
+
+                const char* owner_raw =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+                reply_owner_fp = owner_raw ? owner_raw : "";
+
+                created_epoch = sqlite3_column_int64(st, 2);
+            }
+
+            sqlite3_finalize(st);
+
+            if (post_id <= 0 || reply_owner_fp.empty()) {
+                res.status = 404;
+                return set_json(res, {{"ok", false}, {"error", "not_found"}});
+            }
+
+            if (reply_owner_fp != actor_fp) {
+                res.status = 403;
+                return set_json(res, {{"ok", false}, {"error", "forbidden"}});
+            }
+
+            std::string visibility_err;
+            if (!cs_actor_can_see_post(g_db, post_id, actor_fp, &visibility_err)) {
+                res.status = visibility_err == "not_found" ? 404 : 403;
+                return set_json(res, {{"ok", false}, {"error", visibility_err}});
+            }
+
+            if (sqlite3_prepare_v2(g_db,
+                    "UPDATE post_replies "
+                    "SET text = ?, media_path = ? "
+                    "WHERE id = ? AND actor_fp = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_text(st, 1, text.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, media_path.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(st, 3, id);
+            sqlite3_bind_text(st, 4, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_update_failed"}});
+            }
+
+            sqlite3_finalize(st);
+
+            std::string actor_display = cs_short_fp(actor_fp);
+            std::string actor_avatar_url;
+
+            if (deps.users) {
+                auto u = deps.users->get(actor_fp);
+                if (u.has_value()) {
+                    if (!u->name.empty()) {
+                        actor_display = u->name;
+                    }
+                    actor_avatar_url = u->avatar_url;
+                }
+            }
+
+            json reply = {
+                {"id", id},
+                {"post_id", post_id},
+                {"actor_fp", actor_fp},
+                {"actor_fp_short", cs_short_fp(actor_fp)},
+                {"actor_display_name", actor_display},
+                {"actor_avatar_url", actor_avatar_url},
+                {"text", text},
+                {"created_epoch", created_epoch},
+                {"is_mine", true}
+            };
+
+            if (!media_path.empty()) {
+                reply["media_url"] =
+                    "/api/v4/circlestack/reply/media?id=" + std::to_string(id);
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"id", id},
+                {"post_id", post_id},
+                {"reply", reply}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/replies/delete",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_json"}});
+            }
+
+            const int id = body.value("id", 0);
+
+            if (id <= 0) {
+                res.status = 400;
+                return set_json(res, {{"ok", false}, {"error", "invalid_reply_id"}});
+            }
+
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(g_db,
+                    "SELECT post_id, actor_fp FROM post_replies WHERE id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, id);
+
+            int post_id = 0;
+            std::string reply_owner_fp;
+
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                post_id = sqlite3_column_int(st, 0);
+
+                const char* owner_raw =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+                reply_owner_fp = owner_raw ? owner_raw : "";
+            }
+
+            sqlite3_finalize(st);
+
+            if (post_id <= 0 || reply_owner_fp.empty()) {
+                res.status = 404;
+                return set_json(res, {{"ok", false}, {"error", "not_found"}});
+            }
+
+            if (reply_owner_fp != actor_fp) {
+                res.status = 403;
+                return set_json(res, {{"ok", false}, {"error", "forbidden"}});
+            }
+
+            if (sqlite3_prepare_v2(g_db,
+                    "DELETE FROM post_replies WHERE id = ? AND actor_fp = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, id);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+            }
+
+            sqlite3_finalize(st);
+
+            set_json(res, {
+                {"ok", true},
+                {"id", id},
+                {"post_id", post_id}
             });
         });
 

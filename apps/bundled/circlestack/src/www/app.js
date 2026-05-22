@@ -347,6 +347,7 @@ function csRenderReplies(post) {
 function csRenderReply(reply) {
   const row = document.createElement("div");
   row.className = "cs-reply";
+  row.dataset.replyId = String(reply.id || "");
 
   const avatar = document.createElement("button");
   avatar.className = "cs-reply-avatar";
@@ -396,13 +397,56 @@ function csRenderReply(reply) {
 
   head.appendChild(name);
   head.appendChild(time);
+
+  if (reply.is_mine) {
+    const tools = document.createElement("div");
+    tools.className = "cs-reply-tools";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      csOpenReplyEdit(row, reply);
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Delete";
+    del.addEventListener("click", async () => {
+      if (!confirm("Delete this reply?")) return;
+
+      const ok = await csDeleteReply(reply.id);
+      if (ok) {
+        row.remove();
+        csUpdateReplyCountNear(row);
+      }
+    });
+
+    tools.appendChild(edit);
+    tools.appendChild(del);
+    head.appendChild(tools);
+  }
+
   body.appendChild(head);
+
+  const content = document.createElement("div");
+  content.className = "cs-reply-content";
+  csFillReplyContent(content, reply);
+  body.appendChild(content);
+
+  row.appendChild(avatar);
+  row.appendChild(body);
+  return row;
+}
+
+function csFillReplyContent(content, reply) {
+  content.textContent = "";
 
   if (reply.text) {
     const text = document.createElement("div");
     text.className = "cs-reply-text";
     text.textContent = reply.text;
-    body.appendChild(text);
+    content.appendChild(text);
   }
 
   if (reply.media_url) {
@@ -412,13 +456,138 @@ function csRenderReply(reply) {
     img.loading = "lazy";
     img.decoding = "async";
     img.alt = "";
-    body.appendChild(img);
+    content.appendChild(img);
+  }
+}
+
+function csUpdateReplyCountNear(row) {
+  const replies = row.closest(".cs-replies");
+  if (!replies) return;
+
+  const count = replies.querySelectorAll(".cs-reply").length;
+  const toggle = replies.querySelector(".cs-reply-toggle");
+
+  if (toggle) {
+    toggle.textContent = count ? `Reply (${count})` : "Reply";
+  }
+}
+
+function csOpenReplyEdit(row, reply) {
+  const body = row.querySelector(".cs-reply-body");
+  const content = row.querySelector(".cs-reply-content");
+  if (!body || !content) return;
+
+  const oldEditor = row.querySelector(".cs-reply-edit-box");
+  if (oldEditor) {
+    oldEditor.remove();
+    content.hidden = false;
+    return;
   }
 
-  row.appendChild(avatar);
-  row.appendChild(body);
-  return row;
+  content.hidden = true;
+
+  const box = document.createElement("div");
+  box.className = "cs-reply-edit-box";
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "cs-reply-textarea";
+  textarea.value = reply.text || "";
+
+  const mediaRow = document.createElement("div");
+  mediaRow.className = "cs-reply-media-row";
+
+  const mediaInput = document.createElement("input");
+  mediaInput.className = "cs-reply-media-input";
+  mediaInput.placeholder = "Optional image path";
+
+  const browse = document.createElement("button");
+  browse.className = "cs-reply-browse";
+  browse.type = "button";
+  browse.textContent = "Browse";
+
+  const actions = document.createElement("div");
+  actions.className = "cs-reply-edit-actions";
+
+  const cancel = document.createElement("button");
+  cancel.className = "cs-reply-browse";
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+
+  const save = document.createElement("button");
+  save.className = "cs-reply-submit";
+  save.type = "button";
+  save.textContent = "Save";
+
+  browse.addEventListener("click", async () => {
+    const picked = await csOpenMediaPicker();
+    if (picked) mediaInput.value = picked;
+  });
+
+  cancel.addEventListener("click", () => {
+    box.remove();
+    content.hidden = false;
+  });
+
+  save.addEventListener("click", async () => {
+    const text = textarea.value.trim();
+    const media_path = mediaInput.value.trim();
+
+    if (!text && !media_path) return;
+
+    save.disabled = true;
+
+    try {
+      const updated = await csUpdateReply(reply.id, text, media_path);
+      if (!updated) return;
+
+      Object.assign(reply, updated);
+      csFillReplyContent(content, reply);
+      box.remove();
+      content.hidden = false;
+    } finally {
+      save.disabled = false;
+    }
+  });
+
+  mediaRow.appendChild(mediaInput);
+  mediaRow.appendChild(browse);
+
+  actions.appendChild(cancel);
+  actions.appendChild(save);
+
+  box.appendChild(textarea);
+  box.appendChild(mediaRow);
+  box.appendChild(actions);
+
+  content.after(box);
+  textarea.focus();
 }
+
+async function csUpdateReply(id, text, media_path) {
+  const res = await fetch(`${CS_API}/replies/update`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, text, media_path })
+  });
+
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  return data.reply || null;
+}
+
+async function csDeleteReply(id) {
+  const res = await fetch(`${CS_API}/replies/delete`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id })
+  });
+
+  return res.ok;
+}
+
 
 function csRenderReplyComposer(postId, onReplyCreated) {
   const box = document.createElement("div");
