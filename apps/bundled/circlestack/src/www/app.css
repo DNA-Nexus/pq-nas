@@ -82,3 +82,103 @@ body {
   color: #92929e;
   font-size: 12px;
 }
+
+.cs-post-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cs-post-author {
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.cs-post-delete {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.cs-post-delete:hover {
+  opacity: 1;
+}
+
+.cs-post-delete {
+  color: #f87171 !important;
+  font-size: 24px !important;
+  line-height: 1;
+  font-weight: 900;
+  font-family: Arial, sans-serif;
+}
+
+.cs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+}
+
+.cs-modal {
+  width: min(360px, calc(100vw - 32px));
+  background: #181820;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  padding: 18px;
+  color: #fff;
+}
+
+.cs-modal-title {
+  font-weight: 800;
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.cs-modal-text {
+  opacity: 0.8;
+  margin-bottom: 16px;
+}
+
+.cs-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cs-modal-cancel,
+.cs-modal-delete {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.cs-modal-cancel {
+  background: rgba(255,255,255,0.10);
+  color: #fff;
+}
+
+.cs-modal-delete {
+  background: #dc2626;
+  color: #fff;
+}
+
+.cs-post-delete {
+  color: #9ca3af !important;
+  opacity: 0;
+  background: transparent !important;
+}
+
+.cs-post:hover .cs-post-delete {
+  opacity: 0.55;
+}
+
+.cs-post-delete:hover {
+  opacity: 1;
+  color: #f87171 !important;
+}

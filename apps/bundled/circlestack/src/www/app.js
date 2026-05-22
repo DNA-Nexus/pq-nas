@@ -8,7 +8,6 @@ async function csLoadFeed() {
 
   const res = await fetch(`${CS_API}/feed`, { credentials: "same-origin" });
   const data = await res.json();
-
   const posts = Array.isArray(data.posts) ? data.posts : [];
 
   if (!posts.length) {
@@ -28,6 +27,25 @@ function csRenderPost(post) {
   const el = document.createElement("article");
   el.className = "cs-post";
 
+  const header = document.createElement("div");
+  header.className = "cs-post-header";
+
+  const author = document.createElement("div");
+  author.className = "cs-post-author";
+  author.textContent = post.owner_display_name || post.owner_fp_short || "anon";
+  header.appendChild(author);
+
+  const del = document.createElement("button");
+  del.className = "cs-post-delete";
+  del.type = "button";
+  del.textContent = "✕";
+  del.title = "Delete post";
+  del.setAttribute("aria-label", "Delete post");
+  del.addEventListener("click", () => csDeletePost(post.id));
+  header.appendChild(del);
+
+  el.appendChild(header);
+
   const text = document.createElement("div");
   text.className = "cs-post-text";
   text.textContent = post.text || "";
@@ -43,9 +61,17 @@ function csRenderPost(post) {
 
   const meta = document.createElement("div");
   meta.className = "cs-post-meta";
-  meta.textContent = post.created_epoch
-    ? new Date(post.created_epoch * 1000).toLocaleString()
-    : "";
+
+  const vis = post.visibility || "public";
+  let visLabel = "🌍";
+  if (vis === "private") visLabel = "🔒";
+  if (vis === "circle") visLabel = "👥";
+
+  meta.textContent = `${visLabel} ${
+    post.created_epoch
+      ? new Date(post.created_epoch * 1000).toLocaleString()
+      : ""
+  }`;
   el.appendChild(meta);
 
   return el;
@@ -71,6 +97,72 @@ async function csCreatePost() {
   if (mediaEl) mediaEl.value = "";
 
   await csLoadFeed();
+}
+
+async function csDeletePost(id) {
+  if (!id) return;
+
+  const ok = await csConfirmDelete();
+  if (!ok) return;
+
+  await fetch(`${CS_API}/posts?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "same-origin"
+  });
+
+  await csLoadFeed();
+}
+
+function csConfirmDelete() {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "cs-modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "cs-modal";
+
+    const title = document.createElement("div");
+    title.className = "cs-modal-title";
+    title.textContent = "Delete post?";
+
+    const text = document.createElement("div");
+    text.className = "cs-modal-text";
+    text.textContent = "This cannot be undone.";
+
+    const actions = document.createElement("div");
+    actions.className = "cs-modal-actions";
+
+    const cancel = document.createElement("button");
+    cancel.className = "cs-modal-cancel";
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+
+    const del = document.createElement("button");
+    del.className = "cs-modal-delete";
+    del.type = "button";
+    del.textContent = "Delete";
+
+    const close = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+
+    cancel.addEventListener("click", () => close(false));
+    del.addEventListener("click", () => close(true));
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop) close(false);
+    });
+
+    actions.appendChild(cancel);
+    actions.appendChild(del);
+    modal.appendChild(title);
+    modal.appendChild(text);
+    modal.appendChild(actions);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    cancel.focus();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

@@ -124,7 +124,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
             sqlite3_stmt* stmt = nullptr;
             sqlite3_prepare_v2(g_db,
-                "SELECT id, text, media_path, created_epoch, owner_fp "
+                "SELECT id, text, media_path, created_epoch, owner_fp, visibility, circle_allow "
                 "FROM posts ORDER BY id DESC",
                 -1, &stmt, nullptr);
 
@@ -136,7 +136,9 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 const char* media = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
                 const long long created = sqlite3_column_int64(stmt, 3);
                 const char* owner = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+                const char* vis = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
                 const std::string owner_fp = owner ? owner : "";
+                const std::string visibility = vis ? vis : "public";
 
                 std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
 
@@ -151,6 +153,10 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 p["text"] = text ? text : "";
                 p["created_epoch"] = created;
                 p["owner_display_name"] = owner_display;
+                p["owner_fp_short"] = owner_fp.size() >= 8
+                    ? owner_fp.substr(0, 8)
+                    : owner_fp;
+                p["visibility"] = visibility;
 
                 if (media && media[0]) {
                     p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
@@ -185,6 +191,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
             const std::string text = body.value("text", "");
             const std::string media_path = body.value("media_path", "");
+const std::string visibility = body.value("visibility", "public");
+            const std::string circle_allow = body.value("circle_allow", "[]");
 
             if (!media_path.empty()) {
                 std::string rel_norm;
@@ -197,7 +205,13 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 }
             }
 
-            if (text.empty() && media_path.empty()) {
+            if (visibility != "public" && visibility != "private" && visibility != "circle") {
+    res.status = 400;
+    set_json(res, {{"ok", false}, {"error", "invalid_visibility"}});
+    return;
+}
+
+if (text.empty() && media_path.empty()) {
                 res.status = 400;
                 set_json(res, {{"ok", false}, {"error", "empty_post"}});
                 return;
@@ -209,14 +223,16 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
             sqlite3_stmt* stmt = nullptr;
             sqlite3_prepare_v2(g_db,
-                "INSERT INTO posts(text, media_path, created_epoch, owner_fp) "
-                "VALUES(?,?,?,?)",
+                "INSERT INTO posts(text, media_path, created_epoch, owner_fp, visibility, circle_allow) "
+                "VALUES(?,?,?,?,?,?)",
                 -1, &stmt, nullptr);
 
             sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, media_path.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int64(stmt, 3, created_epoch);
             sqlite3_bind_text(stmt, 4, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 6, circle_allow.c_str(), -1, SQLITE_TRANSIENT);
 
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 sqlite3_finalize(stmt);
