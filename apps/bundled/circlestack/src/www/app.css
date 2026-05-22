@@ -763,3 +763,16 @@ body {
 .cs-mini-action-primary:hover {
   background: #16a34a;
 }
+
+
+.cs-notification-title {
+  font-weight: 500;
+}
+
+.cs-notification-message {
+  margin-top: 4px;
+  color: #93c5fd;
+  font-size: 13px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
