@@ -332,10 +332,13 @@ function csRenderReplies(post) {
   composer.hidden = true;
 
   toggle.addEventListener("click", () => {
-    composer.hidden = !composer.hidden;
-    if (!composer.hidden) {
+    if (composer.hidden) {
+      composer.hidden = false;
       composer.querySelector("textarea")?.focus();
+      return;
     }
+
+    csRequestCloseReplyComposer(composer);
   });
 
   wrap.appendChild(list);
@@ -541,6 +544,144 @@ function csRenderReply(reply) {
   return row;
 }
 
+
+function csRenderReplyMentions(reply) {
+  const mentions = Array.isArray(reply.mentions) ? reply.mentions : [];
+  if (!mentions.length) return null;
+
+  const wrap = document.createElement("div");
+  wrap.className = "cs-reply-mentions";
+
+  const label = document.createElement("span");
+  label.className = "cs-post-mentions-label";
+  label.textContent = "Tagged:";
+  wrap.appendChild(label);
+
+  for (const m of mentions) {
+    const chip = document.createElement("button");
+    chip.className = "cs-mention-chip";
+    chip.type = "button";
+    chip.textContent = `@${m.display_name || m.fp_short || csElideFp(m.fp)}`;
+    chip.title = m.fp || "";
+
+    chip.addEventListener("click", () => {
+      csOpenPersonCard(m.fp || "", {
+        display_name: m.display_name || "",
+        fp_short: m.fp_short || "",
+        avatar_url: m.avatar_url || ""
+      });
+    });
+
+    wrap.appendChild(chip);
+  }
+
+  return wrap;
+}
+
+async function csOpenReplyMentionPicker(selectedMentions, onChange) {
+  const candidates = await csLoadMentionCandidates();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-intro-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">Tag friend</div>
+    <div class="cs-modal-text">Pick people to tag in this reply.</div>
+    <input id="csReplyMentionSearch" placeholder="Search people...">
+    <div id="csReplyMentionResults" class="cs-mention-results"></div>
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel" type="button">Close</button>
+    </div>
+  `;
+
+  const input = modal.querySelector("#csReplyMentionSearch");
+  const results = modal.querySelector("#csReplyMentionResults");
+  const selected = new Set(selectedMentions.map(p => p.fingerprint));
+
+  function render(q = "") {
+    const needle = q.trim().toLowerCase();
+    results.textContent = "";
+
+    const filtered = candidates.filter(p => {
+      const hay = `${p.name || ""} ${p.fingerprint || ""}`.toLowerCase();
+      return !needle || hay.includes(needle);
+    });
+
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "cs-search-hint";
+      empty.textContent = "No people found";
+      results.appendChild(empty);
+      return;
+    }
+
+    for (const person of filtered) {
+      const row = document.createElement("button");
+      row.className = "cs-mention-result";
+      row.type = "button";
+
+      const avatar = document.createElement("span");
+      avatar.className = "cs-mention-avatar";
+
+      if (person.avatar_url) {
+        const img = document.createElement("img");
+        img.src = person.avatar_url;
+        img.alt = "";
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = (person.name || "?").slice(0, 1).toUpperCase();
+      }
+
+      const name = document.createElement("span");
+      name.className = "cs-mention-name";
+      name.textContent = person.name || person.fp_short || csElideFp(person.fingerprint);
+
+      const mark = document.createElement("span");
+      mark.className = "cs-mention-mark";
+      mark.textContent = selected.has(person.fingerprint) ? "✓" : "";
+
+      row.appendChild(avatar);
+      row.appendChild(name);
+      row.appendChild(mark);
+
+      row.addEventListener("click", () => {
+        if (selected.has(person.fingerprint)) {
+          selected.delete(person.fingerprint);
+          selectedMentions = selectedMentions.filter(
+            p => p.fingerprint !== person.fingerprint
+          );
+        } else {
+          selected.add(person.fingerprint);
+          selectedMentions.push(person);
+        }
+
+        if (typeof onChange === "function") {
+          onChange(selectedMentions);
+        }
+
+        render(input.value);
+      });
+
+      results.appendChild(row);
+    }
+  }
+
+  input.addEventListener("input", () => render(input.value));
+  modal.querySelector(".cs-modal-cancel").addEventListener("click", () => {
+    backdrop.remove();
+  });
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  render("");
+  input.focus();
+}
+
+
 function csFillReplyContent(content, reply) {
   content.textContent = "";
 
@@ -549,6 +690,11 @@ function csFillReplyContent(content, reply) {
     text.className = "cs-reply-text";
     text.textContent = reply.text;
     content.appendChild(text);
+  }
+
+  const mentions = csRenderReplyMentions(reply);
+  if (mentions) {
+    content.appendChild(mentions);
   }
 
   if (reply.media_url) {
@@ -691,9 +837,107 @@ async function csDeleteReply(id) {
 }
 
 
+
+let csReplyComposerClosingInitialized = false;
+
+function csReplyComposerHasDraft(composer) {
+  if (!composer) return false;
+
+  const textarea = composer.querySelector(".cs-reply-textarea");
+  const mediaInput = composer.querySelector(".cs-reply-media-input");
+
+  return Boolean(
+    (textarea && textarea.value.trim()) ||
+    (mediaInput && mediaInput.value.trim())
+  );
+}
+
+function csClearReplyComposerDraft(composer) {
+  if (!composer) return;
+
+  const textarea = composer.querySelector(".cs-reply-textarea");
+  const mediaInput = composer.querySelector(".cs-reply-media-input");
+
+  if (textarea) textarea.value = "";
+  if (mediaInput) mediaInput.value = "";
+}
+
+function csCloseReplyComposer(composer, options = {}) {
+  if (!composer) return false;
+
+  const discard = options.discard === true;
+
+  if (csReplyComposerHasDraft(composer) && !discard) {
+    return false;
+  }
+
+  if (discard) {
+    csClearReplyComposerDraft(composer);
+  }
+
+  composer.hidden = true;
+  return true;
+}
+
+function csRequestCloseReplyComposer(composer) {
+  if (!composer) return false;
+
+  if (csReplyComposerHasDraft(composer)) {
+    const ok = confirm("Discard this reply draft?");
+    if (!ok) return false;
+
+    return csCloseReplyComposer(composer, { discard: true });
+  }
+
+  return csCloseReplyComposer(composer);
+}
+
+function csInitReplyComposerClosing() {
+  if (csReplyComposerClosingInitialized) return;
+  csReplyComposerClosingInitialized = true;
+
+  document.addEventListener("click", (ev) => {
+    const openComposers = document.querySelectorAll(".cs-reply-composer:not([hidden])");
+    if (!openComposers.length) return;
+
+    if (ev.target.closest(".cs-reply-composer")) return;
+    if (ev.target.closest(".cs-reply-toggle")) return;
+    if (ev.target.closest(".cs-modal-backdrop")) return;
+    if (ev.target.closest(".cs-lightbox")) return;
+
+    for (const composer of openComposers) {
+      csCloseReplyComposer(composer);
+    }
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape") return;
+
+    const openComposers = document.querySelectorAll(".cs-reply-composer:not([hidden])");
+    for (const composer of openComposers) {
+      csCloseReplyComposer(composer);
+    }
+  });
+}
+
+
 function csRenderReplyComposer(postId, onReplyCreated) {
+  csInitReplyComposerClosing();
+
+  let selectedMentions = [];
+
   const box = document.createElement("div");
   box.className = "cs-reply-composer";
+
+  const close = document.createElement("button");
+  close.className = "cs-reply-composer-close";
+  close.type = "button";
+  close.textContent = "×";
+  close.title = "Close reply composer";
+  close.setAttribute("aria-label", "Close reply composer");
+  close.addEventListener("click", () => {
+    csRequestCloseReplyComposer(box);
+  });
 
   const textarea = document.createElement("textarea");
   textarea.className = "cs-reply-textarea";
@@ -710,6 +954,47 @@ function csRenderReplyComposer(postId, onReplyCreated) {
   browse.className = "cs-reply-browse";
   browse.type = "button";
   browse.textContent = "Browse";
+
+  const mentionChips = document.createElement("div");
+  mentionChips.className = "cs-reply-mention-chips";
+
+  function renderSelectedReplyMentions() {
+    mentionChips.textContent = "";
+
+    for (const person of selectedMentions) {
+      const chip = document.createElement("span");
+      chip.className = "cs-compose-mention-chip";
+
+      const label = document.createElement("span");
+      label.textContent = `@${person.name || person.fp_short || csElideFp(person.fingerprint)}`;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = "Remove tag";
+      remove.addEventListener("click", () => {
+        selectedMentions = selectedMentions.filter(
+          p => p.fingerprint !== person.fingerprint
+        );
+        renderSelectedReplyMentions();
+      });
+
+      chip.appendChild(label);
+      chip.appendChild(remove);
+      mentionChips.appendChild(chip);
+    }
+  }
+
+  const tagBtn = document.createElement("button");
+  tagBtn.className = "cs-reply-tag";
+  tagBtn.type = "button";
+  tagBtn.textContent = "Tag friend";
+  tagBtn.addEventListener("click", async () => {
+    await csOpenReplyMentionPicker(selectedMentions, (next) => {
+      selectedMentions = next;
+      renderSelectedReplyMentions();
+    });
+  });
 
   const submit = document.createElement("button");
   submit.className = "cs-reply-submit";
@@ -728,11 +1013,13 @@ function csRenderReplyComposer(postId, onReplyCreated) {
 
     submit.disabled = true;
     try {
-      const reply = await csCreateReply(postId, text, media_path);
+      const mentions = selectedMentions.map(p => p.fingerprint).filter(Boolean);
+      const reply = await csCreateReply(postId, text, media_path, mentions);
 
       if (reply) {
-        textarea.value = "";
-        mediaInput.value = "";
+        csClearReplyComposerDraft(box);
+        selectedMentions = [];
+        renderSelectedReplyMentions();
 
         if (typeof onReplyCreated === "function") {
           onReplyCreated(reply);
@@ -748,21 +1035,24 @@ function csRenderReplyComposer(postId, onReplyCreated) {
 
   const bottom = document.createElement("div");
   bottom.className = "cs-reply-composer-bottom";
+  bottom.appendChild(tagBtn);
   bottom.appendChild(submit);
 
+  box.appendChild(close);
   box.appendChild(textarea);
   box.appendChild(mediaRow);
+  box.appendChild(mentionChips);
   box.appendChild(bottom);
 
   return box;
 }
 
-async function csCreateReply(postId, text, media_path) {
+async function csCreateReply(postId, text, media_path, mentions = []) {
   const res = await fetch(`${CS_API}/posts/reply`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ post_id: postId, text, media_path })
+    body: JSON.stringify({ post_id: postId, text, media_path, mentions })
   });
 
   if (!res.ok) {
@@ -1056,11 +1346,63 @@ function csComposeHasDraft() {
   );
 }
 
+function csClearComposeDraft() {
+  const textEl = document.getElementById("csText");
+  const mediaEl = document.getElementById("csMediaPath");
+
+  if (textEl) textEl.value = "";
+  if (mediaEl) mediaEl.value = "";
+
+  csSetMediaPreview("");
+  csSelectedMentions = [];
+  csRenderMentionComposer();
+}
+
 function csSetComposeExpanded(expanded) {
   const compose = document.querySelector(".cs-compose");
   if (!compose) return;
 
   compose.classList.toggle("is-compact", !expanded);
+}
+
+function csCloseCompose(options = {}) {
+  const discard = options.discard === true;
+
+  if (csComposeHasDraft() && !discard) {
+    return false;
+  }
+
+  if (discard) {
+    csClearComposeDraft();
+  }
+
+  csSetComposeExpanded(false);
+  return true;
+}
+
+function csEnsureComposeCloseButton() {
+  const compose = document.querySelector(".cs-compose");
+  if (!compose || document.getElementById("csComposeClose")) return;
+
+  const close = document.createElement("button");
+  close.id = "csComposeClose";
+  close.type = "button";
+  close.textContent = "×";
+  close.title = "Close composer";
+  close.setAttribute("aria-label", "Close composer");
+
+  close.addEventListener("click", () => {
+    if (csComposeHasDraft()) {
+      const ok = confirm("Discard this post draft?");
+      if (!ok) return;
+      csCloseCompose({ discard: true });
+      return;
+    }
+
+    csCloseCompose();
+  });
+
+  compose.appendChild(close);
 }
 
 function csInitCompactCompose() {
@@ -1070,6 +1412,7 @@ function csInitCompactCompose() {
 
   if (!compose || !textEl) return;
 
+  csEnsureComposeCloseButton();
   csSetComposeExpanded(csComposeHasDraft());
 
   textEl.addEventListener("focus", () => {
@@ -1089,6 +1432,26 @@ function csInitCompactCompose() {
       if (csComposeHasDraft()) csSetComposeExpanded(true);
     });
   }
+
+  document.addEventListener("click", (ev) => {
+    const activeCompose = document.querySelector(".cs-compose:not(.is-compact)");
+    if (!activeCompose) return;
+
+    if (ev.target.closest(".cs-compose")) return;
+    if (ev.target.closest(".cs-modal-backdrop")) return;
+    if (ev.target.closest(".cs-lightbox")) return;
+
+    csCloseCompose();
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape") return;
+
+    const activeCompose = document.querySelector(".cs-compose:not(.is-compact)");
+    if (!activeCompose) return;
+
+    csCloseCompose();
+  });
 }
 
 
@@ -1110,11 +1473,7 @@ async function csCreatePost() {
     body: JSON.stringify({ text, media_path, mentions })
   });
 
-  if (textEl) textEl.value = "";
-  if (mediaEl) mediaEl.value = "";
-  csSetMediaPreview("");
-  csSelectedMentions = [];
-  csRenderMentionComposer();
+  csClearComposeDraft();
   csSetComposeExpanded(false);
 
   await csLoadFeed();

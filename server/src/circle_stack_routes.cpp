@@ -8,6 +8,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -167,6 +168,41 @@ static void cs_db_init() {
     sqlite3_exec(g_db,
         "CREATE INDEX IF NOT EXISTS idx_reply_reactions_reply_id "
         "ON reply_reactions(reply_id)",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS post_mentions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "post_id INTEGER NOT NULL,"
+        "mentioned_fp TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "UNIQUE(post_id, mentioned_fp)"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_post_mentions_post_id "
+        "ON post_mentions(post_id)",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_post_mentions_mentioned_fp "
+        "ON post_mentions(mentioned_fp)",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS reply_mentions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "reply_id INTEGER NOT NULL,"
+        "mentioned_fp TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "UNIQUE(reply_id, mentioned_fp)"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_reply_mentions_reply_id "
+        "ON reply_mentions(reply_id)",
         nullptr, nullptr, nullptr);
 }
 
@@ -588,6 +624,116 @@ json cs_load_reply_reactions(
 }
 
 
+
+json cs_load_reply_mentions(
+    sqlite3* db,
+    int reply_id,
+    const pqnas::CircleStackRoutesDeps& deps
+) {
+    json mentions = json::array();
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT mentioned_fp "
+            "FROM reply_mentions "
+            "WHERE reply_id = ? "
+            "ORDER BY id ASC",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return mentions;
+    }
+
+    sqlite3_bind_int(st, 1, reply_id);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* fp_raw =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+
+        const std::string fp = fp_raw ? fp_raw : "";
+        if (fp.empty()) continue;
+
+        std::string display_name = cs_short_fp(fp);
+        std::string avatar_url;
+
+        if (deps.users) {
+            auto u = deps.users->get(fp);
+            if (u.has_value()) {
+                if (!u->name.empty()) {
+                    display_name = u->name;
+                }
+                avatar_url = u->avatar_url;
+            }
+        }
+
+        mentions.push_back({
+            {"fp", fp},
+            {"fp_short", cs_short_fp(fp)},
+            {"display_name", display_name},
+            {"avatar_url", avatar_url}
+        });
+    }
+
+    sqlite3_finalize(st);
+    return mentions;
+}
+
+bool cs_insert_reply_mentions(
+    sqlite3* db,
+    long long reply_id,
+    const json& mentions,
+    const pqnas::CircleStackRoutesDeps& deps,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    if (!mentions.is_array()) return true;
+
+    std::set<std::string> seen;
+    int inserted = 0;
+
+    for (const auto& item : mentions) {
+        if (!item.is_string()) continue;
+
+        const std::string fp = item.get<std::string>();
+        if (fp.empty()) continue;
+        if (seen.count(fp)) continue;
+
+        if (deps.users) {
+            auto u = deps.users->get(fp);
+            if (!u.has_value() || u->status != "enabled") {
+                continue;
+            }
+        }
+
+        seen.insert(fp);
+
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db,
+                "INSERT OR IGNORE INTO reply_mentions "
+                "(reply_id, mentioned_fp, created_epoch) "
+                "VALUES (?, ?, ?)",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)reply_id);
+        sqlite3_bind_text(st, 2, fp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(st, 3, now);
+
+        const int rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+
+        if (rc != SQLITE_DONE) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        if (++inserted >= 20) break;
+    }
+
+    return true;
+}
+
+
 json cs_load_post_replies(
     sqlite3* db,
     int post_id,
@@ -645,6 +791,7 @@ json cs_load_post_replies(
             {"text", text_raw ? text_raw : ""},
             {"created_epoch", created},
             {"is_mine", actor_fp == viewer_fp},
+            {"mentions", cs_load_reply_mentions(db, id, deps)},
             {"reactions", reactions},
             {"my_reaction", my_reaction}
         };
@@ -658,6 +805,116 @@ json cs_load_post_replies(
 
     sqlite3_finalize(st);
     return replies;
+}
+
+
+
+json cs_load_post_mentions(
+    sqlite3* db,
+    int post_id,
+    const pqnas::CircleStackRoutesDeps& deps
+) {
+    json mentions = json::array();
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT mentioned_fp "
+            "FROM post_mentions "
+            "WHERE post_id = ? "
+            "ORDER BY id ASC",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return mentions;
+    }
+
+    sqlite3_bind_int(st, 1, post_id);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* fp_raw =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+
+        const std::string fp = fp_raw ? fp_raw : "";
+        if (fp.empty()) continue;
+
+        std::string display_name = cs_short_fp(fp);
+        std::string avatar_url;
+
+        if (deps.users) {
+            auto u = deps.users->get(fp);
+            if (u.has_value()) {
+                if (!u->name.empty()) {
+                    display_name = u->name;
+                }
+                avatar_url = u->avatar_url;
+            }
+        }
+
+        mentions.push_back({
+            {"fp", fp},
+            {"fp_short", cs_short_fp(fp)},
+            {"display_name", display_name},
+            {"avatar_url", avatar_url}
+        });
+    }
+
+    sqlite3_finalize(st);
+    return mentions;
+}
+
+bool cs_insert_post_mentions(
+    sqlite3* db,
+    long long post_id,
+    const json& mentions,
+    const pqnas::CircleStackRoutesDeps& deps,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    if (!mentions.is_array()) return true;
+
+    std::set<std::string> seen;
+    int inserted = 0;
+
+    for (const auto& item : mentions) {
+        if (!item.is_string()) continue;
+
+        const std::string fp = item.get<std::string>();
+        if (fp.empty()) continue;
+        if (seen.count(fp)) continue;
+
+        if (deps.users) {
+            auto u = deps.users->get(fp);
+            if (!u.has_value() || u->status != "enabled") {
+                continue;
+            }
+        }
+
+        seen.insert(fp);
+
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db,
+                "INSERT OR IGNORE INTO post_mentions "
+                "(post_id, mentioned_fp, created_epoch) "
+                "VALUES (?, ?, ?)",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)post_id);
+        sqlite3_bind_text(st, 2, fp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(st, 3, now);
+
+        const int rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+
+        if (rc != SQLITE_DONE) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        if (++inserted >= 20) break;
+    }
+
+    return true;
 }
 
 
@@ -844,6 +1101,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 p["reactions"] = cs_load_post_reactions(
                     g_db, id, actor_fp, deps, &my_reaction);
                 p["my_reaction"] = my_reaction;
+                p["mentions"] = cs_load_post_mentions(g_db, id, deps);
                 p["replies"] = cs_load_post_replies(g_db, id, actor_fp, deps);
 
                 if (media && media[0]) {
@@ -972,6 +1230,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             const std::string media_path = body.value("media_path", "");
 const std::string visibility = body.value("visibility", "public");
             const std::string circle_allow = body.value("circle_allow", "[]");
+            const json mentions = body.value("mentions", json::array());
 
             if (!media_path.empty()) {
                 std::string rel_norm;
@@ -1023,6 +1282,23 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             const long long id = sqlite3_last_insert_rowid(g_db);
             sqlite3_finalize(stmt);
 
+            std::string mentions_err;
+            if (!cs_insert_post_mentions(
+                    g_db,
+                    id,
+                    mentions,
+                    deps,
+                    (sqlite3_int64)created_epoch,
+                    &mentions_err)) {
+                res.status = 500;
+                set_json(res, {
+                    {"ok", false},
+                    {"error", "mention_insert_failed"},
+                    {"detail", mentions_err}
+                });
+                return;
+            }
+
             set_json(res, {{"ok", true}, {"id", id}});
         });
 
@@ -1048,6 +1324,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             const int post_id = body.value("post_id", 0);
             const std::string text = body.value("text", "");
             const std::string media_path = body.value("media_path", "");
+            const json mentions = body.value("mentions", json::array());
 
             if (post_id <= 0) {
                 res.status = 400;
@@ -1103,6 +1380,22 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             const sqlite3_int64 id = sqlite3_last_insert_rowid(g_db);
             sqlite3_finalize(st);
 
+            std::string mentions_err;
+            if (!cs_insert_reply_mentions(
+                    g_db,
+                    id,
+                    mentions,
+                    deps,
+                    (sqlite3_int64)std::time(nullptr),
+                    &mentions_err)) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "reply_mention_insert_failed"},
+                    {"detail", mentions_err}
+                });
+            }
+
             std::string actor_display = cs_short_fp(actor_fp);
             std::string actor_avatar_url;
 
@@ -1126,6 +1419,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"text", text},
                 {"created_epoch", (sqlite3_int64)std::time(nullptr)},
                 {"is_mine", true},
+                {"mentions", cs_load_reply_mentions(g_db, id, deps)},
                 {"reactions", json::array()},
                 {"my_reaction", ""}
             };
@@ -1425,6 +1719,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 {"text", text},
                 {"created_epoch", created_epoch},
                 {"is_mine", true},
+                {"mentions", cs_load_reply_mentions(g_db, id, deps)},
                 {"reactions", cs_load_reply_reactions(g_db, id, actor_fp, deps, nullptr)},
                 {"my_reaction", ""}
             };
@@ -1501,6 +1796,24 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 res.status = 403;
                 return set_json(res, {{"ok", false}, {"error", "forbidden"}});
             }
+
+            if (sqlite3_prepare_v2(g_db,
+                    "DELETE FROM reply_mentions WHERE reply_id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
+            }
+
+            sqlite3_bind_int(st, 1, id);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                res.status = 500;
+                return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
 
             if (sqlite3_prepare_v2(g_db,
                     "DELETE FROM reply_reactions WHERE reply_id = ?",
@@ -1725,6 +2038,25 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 set_json(res, {{"ok", false}, {"error", "forbidden"}});
                 return;
             }
+
+            sqlite3_prepare_v2(g_db,
+                "DELETE FROM post_mentions WHERE post_id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+
+            sqlite3_prepare_v2(g_db,
+                "DELETE FROM reply_mentions "
+                "WHERE reply_id IN (SELECT id FROM post_replies WHERE post_id=?)",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
 
             sqlite3_prepare_v2(g_db,
                 "DELETE FROM reply_reactions "
