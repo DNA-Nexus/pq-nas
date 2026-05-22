@@ -715,3 +715,51 @@ body {
   font-size: 12px;
   line-height: 1;
 }
+
+
+.cs-notification-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px;
+  margin: 6px 0;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  cursor: default;
+}
+
+.cs-notification-row:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.cs-notification-label {
+  flex: 1;
+  min-width: 0;
+  color: rgba(255,255,255,0.88);
+  line-height: 1.35;
+}
+
+.cs-mini-action {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.10);
+  color: #e4e4e7;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-mini-action:hover {
+  background: rgba(255,255,255,0.16);
+}
+
+.cs-mini-action-primary {
+  background: #22c55e;
+  color: #052e16;
+}
+
+.cs-mini-action-primary:hover {
+  background: #16a34a;
+}

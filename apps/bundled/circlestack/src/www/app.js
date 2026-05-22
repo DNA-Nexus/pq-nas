@@ -630,7 +630,8 @@ async function csRespondIntro(id, action) {
     body: JSON.stringify({ id, action })
   });
 
-  csLoadIntroductions();
+  await csLoadIntroductions();
+  await csUpdateFindPeopleBadge();
 }
 
 document.addEventListener("DOMContentLoaded", csLoadIntroductions);
@@ -793,45 +794,139 @@ async function csOpenFindPeople() {
   const requestsBox = modal.querySelector("#csContactRequests");
 
   async function loadRequests() {
-    const res = await fetch("/api/v4/circlestack/contact/requests", { credentials: "same-origin" });
-    const data = await res.json();
+    const [notificationsRes, requestsRes] = await Promise.all([
+      fetch("/api/v4/circlestack/notifications", { credentials: "same-origin" }),
+      fetch("/api/v4/circlestack/contact/requests", { credentials: "same-origin" })
+    ]);
+
+    const notificationsData = await notificationsRes.json();
+    const requestsData = await requestsRes.json();
+
     requestsBox.innerHTML = "";
 
-    const incoming = (data.incoming || []).filter(r => r.status === "pending");
-    const outgoing = (data.outgoing || []).filter(r => r.status === "pending");
+    const notifications = Array.isArray(notificationsData.items)
+      ? notificationsData.items
+      : [];
 
-    if (!incoming.length && !outgoing.length) {
+    const outgoing = (requestsData.outgoing || []).filter(r => r.status === "pending");
+
+    if (!notifications.length && !outgoing.length) {
       requestsBox.innerHTML = `<div class="cs-search-hint">No pending requests</div>`;
       return;
     }
 
-    for (const r of incoming) {
+    for (const n of notifications) {
       const row = document.createElement("div");
-      row.className = "cs-search-row";
-      row.innerHTML = `
-        <span>Incoming: ${csElideFp(r.from_fp)}</span>
-        <button type="button" data-act="accept">Accept</button>
-        <button type="button" data-act="reject">Reject</button>
-      `;
-      row.querySelectorAll("button").forEach(btn => {
-        btn.onclick = async () => {
+      row.className = "cs-search-row cs-notification-row";
+
+      const label = document.createElement("span");
+      label.className = "cs-notification-label";
+
+      if (n.type === "contact_request") {
+        label.textContent = `Contact request: ${n.from_display_name || csElideFp(n.from_fp)}`;
+
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "cs-mini-action cs-mini-action-primary";
+        accept.textContent = "Accept";
+
+        const reject = document.createElement("button");
+        reject.type = "button";
+        reject.className = "cs-mini-action";
+        reject.textContent = "Reject";
+
+        accept.onclick = async () => {
           await fetch("/api/v4/circlestack/contact/respond", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: r.id, action: btn.dataset.act })
+            body: JSON.stringify({ id: n.id, action: "accept" })
           });
+
+          await loadRequests();
+          await csUpdateFindPeopleBadge();
+          await csLoadIntroductions();
+        };
+
+        reject.onclick = async () => {
+          await fetch("/api/v4/circlestack/contact/respond", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: n.id, action: "reject" })
+          });
+
           await loadRequests();
           await csUpdateFindPeopleBadge();
         };
-      });
+
+        row.appendChild(label);
+        row.appendChild(accept);
+        row.appendChild(reject);
+      } else if (n.type === "introduction") {
+        label.textContent =
+          `Introduction: ${n.introducer_display_name || csElideFp(n.introducer_fp)} introduced you to ${n.other_display_name || csElideFp(n.other_fp)}`;
+
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "cs-mini-action cs-mini-action-primary";
+        accept.textContent = "Accept";
+
+        const dismiss = document.createElement("button");
+        dismiss.type = "button";
+        dismiss.className = "cs-mini-action";
+        dismiss.textContent = "Dismiss";
+
+        accept.onclick = async () => {
+          await fetch("/api/v4/circlestack/introductions/respond", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: n.id, action: "accept" })
+          });
+
+          await loadRequests();
+          await csUpdateFindPeopleBadge();
+          await csLoadIntroductions();
+        };
+
+        dismiss.onclick = async () => {
+          await fetch("/api/v4/circlestack/introductions/respond", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: n.id, action: "dismiss" })
+          });
+
+          await loadRequests();
+          await csUpdateFindPeopleBadge();
+          await csLoadIntroductions();
+        };
+
+        row.appendChild(label);
+        row.appendChild(accept);
+        row.appendChild(dismiss);
+      } else {
+        label.textContent = "Notification";
+        row.appendChild(label);
+      }
+
       requestsBox.appendChild(row);
     }
 
     for (const r of outgoing) {
       const row = document.createElement("div");
-      row.className = "cs-search-row";
-      row.innerHTML = `<span>Outgoing: ${csElideFp(r.to_fp)}</span><span>Pending</span>`;
+      row.className = "cs-search-row cs-notification-row";
+
+      const label = document.createElement("span");
+      label.className = "cs-notification-label";
+      label.textContent = `Outgoing: ${csElideFp(r.to_fp)}`;
+
+      const status = document.createElement("span");
+      status.textContent = "Pending";
+
+      row.appendChild(label);
+      row.appendChild(status);
       requestsBox.appendChild(row);
     }
   }
@@ -897,18 +992,28 @@ async function csUpdateFindPeopleBadge() {
   if (!btn) return;
 
   btn.querySelector(".cs-badge-dot")?.remove();
+  btn.removeAttribute("title");
 
-  const res = await fetch("/api/v4/circlestack/contact/requests", {
-    credentials: "same-origin"
-  });
-  const data = await res.json();
-  const incoming = (data.incoming || []).filter(r => r.status === "pending");
+  try {
+    const res = await fetch("/api/v4/circlestack/notifications", {
+      credentials: "same-origin"
+    });
 
-  if (incoming.length > 0) {
-    const dot = document.createElement("span");
-    dot.className = "cs-badge-dot";
-    dot.textContent = incoming.length > 9 ? "9+" : String(incoming.length);
-    btn.appendChild(dot);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    const count = Number.isFinite(data.count) ? data.count : items.length;
+
+    if (count > 0) {
+      const dot = document.createElement("span");
+      dot.className = "cs-badge-dot";
+      dot.textContent = count > 9 ? "9+" : String(count);
+      btn.title = count === 1 ? "1 pending notification" : `${count} pending notifications`;
+      btn.appendChild(dot);
+    }
+  } catch (_) {
+    // Badge is best-effort. Do not break Circle Stack if notifications fail.
   }
 }
 
