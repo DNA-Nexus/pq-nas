@@ -864,3 +864,177 @@ body {
   color: rgba(255,255,255,0.82);
   overflow-wrap: anywhere;
 }
+
+.cs-reactions {
+  margin-top: 12px;
+  display: grid;
+  gap: 7px;
+}
+
+.cs-reaction-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cs-reaction-button {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.055);
+  color: #e5e7eb;
+  padding: 5px 9px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+
+.cs-reaction-button:hover {
+  background: rgba(147,197,253,0.13);
+  border-color: rgba(147,197,253,0.32);
+  transform: translateY(-1px);
+}
+
+.cs-reaction-button.is-active {
+  background: rgba(37,99,235,0.28);
+  border-color: rgba(147,197,253,0.72);
+  color: #eff6ff;
+}
+
+.cs-reaction-people {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cs-reaction-person {
+  color: #93c5fd;
+}
+
+.cs-reaction-sep {
+  color: rgba(255,255,255,0.28);
+}
+
+.cs-reaction-more {
+  color: rgba(255,255,255,0.48);
+}
+
+/* Compact hover reaction picker */
+
+.cs-reaction-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-reaction-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cs-reaction-chip {
+  border: 1px solid rgba(147,197,253,0.26);
+  border-radius: 999px;
+  background: rgba(147,197,253,0.10);
+  color: #dbeafe;
+  padding: 5px 9px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cs-reaction-chip:hover {
+  background: rgba(147,197,253,0.18);
+  border-color: rgba(147,197,253,0.45);
+}
+
+.cs-reaction-chip.is-active {
+  background: rgba(37,99,235,0.34);
+  border-color: rgba(147,197,253,0.72);
+  color: #eff6ff;
+}
+
+.cs-reaction-picker {
+  position: relative;
+  display: inline-flex;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.cs-post:hover .cs-reaction-picker,
+.cs-reaction-picker:hover,
+.cs-reaction-picker:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cs-reaction-trigger {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.055);
+  color: rgba(255,255,255,0.72);
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-reaction-trigger:hover,
+.cs-reaction-picker:focus-within .cs-reaction-trigger {
+  background: rgba(147,197,253,0.13);
+  border-color: rgba(147,197,253,0.36);
+  color: #dbeafe;
+}
+
+.cs-reaction-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  gap: 5px;
+  padding: 7px;
+  border-radius: 999px;
+  background: rgba(24,24,32,0.96);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 16px 50px rgba(0,0,0,0.45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.98);
+  transition: opacity 130ms ease, transform 130ms ease;
+  z-index: 5;
+}
+
+.cs-reaction-picker:hover .cs-reaction-menu,
+.cs-reaction-picker:focus-within .cs-reaction-menu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.cs-reaction-menu-button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.cs-reaction-menu-button:hover {
+  transform: translateY(-3px) scale(1.14);
+  background: rgba(147,197,253,0.14);
+}
+
+.cs-reaction-menu-button.is-active {
+  background: rgba(37,99,235,0.30);
+}

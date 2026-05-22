@@ -1,4 +1,5 @@
 const CS_API = "/api/v4/circlestack";
+const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
 
 async function csLoadFeed() {
   const feed = document.getElementById("csFeed");
@@ -145,6 +146,159 @@ async function csOpenPersonCard(fp, fallback = {}) {
 }
 
 
+
+function csReactionTitle(summary) {
+  const people = Array.isArray(summary.people) ? summary.people : [];
+  if (!people.length) return "";
+
+  return people
+    .map(p => p.display_name || p.fp_short || csElideFp(p.fp))
+    .join(", ");
+}
+
+function csReactionPeopleLine(post) {
+  const summaries = Array.isArray(post.reactions) ? post.reactions : [];
+  const bits = [];
+
+  for (const summary of summaries) {
+    const people = Array.isArray(summary.people) ? summary.people : [];
+    for (const p of people) {
+      bits.push({
+        reaction: summary.reaction,
+        name: p.display_name || p.fp_short || csElideFp(p.fp)
+      });
+    }
+  }
+
+  if (!bits.length) return null;
+
+  const line = document.createElement("div");
+  line.className = "cs-reaction-people";
+
+  const visible = bits.slice(0, 8);
+  visible.forEach((item, idx) => {
+    const chip = document.createElement("span");
+    chip.className = "cs-reaction-person";
+    chip.textContent = `${item.name} ${item.reaction}`;
+    line.appendChild(chip);
+
+    if (idx < visible.length - 1) {
+      const sep = document.createElement("span");
+      sep.className = "cs-reaction-sep";
+      sep.textContent = "·";
+      line.appendChild(sep);
+    }
+  });
+
+  if (bits.length > visible.length) {
+    const more = document.createElement("span");
+    more.className = "cs-reaction-more";
+    more.textContent = `+${bits.length - visible.length}`;
+    line.appendChild(more);
+  }
+
+  return line;
+}
+
+function csRenderReactionBar(post) {
+  const wrap = document.createElement("div");
+  wrap.className = "cs-reactions";
+
+  const summaries = new Map(
+    (Array.isArray(post.reactions) ? post.reactions : [])
+      .map(r => [r.reaction, r])
+  );
+
+  const top = document.createElement("div");
+  top.className = "cs-reaction-top";
+
+  const summaryRow = document.createElement("div");
+  summaryRow.className = "cs-reaction-summary";
+
+  for (const reaction of CS_REACTIONS) {
+    const summary = summaries.get(reaction);
+    if (!summary || Number(summary.count || 0) <= 0) continue;
+
+    const count = Number(summary.count || 0);
+    const isMine = post.my_reaction === reaction || summary.reacted_by_me === true;
+
+    const chip = document.createElement("button");
+    chip.className = "cs-reaction-chip";
+    if (isMine) chip.classList.add("is-active");
+    chip.type = "button";
+    chip.textContent = `${reaction} ${count}`;
+
+    const names = csReactionTitle(summary);
+    chip.title = names ? `${reaction} ${names}` : reaction;
+
+    chip.addEventListener("click", async () => {
+      await csReactToPost(post.id, isMine ? "" : reaction);
+    });
+
+    summaryRow.appendChild(chip);
+  }
+
+  const picker = document.createElement("div");
+  picker.className = "cs-reaction-picker";
+
+  const trigger = document.createElement("button");
+  trigger.className = "cs-reaction-trigger";
+  trigger.type = "button";
+  trigger.textContent = post.my_reaction ? `${post.my_reaction} React` : "🙂 React";
+  trigger.title = "React to this post";
+
+  const menu = document.createElement("div");
+  menu.className = "cs-reaction-menu";
+
+  for (const reaction of CS_REACTIONS) {
+    const isMine = post.my_reaction === reaction;
+
+    const btn = document.createElement("button");
+    btn.className = "cs-reaction-menu-button";
+    if (isMine) btn.classList.add("is-active");
+    btn.type = "button";
+    btn.textContent = reaction;
+    btn.title = isMine ? "Remove reaction" : `React ${reaction}`;
+
+    btn.addEventListener("click", async () => {
+      await csReactToPost(post.id, isMine ? "" : reaction);
+    });
+
+    menu.appendChild(btn);
+  }
+
+  picker.appendChild(trigger);
+  picker.appendChild(menu);
+
+  if (summaryRow.children.length > 0) {
+    top.appendChild(summaryRow);
+  }
+
+  top.appendChild(picker);
+  wrap.appendChild(top);
+
+  const peopleLine = csReactionPeopleLine(post);
+  if (peopleLine) {
+    wrap.appendChild(peopleLine);
+  }
+
+  return wrap;
+}
+
+async function csReactToPost(postId, reaction) {
+  if (!postId) return;
+
+  await fetch(`${CS_API}/posts/react`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ post_id: postId, reaction })
+  });
+
+  await csLoadFeed();
+}
+
+
 function csRenderPost(post) {
   const el = document.createElement("article");
   el.className = "cs-post";
@@ -191,6 +345,8 @@ function csRenderPost(post) {
     img.alt = "";
     el.appendChild(img);
   }
+
+  el.appendChild(csRenderReactionBar(post));
 
   const meta = document.createElement("div");
   meta.className = "cs-post-meta";
