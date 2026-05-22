@@ -135,10 +135,22 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
                 const char* media = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
                 const long long created = sqlite3_column_int64(stmt, 3);
+                const char* owner = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+                const std::string owner_fp = owner ? owner : "";
+
+                std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
+
+                if (deps.users && !owner_fp.empty()) {
+                    auto u = deps.users->get(owner_fp);
+                    if (u.has_value() && !u->name.empty()) {
+                        owner_display = u->name;
+                    }
+                }
 
                 p["id"] = id;
                 p["text"] = text ? text : "";
                 p["created_epoch"] = created;
+                p["owner_display_name"] = owner_display;
 
                 if (media && media[0]) {
                     p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
@@ -217,6 +229,72 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             sqlite3_finalize(stmt);
 
             set_json(res, {{"ok", true}, {"id", id}});
+        });
+
+    server.Delete("/api/v4/circlestack/posts",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (!req.has_param("id")) {
+                res.status = 400;
+                set_json(res, {{"ok", false}, {"error", "missing_id"}});
+                return;
+            }
+
+            const int id = std::atoi(req.get_param_value("id").c_str());
+
+            cs_db_init();
+
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT owner_fp FROM posts WHERE id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+
+            std::string owner_fp;
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                const char* o = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                if (o) owner_fp = o;
+            }
+
+            sqlite3_finalize(stmt);
+
+            if (owner_fp.empty()) {
+                res.status = 404;
+                set_json(res, {{"ok", false}, {"error", "not_found"}});
+                return;
+            }
+
+            if (owner_fp != actor_fp) {
+                res.status = 403;
+                set_json(res, {{"ok", false}, {"error", "forbidden"}});
+                return;
+            }
+
+            sqlite3_prepare_v2(g_db,
+                "DELETE FROM posts WHERE id=?",
+                -1, &stmt, nullptr);
+
+            sqlite3_bind_int(stmt, 1, id);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                sqlite3_finalize(stmt);
+                res.status = 500;
+                set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
+                return;
+            }
+
+            sqlite3_finalize(stmt);
+
+            set_json(res, {{"ok", true}, {"deleted_id", id}});
         });
 
     server.Get("/api/v4/circlestack/media",
