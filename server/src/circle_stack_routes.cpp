@@ -64,20 +64,6 @@ static void cs_db_init() {
         "ON circle_edges(user_a_fp, user_b_fp, source_intro_id)",
         nullptr, nullptr, nullptr);
 
-    sqlite3_exec(g_db,
-        "CREATE TABLE IF NOT EXISTS people_edges ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "created_epoch INTEGER,"
-        "owner_fp TEXT,"
-        "other_fp TEXT,"
-        "source TEXT"
-        ")",
-        nullptr, nullptr, nullptr);
-
-    sqlite3_exec(g_db,
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_edges_owner_other "
-        "ON people_edges(owner_fp, other_fp)",
-        nullptr, nullptr, nullptr);
 
     sqlite3_exec(g_db,
         "CREATE TABLE IF NOT EXISTS introductions ("
