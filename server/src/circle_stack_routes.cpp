@@ -436,21 +436,27 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 if (!can_see) continue;
 
                 std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
+                std::string owner_avatar_url;
 
                 if (deps.users && !owner_fp.empty()) {
                     auto u = deps.users->get(owner_fp);
-                    if (u.has_value() && !u->name.empty()) {
-                        owner_display = u->name;
+                    if (u.has_value()) {
+                        if (!u->name.empty()) {
+                            owner_display = u->name;
+                        }
+                        owner_avatar_url = u->avatar_url;
                     }
                 }
 
                 p["id"] = id;
                 p["text"] = text ? text : "";
                 p["created_epoch"] = created;
+                p["owner_fp"] = owner_fp;
                 p["owner_display_name"] = owner_display;
                 p["owner_fp_short"] = owner_fp.size() >= 8
                     ? owner_fp.substr(0, 8)
                     : owner_fp;
+                p["owner_avatar_url"] = owner_avatar_url;
                 p["visibility"] = visibility;
 
                 if (media && media[0]) {

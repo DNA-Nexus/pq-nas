@@ -23,6 +23,128 @@ async function csLoadFeed() {
   }
 }
 
+
+async function csOpenPersonCard(fp, fallback = {}) {
+  const safeFp = String(fp || "").trim();
+  if (!safeFp && !fallback.display_name) return;
+
+  let user = null;
+
+  try {
+    if (safeFp) {
+      const res = await fetch("/api/v4/circlestack/users", {
+        credentials: "same-origin"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        user = (data.users || []).find(u => u.fingerprint === safeFp) || null;
+      }
+    }
+  } catch (_) {
+    // Person card can still render from post fallback data.
+  }
+
+  const name =
+    (user && user.name) ||
+    fallback.display_name ||
+    fallback.fp_short ||
+    csElideFp(safeFp) ||
+    "Unknown";
+
+  const role = (user && user.role) || "";
+  const avatarUrl = (user && user.avatar_url) || fallback.avatar_url || "";
+  const fpShort = (user && user.fp_short) || fallback.fp_short || csElideFp(safeFp);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-profile-modal";
+
+  const close = () => backdrop.remove();
+
+  const head = document.createElement("div");
+  head.className = "cs-profile-head";
+
+  const avatar = document.createElement("div");
+  avatar.className = "cs-profile-avatar";
+
+  if (avatarUrl) {
+    const img = document.createElement("img");
+    img.src = avatarUrl;
+    img.alt = "";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = name.slice(0, 1).toUpperCase();
+  }
+
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "cs-profile-title-wrap";
+
+  const title = document.createElement("div");
+  title.className = "cs-profile-name";
+  title.textContent = name;
+
+  const sub = document.createElement("div");
+  sub.className = "cs-profile-sub";
+  sub.textContent = role ? `${role} · ${fpShort}` : fpShort;
+
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(sub);
+
+  head.appendChild(avatar);
+  head.appendChild(titleWrap);
+
+  const body = document.createElement("div");
+  body.className = "cs-profile-body";
+
+  const fpLabel = document.createElement("div");
+  fpLabel.className = "cs-profile-label";
+  fpLabel.textContent = "Fingerprint";
+
+  const fpValue = document.createElement("div");
+  fpValue.className = "cs-profile-fingerprint";
+  fpValue.textContent = safeFp || fpShort || "unknown";
+
+  body.appendChild(fpLabel);
+  body.appendChild(fpValue);
+
+  const actions = document.createElement("div");
+  actions.className = "cs-modal-actions";
+
+  if (safeFp && navigator.clipboard) {
+    const copy = document.createElement("button");
+    copy.className = "cs-modal-cancel";
+    copy.type = "button";
+    copy.textContent = "Copy fingerprint";
+    copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(safeFp);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+    });
+    actions.appendChild(copy);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "cs-modal-cancel";
+  closeBtn.type = "button";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", close);
+  actions.appendChild(closeBtn);
+
+  modal.appendChild(head);
+  modal.appendChild(body);
+  modal.appendChild(actions);
+
+  backdrop.appendChild(modal);
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) close();
+  });
+
+  document.body.appendChild(backdrop);
+}
+
+
 function csRenderPost(post) {
   const el = document.createElement("article");
   el.className = "cs-post";
@@ -30,9 +152,18 @@ function csRenderPost(post) {
   const header = document.createElement("div");
   header.className = "cs-post-header";
 
-  const author = document.createElement("div");
-  author.className = "cs-post-author";
+  const author = document.createElement("button");
+  author.className = "cs-post-author cs-post-author-button";
+  author.type = "button";
   author.textContent = post.owner_display_name || post.owner_fp_short || "anon";
+  author.title = "Open person card";
+  author.addEventListener("click", () => {
+    csOpenPersonCard(post.owner_fp || "", {
+      display_name: post.owner_display_name || "",
+      fp_short: post.owner_fp_short || "",
+      avatar_url: post.owner_avatar_url || ""
+    });
+  });
   header.appendChild(author);
 
   const del = document.createElement("button");
@@ -527,114 +658,17 @@ document.getElementById("csIntroduceBtn")
   ?.addEventListener("click", csOpenIntroduceModal);
 
 
+function csRemoveLegacyIntroductionsPanel() {
+  document.getElementById("csIntroductions")?.remove();
+}
+
 async function csLoadIntroductions() {
-  const res = await fetch("/api/v4/circlestack/introductions", {
-    credentials: "same-origin"
-  });
-  const data = await res.json();
-  
-const items = data.items || [];
-
-const peopleRes = await fetch("/api/v4/circlestack/people", { credentials: "same-origin" });
-const peopleData = await peopleRes.json();
-
-const merged = new Map();
-
-// circle ensin (vahvempi)
-for (const it of items) {
-  merged.set(it.fp, { fp: it.fp, source: "circle" });
+  // Introductions are notifications/actions, not feed posts.
+  // Keep this function as a compatibility refresh hook for existing callers.
+  csRemoveLegacyIntroductionsPanel();
 }
 
-// sitten people
-for (const it of (peopleData.items || [])) {
-  if (!merged.has(it.fp)) {
-    merged.set(it.fp, it);
-  }
-}
-
-const list = Array.from(merged.values());
-
-
-  const usersRes = await fetch("/api/v4/circlestack/users", {
-    credentials: "same-origin"
-  });
-  const usersData = await usersRes.json();
-  const users = usersData.users || [];
-  const me = users.find(u => u.is_me);
-  const meFp = me ? me.fingerprint : "";
-
-  const usersByFp = new Map(
-    users.map(u => [u.fingerprint, u])
-  );
-
-  let box = document.getElementById("csIntroductions");
-  if (!box) {
-    box = document.createElement("section");
-    box.id = "csIntroductions";
-    box.className = "cs-feed";
-    document.querySelector(".cs-shell").appendChild(box);
-  }
-
-  box.innerHTML = "";
-
-  for (const it of items) {
-    const el = document.createElement("div");
-    el.className = "cs-post";
-
-    const introducer = csUserLabel(it.introducer_fp, usersByFp);
-    const a = csUserLabel(it.person_a_fp, usersByFp);
-    const b = csUserLabel(it.person_b_fp, usersByFp);
-
-    el.innerHTML = `
-      <div class="cs-intro-line">
-        <span class="cs-intro-from">${introducer}</span>
-        <span class="cs-intro-verb">introduced</span>
-        <span class="cs-intro-to">${a} ↔ ${b}</span>
-      </div>
-      ${it.message ? `<div class="cs-intro-msg">"${it.message}"</div>` : ""}
-    `;
-
-    const canRespond =
-      it.status === "pending" &&
-      meFp &&
-      (meFp === it.person_a_fp || meFp === it.person_b_fp) &&
-      meFp !== it.introducer_fp;
-
-    if (canRespond) {
-      const actions = document.createElement("div");
-      actions.className = "cs-intro-actions";
-
-      const ok = document.createElement("button");
-      ok.textContent = "Accept";
-
-      const no = document.createElement("button");
-      no.textContent = "Dismiss";
-
-      ok.onclick = () => csRespondIntro(it.id, "accept");
-      no.onclick = () => csRespondIntro(it.id, "dismiss");
-
-      actions.appendChild(ok);
-      actions.appendChild(no);
-      el.appendChild(actions);
-    }
-
-    box.appendChild(el);
-  }
-}
-
-async function csRespondIntro(id, action) {
-  await fetch("/api/v4/circlestack/introductions/respond", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, action })
-  });
-
-  await csLoadIntroductions();
-  await csUpdateFindPeopleBadge();
-}
-
-document.addEventListener("DOMContentLoaded", csLoadIntroductions);
+document.addEventListener("DOMContentLoaded", csRemoveLegacyIntroductionsPanel);
 
 
 function csUserLabel(fp, usersByFp) {
@@ -864,8 +898,21 @@ async function csOpenFindPeople() {
         row.appendChild(accept);
         row.appendChild(reject);
       } else if (n.type === "introduction") {
-        label.textContent =
+        label.textContent = "";
+
+        const title = document.createElement("div");
+        title.className = "cs-notification-title";
+        title.textContent =
           `Introduction: ${n.introducer_display_name || csElideFp(n.introducer_fp)} introduced you to ${n.other_display_name || csElideFp(n.other_fp)}`;
+        label.appendChild(title);
+
+        const msg = String(n.message || "").trim();
+        if (msg) {
+          const msgEl = document.createElement("div");
+          msgEl.className = "cs-notification-message";
+          msgEl.textContent = `"${msg}"`;
+          label.appendChild(msgEl);
+        }
 
         const accept = document.createElement("button");
         accept.type = "button";
