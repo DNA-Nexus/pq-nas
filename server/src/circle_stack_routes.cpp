@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@ using json = nlohmann::json;
 namespace {
 
 static sqlite3* g_db = nullptr;
+static constexpr const char* kCircleStackDbPath = "/srv/pqnas/circlestack.db";
 
 void set_json(httplib::Response& res, const json& body) {
     res.set_content(body.dump(), "application/json; charset=utf-8");
@@ -23,7 +25,7 @@ void set_json(httplib::Response& res, const json& body) {
 static void cs_db_init() {
     if (g_db) return;
 
-    if (sqlite3_open("circlestack.db", &g_db) != SQLITE_OK) {
+    if (sqlite3_open(kCircleStackDbPath, &g_db) != SQLITE_OK) {
         fprintf(stderr, "CircleStack DB open failed\n");
         return;
     }
@@ -60,8 +62,38 @@ static void cs_db_init() {
         nullptr, nullptr, nullptr);
 
     sqlite3_exec(g_db,
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_circle_edges_pair_intro "
-        "ON circle_edges(user_a_fp, user_b_fp, source_intro_id)",
+        "DELETE FROM circle_edges "
+        "WHERE user_a_fp IS NULL OR user_b_fp IS NULL "
+        "   OR user_a_fp = '' OR user_b_fp = '' "
+        "   OR user_a_fp = user_b_fp",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "UPDATE circle_edges "
+        "SET user_a_fp = CASE WHEN user_a_fp > user_b_fp THEN user_b_fp ELSE user_a_fp END, "
+        "    user_b_fp = CASE WHEN user_a_fp > user_b_fp THEN user_a_fp ELSE user_b_fp END "
+        "WHERE user_a_fp > user_b_fp",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "DELETE FROM circle_edges "
+        "WHERE id NOT IN ("
+        "  SELECT MIN(id) FROM circle_edges GROUP BY user_a_fp, user_b_fp"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "DROP INDEX IF EXISTS idx_circle_edges_pair_intro",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_circle_edges_pair "
+        "ON circle_edges(user_a_fp, user_b_fp)",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_circle_edges_intro "
+        "ON circle_edges(source_intro_id)",
         nullptr, nullptr, nullptr);
 
 
@@ -146,6 +178,196 @@ std::string cs_mime_for_path(const std::filesystem::path& p) {
     if (ext == ".gif") return "image/gif";
 
     return "application/octet-stream";
+}
+
+
+static constexpr const char* kPeopleContactsDbPath =
+    "/srv/pqnas/config/people_contacts.sqlite3";
+
+std::string cs_short_fp(const std::string& fp) {
+    return fp.size() >= 8 ? fp.substr(0, 8) : fp;
+}
+
+std::string cs_display_name_for_fp(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& fp
+) {
+    std::string name = cs_short_fp(fp);
+
+    if (deps.users && !fp.empty()) {
+        auto u = deps.users->get(fp);
+        if (u.has_value() && !u->name.empty()) {
+            name = u->name;
+        }
+    }
+
+    return name;
+}
+
+bool cs_open_people_db(sqlite3** out_db, std::string* err) {
+    if (!out_db) return false;
+    *out_db = nullptr;
+
+    sqlite3* db = nullptr;
+    if (sqlite3_open(kPeopleContactsDbPath, &db) != SQLITE_OK) {
+        if (err) {
+            err->assign(db ? sqlite3_errmsg(db) : "sqlite3_open failed");
+        }
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    *out_db = db;
+    return true;
+}
+
+bool cs_insert_people_contact(
+    sqlite3* people_db,
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& owner_fp,
+    const std::string& subject_fp,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    if (!people_db || owner_fp.empty() || subject_fp.empty() || owner_fp == subject_fp) {
+        if (err) *err = "invalid people contact";
+        return false;
+    }
+
+    const std::string display_name = cs_display_name_for_fp(deps, subject_fp);
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT OR IGNORE INTO people_contacts "
+        "(owner_fingerprint, subject_user_id, subject_fingerprint, subject_kind, "
+        " display_name, nickname, notes, created_at_epoch, updated_at_epoch) "
+        "VALUES (?, '', ?, 'local_user', ?, '', 'Accepted contact', ?, ?)";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, subject_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 4, now);
+    sqlite3_bind_int64(st, 5, now);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    return true;
+}
+
+bool cs_insert_symmetric_people_contacts(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& a_fp,
+    const std::string& b_fp,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    bool ok = true;
+
+    if (sqlite3_exec(people_db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        ok = false;
+    }
+
+    if (ok) ok = cs_insert_people_contact(people_db, deps, a_fp, b_fp, now, err);
+    if (ok) ok = cs_insert_people_contact(people_db, deps, b_fp, a_fp, now, err);
+
+    if (ok) {
+        if (sqlite3_exec(people_db, "COMMIT", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(people_db);
+            ok = false;
+        }
+    } else {
+        sqlite3_exec(people_db, "ROLLBACK", nullptr, nullptr, nullptr);
+    }
+
+    sqlite3_close(people_db);
+    return ok;
+}
+
+bool cs_canonical_circle_pair(
+    const std::string& left,
+    const std::string& right,
+    std::string* out_a,
+    std::string* out_b,
+    std::string* err
+) {
+    if (left.empty() || right.empty() || left == right) {
+        if (err) *err = "invalid circle pair";
+        return false;
+    }
+
+    if (left < right) {
+        *out_a = left;
+        *out_b = right;
+    } else {
+        *out_a = right;
+        *out_b = left;
+    }
+
+    return true;
+}
+
+bool cs_insert_circle_edge(
+    sqlite3* db,
+    const std::string& left_fp,
+    const std::string& right_fp,
+    sqlite3_int64 now,
+    sqlite3_int64 source_intro_id,
+    std::string* err
+) {
+    std::string a;
+    std::string b;
+
+    if (!cs_canonical_circle_pair(left_fp, right_fp, &a, &b, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT OR IGNORE INTO circle_edges "
+        "(created_epoch, user_a_fp, user_b_fp, source_intro_id) "
+        "VALUES (?, ?, ?, ?)";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, now);
+    sqlite3_bind_text(st, 2, a.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, b.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (source_intro_id > 0) {
+        sqlite3_bind_int64(st, 4, source_intro_id);
+    } else {
+        sqlite3_bind_null(st, 4);
+    }
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace
@@ -703,16 +925,21 @@ server.Post("/api/v4/circlestack/introductions/create",
             }
 
             if (action == "accept") {
-                sqlite3_stmt* st2 = nullptr;
-                sqlite3_prepare_v2(g_db,
-                    "INSERT OR IGNORE INTO circle_edges (created_epoch, user_a_fp, user_b_fp, source_intro_id) VALUES (?, ?, ?, ?)",
-                    -1, &st2, nullptr);
-                sqlite3_bind_int64(st2, 1, (sqlite3_int64)std::time(nullptr));
-                sqlite3_bind_text(st2, 2, a.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(st2, 3, b.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(st2, 4, id);
-                sqlite3_step(st2);
-                sqlite3_finalize(st2);
+                std::string edge_err;
+                if (!cs_insert_circle_edge(
+                        g_db,
+                        a,
+                        b,
+                        (sqlite3_int64)std::time(nullptr),
+                        id,
+                        &edge_err)) {
+                    res.status = 500;
+                    return set_json(res, {
+                        {"ok", false},
+                        {"error", "circle_edge_insert_failed"},
+                        {"detail", edge_err}
+                    });
+                }
             }
 
             sqlite3_prepare_v2(g_db,
@@ -740,7 +967,7 @@ server.Post("/api/v4/circlestack/introductions/create",
 
             sqlite3_stmt* st = nullptr;
             sqlite3* people_db = nullptr;
-            if (sqlite3_open("/srv/pqnas/config/people_contacts.sqlite3", &people_db) != SQLITE_OK) {
+            if (sqlite3_open(kPeopleContactsDbPath, &people_db) != SQLITE_OK) {
                 if (people_db) sqlite3_close(people_db);
                 return set_json(res, {{"ok", false}, {"error", "people db open failed"}});
             }
@@ -767,8 +994,8 @@ server.Post("/api/v4/circlestack/introductions/create",
                 });
             }
 
-            sqlite3_close(people_db);
             sqlite3_finalize(st);
+            sqlite3_close(people_db);
 
             set_json(res, {{"ok", true}, {"items", out}});
         });
@@ -895,52 +1122,36 @@ server.Post("/api/v4/circlestack/introductions/create",
             const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
 
             if (action == "accept") {
-                sqlite3* people_db = nullptr;
-                if (sqlite3_open("/srv/pqnas/config/people_contacts.sqlite3", &people_db) != SQLITE_OK) {
-                    if (people_db) sqlite3_close(people_db);
-                    return set_json(res, {{"ok", false}, {"error", "people db open failed"}});
+                std::string contact_err;
+                if (!cs_insert_symmetric_people_contacts(
+                        deps,
+                        from_fp,
+                        to_fp,
+                        now,
+                        &contact_err)) {
+                    res.status = 500;
+                    return set_json(res, {
+                        {"ok", false},
+                        {"error", "people_contacts_insert_failed"},
+                        {"detail", contact_err}
+                    });
                 }
 
-                auto insert_contact = [&](const std::string& owner, const std::string& other) {
-                    std::string name = other.size() >= 8 ? other.substr(0, 8) : other;
-                    if (deps.users) {
-                        auto u = deps.users->get(other);
-                        if (u.has_value() && !u->name.empty()) name = u->name;
-                    }
-
-                    sqlite3_stmt* st2 = nullptr;
-                    sqlite3_prepare_v2(people_db,
-                        "INSERT OR IGNORE INTO people_contacts "
-                        "(owner_fingerprint, subject_user_id, subject_fingerprint, subject_kind, display_name, nickname, notes, created_at_epoch, updated_at_epoch) "
-                        "VALUES (?, '', ?, 'local_user', ?, '', 'Accepted contact', ?, ?)",
-                        -1, &st2, nullptr);
-
-                    sqlite3_bind_text(st2, 1, owner.c_str(), -1, SQLITE_TRANSIENT);
-                    sqlite3_bind_text(st2, 2, other.c_str(), -1, SQLITE_TRANSIENT);
-                    sqlite3_bind_text(st2, 3, name.c_str(), -1, SQLITE_TRANSIENT);
-                    sqlite3_bind_int64(st2, 4, now);
-                    sqlite3_bind_int64(st2, 5, now);
-
-                    sqlite3_step(st2);
-                    sqlite3_finalize(st2);
-                };
-
-                insert_contact(from_fp, to_fp);
-                insert_contact(to_fp, from_fp);
-                sqlite3_close(people_db);
-
-                sqlite3_prepare_v2(g_db,
-                    "INSERT OR IGNORE INTO circle_edges "
-                    "(created_epoch, user_a_fp, user_b_fp, source_intro_id) "
-                    "VALUES (?, ?, ?, NULL)",
-                    -1, &st, nullptr);
-
-                sqlite3_bind_int64(st, 1, now);
-                sqlite3_bind_text(st, 2, from_fp.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(st, 3, to_fp.c_str(), -1, SQLITE_TRANSIENT);
-
-                sqlite3_step(st);
-                sqlite3_finalize(st);
+                std::string edge_err;
+                if (!cs_insert_circle_edge(
+                        g_db,
+                        from_fp,
+                        to_fp,
+                        now,
+                        0,
+                        &edge_err)) {
+                    res.status = 500;
+                    return set_json(res, {
+                        {"ok", false},
+                        {"error", "circle_edge_insert_failed"},
+                        {"detail", edge_err}
+                    });
+                }
             }
 
             sqlite3_prepare_v2(g_db,
@@ -954,6 +1165,94 @@ server.Post("/api/v4/circlestack/introductions/create",
             sqlite3_finalize(st);
 
             set_json(res, {{"ok", true}});
+        });
+
+
+
+    server.Get("/api/v4/circlestack/notifications",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp, actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            json items = json::array();
+
+            sqlite3_stmt* st = nullptr;
+            sqlite3_prepare_v2(g_db,
+                "SELECT id, created_epoch, from_fp, message "
+                "FROM contact_requests "
+                "WHERE to_fp = ? AND status = 'pending' "
+                "ORDER BY created_epoch DESC",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string from_fp =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+
+                items.push_back({
+                    {"type", "contact_request"},
+                    {"id", sqlite3_column_int64(st, 0)},
+                    {"created_epoch", sqlite3_column_int64(st, 1)},
+                    {"from_fp", from_fp},
+                    {"from_display_name", cs_display_name_for_fp(deps, from_fp)},
+                    {"message", reinterpret_cast<const char*>(sqlite3_column_text(st, 3))},
+                    {"action_endpoint", "/api/v4/circlestack/contact/respond"}
+                });
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
+
+            sqlite3_prepare_v2(g_db,
+                "SELECT id, created_epoch, introducer_fp, person_a_fp, person_b_fp, message "
+                "FROM introductions "
+                "WHERE status = 'pending' "
+                "  AND (person_a_fp = ? OR person_b_fp = ?) "
+                "ORDER BY created_epoch DESC",
+                -1, &st, nullptr);
+
+            sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string introducer_fp =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+                const std::string a_fp =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+                const std::string b_fp =
+                    reinterpret_cast<const char*>(sqlite3_column_text(st, 4));
+
+                const std::string other_fp = (actor_fp == a_fp) ? b_fp : a_fp;
+
+                items.push_back({
+                    {"type", "introduction"},
+                    {"id", sqlite3_column_int64(st, 0)},
+                    {"created_epoch", sqlite3_column_int64(st, 1)},
+                    {"introducer_fp", introducer_fp},
+                    {"introducer_display_name", cs_display_name_for_fp(deps, introducer_fp)},
+                    {"other_fp", other_fp},
+                    {"other_display_name", cs_display_name_for_fp(deps, other_fp)},
+                    {"person_a_fp", a_fp},
+                    {"person_b_fp", b_fp},
+                    {"message", reinterpret_cast<const char*>(sqlite3_column_text(st, 5))},
+                    {"action_endpoint", "/api/v4/circlestack/introductions/respond"}
+                });
+            }
+
+            sqlite3_finalize(st);
+
+            set_json(res, {
+                {"ok", true},
+                {"count", items.size()},
+                {"items", items}
+            });
         });
 
 
