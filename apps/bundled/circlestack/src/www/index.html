@@ -15,6 +15,15 @@
     <section class="cs-compose">
       <textarea id="csText" data-i18n-placeholder="compose.placeholder"></textarea>
       <input id="csMediaPath" data-i18n-placeholder="compose.mediaPath">
+
+      <div id="csVisibility" class="cs-visibility" data-value="public">
+        <button type="button" class="cs-vis-option is-active" data-value="public">🌍 Public</button>
+        <button type="button" class="cs-vis-option" data-value="private">🔒 Private</button>
+        <button type="button" class="cs-vis-option" data-value="circle">👥 Circle</button>
+      </div>
+
+      <div id="csCircleUsers" class="cs-circle-users" hidden></div>
+
       <button id="csPostButton" data-i18n="compose.post"></button>
     </section>
 

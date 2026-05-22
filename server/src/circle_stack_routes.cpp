@@ -169,6 +169,41 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             set_json(res, out);
         });
 
+
+    server.Get("/api/v4/circlestack/users",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json out;
+            out["ok"] = true;
+            out["users"] = json::array();
+
+            if (deps.users) {
+                auto snap = deps.users->snapshot();
+                for (const auto& kv : snap) {
+                    const auto& u = kv.second;
+                    if (u.status != "enabled") continue;
+
+                    json item;
+                    item["fingerprint"] = u.fingerprint;
+                    item["fp_short"] = u.fingerprint.size() >= 8 ? u.fingerprint.substr(0, 8) : u.fingerprint;
+                    item["name"] = u.name.empty() ? item["fp_short"].get<std::string>() : u.name;
+                    item["role"] = u.role;
+                    item["avatar_url"] = u.avatar_url;
+                    item["is_me"] = (u.fingerprint == actor_fp);
+                    out["users"].push_back(item);
+                }
+            }
+
+            set_json(res, out);
+        });
+
     server.Post("/api/v4/circlestack/posts/create",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;

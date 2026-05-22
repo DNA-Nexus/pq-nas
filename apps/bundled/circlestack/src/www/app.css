@@ -42,7 +42,7 @@ body {
   resize: vertical;
 }
 
-.cs-compose button {
+#csPostButton {
   justify-self: end;
   border: 0;
   border-radius: 999px;
@@ -181,4 +181,112 @@ body {
 .cs-post-delete:hover {
   opacity: 1;
   color: #f87171 !important;
+}
+
+.cs-circle-users {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+#csVisibility {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: #181820;
+  color: #f9fafb;
+  font-size: 14px;
+}
+
+#csVisibility option {
+  background: #181820;
+  color: #f9fafb;
+}
+
+.cs-visibility {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cs-vis-option {
+  flex: 1;
+  background: #181820;
+  color: #d1d5db;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.cs-vis-option:hover {
+  background: #20202a;
+}
+
+.cs-vis-option.is-active {
+  background: rgba(96,165,250,0.16);
+  color: #fff;
+  border-color: rgba(96,165,250,0.55);
+}
+
+.cs-vis-option:hover {
+  background: #20202a !important;
+  color: #f3f4f6;
+  border-color: rgba(255,255,255,0.20);
+}
+
+.cs-vis-option.is-active:hover {
+  background: rgba(96,165,250,0.16) !important;
+  border-color: rgba(96,165,250,0.55);
+}
+
+.cs-vis-option:hover {
+  background: inherit !important;
+  filter: brightness(1.06);
+}
+
+.cs-vis-option.is-active:hover {
+  background: rgba(96,165,250,0.16) !important;
+  filter: brightness(1.08);
+}
+
+.cs-visibility .cs-vis-option:hover {
+  background: #181820 !important;
+  color: #f3f4f6 !important;
+  filter: none !important;
+}
+
+.cs-visibility .cs-vis-option.is-active,
+.cs-visibility .cs-vis-option.is-active:hover {
+  background: rgba(96,165,250,0.16) !important;
+  color: #fff !important;
+  border-color: rgba(96,165,250,0.55) !important;
+  filter: none !important;
+}
+
+
+.cs-visibility .cs-vis-option {
+  background: #181820 !important;
+  color: #d1d5db !important;
+}
+
+.cs-visibility .cs-vis-option:hover {
+  background: #1c1c25 !important;
+  color: #f3f4f6 !important;
+}
+
+.cs-visibility .cs-vis-option.is-active {
+  background: rgba(96,165,250,0.18) !important;
+  color: #fff !important;
+  border-color: rgba(96,165,250,0.55) !important;
 }

@@ -173,3 +173,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await csLoadFeed();
 });
+
+
+async function csLoadUsers() {
+  const el = document.getElementById("csCircleUsers");
+  if (!el) return;
+
+  el.textContent = "";
+
+  const res = await fetch("/api/v4/circlestack/users", {
+    credentials: "same-origin"
+  });
+  const data = await res.json();
+  const users = Array.isArray(data.users) ? data.users : [];
+
+  for (const u of users) {
+    if (u.is_me) continue;
+
+    const row = document.createElement("label");
+    row.className = "cs-user-row";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "cs-user-checkbox";
+    cb.value = u.fingerprint;
+
+    const name = document.createElement("span");
+    name.textContent = u.name || u.fp_short;
+
+    row.appendChild(cb);
+    row.appendChild(name);
+    el.appendChild(row);
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".cs-vis-option");
+  if (!btn) return;
+
+  const wrap = document.getElementById("csVisibility");
+  const circleEl = document.getElementById("csCircleUsers");
+  if (!wrap) return;
+
+  wrap.dataset.value = btn.dataset.value;
+
+  wrap.querySelectorAll(".cs-vis-option").forEach(b => {
+    b.classList.toggle("is-active", b === btn);
+  });
+
+  if (circleEl) {
+    circleEl.hidden = btn.dataset.value !== "circle";
+  }
+});
