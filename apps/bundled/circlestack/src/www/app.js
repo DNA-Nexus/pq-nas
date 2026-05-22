@@ -1,5 +1,6 @@
 const CS_API = "/api/v4/circlestack";
 const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
+let csSelectedMentions = [];
 
 async function csLoadFeed() {
   const feed = document.getElementById("csFeed");
@@ -773,6 +774,203 @@ async function csCreateReply(postId, text, media_path) {
 }
 
 
+
+function csRenderPostMentions(post) {
+  const mentions = Array.isArray(post.mentions) ? post.mentions : [];
+  if (!mentions.length) return null;
+
+  const wrap = document.createElement("div");
+  wrap.className = "cs-post-mentions";
+
+  const label = document.createElement("span");
+  label.className = "cs-post-mentions-label";
+  label.textContent = "Tagged:";
+  wrap.appendChild(label);
+
+  for (const m of mentions) {
+    const chip = document.createElement("button");
+    chip.className = "cs-mention-chip";
+    chip.type = "button";
+    chip.textContent = `@${m.display_name || m.fp_short || csElideFp(m.fp)}`;
+    chip.title = m.fp || "";
+
+    chip.addEventListener("click", () => {
+      csOpenPersonCard(m.fp || "", {
+        display_name: m.display_name || "",
+        fp_short: m.fp_short || "",
+        avatar_url: m.avatar_url || ""
+      });
+    });
+
+    wrap.appendChild(chip);
+  }
+
+  return wrap;
+}
+
+function csRenderMentionComposer() {
+  const chips = document.getElementById("csMentionChips");
+  if (!chips) return;
+
+  chips.textContent = "";
+
+  for (const person of csSelectedMentions) {
+    const chip = document.createElement("span");
+    chip.className = "cs-compose-mention-chip";
+
+    const label = document.createElement("span");
+    label.textContent = `@${person.name || person.fp_short || csElideFp(person.fingerprint)}`;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.title = "Remove tag";
+    remove.addEventListener("click", () => {
+      csSelectedMentions = csSelectedMentions.filter(
+        p => p.fingerprint !== person.fingerprint
+      );
+      csRenderMentionComposer();
+    });
+
+    chip.appendChild(label);
+    chip.appendChild(remove);
+    chips.appendChild(chip);
+  }
+}
+
+async function csLoadMentionCandidates() {
+  const [peopleRes, usersRes] = await Promise.all([
+    fetch(`${CS_API}/people`, { credentials: "same-origin" }),
+    fetch(`${CS_API}/users`, { credentials: "same-origin" })
+  ]);
+
+  const peopleData = await peopleRes.json();
+  const usersData = await usersRes.json();
+
+  const usersByFp = new Map(
+    (usersData.users || []).map(u => [u.fingerprint, u])
+  );
+
+  const out = [];
+
+  for (const p of (peopleData.items || [])) {
+    const u = usersByFp.get(p.fp);
+    if (!u || u.is_me || u.role === "external") continue;
+
+    out.push({
+      fingerprint: u.fingerprint,
+      fp_short: u.fp_short,
+      name: u.name || p.display_name || u.fp_short,
+      avatar_url: u.avatar_url || ""
+    });
+  }
+
+  out.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  return out;
+}
+
+async function csOpenMentionPicker() {
+  const candidates = await csLoadMentionCandidates();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-intro-modal";
+
+  modal.innerHTML = `
+    <div class="cs-modal-title">Tag friend</div>
+    <div class="cs-modal-text">Pick people from your Circle / contacts.</div>
+    <input id="csMentionSearch" placeholder="Search people...">
+    <div id="csMentionResults" class="cs-mention-results"></div>
+    <div class="cs-modal-actions">
+      <button class="cs-modal-cancel" type="button">Close</button>
+    </div>
+  `;
+
+  const input = modal.querySelector("#csMentionSearch");
+  const results = modal.querySelector("#csMentionResults");
+
+  const selected = new Set(csSelectedMentions.map(p => p.fingerprint));
+
+  function render(q = "") {
+    const needle = q.trim().toLowerCase();
+    results.textContent = "";
+
+    const filtered = candidates.filter(p => {
+      const hay = `${p.name || ""} ${p.fingerprint || ""}`.toLowerCase();
+      return !needle || hay.includes(needle);
+    });
+
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "cs-search-hint";
+      empty.textContent = "No people found";
+      results.appendChild(empty);
+      return;
+    }
+
+    for (const person of filtered) {
+      const row = document.createElement("button");
+      row.className = "cs-mention-result";
+      row.type = "button";
+
+      const avatar = document.createElement("span");
+      avatar.className = "cs-mention-avatar";
+
+      if (person.avatar_url) {
+        const img = document.createElement("img");
+        img.src = person.avatar_url;
+        img.alt = "";
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = (person.name || "?").slice(0, 1).toUpperCase();
+      }
+
+      const name = document.createElement("span");
+      name.className = "cs-mention-name";
+      name.textContent = person.name || person.fp_short || csElideFp(person.fingerprint);
+
+      const mark = document.createElement("span");
+      mark.className = "cs-mention-mark";
+      mark.textContent = selected.has(person.fingerprint) ? "✓" : "";
+
+      row.appendChild(avatar);
+      row.appendChild(name);
+      row.appendChild(mark);
+
+      row.addEventListener("click", () => {
+        if (selected.has(person.fingerprint)) {
+          selected.delete(person.fingerprint);
+          csSelectedMentions = csSelectedMentions.filter(
+            p => p.fingerprint !== person.fingerprint
+          );
+        } else {
+          selected.add(person.fingerprint);
+          csSelectedMentions.push(person);
+        }
+
+        csRenderMentionComposer();
+        render(input.value);
+      });
+
+      results.appendChild(row);
+    }
+  }
+
+  input.addEventListener("input", () => render(input.value));
+  modal.querySelector(".cs-modal-cancel").addEventListener("click", () => {
+    backdrop.remove();
+  });
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  render("");
+  input.focus();
+}
+
+
 function csRenderPost(post) {
   const el = document.createElement("article");
   el.className = "cs-post";
@@ -810,6 +1008,11 @@ function csRenderPost(post) {
   text.textContent = post.text || "";
   el.appendChild(text);
 
+  const mentions = csRenderPostMentions(post);
+  if (mentions) {
+    el.appendChild(mentions);
+  }
+
   if (post.media_url) {
     const img = document.createElement("img");
     img.className = "cs-post-media";
@@ -841,6 +1044,54 @@ function csRenderPost(post) {
   return el;
 }
 
+
+function csComposeHasDraft() {
+  const textEl = document.getElementById("csText");
+  const mediaEl = document.getElementById("csMediaPath");
+
+  return Boolean(
+    (textEl && textEl.value.trim()) ||
+    (mediaEl && mediaEl.value.trim()) ||
+    (Array.isArray(csSelectedMentions) && csSelectedMentions.length > 0)
+  );
+}
+
+function csSetComposeExpanded(expanded) {
+  const compose = document.querySelector(".cs-compose");
+  if (!compose) return;
+
+  compose.classList.toggle("is-compact", !expanded);
+}
+
+function csInitCompactCompose() {
+  const compose = document.querySelector(".cs-compose");
+  const textEl = document.getElementById("csText");
+  const mediaEl = document.getElementById("csMediaPath");
+
+  if (!compose || !textEl) return;
+
+  csSetComposeExpanded(csComposeHasDraft());
+
+  textEl.addEventListener("focus", () => {
+    csSetComposeExpanded(true);
+  });
+
+  textEl.addEventListener("click", () => {
+    csSetComposeExpanded(true);
+  });
+
+  textEl.addEventListener("input", () => {
+    if (csComposeHasDraft()) csSetComposeExpanded(true);
+  });
+
+  if (mediaEl) {
+    mediaEl.addEventListener("input", () => {
+      if (csComposeHasDraft()) csSetComposeExpanded(true);
+    });
+  }
+}
+
+
 async function csCreatePost() {
   const textEl = document.getElementById("csText");
   const mediaEl = document.getElementById("csMediaPath");
@@ -850,15 +1101,21 @@ async function csCreatePost() {
 
   if (!text && !media_path) return;
 
+  const mentions = csSelectedMentions.map(p => p.fingerprint).filter(Boolean);
+
   await fetch(`${CS_API}/posts/create`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, media_path })
+    body: JSON.stringify({ text, media_path, mentions })
   });
 
   if (textEl) textEl.value = "";
   if (mediaEl) mediaEl.value = "";
+  csSetMediaPreview("");
+  csSelectedMentions = [];
+  csRenderMentionComposer();
+  csSetComposeExpanded(false);
 
   await csLoadFeed();
 }
@@ -934,6 +1191,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const btn = document.getElementById("csPostButton");
   if (btn) btn.addEventListener("click", csCreatePost);
+
+  const mentionBtn = document.getElementById("csAddMentionBtn");
+  if (mentionBtn) {
+    mentionBtn.addEventListener("click", () => {
+      csSetComposeExpanded(true);
+      csOpenMentionPicker();
+    });
+  }
+
+  csRenderMentionComposer();
+  csInitCompactCompose();
 
   await csLoadFeed();
 });
@@ -1125,6 +1393,7 @@ async function csOpenMediaPicker() {
 
 document.addEventListener("click", async (ev) => {
   if (!ev.target.closest("#csPickMedia")) return;
+  csSetComposeExpanded(true);
 
   const picked = await csOpenMediaPicker();
   if (!picked) return;

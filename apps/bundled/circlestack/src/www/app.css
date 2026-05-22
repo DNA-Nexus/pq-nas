@@ -1266,3 +1266,180 @@ body {
   opacity: 1;
   transform: translateY(0);
 }
+
+.cs-mention-composer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-mention-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#csAddMentionBtn {
+  border: 1px solid rgba(147,197,253,0.26);
+  border-radius: 999px;
+  background: rgba(147,197,253,0.10);
+  color: #dbeafe;
+  padding: 7px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#csAddMentionBtn:hover {
+  background: rgba(147,197,253,0.18);
+  border-color: rgba(147,197,253,0.45);
+}
+
+.cs-compose-mention-chip,
+.cs-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(147,197,253,0.30);
+  border-radius: 999px;
+  background: rgba(37,99,235,0.18);
+  color: #bfdbfe;
+  padding: 5px 9px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cs-compose-mention-chip button {
+  border: 0;
+  background: transparent;
+  color: #bfdbfe;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.cs-post-mentions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cs-post-mentions-label {
+  color: rgba(255,255,255,0.46);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cs-mention-chip {
+  cursor: pointer;
+}
+
+.cs-mention-chip:hover {
+  background: rgba(147,197,253,0.18);
+  color: #dbeafe;
+}
+
+#csMentionSearch {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 10px;
+  border-radius: 10px;
+  padding: 10px;
+  background: #101014;
+  color: #f4f4f5;
+  border: 1px solid rgba(255,255,255,0.16);
+}
+
+.cs-mention-results {
+  display: grid;
+  gap: 6px;
+  max-height: 340px;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+
+.cs-mention-result {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  color: #f4f4f5;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-mention-result:hover {
+  background: rgba(147,197,253,0.11);
+  border-color: rgba(147,197,253,0.26);
+}
+
+.cs-mention-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(37,99,235,0.28);
+  border: 1px solid rgba(147,197,253,0.35);
+  color: #eff6ff;
+  font-weight: 900;
+}
+
+.cs-mention-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cs-mention-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-mention-mark {
+  color: #93c5fd;
+  font-weight: 900;
+  text-align: center;
+}
+
+/* Compact main composer */
+
+.cs-compose.is-compact {
+  margin-bottom: 18px;
+}
+
+.cs-compose.is-compact .cs-media-row,
+.cs-compose.is-compact #csMediaPreview,
+.cs-compose.is-compact .cs-visibility,
+.cs-compose.is-compact .cs-circle-users,
+.cs-compose.is-compact .cs-mention-composer,
+.cs-compose.is-compact #csPostButton {
+  display: none !important;
+}
+
+.cs-compose.is-compact textarea {
+  min-height: 52px;
+  max-height: 52px;
+  resize: none;
+  cursor: text;
+  opacity: 0.88;
+}
+
+.cs-compose.is-compact textarea:hover,
+.cs-compose.is-compact textarea:focus {
+  border-color: rgba(147,197,253,0.42);
+  background: #1b1b25;
+  opacity: 1;
+}
