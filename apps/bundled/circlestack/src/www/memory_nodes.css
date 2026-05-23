@@ -230,7 +230,7 @@
   border:1px solid rgba(255,255,255,.18);
   border-radius:16px;
   padding:10px;
-  background:rgba(18,18,26,.96);
+  background:rgb(18,18,26);
   box-shadow:0 18px 42px rgba(0,0,0,.42);
   opacity:0;
   transform:translateY(-4px);
@@ -253,7 +253,7 @@
   top:-7px;
   width:12px;
   height:12px;
-  background:rgba(18,18,26,.96);
+  background:rgb(18,18,26);
   border-left:1px solid rgba(255,255,255,.18);
   border-top:1px solid rgba(255,255,255,.18);
   transform:rotate(45deg);
@@ -314,4 +314,294 @@
   opacity:.68;
   font-size:13px;
   padding:4px;
+}
+
+.cs-memory-frame.is-clickable{
+  cursor:zoom-in;
+  outline:none;
+}
+
+.cs-memory-frame.is-clickable:focus{
+  box-shadow:0 0 0 3px rgba(255,255,255,.22) inset;
+}
+
+.cs-memory-frame.is-clickable img{
+  transition:transform 160ms ease, filter 160ms ease;
+}
+
+.cs-memory-frame.is-clickable:hover img,
+.cs-memory-frame.is-clickable:focus img{
+  transform:scale(1.035);
+  filter:brightness(1.06);
+}
+
+.cs-memory-lightbox{
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:28px;
+  background:rgba(0,0,0,.86);
+  backdrop-filter:blur(8px);
+}
+
+.cs-memory-lightbox-close{
+  position:fixed;
+  top:18px;
+  right:22px;
+  z-index:2;
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.28);
+  background:rgba(0,0,0,.42);
+  color:white;
+  font-size:28px;
+  line-height:1;
+  cursor:pointer;
+}
+
+.cs-memory-lightbox-close:hover{
+  background:rgba(255,255,255,.12);
+}
+
+.cs-memory-lightbox-figure{
+  margin:0;
+  max-width:min(1100px, 96vw);
+  max-height:92vh;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  align-items:center;
+}
+
+.cs-memory-lightbox-figure img{
+  max-width:100%;
+  max-height:calc(92vh - 86px);
+  object-fit:contain;
+  border-radius:18px;
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+  background:rgba(0,0,0,.35);
+}
+
+.cs-memory-lightbox-caption{
+  max-width:min(820px, 92vw);
+  color:white;
+  text-align:center;
+  padding:8px 12px;
+  border-radius:14px;
+  background:rgba(0,0,0,.38);
+  border:1px solid rgba(255,255,255,.12);
+}
+
+.cs-memory-lightbox-owner{
+  font-size:12px;
+  font-weight:950;
+  opacity:.72;
+}
+
+.cs-memory-lightbox-text{
+  margin-top:4px;
+  font-size:14px;
+  line-height:1.35;
+  white-space:pre-wrap;
+}
+
+.cs-memory-remove-detail{
+  margin-top:12px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:14px;
+  padding:12px;
+  background:rgba(0,0,0,.20);
+}
+
+.cs-memory-remove-owner{
+  font-weight:950;
+  opacity:.82;
+}
+
+.cs-memory-remove-caption{
+  margin-top:6px;
+  color:rgba(255,255,255,.74);
+  white-space:pre-wrap;
+  line-height:1.35;
+}
+
+.cs-memory-remove-confirm{
+  border-color:rgba(255,96,96,.50);
+  background:rgba(255,96,96,.16);
+}
+
+.cs-memory-remove-confirm:hover{
+  background:rgba(255,96,96,.24);
+}
+
+/* Memory Node spotlight post treatment */
+.cs-post-memory-node{
+  position:relative;
+  border-color:rgba(255,183,77,.26) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255,183,77,.10), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(0,240,248,.10), transparent 38%),
+    rgba(18,18,28,.92) !important;
+  box-shadow:
+    0 0 0 1px rgba(255,183,77,.08) inset,
+    0 18px 50px rgba(0,0,0,.22),
+    0 0 42px rgba(0,240,248,.055);
+}
+
+.cs-post-memory-node::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:4px;
+  border-radius:22px 0 0 22px;
+  background:linear-gradient(180deg, rgba(255,183,77,.92), rgba(0,240,248,.72));
+  opacity:.84;
+}
+
+.cs-memory-spotlight{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:10px 0 14px;
+  padding:11px 13px;
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:18px;
+  background:
+    linear-gradient(135deg, rgba(255,183,77,.15), rgba(0,240,248,.08)),
+    rgba(0,0,0,.18);
+}
+
+.cs-memory-spotlight-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.cs-memory-spotlight-icon{
+  width:34px;
+  height:34px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 0 22px rgba(0,240,248,.12);
+}
+
+.cs-memory-spotlight-text{
+  min-width:0;
+}
+
+.cs-memory-spotlight-title{
+  font-size:13px;
+  font-weight:950;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.cs-memory-spotlight-sub{
+  margin-top:2px;
+  font-size:12px;
+  color:rgba(255,255,255,.64);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.cs-memory-spotlight-pill{
+  flex:0 0 auto;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(0,0,0,.22);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:850;
+  color:rgba(255,255,255,.76);
+}
+
+.cs-post-memory-node .cs-memory-node{
+  border-color:rgba(0,240,248,.22);
+  box-shadow:
+    0 0 0 1px rgba(255,183,77,.06) inset,
+    0 16px 44px rgba(0,0,0,.24);
+}
+
+.cs-post-memory-node .cs-replies{
+  margin-top:16px;
+}
+
+@media (max-width: 720px){
+  .cs-memory-spotlight{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .cs-memory-spotlight-pill{
+    align-self:flex-start;
+  }
+}
+
+
+/* Solid contributor popover override */
+.cs-memory-contributors-popover{
+  background:#11131b !important;
+  background-color:#11131b !important;
+  border:1px solid rgba(255,255,255,.22) !important;
+  box-shadow:
+    0 22px 54px rgba(0,0,0,.72),
+    0 0 0 1px rgba(255,255,255,.04) inset !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  opacity:0;
+  z-index:9999 !important;
+  isolation:isolate;
+}
+
+.cs-memory-stats:hover .cs-memory-contributors-popover,
+.cs-memory-stats:focus .cs-memory-contributors-popover,
+.cs-memory-stats:focus-within .cs-memory-contributors-popover{
+  opacity:1 !important;
+}
+
+.cs-memory-contributors-popover::before{
+  background:#11131b !important;
+  background-color:#11131b !important;
+  border-left:1px solid rgba(255,255,255,.22) !important;
+  border-top:1px solid rgba(255,255,255,.22) !important;
+}
+
+.cs-memory-contributor-row,
+.cs-memory-contributors-title,
+.cs-memory-contributor-name,
+.cs-memory-contributor-empty{
+  opacity:1 !important;
+}
+
+/* Fix contributor popover transparency caused by parent opacity */
+.cs-memory-stats{
+  opacity:1 !important;
+}
+
+.cs-memory-stats-label{
+  opacity:.78;
+}
+
+.cs-memory-contributors-popover{
+  opacity:0;
+  background:#11131b !important;
+  background-color:#11131b !important;
+}
+
+.cs-memory-stats:hover .cs-memory-contributors-popover,
+.cs-memory-stats:focus .cs-memory-contributors-popover,
+.cs-memory-stats:focus-within .cs-memory-contributors-popover{
+  opacity:1 !important;
 }

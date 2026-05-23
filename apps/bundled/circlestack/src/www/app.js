@@ -230,7 +230,7 @@ function csRenderReactionBar(post) {
     chip.textContent = `${reaction} ${count}`;
 
     const names = csReactionTitle(summary);
-    chip.title = names ? `${reaction} ${names}` : reaction;
+    chip.setAttribute("aria-label", names ? `${reaction} ${names}` : reaction);
 
     chip.addEventListener("click", async () => {
       await csReactToPost(post.id, isMine ? "" : reaction);
@@ -259,7 +259,7 @@ function csRenderReactionBar(post) {
     if (isMine) btn.classList.add("is-active");
     btn.type = "button";
     btn.textContent = reaction;
-    btn.title = isMine ? "Remove reaction" : `React ${reaction}`;
+    btn.setAttribute("aria-label", isMine ? "Remove reaction" : `React ${reaction}`);
 
     btn.addEventListener("click", async () => {
       await csReactToPost(post.id, isMine ? "" : reaction);
@@ -378,7 +378,7 @@ function csRenderReplyReactionBar(reply) {
     chip.textContent = `${reaction} ${count}`;
 
     const names = csReactionTitle(summary);
-    chip.title = names ? `${reaction} ${names}` : reaction;
+    chip.setAttribute("aria-label", names ? `${reaction} ${names}` : reaction);
 
     chip.addEventListener("click", async () => {
       await csReactToReply(reply.id, isMine ? "" : reaction);
@@ -407,7 +407,7 @@ function csRenderReplyReactionBar(reply) {
     if (isMine) btn.classList.add("is-active");
     btn.type = "button";
     btn.textContent = reaction;
-    btn.title = isMine ? "Remove reaction" : `React ${reaction}`;
+    btn.setAttribute("aria-label", isMine ? "Remove reaction" : `React ${reaction}`);
 
     btn.addEventListener("click", async () => {
       await csReactToReply(reply.id, isMine ? "" : reaction);

@@ -294,6 +294,114 @@
     mediaInput.focus();
   }
 
+  function openMemoryImageLightbox(item) {
+    if (!item || !item.media_url) return;
+
+    const backdrop = el("div", "cs-memory-lightbox");
+    const closeBtn = el("button", "cs-memory-lightbox-close", "×");
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Close image");
+
+    const figure = document.createElement("figure");
+    figure.className = "cs-memory-lightbox-figure";
+
+    const img = document.createElement("img");
+    img.src = item.media_url;
+    img.alt = item.caption || "";
+
+    const caption = document.createElement("figcaption");
+    caption.className = "cs-memory-lightbox-caption";
+
+    const owner = el(
+      "div",
+      "cs-memory-lightbox-owner",
+      item.owner_display_name || item.owner_fp_short || "unknown"
+    );
+    caption.appendChild(owner);
+
+    if (item.caption) {
+      caption.appendChild(el("div", "cs-memory-lightbox-text", item.caption));
+    }
+
+    figure.appendChild(img);
+    figure.appendChild(caption);
+
+    const close = () => {
+      document.removeEventListener("keydown", onKeyDown);
+      backdrop.remove();
+    };
+
+    function onKeyDown(ev) {
+      if (ev.key === "Escape") close();
+    }
+
+    closeBtn.addEventListener("click", close);
+
+    img.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      close();
+    });
+
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop) close();
+    });
+
+    document.addEventListener("keydown", onKeyDown);
+
+    backdrop.appendChild(closeBtn);
+    backdrop.appendChild(figure);
+    document.body.appendChild(backdrop);
+
+    closeBtn.focus();
+  }
+
+  function confirmRemoveMemoryItem(item) {
+    return new Promise((resolve) => {
+      const { modal, close } = modalShell(
+        "Remove media?",
+        "This removes the media from this Memory Node. The original file stays in the owner's NAS storage."
+      );
+
+      const detail = el("div", "cs-memory-remove-detail");
+
+      const owner = el(
+        "div",
+        "cs-memory-remove-owner",
+        item.owner_display_name || item.owner_fp_short || "unknown"
+      );
+
+      detail.appendChild(owner);
+
+      if (item.caption) {
+        detail.appendChild(el("div", "cs-memory-remove-caption", item.caption));
+      }
+
+      modal.appendChild(detail);
+
+      const actions = el("div", "cs-modal-actions");
+
+      const cancel = el("button", "cs-modal-cancel", "Cancel");
+      cancel.type = "button";
+
+      const remove = el("button", "cs-modal-delete cs-memory-remove-confirm", "Remove");
+      remove.type = "button";
+
+      const done = (value) => {
+        close();
+        resolve(value);
+      };
+
+      cancel.addEventListener("click", () => done(false));
+      remove.addEventListener("click", () => done(true));
+
+      actions.appendChild(cancel);
+      actions.appendChild(remove);
+      modal.appendChild(actions);
+
+      cancel.focus();
+    });
+  }
+
   function renderItem(item, onDeleted) {
     const tile = el("div", `cs-memory-item is-${item.media_kind || "image"}`);
 
@@ -311,6 +419,21 @@
       img.loading = "lazy";
       img.decoding = "async";
       img.alt = item.caption || "";
+
+      frame.classList.add("is-clickable");
+      frame.tabIndex = 0;
+      frame.setAttribute("role", "button");
+      frame.setAttribute("aria-label", "Open image");
+      frame.title = "Open image";
+
+      frame.addEventListener("click", () => openMemoryImageLightbox(item));
+      frame.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          openMemoryImageLightbox(item);
+        }
+      });
+
       frame.appendChild(img);
     }
 
@@ -328,14 +451,22 @@
     if (item.can_delete) {
       const del = el("button", "cs-memory-delete", "Remove");
       del.type = "button";
-      del.addEventListener("click", async () => {
-        if (!confirm("Remove this media from Memory Node?")) return;
+      del.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+
+        const ok = await confirmRemoveMemoryItem(item);
+        if (!ok) return;
 
         try {
+          del.disabled = true;
+          del.textContent = "Removing…";
+
           await deleteMemoryItem(item.id);
           tile.remove();
           if (typeof onDeleted === "function") onDeleted(item);
         } catch (e) {
+          del.disabled = false;
+          del.textContent = "Remove";
           alert(`Remove failed: ${e.message || e}`);
         }
       });
@@ -376,6 +507,7 @@
 
     statsEl.textContent = "";
     statsEl.tabIndex = 0;
+    statsEl.removeAttribute("title");
 
     const label = el(
       "span",
@@ -413,7 +545,7 @@
       }
     }
 
-    statsEl.title = contributors.map(p => p.name).join(", ");
+    statsEl.removeAttribute("title");
     statsEl.appendChild(pop);
   }
 
@@ -481,6 +613,41 @@
 
   function decoratePost(postEl, post) {
     if (!postEl || !post || !post.memory_node) return;
+
+    postEl.classList.add("cs-post-memory-node");
+
+    if (!postEl.querySelector(".cs-memory-spotlight")) {
+      const spotlight = el("div", "cs-memory-spotlight");
+
+      const left = el("div", "cs-memory-spotlight-left");
+
+      const icon = el("span", "cs-memory-spotlight-icon", "🧠");
+      const text = el("div", "cs-memory-spotlight-text");
+
+      text.appendChild(el("div", "cs-memory-spotlight-title", "Collaborative Memory Node"));
+      text.appendChild(el("div", "cs-memory-spotlight-sub", "Friends can add media from their own NAS storage"));
+
+      left.appendChild(icon);
+      left.appendChild(text);
+
+      const pill = el(
+        "div",
+        "cs-memory-spotlight-pill",
+        `${Number(post.memory_node.item_count || 0)} media`
+      );
+
+      spotlight.appendChild(left);
+      spotlight.appendChild(pill);
+
+      const header = postEl.querySelector(".cs-post-header");
+      if (header && header.nextSibling) {
+        postEl.insertBefore(spotlight, header.nextSibling);
+      } else if (header) {
+        postEl.appendChild(spotlight);
+      } else {
+        postEl.prepend(spotlight);
+      }
+    }
 
     const nodeCard = renderMemoryNodeCard(post.memory_node);
     const before = postEl.querySelector(".cs-reactions") || postEl.querySelector(".cs-replies");
