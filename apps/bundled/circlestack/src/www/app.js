@@ -686,10 +686,12 @@ function csFillReplyContent(content, reply) {
   content.textContent = "";
 
   if (reply.text) {
-    const text = document.createElement("div");
-    text.className = "cs-reply-text";
-    text.textContent = reply.text;
-    content.appendChild(text);
+    content.appendChild(csRenderTextWithLinks(reply.text, "cs-reply-text"));
+
+    const preview = csRenderLinkPreviewFromText(reply.text);
+    if (preview) {
+      content.appendChild(preview);
+    }
   }
 
   const mentions = csRenderReplyMentions(reply);
@@ -1065,6 +1067,215 @@ async function csCreateReply(postId, text, media_path, mentions = []) {
 
 
 
+function csExtractUrls(text) {
+  const raw = String(text || "");
+  const re = /\bhttps?:\/\/[^\s<>"']+/gi;
+  const out = [];
+  let m;
+
+  while ((m = re.exec(raw)) !== null) {
+    let url = m[0];
+
+    while (/[),.;!?]+$/.test(url)) {
+      url = url.slice(0, -1);
+    }
+
+    if (!url) continue;
+
+    out.push({
+      url,
+      index: m.index,
+      end: m.index + url.length
+    });
+  }
+
+  return out;
+}
+
+function csAbsoluteUrl(url) {
+  try {
+    return new URL(String(url || ""), window.location.origin);
+  } catch (_) {
+    return null;
+  }
+}
+
+function csIsSameOriginUrl(urlObj) {
+  return !!(urlObj && urlObj.origin === window.location.origin);
+}
+
+function csMetaContent(doc, selector) {
+  const el = doc.querySelector(selector);
+  return el ? String(el.getAttribute("content") || "").trim() : "";
+}
+
+function csResolvePreviewImage(doc, baseUrl) {
+  const fromMeta =
+    csMetaContent(doc, 'meta[property="og:image"]') ||
+    csMetaContent(doc, 'meta[name="twitter:image"]');
+
+  if (fromMeta) {
+    try {
+      return new URL(fromMeta, baseUrl).href;
+    } catch (_) {}
+  }
+
+  const img = doc.querySelector("img[src]");
+  if (img) {
+    try {
+      return new URL(img.getAttribute("src") || "", baseUrl).href;
+    } catch (_) {}
+  }
+
+  return "";
+}
+
+function csDefaultLinkPreviewTitle(urlObj) {
+  if (urlObj && urlObj.pathname.startsWith("/s/")) {
+    return "DNA-Nexus shared album";
+  }
+
+  return urlObj ? urlObj.hostname : "Link";
+}
+
+function csDefaultLinkPreviewDesc(urlObj) {
+  if (urlObj && urlObj.pathname.startsWith("/s/")) {
+    return "Open shared Photo Gallery item";
+  }
+
+  return urlObj ? urlObj.href : "";
+}
+
+function csRenderTextWithLinks(rawText, className) {
+  const wrap = document.createElement("div");
+  wrap.className = className || "";
+
+  const text = String(rawText || "");
+  const urls = csExtractUrls(text);
+
+  if (!urls.length) {
+    wrap.textContent = text;
+    return wrap;
+  }
+
+  let pos = 0;
+
+  for (const item of urls) {
+    if (item.index > pos) {
+      wrap.appendChild(document.createTextNode(text.slice(pos, item.index)));
+    }
+
+    const urlObj = csAbsoluteUrl(item.url);
+
+    const a = document.createElement("a");
+    a.className = "cs-text-link";
+    a.href = urlObj ? urlObj.href : item.url;
+    a.textContent = item.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+
+    wrap.appendChild(a);
+    pos = item.end;
+  }
+
+  if (pos < text.length) {
+    wrap.appendChild(document.createTextNode(text.slice(pos)));
+  }
+
+  return wrap;
+}
+
+function csRenderLinkPreviewFromText(rawText) {
+  const first = csExtractUrls(rawText)[0];
+  if (!first) return null;
+
+  const urlObj = csAbsoluteUrl(first.url);
+  if (!urlObj) return null;
+
+  const card = document.createElement("a");
+  card.className = "cs-link-preview";
+  card.href = urlObj.href;
+  card.target = "_blank";
+  card.rel = "noopener noreferrer";
+
+  const thumb = document.createElement("div");
+  thumb.className = "cs-link-preview-thumb";
+  thumb.textContent = "🔗";
+
+  const body = document.createElement("div");
+  body.className = "cs-link-preview-body";
+
+  const badge = document.createElement("div");
+  badge.className = "cs-link-preview-badge";
+  badge.textContent = urlObj.pathname.startsWith("/s/")
+    ? "PHOTO GALLERY SHARE"
+    : urlObj.hostname;
+
+  const title = document.createElement("div");
+  title.className = "cs-link-preview-title";
+  title.textContent = csDefaultLinkPreviewTitle(urlObj);
+
+  const desc = document.createElement("div");
+  desc.className = "cs-link-preview-desc";
+  desc.textContent = csDefaultLinkPreviewDesc(urlObj);
+
+  const urlLine = document.createElement("div");
+  urlLine.className = "cs-link-preview-url";
+  urlLine.textContent = urlObj.hostname + urlObj.pathname;
+
+  body.appendChild(badge);
+  body.appendChild(title);
+  body.appendChild(desc);
+  body.appendChild(urlLine);
+
+  card.appendChild(thumb);
+  card.appendChild(body);
+
+  if (csIsSameOriginUrl(urlObj)) {
+    fetch(urlObj.href, {
+      credentials: "same-origin",
+      cache: "no-store"
+    })
+      .then(async (res) => {
+        const ct = String(res.headers.get("content-type") || "");
+        if (!res.ok || !ct.includes("text/html")) return null;
+        return await res.text();
+      })
+      .then((html) => {
+        if (!html) return;
+
+        const doc = new DOMParser().parseFromString(html, "text/html");
+
+        const pageTitle =
+          csMetaContent(doc, 'meta[property="og:title"]') ||
+          csMetaContent(doc, 'meta[name="twitter:title"]') ||
+          String(doc.querySelector("title")?.textContent || "").trim();
+
+        const pageDesc =
+          csMetaContent(doc, 'meta[property="og:description"]') ||
+          csMetaContent(doc, 'meta[name="description"]') ||
+          csMetaContent(doc, 'meta[name="twitter:description"]');
+
+        const imgUrl = csResolvePreviewImage(doc, urlObj.href);
+
+        if (pageTitle) title.textContent = pageTitle;
+        if (pageDesc) desc.textContent = pageDesc;
+
+        if (imgUrl) {
+          thumb.textContent = "";
+          thumb.classList.add("has-image");
+          thumb.style.backgroundImage = `url("${imgUrl.replaceAll('"', "%22")}")`;
+        }
+      })
+      .catch(() => {
+        // Preview is best-effort. The link itself still works.
+      });
+  }
+
+  return card;
+}
+
+
 function csRenderPostMentions(post) {
   const mentions = Array.isArray(post.mentions) ? post.mentions : [];
   if (!mentions.length) return null;
@@ -1293,10 +1504,14 @@ function csRenderPost(post) {
 
   el.appendChild(header);
 
-  const text = document.createElement("div");
-  text.className = "cs-post-text";
-  text.textContent = post.text || "";
-  el.appendChild(text);
+  if (post.text) {
+    el.appendChild(csRenderTextWithLinks(post.text || "", "cs-post-text"));
+
+    const preview = csRenderLinkPreviewFromText(post.text || "");
+    if (preview) {
+      el.appendChild(preview);
+    }
+  }
 
   const mentions = csRenderPostMentions(post);
   if (mentions) {
