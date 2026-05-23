@@ -346,6 +346,77 @@
     return tile;
   }
 
+  function memoryNodeContributors(node) {
+    const items = Array.isArray(node?.items) ? node.items : [];
+    const seen = new Map();
+
+    for (const item of items) {
+      const fp = String(item.owner_fp || item.owner_fp_short || "").trim();
+      const key = fp || String(item.owner_display_name || "").trim();
+      if (!key || seen.has(key)) continue;
+
+      seen.set(key, {
+        fp,
+        name: item.owner_display_name || item.owner_fp_short || "unknown",
+        avatar_url: item.owner_avatar_url || ""
+      });
+    }
+
+    return Array.from(seen.values())
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+
+  function updateMemoryStats(statsEl, node) {
+    if (!statsEl || !node) return;
+
+    const items = Array.isArray(node.items) ? node.items : [];
+    const mediaCount = items.length;
+    const contributors = memoryNodeContributors(node);
+    const contributorCount = contributors.length || Number(node.contributors_count || 0);
+
+    statsEl.textContent = "";
+    statsEl.tabIndex = 0;
+
+    const label = el(
+      "span",
+      "cs-memory-stats-label",
+      `${mediaCount} media · ${contributorCount} contributors`
+    );
+    statsEl.appendChild(label);
+
+    const pop = el("div", "cs-memory-contributors-popover");
+
+    const title = el("div", "cs-memory-contributors-title", "Contributors");
+    pop.appendChild(title);
+
+    if (!contributors.length) {
+      pop.appendChild(el("div", "cs-memory-contributor-empty", "No contributors yet"));
+    } else {
+      for (const person of contributors) {
+        const row = el("div", "cs-memory-contributor-row");
+
+        const avatar = el("span", "cs-memory-contributor-avatar");
+        if (person.avatar_url) {
+          const img = document.createElement("img");
+          img.src = person.avatar_url;
+          img.alt = "";
+          avatar.appendChild(img);
+        } else {
+          avatar.textContent = String(person.name || "?").slice(0, 1).toUpperCase();
+        }
+
+        const name = el("span", "cs-memory-contributor-name", person.name || "unknown");
+
+        row.appendChild(avatar);
+        row.appendChild(name);
+        pop.appendChild(row);
+      }
+    }
+
+    statsEl.title = contributors.map(p => p.name).join(", ");
+    statsEl.appendChild(pop);
+  }
+
   function renderMemoryNodeCard(node) {
     const card = el("section", "cs-memory-node");
 
@@ -355,11 +426,8 @@
     titleWrap.appendChild(el("div", "cs-memory-eyebrow", "Memory Node"));
     titleWrap.appendChild(el("div", "cs-memory-title", node.title || "Memory Node"));
 
-    const stats = el(
-      "div",
-      "cs-memory-stats",
-      `${Number(node.item_count || 0)} media · ${Number(node.contributors_count || 0)} contributors`
-    );
+    const stats = el("div", "cs-memory-stats");
+    updateMemoryStats(stats, node);
 
     head.appendChild(titleWrap);
     head.appendChild(stats);
@@ -377,8 +445,9 @@
     } else {
       for (const item of items) {
         grid.appendChild(renderItem(item, () => {
-          const left = Math.max(0, grid.querySelectorAll(".cs-memory-item").length);
-          stats.textContent = `${left} media · ${Number(node.contributors_count || 0)} contributors`;
+          node.items = (Array.isArray(node.items) ? node.items : [])
+            .filter(existing => existing.id !== item.id);
+          updateMemoryStats(stats, node);
         }));
       }
     }
@@ -394,9 +463,13 @@
         const empty = grid.querySelector(".cs-memory-empty");
         if (empty) empty.remove();
 
-        grid.appendChild(renderItem(item));
-        const count = grid.querySelectorAll(".cs-memory-item").length;
-        stats.textContent = `${count} media · ${Number(node.contributors_count || 0)} contributors`;
+        node.items = Array.isArray(node.items) ? node.items : [];
+        node.items.push(item);
+        grid.appendChild(renderItem(item, () => {
+          node.items = node.items.filter(existing => existing.id !== item.id);
+          updateMemoryStats(stats, node);
+        }));
+        updateMemoryStats(stats, node);
       });
     });
 

@@ -209,3 +209,109 @@
   font-size:11px;
   opacity:.78;
 }
+
+.cs-memory-stats{
+  position:relative;
+  cursor:default;
+  outline:none;
+}
+
+.cs-memory-stats:focus{
+  border-color:rgba(255,255,255,.34);
+}
+
+.cs-memory-contributors-popover{
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  z-index:30;
+  min-width:210px;
+  max-width:280px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:16px;
+  padding:10px;
+  background:rgba(18,18,26,.96);
+  box-shadow:0 18px 42px rgba(0,0,0,.42);
+  opacity:0;
+  transform:translateY(-4px);
+  pointer-events:none;
+  transition:opacity 120ms ease, transform 120ms ease;
+}
+
+.cs-memory-stats:hover .cs-memory-contributors-popover,
+.cs-memory-stats:focus .cs-memory-contributors-popover,
+.cs-memory-stats:focus-within .cs-memory-contributors-popover{
+  opacity:1;
+  transform:translateY(0);
+  pointer-events:auto;
+}
+
+.cs-memory-contributors-popover::before{
+  content:"";
+  position:absolute;
+  right:18px;
+  top:-7px;
+  width:12px;
+  height:12px;
+  background:rgba(18,18,26,.96);
+  border-left:1px solid rgba(255,255,255,.18);
+  border-top:1px solid rgba(255,255,255,.18);
+  transform:rotate(45deg);
+}
+
+.cs-memory-contributors-title{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  opacity:.64;
+  font-weight:950;
+  margin-bottom:8px;
+}
+
+.cs-memory-contributor-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding:6px 4px;
+  border-radius:10px;
+}
+
+.cs-memory-contributor-row:hover{
+  background:rgba(255,255,255,.06);
+}
+
+.cs-memory-contributor-avatar{
+  width:24px;
+  height:24px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  background:rgba(255,255,255,.10);
+  font-size:12px;
+  font-weight:950;
+  overflow:hidden;
+}
+
+.cs-memory-contributor-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+
+.cs-memory-contributor-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:850;
+}
+
+.cs-memory-contributor-empty{
+  opacity:.68;
+  font-size:13px;
+  padding:4px;
+}

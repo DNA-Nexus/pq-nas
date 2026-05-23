@@ -435,6 +435,16 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
     if (!out_db) return false;
     *out_db = nullptr;
 
+    std::error_code ec;
+    std::filesystem::create_directories(
+        std::filesystem::path(kPeopleContactsDbPath).parent_path(),
+        ec
+    );
+    if (ec) {
+        if (err) *err = "failed to create people db directory: " + ec.message();
+        return false;
+    }
+
     sqlite3* db = nullptr;
     if (sqlite3_open(kPeopleContactsDbPath, &db) != SQLITE_OK) {
         if (err) {
@@ -443,6 +453,38 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
         if (db) sqlite3_close(db);
         return false;
     }
+
+    sqlite3_busy_timeout(db, 5000);
+
+    const char* schema_sql =
+        "PRAGMA journal_mode=WAL;"
+        "PRAGMA busy_timeout=5000;"
+        "CREATE TABLE IF NOT EXISTS people_contacts ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "owner_fingerprint TEXT NOT NULL,"
+        "subject_user_id TEXT NOT NULL DEFAULT '',"
+        "subject_fingerprint TEXT NOT NULL,"
+        "subject_kind TEXT NOT NULL DEFAULT 'fingerprint',"
+        "display_name TEXT NOT NULL,"
+        "nickname TEXT NOT NULL DEFAULT '',"
+        "notes TEXT NOT NULL DEFAULT '',"
+        "created_at_epoch INTEGER NOT NULL,"
+        "updated_at_epoch INTEGER NOT NULL,"
+        "UNIQUE(owner_fingerprint, subject_fingerprint)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_name "
+        "ON people_contacts(owner_fingerprint, display_name COLLATE NOCASE);"
+        "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_kind "
+        "ON people_contacts(owner_fingerprint, subject_kind);";
+
+    char* msg = nullptr;
+    if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
+        if (err) *err = msg ? msg : sqlite3_errmsg(db);
+        if (msg) sqlite3_free(msg);
+        sqlite3_close(db);
+        return false;
+    }
+    if (msg) sqlite3_free(msg);
 
     *out_db = db;
     return true;
