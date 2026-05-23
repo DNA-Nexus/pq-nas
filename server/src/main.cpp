@@ -47389,6 +47389,7 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
     auto valid = shares.is_valid_now(token, &s, &err);
 
     if (!valid.has_value()) {
+
         audit_event("share_download", "fail", nullptr, "not_found", 404);
         res.status = 404;
         res.set_header("Cache-Control", "no-store");
@@ -47460,6 +47461,7 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
     std::string album_err;
     auto album = gallery_albums_index.get_album("user", s.owner_fp, s.path, &album_err);
     if (!album.has_value()) {
+
         audit_event("share_album_open", "fail", &s, "album_not_found", 404, album_err);
         res.status = 404;
         res.set_header("Cache-Control", "no-store");
@@ -47473,6 +47475,53 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
     const std::string album_name = album->name.empty() ? "Shared album" : album->name;
     const std::string album_desc = album->description;
 
+    std::string album_cover_rel =
+        public_album_normalize_rel(album->cover_logical_rel_path);
+
+    if (album_cover_rel.empty() ||
+        public_album_mime_for_path(album_cover_rel).empty()) {
+        for (const auto& item : items) {
+            const std::string rel = public_album_normalize_rel(item.logical_rel_path);
+            if (rel.empty()) continue;
+            if (public_album_mime_for_path(rel).empty()) continue;
+
+            album_cover_rel = rel;
+            break;
+        }
+    }
+
+    std::string album_cover_url;
+    if (!album_cover_rel.empty()) {
+        album_cover_url =
+            "/api/public/gallery/album/image?token=" +
+            public_album_url_encode(token) +
+            "&path=" +
+            public_album_url_encode(album_cover_rel);
+    }
+
+    auto public_share_origin = [&]() -> std::string {
+        auto host_it = req.headers.find("Host");
+        if (host_it == req.headers.end() || host_it->second.empty()) {
+            return "";
+        }
+
+        std::string proto = "http";
+        auto proto_it = req.headers.find("X-Forwarded-Proto");
+        if (proto_it != req.headers.end() && !proto_it->second.empty()) {
+            proto = proto_it->second;
+            const auto comma = proto.find(',');
+            if (comma != std::string::npos) proto = proto.substr(0, comma);
+            while (!proto.empty() && proto.back() == ' ') proto.pop_back();
+        }
+
+        return proto + "://" + host_it->second;
+    };
+
+    const std::string album_cover_abs_url =
+        album_cover_url.empty()
+            ? ""
+            : public_share_origin() + album_cover_url;
+
     std::ostringstream html;
     html
         << "<!doctype html>"
@@ -47481,6 +47530,20 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
         << "<meta charset='utf-8'>"
         << "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         << "<title>" << public_album_html_escape(album_name) << " • DNA-Nexus</title>"
+        << "<meta property='og:type' content='website'>"
+        << "<meta property='og:title' content='" << public_album_html_escape(album_name) << " • DNA-Nexus'>"
+        << "<meta property='og:description' content='" << public_album_html_escape(album_desc.empty() ? "Shared Photo Gallery album" : album_desc) << "'>"
+        << "<meta name='twitter:card' content='summary_large_image'>"
+        << "<meta name='twitter:title' content='" << public_album_html_escape(album_name) << " • DNA-Nexus'>"
+        << "<meta name='twitter:description' content='" << public_album_html_escape(album_desc.empty() ? "Shared Photo Gallery album" : album_desc) << "'>";
+
+    if (!album_cover_abs_url.empty()) {
+        html
+            << "<meta property='og:image' content='" << public_album_html_escape(album_cover_abs_url) << "'>"
+            << "<meta name='twitter:image' content='" << public_album_html_escape(album_cover_abs_url) << "'>";
+    }
+
+    html
         << "<style>"
         << ":root{color-scheme:dark;}"
         << "*{box-sizing:border-box;}"

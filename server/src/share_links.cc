@@ -210,7 +210,7 @@ ShareLink entries.
 Invariant:
   - shares_ contains only well-formed entries:
       token, owner_fp, path, type are non-empty
-      type ∈ {"file", "dir"}
+      type ∈ {"file", "dir", "album"}
   - No strong uniqueness invariant is stored beyond token uniqueness at creation
     time. (load() may read duplicates if file is corrupted; current code keeps
     what it reads. Consider de-dup on load if desired.)
@@ -284,7 +284,7 @@ bool ShareRegistry::load(std::string* err) {
 
         // Enforce minimal validity & type whitelist.
         if (s.token.empty() || s.owner_fp.empty() || s.path.empty() || s.type.empty()) continue;
-        if (s.type != "file" && s.type != "dir") continue;
+        if (s.type != "file" && s.type != "dir" && s.type != "album") continue;
         if (s.scope_kind == "workspace" && s.workspace_id.empty()) continue;
 
         shares_.push_back(std::move(s));

@@ -1109,25 +1109,188 @@ function csMetaContent(doc, selector) {
   return el ? String(el.getAttribute("content") || "").trim() : "";
 }
 
+function csPreviewImageAbs(raw, baseUrl) {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+
+  try {
+    return new URL(v, baseUrl).href;
+  } catch (_) {
+    return "";
+  }
+}
+
+function csPreviewImageLooksDecorative(url) {
+  const u = String(url || "").toLowerCase();
+
+  return (
+    u.includes("favicon") ||
+    u.includes("/icon") ||
+    u.includes("icon.") ||
+    u.includes("logo") ||
+    u.includes("avatar") ||
+    u.includes("profile") ||
+    u.includes("mascot") ||
+    u.includes("squirrel") ||
+    u.includes("chipmunk") ||
+    u.includes("onboarding") ||
+    u.includes("guide") ||
+    u.includes("nav_icon") ||
+    u.includes("nexuslogo")
+  );
+}
+
+function csPreviewImageScore(item) {
+  const url = String(item.url || "");
+  const u = url.toLowerCase();
+  const el = item.el || null;
+
+  if (!url) return -10000;
+  if (u.startsWith("data:image/svg")) return -10000;
+
+  let score = 0;
+
+  if (item.source === "meta") score += 20;
+  if (item.source === "img") score += 40;
+  if (item.source === "style") score += 35;
+
+  if (csPreviewImageLooksDecorative(url)) score -= 500;
+
+  if (/\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(url)) score += 25;
+
+  if (
+    u.includes("photo") ||
+    u.includes("gallery") ||
+    u.includes("album") ||
+    u.includes("share") ||
+    u.includes("thumb") ||
+    u.includes("thumbnail") ||
+    u.includes("preview") ||
+    u.includes("/api/v4/")
+  ) {
+    score += 45;
+  }
+
+  if (el) {
+    const hay = [
+      el.className || "",
+      el.id || "",
+      el.getAttribute("alt") || "",
+      el.getAttribute("title") || "",
+      el.closest("[class]")?.className || "",
+      el.closest("article")?.className || "",
+      el.closest("main")?.className || ""
+    ].join(" ").toLowerCase();
+
+    if (
+      hay.includes("album") ||
+      hay.includes("cover") ||
+      hay.includes("photo") ||
+      hay.includes("gallery") ||
+      hay.includes("tile") ||
+      hay.includes("thumb") ||
+      hay.includes("preview")
+    ) {
+      score += 80;
+    }
+
+    if (
+      hay.includes("logo") ||
+      hay.includes("avatar") ||
+      hay.includes("profile") ||
+      hay.includes("mascot") ||
+      hay.includes("onboarding") ||
+      hay.includes("guide")
+    ) {
+      score -= 250;
+    }
+
+    const w = Number(el.getAttribute("width") || 0);
+    const h = Number(el.getAttribute("height") || 0);
+
+    if (w >= 120 && h >= 80) score += 25;
+    if (w > 0 && w <= 80) score -= 80;
+    if (h > 0 && h <= 80) score -= 80;
+  }
+
+  return score;
+}
+
+function csExtractCssUrl(styleValue) {
+  const s = String(styleValue || "");
+  const m = s.match(/url\((['"]?)(.*?)\1\)/i);
+  return m ? String(m[2] || "").trim() : "";
+}
+
 function csResolvePreviewImage(doc, baseUrl) {
-  const fromMeta =
-    csMetaContent(doc, 'meta[property="og:image"]') ||
-    csMetaContent(doc, 'meta[name="twitter:image"]');
+  const candidates = [];
+  const seen = new Set();
 
-  if (fromMeta) {
-    try {
-      return new URL(fromMeta, baseUrl).href;
-    } catch (_) {}
+  function add(raw, source, el = null) {
+    const url = csPreviewImageAbs(raw, baseUrl);
+    if (!url || seen.has(url)) return;
+
+    seen.add(url);
+    candidates.push({ url, source, el });
   }
 
-  const img = doc.querySelector("img[src]");
-  if (img) {
-    try {
-      return new URL(img.getAttribute("src") || "", baseUrl).href;
-    } catch (_) {}
+  add(csMetaContent(doc, 'meta[property="og:image"]'), "meta");
+  add(csMetaContent(doc, 'meta[name="twitter:image"]'), "meta");
+
+  const preferredSelectors = [
+    ".album img",
+    ".albumCard img",
+    ".album-card img",
+    ".albumTile img",
+    ".album-tile img",
+    ".gallery img",
+    ".photoGrid img",
+    ".photo-grid img",
+    ".tile img",
+    ".shareGrid img",
+    ".share-grid img",
+    ".cover img",
+    "main img",
+    "article img",
+    "img"
+  ];
+
+  for (const selector of preferredSelectors) {
+    for (const img of doc.querySelectorAll(selector)) {
+      add(
+        img.getAttribute("src") ||
+        img.getAttribute("data-src") ||
+        img.getAttribute("data-lazy-src") ||
+        img.getAttribute("data-thumb") ||
+        img.getAttribute("data-thumbnail") ||
+        "",
+        "img",
+        img
+      );
+
+      const srcset = img.getAttribute("srcset") || "";
+      if (srcset) {
+        const first = srcset.split(",")[0]?.trim()?.split(/\s+/)[0] || "";
+        add(first, "img", img);
+      }
+    }
   }
 
-  return "";
+  for (const el of doc.querySelectorAll("[style]")) {
+    const bg = csExtractCssUrl(el.getAttribute("style") || "");
+    if (bg) add(bg, "style", el);
+  }
+
+  candidates.sort((a, b) => csPreviewImageScore(b) - csPreviewImageScore(a));
+
+  const best = candidates[0];
+  if (!best) return "";
+
+  if (csPreviewImageScore(best) < 0) {
+    return "";
+  }
+
+  return best.url;
 }
 
 function csDefaultLinkPreviewTitle(urlObj) {
