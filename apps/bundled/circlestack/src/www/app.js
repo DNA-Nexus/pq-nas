@@ -1237,6 +1237,21 @@ function csResolvePreviewImage(doc, baseUrl) {
   add(csMetaContent(doc, 'meta[property="og:image"]'), "meta");
   add(csMetaContent(doc, 'meta[name="twitter:image"]'), "meta");
 
+  // OpenGraph/Twitter image is the page author's intended preview image.
+  // Trust it before scanning visible <img> tags, otherwise album pages may pick
+  // the first grid image instead of the selected album cover.
+  const metaBest = candidates
+    .filter((item) => item.source === "meta")
+    .sort((a, b) => csPreviewImageScore(b) - csPreviewImageScore(a))[0];
+
+  if (
+    metaBest &&
+    csPreviewImageScore(metaBest) >= 0 &&
+    !csPreviewImageLooksDecorative(metaBest.url)
+  ) {
+    return metaBest.url;
+  }
+
   const preferredSelectors = [
     ".album img",
     ".albumCard img",
