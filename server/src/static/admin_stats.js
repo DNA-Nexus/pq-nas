@@ -226,6 +226,121 @@
         `).join("");
     }
 
+    function countRowsHtml(rows, nameKey, emptyText) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return `<tr><td colspan="2">${esc(emptyText || "No data")}</td></tr>`;
+        }
+
+        return rows.map(r => `
+            <tr>
+                <td class="mono">${esc(r[nameKey] || "—")}</td>
+                <td class="num">${fmtNum(r.count)}</td>
+            </tr>
+        `).join("");
+    }
+
+    function setPillValue(id, value) {
+        const el = $(id);
+        if (!el) return;
+
+        const v = el.querySelector(".v");
+        if (v) v.textContent = value;
+        else el.textContent = value;
+    }
+
+    function fmtRatio(n) {
+        const v = Number(n || 0);
+        if (!Number.isFinite(v)) return "0.00";
+        return v.toFixed(2);
+    }
+
+    function renderCircleStackStats(j) {
+        const posts = j.posts || {};
+        const replies = j.replies || {};
+        const reactions = j.reactions || {};
+        const mentions = j.mentions || {};
+        const graph = j.graph || {};
+        const contact = j.contact_requests || {};
+        const intro = j.introductions || {};
+
+        setText("circleActiveUsers", fmtNum(j.active_users_total));
+        setText("circleActiveUsersMini", "users with Circle Stack activity");
+
+        setText("circlePosts", fmtNum(posts.total));
+        setText("circlePostsMini", `${fmtNum(posts.last_24h)} / 24h · ${fmtNum(posts.last_7d)} / 7d · ${fmtNum(posts.last_30d)} / 30d`);
+
+        setText("circleReplies", fmtNum(replies.total));
+        setText("circleRepliesMini", `${fmtRatio(replies.per_post)} replies/post · ${fmtNum(replies.with_media)} with media`);
+
+        setText("circleReactions", fmtNum(reactions.total));
+        setText("circleReactionsMini", `${fmtNum(reactions.post_total)} posts · ${fmtNum(reactions.reply_total)} replies`);
+
+        setText("circleMentions", fmtNum(mentions.total));
+        setText("circleMentionsMini", `${fmtNum(mentions.post_total)} post tags · ${fmtNum(mentions.reply_total)} reply tags`);
+
+        setText("circleEdges", fmtNum(graph.circle_edges_total));
+        setText("circleEdgesMini", "accepted trust graph edges");
+
+        setText("circleContactRequests", fmtNum(contact.total));
+        setText("circleContactRequestsMini", `${fmtNum(contact.pending)} pending`);
+
+        setText("circleIntroductions", fmtNum(intro.total));
+        setText("circleIntroductionsMini", `${fmtNum(intro.pending)} pending`);
+
+        const visibilityRows = $("circleVisibilityRows");
+        if (visibilityRows) {
+            visibilityRows.innerHTML = countRowsHtml(j.visibility, "visibility", "No visibility data");
+        }
+
+        const reactionRows = $("circleReactionRows");
+        if (reactionRows) {
+            reactionRows.innerHTML = countRowsHtml(reactions.top, "reaction", "No reactions yet");
+        }
+
+        const contactRows = $("circleContactRows");
+        if (contactRows) {
+            contactRows.innerHTML = countRowsHtml(contact.by_status, "status", "No contact requests");
+        }
+
+        const introRows = $("circleIntroRows");
+        if (introRows) {
+            introRows.innerHTML = countRowsHtml(intro.by_status, "status", "No introductions");
+        }
+
+        setPillValue("circleStatsStatus", `Updated ${new Date().toLocaleTimeString()}`);
+    }
+
+    async function loadCircleStackStats() {
+        setPillValue("circleStatsStatus", "Loading…");
+
+        try {
+            const r = await fetch("/api/v4/admin/stats/circlestack", {
+                headers: { "Accept": "application/json" },
+                credentials: "include",
+                cache: "no-store"
+            });
+
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) {
+                throw new Error(j.message || j.error || `HTTP ${r.status}`);
+            }
+
+            renderCircleStackStats(j);
+        } catch (e) {
+            setPillValue("circleStatsStatus", `Failed: ${e.message || e}`);
+
+            [
+                "circleVisibilityRows",
+                "circleReactionRows",
+                "circleContactRows",
+                "circleIntroRows"
+            ].forEach(id => {
+                const el = $(id);
+                if (el) el.innerHTML = `<tr><td colspan="2">${esc("Failed to load Circle Stack statistics.")}</td></tr>`;
+            });
+        }
+    }
+
     function trendBucketForPeriod(period) {
         if (period === "24h" || period === "7d") return "hour";
         if (period === "all") return "day";
@@ -559,6 +674,7 @@
         if (btn) {
             btn.addEventListener("click", async () => {
                 await loadStats(true);
+                await loadCircleStackStats();
                 await loadTrends(currentTrendPeriod);
             });
         }
@@ -571,6 +687,7 @@
 
         applyStaticI18n();
         loadStats(false);
+        loadCircleStackStats();
         loadTrends(currentTrendPeriod);
 
         window.addEventListener("pqnas-language-changed", () => {

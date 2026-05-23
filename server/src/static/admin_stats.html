@@ -65,15 +65,39 @@
             background: rgba(var(--info-rgb),0.08);
         }
 
+        html,
+        body{
+            height:100%;
+            overflow:hidden;
+        }
+
+        .desktop{
+            height:100vh;
+            min-height:0;
+        }
+
+        .sidebar{
+            height:100vh;
+            min-height:0;
+            overflow-y:auto;
+            scrollbar-gutter:stable;
+        }
+
+        .workspace{
+            min-height:0;
+            overflow:hidden;
+        }
+
         .statsContent{
             display:flex;
             flex-direction:column;
             gap:14px;
-            padding: 0 24px 0 24px;
+            padding: 0 24px 24px 24px;
             min-height:0;
             min-width:0;
             overflow:auto;
             flex:1 1 auto;
+            scrollbar-gutter:stable;
         }
 
         .grid{
@@ -123,6 +147,35 @@
             gap:14px;
             min-width:0;
             padding-bottom:14px;
+        }
+
+        .circleStatsSection{
+            padding:14px;
+        }
+
+        .circleStatsGrid{
+            display:grid;
+            grid-template-columns:repeat(4, minmax(150px, 1fr));
+            gap:14px;
+            margin-bottom:14px;
+        }
+
+        .circleStatsTables{
+            display:grid;
+            grid-template-columns:repeat(4, minmax(180px, 1fr));
+            gap:14px;
+            min-width:0;
+        }
+
+        .circleStatsTables .pane{
+            padding:0;
+        }
+
+        .circleStatsTables h3{
+            margin:0;
+            padding:12px 14px;
+            font-size:14px;
+            border-bottom:1px solid rgba(var(--fg-rgb),0.08);
         }
 
         .pane{
@@ -305,9 +358,59 @@
             background:rgba(0,0,0,0.12);
         }
 
+
+        /* Admin stats page must scroll inside the main content area. */
+        html,
+        body{
+            height:100%;
+            min-height:0;
+            overflow:hidden;
+        }
+
+        .desktop{
+            height:100vh;
+            min-height:0;
+            overflow:hidden;
+        }
+
+        .sidebar{
+            height:100vh;
+            min-height:0;
+            overflow-y:auto;
+            scrollbar-gutter:stable;
+        }
+
+        .workspace{
+            height:100vh;
+            min-height:0;
+            overflow:hidden;
+            display:flex;
+            flex-direction:column;
+        }
+
+        .topbar{
+            flex:0 0 auto;
+        }
+
+        .statsContent{
+            flex:1 1 auto;
+            min-height:0;
+            min-width:0;
+            overflow-y:auto;
+            overflow-x:hidden;
+            scrollbar-gutter:stable;
+            padding-bottom:120px;
+        }
+
+        .footerline{
+            flex:0 0 auto;
+        }
+
         @media (max-width: 1350px){
             .trendGrid{ grid-template-columns:repeat(2, minmax(260px, 1fr)); }
             .insightGrid{ grid-template-columns:repeat(2, minmax(220px, 1fr)); }
+            .circleStatsGrid{ grid-template-columns:repeat(2, minmax(180px, 1fr)); }
+            .circleStatsTables{ grid-template-columns:repeat(2, minmax(220px, 1fr)); }
         }
 
         @media (max-width: 1100px){
@@ -319,8 +422,58 @@
             .grid{ grid-template-columns:1fr; }
             .trendGrid{ grid-template-columns:1fr; }
             .insightGrid{ grid-template-columns:1fr; }
+            .circleStatsGrid{ grid-template-columns:1fr; }
+            .circleStatsTables{ grid-template-columns:1fr; }
             .actions{ flex-wrap:wrap; justify-content:flex-start; }
         }
+
+        /* Final scroll model: let the whole Admin Statistics page scroll normally. */
+        html{
+            height:auto !important;
+            min-height:100% !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+        }
+
+        body{
+            height:auto !important;
+            min-height:100vh !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+        }
+
+        .desktop{
+            height:auto !important;
+            min-height:100vh !important;
+            overflow:visible !important;
+        }
+
+        .workspace{
+            height:auto !important;
+            min-height:100vh !important;
+            overflow:visible !important;
+            display:flex;
+            flex-direction:column;
+        }
+
+        .statsContent{
+            height:auto !important;
+            max-height:none !important;
+            min-height:0 !important;
+            overflow:visible !important;
+            flex:0 0 auto !important;
+            padding-bottom:32px !important;
+        }
+
+        .circleStatsSection{
+            overflow:visible !important;
+        }
+
+        .footerline{
+            position:static !important;
+            flex:0 0 auto !important;
+        }
+
     </style>
     <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/shell_menu.css">
@@ -394,6 +547,7 @@
                 <div id="cardWorkspacesMini" class="mini">—</div>
             </div>
         </section>
+
 
 
         <section class="pane trendSection" aria-label="Trend charts" data-i18n-aria-label="admin.stats.trend_charts">
@@ -530,6 +684,109 @@
                 </table>
             </div>
         </section>
+
+        <section class="pane circleStatsSection" aria-label="Circle Stack statistics">
+            <div class="trendToolbar">
+                <h2 style="margin:0;">Circle Stack</h2>
+                <span id="circleStatsStatus" class="pill info">
+                    <span class="k">Social</span><span class="k">:</span> <span class="v">Loading…</span>
+                </span>
+            </div>
+
+            <div class="circleStatsGrid" aria-label="Circle Stack overview">
+                <div class="card">
+                    <div class="label">Active users</div>
+                    <div id="circleActiveUsers" class="value">—</div>
+                    <div id="circleActiveUsersMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Posts</div>
+                    <div id="circlePosts" class="value">—</div>
+                    <div id="circlePostsMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Replies</div>
+                    <div id="circleReplies" class="value">—</div>
+                    <div id="circleRepliesMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Reactions</div>
+                    <div id="circleReactions" class="value">—</div>
+                    <div id="circleReactionsMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Mentions</div>
+                    <div id="circleMentions" class="value">—</div>
+                    <div id="circleMentionsMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Circle edges</div>
+                    <div id="circleEdges" class="value">—</div>
+                    <div id="circleEdgesMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Contact requests</div>
+                    <div id="circleContactRequests" class="value">—</div>
+                    <div id="circleContactRequestsMini" class="mini">—</div>
+                </div>
+                <div class="card">
+                    <div class="label">Introductions</div>
+                    <div id="circleIntroductions" class="value">—</div>
+                    <div id="circleIntroductionsMini" class="mini">—</div>
+                </div>
+            </div>
+
+            <div class="circleStatsTables">
+                <div class="pane">
+                    <h3>Post visibility</h3>
+                    <table>
+                        <thead>
+                        <tr><th>Visibility</th><th class="num">Posts</th></tr>
+                        </thead>
+                        <tbody id="circleVisibilityRows">
+                        <tr><td colspan="2">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pane">
+                    <h3>Top reactions</h3>
+                    <table>
+                        <thead>
+                        <tr><th>Reaction</th><th class="num">Count</th></tr>
+                        </thead>
+                        <tbody id="circleReactionRows">
+                        <tr><td colspan="2">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pane">
+                    <h3>Contact request status</h3>
+                    <table>
+                        <thead>
+                        <tr><th>Status</th><th class="num">Count</th></tr>
+                        </thead>
+                        <tbody id="circleContactRows">
+                        <tr><td colspan="2">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pane">
+                    <h3>Introduction status</h3>
+                    <table>
+                        <thead>
+                        <tr><th>Status</th><th class="num">Count</th></tr>
+                        </thead>
+                        <tbody id="circleIntroRows">
+                        <tr><td colspan="2">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         </div>
 
         <div class="footerline">© CPUNK 2026</div>
@@ -537,7 +794,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_stats.js?v=20260518-admin-stats-i18n-trend-pill-2"></script>
+<script src="/static/admin_stats.js?v=20260522-circlestack-stats-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
