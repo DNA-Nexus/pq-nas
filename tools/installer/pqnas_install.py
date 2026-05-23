@@ -98,6 +98,11 @@ def ensure_external_tools(log: Optional[Log] = None) -> None:
     if not shutil.which("convert") and not shutil.which("magick"):
         pkgs.append("imagemagick")
 
+    # Video thumbnail/poster generation for public video share previews.
+    # Used by /s/<token>?poster=1.
+    if not shutil.which("ffmpeg"):
+        pkgs.append("ffmpeg")
+
     if not pkgs:
         if log:
             log.write("[*] External tools: OK")
@@ -120,6 +125,8 @@ def ensure_external_tools(log: Optional[Log] = None) -> None:
         missing_after.append("exiftool")
     if not shutil.which("convert") and not shutil.which("magick"):
         missing_after.append("convert/magick")
+    if not shutil.which("ffmpeg"):
+        missing_after.append("ffmpeg")
 
     if missing_after:
         raise RuntimeError(
@@ -549,8 +556,27 @@ def write_fstab_uuid(mountpoint: str, fstype: str, uuid: str, options: str) -> N
 
 
 def create_pqnas_layout(root: str) -> None:
-    for p in ("data", "logs", "apps/bundled", "apps/installed", "apps/users", "audit", "tmp"):
+    for p in (
+        "data",
+        "logs",
+        "apps/bundled",
+        "apps/installed",
+        "apps/users",
+        "audit",
+        "tmp",
+
+        # Server-managed caches. These are generated artifacts, not user data.
+        "cache",
+        "cache/gallery_thumbs",
+        "cache/reelstack_thumbs",
+        "cache/reelstack_meta",
+        "cache/reelstack_index",
+        "cache/music_covers",
+        "cache/workspace_file_thumbs",
+        "cache/share_posters",
+    ):
         ensure_dir(os.path.join(root, p))
+
     ensure_dir("/opt/pqnas/static")
 
 
