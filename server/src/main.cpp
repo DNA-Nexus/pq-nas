@@ -1023,6 +1023,186 @@ static void public_share_send_file_stream_local(const httplib::Request& req,
     );
 }
 
+static std::string public_share_safe_cache_key_local(const std::string& token) {
+    std::string out;
+    out.reserve(token.size());
+
+    for (char c : token) {
+        if ((c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_') {
+            out += c;
+        } else {
+            out += '_';
+        }
+    }
+
+    return out.empty() ? "share" : out;
+}
+
+static std::string public_share_shell_quote_local(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '\'';
+
+    for (char c : s) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out += c;
+        }
+    }
+
+    out += '\'';
+    return out;
+}
+
+static bool public_share_read_binary_file_local(const std::filesystem::path& p,
+                                                std::string* out,
+                                                std::string* err) {
+    if (!out) return false;
+    out->clear();
+
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(p, ec);
+    if (ec || size == 0) {
+        if (err) *err = ec ? ec.message() : "empty file";
+        return false;
+    }
+
+    if (size > 20ull * 1024ull * 1024ull) {
+        if (err) *err = "poster too large";
+        return false;
+    }
+
+    std::ifstream in(p, std::ios::binary);
+    if (!in) {
+        if (err) *err = "failed to open file";
+        return false;
+    }
+
+    out->resize(static_cast<std::size_t>(size));
+    in.read(out->data(), static_cast<std::streamsize>(out->size()));
+
+    if (!in) {
+        if (err) *err = "failed to read file";
+        out->clear();
+        return false;
+    }
+
+    return true;
+}
+
+static bool public_share_generate_video_poster_local(const std::filesystem::path& video_abs,
+                                                     const std::filesystem::path& poster_abs,
+                                                     std::string* err) {
+    const std::filesystem::path ffmpeg = "/usr/bin/ffmpeg";
+
+    std::error_code ec;
+    if (!std::filesystem::exists(ffmpeg, ec)) {
+        if (err) *err = "ffmpeg not found at /usr/bin/ffmpeg";
+        return false;
+    }
+
+    std::filesystem::create_directories(poster_abs.parent_path(), ec);
+    if (ec) {
+        if (err) *err = "failed to create poster cache directory: " + ec.message();
+        return false;
+    }
+
+    std::filesystem::path tmp = poster_abs;
+    // Keep a real .jpg suffix so ffmpeg can infer the image muxer/encoder.
+    tmp += ".tmp.jpg";
+
+    std::filesystem::remove(tmp, ec);
+
+    auto run_ffmpeg = [&](bool seek) -> int {
+        std::ostringstream cmd;
+        cmd
+            << public_share_shell_quote_local(ffmpeg.string())
+            << " -hide_banner -loglevel error -y ";
+
+        if (seek) {
+            cmd << "-ss 1 ";
+        }
+
+        cmd
+            << "-i " << public_share_shell_quote_local(video_abs.string()) << " "
+            << "-frames:v 1 "
+            << "-vf " << public_share_shell_quote_local("scale=1200:-2:force_original_aspect_ratio=decrease") << " "
+            << "-q:v 4 "
+            << public_share_shell_quote_local(tmp.string());
+
+        return std::system(cmd.str().c_str());
+    };
+
+    int rc = run_ffmpeg(true);
+
+    if (rc != 0 || !std::filesystem::exists(tmp, ec) || std::filesystem::file_size(tmp, ec) == 0) {
+        std::filesystem::remove(tmp, ec);
+        rc = run_ffmpeg(false);
+    }
+
+    if (rc != 0 || !std::filesystem::exists(tmp, ec) || std::filesystem::file_size(tmp, ec) == 0) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "ffmpeg failed to generate poster";
+        return false;
+    }
+
+    std::filesystem::remove(poster_abs, ec);
+    ec.clear();
+    std::filesystem::rename(tmp, poster_abs, ec);
+
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "failed to move poster into cache";
+        return false;
+    }
+
+    return true;
+}
+
+static void public_share_send_video_poster_local(httplib::Response& res,
+                                                 const std::filesystem::path& video_abs,
+                                                 const std::string& token) {
+    const std::filesystem::path cache_dir = "/srv/pqnas/cache/share_posters";
+    const std::string key = public_share_safe_cache_key_local(token);
+    const std::filesystem::path poster_abs = cache_dir / (key + ".jpg");
+
+    std::error_code ec;
+    bool have_poster =
+        std::filesystem::exists(poster_abs, ec) &&
+        !ec &&
+        std::filesystem::file_size(poster_abs, ec) > 0 &&
+        !ec;
+
+    if (!have_poster) {
+        std::string gen_err;
+        have_poster = public_share_generate_video_poster_local(video_abs, poster_abs, &gen_err);
+    }
+
+    if (have_poster) {
+        std::string bytes;
+        std::string read_err;
+
+        if (public_share_read_binary_file_local(poster_abs, &bytes, &read_err)) {
+            res.status = 200;
+            res.set_header("Cache-Control", "public, max-age=3600");
+            res.set_header("Content-Disposition", "inline; filename=\"poster.jpg\"");
+            res.set_content(bytes, "image/jpeg");
+            return;
+        }
+    }
+
+    // Safe fallback: keep public previews working even when ffmpeg is missing
+    // or the video has no decodable frame.
+    res.status = 302;
+    res.set_header("Cache-Control", "no-store");
+    res.set_header("Location", "/static/video-share-fallback.svg");
+}
+
+
 static std::string public_share_video_page_local(const std::string& token,
                                                  const std::string& filename,
                                                  const std::string& mime,
@@ -1042,9 +1222,7 @@ static std::string public_share_video_page_local(const std::string& token,
         ? "/s/" + token
         : origin + "/s/" + token;
     const std::string raw_url = page_url + "?raw=1";
-    const std::string image_url = origin.empty()
-        ? "/static/video-share-fallback.svg"
-        : origin + "/static/video-share-fallback.svg";
+    const std::string image_url = page_url + "?poster=1";
 
     const std::string video_mime = mime.empty() ? "video/mp4" : mime;
 
@@ -1072,7 +1250,6 @@ static std::string public_share_video_page_local(const std::string& token,
         << "  <meta property=\"og:description\" content=\"" << h_description << "\">\n"
         << "  <meta property=\"og:url\" content=\"" << h_page_url << "\">\n"
         << "  <meta property=\"og:image\" content=\"" << h_image_url << "\">\n"
-        << "  <meta property=\"og:image:type\" content=\"image/svg+xml\">\n"
         << "  <meta property=\"og:image:width\" content=\"1200\">\n"
         << "  <meta property=\"og:image:height\" content=\"630\">\n"
         << "  <meta property=\"og:video\" content=\"" << h_raw_url << "\">\n"
@@ -1106,7 +1283,7 @@ static std::string public_share_video_page_local(const std::string& token,
         << "<body>\n"
         << "  <main>\n"
         << "    <section class=\"card\">\n"
-        << "      <video controls preload=\"metadata\" playsinline src=\"" << h_raw_url << "\"></video>\n"
+        << "      <video controls preload=\"metadata\" playsinline poster=\"" << h_image_url << "\" src=\"" << h_raw_url << "\"></video>\n"
         << "      <div class=\"meta\">\n"
         << "        <div class=\"eyebrow\">Reel Stack video share</div>\n"
         << "        <h1>" << h_title << "</h1>\n"
@@ -47784,12 +47961,19 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
             req.has_param("raw") ||
             !req.get_header_value("Range").empty();
 
+        if (!force_download && req.has_param("poster") && public_share_is_video_mime_local(mime)) {
+            audit_event("share_download", "ok", &s, "video_poster", 200);
+            public_share_send_video_poster_local(res, abs, token);
+            return;
+        }
+
         // Keep old behavior for normal non-video share links:
         // /s/<token> still downloads normal files.
         //
         // But video links open a browser player page:
-        // /s/<token>       -> HTML video page
-        // /s/<token>?raw=1 -> actual video stream with Range support
+        // /s/<token>        -> HTML video page
+        // /s/<token>?raw=1  -> actual video stream with Range support
+        // /s/<token>?poster=1 -> generated poster image for link previews
         if (!force_download && !raw_stream && public_share_is_video_mime_local(mime)) {
             std::error_code ec_file;
             const auto sz = std::filesystem::file_size(abs, ec_file);
