@@ -1,4 +1,5 @@
 #include "circle_stack_routes.h"
+#include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
 #include "storage_resolver.h"
 
@@ -1342,6 +1343,8 @@ json cs_admin_stats_json(sqlite3* db) {
             )}
         }},
 
+        {"memory_nodes", pqnas::circle_stack_memory_nodes_admin_stats()},
+
         {"visibility", cs_sql_group_counts(
             db,
             "SELECT visibility, COUNT(*) FROM posts GROUP BY visibility ORDER BY visibility ASC",
@@ -1356,6 +1359,7 @@ json cs_admin_stats_json(sqlite3* db) {
 namespace pqnas {
 
 void register_circle_stack_routes(httplib::Server& server, const CircleStackRoutesDeps& deps) {
+    register_circle_stack_memory_node_routes(server, deps);
     server.Get("/api/v4/admin/stats/circlestack",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;
@@ -1488,6 +1492,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             sqlite3_finalize(stmt);
+            circle_stack_memory_nodes_annotate_feed_posts(out["posts"], actor_fp, deps);
             set_json(res, out);
         });
 

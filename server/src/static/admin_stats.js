@@ -262,6 +262,7 @@
         const graph = j.graph || {};
         const contact = j.contact_requests || {};
         const intro = j.introductions || {};
+        const memory = j.memory_nodes || {};
 
         setText("circleActiveUsers", fmtNum(j.active_users_total));
         setText("circleActiveUsersMini", "users with Circle Stack activity");
@@ -286,6 +287,9 @@
 
         setText("circleIntroductions", fmtNum(intro.total));
         setText("circleIntroductionsMini", `${fmtNum(intro.pending)} pending`);
+
+        setText("circleMemoryNodes", fmtNum(memory.nodes_total));
+        setText("circleMemoryNodesMini", `${fmtNum(memory.items_total)} items · ${fmtNum(memory.contributors_total)} contributors`);
 
         const visibilityRows = $("circleVisibilityRows");
         if (visibilityRows) {

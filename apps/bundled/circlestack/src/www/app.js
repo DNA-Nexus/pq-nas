@@ -1792,7 +1792,7 @@ function csRenderPost(post) {
 
   el.appendChild(header);
 
-  if (post.text) {
+  if (post.text && post.post_kind !== "memory_node") {
     el.appendChild(csRenderTextWithLinks(post.text || "", "cs-post-text"));
 
     const preview = csRenderLinkPreviewFromText(post.text || "");
@@ -1814,6 +1814,11 @@ function csRenderPost(post) {
     img.decoding = "async";
     img.alt = "";
     el.appendChild(img);
+  }
+
+  if (window.CircleStackMemoryNodes &&
+      typeof window.CircleStackMemoryNodes.decoratePost === "function") {
+    window.CircleStackMemoryNodes.decoratePost(el, post);
   }
 
   el.appendChild(csRenderReactionBar(post));

@@ -239,6 +239,7 @@ add_executable(pqnas_server
         server/src/dropzone_index.cpp
         server/src/echo_stack_routes.cpp
         server/src/circle_stack_routes.cpp
+        server/src/circle_stack_memory_nodes.cpp
         server/src/echo_stack_index.cpp
         server/src/echo_stack_text_extract.cpp
         server/src/echo_stack_content_index.cpp
