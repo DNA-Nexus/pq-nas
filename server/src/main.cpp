@@ -1163,9 +1163,181 @@ static bool public_share_generate_video_poster_local(const std::filesystem::path
     return true;
 }
 
+static std::string public_share_now_iso_utc_local() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t tt = std::chrono::system_clock::to_time_t(now);
+
+    std::tm tm{};
+    gmtime_r(&tt, &tm);
+
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return std::string(buf);
+}
+
+static std::string public_share_json_string_local(const json& obj,
+                                                  const char* key) {
+    if (!obj.is_object() || !obj.contains(key) || !obj.at(key).is_string()) {
+        return std::string();
+    }
+
+    return obj.at(key).get<std::string>();
+}
+
+static bool public_share_json_bool_local(const json& obj,
+                                         const char* key) {
+    if (!obj.is_object() || !obj.contains(key)) return false;
+
+    const auto& v = obj.at(key);
+
+    if (v.is_boolean()) return v.get<bool>();
+
+    if (v.is_number_integer()) return v.get<int>() != 0;
+
+    if (v.is_string()) {
+        std::string s = v.get<std::string>();
+        for (char& c : s) {
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        }
+
+        return s == "true" || s == "1" || s == "yes" || s == "revoked" || s == "disabled";
+    }
+
+    return false;
+}
+
+static bool public_share_cache_share_inactive_local(const json& share,
+                                                    const std::string& now_iso) {
+    if (public_share_json_bool_local(share, "disabled")) return true;
+    if (public_share_json_bool_local(share, "revoked")) return true;
+
+    const std::string state = public_share_json_string_local(share, "state");
+    if (state == "disabled" || state == "revoked" || state == "deleted") {
+        return true;
+    }
+
+    const std::string expires_at = public_share_json_string_local(share, "expires_at");
+
+    // shares.json stores UTC timestamps in ISO-8601 form like:
+    // 2026-05-24T02:28:15Z
+    // With that fixed-width UTC format, lexical comparison is safe.
+    if (!expires_at.empty() && expires_at <= now_iso) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool public_share_load_active_tokens_for_poster_cache_local(std::set<std::string>* active_tokens,
+                                                                  std::string* err) {
+    if (!active_tokens) return false;
+    active_tokens->clear();
+
+    const std::filesystem::path shares_path = "/srv/pqnas/config/shares.json";
+
+    std::ifstream in(shares_path);
+    if (!in) {
+        if (err) *err = "failed to open shares.json";
+        return false;
+    }
+
+    json root;
+    try {
+        in >> root;
+    } catch (const std::exception& e) {
+        if (err) *err = std::string("failed to parse shares.json: ") + e.what();
+        return false;
+    }
+
+    const json* items = nullptr;
+
+    if (root.is_array()) {
+        items = &root;
+    } else if (root.is_object() && root.contains("shares") && root.at("shares").is_array()) {
+        items = &root.at("shares");
+    } else {
+        if (err) *err = "shares.json has unsupported shape";
+        return false;
+    }
+
+    const std::string now_iso = public_share_now_iso_utc_local();
+
+    for (const auto& share : *items) {
+        if (!share.is_object()) continue;
+
+        const std::string token = public_share_json_string_local(share, "token").empty()
+            ? public_share_json_string_local(share, "id")
+            : public_share_json_string_local(share, "token");
+
+        if (token.empty()) continue;
+        if (public_share_cache_share_inactive_local(share, now_iso)) continue;
+
+        active_tokens->insert(token);
+    }
+
+    return true;
+}
+
+static void public_share_cleanup_video_poster_cache_local() {
+    const std::filesystem::path cache_dir = "/srv/pqnas/cache/share_posters";
+
+    std::error_code ec;
+    if (!std::filesystem::exists(cache_dir, ec) || ec) return;
+    if (!std::filesystem::is_directory(cache_dir, ec) || ec) return;
+
+    std::set<std::string> active_tokens;
+    std::string load_err;
+
+    if (!public_share_load_active_tokens_for_poster_cache_local(&active_tokens, &load_err)) {
+        // Fail closed: if shares.json cannot be read, do not delete cache files.
+        return;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(cache_dir, ec)) {
+        if (ec) return;
+
+        std::error_code item_ec;
+        if (!entry.is_regular_file(item_ec) || item_ec) continue;
+
+        const auto p = entry.path();
+        if (p.extension() != ".jpg") continue;
+
+        const std::string token = p.stem().string();
+        if (token.empty()) continue;
+
+        if (active_tokens.find(token) == active_tokens.end()) {
+            std::filesystem::remove(p, item_ec);
+        }
+    }
+}
+
+static void public_share_maybe_cleanup_video_poster_cache_daily_local() {
+    static std::mutex mu;
+    static std::chrono::system_clock::time_point last_attempt{};
+
+    const auto now = std::chrono::system_clock::now();
+
+    {
+        std::lock_guard<std::mutex> lock(mu);
+
+        if (last_attempt.time_since_epoch().count() != 0 &&
+            now - last_attempt < std::chrono::hours(24)) {
+            return;
+        }
+
+        // Set before cleanup so repeated failing requests do not hammer disk.
+        last_attempt = now;
+    }
+
+    public_share_cleanup_video_poster_cache_local();
+}
+
+
 static void public_share_send_video_poster_local(httplib::Response& res,
                                                  const std::filesystem::path& video_abs,
                                                  const std::string& token) {
+    public_share_maybe_cleanup_video_poster_cache_daily_local();
+
     const std::filesystem::path cache_dir = "/srv/pqnas/cache/share_posters";
     const std::string key = public_share_safe_cache_key_local(token);
     const std::filesystem::path poster_abs = cache_dir / (key + ".jpg");
