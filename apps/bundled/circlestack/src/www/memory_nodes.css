@@ -605,3 +605,276 @@
 .cs-memory-stats:focus-within .cs-memory-contributors-popover{
   opacity:1 !important;
 }
+
+/* Memory Node data ownership hover */
+.cs-memory-head-right{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:8px;
+  flex:0 0 auto;
+}
+
+.cs-memory-ownership{
+  position:relative;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(0,0,0,.24);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:850;
+  color:rgba(255,255,255,.76);
+  cursor:default;
+  outline:none;
+}
+
+.cs-memory-ownership:hover,
+.cs-memory-ownership:focus{
+  border-color:rgba(0,240,248,.34);
+  color:rgba(255,255,255,.94);
+}
+
+.cs-memory-ownership-popover{
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  z-index:10000;
+  width:320px;
+  max-width:min(320px, calc(100vw - 36px));
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:16px;
+  padding:12px;
+  background:#11131b;
+  color:rgba(255,255,255,.92);
+  box-shadow:
+    0 22px 54px rgba(0,0,0,.72),
+    0 0 0 1px rgba(255,255,255,.04) inset;
+  opacity:0;
+  transform:translateY(-4px);
+  pointer-events:none;
+  transition:opacity 120ms ease, transform 120ms ease;
+}
+
+.cs-memory-ownership:hover .cs-memory-ownership-popover,
+.cs-memory-ownership:focus .cs-memory-ownership-popover,
+.cs-memory-ownership:focus-within .cs-memory-ownership-popover{
+  opacity:1;
+  transform:translateY(0);
+  pointer-events:auto;
+}
+
+.cs-memory-ownership-popover::before{
+  content:"";
+  position:absolute;
+  right:18px;
+  top:-7px;
+  width:12px;
+  height:12px;
+  background:#11131b;
+  border-left:1px solid rgba(255,255,255,.22);
+  border-top:1px solid rgba(255,255,255,.22);
+  transform:rotate(45deg);
+}
+
+.cs-memory-ownership-title{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  opacity:.68;
+  font-weight:950;
+  margin-bottom:9px;
+}
+
+.cs-memory-ownership-row{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:7px 4px;
+  border-radius:10px;
+}
+
+.cs-memory-ownership-row:hover{
+  background:rgba(255,255,255,.06);
+}
+
+.cs-memory-ownership-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:900;
+}
+
+.cs-memory-ownership-value{
+  white-space:nowrap;
+  color:rgba(255,255,255,.70);
+  font-variant-numeric:tabular-nums;
+}
+
+.cs-memory-ownership-total{
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.12);
+  font-weight:950;
+}
+
+.cs-memory-ownership-note{
+  margin-top:7px;
+  color:rgba(255,255,255,.64);
+  font-size:12px;
+  line-height:1.35;
+}
+
+.cs-memory-ownership-empty{
+  color:rgba(255,255,255,.64);
+  padding:4px;
+}
+
+@media (max-width: 720px){
+  .cs-memory-head-right{
+    align-items:flex-start;
+  }
+
+  .cs-memory-ownership-popover{
+    right:auto;
+    left:0;
+  }
+
+  .cs-memory-ownership-popover::before{
+    right:auto;
+    left:18px;
+  }
+}
+
+/* Make data ownership pill subtle; it is secondary trust info */
+.cs-memory-ownership{
+  padding:3px 7px !important;
+  font-size:10px !important;
+  line-height:1.15 !important;
+  font-weight:650 !important;
+  letter-spacing:.02em;
+  color:rgba(255,255,255,.48) !important;
+  background:rgba(0,0,0,.10) !important;
+  border-color:rgba(255,255,255,.10) !important;
+  box-shadow:none !important;
+}
+
+.cs-memory-ownership::before{
+  content:"";
+  display:inline-block;
+  width:5px;
+  height:5px;
+  margin-right:5px;
+  border-radius:999px;
+  background:rgba(0,240,248,.48);
+  vertical-align:middle;
+}
+
+.cs-memory-ownership:hover,
+.cs-memory-ownership:focus{
+  color:rgba(255,255,255,.84) !important;
+  border-color:rgba(0,240,248,.24) !important;
+  background:rgba(0,0,0,.18) !important;
+}
+
+.cs-memory-ownership-label{
+  font-weight:650 !important;
+}
+
+/* Memory Node item reactions */
+.cs-memory-item-reactions{
+  margin-top:8px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
+
+.cs-memory-item-reaction-summary,
+.cs-memory-item-reaction-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+}
+
+.cs-memory-item-reaction-chip,
+.cs-memory-item-reaction-button{
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.045);
+  color:inherit;
+  border-radius:999px;
+  min-width:26px;
+  height:24px;
+  padding:2px 7px;
+  font-size:12px;
+  line-height:1;
+  cursor:pointer;
+}
+
+.cs-memory-item-reaction-chip{
+  font-weight:850;
+  color:rgba(255,255,255,.82);
+}
+
+.cs-memory-item-reaction-button{
+  opacity:.46;
+}
+
+.cs-memory-item:hover .cs-memory-item-reaction-button,
+.cs-memory-item:focus-within .cs-memory-item-reaction-button{
+  opacity:.86;
+}
+
+.cs-memory-item-reaction-chip:hover,
+.cs-memory-item-reaction-button:hover{
+  border-color:rgba(0,240,248,.34);
+  background:rgba(0,240,248,.10);
+}
+
+.cs-memory-item-reaction-chip.is-active,
+.cs-memory-item-reaction-button.is-active{
+  border-color:rgba(255,183,77,.42);
+  background:rgba(255,183,77,.13);
+  opacity:1;
+}
+
+.cs-memory-item-reaction-chip:disabled,
+.cs-memory-item-reaction-button:disabled{
+  opacity:.45;
+  cursor:wait;
+}
+
+/* Hide Memory Node item reaction picker until hover/focus */
+.cs-memory-item-reaction-actions{
+  max-height:0 !important;
+  opacity:0 !important;
+  overflow:hidden !important;
+  pointer-events:none !important;
+  transform:translateY(-3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    max-height 120ms ease;
+}
+
+.cs-memory-item:hover .cs-memory-item-reaction-actions,
+.cs-memory-item:focus-within .cs-memory-item-reaction-actions{
+  max-height:32px !important;
+  opacity:1 !important;
+  pointer-events:auto !important;
+  transform:translateY(0);
+}
+
+.cs-memory-item-reaction-button{
+  opacity:.86 !important;
+}
+
+/* If item has no visible reaction summary yet, avoid reserving extra space until hover. */
+.cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)){
+  margin-top:0 !important;
+}
+
+.cs-memory-item:hover .cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)),
+.cs-memory-item:focus-within .cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)){
+  margin-top:8px !important;
+}

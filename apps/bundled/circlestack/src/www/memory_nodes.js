@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const MEMORY_ITEM_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
+
   const API = "/api/v4/circlestack";
 
   function el(tag, className, text) {
@@ -402,6 +404,108 @@
     });
   }
 
+  function memoryItemReactionNames(summary) {
+    const people = Array.isArray(summary?.people) ? summary.people : [];
+    return people
+      .map(p => p.display_name || p.fp_short || p.fp || "")
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  async function reactMemoryItem(itemId, reaction) {
+    const res = await fetch(`${API}/memory-nodes/items/react`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, reaction })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    }
+
+    return data.item || null;
+  }
+
+  function renderMemoryItemReactionBar(item) {
+    const wrap = el("div", "cs-memory-item-reactions");
+
+    const summaries = new Map(
+      (Array.isArray(item.reactions) ? item.reactions : [])
+        .map(r => [r.reaction, r])
+    );
+
+    const summaryRow = el("div", "cs-memory-item-reaction-summary");
+
+    for (const reaction of MEMORY_ITEM_REACTIONS) {
+      const summary = summaries.get(reaction);
+      const count = Number(summary?.count || 0);
+      if (!summary || count <= 0) continue;
+
+      const isMine = item.my_reaction === reaction || summary.reacted_by_me === true;
+
+      const chip = el("button", "cs-memory-item-reaction-chip", `${reaction} ${count}`);
+      chip.type = "button";
+      if (isMine) chip.classList.add("is-active");
+
+      const names = memoryItemReactionNames(summary);
+      chip.setAttribute("aria-label", names ? `${reaction} ${names}` : reaction);
+
+      chip.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+
+        try {
+          chip.disabled = true;
+          const updated = await reactMemoryItem(item.id, isMine ? "" : reaction);
+          if (updated) Object.assign(item, updated);
+
+          const next = renderMemoryItemReactionBar(item);
+          wrap.replaceWith(next);
+        } catch (e) {
+          alert(`Reaction failed: ${e.message || e}`);
+        }
+      });
+
+      summaryRow.appendChild(chip);
+    }
+
+    const actionRow = el("div", "cs-memory-item-reaction-actions");
+
+    for (const reaction of MEMORY_ITEM_REACTIONS) {
+      const isMine = item.my_reaction === reaction;
+
+      const btn = el("button", "cs-memory-item-reaction-button", reaction);
+      btn.type = "button";
+      btn.classList.toggle("is-active", isMine);
+      btn.setAttribute("aria-label", isMine ? `Remove ${reaction}` : `React ${reaction}`);
+
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+
+        try {
+          btn.disabled = true;
+          const updated = await reactMemoryItem(item.id, isMine ? "" : reaction);
+          if (updated) Object.assign(item, updated);
+
+          const next = renderMemoryItemReactionBar(item);
+          wrap.replaceWith(next);
+        } catch (e) {
+          alert(`Reaction failed: ${e.message || e}`);
+        }
+      });
+
+      actionRow.appendChild(btn);
+    }
+
+    if (summaryRow.children.length) {
+      wrap.appendChild(summaryRow);
+    }
+
+    wrap.appendChild(actionRow);
+    return wrap;
+  }
+
   function renderItem(item, onDeleted) {
     const tile = el("div", `cs-memory-item is-${item.media_kind || "image"}`);
 
@@ -447,6 +551,8 @@
     if (item.caption) {
       meta.appendChild(el("div", "cs-memory-caption", item.caption));
     }
+
+    meta.appendChild(renderMemoryItemReactionBar(item));
 
     if (item.can_delete) {
       const del = el("button", "cs-memory-delete", "Remove");
@@ -549,6 +655,99 @@
     statsEl.appendChild(pop);
   }
 
+  function formatMemoryBytes(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return "0 B";
+
+    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let v = n;
+    let i = 0;
+
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+
+    if (i === 0) return `${Math.round(v)} ${units[i]}`;
+
+    const digits = v >= 100 ? 1 : 2;
+    return `${v.toFixed(digits)} ${units[i]}`;
+  }
+
+  function memoryNodeOwnershipRows(node) {
+    const items = Array.isArray(node?.items) ? node.items : [];
+    const byOwner = new Map();
+
+    for (const item of items) {
+      const fp = String(item.owner_fp || item.owner_fp_short || "").trim();
+      const key = fp || String(item.owner_display_name || "unknown").trim();
+      const name = item.owner_display_name || item.owner_fp_short || "unknown";
+      const bytes = Number(item.media_bytes || 0);
+
+      if (!byOwner.has(key)) {
+        byOwner.set(key, {
+          fp,
+          name,
+          count: 0,
+          bytes: 0
+        });
+      }
+
+      const row = byOwner.get(key);
+      row.count += 1;
+      if (Number.isFinite(bytes) && bytes > 0) {
+        row.bytes += bytes;
+      }
+    }
+
+    return Array.from(byOwner.values())
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+
+  function renderMemoryOwnershipPill(node) {
+    const pill = el("div", "cs-memory-ownership");
+    pill.tabIndex = 0;
+
+    const label = el("span", "cs-memory-ownership-label", "No copies");
+    pill.appendChild(label);
+
+    const pop = el("div", "cs-memory-ownership-popover");
+    pop.appendChild(el("div", "cs-memory-ownership-title", "Data ownership"));
+
+    const rows = memoryNodeOwnershipRows(node);
+    const totalBytes = rows.reduce((sum, row) => sum + Number(row.bytes || 0), 0);
+
+    if (!rows.length) {
+      pop.appendChild(el("div", "cs-memory-ownership-empty", "No media yet"));
+    } else {
+      for (const row of rows) {
+        const item = el("div", "cs-memory-ownership-row");
+
+        const name = el("span", "cs-memory-ownership-name", row.name || "unknown");
+        const value = el(
+          "span",
+          "cs-memory-ownership-value",
+          `${row.count} file${row.count === 1 ? "" : "s"} · ${formatMemoryBytes(row.bytes)}`
+        );
+
+        item.appendChild(name);
+        item.appendChild(value);
+        pop.appendChild(item);
+      }
+    }
+
+    const total = el("div", "cs-memory-ownership-total");
+    total.textContent = `Referenced media total: ${formatMemoryBytes(totalBytes)}`;
+    pop.appendChild(total);
+
+    const note = el("div", "cs-memory-ownership-note");
+    note.textContent = "No duplicate copies created. Circle Stack stores references to owners' NAS files.";
+    pop.appendChild(note);
+
+    pill.appendChild(pop);
+    return pill;
+  }
+
   function renderMemoryNodeCard(node) {
     const card = el("section", "cs-memory-node");
 
@@ -561,8 +760,12 @@
     const stats = el("div", "cs-memory-stats");
     updateMemoryStats(stats, node);
 
+    const headRight = el("div", "cs-memory-head-right");
+    headRight.appendChild(stats);
+    headRight.appendChild(renderMemoryOwnershipPill(node));
+
     head.appendChild(titleWrap);
-    head.appendChild(stats);
+    head.appendChild(headRight);
     card.appendChild(head);
 
     if (node.body) {

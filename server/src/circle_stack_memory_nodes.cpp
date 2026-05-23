@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -173,9 +174,25 @@ bool csmn_init_db(sqlite3* db, std::string* err = nullptr) {
         err)) return false;
 
     if (!csmn_exec(db,
-        "CREATE INDEX IF NOT EXISTS idx_memory_node_items_owner_fp "
-        "ON memory_node_items(owner_fp)",
+        "CREATE TABLE IF NOT EXISTS memory_node_item_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "item_id INTEGER NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "reaction TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(item_id, actor_fp)"
+        ")",
         err)) return false;
+
+    if (!csmn_exec(db,
+        "CREATE INDEX IF NOT EXISTS idx_memory_node_item_reactions_item "
+        "ON memory_node_item_reactions(item_id, reaction)",
+        err)) return false;
+
+    csmn_exec(db,
+        "DELETE FROM memory_node_item_reactions "
+        "WHERE item_id NOT IN (SELECT id FROM memory_node_items)");
 
     csmn_exec(db,
         "DELETE FROM memory_node_items "
@@ -470,6 +487,143 @@ bool csmn_validate_media_path(
     return true;
 }
 
+std::uintmax_t csmn_media_file_size(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& owner_fp,
+    const std::string& media_path
+) {
+    if (!deps.users || owner_fp.empty() || media_path.empty()) return 0;
+
+    pqnas::ResolvedExistingPath resolved;
+    std::string err;
+
+    if (!pqnas::resolve_existing_user_file_path(
+            *deps.users,
+            owner_fp,
+            media_path,
+            &resolved,
+            &err)) {
+        return 0;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(resolved.abs_path, ec) || ec) {
+        return 0;
+    }
+
+    const auto sz = std::filesystem::file_size(resolved.abs_path, ec);
+    return ec ? 0 : sz;
+}
+
+bool csmn_valid_reaction(const std::string& reaction) {
+    static const char* kAllowed[] = {
+        u8"👍",
+        u8"❤️",
+        u8"😂",
+        u8"😮",
+        u8"👏",
+        u8"🔥"
+    };
+
+    for (const char* allowed : kAllowed) {
+        if (reaction == allowed) return true;
+    }
+
+    return false;
+}
+
+std::string csmn_item_my_reaction(
+    sqlite3* db,
+    int item_id,
+    const std::string& viewer_fp
+) {
+    if (!db || item_id <= 0 || viewer_fp.empty()) return "";
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT reaction FROM memory_node_item_reactions "
+            "WHERE item_id = ? AND actor_fp = ? "
+            "LIMIT 1",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return "";
+    }
+
+    sqlite3_bind_int(st, 1, item_id);
+    sqlite3_bind_text(st, 2, viewer_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    std::string out;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char* raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        out = raw ? raw : "";
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+json csmn_item_reactions_json(
+    sqlite3* db,
+    int item_id,
+    const std::string& viewer_fp,
+    const pqnas::CircleStackRoutesDeps& deps
+) {
+    json out = json::array();
+    if (!db || item_id <= 0) return out;
+
+    const std::string my_reaction = csmn_item_my_reaction(db, item_id, viewer_fp);
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT reaction, COUNT(*) "
+            "FROM memory_node_item_reactions "
+            "WHERE item_id = ? "
+            "GROUP BY reaction "
+            "ORDER BY COUNT(*) DESC, reaction ASC",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return out;
+    }
+
+    sqlite3_bind_int(st, 1, item_id);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* reaction_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        const std::string reaction = reaction_raw ? reaction_raw : "";
+        const int count = sqlite3_column_int(st, 1);
+
+        json people = json::array();
+
+        sqlite3_stmt* pst = nullptr;
+        if (sqlite3_prepare_v2(db,
+                "SELECT actor_fp "
+                "FROM memory_node_item_reactions "
+                "WHERE item_id = ? AND reaction = ? "
+                "ORDER BY updated_epoch ASC, id ASC "
+                "LIMIT 16",
+                -1, &pst, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(pst, 1, item_id);
+            sqlite3_bind_text(pst, 2, reaction.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(pst) == SQLITE_ROW) {
+                const char* fp_raw = reinterpret_cast<const char*>(sqlite3_column_text(pst, 0));
+                const std::string fp = fp_raw ? fp_raw : "";
+                people.push_back(csmn_user_summary(deps, fp));
+            }
+
+            sqlite3_finalize(pst);
+        }
+
+        out.push_back({
+            {"reaction", reaction},
+            {"count", count},
+            {"reacted_by_me", !my_reaction.empty() && my_reaction == reaction},
+            {"people", people}
+        });
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
 json csmn_load_items(
     sqlite3* db,
     int node_id,
@@ -505,6 +659,7 @@ json csmn_load_items(
         const std::string owner_fp = owner_raw ? owner_raw : "";
         const std::string media_path = path_raw ? path_raw : "";
         const std::string media_kind = kind_raw ? kind_raw : csmn_media_kind_for_path(media_path);
+        const std::uintmax_t media_bytes = csmn_media_file_size(deps, owner_fp, media_path);
 
         json owner = csmn_user_summary(deps, owner_fp);
 
@@ -516,7 +671,10 @@ json csmn_load_items(
             {"owner_display_name", owner.value("display_name", "")},
             {"owner_avatar_url", owner.value("avatar_url", "")},
             {"media_kind", media_kind},
+            {"media_bytes", media_bytes},
             {"caption", caption_raw ? caption_raw : ""},
+            {"my_reaction", csmn_item_my_reaction(db, id, viewer_fp)},
+            {"reactions", csmn_item_reactions_json(db, id, viewer_fp, deps)},
             {"created_epoch", sqlite3_column_int64(st, 5)},
             {"media_url", "/api/v4/circlestack/memory-nodes/items/media?id=" + std::to_string(id)},
             {"can_delete", owner_fp == viewer_fp || node_owner_fp == viewer_fp}
@@ -972,6 +1130,163 @@ void register_circle_stack_memory_node_routes(
             });
         });
 
+    server.Post("/api/v4/circlestack/memory-nodes/items/react",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return csmn_set_json(res, {{"ok", false}, {"error", "invalid_json"}});
+            }
+
+            const int item_id = body.value("item_id", body.value("id", 0));
+            std::string reaction = csmn_limit(body.value("reaction", ""), 32);
+
+            if (item_id <= 0) {
+                res.status = 400;
+                return csmn_set_json(res, {{"ok", false}, {"error", "invalid_item_id"}});
+            }
+
+            if (!reaction.empty() && !csmn_valid_reaction(reaction)) {
+                res.status = 400;
+                return csmn_set_json(res, {{"ok", false}, {"error", "invalid_reaction"}});
+            }
+
+            sqlite3* db = nullptr;
+            std::string db_err;
+            if (!csmn_open_db(&db, &db_err)) {
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_open_failed"}, {"detail", db_err}});
+            }
+
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(db,
+                    "SELECT i.node_id, n.post_id "
+                    "FROM memory_node_items i "
+                    "JOIN memory_nodes n ON n.id = i.node_id "
+                    "WHERE i.id = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                const std::string detail = sqlite3_errmsg(db);
+                sqlite3_close(db);
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}, {"detail", detail}});
+            }
+
+            sqlite3_bind_int(st, 1, item_id);
+
+            int post_id = 0;
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                post_id = sqlite3_column_int(st, 1);
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
+
+            if (post_id <= 0) {
+                sqlite3_close(db);
+                res.status = 404;
+                return csmn_set_json(res, {{"ok", false}, {"error", "item_not_found"}});
+            }
+
+            std::string visibility_err;
+            if (!csmn_actor_can_see_post(db, post_id, actor_fp, &visibility_err)) {
+                sqlite3_close(db);
+                res.status = visibility_err == "not_found" ? 404 : 403;
+                return csmn_set_json(res, {{"ok", false}, {"error", visibility_err}});
+            }
+
+            if (sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+                const std::string detail = sqlite3_errmsg(db);
+                sqlite3_close(db);
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_begin_failed"}, {"detail", detail}});
+            }
+
+            if (sqlite3_prepare_v2(db,
+                    "DELETE FROM memory_node_item_reactions "
+                    "WHERE item_id = ? AND actor_fp = ?",
+                    -1, &st, nullptr) != SQLITE_OK) {
+                sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                const std::string detail = sqlite3_errmsg(db);
+                sqlite3_close(db);
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}, {"detail", detail}});
+            }
+
+            sqlite3_bind_int(st, 1, item_id);
+            sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+            if (sqlite3_step(st) != SQLITE_DONE) {
+                sqlite3_finalize(st);
+                sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                const std::string detail = sqlite3_errmsg(db);
+                sqlite3_close(db);
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_delete_failed"}, {"detail", detail}});
+            }
+
+            sqlite3_finalize(st);
+            st = nullptr;
+
+            if (!reaction.empty()) {
+                const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+                if (sqlite3_prepare_v2(db,
+                        "INSERT INTO memory_node_item_reactions"
+                        "(item_id, actor_fp, reaction, created_epoch, updated_epoch) "
+                        "VALUES(?,?,?,?,?)",
+                        -1, &st, nullptr) != SQLITE_OK) {
+                    sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                    const std::string detail = sqlite3_errmsg(db);
+                    sqlite3_close(db);
+                    res.status = 500;
+                    return csmn_set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}, {"detail", detail}});
+                }
+
+                sqlite3_bind_int(st, 1, item_id);
+                sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(st, 3, reaction.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64(st, 4, now);
+                sqlite3_bind_int64(st, 5, now);
+
+                if (sqlite3_step(st) != SQLITE_DONE) {
+                    sqlite3_finalize(st);
+                    sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                    const std::string detail = sqlite3_errmsg(db);
+                    sqlite3_close(db);
+                    res.status = 500;
+                    return csmn_set_json(res, {{"ok", false}, {"error", "db_insert_failed"}, {"detail", detail}});
+                }
+
+                sqlite3_finalize(st);
+                st = nullptr;
+            }
+
+            if (sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr) != SQLITE_OK) {
+                sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                const std::string detail = sqlite3_errmsg(db);
+                sqlite3_close(db);
+                res.status = 500;
+                return csmn_set_json(res, {{"ok", false}, {"error", "db_commit_failed"}, {"detail", detail}});
+            }
+
+            json item = csmn_load_single_item(db, item_id, actor_fp, deps);
+            sqlite3_close(db);
+
+            csmn_set_json(res, {
+                {"ok", true},
+                {"item", item}
+            });
+        });
+
     server.Delete("/api/v4/circlestack/memory-nodes/items",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;
@@ -1040,6 +1355,9 @@ void register_circle_stack_memory_node_routes(
                 res.status = 403;
                 return csmn_set_json(res, {{"ok", false}, {"error", "forbidden"}});
             }
+
+            csmn_exec(db,
+                ("DELETE FROM memory_node_item_reactions WHERE item_id = " + std::to_string(item_id)).c_str());
 
             if (sqlite3_prepare_v2(db,
                     "DELETE FROM memory_node_items WHERE id = ?",
