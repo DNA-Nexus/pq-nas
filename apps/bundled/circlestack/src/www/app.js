@@ -1308,6 +1308,42 @@ function csResolvePreviewImage(doc, baseUrl) {
   return best.url;
 }
 
+function csYouTubeVideoIdFromUrl(urlObj) {
+  if (!urlObj) return "";
+
+  const host = String(urlObj.hostname || "").toLowerCase().replace(/^www\./, "");
+  const path = String(urlObj.pathname || "");
+
+  if (host === "youtu.be") {
+    const id = path.split("/").filter(Boolean)[0] || "";
+    return /^[A-Za-z0-9_-]{6,}$/.test(id) ? id : "";
+  }
+
+  if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+    const v = urlObj.searchParams.get("v") || "";
+    if (/^[A-Za-z0-9_-]{6,}$/.test(v)) return v;
+
+    const parts = path.split("/").filter(Boolean);
+    const embedIndex = parts.indexOf("embed");
+    if (embedIndex >= 0 && parts[embedIndex + 1] && /^[A-Za-z0-9_-]{6,}$/.test(parts[embedIndex + 1])) {
+      return parts[embedIndex + 1];
+    }
+
+    const shortsIndex = parts.indexOf("shorts");
+    if (shortsIndex >= 0 && parts[shortsIndex + 1] && /^[A-Za-z0-9_-]{6,}$/.test(parts[shortsIndex + 1])) {
+      return parts[shortsIndex + 1];
+    }
+  }
+
+  return "";
+}
+
+function csYouTubeThumbUrl(videoId) {
+  return videoId
+    ? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`
+    : "";
+}
+
 function csDefaultLinkPreviewBadge(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
     return "DNA-NEXUS SHARE";
@@ -1450,6 +1486,27 @@ function csRenderLinkPreviewFromText(rawText) {
   const urlLine = document.createElement("div");
   urlLine.className = "cs-link-preview-url";
   urlLine.textContent = urlObj.hostname + urlObj.pathname;
+
+  const youtubeVideoId = csYouTubeVideoIdFromUrl(urlObj);
+  if (youtubeVideoId) {
+    const youtubeThumbUrl = csYouTubeThumbUrl(youtubeVideoId);
+
+    badge.textContent = "YOUTUBE VIDEO";
+
+    if (title.textContent === csDefaultLinkPreviewTitle(urlObj)) {
+      title.textContent = "YouTube video";
+    }
+
+    if (desc.textContent === csDefaultLinkPreviewDesc(urlObj)) {
+      desc.textContent = urlObj.href;
+    }
+
+    if (youtubeThumbUrl) {
+      thumb.textContent = "";
+      thumb.classList.add("has-image");
+      thumb.style.backgroundImage = `url("${youtubeThumbUrl.replaceAll('"', "%22")}")`;
+    }
+  }
 
   body.appendChild(badge);
   body.appendChild(title);
