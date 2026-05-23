@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111f"/>
+      <stop offset="55%" stop-color="#0b1020"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="58%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.45"/>
+      <stop offset="58%" stop-color="#f97316" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="72" y="70" width="1056" height="490" rx="38" fill="#0f172a" opacity="0.84" stroke="#60a5fa" stroke-opacity="0.42" stroke-width="3"/>
+  <circle cx="600" cy="295" r="102" fill="#f97316" opacity="0.94"/>
+  <polygon points="574,238 574,352 674,295" fill="#0f172a"/>
+  <text x="600" y="455" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#f8fafc">Reel Stack</text>
+  <text x="600" y="512" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="31" fill="#cbd5e1">Shared video from DNA-Nexus</text>
+</svg>

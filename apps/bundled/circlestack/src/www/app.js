@@ -1308,9 +1308,61 @@ function csResolvePreviewImage(doc, baseUrl) {
   return best.url;
 }
 
+function csDefaultLinkPreviewBadge(urlObj) {
+  if (urlObj && urlObj.pathname.startsWith("/s/")) {
+    return "DNA-NEXUS SHARE";
+  }
+
+  return urlObj ? urlObj.hostname : "LINK";
+}
+
+function csPreviewBadgeFromDoc(doc, urlObj) {
+  if (!doc || !urlObj) return csDefaultLinkPreviewBadge(urlObj);
+
+  const appName = csMetaContent(doc, 'meta[name="application-name"]');
+  const siteName = csMetaContent(doc, 'meta[property="og:site_name"]');
+  const ogType = csMetaContent(doc, 'meta[property="og:type"]');
+  const ogVideo =
+    csMetaContent(doc, 'meta[property="og:video"]') ||
+    csMetaContent(doc, 'meta[property="og:video:url"]') ||
+    csMetaContent(doc, 'meta[property="og:video:secure_url"]');
+  const twitterPlayer =
+    csMetaContent(doc, 'meta[name="twitter:player"]') ||
+    csMetaContent(doc, 'meta[name="twitter:player:stream"]');
+
+  const hay = [
+    appName,
+    siteName,
+    ogType,
+    ogVideo,
+    twitterPlayer
+  ].join(" ").toLowerCase();
+
+  if (
+    hay.includes("reel stack") ||
+    hay.includes("reelstack") ||
+    hay.includes("video.") ||
+    hay.includes("video/") ||
+    ogVideo ||
+    twitterPlayer
+  ) {
+    return "REEL STACK VIDEO";
+  }
+
+  if (
+    hay.includes("photo gallery") ||
+    hay.includes("gallery") ||
+    hay.includes("album")
+  ) {
+    return "PHOTO GALLERY SHARE";
+  }
+
+  return csDefaultLinkPreviewBadge(urlObj);
+}
+
 function csDefaultLinkPreviewTitle(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
-    return "DNA-Nexus shared album";
+    return "DNA-Nexus shared item";
   }
 
   return urlObj ? urlObj.hostname : "Link";
@@ -1318,7 +1370,7 @@ function csDefaultLinkPreviewTitle(urlObj) {
 
 function csDefaultLinkPreviewDesc(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
-    return "Open shared Photo Gallery item";
+    return "Open shared DNA-Nexus item";
   }
 
   return urlObj ? urlObj.href : "";
@@ -1385,9 +1437,7 @@ function csRenderLinkPreviewFromText(rawText) {
 
   const badge = document.createElement("div");
   badge.className = "cs-link-preview-badge";
-  badge.textContent = urlObj.pathname.startsWith("/s/")
-    ? "PHOTO GALLERY SHARE"
-    : urlObj.hostname;
+  badge.textContent = csDefaultLinkPreviewBadge(urlObj);
 
   const title = document.createElement("div");
   title.className = "cs-link-preview-title";
@@ -1423,6 +1473,9 @@ function csRenderLinkPreviewFromText(rawText) {
         if (!html) return;
 
         const doc = new DOMParser().parseFromString(html, "text/html");
+
+        const pageBadge = csPreviewBadgeFromDoc(doc, urlObj);
+        if (pageBadge) badge.textContent = pageBadge;
 
         const pageTitle =
           csMetaContent(doc, 'meta[property="og:title"]') ||

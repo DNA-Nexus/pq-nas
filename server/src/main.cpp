@@ -1024,111 +1024,100 @@ static void public_share_send_file_stream_local(const httplib::Request& req,
 }
 
 static std::string public_share_video_page_local(const std::string& token,
-                                                 const std::string& filename) {
-    const std::string title = public_share_html_escape_local(
-        filename.empty() ? "Shared video" : filename
-    );
-    const std::string safe_token = public_share_html_escape_local(token);
+                                                 const std::string& filename,
+                                                 const std::string& mime,
+                                                 const httplib::Request& req) {
+    // Reuse the shared public share HTML escape helper.
+    const std::string title = filename.empty() ? "Shared video" : filename;
+    const std::string description = "Open shared Reel Stack video";
 
-    return std::string(R"HTML(<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>)HTML") + title + R"HTML(</title>
-<style>
-:root {
-    color-scheme: dark;
-    --bg:#080b12;
-    --panel:#111827;
-    --fg:#e5e7eb;
-    --dim:#9ca3af;
-    --border:rgba(255,255,255,.14);
-}
-* { box-sizing:border-box; }
-body {
-    margin:0;
-    min-height:100vh;
-    background:
-        radial-gradient(circle at top left, rgba(255,122,24,.16), transparent 34rem),
-        linear-gradient(180deg, #05070c, #0b1020);
-    color:var(--fg);
-    font:14px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:24px;
-}
-.card {
-    width:min(1100px, 100%);
-    background:rgba(17,24,39,.86);
-    border:1px solid var(--border);
-    border-radius:22px;
-    box-shadow:0 24px 80px rgba(0,0,0,.46);
-    overflow:hidden;
-}
-.head {
-    padding:18px 20px;
-    border-bottom:1px solid var(--border);
-    display:flex;
-    gap:12px;
-    align-items:center;
-    justify-content:space-between;
-}
-.name {
-    font-weight:700;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-}
-.actions {
-    display:flex;
-    gap:10px;
-    flex-shrink:0;
-}
-a.btn {
-    color:var(--fg);
-    text-decoration:none;
-    border:1px solid var(--border);
-    border-radius:12px;
-    padding:8px 12px;
-    background:rgba(255,255,255,.06);
-}
-a.btn:hover {
-    background:rgba(255,255,255,.1);
-}
-.player {
-    padding:18px;
-}
-video {
-    width:100%;
-    max-height:78vh;
-    border-radius:16px;
-    background:#000;
-    display:block;
-}
-.foot {
-    color:var(--dim);
-    padding:0 20px 18px;
-}
-</style>
-</head>
-<body>
-<div class="card">
-    <div class="head">
-        <div class="name">)HTML" + title + R"HTML(</div>
-        <div class="actions">
-            <a class="btn" href="/s/)HTML" + safe_token + R"HTML(?download=1">Download</a>
-        </div>
-    </div>
-    <div class="player">
-        <video controls preload="metadata" src="/s/)HTML" + safe_token + R"HTML(?raw=1"></video>
-    </div>
-    <div class="foot">DNA-Nexus shared video</div>
-</div>
-</body>
-</html>
-)HTML";
+    std::string proto = req.get_header_value("X-Forwarded-Proto");
+    if (proto.empty()) proto = "https";
+
+    std::string host = req.get_header_value("X-Forwarded-Host");
+    if (host.empty()) host = req.get_header_value("Host");
+
+    const std::string origin = host.empty() ? std::string() : proto + "://" + host;
+    const std::string page_url = origin.empty()
+        ? "/s/" + token
+        : origin + "/s/" + token;
+    const std::string raw_url = page_url + "?raw=1";
+    const std::string image_url = origin.empty()
+        ? "/static/video-share-fallback.svg"
+        : origin + "/static/video-share-fallback.svg";
+
+    const std::string video_mime = mime.empty() ? "video/mp4" : mime;
+
+    const std::string h_title = public_share_html_escape_local(title);
+    const std::string h_description = public_share_html_escape_local(description);
+    const std::string h_page_url = public_share_html_escape_local(page_url);
+    const std::string h_raw_url = public_share_html_escape_local(raw_url);
+    const std::string h_image_url = public_share_html_escape_local(image_url);
+    const std::string h_video_mime = public_share_html_escape_local(video_mime);
+
+    std::ostringstream html;
+    html
+        << "<!doctype html>\n"
+        << "<html lang=\"en\">\n"
+        << "<head>\n"
+        << "  <meta charset=\"utf-8\">\n"
+        << "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+        << "  <title>" << h_title << "</title>\n"
+        << "  <meta name=\"description\" content=\"" << h_description << "\">\n"
+        << "  <meta name=\"application-name\" content=\"Reel Stack\">\n"
+
+        << "  <meta property=\"og:type\" content=\"video.other\">\n"
+        << "  <meta property=\"og:site_name\" content=\"DNA-Nexus / Reel Stack\">\n"
+        << "  <meta property=\"og:title\" content=\"" << h_title << "\">\n"
+        << "  <meta property=\"og:description\" content=\"" << h_description << "\">\n"
+        << "  <meta property=\"og:url\" content=\"" << h_page_url << "\">\n"
+        << "  <meta property=\"og:image\" content=\"" << h_image_url << "\">\n"
+        << "  <meta property=\"og:image:type\" content=\"image/svg+xml\">\n"
+        << "  <meta property=\"og:image:width\" content=\"1200\">\n"
+        << "  <meta property=\"og:image:height\" content=\"630\">\n"
+        << "  <meta property=\"og:video\" content=\"" << h_raw_url << "\">\n"
+        << "  <meta property=\"og:video:url\" content=\"" << h_raw_url << "\">\n"
+        << "  <meta property=\"og:video:secure_url\" content=\"" << h_raw_url << "\">\n"
+        << "  <meta property=\"og:video:type\" content=\"" << h_video_mime << "\">\n"
+
+        << "  <meta name=\"twitter:card\" content=\"player\">\n"
+        << "  <meta name=\"twitter:title\" content=\"" << h_title << "\">\n"
+        << "  <meta name=\"twitter:description\" content=\"" << h_description << "\">\n"
+        << "  <meta name=\"twitter:image\" content=\"" << h_image_url << "\">\n"
+        << "  <meta name=\"twitter:player\" content=\"" << h_page_url << "\">\n"
+        << "  <meta name=\"twitter:player:stream\" content=\"" << h_raw_url << "\">\n"
+        << "  <meta name=\"twitter:player:stream:content_type\" content=\"" << h_video_mime << "\">\n"
+        << "  <meta name=\"twitter:player:width\" content=\"1280\">\n"
+        << "  <meta name=\"twitter:player:height\" content=\"720\">\n"
+
+        << "  <style>\n"
+        << "    :root{color-scheme:dark;background:#070b12;color:#e8edf7;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}\n"
+        << "    body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#182643 0,#070b12 55%);}\n"
+        << "    main{width:min(1120px,94vw);padding:32px 0;}\n"
+        << "    .card{border:1px solid rgba(255,255,255,.12);border-radius:24px;background:rgba(10,16,28,.82);box-shadow:0 24px 80px rgba(0,0,0,.45);overflow:hidden;}\n"
+        << "    video{display:block;width:100%;max-height:76vh;background:#000;}\n"
+        << "    .meta{padding:20px 24px 24px;}\n"
+        << "    .eyebrow{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px;}\n"
+        << "    h1{font-size:20px;line-height:1.25;margin:0 0 8px;}\n"
+        << "    p{margin:0;color:#aeb8cc;}\n"
+        << "    a{color:#9ec5ff;}\n"
+        << "  </style>\n"
+        << "</head>\n"
+        << "<body>\n"
+        << "  <main>\n"
+        << "    <section class=\"card\">\n"
+        << "      <video controls preload=\"metadata\" playsinline src=\"" << h_raw_url << "\"></video>\n"
+        << "      <div class=\"meta\">\n"
+        << "        <div class=\"eyebrow\">Reel Stack video share</div>\n"
+        << "        <h1>" << h_title << "</h1>\n"
+        << "        <p>Shared from DNA-Nexus / Reel Stack. <a href=\"" << h_raw_url << "\">Open raw video</a></p>\n"
+        << "      </div>\n"
+        << "    </section>\n"
+        << "  </main>\n"
+        << "</body>\n"
+        << "</html>\n";
+
+    return html.str();
 }
 
 static json normalize_app_launch_policy_json(const json& in) {
@@ -47821,12 +47810,14 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
             }
 
             audit_event("share_download", "ok", &s, "video_preview_page", 200);
-            (void)shares.increment_downloads(token, &err);
+            // Do not count the HTML preview page as a download.
+            // Circle Stack and link-preview crawlers fetch /s/<token> to read OG metadata.
+            // Count explicit downloads and raw streams below instead.
 
             res.status = 200;
             res.set_header("Cache-Control", "no-store");
             res.set_content(
-                public_share_video_page_local(token, fname),
+                public_share_video_page_local(token, fname, mime, req),
                 "text/html; charset=utf-8"
             );
             return;
