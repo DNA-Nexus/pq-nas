@@ -467,3 +467,11 @@ add_custom_target(run_verify_v5_vectors
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS verify_v5_vectors
 )
+
+
+# --- Circle Stack Nodus federation research sources ---
+target_sources(pqnas_server PRIVATE
+    server/src/federation/pqnas_nodus_client.cpp
+    server/src/federation/circle_federation_event.cpp
+)
+
