@@ -1,4 +1,5 @@
 #include "circle_stack_routes.h"
+#include "routes_circle_nodus_research.h"
 #include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
 #include "storage_resolver.h"
@@ -1402,6 +1403,12 @@ namespace pqnas {
 
 void register_circle_stack_routes(httplib::Server& server, const CircleStackRoutesDeps& deps) {
     register_circle_stack_memory_node_routes(server, deps);
+
+    CircleNodusResearchRoutesDeps nodus_deps;
+    nodus_deps.users = deps.users;
+    nodus_deps.cookie_key = deps.cookie_key;
+    nodus_deps.require_user_auth_users_actor = deps.require_user_auth_users_actor;
+    register_circle_nodus_research_routes(server, nodus_deps);
     server.Get("/api/v4/admin/stats/circlestack",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;

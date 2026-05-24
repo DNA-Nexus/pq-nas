@@ -161,3 +161,42 @@ Add admin-only research endpoints:
     POST /api/v4/federation/circle/ping
 
 Then replace CLI-shell integration with a real Nodus client API integration or local daemon TCP client.
+
+## 2026-05-24 PQ-NAS admin endpoint test
+
+Admin-only PQ-NAS research endpoints were added for:
+
+- `GET /api/v4/admin/nodus/status`
+- `POST /api/v4/admin/nodus/put-test`
+- `GET /api/v4/admin/nodus/get-test?key=...`
+- `POST /api/v4/admin/nodus/circle/ping`
+
+Runtime identity was generated outside the repo at:
+
+`/srv/pqnas/config/nodus/research_identity`
+
+The Circle event pointer model was tested successfully from PQ-NAS:
+
+`pqnas:circlestack:circle:research-circle:head -> latest event_id`
+`pqnas:circlestack:circle:research-circle:event:<event_id> -> event JSON`
+
+Confirmed results:
+
+- EU-1 `circle.ping` wrote both event JSON and head pointer.
+- `get-test` read back the head pointer.
+- `get-test` read back the event JSON.
+- Writing through all 7 configured Nodus seeds succeeded:
+  - US-1 event=true head=true
+  - EU-1 event=true head=true
+  - EU-2 event=true head=true
+  - EU-3 event=true head=true
+  - EU-4 event=true head=true
+  - EU-5 event=true head=true
+  - EU-6 event=true head=true
+
+Notes:
+
+- Nodus is used only for discovery/presence/event delivery.
+- Circle Stack media remains on the origin PQ-NAS.
+- `nodus-cli -i <identity_dir>` requires an existing identity.
+- A one-shot `nodus-server -i <identity_dir>` run generated the persistent PQ-NAS research identity.

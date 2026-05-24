@@ -240,6 +240,12 @@ add_executable(pqnas_server
         server/src/echo_stack_routes.cpp
         server/src/circle_stack_routes.cpp
         server/src/circle_stack_memory_nodes.cpp
+        server/src/federation/pqnas_nodus_client.cpp
+        server/src/federation/pqnas_nodus_client.h
+        server/src/federation/circle_federation_event.cpp
+        server/src/federation/circle_federation_event.h
+        server/src/routes_circle_nodus_research.cpp
+        server/src/routes_circle_nodus_research.h
         server/src/echo_stack_index.cpp
         server/src/echo_stack_text_extract.cpp
         server/src/echo_stack_content_index.cpp
