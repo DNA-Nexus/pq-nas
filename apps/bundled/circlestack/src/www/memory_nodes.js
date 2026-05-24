@@ -12,6 +12,17 @@
     return node;
   }
 
+  function memoryNodeIcon(className = "cs-memory-icon") {
+    const wrap = el("span", className);
+    const img = document.createElement("img");
+    img.src = "memory_node_icon.svg?v=20260523-simpleicon1";
+    img.alt = "";
+    img.decoding = "async";
+    img.loading = "lazy";
+    wrap.appendChild(img);
+    return wrap;
+  }
+
   function isVideo(item) {
     return String(item?.media_kind || "").toLowerCase() === "video";
   }
@@ -824,7 +835,7 @@
 
       const left = el("div", "cs-memory-spotlight-left");
 
-      const icon = el("span", "cs-memory-spotlight-icon", "🧠");
+      const icon = memoryNodeIcon("cs-memory-spotlight-icon");
       const text = el("div", "cs-memory-spotlight-text");
 
       text.appendChild(el("div", "cs-memory-spotlight-title", "Collaborative Memory Node"));
@@ -865,7 +876,9 @@
     const postBtn = document.getElementById("csPostButton");
     if (!postBtn || document.getElementById("csOpenMemoryNodeBtn")) return;
 
-    const btn = el("button", "cs-memory-open-btn", "🧠 Memory Node");
+    const btn = el("button", "cs-memory-open-btn");
+    btn.appendChild(memoryNodeIcon("cs-memory-button-icon"));
+    btn.appendChild(el("span", "", "Memory Node"));
     btn.id = "csOpenMemoryNodeBtn";
     btn.type = "button";
     btn.title = "Open a shared Memory Node";

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 76" role="img" aria-label="Circle Stack">
+  <defs>
+    <linearGradient id="csBrandStroke" x1="8" y1="8" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffb84d"/>
+      <stop offset="55%" stop-color="#34f6ff"/>
+      <stop offset="100%" stop-color="#7cffd4"/>
+    </linearGradient>
+    <radialGradient id="csBrandGlow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#34f6ff" stop-opacity=".24"/>
+      <stop offset="100%" stop-color="#34f6ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="csSoftGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- icon -->
+  <g transform="translate(4,6)">
+    <circle cx="32" cy="32" r="28" fill="#0b0e17"/>
+    <circle cx="32" cy="32" r="28" fill="url(#csBrandGlow)"/>
+    <circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2"/>
+
+    <path d="M18.5 22 L45.5 22 L32 44.5 Z"
+          fill="none"
+          stroke="url(#csBrandStroke)"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity=".9"/>
+
+    <rect x="21" y="25" width="22" height="16" rx="4"
+          fill="#111827"
+          stroke="url(#csBrandStroke)"
+          stroke-width="2.4"/>
+
+    <path d="M24.5 37.5 L29.2 33 L33 36.2 L36.2 33.5 L39.5 37.5"
+          fill="none"
+          stroke="#34f6ff"
+          stroke-width="2.1"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <circle cx="37.2" cy="29.5" r="2.1" fill="#ffb84d"/>
+
+    <g filter="url(#csSoftGlow)">
+      <circle cx="18.5" cy="22" r="4.7" fill="#0b0e17" stroke="#ffb84d" stroke-width="2.4"/>
+      <circle cx="45.5" cy="22" r="4.7" fill="#0b0e17" stroke="#34f6ff" stroke-width="2.4"/>
+      <circle cx="32" cy="44.5" r="4.7" fill="#0b0e17" stroke="#7cffd4" stroke-width="2.4"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <g transform="translate(82,18)">
+    <text x="0" y="18"
+          font-family="Inter, Segoe UI, Arial, sans-serif"
+          font-size="12"
+          font-weight="800"
+          letter-spacing="3"
+          fill="rgba(255,255,255,.58)">DNA-NEXUS APP</text>
+
+    <text x="0" y="46"
+          font-family="Inter, Segoe UI, Arial, sans-serif"
+          font-size="30"
+          font-weight="900"
+          letter-spacing=".6"
+          fill="#f7fafc">Circle</text>
+
+    <text x="97" y="46"
+          font-family="Inter, Segoe UI, Arial, sans-serif"
+          font-size="30"
+          font-weight="900"
+          letter-spacing=".6"
+          fill="url(#csBrandStroke)">Stack</text>
+
+    <text x="0" y="63"
+          font-family="Inter, Segoe UI, Arial, sans-serif"
+          font-size="11"
+          font-weight="600"
+          letter-spacing=".3"
+          fill="rgba(255,255,255,.42)">store moments • share from your own NAS</text>
+  </g>
+</svg>

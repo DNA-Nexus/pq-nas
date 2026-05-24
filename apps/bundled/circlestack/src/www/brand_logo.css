@@ -1,0 +1,30 @@
+.cs-title-has-brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.cs-brand-title{
+  display:inline-flex;
+  align-items:center;
+  min-width:0;
+  max-width:min(360px, 72vw);
+}
+
+.cs-brand-title img{
+  display:block;
+  width:auto;
+  height:42px;
+  max-width:100%;
+}
+
+@media (max-width: 720px){
+  .cs-brand-title{
+    max-width:min(250px, 68vw);
+  }
+
+  .cs-brand-title img{
+    height:34px;
+  }
+}
