@@ -1403,6 +1403,28 @@ json cs_admin_stats_json(sqlite3* db) {
 
 
 json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFeedEvent& ev) {
+    json parsed;
+    json payload;
+
+    std::string display_actor_fp = ev.actor_fp;
+
+    if (!ev.event_json.empty()) {
+        parsed = json::parse(ev.event_json, nullptr, false);
+        if (!parsed.is_discarded() &&
+            parsed.contains("payload") &&
+            parsed["payload"].is_object()) {
+            payload = parsed["payload"];
+
+            if (display_actor_fp.empty()) {
+                if (payload.contains("actor_fp") && payload["actor_fp"].is_string()) {
+                    display_actor_fp = payload["actor_fp"].get<std::string>();
+                } else if (payload.contains("owner_fp") && payload["owner_fp"].is_string()) {
+                    display_actor_fp = payload["owner_fp"].get<std::string>();
+                }
+            }
+        }
+    }
+
     json item = {
         {"id", ev.id},
         {"received_epoch", ev.received_epoch},
@@ -1414,20 +1436,18 @@ json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFe
         {"target_type", ev.target_type},
         {"post_id", ev.post_id},
         {"reply_id", ev.reply_id},
-        {"actor_fp", ev.actor_fp},
-        {"actor_fp_short", ev.actor_fp.size() >= 8 ? ev.actor_fp.substr(0, 8) : ev.actor_fp},
+        {"actor_fp", display_actor_fp},
+        {"actor_fp_short", display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp},
         {"reaction", ev.reaction},
         {"source", "federated"}
     };
 
-    if (!ev.event_json.empty()) {
-        json parsed = json::parse(ev.event_json, nullptr, false);
-        if (!parsed.is_discarded()) {
-            item["event"] = parsed;
-            if (parsed.contains("payload") && parsed["payload"].is_object()) {
-                item["payload"] = parsed["payload"];
-            }
-        }
+    if (!parsed.is_discarded()) {
+        item["event"] = parsed;
+    }
+
+    if (!payload.is_null()) {
+        item["payload"] = payload;
     }
 
     return item;
