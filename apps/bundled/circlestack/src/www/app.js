@@ -41,7 +41,19 @@ function csFederatedTypeLabel(type, targetType = "") {
 }
 
 function csFederatedActorLabel(ev) {
-  return ev.actor_fp_short || ev.actor_fp || ev.origin_nas || "remote";
+  const payload = ev && ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+
+  return (
+    ev.origin_label ||
+    ev.actor_display_name ||
+    payload.origin_label ||
+    payload.owner_display_name ||
+    payload.actor_display_name ||
+    ev.actor_fp_short ||
+    ev.actor_fp ||
+    ev.origin_nas ||
+    "remote"
+  );
 }
 
 function csRenderFederatedEvent(ev) {
@@ -74,6 +86,14 @@ function csRenderFederatedEvent(ev) {
   card.appendChild(header);
 
   const payload = ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+  const previewText = String(ev.text_preview || payload.text_preview || "").trim();
+
+  if (previewText) {
+    const text = document.createElement("div");
+    text.className = "cs-federated-text-preview";
+    text.textContent = previewText;
+    card.appendChild(text);
+  }
 
   const lines = [];
 
@@ -100,6 +120,18 @@ function csRenderFederatedEvent(ev) {
   body.className = "cs-federated-body";
   body.textContent = lines.filter(Boolean).join(" · ");
   card.appendChild(body);
+
+  const mediaPreview = payload.media_preview && typeof payload.media_preview === "object"
+    ? payload.media_preview
+    : null;
+
+  if ((payload.has_media === true || (mediaPreview && mediaPreview.has_media === true)) &&
+      (!mediaPreview || mediaPreview.status !== "none")) {
+    const media = document.createElement("div");
+    media.className = "cs-federated-media-placeholder";
+    media.textContent = "Media stays on origin NAS · preview fetch coming later";
+    card.appendChild(media);
+  }
 
   const meta = document.createElement("div");
   meta.className = "cs-post-meta";

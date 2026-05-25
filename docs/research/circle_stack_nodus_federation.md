@@ -617,3 +617,26 @@ A user-authenticated app-side read endpoint was added:
 It returns read-only records from `circle_federation_remote_feed` and does not mix remote events into the local Circle Stack `posts`, `post_replies`, or reaction tables.
 
 This gives the UI a safe future path for showing a separate Federated / From other NAS section.
+
+
+## Richer remote federated feed events
+
+Circle Stack federation events were enriched for better remote feed display.
+
+Added to `circle.post.created` payload:
+
+- `text_preview`
+- `owner_display_name`
+- `owner_fp_short`
+- `origin_label`
+- `media_preview` placeholder
+
+Added to `circle.reply.created` payload:
+
+- `text_preview`
+- `actor_display_name`
+- `actor_fp_short`
+- `origin_label`
+- `media_preview` placeholder
+
+The remote feed UI now shows preview text when present and a media placeholder when the event says media exists. Actual media fetch from the origin PQ-NAS remains a later milestone.

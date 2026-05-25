@@ -1438,6 +1438,29 @@ json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFe
         {"reply_id", ev.reply_id},
         {"actor_fp", display_actor_fp},
         {"actor_fp_short", display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp},
+        {"actor_display_name",
+            payload.is_object() && payload.contains("actor_display_name") && payload["actor_display_name"].is_string()
+                ? payload["actor_display_name"].get<std::string>()
+                : (
+                    payload.is_object() && payload.contains("owner_display_name") && payload["owner_display_name"].is_string()
+                        ? payload["owner_display_name"].get<std::string>()
+                        : (display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp)
+                  )
+        },
+        {"origin_label",
+            payload.is_object() && payload.contains("origin_label") && payload["origin_label"].is_string()
+                ? payload["origin_label"].get<std::string>()
+                : (
+                    payload.is_object() && payload.contains("owner_display_name") && payload["owner_display_name"].is_string()
+                        ? payload["owner_display_name"].get<std::string>()
+                        : (display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp)
+                  )
+        },
+        {"text_preview",
+            payload.is_object() && payload.contains("text_preview") && payload["text_preview"].is_string()
+                ? payload["text_preview"].get<std::string>()
+                : ""
+        },
         {"reaction", ev.reaction},
         {"source", "federated"}
     };
@@ -1454,6 +1477,34 @@ json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFe
 }
 
 
+
+std::string cs_make_federation_text_preview(const std::string& text) {
+    std::string out = text;
+    constexpr std::size_t kMaxPreview = 280;
+
+    if (out.size() > kMaxPreview) {
+        out.resize(kMaxPreview);
+        out += "...";
+    }
+
+    return out;
+}
+
+json cs_make_federation_media_preview(const std::string& media_path) {
+    if (media_path.empty()) {
+        return {
+            {"has_media", false},
+            {"status", "none"}
+        };
+    }
+
+    return {
+        {"has_media", true},
+        {"status", "origin_fetch_todo"},
+        {"note", "Media stays on origin PQ-NAS; remote preview fetch is not implemented yet."}
+    };
+}
+
 std::string cs_make_post_created_event_id(long long post_id, long long created_epoch) {
     return "post_" + std::to_string(created_epoch) + "_" + std::to_string(post_id);
 }
@@ -1462,6 +1513,8 @@ bool cs_enqueue_post_created_federation_best_effort(
     long long post_id,
     long long created_epoch,
     const std::string& actor_fp,
+    const std::string& owner_display_name,
+    const std::string& text,
     const std::string& visibility,
     const std::string& media_path,
     const json& mentions,
@@ -1508,8 +1561,13 @@ bool cs_enqueue_post_created_federation_best_effort(
         {"payload", {
             {"post_id", post_id},
             {"owner_fp", actor_fp},
+            {"owner_fp_short", cs_short_fp(actor_fp)},
+            {"owner_display_name", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
+            {"origin_label", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
+            {"text_preview", cs_make_federation_text_preview(text)},
             {"visibility", visibility},
             {"has_media", !media_path.empty()},
+            {"media_preview", cs_make_federation_media_preview(media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };
@@ -1563,6 +1621,8 @@ bool cs_enqueue_reply_created_federation_best_effort(
     int post_id,
     long long created_epoch,
     const std::string& actor_fp,
+    const std::string& actor_display_name,
+    const std::string& text,
     const std::string& media_path,
     const json& mentions,
     std::string* out_event_id,
@@ -1607,7 +1667,12 @@ bool cs_enqueue_reply_created_federation_best_effort(
             {"post_id", post_id},
             {"reply_id", reply_id},
             {"actor_fp", actor_fp},
+            {"actor_fp_short", cs_short_fp(actor_fp)},
+            {"actor_display_name", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
+            {"origin_label", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
+            {"text_preview", cs_make_federation_text_preview(text)},
             {"has_media", !media_path.empty()},
+            {"media_preview", cs_make_federation_media_preview(media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };
@@ -2351,6 +2416,8 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     id,
                     created_epoch,
                     actor_fp,
+                    actor_name,
+                    text,
                     visibility,
                     media_path,
                     mentions,
@@ -2560,6 +2627,8 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     post_id,
                     (long long)reply_created_epoch,
                     actor_fp,
+                    actor_display,
+                    text,
                     media_path,
                     mentions,
                     &federation_event_id,
