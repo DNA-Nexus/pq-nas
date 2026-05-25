@@ -3,6 +3,7 @@
 #include "federation/circle_federation_event.h"
 #include "federation/circle_federation_outbox.h"
 #include "federation/circle_federation_outbox_worker.h"
+#include "federation/circle_federation_inbox.h"
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
@@ -372,6 +373,37 @@ int outbox_retry_delay_seconds(int attempts) {
     return std::clamp(delay, 30, 3600);
 }
 
+
+json inbox_event_json(const federation::CircleFederationInboxEvent& ev) {
+    return {
+        {"id", ev.id},
+        {"received_epoch", ev.received_epoch},
+        {"created_epoch", ev.created_epoch},
+        {"status", ev.status},
+        {"circle_id", ev.circle_id},
+        {"event_id", ev.event_id},
+        {"event_type", ev.event_type},
+        {"origin_nas", ev.origin_nas},
+        {"event_key", ev.event_key},
+        {"last_error", ev.last_error}
+    };
+}
+
+std::string extract_nodus_value(const std::string& output) {
+    const std::string marker = "Value: ";
+    const auto pos = output.find(marker);
+    if (pos == std::string::npos) return "";
+
+    const auto start = pos + marker.size();
+    const auto end = output.find('\n', start);
+
+    if (end == std::string::npos) {
+        return output.substr(start);
+    }
+
+    return output.substr(start, end - start);
+}
+
 json outbox_event_json(const federation::CircleFederationOutboxEvent& ev) {
     return {
         {"id", ev.id},
@@ -424,6 +456,433 @@ void register_circle_nodus_research_routes(
             });
         });
 
+
+
+
+    server.Post("/api/v4/admin/nodus/inbox/apply-once",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            if (!require_admin(deps, req, res, &actor_fp)) return;
+
+            json body;
+            if (!parse_json_body(req, res, &body)) return;
+
+            int limit = 10;
+            if (body.contains("limit") && body["limit"].is_number_integer()) {
+                limit = std::clamp(body["limit"].get<int>(), 1, 100);
+            }
+
+            std::string err;
+            const auto rows = federation::list_circle_federation_inbox(limit, &err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "inbox_list_failed"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            json events = json::array();
+            int applied = 0;
+            int ignored = 0;
+            int failed = 0;
+
+            for (const auto& row : rows) {
+                if (row.status != "pending") continue;
+
+                json item = inbox_event_json(row);
+                std::string mark_err;
+
+                if (row.origin_nas == actor_fp) {
+                    if (federation::mark_circle_federation_inbox_ignored(
+                            row.id,
+                            "ignored_local_origin",
+                            &mark_err)) {
+                        item["final_status"] = "ignored";
+                        item["reason"] = "ignored_local_origin";
+                        ++ignored;
+                    } else {
+                        item["final_status"] = "failed";
+                        item["mark_error"] = mark_err;
+                        ++failed;
+                    }
+
+                    events.push_back(item);
+                    continue;
+                }
+
+                // Remote event application is intentionally not implemented yet.
+                // Next milestone will map remote event JSON into a safe local
+                // federated-public-feed table instead of writing into local posts.
+                if (federation::mark_circle_federation_inbox_ignored(
+                        row.id,
+                        "remote_apply_not_implemented",
+                        &mark_err)) {
+                    item["final_status"] = "ignored";
+                    item["reason"] = "remote_apply_not_implemented";
+                    ++ignored;
+                } else {
+                    item["final_status"] = "failed";
+                    item["mark_error"] = mark_err;
+                    ++failed;
+                }
+
+                events.push_back(item);
+            }
+
+            set_json(res, 200, {
+                {"ok", failed == 0},
+                {"applied", applied},
+                {"ignored", ignored},
+                {"failed", failed},
+                {"events", events}
+            });
+        });
+
+    server.Get("/api/v4/admin/nodus/inbox/stats",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            std::string err;
+            const auto stats = federation::circle_federation_inbox_stats(&err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "inbox_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"total", stats.total},
+                {"pending", stats.pending},
+                {"applied", stats.applied},
+                {"ignored", stats.ignored},
+                {"failed", stats.failed}
+            });
+        });
+
+    server.Get("/api/v4/admin/nodus/inbox/list",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            const int limit = query_int(req, "limit", 50, 1, 500);
+
+            std::string err;
+            const auto rows = federation::list_circle_federation_inbox(limit, &err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "inbox_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            json events = json::array();
+            for (const auto& row : rows) {
+                events.push_back(inbox_event_json(row));
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"count", events.size()},
+                {"events", events}
+            });
+        });
+
+
+    server.Post("/api/v4/admin/nodus/inbox/pull-event",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            json body;
+            if (!parse_json_body(req, res, &body)) return;
+
+            std::string circle_id = json_value_to_string(body, "circle_id");
+            std::string event_id = json_value_to_string(body, "event_id");
+
+            if (circle_id.empty() || event_id.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "missing_circle_or_event_id"}
+                });
+                return;
+            }
+
+            const std::string seed_selector =
+                json_value_to_string(body, "seed").empty()
+                    ? "EU-1"
+                    : json_value_to_string(body, "seed");
+
+            std::string seed_err;
+            const auto seeds = select_seeds(seed_selector, false, &seed_err);
+            if (seeds.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_seed"},
+                    {"message", seed_err.empty() ? "no Nodus seeds configured" : seed_err}
+                });
+                return;
+            }
+
+            const auto config = make_nodus_config();
+            std::string identity_err;
+            if (!ensure_identity_dir(config, &identity_err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "identity_dir_error"},
+                    {"message", identity_err}
+                });
+                return;
+            }
+
+            const auto& seed = seeds.front();
+            const std::string event_key = federation::circle_event_key(circle_id, event_id);
+
+            federation::NodusCommandResult event_get;
+            try {
+                event_get = federation::nodus_cli_get(config, seed, event_key);
+            } catch (const std::exception& e) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "nodus_event_get_failed"},
+                    {"message", e.what()}
+                });
+                return;
+            }
+
+            const std::string event_json_raw = extract_nodus_value(event_get.output);
+            if (event_get.exit_code != 0 || event_json_raw.empty()) {
+                set_json(res, 200, {
+                    {"ok", false},
+                    {"error", "event_not_found"},
+                    {"event_key", event_key},
+                    {"event_get", command_result_json(event_get)}
+                });
+                return;
+            }
+
+            json event;
+            try {
+                event = json::parse(event_json_raw);
+            } catch (...) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_event_json"},
+                    {"event_key", event_key},
+                    {"raw", event_json_raw}
+                });
+                return;
+            }
+
+            const std::string parsed_circle_id = event.value("circle_id", "");
+            const std::string parsed_event_id = event.value("event_id", "");
+            const std::string event_type = event.value("type", "");
+            const std::string origin_nas = event.value("origin_nas", "");
+            const std::int64_t created_epoch = event.value("created_epoch", 0LL);
+
+            if (parsed_circle_id != circle_id ||
+                parsed_event_id != event_id ||
+                event_type.empty() ||
+                origin_nas.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_event_fields"},
+                    {"expected_circle_id", circle_id},
+                    {"expected_event_id", event_id},
+                    {"event", event}
+                });
+                return;
+            }
+
+            std::string store_err;
+            if (!federation::store_circle_federation_inbox_event(
+                    parsed_circle_id,
+                    parsed_event_id,
+                    event_type,
+                    origin_nas,
+                    created_epoch,
+                    event_key,
+                    event_json_raw,
+                    &store_err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "inbox_store_failed"},
+                    {"message", store_err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"stored", true},
+                {"circle_id", parsed_circle_id},
+                {"event_id", parsed_event_id},
+                {"event_type", event_type},
+                {"origin_nas", origin_nas},
+                {"event_key", event_key},
+                {"event_get", command_result_json(event_get)},
+                {"event", event}
+            });
+        });
+
+    server.Post("/api/v4/admin/nodus/inbox/pull-once",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            json body;
+            if (!parse_json_body(req, res, &body)) return;
+
+            std::string circle_id = json_value_to_string(body, "circle_id");
+            if (circle_id.empty()) circle_id = "local-public-feed";
+
+            const std::string seed_selector =
+                json_value_to_string(body, "seed").empty()
+                    ? "EU-1"
+                    : json_value_to_string(body, "seed");
+
+            std::string seed_err;
+            const auto seeds = select_seeds(seed_selector, false, &seed_err);
+            if (seeds.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_seed"},
+                    {"message", seed_err.empty() ? "no Nodus seeds configured" : seed_err}
+                });
+                return;
+            }
+
+            const auto config = make_nodus_config();
+            std::string identity_err;
+            if (!ensure_identity_dir(config, &identity_err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "identity_dir_error"},
+                    {"message", identity_err}
+                });
+                return;
+            }
+
+            const auto& seed = seeds.front();
+            const std::string head_key = federation::circle_head_key(circle_id);
+
+            federation::NodusCommandResult head_get;
+            try {
+                head_get = federation::nodus_cli_get(config, seed, head_key);
+            } catch (const std::exception& e) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "nodus_get_failed"},
+                    {"message", e.what()}
+                });
+                return;
+            }
+
+            const std::string event_id = extract_nodus_value(head_get.output);
+            if (head_get.exit_code != 0 || event_id.empty()) {
+                set_json(res, 200, {
+                    {"ok", false},
+                    {"error", "head_not_found"},
+                    {"head_key", head_key},
+                    {"head_get", command_result_json(head_get)}
+                });
+                return;
+            }
+
+            const std::string event_key = federation::circle_event_key(circle_id, event_id);
+
+            federation::NodusCommandResult event_get;
+            try {
+                event_get = federation::nodus_cli_get(config, seed, event_key);
+            } catch (const std::exception& e) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "nodus_event_get_failed"},
+                    {"message", e.what()}
+                });
+                return;
+            }
+
+            const std::string event_json_raw = extract_nodus_value(event_get.output);
+            if (event_get.exit_code != 0 || event_json_raw.empty()) {
+                set_json(res, 200, {
+                    {"ok", false},
+                    {"error", "event_not_found"},
+                    {"event_key", event_key},
+                    {"event_get", command_result_json(event_get)}
+                });
+                return;
+            }
+
+            json event;
+            try {
+                event = json::parse(event_json_raw);
+            } catch (...) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_event_json"},
+                    {"event_key", event_key},
+                    {"raw", event_json_raw}
+                });
+                return;
+            }
+
+            const std::string parsed_circle_id = event.value("circle_id", "");
+            const std::string parsed_event_id = event.value("event_id", "");
+            const std::string event_type = event.value("type", "");
+            const std::string origin_nas = event.value("origin_nas", "");
+            const std::int64_t created_epoch = event.value("created_epoch", 0LL);
+
+            if (parsed_circle_id != circle_id ||
+                parsed_event_id != event_id ||
+                event_type.empty() ||
+                origin_nas.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_event_fields"},
+                    {"expected_circle_id", circle_id},
+                    {"expected_event_id", event_id},
+                    {"event", event}
+                });
+                return;
+            }
+
+            std::string store_err;
+            if (!federation::store_circle_federation_inbox_event(
+                    parsed_circle_id,
+                    parsed_event_id,
+                    event_type,
+                    origin_nas,
+                    created_epoch,
+                    event_key,
+                    event_json_raw,
+                    &store_err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "inbox_store_failed"},
+                    {"message", store_err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"stored", true},
+                {"circle_id", parsed_circle_id},
+                {"event_id", parsed_event_id},
+                {"event_type", event_type},
+                {"origin_nas", origin_nas},
+                {"head_key", head_key},
+                {"event_key", event_key},
+                {"head_get", command_result_json(head_get)},
+                {"event_get", command_result_json(event_get)},
+                {"event", event}
+            });
+        });
 
     server.Get("/api/v4/admin/nodus/outbox/stats",
         [deps](const httplib::Request& req, httplib::Response& res) {

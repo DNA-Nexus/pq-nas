@@ -504,3 +504,58 @@ Verified removed event:
 - event type: `circle.reaction.removed`
 - outbox status: `done`
 - worker log confirmed both publishes.
+
+
+## Inbound federation inbox foundation
+
+A durable Circle Stack federation inbox was added for inbound Nodus events.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/inbox/stats`
+- `GET /api/v4/admin/nodus/inbox/list?limit=50`
+- `POST /api/v4/admin/nodus/inbox/pull-once`
+
+The first pull path reads the latest `circle:<circle_id>:head` from Nodus, reads the matching event JSON, validates basic event fields, and stores it in `circle_federation_inbox`.
+
+This is only the first inbound milestone. It pulls the current head event only. Large-scale federation should later use per-origin or sharded heads plus event history traversal.
+
+
+## Explicit inbound event pull
+
+The initial `pull-once` endpoint successfully stored an inbound event from Nodus, but it also showed that the single mutable `local-public-feed:head` key can return an older event than expected.
+
+A second research endpoint was added:
+
+- `POST /api/v4/admin/nodus/inbox/pull-event`
+
+This endpoint pulls an explicit `circle_id + event_id` from Nodus and stores the event in the local inbox. This avoids relying on one global mutable head pointer during testing.
+
+Design implication: production-scale Circle Stack federation should not rely only on one `circle:<circle_id>:head` key. It should move toward per-origin heads, sharded heads, event IDs from listen notifications, or event-DAG traversal.
+
+
+## Inbound inbox apply-once
+
+An admin-only `POST /api/v4/admin/nodus/inbox/apply-once` endpoint was added for first inbound processing.
+
+Current behavior:
+
+- local-origin events are marked `ignored` with reason `ignored_local_origin`
+- remote-origin events are marked `ignored` with reason `remote_apply_not_implemented`
+- no inbound event is written into the local Circle Stack posts table yet
+
+This prevents self-echo duplication while preparing for a future federated public feed storage table.
+
+## Inbound local-origin ignore verified
+
+Inbound `apply-once` was tested with two events previously published by the same local PQ-NAS identity.
+
+Result:
+
+- pending inbound events: `2`
+- applied: `0`
+- ignored: `2`
+- failed: `0`
+- final reason: `ignored_local_origin`
+
+This confirms that self-echoed federation events are not duplicated back into the local Circle Stack database.
