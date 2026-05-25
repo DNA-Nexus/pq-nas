@@ -426,3 +426,28 @@ Verified event:
 - event type: `circle.reaction.created`
 - outbox status: `done`
 - worker log confirmed publish: `published id=5 event_id=reaction_1779669674_30_a8885f40`
+
+
+## Post reaction removal enqueue
+
+Circle Stack `posts/react` now enqueues a `circle.reaction.removed` federation event when an existing reaction is removed from a public post.
+
+Current safety behavior:
+
+- empty reaction deletes the local post reaction
+- if an existing reaction was deleted and the post is public, a `circle.reaction.removed` event is queued
+- removals on private/circle-restricted posts are skipped for now
+- if there was no existing reaction, federation is skipped with `skipped_no_existing_reaction`
+
+## Real public post reaction removal federation verified
+
+A real Circle Stack reaction removal on a public post was created through `/api/v4/circlestack/posts/react` with an empty reaction and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- federation event id: `reaction_removed_1779669809_30_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.removed`
+- outbox status: `done`
+- worker log confirmed publish: `published id=6 event_id=reaction_removed_1779669809_30_a8885f40`
