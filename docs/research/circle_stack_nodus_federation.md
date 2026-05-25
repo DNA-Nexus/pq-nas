@@ -698,3 +698,16 @@ Behavior:
 - returns `X-PQNAS-Preview-Status: generated` when a real preview is served
 - falls back to the SVG placeholder when ffmpeg is missing, generation fails, or the kind is unsupported
 - still never exposes local `media_path` and never serves the original full file from this endpoint
+
+
+## Federated origin addressing
+
+Federated post/reply events now include an origin descriptor for future cross-NAS preview fetching.
+
+Origin descriptor fields:
+
+- `nas_id`
+- `preview_endpoint`
+- optional `preview_base_url` from `PQNAS_PUBLIC_BASE_URL`
+
+The Federated UI now builds media preview URLs from this origin descriptor when present, and falls back to same-origin relative preview URLs when `preview_base_url` is absent.

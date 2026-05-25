@@ -1557,6 +1557,43 @@ json cs_make_federation_media_preview(
     };
 }
 
+
+std::string cs_trim_trailing_slashes(std::string s) {
+    while (!s.empty() && s.back() == '/') {
+        s.pop_back();
+    }
+    return s;
+}
+
+std::string cs_public_base_url_from_env() {
+    const char* raw = std::getenv("PQNAS_PUBLIC_BASE_URL");
+    if (!raw) return "";
+
+    std::string out = raw;
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.front()))) {
+        out.erase(out.begin());
+    }
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back()))) {
+        out.pop_back();
+    }
+
+    return cs_trim_trailing_slashes(out);
+}
+
+json cs_make_federation_origin_descriptor(const std::string& nas_id) {
+    json origin = {
+        {"nas_id", nas_id},
+        {"preview_endpoint", "/api/v4/circlestack/federation/media-preview"}
+    };
+
+    const std::string base_url = cs_public_base_url_from_env();
+    if (!base_url.empty()) {
+        origin["preview_base_url"] = base_url;
+    }
+
+    return origin;
+}
+
 std::string cs_make_post_created_event_id(long long post_id, long long created_epoch) {
     return "post_" + std::to_string(created_epoch) + "_" + std::to_string(post_id);
 }
@@ -1609,8 +1646,10 @@ bool cs_enqueue_post_created_federation_best_effort(
         {"event_id", event_id},
         {"circle_id", circle_id},
         {"origin_nas", actor_fp},
+        {"origin", cs_make_federation_origin_descriptor(actor_fp)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(actor_fp)},
             {"post_id", post_id},
             {"owner_fp", actor_fp},
             {"owner_fp_short", cs_short_fp(actor_fp)},
@@ -1716,8 +1755,10 @@ bool cs_enqueue_reply_created_federation_best_effort(
         {"event_id", event_id},
         {"circle_id", circle_id},
         {"origin_nas", actor_fp},
+        {"origin", cs_make_federation_origin_descriptor(actor_fp)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(actor_fp)},
             {"post_id", post_id},
             {"reply_id", reply_id},
             {"actor_fp", actor_fp},

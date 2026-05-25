@@ -79,8 +79,28 @@ function csFederatedPreviewUrl(ev, ref) {
 
   if (!eventId || !refId) return "";
 
-  return `/api/v4/circlestack/federation/media-preview?event_id=${encodeURIComponent(eventId)}&ref_id=${encodeURIComponent(refId)}`;
+  const payload = ev && ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+  const eventJson = ev && ev.event && typeof ev.event === "object" ? ev.event : {};
+
+  const origin = payload.origin && typeof payload.origin === "object"
+    ? payload.origin
+    : (
+      eventJson.origin && typeof eventJson.origin === "object"
+        ? eventJson.origin
+        : {}
+    );
+
+  const endpoint = String(origin.preview_endpoint || "/api/v4/circlestack/federation/media-preview");
+  const base = String(origin.preview_base_url || "").replace(/\/+$/, "");
+
+  const sep = endpoint.includes("?") ? "&" : "?";
+  const path = `${endpoint}${sep}event_id=${encodeURIComponent(eventId)}&ref_id=${encodeURIComponent(refId)}`;
+
+  if (!base) return path;
+
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 }
+
 
 function csRenderFederatedMediaPreview(ev, payload) {
   const refs = csFederatedMediaRefsFromPayload(payload);
