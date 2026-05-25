@@ -278,6 +278,19 @@ std::vector<CircleFederationOutboxEvent> claim_circle_federation_outbox_pending(
         return out;
     }
 
+    if (!exec_sql(db,
+            "UPDATE circle_federation_outbox "
+            "SET status = 'pending', "
+            "    updated_epoch = strftime('%s','now'), "
+            "    last_error = 'Recovered stale publishing lease' "
+            "WHERE status = 'publishing' "
+            "  AND next_attempt_epoch <= strftime('%s','now')",
+            err)) {
+        exec_sql(db, "ROLLBACK", nullptr);
+        sqlite3_close(db);
+        return out;
+    }
+
     std::vector<std::int64_t> ids;
     sqlite3_stmt* select_st = nullptr;
 
@@ -482,6 +495,42 @@ bool mark_circle_federation_outbox_failed(
 
     sqlite3_close(db);
     return true;
+}
+
+
+int recover_stale_circle_federation_outbox_leases(std::string* err) {
+    if (!ensure_circle_federation_outbox(err)) return 0;
+
+    sqlite3* db = nullptr;
+    if (!open_outbox_db(&db, err)) return 0;
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "UPDATE circle_federation_outbox "
+        "SET status = 'pending', "
+        "    updated_epoch = strftime('%s','now'), "
+        "    last_error = 'Recovered stale publishing lease' "
+        "WHERE status = 'publishing' "
+        "  AND next_attempt_epoch <= strftime('%s','now')";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    const int rc = sqlite3_step(st);
+    const int changed = sqlite3_changes(db);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    sqlite3_close(db);
+    return changed;
 }
 
 

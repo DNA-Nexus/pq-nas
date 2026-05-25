@@ -308,3 +308,14 @@ Research endpoints:
 - `POST /api/v4/admin/nodus/outbox/enqueue-ping`
 
 The outbox stores small signed/serializable federation events and pointer keys. Production Circle Stack should save user actions locally, enqueue federation events, and let a controlled background publisher drain this outbox asynchronously.
+
+
+## Outbox lease recovery
+
+Outbox publishing uses a lease-style `publishing` state. If PQ-NAS crashes after claiming events but before marking them `done`, stale rows are recovered back to `pending` when `next_attempt_epoch` expires.
+
+Research endpoint:
+
+- `POST /api/v4/admin/nodus/outbox/recover-leases`
+
+The drain path also performs stale lease recovery before claiming new pending events.

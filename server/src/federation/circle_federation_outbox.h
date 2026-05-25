@@ -69,4 +69,6 @@ bool mark_circle_federation_outbox_failed(
     const std::string& last_error,
     std::string* err);
 
+int recover_stale_circle_federation_outbox_leases(std::string* err);
+
 } // namespace pqnas::federation

@@ -554,6 +554,30 @@ void register_circle_nodus_research_routes(
         });
 
 
+
+    server.Post("/api/v4/admin/nodus/outbox/recover-leases",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            std::string err;
+            const int recovered =
+                federation::recover_stale_circle_federation_outbox_leases(&err);
+
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "outbox_recover_failed"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"recovered", recovered}
+            });
+        });
+
     server.Post("/api/v4/admin/nodus/outbox/drain-once",
         [deps](const httplib::Request& req, httplib::Response& res) {
             if (!require_admin(deps, req, res, nullptr)) return;
