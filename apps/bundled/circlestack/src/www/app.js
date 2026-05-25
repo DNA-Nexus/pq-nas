@@ -1,6 +1,8 @@
 const CS_API = "/api/v4/circlestack";
 const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
 let csSelectedMentions = [];
+let csFeedMode = "local";
+let csFederatedFeedLoadSeq = 0;
 
 async function csLoadFeed() {
   const feed = document.getElementById("csFeed");
@@ -24,6 +26,176 @@ async function csLoadFeed() {
     feed.appendChild(csRenderPost(post));
   }
 }
+
+
+function csFederatedTypeLabel(type, targetType = "") {
+  if (type === "circle.post.created") return "Remote post";
+  if (type === "circle.reply.created") return "Remote reply";
+  if (type === "circle.reaction.created") {
+    return targetType === "reply" ? "Remote reply reaction" : "Remote post reaction";
+  }
+  if (type === "circle.reaction.removed") {
+    return targetType === "reply" ? "Remote reply reaction removed" : "Remote post reaction removed";
+  }
+  return type || "Remote event";
+}
+
+function csFederatedActorLabel(ev) {
+  return ev.actor_fp_short || ev.actor_fp || ev.origin_nas || "remote";
+}
+
+function csRenderFederatedEvent(ev) {
+  const card = document.createElement("article");
+  card.className = "cs-post cs-federated-post";
+
+  const header = document.createElement("div");
+  header.className = "cs-post-header";
+
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "cs-federated-title-wrap";
+
+  const title = document.createElement("div");
+  title.className = "cs-post-author";
+  title.textContent = csFederatedTypeLabel(ev.event_type, ev.target_type);
+
+  const sub = document.createElement("div");
+  sub.className = "cs-federated-sub";
+  sub.textContent = `from ${csFederatedActorLabel(ev)}`;
+
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(sub);
+
+  const badge = document.createElement("span");
+  badge.className = "cs-federated-badge";
+  badge.textContent = "FEDERATED";
+
+  header.appendChild(titleWrap);
+  header.appendChild(badge);
+  card.appendChild(header);
+
+  const payload = ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+
+  const lines = [];
+
+  if (ev.event_type === "circle.post.created") {
+    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
+    if (payload.visibility) lines.push(`Visibility: ${payload.visibility}`);
+    lines.push(payload.has_media ? "Media: yes" : "Media: no");
+  } else if (ev.event_type === "circle.reply.created") {
+    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
+    lines.push(`Reply id: ${ev.reply_id || payload.reply_id || "unknown"}`);
+    lines.push(payload.has_media ? "Media: yes" : "Media: no");
+  } else if (ev.event_type === "circle.reaction.created") {
+    lines.push(`Target: ${ev.target_type || payload.target_type || "post"}`);
+    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
+    if (ev.reply_id || payload.reply_id) lines.push(`Reply id: ${ev.reply_id || payload.reply_id}`);
+    lines.push(`Reaction: ${ev.reaction || payload.reaction || ""}`);
+  } else if (ev.event_type === "circle.reaction.removed") {
+    lines.push(`Target: ${ev.target_type || payload.target_type || "post"}`);
+    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
+    if (ev.reply_id || payload.reply_id) lines.push(`Reply id: ${ev.reply_id || payload.reply_id}`);
+  }
+
+  const body = document.createElement("div");
+  body.className = "cs-federated-body";
+  body.textContent = lines.filter(Boolean).join(" · ");
+  card.appendChild(body);
+
+  const meta = document.createElement("div");
+  meta.className = "cs-post-meta";
+  meta.textContent = `${ev.created_epoch ? new Date(ev.created_epoch * 1000).toLocaleString() : ""} · ${ev.event_id || ""}`;
+  card.appendChild(meta);
+
+  return card;
+}
+
+async function csLoadFederatedFeed() {
+  const feed = document.getElementById("csFederatedFeed");
+  if (!feed) return;
+
+  const loadSeq = ++csFederatedFeedLoadSeq;
+
+  let data = null;
+  try {
+    const res = await fetch(`${CS_API}/federated/feed?limit=50`, {
+      credentials: "same-origin"
+    });
+    data = await res.json();
+  } catch (_) {
+    data = { ok: false };
+  }
+
+  // If another federated-feed load started after this one, ignore this older result.
+  if (loadSeq !== csFederatedFeedLoadSeq) return;
+
+  feed.textContent = "";
+
+  const events = data && Array.isArray(data.events) ? data.events : [];
+
+  if (!events.length) {
+    const empty = document.createElement("div");
+    empty.className = "cs-empty";
+    empty.textContent = "No federated events yet.";
+    feed.appendChild(empty);
+    return;
+  }
+
+  for (const ev of events) {
+    feed.appendChild(csRenderFederatedEvent(ev));
+  }
+}
+
+async function csSetFeedMode(mode) {
+  csFeedMode = mode === "federated" ? "federated" : "local";
+
+  const localBtn = document.getElementById("csLocalFeedBtn");
+  const fedBtn = document.getElementById("csFederatedBtn");
+  const localFeed = document.getElementById("csFeed");
+  const fedFeed = document.getElementById("csFederatedFeed");
+  const intros = document.getElementById("csIntroductions");
+
+  if (localBtn) localBtn.classList.toggle("is-active", csFeedMode === "local");
+  if (fedBtn) fedBtn.classList.toggle("is-active", csFeedMode === "federated");
+
+  if (localFeed) {
+    localFeed.hidden = csFeedMode !== "local";
+    localFeed.style.display = csFeedMode === "local" ? "" : "none";
+  }
+
+  if (fedFeed) {
+    fedFeed.hidden = csFeedMode !== "federated";
+    fedFeed.style.display = csFeedMode === "federated" ? "" : "none";
+  }
+
+  if (intros) {
+    intros.hidden = csFeedMode !== "local";
+    intros.style.display = csFeedMode === "local" ? "" : "none";
+  }
+
+  if (csFeedMode === "federated") {
+    await csLoadFederatedFeed();
+  } else {
+    await csLoadFeed();
+  }
+}
+
+function csInitFeedTabs() {
+  const localBtn = document.getElementById("csLocalFeedBtn");
+  const fedBtn = document.getElementById("csFederatedBtn");
+
+  if (localBtn) {
+    localBtn.addEventListener("click", () => {
+      csSetFeedMode("local");
+    });
+  }
+
+  if (fedBtn) {
+    fedBtn.addEventListener("click", () => {
+      csSetFeedMode("federated");
+    });
+  }
+}
+
 
 
 async function csOpenPersonCard(fp, fallback = {}) {
@@ -2053,6 +2225,12 @@ function csConfirmDelete() {
   });
 }
 
+
+
+// Expose federated feed helpers for inline button handlers and browser debugging.
+window.csSetFeedMode = csSetFeedMode;
+window.csLoadFederatedFeed = csLoadFederatedFeed;
+
 document.addEventListener("DOMContentLoaded", async () => {
   await csApplyI18n();
 
@@ -2069,8 +2247,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   csRenderMentionComposer();
   csInitCompactCompose();
+  csInitFeedTabs();
 
-  await csLoadFeed();
+  await csSetFeedMode("local");
 });
 
 
@@ -2835,3 +3014,48 @@ csUpdateFindPeopleBadge();
 
 document.getElementById("csFindPeopleBtn")
   ?.addEventListener("click", csOpenFindPeople);
+
+// Robust fallback for Feed/Federated tab switching.
+// This is delegated so it still works if toolbar buttons are already present
+// before csInitFeedTabs() runs or if another script re-renders the toolbar.
+if (!window.__circleStackFederatedTabDelegated) {
+  window.__circleStackFederatedTabDelegated = true;
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target && ev.target.closest
+      ? ev.target.closest("#csLocalFeedBtn, #csFederatedBtn")
+      : null;
+
+    if (!btn) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    csSetFeedMode(btn.id === "csFederatedBtn" ? "federated" : "local");
+  }, true);
+}
+
+// Robust Feed/Federated tab fallback.
+// The normal init listener should work, but this catches both pointerdown and
+// click in capture phase so toolbar buttons still switch modes if another
+// handler interferes.
+if (!window.__circleStackFederatedTabHardFallback) {
+  window.__circleStackFederatedTabHardFallback = true;
+
+  const csHandleFeedTabEvent = (ev) => {
+    const btn = ev.target && ev.target.closest
+      ? ev.target.closest("#csLocalFeedBtn, #csFederatedBtn")
+      : null;
+
+    if (!btn) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    csSetFeedMode(btn.id === "csFederatedBtn" ? "federated" : "local");
+  };
+
+  document.addEventListener("pointerdown", csHandleFeedTabEvent, true);
+  document.addEventListener("click", csHandleFeedTabEvent, true);
+}
+

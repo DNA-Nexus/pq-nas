@@ -39,16 +39,19 @@
     </section>
 
     <div class="cs-intro-toolbar">
+  <button id="csLocalFeedBtn" type="button" class="is-active" onclick="csSetFeedMode('local')">Feed</button>
+  <button id="csFederatedBtn" type="button" onclick="csSetFeedMode('federated')">Federated</button>
   <button id="csIntroduceBtn" type="button">Introduce people</button>
   <button id="csMyCircleBtn" type="button">My Circle</button>
   <button id="csFindPeopleBtn" type="button">Find people</button>
 </div>
 <section id="csIntroductions" class="cs-feed"></section>
 <section id="csFeed" class="cs-feed"></section>
+<section id="csFederatedFeed" class="cs-feed" hidden></section>
   </main>
 
   <script src="i18n.js"></script>
-  <script src="app.js?v=20260523-reaction-tooltipfix1"></script>
+  <script src="app.js?v=20260525-federatedfeed5"></script>
   <script src="memory_nodes.js?v=20260523-simpleicon1"></script>
   <script src="brand_logo.js?v=20260523-brandlogo1"></script>
   <script src="version_badge.js?v=20260523-version1"></script>
