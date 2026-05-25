@@ -464,3 +464,43 @@ Verified event:
 - event type: `circle.reaction.removed`
 - outbox status: `done`
 - worker log confirmed publish: `published id=6 event_id=reaction_removed_1779669809_30_a8885f40`
+
+
+## Reply reaction enqueue
+
+Circle Stack `replies/react` now enqueues federation events for reactions on replies whose parent post is public.
+
+Events:
+
+- `circle.reaction.created` with `target_type=reply`
+- `circle.reaction.removed` with `target_type=reply`
+
+Current safety behavior:
+
+- reply reactions under public posts are federated
+- reply reactions under private/circle-restricted posts are skipped for now
+- removing a non-existing reaction is skipped with `skipped_no_existing_reaction`
+
+## Real public reply reaction federation verified
+
+Real Circle Stack reactions on a reply under a public post were created through `/api/v4/circlestack/replies/react` and successfully federated through the outbox worker.
+
+Verified created event:
+
+- post id: `30`
+- reply id: `6`
+- reaction: `👍`
+- federation event id: `reply_reaction_1779669949_30_6_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.created`
+- outbox status: `done`
+
+Verified removed event:
+
+- post id: `30`
+- reply id: `6`
+- federation event id: `reply_reaction_removed_1779669959_30_6_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.removed`
+- outbox status: `done`
+- worker log confirmed both publishes.
