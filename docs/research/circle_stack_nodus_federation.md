@@ -340,3 +340,17 @@ Useful environment knobs:
 - `PQNAS_CIRCLE_FEDERATION_WORKER_SEED` default `EU-1`
 
 The worker is intentionally controlled and conservative because the current adapter still uses serialized `nodus-cli` calls. Long-term, this should be replaced by a persistent Nodus client daemon or direct C++ integration.
+
+
+## Real post creation enqueue
+
+Circle Stack `posts/create` now enqueues a `circle.post.created` federation event for public posts.
+
+Current safety behavior:
+
+- public posts enqueue a small federation event into the durable outbox
+- private and circle-restricted posts are skipped for now
+- the event does not include raw media paths or full post text
+- media remains on the origin PQ-NAS
+
+The initial circle id is `local-public-feed`. This is suitable for the first real end-to-end path, but large-scale federation should later move toward per-origin or sharded feed heads.
