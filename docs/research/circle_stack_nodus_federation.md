@@ -730,3 +730,21 @@ Verified event:
 
 - `post_1779673969_32`
 - `ref_id=post:32:media:primary`
+
+## Absolute origin preview URL verified
+
+Inserted a simulated remote-feed row with `origin.preview_base_url` set to the configured public base URL.
+
+Verified:
+
+- `PQNAS_PUBLIC_BASE_URL=https://pqnas-dev.pqnas-test.uk` was visible in the systemd environment.
+- Nodus event `post_1779673969_32` contains top-level and payload origin descriptors.
+- Federated feed row includes `payload.origin.preview_base_url` and `payload.media_refs[]`.
+- Browser Network tab showed `media-preview?event_id=post_1779673969_32...` returning `200` as `jpeg`.
+- Older fake media-ref rows with non-existing refs correctly returned `404`.
+
+Test row:
+
+- `origin_label=Remote Absolute Origin Test`
+- `event_id=post_1779673969_32`
+- `ref_id=post:32:media:primary`
