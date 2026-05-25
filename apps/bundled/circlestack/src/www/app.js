@@ -56,6 +56,43 @@ function csFederatedActorLabel(ev) {
   );
 }
 
+
+function csFederatedMediaLabel(payload) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const preview = p.media_preview && typeof p.media_preview === "object"
+    ? p.media_preview
+    : null;
+
+  const refs = Array.isArray(p.media_refs)
+    ? p.media_refs
+    : (
+      preview && Array.isArray(preview.refs)
+        ? preview.refs
+        : []
+    );
+
+  const count = Number(p.media_count || refs.length || (p.has_media ? 1 : 0));
+
+  if (!count) return "Media: no";
+
+  const kinds = Array.from(new Set(
+    refs
+      .map(ref => ref && ref.kind ? String(ref.kind) : "")
+      .filter(Boolean)
+  ));
+
+  if (kinds.length === 1) {
+    return `Media: ${count} ${kinds[0]}${count === 1 ? "" : "s"}`;
+  }
+
+  if (kinds.length > 1) {
+    return `Media: ${count} items`;
+  }
+
+  return `Media: ${count}`;
+}
+
+
 function csRenderFederatedEvent(ev) {
   const card = document.createElement("article");
   card.className = "cs-post cs-federated-post";
@@ -100,11 +137,11 @@ function csRenderFederatedEvent(ev) {
   if (ev.event_type === "circle.post.created") {
     lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
     if (payload.visibility) lines.push(`Visibility: ${payload.visibility}`);
-    lines.push(payload.has_media ? "Media: yes" : "Media: no");
+    lines.push(csFederatedMediaLabel(payload));
   } else if (ev.event_type === "circle.reply.created") {
     lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
     lines.push(`Reply id: ${ev.reply_id || payload.reply_id || "unknown"}`);
-    lines.push(payload.has_media ? "Media: yes" : "Media: no");
+    lines.push(csFederatedMediaLabel(payload));
   } else if (ev.event_type === "circle.reaction.created") {
     lines.push(`Target: ${ev.target_type || payload.target_type || "post"}`);
     lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
