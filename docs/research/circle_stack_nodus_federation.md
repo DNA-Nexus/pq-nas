@@ -674,3 +674,12 @@ Phase 1 behavior:
 - does not return the original file and does not expose the local `media_path`
 
 This prepares the protocol path for later real thumbnail generation while keeping the origin NAS access-control boundary explicit.
+
+
+## Federated preview rendering phase 2a
+
+The Circle Stack Federated tab now renders media previews by calling the origin preview endpoint for the first media ref:
+
+- `/api/v4/circlestack/federation/media-preview?event_id=...&ref_id=...`
+
+Current behavior shows the validated SVG placeholder returned by the origin endpoint. This proves the UI-to-origin preview path without exposing original media files. Later the endpoint can return a real generated thumbnail while keeping the UI contract unchanged.

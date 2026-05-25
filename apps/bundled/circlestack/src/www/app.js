@@ -57,6 +57,59 @@ function csFederatedActorLabel(ev) {
 }
 
 
+
+function csFederatedMediaRefsFromPayload(payload) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const preview = p.media_preview && typeof p.media_preview === "object"
+    ? p.media_preview
+    : null;
+
+  return Array.isArray(p.media_refs)
+    ? p.media_refs
+    : (
+      preview && Array.isArray(preview.refs)
+        ? preview.refs
+        : []
+    );
+}
+
+function csFederatedPreviewUrl(ev, ref) {
+  const eventId = String(ev && ev.event_id ? ev.event_id : "");
+  const refId = String(ref && ref.ref_id ? ref.ref_id : "");
+
+  if (!eventId || !refId) return "";
+
+  return `/api/v4/circlestack/federation/media-preview?event_id=${encodeURIComponent(eventId)}&ref_id=${encodeURIComponent(refId)}`;
+}
+
+function csRenderFederatedMediaPreview(ev, payload) {
+  const refs = csFederatedMediaRefsFromPayload(payload);
+  if (!refs.length) return null;
+
+  const primary = refs.find(ref => ref && ref.role === "primary") || refs[0];
+  const url = csFederatedPreviewUrl(ev, primary);
+  if (!url) return null;
+
+  const wrap = document.createElement("div");
+  wrap.className = "cs-federated-preview-wrap";
+
+  const img = document.createElement("img");
+  img.className = "cs-federated-preview-img";
+  img.src = url;
+  img.alt = "";
+  img.loading = "lazy";
+  img.decoding = "async";
+
+  img.addEventListener("error", () => {
+    wrap.classList.add("is-error");
+    wrap.textContent = "Preview unavailable from origin NAS";
+  }, { once: true });
+
+  wrap.appendChild(img);
+  return wrap;
+}
+
+
 function csFederatedMediaLabel(payload) {
   const p = payload && typeof payload === "object" ? payload : {};
   const preview = p.media_preview && typeof p.media_preview === "object"
@@ -172,6 +225,11 @@ function csRenderFederatedEvent(ev) {
 
   if ((payload.has_media === true || (mediaPreview && mediaPreview.has_media === true) || mediaRefs.length > 0) &&
       (!mediaPreview || mediaPreview.status !== "none")) {
+    const previewEl = csRenderFederatedMediaPreview(ev, payload);
+    if (previewEl) {
+      card.appendChild(previewEl);
+    }
+
     const media = document.createElement("div");
     media.className = "cs-federated-media-placeholder";
 
@@ -183,7 +241,9 @@ function csRenderFederatedEvent(ev) {
 
     const count = Number(payload.media_count || mediaRefs.length || (payload.has_media ? 1 : 0));
     const kindText = kinds.length ? ` · ${kinds.join(", ")}` : "";
-    media.textContent = `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · preview fetch coming later`;
+    media.textContent = previewEl
+      ? `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · origin preview validated`
+      : `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · preview fetch coming later`;
     card.appendChild(media);
   }
 
