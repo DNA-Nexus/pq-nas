@@ -748,3 +748,23 @@ Test row:
 - `origin_label=Remote Absolute Origin Test`
 - `event_id=post_1779673969_32`
 - `ref_id=post:32:media:primary`
+
+## Real test-user public media event verified
+
+Created a real public Circle Stack media post as a test user on the dev box.
+
+Verified Nodus event:
+
+- `event_id=post_1779674571_33`
+- `ref_id=post:33:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+- `preview_endpoint=/api/v4/circlestack/federation/media-preview`
+- `text_preview=This is federated public test`
+- `owner_display_name=Timo`
+
+Verified preview endpoint:
+
+- returned `HTTP 200`
+- returned `content-type: image/jpeg`
+- returned `x-pqnas-preview-status: generated`
+- returned a `640x360` JPEG preview
