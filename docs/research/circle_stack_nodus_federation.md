@@ -374,3 +374,29 @@ A private post was also tested and correctly skipped federation:
 - `federation_queued=false`
 - `federation_note=skipped_non_public_visibility`
 - outbox total did not increase
+
+
+## Reply creation enqueue
+
+Circle Stack `posts/reply` now enqueues a `circle.reply.created` federation event when the parent post is public.
+
+Current safety behavior:
+
+- replies to public posts enqueue a small federation event into the durable outbox
+- replies to private/circle-restricted posts are skipped for now
+- the event does not include raw media paths or full reply text
+- media remains on the origin PQ-NAS
+
+## Real public reply federation verified
+
+A real Circle Stack reply to a public post was created through `/api/v4/circlestack/posts/reply` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- reply id: `6`
+- federation event id: `reply_1779669505_30_6`
+- circle id: `local-public-feed`
+- event type: `circle.reply.created`
+- outbox status: `done`
+- worker log confirmed publish: `published id=4 event_id=reply_1779669505_30_6`

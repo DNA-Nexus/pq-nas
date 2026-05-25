@@ -1478,6 +1478,105 @@ bool cs_enqueue_post_created_federation_best_effort(
 }
 
 
+std::string cs_post_visibility(sqlite3* db, int post_id) {
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT visibility FROM posts WHERE id = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return "";
+    }
+
+    sqlite3_bind_int(st, 1, post_id);
+
+    std::string visibility;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char* raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        visibility = raw ? raw : "";
+    }
+
+    sqlite3_finalize(st);
+    return visibility;
+}
+
+std::string cs_make_reply_created_event_id(sqlite3_int64 reply_id, int post_id, long long created_epoch) {
+    return "reply_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + std::to_string(reply_id);
+}
+
+bool cs_enqueue_reply_created_federation_best_effort(
+    sqlite3* db,
+    sqlite3_int64 reply_id,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& media_path,
+    const json& mentions,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (reply_id <= 0 || post_id <= 0 || actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_reply_event";
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_reply_created_event_id(reply_id, post_id, created_epoch);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    const json event = {
+        {"type", "circle.reply.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", actor_fp},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"post_id", post_id},
+            {"reply_id", reply_id},
+            {"actor_fp", actor_fp},
+            {"has_media", !media_path.empty()},
+            {"mention_count", mentions.is_array() ? mentions.size() : 0}
+        }}
+    };
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reply.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            event.dump(),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
 } // namespace
 
 namespace pqnas {
@@ -1932,11 +2031,13 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
             }
 
+            const auto reply_created_epoch = static_cast<sqlite3_int64>(std::time(nullptr));
+
             sqlite3_bind_int(st, 1, post_id);
             sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 3, text.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 4, media_path.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(st, 5, (sqlite3_int64)std::time(nullptr));
+            sqlite3_bind_int64(st, 5, reply_created_epoch);
 
             if (sqlite3_step(st) != SQLITE_DONE) {
                 sqlite3_finalize(st);
@@ -2041,12 +2142,38 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 id
             );
 
-            set_json(res, {
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_reply_created_federation_best_effort(
+                    g_db,
+                    id,
+                    post_id,
+                    (long long)reply_created_epoch,
+                    actor_fp,
+                    media_path,
+                    mentions,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
                 {"ok", true},
                 {"id", id},
                 {"post_id", post_id},
-                {"reply", reply}
-            });
+                {"reply", reply},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
 
