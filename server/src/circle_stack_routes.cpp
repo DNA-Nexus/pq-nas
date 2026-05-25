@@ -1,6 +1,7 @@
 #include "circle_stack_routes.h"
 #include "routes_circle_nodus_research.h"
 #include "federation/circle_federation_outbox.h"
+#include "federation/circle_federation_remote_feed.h"
 #include "federation/circle_federation_event.h"
 #include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
@@ -1400,6 +1401,39 @@ json cs_admin_stats_json(sqlite3* db) {
 
 
 
+
+json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFeedEvent& ev) {
+    json item = {
+        {"id", ev.id},
+        {"received_epoch", ev.received_epoch},
+        {"created_epoch", ev.created_epoch},
+        {"circle_id", ev.circle_id},
+        {"event_id", ev.event_id},
+        {"event_type", ev.event_type},
+        {"origin_nas", ev.origin_nas},
+        {"target_type", ev.target_type},
+        {"post_id", ev.post_id},
+        {"reply_id", ev.reply_id},
+        {"actor_fp", ev.actor_fp},
+        {"actor_fp_short", ev.actor_fp.size() >= 8 ? ev.actor_fp.substr(0, 8) : ev.actor_fp},
+        {"reaction", ev.reaction},
+        {"source", "federated"}
+    };
+
+    if (!ev.event_json.empty()) {
+        json parsed = json::parse(ev.event_json, nullptr, false);
+        if (!parsed.is_discarded()) {
+            item["event"] = parsed;
+            if (parsed.contains("payload") && parsed["payload"].is_object()) {
+                item["payload"] = parsed["payload"];
+            }
+        }
+    }
+
+    return item;
+}
+
+
 std::string cs_make_post_created_event_id(long long post_id, long long created_epoch) {
     return "post_" + std::to_string(created_epoch) + "_" + std::to_string(post_id);
 }
@@ -2119,6 +2153,55 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             set_json(res, out);
+        });
+
+
+
+    server.Get("/api/v4/circlestack/federated/feed",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                    limit = 50;
+                }
+            }
+
+            limit = std::clamp(limit, 1, 200);
+
+            std::string err;
+            const auto rows =
+                pqnas::federation::list_circle_federation_remote_feed(limit, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "remote_feed_error"},
+                    {"message", err}
+                });
+            }
+
+            json events = json::array();
+            for (const auto& row : rows) {
+                events.push_back(cs_remote_feed_event_json(row));
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", events.size()},
+                {"events", events}
+            });
         });
 
 

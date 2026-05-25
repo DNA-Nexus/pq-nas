@@ -606,3 +606,14 @@ Current remote-feed test row:
 - origin NAS: `remote_test_nas_002`
 - actor fp: `remote_test_nas_002`
 - post id: `900002`
+
+
+## App-side federated feed read API
+
+A user-authenticated app-side read endpoint was added:
+
+- `GET /api/v4/circlestack/federated/feed?limit=50`
+
+It returns read-only records from `circle_federation_remote_feed` and does not mix remote events into the local Circle Stack `posts`, `post_replies`, or reaction tables.
+
+This gives the UI a safe future path for showing a separate Federated / From other NAS section.
