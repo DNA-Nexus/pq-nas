@@ -4,14 +4,26 @@
 #include <cstdio>
 #include <sstream>
 #include <stdexcept>
+#include <sys/wait.h>
+#include <mutex>
 
 namespace pqnas::federation {
 namespace {
 
 NodusCommandResult run_command_capture(const std::string& command) {
+    static std::mutex nodus_cli_mutex;
+
+    // Temporary research adapter safety:
+    // nodus-cli with one persistent PQ-NAS identity is not safe to run as a
+    // parallel process storm. Serialize calls until this becomes an async
+    // outbox worker or persistent Nodus client integration.
+    std::lock_guard<std::mutex> lock(nodus_cli_mutex);
+
     NodusCommandResult result;
 
-    FILE* pipe = popen(command.c_str(), "r");
+    const std::string command_with_stderr = command + " 2>&1";
+
+    FILE* pipe = popen(command_with_stderr.c_str(), "r");
     if (!pipe) {
         result.exit_code = -1;
         result.output = "popen failed";
@@ -23,7 +35,21 @@ NodusCommandResult run_command_capture(const std::string& command) {
         result.output.append(buffer.data());
     }
 
-    result.exit_code = pclose(pipe);
+    const int status = pclose(pipe);
+
+    if (status == -1) {
+        result.exit_code = -1;
+        if (result.output.empty()) {
+            result.output = "pclose failed";
+        }
+    } else if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = 128 + WTERMSIG(status);
+    } else {
+        result.exit_code = status;
+    }
+
     return result;
 }
 
