@@ -656,3 +656,21 @@ Payload additions:
 - `media_refs[].fetch_policy = origin_public_preview_required`
 
 The actual local `media_path` is intentionally not published. Future remote preview fetching should use `event_id + ref_id` against the origin PQ-NAS, and the origin must validate public/federated access before returning a thumbnail or preview.
+
+
+## Origin media preview endpoint phase 1
+
+Added public origin-side validation endpoint:
+
+- `GET /api/v4/circlestack/federation/media-preview?event_id=...&ref_id=...`
+
+Phase 1 behavior:
+
+- validates `ref_id` format such as `post:<id>:media:primary` or `reply:<id>:media:primary`
+- validates that the referenced local post/reply has media
+- validates that the parent post visibility is `public`
+- validates that the supplied `event_id` matches the deterministic local federation event id
+- returns a generated SVG placeholder preview only
+- does not return the original file and does not expose the local `media_path`
+
+This prepares the protocol path for later real thumbnail generation while keeping the origin NAS access-control boundary explicit.

@@ -2057,6 +2057,230 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
 
 
 
+bool cs_parse_federation_media_ref_id(
+    const std::string& ref_id,
+    std::string* entity_type,
+    long long* entity_id
+) {
+    if (entity_type) *entity_type = "";
+    if (entity_id) *entity_id = 0;
+
+    const std::string suffix = ":media:primary";
+    if (ref_id.size() <= suffix.size()) return false;
+
+    if (ref_id.compare(ref_id.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+
+    const std::string head = ref_id.substr(0, ref_id.size() - suffix.size());
+    const auto pos = head.find(':');
+    if (pos == std::string::npos) return false;
+
+    const std::string type = head.substr(0, pos);
+    const std::string id_raw = head.substr(pos + 1);
+
+    if (type != "post" && type != "reply") return false;
+    if (id_raw.empty()) return false;
+
+    long long id = 0;
+    try {
+        id = std::stoll(id_raw);
+    } catch (...) {
+        return false;
+    }
+
+    if (id <= 0) return false;
+
+    if (entity_type) *entity_type = type;
+    if (entity_id) *entity_id = id;
+    return true;
+}
+
+std::string cs_svg_escape(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+
+    for (char c : raw) {
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            case '\'': out += "&apos;"; break;
+            default: out.push_back(c); break;
+        }
+    }
+
+    return out;
+}
+
+void cs_set_federation_media_preview_placeholder(
+    httplib::Response& res,
+    const std::string& kind,
+    const std::string& event_id,
+    const std::string& ref_id
+) {
+    const std::string title =
+        kind == "image" ? "Image preview" :
+        kind == "video" ? "Video preview" :
+        "Media preview";
+
+    const std::string svg =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"640\" height=\"360\" viewBox=\"0 0 640 360\">"
+        "<defs>"
+        "<linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">"
+        "<stop offset=\"0\" stop-color=\"#062b2f\"/>"
+        "<stop offset=\"1\" stop-color=\"#111827\"/>"
+        "</linearGradient>"
+        "</defs>"
+        "<rect width=\"640\" height=\"360\" rx=\"26\" fill=\"url(#g)\"/>"
+        "<rect x=\"24\" y=\"24\" width=\"592\" height=\"312\" rx=\"22\" fill=\"none\" stroke=\"#22c55e\" stroke-opacity=\"0.45\" stroke-width=\"2\" stroke-dasharray=\"8 8\"/>"
+        "<text x=\"320\" y=\"145\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"30\" font-weight=\"700\" fill=\"#dcfce7\">" +
+        cs_svg_escape(title) +
+        "</text>"
+        "<text x=\"320\" y=\"188\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"18\" fill=\"#a7f3d0\">"
+        "Origin PQ-NAS validated this public media reference"
+        "</text>"
+        "<text x=\"320\" y=\"228\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"13\" fill=\"#94a3b8\">" +
+        cs_svg_escape(ref_id) +
+        "</text>"
+        "</svg>";
+
+    res.set_header("Cache-Control", "no-store");
+    res.set_header("X-PQNAS-Preview-Status", "placeholder");
+    res.set_header("X-PQNAS-Media-Kind", kind);
+    res.set_header("X-PQNAS-Federation-Event", event_id);
+    res.set_content(svg, "image/svg+xml; charset=utf-8");
+}
+
+bool cs_lookup_public_federation_media_ref(
+    sqlite3* db,
+    const std::string& event_id,
+    const std::string& ref_id,
+    std::string* media_kind,
+    std::string* err
+) {
+    if (media_kind) *media_kind = "";
+    if (err) *err = "";
+
+    std::string entity_type;
+    long long entity_id = 0;
+
+    if (!cs_parse_federation_media_ref_id(ref_id, &entity_type, &entity_id)) {
+        if (err) *err = "invalid_ref_id";
+        return false;
+    }
+
+    if (entity_type == "post") {
+        sqlite3_stmt* st = nullptr;
+
+        if (sqlite3_prepare_v2(db,
+                "SELECT media_path, visibility, created_epoch "
+                "FROM posts WHERE id = ?",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
+
+        std::string media_path;
+        std::string visibility;
+        long long created_epoch = 0;
+
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+
+            media_path = media_raw ? media_raw : "";
+            visibility = vis_raw ? vis_raw : "";
+            created_epoch = sqlite3_column_int64(st, 2);
+        }
+
+        sqlite3_finalize(st);
+
+        if (media_path.empty()) {
+            if (err) *err = "media_not_found";
+            return false;
+        }
+
+        if (visibility != "public") {
+            if (err) *err = "not_public";
+            return false;
+        }
+
+        const std::string expected_event_id =
+            cs_make_post_created_event_id(entity_id, created_epoch);
+
+        if (event_id != expected_event_id) {
+            if (err) *err = "event_ref_mismatch";
+            return false;
+        }
+
+        if (media_kind) *media_kind = cs_federation_media_kind_for_path(media_path);
+        return true;
+    }
+
+    if (entity_type == "reply") {
+        sqlite3_stmt* st = nullptr;
+
+        if (sqlite3_prepare_v2(db,
+                "SELECT r.media_path, r.created_epoch, r.post_id, p.visibility "
+                "FROM post_replies r "
+                "JOIN posts p ON p.id = r.post_id "
+                "WHERE r.id = ?",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
+
+        std::string media_path;
+        std::string visibility;
+        long long created_epoch = 0;
+        int post_id = 0;
+
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+            media_path = media_raw ? media_raw : "";
+            created_epoch = sqlite3_column_int64(st, 1);
+            post_id = sqlite3_column_int(st, 2);
+            visibility = vis_raw ? vis_raw : "";
+        }
+
+        sqlite3_finalize(st);
+
+        if (media_path.empty() || post_id <= 0) {
+            if (err) *err = "media_not_found";
+            return false;
+        }
+
+        if (visibility != "public") {
+            if (err) *err = "not_public";
+            return false;
+        }
+
+        const std::string expected_event_id =
+            cs_make_reply_created_event_id(entity_id, post_id, created_epoch);
+
+        if (event_id != expected_event_id) {
+            if (err) *err = "event_ref_mismatch";
+            return false;
+        }
+
+        if (media_kind) *media_kind = cs_federation_media_kind_for_path(media_path);
+        return true;
+    }
+
+    if (err) *err = "unsupported_ref_type";
+    return false;
+}
+
+
+
 } // namespace
 
 namespace pqnas {
@@ -2295,6 +2519,58 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             set_json(res, out);
         });
 
+
+
+
+    server.Get("/api/v4/circlestack/federation/media-preview",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            const std::string event_id =
+                req.has_param("event_id") ? req.get_param_value("event_id") : "";
+            const std::string ref_id =
+                req.has_param("ref_id") ? req.get_param_value("ref_id") : "";
+
+            if (event_id.empty() || ref_id.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_event_or_ref_id"}
+                });
+            }
+
+            cs_db_init();
+
+            if (!g_db) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circlestack_db_unavailable"}
+                });
+            }
+
+            std::string media_kind;
+            std::string err;
+
+            if (!cs_lookup_public_federation_media_ref(
+                    g_db,
+                    event_id,
+                    ref_id,
+                    &media_kind,
+                    &err)) {
+                // Do not leak filesystem paths or private media details.
+                res.status = (err == "not_public") ? 403 : 404;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "media_preview_not_found" : err}
+                });
+            }
+
+            cs_set_federation_media_preview_placeholder(
+                res,
+                media_kind.empty() ? "file" : media_kind,
+                event_id,
+                ref_id
+            );
+        });
 
 
     server.Get("/api/v4/circlestack/federated/feed",
