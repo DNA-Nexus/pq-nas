@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -2153,14 +2154,66 @@ void cs_set_federation_media_preview_placeholder(
     res.set_content(svg, "image/svg+xml; charset=utf-8");
 }
 
-bool cs_lookup_public_federation_media_ref(
+
+
+std::string cs_shell_quote(const std::string& raw) {
+    std::string out = "'";
+    for (char c : raw) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out += "'";
+    return out;
+}
+
+std::string cs_federation_preview_cache_key(
+    const std::string& event_id,
+    const std::string& ref_id
+) {
+    // FNV-1a 64-bit. Good enough for non-security cache filenames.
+    unsigned long long h = 1469598103934665603ULL;
+    const std::string in = event_id + "\n" + ref_id;
+
+    for (unsigned char c : in) {
+        h ^= static_cast<unsigned long long>(c);
+        h *= 1099511628211ULL;
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << h;
+    return oss.str();
+}
+
+bool cs_send_file_response(
+    httplib::Response& res,
+    const std::filesystem::path& file,
+    const std::string& mime
+) {
+    std::ifstream f(file, std::ios::binary);
+    if (!f) return false;
+
+    std::stringstream ss;
+    ss << f.rdbuf();
+
+    res.set_header("Cache-Control", "public, max-age=3600");
+    res.set_content(ss.str(), mime.c_str());
+    return true;
+}
+
+bool cs_resolve_public_federation_media_ref_source(
     sqlite3* db,
+    const pqnas::CircleStackRoutesDeps& deps,
     const std::string& event_id,
     const std::string& ref_id,
-    std::string* media_kind,
+    std::filesystem::path* out_source,
+    std::string* out_kind,
     std::string* err
 ) {
-    if (media_kind) *media_kind = "";
+    if (out_source) *out_source = std::filesystem::path();
+    if (out_kind) *out_kind = "";
     if (err) *err = "";
 
     std::string entity_type;
@@ -2171,11 +2224,17 @@ bool cs_lookup_public_federation_media_ref(
         return false;
     }
 
+    std::string media_path;
+    std::string owner_fp;
+    std::string visibility;
+    long long created_epoch = 0;
+    int post_id = 0;
+
     if (entity_type == "post") {
         sqlite3_stmt* st = nullptr;
 
         if (sqlite3_prepare_v2(db,
-                "SELECT media_path, visibility, created_epoch "
+                "SELECT media_path, visibility, created_epoch, owner_fp "
                 "FROM posts WHERE id = ?",
                 -1, &st, nullptr) != SQLITE_OK) {
             if (err) *err = sqlite3_errmsg(db);
@@ -2184,22 +2243,20 @@ bool cs_lookup_public_federation_media_ref(
 
         sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
 
-        std::string media_path;
-        std::string visibility;
-        long long created_epoch = 0;
-
         if (sqlite3_step(st) == SQLITE_ROW) {
             const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
             const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+            const char* owner_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
 
             media_path = media_raw ? media_raw : "";
             visibility = vis_raw ? vis_raw : "";
             created_epoch = sqlite3_column_int64(st, 2);
+            owner_fp = owner_raw ? owner_raw : "";
         }
 
         sqlite3_finalize(st);
 
-        if (media_path.empty()) {
+        if (media_path.empty() || owner_fp.empty()) {
             if (err) *err = "media_not_found";
             return false;
         }
@@ -2216,16 +2273,11 @@ bool cs_lookup_public_federation_media_ref(
             if (err) *err = "event_ref_mismatch";
             return false;
         }
-
-        if (media_kind) *media_kind = cs_federation_media_kind_for_path(media_path);
-        return true;
-    }
-
-    if (entity_type == "reply") {
+    } else if (entity_type == "reply") {
         sqlite3_stmt* st = nullptr;
 
         if (sqlite3_prepare_v2(db,
-                "SELECT r.media_path, r.created_epoch, r.post_id, p.visibility "
+                "SELECT r.media_path, r.created_epoch, r.post_id, r.actor_fp, p.visibility "
                 "FROM post_replies r "
                 "JOIN posts p ON p.id = r.post_id "
                 "WHERE r.id = ?",
@@ -2236,24 +2288,21 @@ bool cs_lookup_public_federation_media_ref(
 
         sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
 
-        std::string media_path;
-        std::string visibility;
-        long long created_epoch = 0;
-        int post_id = 0;
-
         if (sqlite3_step(st) == SQLITE_ROW) {
             const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
-            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+            const char* owner_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 4));
 
             media_path = media_raw ? media_raw : "";
             created_epoch = sqlite3_column_int64(st, 1);
             post_id = sqlite3_column_int(st, 2);
+            owner_fp = owner_raw ? owner_raw : "";
             visibility = vis_raw ? vis_raw : "";
         }
 
         sqlite3_finalize(st);
 
-        if (media_path.empty() || post_id <= 0) {
+        if (media_path.empty() || owner_fp.empty() || post_id <= 0) {
             if (err) *err = "media_not_found";
             return false;
         }
@@ -2270,13 +2319,124 @@ bool cs_lookup_public_federation_media_ref(
             if (err) *err = "event_ref_mismatch";
             return false;
         }
+    } else {
+        if (err) *err = "unsupported_ref_type";
+        return false;
+    }
 
-        if (media_kind) *media_kind = cs_federation_media_kind_for_path(media_path);
+    std::string rel_norm;
+    std::string norm_err;
+
+    if (!pqnas::normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+        if (err) *err = "INVALID_MEDIA_PATH";
+        return false;
+    }
+
+    if (!deps.users || !deps.user_dir_for_fp) {
+        if (err) *err = "users_unavailable";
+        return false;
+    }
+
+    const std::filesystem::path owner_root =
+        deps.user_dir_for_fp(*deps.users, owner_fp);
+
+    const std::filesystem::path requested = owner_root / rel_norm;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(requested, ec) || ec) {
+        if (err) *err = "media_not_found";
+        return false;
+    }
+
+    std::string symlink_err;
+    if (!cs_path_has_no_symlink_components_below_root(
+            owner_root, requested, &symlink_err)) {
+        if (err) *err = "SYMLINK_REJECTED";
+        return false;
+    }
+
+    if (out_source) *out_source = requested;
+    if (out_kind) *out_kind = cs_federation_media_kind_for_path(media_path);
+    return true;
+}
+
+bool cs_generate_federation_preview_jpeg(
+    const std::filesystem::path& source,
+    const std::string& media_kind,
+    const std::string& event_id,
+    const std::string& ref_id,
+    std::filesystem::path* out_preview,
+    std::string* err
+) {
+    if (out_preview) *out_preview = std::filesystem::path();
+    if (err) *err = "";
+
+    if (media_kind != "image" && media_kind != "video") {
+        if (err) *err = "unsupported_preview_kind";
+        return false;
+    }
+
+    if (std::system("command -v ffmpeg >/dev/null 2>&1") != 0) {
+        if (err) *err = "ffmpeg_missing";
+        return false;
+    }
+
+    const std::filesystem::path cache_dir =
+        "/srv/pqnas/cache/circlestack/federation-previews";
+
+    std::error_code ec;
+    std::filesystem::create_directories(cache_dir, ec);
+    if (ec) {
+        if (err) *err = "cache_dir_failed: " + ec.message();
+        return false;
+    }
+
+    const std::string key = cs_federation_preview_cache_key(event_id, ref_id);
+    const std::filesystem::path preview = cache_dir / (key + ".jpg");
+
+    if (std::filesystem::exists(preview, ec) &&
+        !ec &&
+        std::filesystem::file_size(preview, ec) > 0 &&
+        !ec) {
+        if (out_preview) *out_preview = preview;
         return true;
     }
 
-    if (err) *err = "unsupported_ref_type";
-    return false;
+    const std::filesystem::path tmp =
+        cache_dir / (key + ".tmp." + std::to_string(std::time(nullptr)) + ".jpg");
+
+    const std::string filter =
+        "scale=w=640:h=360:force_original_aspect_ratio=decrease,"
+        "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=0x111827";
+
+    const std::string cmd =
+        "timeout 20 ffmpeg -y -hide_banner -loglevel error -nostdin "
+        "-i " + cs_shell_quote(source.string()) + " "
+        "-vf " + cs_shell_quote(filter) + " "
+        "-frames:v 1 -q:v 5 " + cs_shell_quote(tmp.string()) +
+        " >/dev/null 2>&1";
+
+    const int rc = std::system(cmd.c_str());
+
+    if (rc != 0 ||
+        !std::filesystem::exists(tmp, ec) ||
+        ec ||
+        std::filesystem::file_size(tmp, ec) == 0 ||
+        ec) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "preview_generation_failed";
+        return false;
+    }
+
+    std::filesystem::rename(tmp, preview, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "preview_cache_rename_failed: " + ec.message();
+        return false;
+    }
+
+    if (out_preview) *out_preview = preview;
+    return true;
 }
 
 
@@ -2522,6 +2682,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
 
 
+
     server.Get("/api/v4/circlestack/federation/media-preview",
         [&](const httplib::Request& req, httplib::Response& res) {
             const std::string event_id =
@@ -2547,13 +2708,16 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 });
             }
 
+            std::filesystem::path source_file;
             std::string media_kind;
             std::string err;
 
-            if (!cs_lookup_public_federation_media_ref(
+            if (!cs_resolve_public_federation_media_ref_source(
                     g_db,
+                    deps,
                     event_id,
                     ref_id,
+                    &source_file,
                     &media_kind,
                     &err)) {
                 // Do not leak filesystem paths or private media details.
@@ -2563,6 +2727,29 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     {"error", err.empty() ? "media_preview_not_found" : err}
                 });
             }
+
+            std::filesystem::path preview_file;
+            std::string preview_err;
+
+            if (cs_generate_federation_preview_jpeg(
+                    source_file,
+                    media_kind,
+                    event_id,
+                    ref_id,
+                    &preview_file,
+                    &preview_err)) {
+                res.set_header("X-PQNAS-Preview-Status", "generated");
+                res.set_header("X-PQNAS-Media-Kind", media_kind.empty() ? "file" : media_kind);
+                res.set_header("X-PQNAS-Federation-Event", event_id);
+
+                if (cs_send_file_response(res, preview_file, "image/jpeg")) {
+                    return;
+                }
+            }
+
+            // Safe fallback. This keeps the endpoint useful even before ffmpeg
+            // exists or for unsupported file types.
+            res.set_header("X-PQNAS-Preview-Fallback", preview_err.empty() ? "unknown" : preview_err);
 
             cs_set_federation_media_preview_placeholder(
                 res,

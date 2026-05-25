@@ -683,3 +683,18 @@ The Circle Stack Federated tab now renders media previews by calling the origin 
 - `/api/v4/circlestack/federation/media-preview?event_id=...&ref_id=...`
 
 Current behavior shows the validated SVG placeholder returned by the origin endpoint. This proves the UI-to-origin preview path without exposing original media files. Later the endpoint can return a real generated thumbnail while keeping the UI contract unchanged.
+
+
+## Real generated media previews phase 2b
+
+The origin-side media preview endpoint now attempts to generate cached JPEG previews for image/video media using `ffmpeg`.
+
+Behavior:
+
+- validates `event_id + ref_id` exactly as before
+- resolves the local media file only after public visibility and ref validation
+- rejects symlink components below the owner root
+- generates 640x360 JPEG previews under `/srv/pqnas/cache/circlestack/federation-previews/`
+- returns `X-PQNAS-Preview-Status: generated` when a real preview is served
+- falls back to the SVG placeholder when ffmpeg is missing, generation fails, or the kind is unsupported
+- still never exposes local `media_path` and never serves the original full file from this endpoint
