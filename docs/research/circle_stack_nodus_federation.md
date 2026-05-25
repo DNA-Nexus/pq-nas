@@ -559,3 +559,50 @@ Result:
 - final reason: `ignored_local_origin`
 
 This confirms that self-echoed federation events are not duplicated back into the local Circle Stack database.
+
+
+## Remote federated feed storage
+
+A separate `circle_federation_remote_feed` storage path was added for remote-origin inbound events.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/remote-feed/stats`
+- `GET /api/v4/admin/nodus/remote-feed/list?limit=50`
+
+Inbound `apply-once` now stores remote-origin events into this read-only remote feed table and marks the inbox row `applied`. Local-origin events are still ignored as self-echoes.
+
+Remote events are intentionally not inserted into local Circle Stack `posts`, `post_replies`, or reaction tables. The UI should later combine local content and remote-feed records at read time.
+
+
+## Remote federated feed apply verified
+
+A fake remote-origin `circle.post.created` event was inserted into the inbound inbox and processed through `apply-once`.
+
+Result:
+
+- inbox `applied` increased to `1`
+- remote-feed `total` increased to `1`
+- remote-feed `posts` increased to `1`
+- local-origin self-echo events remained ignored
+
+Parser note: `circle.post.created` payload uses `owner_fp`, so remote-feed parsing now falls back from `actor_fp` to `owner_fp`.
+
+## Remote federated feed apply verified
+
+A fake remote-origin `circle.post.created` event was inserted into the inbound inbox and processed through `apply-once`.
+
+Result:
+
+- inbox `applied` increased.
+- remote-feed `total` increased to `2`.
+- remote-feed `posts` increased to `2`.
+- local-origin self-echo events remained ignored.
+- parser fallback from `actor_fp` to `owner_fp` was verified with `remote_test_nas_002`.
+
+Current remote-feed test row:
+
+- event id: `remote_test_post_1779670606`
+- origin NAS: `remote_test_nas_002`
+- actor fp: `remote_test_nas_002`
+- post id: `900002`

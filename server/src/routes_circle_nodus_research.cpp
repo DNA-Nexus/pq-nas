@@ -4,6 +4,7 @@
 #include "federation/circle_federation_outbox.h"
 #include "federation/circle_federation_outbox_worker.h"
 #include "federation/circle_federation_inbox.h"
+#include "federation/circle_federation_remote_feed.h"
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
@@ -374,6 +375,71 @@ int outbox_retry_delay_seconds(int attempts) {
 }
 
 
+
+json remote_feed_event_json(const federation::CircleFederationRemoteFeedEvent& ev) {
+    return {
+        {"id", ev.id},
+        {"received_epoch", ev.received_epoch},
+        {"created_epoch", ev.created_epoch},
+        {"circle_id", ev.circle_id},
+        {"event_id", ev.event_id},
+        {"event_type", ev.event_type},
+        {"origin_nas", ev.origin_nas},
+        {"target_type", ev.target_type},
+        {"post_id", ev.post_id},
+        {"reply_id", ev.reply_id},
+        {"actor_fp", ev.actor_fp},
+        {"reaction", ev.reaction}
+    };
+}
+
+bool parse_remote_feed_fields_from_event(
+    const json& event,
+    std::string* target_type,
+    std::int64_t* post_id,
+    std::int64_t* reply_id,
+    std::string* actor_fp,
+    std::string* reaction) {
+    if (target_type) *target_type = "";
+    if (post_id) *post_id = 0;
+    if (reply_id) *reply_id = 0;
+    if (actor_fp) *actor_fp = "";
+    if (reaction) *reaction = "";
+
+    if (!event.contains("payload") || !event["payload"].is_object()) {
+        return true;
+    }
+
+    const auto& payload = event["payload"];
+
+    if (target_type && payload.contains("target_type") && payload["target_type"].is_string()) {
+        *target_type = payload["target_type"].get<std::string>();
+    }
+
+    if (post_id && payload.contains("post_id") && payload["post_id"].is_number_integer()) {
+        *post_id = payload["post_id"].get<std::int64_t>();
+    }
+
+    if (reply_id && payload.contains("reply_id") && payload["reply_id"].is_number_integer()) {
+        *reply_id = payload["reply_id"].get<std::int64_t>();
+    }
+
+    if (actor_fp) {
+        if (payload.contains("actor_fp") && payload["actor_fp"].is_string()) {
+            *actor_fp = payload["actor_fp"].get<std::string>();
+        } else if (payload.contains("owner_fp") && payload["owner_fp"].is_string()) {
+            // circle.post.created uses owner_fp, while reactions/replies use actor_fp.
+            *actor_fp = payload["owner_fp"].get<std::string>();
+        }
+    }
+
+    if (reaction && payload.contains("reaction") && payload["reaction"].is_string()) {
+        *reaction = payload["reaction"].get<std::string>();
+    }
+
+    return true;
+}
+
 json inbox_event_json(const federation::CircleFederationInboxEvent& ev) {
     return {
         {"id", ev.id},
@@ -459,6 +525,61 @@ void register_circle_nodus_research_routes(
 
 
 
+
+    server.Get("/api/v4/admin/nodus/remote-feed/stats",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            std::string err;
+            const auto stats = federation::circle_federation_remote_feed_stats(&err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "remote_feed_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"total", stats.total},
+                {"posts", stats.posts},
+                {"replies", stats.replies},
+                {"reaction_created", stats.reaction_created},
+                {"reaction_removed", stats.reaction_removed}
+            });
+        });
+
+    server.Get("/api/v4/admin/nodus/remote-feed/list",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            const int limit = query_int(req, "limit", 50, 1, 500);
+
+            std::string err;
+            const auto rows = federation::list_circle_federation_remote_feed(limit, &err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "remote_feed_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            json events = json::array();
+            for (const auto& row : rows) {
+                events.push_back(remote_feed_event_json(row));
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"count", events.size()},
+                {"events", events}
+            });
+        });
+
     server.Post("/api/v4/admin/nodus/inbox/apply-once",
         [deps](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;
@@ -512,16 +633,74 @@ void register_circle_nodus_research_routes(
                     continue;
                 }
 
-                // Remote event application is intentionally not implemented yet.
-                // Next milestone will map remote event JSON into a safe local
-                // federated-public-feed table instead of writing into local posts.
-                if (federation::mark_circle_federation_inbox_ignored(
-                        row.id,
-                        "remote_apply_not_implemented",
-                        &mark_err)) {
-                    item["final_status"] = "ignored";
-                    item["reason"] = "remote_apply_not_implemented";
-                    ++ignored;
+                json event;
+                try {
+                    event = json::parse(row.event_json);
+                } catch (...) {
+                    if (federation::mark_circle_federation_inbox_failed(
+                            row.id,
+                            "invalid_event_json",
+                            &mark_err)) {
+                        item["final_status"] = "failed";
+                        item["reason"] = "invalid_event_json";
+                    } else {
+                        item["final_status"] = "failed";
+                        item["mark_error"] = mark_err;
+                    }
+
+                    ++failed;
+                    events.push_back(item);
+                    continue;
+                }
+
+                std::string target_type;
+                std::int64_t post_id = 0;
+                std::int64_t reply_id = 0;
+                std::string event_actor_fp;
+                std::string reaction;
+
+                parse_remote_feed_fields_from_event(
+                    event,
+                    &target_type,
+                    &post_id,
+                    &reply_id,
+                    &event_actor_fp,
+                    &reaction);
+
+                std::string store_err;
+                if (!federation::store_circle_federation_remote_feed_event(
+                        row.circle_id,
+                        row.event_id,
+                        row.event_type,
+                        row.origin_nas,
+                        row.created_epoch,
+                        target_type,
+                        post_id,
+                        reply_id,
+                        event_actor_fp,
+                        reaction,
+                        row.event_json,
+                        &store_err)) {
+                    if (federation::mark_circle_federation_inbox_failed(
+                            row.id,
+                            store_err,
+                            &mark_err)) {
+                        item["final_status"] = "failed";
+                        item["reason"] = store_err;
+                    } else {
+                        item["final_status"] = "failed";
+                        item["mark_error"] = mark_err;
+                    }
+
+                    ++failed;
+                    events.push_back(item);
+                    continue;
+                }
+
+                if (federation::mark_circle_federation_inbox_applied(row.id, &mark_err)) {
+                    item["final_status"] = "applied";
+                    item["remote_feed_stored"] = true;
+                    ++applied;
                 } else {
                     item["final_status"] = "failed";
                     item["mark_error"] = mark_err;
