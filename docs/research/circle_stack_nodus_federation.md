@@ -319,3 +319,24 @@ Research endpoint:
 - `POST /api/v4/admin/nodus/outbox/recover-leases`
 
 The drain path also performs stale lease recovery before claiming new pending events.
+
+
+## Optional background outbox worker
+
+An optional process-local background worker can drain the Circle Stack federation outbox.
+
+It is disabled by default. Enable with:
+
+```text
+PQNAS_CIRCLE_FEDERATION_WORKER=1
+```
+
+Useful environment knobs:
+
+- `PQNAS_CIRCLE_FEDERATION_WORKER_INTERVAL_SECONDS` default `10`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_BATCH` default `5`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_LEASE_SECONDS` default `300`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_MAX_ATTEMPTS` default `5`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_SEED` default `EU-1`
+
+The worker is intentionally controlled and conservative because the current adapter still uses serialized `nodus-cli` calls. Long-term, this should be replaced by a persistent Nodus client daemon or direct C++ integration.

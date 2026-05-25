@@ -2,6 +2,7 @@
 
 #include "federation/circle_federation_event.h"
 #include "federation/circle_federation_outbox.h"
+#include "federation/circle_federation_outbox_worker.h"
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
@@ -393,6 +394,7 @@ json outbox_event_json(const federation::CircleFederationOutboxEvent& ev) {
 void register_circle_nodus_research_routes(
     httplib::Server& server,
     const CircleNodusResearchRoutesDeps& deps) {
+    federation::start_circle_federation_outbox_worker_once();
     server.Get("/api/v4/admin/nodus/status",
         [deps](const httplib::Request& req, httplib::Response& res) {
             if (!require_admin(deps, req, res, nullptr)) return;

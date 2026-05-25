@@ -246,6 +246,8 @@ add_executable(pqnas_server
         server/src/federation/circle_federation_event.h
         server/src/federation/circle_federation_outbox.cpp
         server/src/federation/circle_federation_outbox.h
+        server/src/federation/circle_federation_outbox_worker.cpp
+        server/src/federation/circle_federation_outbox_worker.h
         server/src/routes_circle_nodus_research.cpp
         server/src/routes_circle_nodus_research.h
         server/src/echo_stack_index.cpp
