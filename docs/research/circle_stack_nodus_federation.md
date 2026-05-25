@@ -200,3 +200,50 @@ Notes:
 - Circle Stack media remains on the origin PQ-NAS.
 - `nodus-cli -i <identity_dir>` requires an existing identity.
 - A one-shot `nodus-server -i <identity_dir>` run generated the persistent PQ-NAS research identity.
+
+## Scale-first design constraints
+
+Circle Stack federation over Nodus should be designed for 10k, 100k, and eventually 1M+ users without requiring a full rewrite.
+
+Core constraints:
+
+- Nodus carries small signed federation events only.
+- Photos, videos, thumbnails, and other media remain on the origin PQ-NAS.
+- User-facing Circle Stack actions must save locally first and must not wait synchronously for Nodus publishing.
+- Federation publishing should use a local durable `federation_outbox` queue with retries and backoff.
+- Research endpoints may write to all Nodus seeds, but production publishing should use nearest/healthy nodes or quorum-style replication.
+- Avoid one global hot key for large/public circles.
+- Use per-origin heads, sharded heads, or event-DAG style linkage for high-volume circles.
+- Remote PQ-NAS instances should merge events by signed event metadata rather than trusting one last-write-wins head pointer.
+- Add metrics early: publish latency, get latency, listen propagation delay, queue depth, retry count, error rate, and per-node health.
+- Plan for abuse controls: rate limits, event size limits, identity reputation, and spam filtering.
+
+The current `circle:<circle_id>:head -> latest event_id` model is acceptable for research and small circles, but production large-circle federation should evolve toward per-origin or sharded heads before public-scale use.
+
+## 2026-05-24 Nodus benchmark baseline
+
+Baseline was measured through the PQ-NAS admin research endpoints, which currently use `popen(nodus-cli ...)` per Nodus operation. This includes HTTP, Cloudflare/proxy path, PQ-NAS route handling, process startup, TCP connect, Nodus authentication, and the DHT command.
+
+Single EU-1 `put-test`:
+
+- count: 20
+- avg: 414.55 ms
+- min: 343 ms
+- max: 536 ms
+- median: about 407 ms
+
+All-seed `circle.ping`:
+
+- count: 10
+- avg: 4859.2 ms
+- min: 4475 ms
+- max: 5273 ms
+- median: about 4881 ms
+
+Interpretation:
+
+- Single-seed publishing is acceptable for a background federation worker.
+- All-seed synchronous publishing is too slow for user-facing actions.
+- The all-seed test performs 14 Nodus operations per request: 7 seeds × event put + head put.
+- Production Circle Stack should save locally first, enqueue federation work, and publish asynchronously.
+- Production publishing should use nearest/healthy nodes or quorum-style replication, not synchronous writes to every seed.
