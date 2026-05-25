@@ -1577,6 +1577,83 @@ bool cs_enqueue_reply_created_federation_best_effort(
 
 
 
+std::string cs_make_post_reaction_event_id(int post_id, long long created_epoch, const std::string& actor_fp) {
+    const std::string actor_short = actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+    return "reaction_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + actor_short;
+}
+
+bool cs_enqueue_post_reaction_created_federation_best_effort(
+    sqlite3* db,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& reaction,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (post_id <= 0 || actor_fp.empty() || reaction.empty()) {
+        if (out_error) *out_error = "invalid_reaction_event";
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_post_reaction_event_id(post_id, created_epoch, actor_fp);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    const json event = {
+        {"type", "circle.reaction.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", actor_fp},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"target_type", "post"},
+            {"post_id", post_id},
+            {"actor_fp", actor_fp},
+            {"reaction", reaction}
+        }}
+    };
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reaction.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            event.dump(),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
 } // namespace
 
 namespace pqnas {
@@ -2703,10 +2780,12 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
             }
 
+            const auto reaction_created_epoch = static_cast<sqlite3_int64>(std::time(nullptr));
+
             sqlite3_bind_int(st, 1, post_id);
             sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 3, reaction.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+            sqlite3_bind_int64(st, 4, reaction_created_epoch);
 
             if (sqlite3_step(st) != SQLITE_DONE) {
                 sqlite3_finalize(st);
@@ -2723,11 +2802,35 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_commit_failed"}});
             }
 
-            set_json(res, {
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_post_reaction_created_federation_best_effort(
+                    g_db,
+                    post_id,
+                    (long long)reaction_created_epoch,
+                    actor_fp,
+                    reaction,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
                 {"ok", true},
                 {"post_id", post_id},
-                {"reaction", reaction}
-            });
+                {"reaction", reaction},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
 

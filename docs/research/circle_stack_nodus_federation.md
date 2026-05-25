@@ -400,3 +400,29 @@ Verified event:
 - event type: `circle.reply.created`
 - outbox status: `done`
 - worker log confirmed publish: `published id=4 event_id=reply_1779669505_30_6`
+
+
+## Post reaction creation enqueue
+
+Circle Stack `posts/react` now enqueues a `circle.reaction.created` federation event when reacting to a public post.
+
+Current safety behavior:
+
+- non-empty reactions on public posts enqueue a small federation event into the durable outbox
+- reactions on private/circle-restricted posts are skipped for now
+- reaction removal is not federated yet; it should become `circle.reaction.removed` later
+- the event contains target type, post id, actor fingerprint, and reaction only
+
+## Real public post reaction federation verified
+
+A real Circle Stack reaction on a public post was created through `/api/v4/circlestack/posts/react` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- reaction: `❤️`
+- federation event id: `reaction_1779669674_30_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.created`
+- outbox status: `done`
+- worker log confirmed publish: `published id=5 event_id=reaction_1779669674_30_a8885f40`
