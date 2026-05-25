@@ -125,11 +125,28 @@ function csRenderFederatedEvent(ev) {
     ? payload.media_preview
     : null;
 
-  if ((payload.has_media === true || (mediaPreview && mediaPreview.has_media === true)) &&
+  const mediaRefs = Array.isArray(payload.media_refs)
+    ? payload.media_refs
+    : (
+      mediaPreview && Array.isArray(mediaPreview.refs)
+        ? mediaPreview.refs
+        : []
+    );
+
+  if ((payload.has_media === true || (mediaPreview && mediaPreview.has_media === true) || mediaRefs.length > 0) &&
       (!mediaPreview || mediaPreview.status !== "none")) {
     const media = document.createElement("div");
     media.className = "cs-federated-media-placeholder";
-    media.textContent = "Media stays on origin NAS · preview fetch coming later";
+
+    const kinds = Array.from(new Set(
+      mediaRefs
+        .map(ref => ref && ref.kind ? String(ref.kind) : "")
+        .filter(Boolean)
+    ));
+
+    const count = Number(payload.media_count || mediaRefs.length || (payload.has_media ? 1 : 0));
+    const kindText = kinds.length ? ` · ${kinds.join(", ")}` : "";
+    media.textContent = `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · preview fetch coming later`;
     card.appendChild(media);
   }
 

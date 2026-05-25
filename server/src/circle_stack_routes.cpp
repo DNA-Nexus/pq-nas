@@ -1490,17 +1490,68 @@ std::string cs_make_federation_text_preview(const std::string& text) {
     return out;
 }
 
-json cs_make_federation_media_preview(const std::string& media_path) {
+std::string cs_federation_media_kind_for_path(const std::string& media_path) {
+    std::string ext = std::filesystem::path(media_path).extension().string();
+
+    for (auto& c : ext) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+        ext == ".webp" || ext == ".gif") {
+        return "image";
+    }
+
+    if (ext == ".mp4" || ext == ".webm" || ext == ".mov" ||
+        ext == ".m4v" || ext == ".avi" || ext == ".mkv") {
+        return "video";
+    }
+
+    return "file";
+}
+
+json cs_make_federation_media_refs(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& media_path
+) {
+    if (media_path.empty() || entity_id <= 0 || entity_type.empty()) {
+        return json::array();
+    }
+
+    const std::string kind = cs_federation_media_kind_for_path(media_path);
+
+    return json::array({
+        {
+            {"ref_id", entity_type + ":" + std::to_string(entity_id) + ":media:primary"},
+            {"role", "primary"},
+            {"kind", kind},
+            {"preview_status", "origin_fetch_todo"},
+            {"fetch_policy", "origin_public_preview_required"}
+        }
+    });
+}
+
+json cs_make_federation_media_preview(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& media_path
+) {
     if (media_path.empty()) {
         return {
             {"has_media", false},
-            {"status", "none"}
+            {"status", "none"},
+            {"refs", json::array()}
         };
     }
+
+    const json refs = cs_make_federation_media_refs(entity_type, entity_id, media_path);
 
     return {
         {"has_media", true},
         {"status", "origin_fetch_todo"},
+        {"count", refs.size()},
+        {"refs", refs},
         {"note", "Media stays on origin PQ-NAS; remote preview fetch is not implemented yet."}
     };
 }
@@ -1567,7 +1618,9 @@ bool cs_enqueue_post_created_federation_best_effort(
             {"text_preview", cs_make_federation_text_preview(text)},
             {"visibility", visibility},
             {"has_media", !media_path.empty()},
-            {"media_preview", cs_make_federation_media_preview(media_path)},
+            {"media_count", media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("post", post_id, media_path)},
+            {"media_preview", cs_make_federation_media_preview("post", post_id, media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };
@@ -1672,7 +1725,9 @@ bool cs_enqueue_reply_created_federation_best_effort(
             {"origin_label", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
             {"text_preview", cs_make_federation_text_preview(text)},
             {"has_media", !media_path.empty()},
-            {"media_preview", cs_make_federation_media_preview(media_path)},
+            {"media_count", media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("reply", reply_id, media_path)},
+            {"media_preview", cs_make_federation_media_preview("reply", reply_id, media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };

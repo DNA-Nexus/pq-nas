@@ -640,3 +640,19 @@ Added to `circle.reply.created` payload:
 - `media_preview` placeholder
 
 The remote feed UI now shows preview text when present and a media placeholder when the event says media exists. Actual media fetch from the origin PQ-NAS remains a later milestone.
+
+
+## Federated media references
+
+Federated `circle.post.created` and `circle.reply.created` events now include safe media references when local media exists.
+
+Payload additions:
+
+- `media_count`
+- `media_refs[]`
+- `media_refs[].ref_id`
+- `media_refs[].kind` (`image`, `video`, or `file`)
+- `media_refs[].preview_status = origin_fetch_todo`
+- `media_refs[].fetch_policy = origin_public_preview_required`
+
+The actual local `media_path` is intentionally not published. Future remote preview fetching should use `event_id + ref_id` against the origin PQ-NAS, and the origin must validate public/federated access before returning a thumbnail or preview.
