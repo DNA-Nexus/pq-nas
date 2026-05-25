@@ -354,3 +354,23 @@ Current safety behavior:
 - media remains on the origin PQ-NAS
 
 The initial circle id is `local-public-feed`. This is suitable for the first real end-to-end path, but large-scale federation should later move toward per-origin or sharded feed heads.
+
+## Real public post federation verified
+
+A real Circle Stack public post was created through `/api/v4/circlestack/posts/create` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- federation event id: `post_1779669289_30`
+- circle id: `local-public-feed`
+- event type: `circle.post.created`
+- outbox status: `done`
+- Nodus head key readback succeeded: `pqnas:circlestack:circle:local-public-feed:head -> post_1779669289_30`
+- Nodus event key readback succeeded and returned the event JSON.
+
+A private post was also tested and correctly skipped federation:
+
+- `federation_queued=false`
+- `federation_note=skipped_non_public_visibility`
+- outbox total did not increase
