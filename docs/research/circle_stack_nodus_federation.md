@@ -295,3 +295,16 @@ Interpretation:
 - Higher latency is expected because calls queue behind one another.
 - This confirms the production design should use a durable federation outbox and controlled background publisher, not user-facing synchronous parallel `nodus-cli` calls.
 - Long-term replacement should be a persistent Nodus client daemon or direct C++ integration.
+
+
+## Federation outbox foundation
+
+A durable Circle Stack federation outbox was added as the scale-first bridge between local Circle Stack actions and Nodus publishing.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/outbox/stats`
+- `GET /api/v4/admin/nodus/outbox/list?limit=50`
+- `POST /api/v4/admin/nodus/outbox/enqueue-ping`
+
+The outbox stores small signed/serializable federation events and pointer keys. Production Circle Stack should save user actions locally, enqueue federation events, and let a controlled background publisher drain this outbox asynchronously.

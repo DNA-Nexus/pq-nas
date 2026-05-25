@@ -1,6 +1,7 @@
 #include "routes_circle_nodus_research.h"
 
 #include "federation/circle_federation_event.h"
+#include "federation/circle_federation_outbox.h"
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
@@ -338,6 +339,55 @@ int query_int(const httplib::Request& req,
     }
 }
 
+
+
+std::string outbox_publish_error_summary(const json& result) {
+    std::string out;
+
+    if (result.contains("put_event")) {
+        out += result["put_event"].value("output", "");
+    }
+    if (result.contains("put_head")) {
+        if (!out.empty()) out += "\n";
+        out += result["put_head"].value("output", "");
+    }
+
+    if (out.empty()) out = "unknown publish error";
+
+    constexpr std::size_t kMax = 2048;
+    if (out.size() > kMax) {
+        out.resize(kMax);
+        out += "...[truncated]";
+    }
+
+    return out;
+}
+
+int outbox_retry_delay_seconds(int attempts) {
+    int delay = 30;
+    for (int i = 1; i < attempts && delay < 3600; ++i) {
+        delay *= 2;
+    }
+    return std::clamp(delay, 30, 3600);
+}
+
+json outbox_event_json(const federation::CircleFederationOutboxEvent& ev) {
+    return {
+        {"id", ev.id},
+        {"created_epoch", ev.created_epoch},
+        {"updated_epoch", ev.updated_epoch},
+        {"next_attempt_epoch", ev.next_attempt_epoch},
+        {"attempts", ev.attempts},
+        {"status", ev.status},
+        {"event_type", ev.event_type},
+        {"circle_id", ev.circle_id},
+        {"event_id", ev.event_id},
+        {"event_key", ev.event_key},
+        {"head_key", ev.head_key},
+        {"last_error", ev.last_error}
+    };
+}
+
 } // namespace
 
 void register_circle_nodus_research_routes(
@@ -369,6 +419,300 @@ void register_circle_nodus_research_routes(
                 {"timeout_seconds", config.timeout_seconds},
                 {"timeout_ms", timeout_ms},
                 {"seeds", seeds}
+            });
+        });
+
+
+    server.Get("/api/v4/admin/nodus/outbox/stats",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            std::string err;
+            const auto stats = federation::circle_federation_outbox_stats(&err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "outbox_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"total", stats.total},
+                {"pending", stats.pending},
+                {"publishing", stats.publishing},
+                {"done", stats.done},
+                {"failed", stats.failed},
+                {"retry_wait", stats.retry_wait}
+            });
+        });
+
+    server.Get("/api/v4/admin/nodus/outbox/list",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            const int limit = query_int(req, "limit", 50, 1, 500);
+
+            std::string err;
+            const auto rows = federation::list_circle_federation_outbox(limit, &err);
+            if (!err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "outbox_error"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            json events = json::array();
+            for (const auto& row : rows) {
+                events.push_back(outbox_event_json(row));
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"count", events.size()},
+                {"events", events}
+            });
+        });
+
+    server.Post("/api/v4/admin/nodus/outbox/enqueue-ping",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            if (!require_admin(deps, req, res, &actor_fp)) return;
+
+            json body;
+            if (!parse_json_body(req, res, &body)) return;
+
+            std::string circle_id = json_value_to_string(body, "circle_id");
+            if (circle_id.empty()) circle_id = "research-circle";
+
+            std::string event_id = json_value_to_string(body, "event_id");
+            if (event_id.empty()) event_id = make_event_id();
+
+            std::string origin_nas = json_value_to_string(body, "origin_nas");
+            if (origin_nas.empty()) origin_nas = actor_fp.empty() ? "local-pqnas" : actor_fp;
+
+            std::string message = json_value_to_string(body, "message");
+            if (message.empty()) {
+                message = "Circle Stack queued Nodus research ping from PQ-NAS";
+            }
+
+            federation::CircleEventDraft draft;
+            draft.type = "circle.ping";
+            draft.event_id = event_id;
+            draft.circle_id = circle_id;
+            draft.origin_nas = origin_nas;
+            draft.created_at_iso = now_iso_utc();
+            draft.message = message;
+
+            std::string event_json;
+            std::string event_key;
+            std::string head_key;
+
+            try {
+                event_json = federation::make_circle_ping_event_json(draft);
+                event_key = federation::circle_event_key(circle_id, event_id);
+                head_key = federation::circle_head_key(circle_id);
+            } catch (const std::exception& e) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_event"},
+                    {"message", e.what()}
+                });
+                return;
+            }
+
+            std::string err;
+            if (!federation::enqueue_circle_federation_event(
+                    draft.type,
+                    circle_id,
+                    event_id,
+                    event_key,
+                    head_key,
+                    event_json,
+                    &err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "outbox_enqueue_failed"},
+                    {"message", err}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"queued", true},
+                {"circle_id", circle_id},
+                {"event_id", event_id},
+                {"event_key", event_key},
+                {"head_key", head_key},
+                {"event", json::parse(event_json)}
+            });
+        });
+
+
+    server.Post("/api/v4/admin/nodus/outbox/drain-once",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
+
+            json body;
+            if (!parse_json_body(req, res, &body)) return;
+
+            int limit = 10;
+            if (body.contains("limit") && body["limit"].is_number_integer()) {
+                limit = std::clamp(body["limit"].get<int>(), 1, 50);
+            }
+
+            int lease_seconds = 300;
+            if (body.contains("lease_seconds") && body["lease_seconds"].is_number_integer()) {
+                lease_seconds = std::clamp(body["lease_seconds"].get<int>(), 10, 3600);
+            }
+
+            const int max_attempts = body.contains("max_attempts") && body["max_attempts"].is_number_integer()
+                ? std::clamp(body["max_attempts"].get<int>(), 1, 20)
+                : 5;
+
+            const std::string seed_selector =
+                json_value_to_string(body, "seed").empty()
+                    ? "EU-1"
+                    : json_value_to_string(body, "seed");
+
+            std::string seed_err;
+            const auto seeds = select_seeds(seed_selector, false, &seed_err);
+            if (seeds.empty()) {
+                set_json(res, 400, {
+                    {"ok", false},
+                    {"error", "invalid_seed"},
+                    {"message", seed_err.empty() ? "no Nodus seeds configured" : seed_err}
+                });
+                return;
+            }
+
+            const auto config = make_nodus_config();
+            std::string identity_err;
+            if (!ensure_identity_dir(config, &identity_err)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "identity_dir_error"},
+                    {"message", identity_err}
+                });
+                return;
+            }
+
+            std::string claim_err;
+            const auto rows = federation::claim_circle_federation_outbox_pending(
+                limit,
+                lease_seconds,
+                &claim_err);
+
+            if (!claim_err.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "outbox_claim_failed"},
+                    {"message", claim_err}
+                });
+                return;
+            }
+
+            json events = json::array();
+            int done_count = 0;
+            int retry_count = 0;
+            int failed_count = 0;
+
+            for (const auto& row : rows) {
+                json event_result = outbox_event_json(row);
+                event_result["publish"] = json::array();
+
+                bool all_ok = true;
+
+                for (const auto& seed : seeds) {
+                    json item = seed_json(seed);
+
+                    try {
+                        const auto event_put =
+                            federation::nodus_cli_put(config, seed, row.event_key, row.event_json);
+                        const auto head_put =
+                            federation::nodus_cli_put(config, seed, row.head_key, row.event_id);
+
+                        item["put_event"] = command_result_json(event_put);
+                        item["put_head"] = command_result_json(head_put);
+
+                        all_ok = all_ok &&
+                                 event_put.exit_code == 0 &&
+                                 head_put.exit_code == 0;
+                    } catch (const std::exception& e) {
+                        item["put_event"] = {
+                            {"ok", false},
+                            {"exit_code", -1},
+                            {"output", e.what()}
+                        };
+                        item["put_head"] = {
+                            {"ok", false},
+                            {"exit_code", -1},
+                            {"output", "skipped"}
+                        };
+                        all_ok = false;
+                    }
+
+                    event_result["publish"].push_back(item);
+                }
+
+                std::string mark_err;
+
+                if (all_ok) {
+                    if (federation::mark_circle_federation_outbox_done(row.id, &mark_err)) {
+                        event_result["final_status"] = "done";
+                        ++done_count;
+                    } else {
+                        event_result["final_status"] = "mark_done_failed";
+                        event_result["mark_error"] = mark_err;
+                        ++failed_count;
+                    }
+                } else if (row.attempts >= max_attempts) {
+                    const std::string publish_err =
+                        outbox_publish_error_summary(event_result["publish"].front());
+
+                    if (federation::mark_circle_federation_outbox_failed(row.id, publish_err, &mark_err)) {
+                        event_result["final_status"] = "failed";
+                        ++failed_count;
+                    } else {
+                        event_result["final_status"] = "mark_failed_failed";
+                        event_result["mark_error"] = mark_err;
+                        ++failed_count;
+                    }
+                } else {
+                    const int delay = outbox_retry_delay_seconds(row.attempts);
+                    const std::string publish_err =
+                        outbox_publish_error_summary(event_result["publish"].front());
+
+                    if (federation::mark_circle_federation_outbox_retry(
+                            row.id,
+                            publish_err,
+                            delay,
+                            &mark_err)) {
+                        event_result["final_status"] = "pending";
+                        event_result["retry_delay_seconds"] = delay;
+                        ++retry_count;
+                    } else {
+                        event_result["final_status"] = "mark_retry_failed";
+                        event_result["mark_error"] = mark_err;
+                        ++failed_count;
+                    }
+                }
+
+                events.push_back(event_result);
+            }
+
+            set_json(res, 200, {
+                {"ok", failed_count == 0},
+                {"claimed", rows.size()},
+                {"done", done_count},
+                {"retry", retry_count},
+                {"failed", failed_count},
+                {"events", events}
             });
         });
 
