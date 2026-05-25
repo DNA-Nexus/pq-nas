@@ -711,3 +711,22 @@ Origin descriptor fields:
 - optional `preview_base_url` from `PQNAS_PUBLIC_BASE_URL`
 
 The Federated UI now builds media preview URLs from this origin descriptor when present, and falls back to same-origin relative preview URLs when `preview_base_url` is absent.
+
+## Public origin descriptor verified
+
+Set systemd environment:
+
+- `PQNAS_PUBLIC_BASE_URL=https://pqnas-dev.pqnas-test.uk`
+
+Created a new public media post and verified the Nodus event payload includes:
+
+- top-level `origin.preview_base_url`
+- top-level `origin.preview_endpoint`
+- payload `origin.preview_base_url`
+- payload `media_refs[]`
+- `fetch_policy=origin_public_preview_required`
+
+Verified event:
+
+- `post_1779673969_32`
+- `ref_id=post:32:media:primary`
