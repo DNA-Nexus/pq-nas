@@ -247,3 +247,51 @@ Interpretation:
 - The all-seed test performs 14 Nodus operations per request: 7 seeds × event put + head put.
 - Production Circle Stack should save locally first, enqueue federation work, and publish asynchronously.
 - Production publishing should use nearest/healthy nodes or quorum-style replication, not synchronous writes to every seed.
+
+## 2026-05-24 parallel publishing benchmark
+
+A parallel benchmark was run to separate Nodus network capacity from the current PQ-NAS research adapter.
+
+Persistent PQ-NAS identity through admin endpoint:
+
+- 50 parallel HTTP requests to `/api/v4/admin/nodus/put-test`
+- Same persistent identity dir: `/srv/pqnas/config/nodus/research_identity`
+- Result: 2 / 50 succeeded
+- Failed calls reached TCP connect and authentication, but did not reach `PUT ok`
+- Failed raw exit status was 256
+
+Direct `nodus-cli` with random identity, no `-i`:
+
+- 50 parallel PUTs
+- Result: 50 / 50 succeeded
+- Average latency: 545.54 ms
+- Min latency: 303 ms
+- Max latency: 735 ms
+
+Interpretation:
+
+- Nodus handled this small parallel PUT test successfully when identities were independent.
+- The current PQ-NAS research adapter should not spawn many parallel `nodus-cli` processes using the same persistent identity.
+- Production Circle Stack should publish through a durable `federation_outbox` and a controlled background publisher.
+- Long-term, PQ-NAS should use a persistent Nodus client daemon or direct C++ integration instead of `popen(nodus-cli ...)` per event.
+
+## 2026-05-24 serialized CLI adapter result
+
+After the parallel same-identity benchmark showed only 2 / 50 successful endpoint PUTs, the research `nodus-cli` adapter was guarded with a process-local mutex.
+
+Retest through `/api/v4/admin/nodus/put-test`:
+
+- 20 parallel HTTP requests
+- concurrency: `xargs -P 5`
+- same persistent PQ-NAS identity
+- result: 20 / 20 succeeded
+- average latency: 1431.95 ms
+- min latency: 389 ms
+- max latency: 1645 ms
+
+Interpretation:
+
+- Serialization fixes reliability for the temporary research adapter.
+- Higher latency is expected because calls queue behind one another.
+- This confirms the production design should use a durable federation outbox and controlled background publisher, not user-facing synchronous parallel `nodus-cli` calls.
+- Long-term replacement should be a persistent Nodus client daemon or direct C++ integration.
