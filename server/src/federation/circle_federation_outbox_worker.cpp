@@ -874,7 +874,8 @@ void worker_pull_and_apply_inbound(
     const std::vector<NodusSeed>& seeds,
     int batch_limit,
     int recent_slots,
-    int recent_index_limit) {
+    int recent_index_limit,
+    bool poll_legacy_head) {
     const std::string local_nodus_fp =
         local_federation_origin_fingerprint(config);
 
@@ -882,7 +883,10 @@ void worker_pull_and_apply_inbound(
     worker_apply_pending_inbox(config, batch_limit);
 
     for (const auto& seed : seeds) {
-        worker_pull_latest_remote_head(circle_id, config, seed, local_nodus_fp);
+        if (poll_legacy_head) {
+            worker_pull_latest_remote_head(circle_id, config, seed, local_nodus_fp);
+        }
+
         worker_pull_recent_index_remote_events(
             circle_id,
             config,
@@ -915,6 +919,8 @@ void worker_loop() {
         env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_SLOTS", 0, 0, 512);
     const int recent_index_limit =
         env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_INDEX_LIMIT", 20, 1, 100);
+    const bool poll_legacy_head =
+        env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_LEGACY_HEAD");
     const std::string seed_selector =
         env_string("PQNAS_CIRCLE_FEDERATION_WORKER_SEED", "EU-1");
     const std::string inbound_circle_id =
@@ -930,6 +936,7 @@ void worker_loop() {
               << "s max_attempts=" << max_attempts
               << " recent_slots=" << recent_slots
               << " recent_index_limit=" << recent_index_limit
+              << " poll_legacy_head=" << (poll_legacy_head ? "1" : "0")
               << " seeds=" << seed_selector
               << " inbound_circle=" << inbound_circle_id
               << "\n";
@@ -994,7 +1001,8 @@ void worker_loop() {
                 seeds,
                 inbox_batch_limit,
                 recent_slots,
-                recent_index_limit);
+                recent_index_limit,
+                poll_legacy_head);
         } catch (const std::exception& e) {
             std::cerr << "[CircleFederationWorker] exception: " << e.what() << "\n";
         } catch (...) {
