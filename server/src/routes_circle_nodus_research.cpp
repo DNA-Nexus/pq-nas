@@ -9,6 +9,7 @@
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
+#include <sqlite3.h>
 
 #include <algorithm>
 #include <fstream>
@@ -631,6 +632,425 @@ json inbox_event_json(const federation::CircleFederationInboxEvent& ev) {
     };
 }
 
+
+// FEDERATED_REACTION_REDUCER_PATCH_V1
+
+static constexpr const char* kCircleStackDbPathForFederationReducer =
+    "/srv/pqnas/circlestack.db";
+
+bool federation_reducer_supported_reaction(const std::string& reaction) {
+    return reaction == "👍" ||
+           reaction == "❤️" ||
+           reaction == "😂" ||
+           reaction == "😮" ||
+           reaction == "👏" ||
+           reaction == "🔥";
+}
+
+std::string federation_reducer_short_fp(const std::string& fp) {
+    return fp.size() >= 8 ? fp.substr(0, 8) : fp;
+}
+
+long long federation_reducer_post_id_from_event_id(const std::string& event_id) {
+    const std::string prefix = "post_";
+    if (!starts_with(event_id, prefix)) return 0;
+
+    const auto pos = event_id.rfind('_');
+    if (pos == std::string::npos || pos + 1 >= event_id.size()) return 0;
+
+    try {
+        const long long id = std::stoll(event_id.substr(pos + 1));
+        return id > 0 ? id : 0;
+    } catch (...) {
+        return 0;
+    }
+}
+
+std::string federation_reducer_expected_post_event_id(
+    long long post_id,
+    long long created_epoch
+) {
+    return "post_" + std::to_string(created_epoch) + "_" + std::to_string(post_id);
+}
+
+bool federation_reducer_ensure_table(sqlite3* db, std::string* err) {
+    const char* sql =
+        "CREATE TABLE IF NOT EXISTS federated_post_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "local_post_id INTEGER NOT NULL,"
+        "target_event_id TEXT NOT NULL,"
+        "remote_event_id TEXT NOT NULL,"
+        "remote_origin_nas TEXT NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "actor_display_name TEXT NOT NULL DEFAULT '',"
+        "reaction TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "removed_epoch INTEGER NOT NULL DEFAULT 0,"
+        "UNIQUE(remote_event_id),"
+        "UNIQUE(local_post_id, remote_origin_nas, actor_fp)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_federated_post_reactions_local_post "
+        "ON federated_post_reactions(local_post_id, removed_epoch);";
+
+    char* msg = nullptr;
+    if (sqlite3_exec(db, sql, nullptr, nullptr, &msg) != SQLITE_OK) {
+        if (err) *err = msg ? msg : sqlite3_errmsg(db);
+        if (msg) sqlite3_free(msg);
+        return false;
+    }
+
+    if (msg) sqlite3_free(msg);
+    return true;
+}
+
+bool federation_reducer_validate_local_post_target(
+    sqlite3* db,
+    const std::string& target_event_id,
+    long long* out_post_id,
+    std::string* err
+) {
+    if (out_post_id) *out_post_id = 0;
+
+    const long long post_id =
+        federation_reducer_post_id_from_event_id(target_event_id);
+
+    if (post_id <= 0) {
+        if (err) *err = "invalid_target_event_id";
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT created_epoch, visibility FROM posts WHERE id = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)post_id);
+
+    long long created_epoch = 0;
+    std::string visibility;
+
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        created_epoch = sqlite3_column_int64(st, 0);
+        const char* vis_raw =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+        visibility = vis_raw ? vis_raw : "";
+    }
+
+    sqlite3_finalize(st);
+
+    if (created_epoch <= 0) {
+        if (err) *err = "target_local_post_not_found";
+        return false;
+    }
+
+    if (visibility != "public") {
+        if (err) *err = "target_local_post_not_public";
+        return false;
+    }
+
+    const std::string expected =
+        federation_reducer_expected_post_event_id(post_id, created_epoch);
+
+    if (target_event_id != expected) {
+        if (err) *err = "target_event_id_mismatch";
+        return false;
+    }
+
+    if (out_post_id) *out_post_id = post_id;
+    return true;
+}
+
+bool federation_reducer_apply_created(
+    sqlite3* db,
+    long long local_post_id,
+    const std::string& target_event_id,
+    const std::string& remote_event_id,
+    const std::string& remote_origin_nas,
+    const std::string& actor_fp,
+    const std::string& actor_display_name_raw,
+    const std::string& reaction,
+    long long created_epoch,
+    std::string* err
+) {
+    std::string actor_display_name = trim_copy(actor_display_name_raw);
+    if (actor_display_name.size() > 120) {
+        actor_display_name.resize(120);
+    }
+    if (actor_display_name.empty()) {
+        actor_display_name = federation_reducer_short_fp(actor_fp) + " · remote NAS";
+    }
+
+    char* msg = nullptr;
+    if (sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, &msg) != SQLITE_OK) {
+        if (err) *err = msg ? msg : sqlite3_errmsg(db);
+        if (msg) sqlite3_free(msg);
+        return false;
+    }
+    if (msg) {
+        sqlite3_free(msg);
+        msg = nullptr;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "DELETE FROM federated_post_reactions "
+            "WHERE local_post_id = ? AND remote_origin_nas = ? AND actor_fp = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)local_post_id);
+    sqlite3_bind_text(st, 2, remote_origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(st) != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(st);
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_finalize(st);
+    st = nullptr;
+
+    if (sqlite3_prepare_v2(db,
+            "INSERT OR IGNORE INTO federated_post_reactions "
+            "(local_post_id, target_event_id, remote_event_id, remote_origin_nas, "
+            " actor_fp, actor_display_name, reaction, created_epoch, removed_epoch) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)local_post_id);
+    sqlite3_bind_text(st, 2, target_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, remote_origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 6, actor_display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 7, reaction.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 8, (sqlite3_int64)created_epoch);
+
+    if (sqlite3_step(st) != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(st);
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_finalize(st);
+
+    if (sqlite3_exec(db, "COMMIT", nullptr, nullptr, &msg) != SQLITE_OK) {
+        if (err) *err = msg ? msg : sqlite3_errmsg(db);
+        if (msg) sqlite3_free(msg);
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    if (msg) sqlite3_free(msg);
+    return true;
+}
+
+bool federation_reducer_apply_removed(
+    sqlite3* db,
+    long long local_post_id,
+    const std::string& target_event_id,
+    const std::string& remote_event_id,
+    const std::string& remote_origin_nas,
+    const std::string& actor_fp,
+    long long removed_epoch,
+    std::string* err
+) {
+    sqlite3_stmt* st = nullptr;
+
+    if (sqlite3_prepare_v2(db,
+            "UPDATE federated_post_reactions "
+            "SET removed_epoch = ?, remote_event_id = ? "
+            "WHERE local_post_id = ? AND remote_origin_nas = ? AND actor_fp = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)removed_epoch);
+    sqlite3_bind_text(st, 2, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 3, (sqlite3_int64)local_post_id);
+    sqlite3_bind_text(st, 4, remote_origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(st) != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(st);
+        return false;
+    }
+
+    const int changed = sqlite3_changes(db);
+    sqlite3_finalize(st);
+
+    if (changed > 0) {
+        return true;
+    }
+
+    if (sqlite3_prepare_v2(db,
+            "INSERT OR IGNORE INTO federated_post_reactions "
+            "(local_post_id, target_event_id, remote_event_id, remote_origin_nas, "
+            " actor_fp, actor_display_name, reaction, created_epoch, removed_epoch) "
+            "VALUES (?, ?, ?, ?, ?, '', '', ?, ?)",
+            -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)local_post_id);
+    sqlite3_bind_text(st, 2, target_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, remote_origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 6, (sqlite3_int64)removed_epoch);
+    sqlite3_bind_int64(st, 7, (sqlite3_int64)removed_epoch);
+
+    if (sqlite3_step(st) != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(st);
+        return false;
+    }
+
+    sqlite3_finalize(st);
+    return true;
+}
+
+bool apply_federated_reaction_to_local_post_if_targeted(
+    const federation::CircleFederationInboxEvent& row,
+    const json& event,
+    const std::string& local_nodus_fp,
+    bool* out_touched_local_post,
+    std::string* err
+) {
+    if (out_touched_local_post) *out_touched_local_post = false;
+    if (err) *err = "";
+
+    const std::string event_type = event.value("type", "");
+    if (event_type != "circle.reaction.created" &&
+        event_type != "circle.reaction.removed") {
+        return true;
+    }
+
+    if (local_nodus_fp.empty()) {
+        return true;
+    }
+
+    if (!event.contains("payload") || !event["payload"].is_object()) {
+        return true;
+    }
+
+    const auto& payload = event["payload"];
+
+    const std::string target_type = payload.value("target_type", "");
+    if (target_type != "post") {
+        return true;
+    }
+
+    const std::string target_origin_nas =
+        payload.value("target_origin_nas", "");
+
+    if (target_origin_nas.empty() || target_origin_nas != local_nodus_fp) {
+        return true;
+    }
+
+    if (out_touched_local_post) *out_touched_local_post = true;
+
+    const std::string target_event_id =
+        payload.value("target_event_id", "");
+
+    const std::string actor_fp =
+        payload.value("actor_fp", "");
+
+    const std::string actor_display_name =
+        payload.value("actor_display_name", "");
+
+    const std::string reaction =
+        payload.value("reaction", "");
+
+    if (target_event_id.empty() || actor_fp.empty()) {
+        if (err) *err = "missing_target_event_or_actor";
+        return false;
+    }
+
+    if (event_type == "circle.reaction.created" &&
+        !federation_reducer_supported_reaction(reaction)) {
+        if (err) *err = "unsupported_reaction";
+        return false;
+    }
+
+    sqlite3* db = nullptr;
+    if (sqlite3_open(kCircleStackDbPathForFederationReducer, &db) != SQLITE_OK) {
+        if (err) *err = db ? sqlite3_errmsg(db) : "sqlite3_open_failed";
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_busy_timeout(db, 5000);
+
+    bool ok = true;
+    std::string local_err;
+
+    if (!federation_reducer_ensure_table(db, &local_err)) {
+        ok = false;
+    }
+
+    long long local_post_id = 0;
+    if (ok &&
+        !federation_reducer_validate_local_post_target(
+            db,
+            target_event_id,
+            &local_post_id,
+            &local_err)) {
+        ok = false;
+    }
+
+    const long long event_epoch =
+        event.value("created_epoch", row.created_epoch);
+
+    if (ok && event_type == "circle.reaction.created") {
+        ok = federation_reducer_apply_created(
+            db,
+            local_post_id,
+            target_event_id,
+            row.event_id,
+            row.origin_nas,
+            actor_fp,
+            actor_display_name,
+            reaction,
+            event_epoch > 0 ? event_epoch : (long long)std::time(nullptr),
+            &local_err);
+    } else if (ok && event_type == "circle.reaction.removed") {
+        ok = federation_reducer_apply_removed(
+            db,
+            local_post_id,
+            target_event_id,
+            row.event_id,
+            row.origin_nas,
+            actor_fp,
+            event_epoch > 0 ? event_epoch : (long long)std::time(nullptr),
+            &local_err);
+    }
+
+    sqlite3_close(db);
+
+    if (!ok && err) {
+        *err = local_err.empty() ? "federated_reaction_reduce_failed" : local_err;
+    }
+
+    return ok;
+}
+
 std::string extract_nodus_value(const std::string& output) {
     const std::string marker = "Value: ";
     const auto pos = output.find(marker);
@@ -655,6 +1075,17 @@ std::string recent_index_json_for_outbox_event(
     json ids = json::array();
     std::vector<std::string> seen;
 
+    // SIGNED_RECENT_INDEX_PATCH_V1
+    auto event_json_is_signed = [](const std::string& raw) {
+        json ev = json::parse(raw, nullptr, false);
+        return ev.is_object() &&
+               ev.contains("origin_nas") &&
+               ev.contains("origin_pubkey") &&
+               ev.contains("origin_sig") &&
+               ev.contains("origin_sig_alg") &&
+               ev.value("origin_sig_alg", "") == "Ed25519";
+    };
+
     auto push_id = [&](const std::string& id) {
         if (id.empty()) return;
         if (std::find(seen.begin(), seen.end(), id) != seen.end()) return;
@@ -662,7 +1093,9 @@ std::string recent_index_json_for_outbox_event(
         ids.push_back(id);
     };
 
-    push_id(current.event_id);
+    if (event_json_is_signed(current.event_json)) {
+        push_id(current.event_id);
+    }
 
     std::string err;
     const auto rows = federation::list_circle_federation_outbox(limit, &err);
@@ -670,6 +1103,7 @@ std::string recent_index_json_for_outbox_event(
     for (const auto& row : rows) {
         if (static_cast<int>(ids.size()) >= limit) break;
         if (row.circle_id != current.circle_id) continue;
+        if (!event_json_is_signed(row.event_json)) continue;
         push_id(row.event_id);
     }
 
@@ -1032,6 +1466,36 @@ void register_circle_nodus_research_routes(
                     &reply_id,
                     &event_actor_fp,
                     &reaction);
+
+                bool touched_local_post = false;
+                std::string reduce_err;
+                if (!apply_federated_reaction_to_local_post_if_targeted(
+                        row,
+                        event,
+                        local_nodus_fp,
+                        &touched_local_post,
+                        &reduce_err)) {
+                    if (federation::mark_circle_federation_inbox_failed(
+                            row.id,
+                            reduce_err.empty() ? "federated_reaction_reduce_failed" : reduce_err,
+                            &mark_err)) {
+                        item["final_status"] = "failed";
+                        item["reason"] = reduce_err.empty()
+                            ? "federated_reaction_reduce_failed"
+                            : reduce_err;
+                    } else {
+                        item["final_status"] = "failed";
+                        item["mark_error"] = mark_err;
+                    }
+
+                    ++failed;
+                    events.push_back(item);
+                    continue;
+                }
+
+                if (touched_local_post) {
+                    item["local_post_reaction_reduced"] = true;
+                }
 
                 std::string store_err;
                 if (!federation::store_circle_federation_remote_feed_event(

@@ -58,6 +58,174 @@ function csFederatedActorLabel(ev) {
 
 
 
+
+// FEDERATED_REMOTE_ACTIONS_PATCH_V1
+
+function csFederatedActorFingerprint(ev) {
+  const payload = ev && ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+
+  return String(
+    payload.owner_fp ||
+    payload.actor_fp ||
+    ev.actor_fp ||
+    ""
+  ).trim();
+}
+
+async function csAddFederatedPerson(ev) {
+  const fp = csFederatedActorFingerprint(ev);
+  if (!fp) {
+    alert("No remote fingerprint found for this federated event.");
+    return;
+  }
+
+  const res = await fetch(`${CS_API}/federated/people/add`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fp,
+      display_name: csFederatedActorLabel(ev),
+      source_event_id: ev.event_id || ""
+    })
+  });
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !data.ok) {
+    alert(`Could not add remote person: ${data.error || res.status}`);
+    return;
+  }
+
+  alert("Added to People.");
+}
+
+// FEDERATED_REACTION_CLICK_FEEDBACK_PATCH_V1
+async function csReactToFederatedPost(ev, reaction, button = null) {
+  if (!ev || !ev.event_id) return;
+
+  const oldText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "…";
+  }
+
+  try {
+    const res = await fetch(`${CS_API}/federated/posts/react`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_id: ev.event_id,
+        reaction
+      })
+    });
+
+    const data = await res.json().catch(() => ({ ok: false }));
+
+    if (!res.ok || !data.ok) {
+      const msg = data.error || data.detail || `HTTP ${res.status}`;
+      if (button) {
+        button.textContent = "!";
+        button.title = `Could not queue federated reaction: ${msg}`;
+        setTimeout(() => {
+          button.disabled = false;
+          button.textContent = oldText || reaction;
+        }, 1600);
+      }
+      alert(`Could not queue federated reaction: ${msg}`);
+      return;
+    }
+
+    if (button) {
+      button.textContent = `Queued ${reaction}`;
+      button.title = data.federation_event_id
+        ? `Queued as ${data.federation_event_id}`
+        : "Federated reaction queued";
+      setTimeout(() => {
+        button.disabled = false;
+        button.textContent = oldText || reaction;
+      }, 1800);
+    }
+
+    console.log("Federated reaction queued", data);
+  } catch (err) {
+    if (button) {
+      button.textContent = "!";
+      button.title = String(err && err.message ? err.message : err);
+      setTimeout(() => {
+        button.disabled = false;
+        button.textContent = oldText || reaction;
+      }, 1600);
+    }
+    alert(`Could not queue federated reaction: ${err && err.message ? err.message : err}`);
+  }
+}
+
+function csRenderFederatedActions(ev) {
+  const actorFp = csFederatedActorFingerprint(ev);
+  const wrap = document.createElement("div");
+  wrap.className = "cs-federated-actions";
+
+  if (actorFp) {
+    const person = document.createElement("button");
+    person.className = "cs-modal-cancel";
+    person.type = "button";
+    person.textContent = "Person";
+    person.addEventListener("click", () => {
+      csOpenPersonCard(actorFp, {
+        display_name: csFederatedActorLabel(ev),
+        fp_short: ev.actor_fp_short || csElideFp(actorFp)
+      });
+    });
+    wrap.appendChild(person);
+
+    if (navigator.clipboard) {
+      const copy = document.createElement("button");
+      copy.className = "cs-modal-cancel";
+      copy.type = "button";
+      copy.textContent = "Copy FP";
+      copy.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(actorFp);
+        copy.textContent = "Copied";
+        setTimeout(() => { copy.textContent = "Copy FP"; }, 1200);
+      });
+      wrap.appendChild(copy);
+    }
+
+    const add = document.createElement("button");
+    add.className = "cs-modal-cancel";
+    add.type = "button";
+    add.textContent = "Add to People";
+    add.addEventListener("click", () => csAddFederatedPerson(ev));
+    wrap.appendChild(add);
+  }
+
+  // FEDERATED_VISIBLE_REACTION_BUTTONS_PATCH_V1
+  if (ev && ev.event_type === "circle.post.created") {
+    const reactRow = document.createElement("div");
+    reactRow.className = "cs-federated-reaction-row";
+
+    const label = document.createElement("span");
+    label.className = "cs-federated-reaction-label";
+    label.textContent = "React:";
+    reactRow.appendChild(label);
+
+    for (const reaction of CS_REACTIONS) {
+      const btn = document.createElement("button");
+      btn.className = "cs-federated-reaction-button";
+      btn.type = "button";
+      btn.textContent = reaction;
+      btn.title = "React to federated post";
+      btn.addEventListener("click", () => csReactToFederatedPost(ev, reaction, btn));
+      reactRow.appendChild(btn);
+    }
+
+    wrap.appendChild(reactRow);
+  }
+
+  return wrap.children.length ? wrap : null;
+}
+
 function csFederatedMediaRefsFromPayload(payload) {
   const p = payload && typeof payload === "object" ? payload : {};
   const preview = p.media_preview && typeof p.media_preview === "object"
@@ -194,6 +362,11 @@ function csRenderFederatedEvent(ev) {
   header.appendChild(titleWrap);
   header.appendChild(badge);
   card.appendChild(header);
+
+  const federatedActions = csRenderFederatedActions(ev);
+  if (federatedActions) {
+    card.appendChild(federatedActions);
+  }
 
   const payload = ev.payload && typeof ev.payload === "object" ? ev.payload : {};
   const previewText = String(ev.text_preview || payload.text_preview || "").trim();

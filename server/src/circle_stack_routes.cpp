@@ -264,6 +264,29 @@ static void cs_db_init() {
         nullptr, nullptr, nullptr);
 
     sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS federated_post_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "local_post_id INTEGER NOT NULL,"
+        "target_event_id TEXT NOT NULL,"
+        "remote_event_id TEXT NOT NULL,"
+        "remote_origin_nas TEXT NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "actor_display_name TEXT NOT NULL DEFAULT '',"
+        "reaction TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "removed_epoch INTEGER NOT NULL DEFAULT 0,"
+        "UNIQUE(remote_event_id),"
+        "UNIQUE(local_post_id, remote_origin_nas, actor_fp)"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_federated_post_reactions_local_post "
+        "ON federated_post_reactions(local_post_id, removed_epoch)",
+        nullptr, nullptr, nullptr);
+
+    // FEDERATED_POST_REACTIONS_MERGE_PATCH_V1
+    sqlite3_exec(g_db,
         "CREATE INDEX IF NOT EXISTS idx_reply_mentions_reply_id "
         "ON reply_mentions(reply_id)",
         nullptr, nullptr, nullptr);
@@ -1240,6 +1263,61 @@ json cs_load_post_reactions(
     }
 
     sqlite3_finalize(st);
+
+    st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT actor_fp, actor_display_name, reaction, remote_origin_nas "
+            "FROM federated_post_reactions "
+            "WHERE local_post_id = ? AND removed_epoch = 0 "
+            "ORDER BY created_epoch ASC",
+            -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(st, 1, post_id);
+
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char* actor_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* name_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+            const char* reaction_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+            const char* origin_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+            const std::string remote_actor_fp = actor_raw ? actor_raw : "";
+            const std::string remote_name = name_raw ? name_raw : "";
+            const std::string reaction = reaction_raw ? reaction_raw : "";
+            const std::string remote_origin_nas = origin_raw ? origin_raw : "";
+
+            if (remote_actor_fp.empty() || !cs_is_supported_reaction(reaction)) {
+                continue;
+            }
+
+            if (!by_reaction.contains(reaction)) {
+                by_reaction[reaction] = {
+                    {"reaction", reaction},
+                    {"count", 0},
+                    {"reacted_by_me", false},
+                    {"people", json::array()}
+                };
+            }
+
+            by_reaction[reaction]["count"] =
+                by_reaction[reaction].value("count", 0) + 1;
+
+            const std::string display_name =
+                !remote_name.empty()
+                    ? remote_name
+                    : (cs_short_fp(remote_actor_fp) + " · remote NAS");
+
+            by_reaction[reaction]["people"].push_back({
+                {"fp", remote_actor_fp},
+                {"fp_short", cs_short_fp(remote_actor_fp)},
+                {"display_name", display_name},
+                {"avatar_url", ""},
+                {"remote", true},
+                {"origin_nas", remote_origin_nas},
+                {"origin_nas_short", cs_short_fp(remote_origin_nas)}
+            });
+        }
+
+        sqlite3_finalize(st);
+    }
 
     json out = json::array();
 
@@ -2577,6 +2655,268 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
 
 
 
+
+// FEDERATED_REMOTE_INTERACTION_PATCH_V1
+
+struct CsRemotePostTarget {
+    long long post_id = 0;
+    std::string event_id;
+    std::string origin_nas;
+    std::string owner_fp;
+    std::string owner_display_name;
+};
+
+bool cs_find_remote_post_target(
+    const std::string& event_id,
+    CsRemotePostTarget* out,
+    std::string* err
+) {
+    if (out) *out = CsRemotePostTarget{};
+    if (err) *err = "";
+
+    if (event_id.empty()) {
+        if (err) *err = "missing_event_id";
+        return false;
+    }
+
+    std::string list_err;
+    const auto rows = pqnas::federation::list_circle_federation_remote_feed(500, &list_err);
+    if (!list_err.empty()) {
+        if (err) *err = list_err;
+        return false;
+    }
+
+    for (const auto& row : rows) {
+        if (row.event_id != event_id) continue;
+        if (row.event_type != "circle.post.created") {
+            if (err) *err = "not_a_remote_post_event";
+            return false;
+        }
+
+        CsRemotePostTarget target;
+        target.post_id = row.post_id;
+        target.event_id = row.event_id;
+        target.origin_nas = row.origin_nas;
+        target.owner_fp = row.actor_fp;
+
+        json parsed = json::parse(row.event_json, nullptr, false);
+        if (!parsed.is_discarded() &&
+            parsed.contains("payload") &&
+            parsed["payload"].is_object()) {
+            const auto& payload = parsed["payload"];
+
+            if (target.post_id <= 0 &&
+                payload.contains("post_id") &&
+                payload["post_id"].is_number_integer()) {
+                target.post_id = payload["post_id"].get<long long>();
+            }
+
+            if (target.owner_fp.empty() &&
+                payload.contains("owner_fp") &&
+                payload["owner_fp"].is_string()) {
+                target.owner_fp = payload["owner_fp"].get<std::string>();
+            }
+
+            if (payload.contains("owner_display_name") &&
+                payload["owner_display_name"].is_string()) {
+                target.owner_display_name = payload["owner_display_name"].get<std::string>();
+            } else if (payload.contains("origin_label") &&
+                       payload["origin_label"].is_string()) {
+                target.owner_display_name = payload["origin_label"].get<std::string>();
+            }
+        }
+
+        if (target.post_id <= 0 || target.origin_nas.empty()) {
+            if (err) *err = "remote_post_target_incomplete";
+            return false;
+        }
+
+        if (out) *out = target;
+        return true;
+    }
+
+    if (err) *err = "remote_post_event_not_found";
+    return false;
+}
+
+std::string cs_make_remote_post_reaction_event_id(
+    const CsRemotePostTarget& target,
+    long long created_epoch,
+    const std::string& actor_fp,
+    bool removed
+) {
+    const std::string actor_short =
+        actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+
+    return std::string(removed ? "remote_reaction_removed_" : "remote_reaction_") +
+           std::to_string(created_epoch) + "_" +
+           std::to_string(target.post_id) + "_" +
+           actor_short;
+}
+
+// FEDERATED_REMOTE_REACTION_DISPLAY_NAME_PATCH_V1
+bool cs_enqueue_remote_post_reaction_federation_best_effort(
+    const CsRemotePostTarget& target,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& actor_display_name,
+    const std::string& reaction,
+    bool removed,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    if (target.event_id.empty() ||
+        target.post_id <= 0 ||
+        target.origin_nas.empty() ||
+        actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_remote_reaction_target";
+        return false;
+    }
+
+    if (!removed && reaction.empty()) {
+        if (out_error) *out_error = "missing_reaction";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_type =
+        removed ? "circle.reaction.removed" : "circle.reaction.created";
+
+    const std::string event_id =
+        cs_make_remote_post_reaction_event_id(target, created_epoch, actor_fp, removed);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json payload = {
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"target_type", "post"},
+        {"post_id", target.post_id},
+        {"target_event_id", target.event_id},
+        {"target_origin_nas", target.origin_nas},
+        {"actor_fp", actor_fp},
+        {"actor_fp_short", cs_short_fp(actor_fp)},
+        {"actor_display_name", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name}
+    };
+
+    if (!removed) {
+        payload["reaction"] = reaction;
+    }
+
+    json event = {
+        {"type", event_type},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", payload}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            event_type,
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+bool cs_add_remote_people_contact(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& owner_fp,
+    const std::string& subject_fp,
+    const std::string& display_name_raw,
+    const std::string& source_event_id,
+    std::string* err
+) {
+    (void)deps;
+
+    if (owner_fp.empty() || subject_fp.empty() || owner_fp == subject_fp) {
+        if (err) *err = "invalid_remote_contact";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    std::string display_name = cs_trim_copy(display_name_raw);
+    if (display_name.empty()) {
+        display_name = cs_short_fp(subject_fp);
+    }
+    if (display_name.size() > 120) {
+        display_name.resize(120);
+    }
+
+    std::string notes = "Federated Circle Stack contact";
+    if (!source_event_id.empty()) {
+        notes += " from event " + source_event_id;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT OR IGNORE INTO people_contacts "
+        "(owner_fingerprint, subject_user_id, subject_fingerprint, subject_kind, "
+        " display_name, nickname, notes, created_at_epoch, updated_at_epoch) "
+        "VALUES (?, '', ?, 'remote_federated', ?, '', ?, ?, ?)";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, subject_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, notes.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 5, now);
+    sqlite3_bind_int64(st, 6, now);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "remote_people_contact_insert_failed";
+        return false;
+    }
+
+    return true;
+}
+
 bool cs_parse_federation_media_ref_id(
     const std::string& ref_id,
     std::string* entity_type,
@@ -3402,6 +3742,147 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 {"ok", true},
                 {"count", events.size()},
                 {"events", events}
+            });
+        });
+
+
+
+    server.Post("/api/v4/circlestack/federated/posts/react",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_json" }});
+            }
+
+            const std::string event_id = body.value("event_id", "");
+            const std::string reaction = body.value("reaction", "");
+
+            if (event_id.empty()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "missing_event_id" }});
+            }
+
+            const bool removed = reaction.empty();
+            if (!removed && !cs_is_supported_reaction(reaction)) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "unsupported_reaction" }});
+            }
+
+            CsRemotePostTarget target;
+            std::string target_err;
+            if (!cs_find_remote_post_target(event_id, &target, &target_err)) {
+                res.status = target_err == "remote_post_event_not_found" ? 404 : 400;
+                return set_json(res, {
+                    { "ok", false },
+                    { "error", target_err.empty() ? "remote_post_target_failed" : target_err }
+                });
+            }
+
+            const auto created_epoch = static_cast<long long>(std::time(nullptr));
+
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_remote_post_reaction_federation_best_effort(
+                    target,
+                    created_epoch,
+                    actor_fp,
+                    cs_display_name_for_fp(deps, actor_fp),
+                    reaction,
+                    removed,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
+                { "ok", federation_queued },
+                { "target_event_id", event_id },
+                { "target_origin_nas", target.origin_nas },
+                { "post_id", target.post_id },
+                { "reaction", reaction },
+                { "federation_queued", federation_queued }
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["error"] = federation_error;
+            }
+
+            set_json(res, response);
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/people/add",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_json" }});
+            }
+
+            std::string fp = body.value("fp", "");
+            std::string display_name = body.value("display_name", "");
+            const std::string source_event_id = body.value("source_event_id", "");
+
+            if (fp.empty() && !source_event_id.empty()) {
+                CsRemotePostTarget target;
+                std::string target_err;
+                if (cs_find_remote_post_target(source_event_id, &target, &target_err)) {
+                    fp = target.owner_fp;
+                    if (display_name.empty()) {
+                        display_name = target.owner_display_name;
+                    }
+                }
+            }
+
+            if (fp.empty() || fp == actor_fp) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_fp" }});
+            }
+
+            std::string add_err;
+            if (!cs_add_remote_people_contact(
+                    deps,
+                    actor_fp,
+                    fp,
+                    display_name,
+                    source_event_id,
+                    &add_err)) {
+                res.status = 500;
+                return set_json(res, {
+                    { "ok", false },
+                    { "error", "remote_people_add_failed" },
+                    { "detail", add_err }
+                });
+            }
+
+            set_json(res, {
+                { "ok", true },
+                { "fp", fp },
+                { "display_name", display_name.empty() ? cs_short_fp(fp) : display_name },
+                { "source", "remote_federated" }
             });
         });
 

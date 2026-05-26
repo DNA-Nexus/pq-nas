@@ -1761,3 +1761,42 @@ body {
   font-size: 13px;
 }
 
+
+
+/* FEDERATED_VISIBLE_REACTION_BUTTONS_CSS_V1 */
+/* Federated visible reaction buttons */
+.cs-federated-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 8px;
+  align-items: center;
+}
+
+.cs-federated-reaction-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.cs-federated-reaction-label {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.cs-federated-reaction-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.cs-federated-reaction-button:hover {
+  background: rgba(255,255,255,0.18);
+}
