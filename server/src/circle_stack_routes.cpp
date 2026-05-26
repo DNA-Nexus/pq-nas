@@ -1887,7 +1887,19 @@ std::string cs_local_nodus_identity_dir() {
     return production.string();
 }
 
-std::string cs_canonical_federation_event_json(const json& event) {
+std::string cs_federation_event_json_for_storage(const json& event) {
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+std::string cs_canonical_federation_event_json_for_signing(json event) {
+    if (event.is_object()) {
+        event.erase("origin_sig");
+    }
+
     return event.dump(
         -1,
         ' ',
@@ -1931,7 +1943,7 @@ bool cs_sign_federation_event(
         (*event)["payload"]["origin"]["nas_id"] = identity.public_key_fingerprint;
     }
 
-    const std::string canonical = cs_canonical_federation_event_json(*event);
+    const std::string canonical = cs_canonical_federation_event_json_for_signing(*event);
 
     std::string sig_b64;
     if (!pqnas::federation::sign_circle_federation_canonical_json(
@@ -2082,7 +2094,7 @@ bool cs_enqueue_post_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2203,7 +2215,7 @@ bool cs_enqueue_reply_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2291,7 +2303,7 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2377,7 +2389,7 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2473,7 +2485,7 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2553,7 +2565,7 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            cs_canonical_federation_event_json(event),
+            cs_federation_event_json_for_storage(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
