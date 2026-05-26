@@ -4,6 +4,7 @@
 #include "federation/circle_federation_inbox.h"
 #include "federation/circle_federation_limits.h"
 #include "federation/circle_federation_remote_feed.h"
+#include "federation/circle_federation_signing.h"
 #include "federation/circle_federation_event.h"
 #include "federation/pqnas_nodus_client.h"
 
@@ -113,6 +114,88 @@ bool event_json_too_large(
               << " bytes=" << event_json_raw.size()
               << " max=" << kMaxCircleFederationEventJsonBytes << "\n";
     return true;
+}
+
+std::string canonical_federation_event_without_signature(json event) {
+    if (event.is_object()) {
+        event.erase("origin_sig");
+    }
+
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+bool verify_federation_event_signature(
+    const json& event,
+    const std::string& event_id,
+    const char* source_label) {
+    if (!event.is_object()) {
+        return false;
+    }
+
+    const std::string origin_nas =
+        event.value("origin_nas", "");
+    const std::string origin_pubkey =
+        event.value("origin_pubkey", "");
+    const std::string origin_sig =
+        event.value("origin_sig", "");
+    const std::string origin_sig_alg =
+        event.value("origin_sig_alg", "");
+
+    if (origin_nas.empty() ||
+        origin_pubkey.empty() ||
+        origin_sig.empty() ||
+        origin_sig_alg != "Ed25519") {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " unsigned event rejected event_id=" << event_id << "\n";
+        return false;
+    }
+
+    const std::string signing_fp =
+        circle_federation_signing_public_key_fingerprint(origin_pubkey);
+
+    if (signing_fp.empty() || signing_fp != origin_nas) {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " signing key fingerprint mismatch event_id=" << event_id
+                  << "\n";
+        return false;
+    }
+
+    const std::string canonical =
+        canonical_federation_event_without_signature(event);
+
+    std::string err;
+    if (!verify_circle_federation_canonical_json(
+            origin_pubkey,
+            canonical,
+            origin_sig,
+            &err)) {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " signature verify failed event_id=" << event_id
+                  << ": " << err << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::string local_federation_origin_fingerprint(
+    const NodusClientConfig& config) {
+    CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (ensure_circle_federation_signing_identity(
+            config.identity_dir,
+            &identity,
+            &err)) {
+        return identity.public_key_fingerprint;
+    }
+
+    // Compatibility fallback for older unsigned research events.
+    return local_federation_origin_fingerprint(config);
 }
 
 bool parse_remote_feed_fields_from_event(
@@ -397,6 +480,14 @@ bool worker_pull_latest_remote_head(
         return false;
     }
 
+    if (!verify_federation_event_signature(event, event_id, "head")) {
+        return false;
+    }
+
+    if (!verify_federation_event_signature(event, event_id, "head")) {
+        return false;
+    }
+
     const std::string parsed_circle_id = event.value("circle_id", "");
     const std::string parsed_event_id = event.value("event_id", "");
     const std::string event_type = event.value("type", "");
@@ -623,6 +714,10 @@ void worker_pull_recent_remote_events(
             continue;
         }
 
+        if (!verify_federation_event_signature(event, event_id, "recent")) {
+            continue;
+        }
+
         const std::string parsed_circle_id = event.value("circle_id", "");
         const std::string parsed_event_id = event.value("event_id", "");
         const std::string event_type = event.value("type", "");
@@ -670,7 +765,7 @@ void worker_apply_pending_inbox(
     }
 
     const std::string local_nodus_fp =
-        nodus_identity_fingerprint_from_dir(config.identity_dir);
+        local_federation_origin_fingerprint(config);
 
     for (const auto& row : rows) {
         if (row.status != "pending") continue;
@@ -708,6 +803,17 @@ void worker_apply_pending_inbox(
                     "invalid_event_json",
                     &mark_err)) {
                 std::cerr << "[CircleFederationWorker] inbound mark invalid JSON failed id="
+                          << row.id << ": " << mark_err << "\n";
+            }
+            continue;
+        }
+
+        if (!verify_federation_event_signature(event, row.event_id, "apply")) {
+            if (!mark_circle_federation_inbox_failed(
+                    row.id,
+                    "invalid_event_signature",
+                    &mark_err)) {
+                std::cerr << "[CircleFederationWorker] inbound mark invalid signature failed id="
                           << row.id << ": " << mark_err << "\n";
             }
             continue;
@@ -770,7 +876,7 @@ void worker_pull_and_apply_inbound(
     int recent_slots,
     int recent_index_limit) {
     const std::string local_nodus_fp =
-        nodus_identity_fingerprint_from_dir(config.identity_dir);
+        local_federation_origin_fingerprint(config);
 
     // First clear anything already discovered in a previous loop.
     worker_apply_pending_inbox(config, batch_limit);

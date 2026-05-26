@@ -3,6 +3,7 @@
 #include "federation/circle_federation_outbox.h"
 #include "federation/circle_federation_remote_feed.h"
 #include "federation/circle_federation_event.h"
+#include "federation/circle_federation_signing.h"
 #include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
 #include "storage_resolver.h"
@@ -1676,15 +1677,96 @@ std::string cs_local_nodus_identity_fingerprint() {
     return "";
 }
 
+std::string cs_local_nodus_identity_dir() {
+    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
+    if (env_dir && env_dir[0]) {
+        return env_dir;
+    }
+
+    const std::filesystem::path production =
+        "/srv/pqnas/config/nodus/identity";
+    const std::filesystem::path legacy =
+        "/srv/pqnas/config/nodus/research_identity";
+
+    if (!cs_read_first_line_trimmed(production / "nodus.fp").empty()) {
+        return production.string();
+    }
+
+    if (!cs_read_first_line_trimmed(legacy / "nodus.fp").empty()) {
+        return legacy.string();
+    }
+
+    return production.string();
+}
+
+std::string cs_canonical_federation_event_json(const json& event) {
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+bool cs_sign_federation_event(
+    json* event,
+    std::string* out_error) {
+    if (!event || !event->is_object()) {
+        if (out_error) *out_error = "invalid_federation_event_to_sign";
+        return false;
+    }
+
+    const std::string identity_dir = cs_local_nodus_identity_dir();
+
+    pqnas::federation::CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (!pqnas::federation::ensure_circle_federation_signing_identity(
+            identity_dir,
+            &identity,
+            &err)) {
+        if (out_error) *out_error = "federation_signing_identity_failed: " + err;
+        return false;
+    }
+
+    (*event)["origin_nas"] = identity.public_key_fingerprint;
+    (*event)["origin_pubkey"] = identity.public_key_b64;
+    (*event)["origin_sig_alg"] = "Ed25519";
+
+    if (event->contains("origin") && (*event)["origin"].is_object()) {
+        (*event)["origin"]["nas_id"] = identity.public_key_fingerprint;
+    }
+
+    if (event->contains("payload") &&
+        (*event)["payload"].is_object() &&
+        (*event)["payload"].contains("origin") &&
+        (*event)["payload"]["origin"].is_object()) {
+        (*event)["payload"]["origin"]["nas_id"] = identity.public_key_fingerprint;
+    }
+
+    const std::string canonical = cs_canonical_federation_event_json(*event);
+
+    std::string sig_b64;
+    if (!pqnas::federation::sign_circle_federation_canonical_json(
+            identity_dir,
+            canonical,
+            &sig_b64,
+            &err)) {
+        if (out_error) *out_error = "federation_event_sign_failed: " + err;
+        return false;
+    }
+
+    (*event)["origin_sig"] = sig_b64;
+    return true;
+}
+
 bool cs_require_local_nodus_origin(
     std::string* out_origin_nas,
     std::string* out_error
 ) {
     if (out_origin_nas) *out_origin_nas = "";
 
-    const std::string fp = cs_local_nodus_identity_fingerprint();
-
-    if (fp.empty()) {
+    const std::string nodus_fp = cs_local_nodus_identity_fingerprint();
+    if (nodus_fp.empty()) {
         if (out_error) {
             *out_error =
                 "nodus_identity_missing: run nodus-cli -i /srv/pqnas/config/nodus/identity identity-init";
@@ -1692,7 +1774,18 @@ bool cs_require_local_nodus_origin(
         return false;
     }
 
-    if (out_origin_nas) *out_origin_nas = fp;
+    pqnas::federation::CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (!pqnas::federation::ensure_circle_federation_signing_identity(
+            cs_local_nodus_identity_dir(),
+            &identity,
+            &err)) {
+        if (out_error) *out_error = "federation_signing_identity_failed: " + err;
+        return false;
+    }
+
+    if (out_origin_nas) *out_origin_nas = identity.public_key_fingerprint;
     return true;
 }
 
@@ -1763,7 +1856,7 @@ bool cs_enqueue_post_created_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.post.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -1787,6 +1880,10 @@ bool cs_enqueue_post_created_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.post.created",
@@ -1794,7 +1891,7 @@ bool cs_enqueue_post_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -1877,7 +1974,7 @@ bool cs_enqueue_reply_created_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.reply.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -1901,6 +1998,10 @@ bool cs_enqueue_reply_created_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.reply.created",
@@ -1908,7 +2009,7 @@ bool cs_enqueue_reply_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -1969,7 +2070,7 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.reaction.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -1985,6 +2086,10 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.reaction.created",
@@ -1992,7 +2097,7 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2052,7 +2157,7 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.reaction.removed"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -2067,6 +2172,10 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.reaction.removed",
@@ -2074,7 +2183,7 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2142,7 +2251,7 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.reaction.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -2159,6 +2268,10 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.reaction.created",
@@ -2166,7 +2279,7 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
@@ -2219,7 +2332,7 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
         return false;
     }
 
-    const json event = {
+    json event = {
         {"type", "circle.reaction.removed"},
         {"event_id", event_id},
         {"circle_id", circle_id},
@@ -2235,6 +2348,10 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
         }}
     };
 
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
     std::string err;
     if (!pqnas::federation::enqueue_circle_federation_event(
             "circle.reaction.removed",
@@ -2242,7 +2359,7 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
             event_id,
             event_key,
             head_key,
-            event.dump(),
+            cs_canonical_federation_event_json(event),
             &err)) {
         if (out_error) *out_error = err;
         return false;
