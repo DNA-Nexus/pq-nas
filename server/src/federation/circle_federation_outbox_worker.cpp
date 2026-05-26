@@ -654,7 +654,8 @@ void worker_pull_recent_index_remote_events(
         }
     }
 
-    if (pulled > 0) {
+    if (pulled > 0 &&
+        env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_VERBOSE_PULLS")) {
         std::cerr << "[CircleFederationWorker] inbound recent:index pulled="
                   << pulled << " seed=" << seed.name << "\n";
     }
