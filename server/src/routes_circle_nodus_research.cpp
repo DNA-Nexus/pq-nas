@@ -1534,15 +1534,39 @@ void register_circle_nodus_research_routes(
                     try {
                         const auto event_put =
                             federation::nodus_cli_put(config, seed, row.event_key, row.event_json);
-                        const auto head_put =
-                            federation::nodus_cli_put(config, seed, row.head_key, row.event_id);
+
+                        const int recent_slot = static_cast<int>(row.id % 64);
+                        const std::string recent_key =
+                            federation::circle_recent_key(row.circle_id, recent_slot);
 
                         item["put_event"] = command_result_json(event_put);
-                        item["put_head"] = command_result_json(head_put);
+                        item["recent_key"] = recent_key;
 
-                        all_ok = all_ok &&
-                                 event_put.exit_code == 0 &&
-                                 head_put.exit_code == 0;
+                        if (event_put.exit_code != 0) {
+                            item["put_head"] = {
+                                {"ok", false},
+                                {"exit_code", -1},
+                                {"output", "skipped because event PUT failed"}
+                            };
+                            item["put_recent"] = {
+                                {"ok", false},
+                                {"exit_code", -1},
+                                {"output", "skipped because event PUT failed"}
+                            };
+                            all_ok = false;
+                        } else {
+                            const auto head_put =
+                                federation::nodus_cli_put(config, seed, row.head_key, row.event_id);
+                            const auto recent_put =
+                                federation::nodus_cli_put(config, seed, recent_key, row.event_id);
+
+                            item["put_head"] = command_result_json(head_put);
+                            item["put_recent"] = command_result_json(recent_put);
+
+                            all_ok = all_ok &&
+                                     head_put.exit_code == 0 &&
+                                     recent_put.exit_code == 0;
+                        }
                     } catch (const std::exception& e) {
                         item["put_event"] = {
                             {"ok", false},
@@ -1550,6 +1574,11 @@ void register_circle_nodus_research_routes(
                             {"output", e.what()}
                         };
                         item["put_head"] = {
+                            {"ok", false},
+                            {"exit_code", -1},
+                            {"output", "skipped"}
+                        };
+                        item["put_recent"] = {
                             {"ok", false},
                             {"exit_code", -1},
                             {"output", "skipped"}

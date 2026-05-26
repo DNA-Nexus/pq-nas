@@ -50,6 +50,15 @@ std::string circle_event_key(const std::string& circle_id, const std::string& ev
     return "pqnas:circlestack:circle:" + circle_id + ":event:" + event_id;
 }
 
+std::string circle_recent_key(const std::string& circle_id, int slot) {
+    require_non_empty(circle_id, "circle_id");
+    if (slot < 0) {
+        throw std::invalid_argument("slot is negative");
+    }
+
+    return "pqnas:circlestack:circle:" + circle_id + ":recent:" + std::to_string(slot);
+}
+
 std::string nas_presence_key(const std::string& nas_fingerprint) {
     require_non_empty(nas_fingerprint, "nas_fingerprint");
     return "pqnas:circlestack:nas:" + nas_fingerprint + ":presence";

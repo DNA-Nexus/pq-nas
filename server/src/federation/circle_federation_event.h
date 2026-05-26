@@ -15,6 +15,7 @@ struct CircleEventDraft {
 
 std::string circle_head_key(const std::string& circle_id);
 std::string circle_event_key(const std::string& circle_id, const std::string& event_id);
+std::string circle_recent_key(const std::string& circle_id, int slot);
 std::string nas_presence_key(const std::string& nas_fingerprint);
 
 std::string make_circle_ping_event_json(const CircleEventDraft& draft);
