@@ -773,6 +773,72 @@ int recent_slot_for_outbox_id(std::int64_t id, int slots) {
 }
 
 
+// ORIGIN_SCOPED_RECENT_INDEX_WORKER_PATCH_V1
+
+bool is_safe_nodus_key_segment_for_worker(const std::string& value) {
+    if (value.empty() || value.size() > 180) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+std::string circle_origin_recent_index_key_for_worker(
+    const std::string& circle_id,
+    const std::string& origin_nas
+) {
+    if (!is_safe_nodus_key_segment_for_worker(circle_id) ||
+        !is_safe_nodus_key_segment_for_worker(origin_nas)) {
+        return "";
+    }
+
+    return "pqnas:circlestack:circle:" + circle_id +
+           ":origin:" + origin_nas + ":recent:index";
+}
+
+std::string event_origin_nas_from_json_for_worker(const std::string& raw) {
+    json ev = json::parse(raw, nullptr, false);
+    if (!ev.is_object()) return "";
+
+    if (ev.contains("origin_nas") && ev["origin_nas"].is_string()) {
+        return trim_copy(ev["origin_nas"].get<std::string>());
+    }
+
+    return "";
+}
+
+std::vector<std::string> split_remote_origins_env_for_worker(std::string raw) {
+    for (char& c : raw) {
+        if (c == ';' || std::isspace(static_cast<unsigned char>(c))) {
+            c = ',';
+        }
+    }
+
+    std::vector<std::string> out;
+    std::istringstream in(raw);
+    std::string part;
+
+    while (std::getline(in, part, ',')) {
+        part = trim_copy(part);
+        if (part.empty()) continue;
+        if (!is_safe_nodus_key_segment_for_worker(part)) {
+            std::cerr << "[CircleFederationWorker] ignored unsafe remote origin key segment\n";
+            continue;
+        }
+        if (std::find(out.begin(), out.end(), part) != out.end()) continue;
+        out.push_back(part);
+    }
+
+    return out;
+}
+
+
+
 std::string recent_index_json_for_outbox_event(
     const CircleFederationOutboxEvent& current,
     int limit) {
@@ -861,18 +927,37 @@ bool publish_one_event_to_seeds(
             const auto recent_index_put =
                 nodus_cli_put(config, seed, recent_index_key, recent_index_json);
 
+            NodusCommandResult origin_recent_index_put{};
+            origin_recent_index_put.exit_code = 0;
+            origin_recent_index_put.output = "skipped: event has no safe origin_nas";
+
+            const std::string origin_nas =
+                event_origin_nas_from_json_for_worker(ev.event_json);
+
+            const std::string origin_recent_index_key =
+                circle_origin_recent_index_key_for_worker(ev.circle_id, origin_nas);
+
+            if (!origin_recent_index_key.empty()) {
+                origin_recent_index_put =
+                    nodus_cli_put(config, seed, origin_recent_index_key, recent_index_json);
+            }
+
             if (head_put.exit_code != 0 ||
                 recent_put.exit_code != 0 ||
-                recent_index_put.exit_code != 0) {
+                recent_index_put.exit_code != 0 ||
+                origin_recent_index_put.exit_code != 0) {
                 all_ok = false;
                 errors << seed.name << " event_exit=" << event_put.exit_code
                        << " head_exit=" << head_put.exit_code
                        << " recent_exit=" << recent_put.exit_code
-                       << " recent_index_exit=" << recent_index_put.exit_code << "\n"
+                       << " recent_index_exit=" << recent_index_put.exit_code
+                       << " origin_recent_index_exit=" << origin_recent_index_put.exit_code
+                       << "\n"
                        << event_put.output << "\n"
                        << head_put.output << "\n"
                        << recent_put.output << "\n"
-                       << recent_index_put.output << "\n";
+                       << recent_index_put.output << "\n"
+                       << origin_recent_index_put.output << "\n";
             }
         } catch (const std::exception& e) {
             all_ok = false;
@@ -1133,6 +1218,74 @@ void worker_pull_recent_index_remote_events(
 }
 
 
+
+void worker_pull_origin_recent_index_remote_events(
+    const std::string& circle_id,
+    const std::string& origin_nas,
+    const NodusClientConfig& config,
+    const NodusSeed& seed,
+    const std::string& local_nodus_fp,
+    int max_items) {
+    max_items = std::clamp(max_items, 1, 100);
+
+    const std::string index_key =
+        circle_origin_recent_index_key_for_worker(circle_id, origin_nas);
+
+    if (index_key.empty()) {
+        return;
+    }
+
+    NodusCommandResult index_get;
+    try {
+        index_get = nodus_cli_get(config, seed, index_key);
+    } catch (const std::exception& e) {
+        std::cerr << "[CircleFederationWorker] inbound origin:recent:index get exception seed="
+                  << seed.name << " origin=" << origin_nas << ": " << e.what() << "\n";
+        return;
+    }
+
+    const std::string raw = extract_nodus_value(index_get.output);
+    if (index_get.exit_code != 0 || raw.empty()) {
+        return;
+    }
+
+    json ids;
+    try {
+        ids = json::parse(raw);
+    } catch (...) {
+        std::cerr << "[CircleFederationWorker] inbound origin:recent:index invalid JSON seed="
+                  << seed.name << " origin=" << origin_nas << "\n";
+        return;
+    }
+
+    if (!ids.is_array()) return;
+
+    int pulled = 0;
+    for (const auto& item : ids) {
+        if (pulled >= max_items) break;
+        if (!item.is_string()) continue;
+
+        const std::string event_id = item.get<std::string>();
+        if (worker_fetch_event_to_inbox(
+                circle_id,
+                event_id,
+                config,
+                seed,
+                local_nodus_fp,
+                "origin:recent:index")) {
+            ++pulled;
+        }
+    }
+
+    if (pulled > 0 ||
+        env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_VERBOSE_PULLS")) {
+        std::cerr << "[CircleFederationWorker] inbound origin:recent:index origin="
+                  << origin_nas.substr(0, 12)
+                  << " pulled=" << pulled
+                  << " seed=" << seed.name << "\n";
+    }
+}
+
 void worker_pull_recent_remote_events(
     const std::string& circle_id,
     const NodusClientConfig& config,
@@ -1378,6 +1531,7 @@ void worker_apply_pending_inbox(
     }
 }
 
+// SKIP_GLOBAL_RECENT_INDEX_WHEN_REMOTE_ORIGINS_PATCH_V1
 void worker_pull_and_apply_inbound(
     const std::string& circle_id,
     const NodusClientConfig& config,
@@ -1385,7 +1539,9 @@ void worker_pull_and_apply_inbound(
     int batch_limit,
     int recent_slots,
     int recent_index_limit,
-    bool poll_legacy_head) {
+    bool poll_legacy_head,
+    bool poll_global_recent_index,
+    const std::vector<std::string>& remote_origins) {
     const std::string local_nodus_fp =
         local_federation_origin_fingerprint(config);
 
@@ -1397,12 +1553,24 @@ void worker_pull_and_apply_inbound(
             worker_pull_latest_remote_head(circle_id, config, seed, local_nodus_fp);
         }
 
-        worker_pull_recent_index_remote_events(
-            circle_id,
-            config,
-            seed,
-            local_nodus_fp,
-            recent_index_limit);
+        if (poll_global_recent_index) {
+            worker_pull_recent_index_remote_events(
+                circle_id,
+                config,
+                seed,
+                local_nodus_fp,
+                recent_index_limit);
+        }
+
+        for (const auto& remote_origin : remote_origins) {
+            worker_pull_origin_recent_index_remote_events(
+                circle_id,
+                remote_origin,
+                config,
+                seed,
+                local_nodus_fp,
+                recent_index_limit);
+        }
 
         if (recent_slots > 0) {
             worker_pull_recent_remote_events(circle_id, config, seed, local_nodus_fp, recent_slots);
@@ -1431,6 +1599,13 @@ void worker_loop() {
         env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_INDEX_LIMIT", 20, 1, 100);
     const bool poll_legacy_head =
         env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_LEGACY_HEAD");
+    const std::string remote_origins_raw =
+        env_string("PQNAS_CIRCLE_FEDERATION_WORKER_REMOTE_ORIGINS", "");
+    const auto remote_origins =
+        split_remote_origins_env_for_worker(remote_origins_raw);
+    const bool poll_global_recent_index =
+        remote_origins.empty() ||
+        env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_GLOBAL_RECENT_INDEX");
     const std::string seed_selector =
         env_string("PQNAS_CIRCLE_FEDERATION_WORKER_SEED", "EU-1");
     const std::string inbound_circle_id =
@@ -1447,6 +1622,8 @@ void worker_loop() {
               << " recent_slots=" << recent_slots
               << " recent_index_limit=" << recent_index_limit
               << " poll_legacy_head=" << (poll_legacy_head ? "1" : "0")
+              << " poll_global_recent_index=" << (poll_global_recent_index ? "1" : "0")
+              << " remote_origins=" << remote_origins.size()
               << " seeds=" << seed_selector
               << " inbound_circle=" << inbound_circle_id
               << "\n";
@@ -1512,7 +1689,9 @@ void worker_loop() {
                 inbox_batch_limit,
                 recent_slots,
                 recent_index_limit,
-                poll_legacy_head);
+                poll_legacy_head,
+                poll_global_recent_index,
+                remote_origins);
         } catch (const std::exception& e) {
             std::cerr << "[CircleFederationWorker] exception: " << e.what() << "\n";
         } catch (...) {

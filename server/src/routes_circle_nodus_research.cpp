@@ -1067,6 +1067,47 @@ std::string extract_nodus_value(const std::string& output) {
 }
 
 
+// ORIGIN_SCOPED_RECENT_INDEX_ROUTE_PATCH_V1
+
+bool is_safe_nodus_key_segment_for_route(const std::string& value) {
+    if (value.empty() || value.size() > 180) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+std::string circle_origin_recent_index_key_for_route(
+    const std::string& circle_id,
+    const std::string& origin_nas
+) {
+    if (!is_safe_nodus_key_segment_for_route(circle_id) ||
+        !is_safe_nodus_key_segment_for_route(origin_nas)) {
+        return "";
+    }
+
+    return "pqnas:circlestack:circle:" + circle_id +
+           ":origin:" + origin_nas + ":recent:index";
+}
+
+std::string event_origin_nas_from_json_for_route(const std::string& raw) {
+    json ev = json::parse(raw, nullptr, false);
+    if (!ev.is_object()) return "";
+
+    if (ev.contains("origin_nas") && ev["origin_nas"].is_string()) {
+        return trim_copy(ev["origin_nas"].get<std::string>());
+    }
+
+    return "";
+}
+
+
+
 std::string recent_index_json_for_outbox_event(
     const federation::CircleFederationOutboxEvent& current,
     int limit) {
@@ -1180,6 +1221,15 @@ void register_circle_nodus_research_routes(
             const std::string worker_env =
                 env_string("PQNAS_CIRCLE_FEDERATION_WORKER");
 
+            // NODUS_STATUS_FEDERATION_IDENTITY_PATCH_V1
+            federation::CircleFederationSigningIdentity federation_identity;
+            std::string federation_identity_error;
+            const bool federation_identity_ok =
+                federation::ensure_circle_federation_signing_identity(
+                    config.identity_dir,
+                    &federation_identity,
+                    &federation_identity_error);
+
             const std::string public_base_url =
                 public_base_url_from_env();
 
@@ -1205,7 +1255,18 @@ void register_circle_nodus_research_routes(
                     {"fingerprint", fingerprint},
                     {"fingerprint_short", short_fp(fingerprint)},
                     {"legacy_dir", legacy_identity_dir},
-                    {"legacy_exists", legacy_exists}
+                    {"legacy_exists", legacy_exists},
+                    {"kind", "nodus_transport"}
+                }},
+                {"federation_identity", {
+                    {"dir", config.identity_dir},
+                    {"exists", federation_identity_ok},
+                    {"fingerprint", federation_identity_ok ? federation_identity.public_key_fingerprint : ""},
+                    {"fingerprint_short", federation_identity_ok ? short_fp(federation_identity.public_key_fingerprint) : ""},
+                    {"public_key_b64", federation_identity_ok ? federation_identity.public_key_b64 : ""},
+                    {"error", federation_identity_ok ? "" : federation_identity_error},
+                    {"kind", "circle_federation_signing"},
+                    {"use_for_remote_origins", true}
                 }},
                 {"public_base_url", public_base_url},
                 {"worker", {
@@ -2161,15 +2222,36 @@ void register_circle_nodus_research_routes(
                             const auto recent_index_put =
                                 federation::nodus_cli_put(config, seed, recent_index_key, recent_index_json);
 
+                            federation::NodusCommandResult origin_recent_index_put{};
+                            origin_recent_index_put.exit_code = 0;
+                            origin_recent_index_put.output = "skipped: event has no safe origin_nas";
+
+                            const std::string origin_nas =
+                                event_origin_nas_from_json_for_route(row.event_json);
+                            const std::string origin_recent_index_key =
+                                circle_origin_recent_index_key_for_route(row.circle_id, origin_nas);
+
+                            if (!origin_recent_index_key.empty()) {
+                                origin_recent_index_put =
+                                    federation::nodus_cli_put(
+                                        config,
+                                        seed,
+                                        origin_recent_index_key,
+                                        recent_index_json);
+                            }
+
                             item["put_head"] = command_result_json(head_put);
                             item["put_recent"] = command_result_json(recent_put);
                             item["put_recent_index"] = command_result_json(recent_index_put);
+                            item["put_origin_recent_index"] = command_result_json(origin_recent_index_put);
                             item["recent_index_key"] = recent_index_key;
+                            item["origin_recent_index_key"] = origin_recent_index_key;
 
                             all_ok = all_ok &&
                                      head_put.exit_code == 0 &&
                                      recent_put.exit_code == 0 &&
-                                     recent_index_put.exit_code == 0;
+                                     recent_index_put.exit_code == 0 &&
+                                     origin_recent_index_put.exit_code == 0;
                         }
                     } catch (const std::exception& e) {
                         item["put_event"] = {
