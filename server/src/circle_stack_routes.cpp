@@ -11,6 +11,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <ctime>
 #include <cstdlib>
@@ -2555,6 +2556,81 @@ bool cs_resolve_public_federation_media_ref_source(
     return true;
 }
 
+
+void cs_cleanup_old_federation_preview_cache(
+    const std::filesystem::path& cache_dir) {
+    static std::mutex cleanup_mutex;
+    static std::int64_t last_cleanup_epoch = 0;
+
+    const std::int64_t now =
+        static_cast<std::int64_t>(std::time(nullptr));
+
+    // Avoid doing directory scans on every preview request.
+    if (now - last_cleanup_epoch < 3600) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(cleanup_mutex);
+
+    if (now - last_cleanup_epoch < 3600) {
+        return;
+    }
+
+    last_cleanup_epoch = now;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(cache_dir, ec) || ec) {
+        return;
+    }
+
+    const auto cutoff =
+        std::filesystem::file_time_type::clock::now() -
+        std::chrono::hours(24 * 7);
+
+    int scanned = 0;
+    int removed = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(cache_dir, ec)) {
+        if (ec) break;
+
+        if (++scanned > 2000) {
+            break;
+        }
+
+        const auto path = entry.path();
+        const std::string name = path.filename().string();
+
+        if (entry.is_directory(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+
+        const bool looks_like_preview =
+            path.extension() == ".jpg" ||
+            name.find(".tmp.") != std::string::npos;
+
+        if (!looks_like_preview) {
+            continue;
+        }
+
+        const auto mtime = std::filesystem::last_write_time(path, ec);
+        if (ec) {
+            ec.clear();
+            continue;
+        }
+
+        if (mtime < cutoff) {
+            std::filesystem::remove(path, ec);
+            ec.clear();
+
+            if (++removed >= 200) {
+                break;
+            }
+        }
+    }
+}
+
+
 bool cs_generate_federation_preview_jpeg(
     const std::filesystem::path& source,
     const std::string& media_kind,
@@ -2585,6 +2661,8 @@ bool cs_generate_federation_preview_jpeg(
         if (err) *err = "cache_dir_failed: " + ec.message();
         return false;
     }
+
+    cs_cleanup_old_federation_preview_cache(cache_dir);
 
     const std::string key = cs_federation_preview_cache_key(event_id, ref_id);
     const std::filesystem::path preview = cache_dir / (key + ".jpg");
