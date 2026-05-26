@@ -851,50 +851,48 @@
 
             <div class="card accordion open" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="true">
-                    <div class="h">Nodus Federation</div>
+                    <div class="h"><span data-i18n="admin.nodus.title">Nodus Federation</span></div>
                     <div class="pill warn" id="nodusStatusPill">
-                        <span class="k">Status:</span> <span class="v">loading…</span>
+                        <span class="k"><span data-i18n="admin.common.status">Status</span>:</span> <span class="v" data-i18n="admin.common.loading">loading…</span>
                     </div>
                     <span class="chev" aria-hidden="true">▸</span>
                 </div>
 
                 <div class="bd">
                     <div class="row">
-                        <button id="btnNodusRefresh" class="btn primary" type="button">Refresh Nodus status</button>
-                        <button id="btnNodusCreateIdentity" class="btn" type="button">Generate identity</button>
+                        <button id="btnNodusRefresh" class="btn primary" type="button"><span data-i18n="admin.nodus.refresh">Refresh Nodus status</span></button>
+                        <button id="btnNodusCreateIdentity" class="btn" type="button"><span data-i18n="admin.nodus.generate_identity">Generate identity</span></button>
                     </div>
 
                     <div class="statusGrid">
                         <div class="statusTile">
-                            <div class="label"><span id="nodusCliLight" class="lightDot warn"></span>CLI installed</div>
+                            <div class="label"><span id="nodusCliLight" class="lightDot warn"></span><span data-i18n="admin.nodus.cli_installed">CLI installed</span></div>
                             <div id="nodusCliValue" class="value">—</div>
                         </div>
 
                         <div class="statusTile">
-                            <div class="label"><span id="nodusIdentityLight" class="lightDot warn"></span>Local NAS identity</div>
+                            <div class="label"><span id="nodusIdentityLight" class="lightDot warn"></span><span data-i18n="admin.nodus.local_identity">Local NAS identity</span></div>
                             <div id="nodusIdentityValue" class="value">—</div>
                         </div>
 
                         <div class="statusTile">
-                            <div class="label"><span id="nodusSeedsLight" class="lightDot warn"></span>Bootstrap seeds</div>
+                            <div class="label"><span id="nodusSeedsLight" class="lightDot warn"></span><span data-i18n="admin.nodus.bootstrap_seeds">Bootstrap seeds</span></div>
                             <div id="nodusSeedsValue" class="value">—</div>
                         </div>
 
                         <div class="statusTile">
-                            <div class="label"><span id="nodusPublicUrlLight" class="lightDot warn"></span>Public base URL</div>
+                            <div class="label"><span id="nodusPublicUrlLight" class="lightDot warn"></span><span data-i18n="admin.nodus.public_base_url">Public base URL</span></div>
                             <div id="nodusPublicUrlValue" class="value">—</div>
                         </div>
 
                         <div class="statusTile">
-                            <div class="label"><span id="nodusWorkerLight" class="lightDot warn"></span>Federation worker</div>
+                            <div class="label"><span id="nodusWorkerLight" class="lightDot warn"></span><span data-i18n="admin.nodus.worker">Federation worker</span></div>
                             <div id="nodusWorkerValue" class="value">—</div>
                         </div>
                     </div>
 
                     <div class="note">
-                        Nodus identity is the NAS/server identity used for federation origin.
-                        Circle Stack user identity stays separate as <span class="mono">owner_fp</span> / <span class="mono">actor_fp</span>.
-                        Media previews are still fetched directly from the origin DNA-Nexus server, not through Nodus.
+                        <span data-i18n="admin.nodus.note">Nodus federation is used by Circle Stack’s worldwide public feed to send and receive public messages between DNA-Nexus servers. Nodus carries the federation messages; media previews are fetched directly from the origin DNA-Nexus server.</span>
                     </div>
                 </div>
             </div>
@@ -1122,7 +1120,7 @@ New uploads land in a fast internal pool first and later migrate to capacity sto
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260526-nodus-status-1"></script>
+<script src="/static/admin_settings.js?v=20260526-nodus-i18n-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

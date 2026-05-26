@@ -189,6 +189,8 @@
         if (s === "ready") return tr("admin.common.ready", null, "ready");
         if (s === "error") return tr("admin.common.error", null, "error");
         if (s === "saving…" || s === "saving...") return tr("admin.common.saving", null, "saving…");
+        if (s === "needs attention") return tr("admin.nodus.status.needs_attention", null, "needs attention");
+        if (s === "creating identity…" || s === "creating identity...") return tr("admin.nodus.status.creating_identity", null, "creating identity…");
         return s;
     }
 
@@ -326,7 +328,7 @@
             "tr-tr": "tr",
             "it-ch": "it"
         };
-        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it"]);
+        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it", "tr"]);
         const aliased = aliases[raw] || raw;
 
         if (allowed.has(aliased)) return aliased;
@@ -360,6 +362,10 @@
         if (l === "de") return tr("admin.language.german", null, "🇩🇪 Deutsch");
         if (l === "et") return tr("admin.language.estonian", null, "🇪🇪 Eesti");
         if (l === "pl") return tr("admin.language.polish", null, "🇵🇱 Polski");
+        if (l === "es") return tr("admin.language.spanish", null, "🇪🇸 Español");
+        if (l === "fr") return tr("admin.language.french", null, "🇫🇷 Français");
+        if (l === "it") return tr("admin.language.italian", null, "🇮🇹 Italiano");
+        if (l === "tr") return tr("admin.language.turkish", null, "🇹🇷 Türkçe");
         return tr("admin.language.english", null, "🇬🇧 English");
     }
 
@@ -1534,7 +1540,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     function setNodusStatusPill(kind, text) {
         if (!nodusStatusPill) return;
         nodusStatusPill.className = "pill " + (kind || "");
-        nodusStatusPill.innerHTML = `<span class="k">Status:</span> <span class="v">${escapeHtml(text || "—")}</span>`;
+        nodusStatusPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text || "—"))}</span>`;
     }
 
     function renderNodusStatus(j) {
@@ -1562,31 +1568,31 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (nodusCliValue) {
             nodusCliValue.textContent = cliOk
                 ? `${cli.path || "/usr/local/bin/nodus-cli"}${cli.version ? " • " + cli.version : ""}`
-                : `Missing: ${cli.path || "/usr/local/bin/nodus-cli"}`;
+                : tr("admin.nodus.cli_missing", { path: cli.path || "/usr/local/bin/nodus-cli" }, `Missing: ${cli.path || "/usr/local/bin/nodus-cli"}`);
         }
 
         setLight(nodusIdentityLight, idOk ? "ok" : "fail");
         if (nodusIdentityValue) {
             nodusIdentityValue.textContent = idOk
-                ? `${identity.fingerprint_short || "present"}… • ${identity.dir || ""}`
-                : `Missing in ${identity.dir || "identity dir"}`;
+                ? tr("admin.nodus.identity_present", { fp: identity.fingerprint_short || "present", dir: identity.dir || "" }, `${identity.fingerprint_short || "present"}… • ${identity.dir || ""}`)
+                : tr("admin.nodus.identity_missing", { dir: identity.dir || "identity dir" }, `Missing in ${identity.dir || "identity dir"}`);
         }
 
         setLight(nodusSeedsLight, seedsAllOk ? "ok" : (seedsOk ? "warn" : "fail"));
         if (nodusSeedsValue) {
-            nodusSeedsValue.textContent = `${reachableSeeds} / ${totalSeeds} reachable`;
+            nodusSeedsValue.textContent = tr("admin.nodus.seeds_reachable", { reachable: reachableSeeds, total: totalSeeds }, `${reachableSeeds} / ${totalSeeds} reachable`);
         }
 
         setLight(nodusPublicUrlLight, publicOk ? "ok" : "warn");
         if (nodusPublicUrlValue) {
-            nodusPublicUrlValue.textContent = publicOk ? publicUrl : "Not configured";
+            nodusPublicUrlValue.textContent = publicOk ? publicUrl : tr("admin.nodus.not_configured", null, "Not configured");
         }
 
         setLight(nodusWorkerLight, workerEnabled ? "ok" : "warn");
         if (nodusWorkerValue) {
             nodusWorkerValue.textContent = workerEnabled
-                ? "Enabled"
-                : "Disabled • set PQNAS_CIRCLE_FEDERATION_WORKER=1";
+                ? tr("admin.nodus.enabled", null, "Enabled")
+                : tr("admin.nodus.worker_disabled", { env: "PQNAS_CIRCLE_FEDERATION_WORKER" }, "Disabled • set PQNAS_CIRCLE_FEDERATION_WORKER=1");
         }
 
         const overallOk = cliOk && idOk && seedsOk && publicOk;
@@ -1610,7 +1616,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             setLight(nodusCliLight, "fail");
             setLight(nodusIdentityLight, "fail");
             setLight(nodusSeedsLight, "fail");
-            showToast("fail", "Nodus status failed", String(e.message || e));
+            showToast("fail", tr("admin.nodus.status_failed", null, "Nodus status failed"), String(e.message || e));
         }
     }
 
@@ -1768,14 +1774,14 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         ev.preventDefault();
 
         const ok = await openAdminConfirmModal({
-            title: "Generate Nodus identity?",
-            subtitle: "This creates a local NAS federation identity if missing.",
+            title: tr("admin.nodus.identity_confirm_title", null, "Generate Nodus identity?"),
+            subtitle: tr("admin.nodus.identity_confirm_subtitle", null, "This creates a local NAS federation identity if missing."),
             rows: [
-                { label: "Target", value: "/srv/pqnas/config/nodus/identity", mono: true },
-                { label: "Effect", value: "This NAS gets a unique federation origin fingerprint." }
+                { label: tr("admin.nodus.identity_confirm_target", null, "Target"), value: "/srv/pqnas/config/nodus/identity", mono: true },
+                { label: tr("admin.nodus.identity_confirm_effect", null, "Effect"), value: tr("admin.nodus.identity_confirm_effect_value", null, "This NAS gets a unique federation origin fingerprint.") }
             ],
-            note: "Do not replace an existing identity unless you intentionally want this NAS to appear as a different node.",
-            confirmText: "Generate identity",
+            note: tr("admin.nodus.identity_confirm_note", null, "Do not replace an existing identity unless you intentionally want this NAS to appear as a different node."),
+            confirmText: tr("admin.nodus.identity_confirm_button", null, "Generate identity"),
             cancelText: tr("admin.common.cancel", null, "Cancel"),
             warn: true
         });
@@ -1789,13 +1795,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             const j = await apiNodusCreateIdentity();
             showToast(
                 "ok",
-                j.created ? "Nodus identity created" : "Nodus identity already exists",
-                j.fingerprint_short ? `${j.fingerprint_short}…` : "OK"
+                j.created ? tr("admin.nodus.identity_created", null, "Nodus identity created") : tr("admin.nodus.identity_exists", null, "Nodus identity already exists"),
+                j.fingerprint_short ? `${j.fingerprint_short}…` : tr("admin.common.ok", null, "OK")
             );
             await refreshNodusStatus();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Nodus identity failed", String(e.message || e));
+            showToast("fail", tr("admin.nodus.identity_failed", null, "Nodus identity failed"), String(e.message || e));
             await refreshNodusStatus();
         } finally {
             btnNodusCreateIdentity.disabled = false;
