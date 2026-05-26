@@ -1621,6 +1621,146 @@ std::string cs_trim_trailing_slashes(std::string s) {
     return s;
 }
 
+bool cs_starts_with_ascii(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() &&
+           s.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string cs_lower_ascii_copy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool cs_env_true(const char* name) {
+    const char* raw = std::getenv(name);
+    if (!raw) return false;
+
+    const std::string v = cs_lower_ascii_copy(raw);
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool cs_url_has_unsafe_chars(const std::string& url) {
+    for (unsigned char c : url) {
+        if (c <= 0x20 || c >= 0x7f) return true;
+
+        switch (c) {
+            case '"':
+            case '\'':
+            case '<':
+            case '>':
+            case '\\':
+                return true;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+std::string cs_extract_url_host_lower(const std::string& url) {
+    const auto scheme_pos = url.find("://");
+    if (scheme_pos == std::string::npos) return "";
+
+    const std::size_t authority_start = scheme_pos + 3;
+    if (authority_start >= url.size()) return "";
+
+    const auto authority_end = url.find_first_of("/?#", authority_start);
+    if (authority_end != std::string::npos) {
+        return "";
+    }
+
+    std::string authority = url.substr(authority_start);
+    if (authority.empty() || authority.find('@') != std::string::npos) {
+        return "";
+    }
+
+    std::string host;
+
+    if (authority.front() == '[') {
+        const auto close = authority.find(']');
+        if (close == std::string::npos) return "";
+        host = authority.substr(1, close - 1);
+
+        const std::string rest = authority.substr(close + 1);
+        if (!rest.empty() && rest.front() != ':') return "";
+    } else {
+        const auto colon = authority.find(':');
+        host = authority.substr(0, colon);
+    }
+
+    if (host.empty()) return "";
+    return cs_lower_ascii_copy(host);
+}
+
+bool cs_is_disallowed_public_base_host(const std::string& host) {
+    if (host.empty()) return true;
+
+    if (host == "localhost" ||
+        host == "::1" ||
+        host == "0.0.0.0" ||
+        host == "127.0.0.1") {
+        return true;
+    }
+
+    if (host.size() > 10 &&
+        host.compare(host.size() - 10, 10, ".localhost") == 0) {
+        return true;
+    }
+
+    if (cs_starts_with_ascii(host, "127.") ||
+        cs_starts_with_ascii(host, "10.") ||
+        cs_starts_with_ascii(host, "192.168.")) {
+        return true;
+    }
+
+    if (cs_starts_with_ascii(host, "172.")) {
+        const auto second_dot = host.find('.', 4);
+        if (second_dot != std::string::npos) {
+            try {
+                const int octet = std::stoi(host.substr(4, second_dot - 4));
+                if (octet >= 16 && octet <= 31) return true;
+            } catch (...) {
+                // Non-IPv4 hostnames beginning with 172. are handled below.
+            }
+        }
+    }
+
+    if (cs_starts_with_ascii(host, "fc") ||
+        cs_starts_with_ascii(host, "fd") ||
+        cs_starts_with_ascii(host, "fe80")) {
+        return true;
+    }
+
+    return false;
+}
+
+bool cs_public_base_url_is_safe(const std::string& url) {
+    if (url.empty() || url.size() > 512) {
+        return false;
+    }
+
+    if (cs_url_has_unsafe_chars(url)) {
+        return false;
+    }
+
+    const bool is_https = cs_starts_with_ascii(url, "https://");
+    const bool is_http = cs_starts_with_ascii(url, "http://");
+
+    if (!is_https &&
+        !(is_http && cs_env_true("PQNAS_ALLOW_INSECURE_PUBLIC_BASE_URL"))) {
+        return false;
+    }
+
+    const std::string host = cs_extract_url_host_lower(url);
+    if (cs_is_disallowed_public_base_host(host)) {
+        return false;
+    }
+
+    return true;
+}
+
 std::string cs_public_base_url_from_env() {
     const char* raw = std::getenv("PQNAS_PUBLIC_BASE_URL");
     if (!raw) return "";
@@ -1633,7 +1773,13 @@ std::string cs_public_base_url_from_env() {
         out.pop_back();
     }
 
-    return cs_trim_trailing_slashes(out);
+    out = cs_trim_trailing_slashes(out);
+
+    if (!cs_public_base_url_is_safe(out)) {
+        return "";
+    }
+
+    return out;
 }
 
 
