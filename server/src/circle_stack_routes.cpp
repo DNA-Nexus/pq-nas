@@ -1580,6 +1580,68 @@ std::string cs_public_base_url_from_env() {
     return cs_trim_trailing_slashes(out);
 }
 
+
+std::string cs_trim_copy(const std::string& raw) {
+    std::size_t a = 0;
+    while (a < raw.size() && std::isspace(static_cast<unsigned char>(raw[a]))) ++a;
+
+    std::size_t b = raw.size();
+    while (b > a && std::isspace(static_cast<unsigned char>(raw[b - 1]))) --b;
+
+    return raw.substr(a, b - a);
+}
+
+std::string cs_read_first_line_trimmed(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    if (!f) return "";
+
+    std::string line;
+    std::getline(f, line);
+    return cs_trim_copy(line);
+}
+
+std::string cs_local_nodus_identity_fingerprint() {
+    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
+
+    std::vector<std::filesystem::path> dirs;
+
+    if (env_dir && env_dir[0]) {
+        dirs.emplace_back(env_dir);
+    }
+
+    // Production path first, research path as compatibility fallback.
+    dirs.emplace_back("/srv/pqnas/config/nodus/identity");
+    dirs.emplace_back("/srv/pqnas/config/nodus/research_identity");
+
+    for (const auto& dir : dirs) {
+        const std::string fp = cs_read_first_line_trimmed(dir / "nodus.fp");
+        if (!fp.empty()) return fp;
+    }
+
+    return "";
+}
+
+bool cs_require_local_nodus_origin(
+    std::string* out_origin_nas,
+    std::string* out_error
+) {
+    if (out_origin_nas) *out_origin_nas = "";
+
+    const std::string fp = cs_local_nodus_identity_fingerprint();
+
+    if (fp.empty()) {
+        if (out_error) {
+            *out_error =
+                "nodus_identity_missing: run nodus-cli -i /srv/pqnas/config/nodus/identity identity-init";
+        }
+        return false;
+    }
+
+    if (out_origin_nas) *out_origin_nas = fp;
+    return true;
+}
+
+
 json cs_make_federation_origin_descriptor(const std::string& nas_id) {
     json origin = {
         {"nas_id", nas_id},
@@ -1626,6 +1688,11 @@ bool cs_enqueue_post_created_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_post_created_event_id(post_id, created_epoch);
@@ -1645,11 +1712,11 @@ bool cs_enqueue_post_created_federation_best_effort(
         {"type", "circle.post.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
-        {"origin", cs_make_federation_origin_descriptor(actor_fp)},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
-            {"origin", cs_make_federation_origin_descriptor(actor_fp)},
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"post_id", post_id},
             {"owner_fp", actor_fp},
             {"owner_fp_short", cs_short_fp(actor_fp)},
@@ -1735,6 +1802,11 @@ bool cs_enqueue_reply_created_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_reply_created_event_id(reply_id, post_id, created_epoch);
@@ -1754,11 +1826,11 @@ bool cs_enqueue_reply_created_federation_best_effort(
         {"type", "circle.reply.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
-        {"origin", cs_make_federation_origin_descriptor(actor_fp)},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
-            {"origin", cs_make_federation_origin_descriptor(actor_fp)},
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"post_id", post_id},
             {"reply_id", reply_id},
             {"actor_fp", actor_fp},
@@ -1822,6 +1894,11 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_post_reaction_event_id(post_id, created_epoch, actor_fp);
@@ -1841,9 +1918,11 @@ bool cs_enqueue_post_reaction_created_federation_best_effort(
         {"type", "circle.reaction.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"target_type", "post"},
             {"post_id", post_id},
             {"actor_fp", actor_fp},
@@ -1898,6 +1977,11 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_post_reaction_removed_event_id(post_id, created_epoch, actor_fp);
@@ -1917,9 +2001,11 @@ bool cs_enqueue_post_reaction_removed_federation_best_effort(
         {"type", "circle.reaction.removed"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"target_type", "post"},
             {"post_id", post_id},
             {"actor_fp", actor_fp}
@@ -1981,6 +2067,11 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_reply_reaction_event_id(reply_id, post_id, created_epoch, actor_fp);
@@ -2000,9 +2091,11 @@ bool cs_enqueue_reply_reaction_created_federation_best_effort(
         {"type", "circle.reaction.created"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"target_type", "reply"},
             {"post_id", post_id},
             {"reply_id", reply_id},
@@ -2051,6 +2144,11 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
         return false;
     }
 
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
     const std::string circle_id = "local-public-feed";
     const std::string event_id =
         cs_make_reply_reaction_removed_event_id(reply_id, post_id, created_epoch, actor_fp);
@@ -2070,9 +2168,11 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
         {"type", "circle.reaction.removed"},
         {"event_id", event_id},
         {"circle_id", circle_id},
-        {"origin_nas", actor_fp},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
         {"created_epoch", created_epoch},
         {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
             {"target_type", "reply"},
             {"post_id", post_id},
             {"reply_id", reply_id},

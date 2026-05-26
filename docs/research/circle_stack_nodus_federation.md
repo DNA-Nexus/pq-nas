@@ -789,3 +789,25 @@ Results:
 - Preview response was `HTTP 200`, `content-type: image/jpeg`, `x-pqnas-preview-status: generated`, `640x360` JPEG.
 
 Important follow-up: real two-NAS tests require each NAS to have a unique Nodus identity. Copying the identity is only acceptable for this temporary research test and correctly triggers local-origin self-echo protection.
+
+## Clean two-NAS origin identity federation test verified
+
+Verified dev box -> Nodus -> VPS with distinct NAS identities.
+
+Test event:
+
+- `event_id=post_1779757399_37`
+- `origin_nas=d35a046411d6e6788431e9e7b21ba9bcf277f967161937f197ac16d25de6e0f86bd97e5ae2917b05a92d7a75b0b3867c9fc27fa499517b1562fbffe370e0bb9e`
+- `owner_fp=a8885f40...`
+- `origin_label=Timo`
+- `text_preview=testing`
+- `ref_id=post:37:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+
+VPS verified:
+
+- Federated feed displayed the remote post.
+- Preview URL fetched from dev-box origin.
+- Preview response was `HTTP 200`, `content-type: image/jpeg`, `x-pqnas-preview-status: generated`, `640x360` JPEG.
+
+This confirms the corrected identity model: `origin_nas` is the NAS/Nodus identity, while `owner_fp` / `actor_fp` remain Circle Stack user identities.
