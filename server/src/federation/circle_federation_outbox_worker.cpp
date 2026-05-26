@@ -223,11 +223,47 @@ int recent_slot_for_outbox_id(std::int64_t id, int slots) {
     return static_cast<int>(id % slots);
 }
 
+
+std::string recent_index_json_for_outbox_event(
+    const CircleFederationOutboxEvent& current,
+    int limit) {
+    limit = std::clamp(limit, 1, 100);
+
+    json ids = json::array();
+    std::vector<std::string> seen;
+
+    auto push_id = [&](const std::string& id) {
+        if (id.empty()) return;
+        if (std::find(seen.begin(), seen.end(), id) != seen.end()) return;
+        seen.push_back(id);
+        ids.push_back(id);
+    };
+
+    push_id(current.event_id);
+
+    std::string err;
+    const auto rows = list_circle_federation_outbox(limit, &err);
+    if (!err.empty()) {
+        std::cerr << "[CircleFederationWorker] recent index list failed: "
+                  << err << "\n";
+    }
+
+    for (const auto& row : rows) {
+        if (static_cast<int>(ids.size()) >= limit) break;
+        if (row.circle_id != current.circle_id) continue;
+        push_id(row.event_id);
+    }
+
+    return ids.dump();
+}
+
+
 bool publish_one_event_to_seeds(
     const CircleFederationOutboxEvent& ev,
     const NodusClientConfig& config,
     const std::vector<NodusSeed>& seeds,
     int recent_slots,
+    int recent_index_limit,
     std::string* error_out) {
     bool all_ok = true;
     std::ostringstream errors;
@@ -246,18 +282,34 @@ bool publish_one_event_to_seeds(
 
             const auto head_put = nodus_cli_put(config, seed, ev.head_key, ev.event_id);
 
-            const int recent_slot = recent_slot_for_outbox_id(ev.id, recent_slots);
-            const std::string recent_key = circle_recent_key(ev.circle_id, recent_slot);
-            const auto recent_put = nodus_cli_put(config, seed, recent_key, ev.event_id);
+            NodusCommandResult recent_put{};
+            recent_put.exit_code = 0;
+            recent_put.output = "skipped because recent_slots=0";
 
-            if (head_put.exit_code != 0 || recent_put.exit_code != 0) {
+            if (recent_slots > 0) {
+                const int recent_slot = recent_slot_for_outbox_id(ev.id, recent_slots);
+                const std::string recent_key = circle_recent_key(ev.circle_id, recent_slot);
+                recent_put = nodus_cli_put(config, seed, recent_key, ev.event_id);
+            }
+
+            const std::string recent_index_key = circle_recent_index_key(ev.circle_id);
+            const std::string recent_index_json =
+                recent_index_json_for_outbox_event(ev, recent_index_limit);
+            const auto recent_index_put =
+                nodus_cli_put(config, seed, recent_index_key, recent_index_json);
+
+            if (head_put.exit_code != 0 ||
+                recent_put.exit_code != 0 ||
+                recent_index_put.exit_code != 0) {
                 all_ok = false;
                 errors << seed.name << " event_exit=" << event_put.exit_code
                        << " head_exit=" << head_put.exit_code
-                       << " recent_exit=" << recent_put.exit_code << "\n"
+                       << " recent_exit=" << recent_put.exit_code
+                       << " recent_index_exit=" << recent_index_put.exit_code << "\n"
                        << event_put.output << "\n"
                        << head_put.output << "\n"
-                       << recent_put.output << "\n";
+                       << recent_put.output << "\n"
+                       << recent_index_put.output << "\n";
             }
         } catch (const std::exception& e) {
             all_ok = false;
@@ -357,6 +409,137 @@ bool worker_pull_latest_remote_head(
     }
 
     return true;
+}
+
+
+
+bool worker_fetch_event_to_inbox(
+    const std::string& circle_id,
+    const std::string& event_id,
+    const NodusClientConfig& config,
+    const NodusSeed& seed,
+    const std::string& local_nodus_fp,
+    const char* source_label) {
+    if (event_id.empty()) return false;
+
+    const std::string event_key = circle_event_key(circle_id, event_id);
+
+    NodusCommandResult event_get;
+    try {
+        event_get = nodus_cli_get(config, seed, event_key);
+    } catch (const std::exception& e) {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " event get exception seed=" << seed.name
+                  << " event_id=" << event_id << ": " << e.what() << "\n";
+        return false;
+    }
+
+    const std::string event_json_raw = extract_nodus_value(event_get.output);
+    if (event_get.exit_code != 0 || event_json_raw.empty()) {
+        return false;
+    }
+
+    json event;
+    try {
+        event = json::parse(event_json_raw);
+    } catch (...) {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " invalid JSON event_id=" << event_id << "\n";
+        return false;
+    }
+
+    const std::string parsed_circle_id = event.value("circle_id", "");
+    const std::string parsed_event_id = event.value("event_id", "");
+    const std::string event_type = event.value("type", "");
+    const std::string origin_nas = event.value("origin_nas", "");
+    const std::int64_t created_epoch = event.value("created_epoch", 0LL);
+
+    if (parsed_circle_id != circle_id ||
+        parsed_event_id != event_id ||
+        event_type.empty() ||
+        origin_nas.empty()) {
+        return false;
+    }
+
+    if (!local_nodus_fp.empty() && origin_nas == local_nodus_fp) {
+        return false;
+    }
+
+    std::string store_err;
+    if (!store_circle_federation_inbox_event(
+            parsed_circle_id,
+            parsed_event_id,
+            event_type,
+            origin_nas,
+            created_epoch,
+            event_key,
+            event_json_raw,
+            &store_err)) {
+        std::cerr << "[CircleFederationWorker] inbound " << source_label
+                  << " store failed event_id=" << event_id
+                  << ": " << store_err << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+void worker_pull_recent_index_remote_events(
+    const std::string& circle_id,
+    const NodusClientConfig& config,
+    const NodusSeed& seed,
+    const std::string& local_nodus_fp,
+    int max_items) {
+    max_items = std::clamp(max_items, 1, 100);
+
+    const std::string index_key = circle_recent_index_key(circle_id);
+
+    NodusCommandResult index_get;
+    try {
+        index_get = nodus_cli_get(config, seed, index_key);
+    } catch (const std::exception& e) {
+        std::cerr << "[CircleFederationWorker] inbound recent:index get exception seed="
+                  << seed.name << ": " << e.what() << "\n";
+        return;
+    }
+
+    const std::string raw = extract_nodus_value(index_get.output);
+    if (index_get.exit_code != 0 || raw.empty()) {
+        return;
+    }
+
+    json ids;
+    try {
+        ids = json::parse(raw);
+    } catch (...) {
+        std::cerr << "[CircleFederationWorker] inbound recent:index invalid JSON seed="
+                  << seed.name << "\n";
+        return;
+    }
+
+    if (!ids.is_array()) return;
+
+    int pulled = 0;
+    for (const auto& item : ids) {
+        if (pulled >= max_items) break;
+        if (!item.is_string()) continue;
+
+        const std::string event_id = item.get<std::string>();
+        if (worker_fetch_event_to_inbox(
+                circle_id,
+                event_id,
+                config,
+                seed,
+                local_nodus_fp,
+                "recent:index")) {
+            ++pulled;
+        }
+    }
+
+    if (pulled > 0) {
+        std::cerr << "[CircleFederationWorker] inbound recent:index pulled="
+                  << pulled << " seed=" << seed.name << "\n";
+    }
 }
 
 
@@ -542,7 +725,8 @@ void worker_pull_and_apply_inbound(
     const NodusClientConfig& config,
     const std::vector<NodusSeed>& seeds,
     int batch_limit,
-    int recent_slots) {
+    int recent_slots,
+    int recent_index_limit) {
     const std::string local_nodus_fp =
         nodus_identity_fingerprint_from_dir(config.identity_dir);
 
@@ -551,7 +735,16 @@ void worker_pull_and_apply_inbound(
 
     for (const auto& seed : seeds) {
         worker_pull_latest_remote_head(circle_id, config, seed, local_nodus_fp);
-        worker_pull_recent_remote_events(circle_id, config, seed, local_nodus_fp, recent_slots);
+        worker_pull_recent_index_remote_events(
+            circle_id,
+            config,
+            seed,
+            local_nodus_fp,
+            recent_index_limit);
+
+        if (recent_slots > 0) {
+            worker_pull_recent_remote_events(circle_id, config, seed, local_nodus_fp, recent_slots);
+        }
     }
 
     // Then apply anything discovered during this loop immediately.
@@ -571,7 +764,9 @@ void worker_loop() {
     const int max_attempts =
         env_int("PQNAS_CIRCLE_FEDERATION_WORKER_MAX_ATTEMPTS", 5, 1, 20);
     const int recent_slots =
-        env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_SLOTS", 64, 4, 512);
+        env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_SLOTS", 0, 0, 512);
+    const int recent_index_limit =
+        env_int("PQNAS_CIRCLE_FEDERATION_WORKER_RECENT_INDEX_LIMIT", 20, 1, 100);
     const std::string seed_selector =
         env_string("PQNAS_CIRCLE_FEDERATION_WORKER_SEED", "EU-1");
     const std::string inbound_circle_id =
@@ -586,6 +781,7 @@ void worker_loop() {
               << " lease=" << lease_seconds
               << "s max_attempts=" << max_attempts
               << " recent_slots=" << recent_slots
+              << " recent_index_limit=" << recent_index_limit
               << " seeds=" << seed_selector
               << " inbound_circle=" << inbound_circle_id
               << "\n";
@@ -616,7 +812,7 @@ void worker_loop() {
                 std::string publish_err;
                 std::string mark_err;
 
-                if (publish_one_event_to_seeds(row, config, seeds, recent_slots, &publish_err)) {
+                if (publish_one_event_to_seeds(row, config, seeds, recent_slots, recent_index_limit, &publish_err)) {
                     if (!mark_circle_federation_outbox_done(row.id, &mark_err)) {
                         std::cerr << "[CircleFederationWorker] mark done failed id="
                                   << row.id << ": " << mark_err << "\n";
@@ -649,7 +845,8 @@ void worker_loop() {
                 config,
                 seeds,
                 inbox_batch_limit,
-                recent_slots);
+                recent_slots,
+                recent_index_limit);
         } catch (const std::exception& e) {
             std::cerr << "[CircleFederationWorker] exception: " << e.what() << "\n";
         } catch (...) {

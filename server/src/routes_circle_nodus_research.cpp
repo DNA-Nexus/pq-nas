@@ -569,6 +569,37 @@ std::string extract_nodus_value(const std::string& output) {
     return output.substr(start, end - start);
 }
 
+
+std::string recent_index_json_for_outbox_event(
+    const federation::CircleFederationOutboxEvent& current,
+    int limit) {
+    limit = std::clamp(limit, 1, 100);
+
+    json ids = json::array();
+    std::vector<std::string> seen;
+
+    auto push_id = [&](const std::string& id) {
+        if (id.empty()) return;
+        if (std::find(seen.begin(), seen.end(), id) != seen.end()) return;
+        seen.push_back(id);
+        ids.push_back(id);
+    };
+
+    push_id(current.event_id);
+
+    std::string err;
+    const auto rows = federation::list_circle_federation_outbox(limit, &err);
+
+    for (const auto& row : rows) {
+        if (static_cast<int>(ids.size()) >= limit) break;
+        if (row.circle_id != current.circle_id) continue;
+        push_id(row.event_id);
+    }
+
+    return ids.dump();
+}
+
+
 json outbox_event_json(const federation::CircleFederationOutboxEvent& ev) {
     return {
         {"id", ev.id},
@@ -1560,12 +1591,22 @@ void register_circle_nodus_research_routes(
                             const auto recent_put =
                                 federation::nodus_cli_put(config, seed, recent_key, row.event_id);
 
+                            const std::string recent_index_key =
+                                federation::circle_recent_index_key(row.circle_id);
+                            const std::string recent_index_json =
+                                recent_index_json_for_outbox_event(row, 20);
+                            const auto recent_index_put =
+                                federation::nodus_cli_put(config, seed, recent_index_key, recent_index_json);
+
                             item["put_head"] = command_result_json(head_put);
                             item["put_recent"] = command_result_json(recent_put);
+                            item["put_recent_index"] = command_result_json(recent_index_put);
+                            item["recent_index_key"] = recent_index_key;
 
                             all_ok = all_ok &&
                                      head_put.exit_code == 0 &&
-                                     recent_put.exit_code == 0;
+                                     recent_put.exit_code == 0 &&
+                                     recent_index_put.exit_code == 0;
                         }
                     } catch (const std::exception& e) {
                         item["put_event"] = {
