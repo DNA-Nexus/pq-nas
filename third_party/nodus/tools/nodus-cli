@@ -1,0 +1,24 @@
+#!/bin/bash
+# nodus-cli — Nodus management CLI
+case "${1:-help}" in
+    update)
+        shift
+        exec /opt/dna/nodus/tools/nodus-update.sh "$@" 2>/dev/null || exec /usr/local/bin/nodus-update.sh "$@"
+        ;;
+    version)
+        V=$(/usr/local/bin/nodus-server -h 2>&1 | grep -oP 'v[0-9.]+' | head -1)
+        C=$(cd /opt/dna 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "?")
+        echo "nodus $V (commit $C)"
+        ;;
+    status)
+        systemctl status nodus --no-pager | head -5
+        ;;
+    *)
+        echo "nodus-cli — Nodus management"
+        echo ""
+        echo "Commands:"
+        echo "  update [-s]    Check for updates and apply (-s = silent)"
+        echo "  version        Show current version"
+        echo "  status         Show service status"
+        ;;
+esac

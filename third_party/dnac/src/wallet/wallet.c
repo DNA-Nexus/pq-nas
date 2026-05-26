@@ -1,0 +1,566 @@
+/**
+ * @file wallet.c
+ * @brief DNAC wallet implementation (v1 transparent)
+ */
+
+#include "dnac/dnac.h"
+#include "dnac/wallet.h"
+#include "dnac/transaction.h"
+#include "dnac/nodus.h"
+#include "dnac/db.h"
+#include "dnac/ledger.h"
+#include "dnac/commitment.h"
+#include "dnac/trusted_state.h"
+#include "dnac/block.h"
+#include <dna/dna_engine.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <openssl/evp.h>
+
+#include "crypto/utils/qgp_log.h"
+#include "crypto/hash/qgp_sha3.h"
+#include "dnac/crypto_helpers.h"
+#include "crypto/utils/qgp_safe_string.h"   /* Phase 03: unsafe-string poison guard */
+
+#define LOG_TAG "DNAC_WALLET"
+
+/* Default database filename */
+#define DNAC_DB_FILENAME "dnac.db"
+
+struct dnac_context {
+    dna_engine_t *dna_engine;           /* libdna engine */
+    sqlite3 *db;                         /* SQLite database */
+    char owner_fingerprint[129];         /* Owner's fingerprint */
+    dnac_payment_cb_t payment_cb;
+    void *payment_cb_data;
+    uint8_t chain_id[32];               /* Chain ID from witness */
+    bool chain_id_loaded;               /* Whether chain_id has been fetched */
+    int initialized;
+
+    /* Phase 13 / Task 13.4 — latest send receipt for CLI display. */
+    bool     last_receipt_valid;
+    uint64_t last_receipt_block_height;
+    uint32_t last_receipt_tx_index;
+    uint8_t  last_receipt_tx_hash[64];
+};
+
+/* ============================================================================
+ * Lifecycle Functions
+ * ========================================================================== */
+
+/**
+ * Audit C6 (2026-04-22) — Bootstrap anchored trust state via quorum.
+ *
+ * The hardcoded DNAC_KNOWN_CHAINS[0].chain_id anchor was removed. Trust
+ * now derives from a BFT quorum across the bootstrap peer set: all
+ * configured bootstrap nodes are queried for the genesis block, each
+ * response's block_hash is computed locally, and the chain_id is
+ * accepted only when DNAC_GENESIS_QUORUM_THRESHOLD (2f+1 = 5/7) peers
+ * agree on the same hash. A single compromised bootstrap returning a
+ * forged chain_id is out-voted by the honest majority.
+ *
+ * Tri-state outcome:
+ *   - VERIFIED : quorum reached → trusted_state populated
+ *   - PENDING  : too few peers responded (network / cold-cluster) → the
+ *                wallet continues without trust, sync retries later
+ *   - REJECTED : enough peers responded but they diverge below the
+ *                quorum threshold → attack signal, trust left empty so
+ *                DNAC ops refuse to proceed (messaging unaffected)
+ */
+static void bootstrap_trusted_state(dnac_context_t *ctx) {
+    if (!ctx) return;
+
+    dnac_block_t genesis;
+    memset(&genesis, 0, sizeof(genesis));
+    int verified = 0;
+    int total = 0;
+    int rc = dnac_request_genesis_quorum(ctx, &genesis, &verified, &total);
+
+    if (rc == DNAC_ERROR_TIMEOUT) {
+        QGP_LOG_WARN(LOG_TAG,
+            "trust: PENDING — only %d peers responded (need >= %d); "
+            "DNAC ops deferred, will retry on next sync",
+            total, DNAC_GENESIS_QUORUM_THRESHOLD);
+        return;
+    }
+
+    if (rc == DNAC_ERROR_WITNESS_FAILED) {
+        QGP_LOG_ERROR(LOG_TAG,
+            "trust: REJECTED — %d/%d peers disagree below quorum (%d); "
+            "possible compromised bootstrap or chain divergence, "
+            "DNAC ops disabled",
+            verified, total, DNAC_GENESIS_QUORUM_THRESHOLD);
+        return;
+    }
+
+    if (rc != DNAC_SUCCESS) {
+        QGP_LOG_ERROR(LOG_TAG,
+            "trust: quorum bootstrap failed rc=%d, DNAC ops deferred", rc);
+        return;
+    }
+
+    dnac_trusted_state_t trust;
+    memset(&trust, 0, sizeof(trust));
+    memcpy(trust.chain_id, genesis.block_hash, DNAC_BLOCK_HASH_SIZE);
+    memcpy(&trust.chain_def, &genesis.chain_def, sizeof(genesis.chain_def));
+    /* latest_verified_anchor intentionally zeroed — populated on first
+     * anchor_verify in the sync path. */
+
+    if (dnac_set_current_trusted_state(&trust) != 0) {
+        QGP_LOG_ERROR(LOG_TAG,
+            "trust: dnac_set_current_trusted_state failed, DNAC ops deferred");
+        return;
+    }
+
+    QGP_LOG_INFO(LOG_TAG,
+        "trust: VERIFIED — %d/%d peers agree on genesis; chain='%s', "
+        "%u witnesses",
+        verified, total, trust.chain_def.chain_name,
+        (unsigned)trust.chain_def.witness_count);
+}
+
+dnac_context_t* dnac_init(void *dna_engine) {
+    if (!dna_engine) return NULL;
+
+    dna_engine_t *engine = (dna_engine_t *)dna_engine;
+
+    /* Check if identity is loaded */
+    const char *fp = dna_engine_get_fingerprint(engine);
+    if (!fp) {
+        QGP_LOG_ERROR(LOG_TAG, "No identity loaded in DNA engine");
+        return NULL;
+    }
+
+    dnac_context_t *ctx = calloc(1, sizeof(dnac_context_t));
+    if (!ctx) return NULL;
+
+    ctx->dna_engine = engine;
+    strncpy(ctx->owner_fingerprint, fp, sizeof(ctx->owner_fingerprint) - 1);
+
+    /* Open database in engine's data directory (works on all platforms) */
+    char db_path[512];
+    const char *data_dir = dna_engine_get_data_dir(engine);
+    if (data_dir) {
+        snprintf(db_path, sizeof(db_path), "%s/%s", data_dir, DNAC_DB_FILENAME);
+    } else {
+        const char *home = getenv("HOME");
+        if (home) {
+            snprintf(db_path, sizeof(db_path), "%s/.dna/%s", home, DNAC_DB_FILENAME);
+        } else {
+            snprintf(db_path, sizeof(db_path), "./%s", DNAC_DB_FILENAME);
+        }
+    }
+
+    int rc = sqlite3_open(db_path, &ctx->db);
+    if (rc != SQLITE_OK) {
+        QGP_LOG_ERROR(LOG_TAG, "Failed to open database: %s", sqlite3_errmsg(ctx->db));
+        sqlite3_close(ctx->db);
+        free(ctx);
+        return NULL;
+    }
+
+    /* Initialize schema */
+    rc = dnac_db_init(ctx->db);
+    if (rc != DNAC_SUCCESS) {
+        QGP_LOG_ERROR(LOG_TAG, "Failed to initialize database schema");
+        sqlite3_close(ctx->db);
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->initialized = 1;
+
+    /* Phase 12 — bootstrap anchored trust state. Best-effort: failure is
+     * logged and the wallet continues in degraded mode (UTXOs stay
+     * verified=false). */
+    bootstrap_trusted_state(ctx);
+
+    return ctx;
+}
+
+void dnac_shutdown(dnac_context_t *ctx) {
+    if (!ctx) return;
+
+    if (ctx->db) {
+        sqlite3_close(ctx->db);
+        ctx->db = NULL;
+    }
+
+    ctx->initialized = 0;
+    free(ctx);
+}
+
+void dnac_set_payment_callback(dnac_context_t *ctx,
+                               dnac_payment_cb_t callback,
+                               void *user_data) {
+    if (!ctx) return;
+    ctx->payment_cb = callback;
+    ctx->payment_cb_data = user_data;
+}
+
+/* ============================================================================
+ * Chain ID (fetched from witness on first use)
+ * ========================================================================== */
+
+void dnac_set_chain_id(dnac_context_t *ctx, const uint8_t *chain_id) {
+    if (!ctx || !chain_id) return;
+    memcpy(ctx->chain_id, chain_id, 32);
+    ctx->chain_id_loaded = true;
+}
+
+const uint8_t *dnac_get_chain_id(dnac_context_t *ctx) {
+    if (!ctx) return NULL;
+
+    if (!ctx->chain_id_loaded) {
+        /* Fetch chain_id from witness via dnac_supply */
+        uint64_t genesis_supply = 0;
+        int rc = dnac_ledger_get_supply(ctx, &genesis_supply, NULL, NULL);
+        (void)rc;
+    }
+
+    /* Return NULL if chain_id is all-zero (pre-genesis) */
+    static const uint8_t zero[32] = {0};
+    if (memcmp(ctx->chain_id, zero, 32) == 0)
+        return NULL;
+
+    return ctx->chain_id;
+}
+
+/* ============================================================================
+ * Listener Functions (no-op: witness-based polling replaces DHT listener)
+ * ========================================================================== */
+
+int dnac_start_listening(dnac_context_t *ctx) {
+    (void)ctx;
+    return DNAC_SUCCESS;
+}
+
+int dnac_stop_listening(dnac_context_t *ctx) {
+    (void)ctx;
+    return DNAC_SUCCESS;
+}
+
+/* ============================================================================
+ * Balance Functions
+ * ========================================================================== */
+
+int dnac_get_balance(dnac_context_t *ctx, dnac_balance_t *balance) {
+    if (!ctx || !balance || !ctx->initialized) {
+        return DNAC_ERROR_INVALID_PARAM;
+    }
+
+    return dnac_wallet_calculate_balance(ctx, balance);
+}
+
+/* ============================================================================
+ * UTXO Functions
+ * ========================================================================== */
+
+int dnac_get_utxos(dnac_context_t *ctx, dnac_utxo_t **utxos, int *count) {
+    if (!ctx || !utxos || !count || !ctx->initialized) {
+        return DNAC_ERROR_INVALID_PARAM;
+    }
+
+    return dnac_db_get_unspent_utxos(ctx->db, ctx->owner_fingerprint, utxos, count);
+}
+
+void dnac_free_utxos(dnac_utxo_t *utxos, int count) {
+    (void)count;
+    free(utxos);
+}
+
+/**
+ * Derive nullifier from seed and owner secret
+ * nullifier = SHA3-512(owner_fingerprint || nullifier_seed)
+ */
+static int derive_nullifier(const char *owner_fp, const uint8_t *seed,
+                            uint8_t *nullifier_out) {
+    uint8_t data[256];
+    size_t offset = 0;
+
+    size_t fp_len = strlen(owner_fp);
+    memcpy(data, owner_fp, fp_len);
+    offset = fp_len;
+
+    memcpy(data + offset, seed, 32);
+    offset += 32;
+
+    return qgp_sha3_512(data, offset, nullifier_out);
+}
+
+int dnac_sync_wallet(dnac_context_t *ctx) {
+    if (!ctx || !ctx->initialized) return DNAC_ERROR_INVALID_PARAM;
+
+    /* Detect chain resets: if the witness chain_id differs from what we
+     * stored last, any cached transaction history is from a dead chain
+     * and must be wiped. UTXOs are already rebuilt from witnesses below,
+     * but dnac_transactions is never cleared on sync and would otherwise
+     * leak ghost TXs across chain resets. */
+    const uint8_t *current_chain = dnac_get_chain_id(ctx);
+    if (current_chain) {
+        uint8_t stored_chain[32];
+        int cr = dnac_db_get_stored_chain_id(ctx->db, stored_chain);
+        if (cr == DNAC_ERROR_NOT_FOUND) {
+            dnac_db_set_stored_chain_id(ctx->db, current_chain);
+        } else if (cr == DNAC_SUCCESS &&
+                   memcmp(stored_chain, current_chain, 32) != 0) {
+            QGP_LOG_WARN(LOG_TAG,
+                "sync: chain_id changed, wiping stale transaction cache");
+            dnac_db_clear_transactions(ctx->db);
+            dnac_db_set_stored_chain_id(ctx->db, current_chain);
+        }
+    }
+
+    /* Clear existing UTXOs (fresh start from authoritative source) */
+    int rc = dnac_db_clear_utxos(ctx->db, ctx->owner_fingerprint);
+    if (rc != DNAC_SUCCESS) {
+        QGP_LOG_ERROR(LOG_TAG, "sync: failed to clear local UTXOs: %d", rc);
+        return rc;
+    }
+
+    /* Recover UTXO state from witnesses (authoritative source) */
+    int witness_recovered = 0;
+    uint64_t witness_total = 0;
+    rc = dnac_wallet_recover_from_witnesses(ctx, &witness_recovered, &witness_total);
+    if (rc == DNAC_SUCCESS && witness_recovered > 0) {
+        QGP_LOG_INFO(LOG_TAG, "sync: recovered %d UTXOs from witnesses (total: %llu)",
+                     witness_recovered, (unsigned long long)witness_total);
+    }
+
+    return rc;
+}
+
+int dnac_sync_tokens(dnac_context_t *ctx) {
+    if (!ctx || !ctx->initialized) return DNAC_ERROR_INVALID_PARAM;
+
+    /* Refresh local token registry from witnesses */
+    dnac_token_t tokens[128];
+    int token_count = 0;
+    int rc = dnac_token_list(ctx, tokens, 128, &token_count);
+    if (rc != DNAC_SUCCESS) {
+        QGP_LOG_WARN(LOG_TAG, "sync_tokens: failed to fetch token list: %d", rc);
+        return rc;
+    }
+
+    QGP_LOG_INFO(LOG_TAG, "sync_tokens: refreshed %d tokens from witnesses",
+                 token_count);
+    return DNAC_SUCCESS;
+}
+
+int dnac_wallet_recover(dnac_context_t *ctx, int *recovered_count) {
+    if (!ctx || !ctx->initialized) return DNAC_ERROR_INVALID_PARAM;
+
+    /* recover is now just sync (which clears + rebuilds from authoritative sources) */
+    int rc = dnac_sync_wallet(ctx);
+    if (recovered_count) *recovered_count = 0;
+    return rc;
+}
+
+/* ============================================================================
+ * Send Functions
+ * ========================================================================== */
+
+int dnac_send_token(dnac_context_t *ctx,
+                    const char *recipient_fingerprint,
+                    uint64_t amount,
+                    const char *memo,
+                    const uint8_t *token_id,
+                    dnac_callback_t callback,
+                    void *user_data) {
+    if (!ctx || !recipient_fingerprint || amount == 0 || !ctx->initialized) {
+        return DNAC_ERROR_INVALID_PARAM;
+    }
+
+    /* Validate fingerprint: must be exactly 128 lowercase hex characters */
+    size_t fp_len = strlen(recipient_fingerprint);
+    if (fp_len != 128) {
+        QGP_LOG_ERROR(LOG_TAG, "invalid recipient fingerprint length: %zu (expected 128)", fp_len);
+        return DNAC_ERROR_INVALID_PARAM;
+    }
+    for (size_t i = 0; i < 128; i++) {
+        char c = recipient_fingerprint[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            QGP_LOG_ERROR(LOG_TAG, "invalid character '%c' at position %zu in fingerprint", c, i);
+            return DNAC_ERROR_INVALID_PARAM;
+        }
+    }
+
+    (void)memo;  /* TODO: Add memo to payment message in Phase 9 */
+
+    int rc;
+
+    /* Fix #4 B: before building a brand-new TX, check for an active
+     * pending broadcast with the same (recipient, amount, token_id).
+     * If found, re-broadcast that cached TX instead — this preserves
+     * tx_hash across retries so a subsequent dnac_witness_replay can
+     * recover the committed receipt (or the server can idempotently
+     * recognize the re-submission as the already-committed spend). */
+    {
+        sqlite3 *db = dnac_get_db(ctx);
+        if (db) {
+            uint8_t cached_hash[DNAC_TX_HASH_SIZE];
+            uint8_t *cached_tx_data = NULL;
+            size_t cached_tx_len = 0;
+            int frc = dnac_db_find_active_broadcast(
+                db, recipient_fingerprint, amount,
+                token_id, cached_hash,
+                &cached_tx_data, &cached_tx_len);
+            if (frc == DNAC_SUCCESS && cached_tx_data && cached_tx_len > 0) {
+                dnac_transaction_t *cached_tx = NULL;
+                int drc = dnac_tx_deserialize(cached_tx_data,
+                                                cached_tx_len, &cached_tx);
+                free(cached_tx_data);
+                cached_tx_data = NULL;
+                if (drc == DNAC_SUCCESS && cached_tx) {
+                    QGP_LOG_WARN(LOG_TAG,
+                        "Reusing cached pending broadcast for retry "
+                        "(recipient=%.16s... amount=%llu)",
+                        recipient_fingerprint,
+                        (unsigned long long)amount);
+                    rc = dnac_tx_broadcast(ctx, cached_tx,
+                                             callback, user_data);
+                    dnac_free_transaction(cached_tx);
+                    if (rc == DNAC_SUCCESS) {
+                        return DNAC_SUCCESS;
+                    }
+                    QGP_LOG_WARN(LOG_TAG,
+                        "Cached rebroadcast failed: %d; building new TX",
+                        rc);
+                }
+            }
+        }
+    }
+
+    /* Step 1: Create transaction builder */
+    dnac_tx_builder_t *builder = dnac_tx_builder_create(ctx);
+    if (!builder) {
+        return DNAC_ERROR_OUT_OF_MEMORY;
+    }
+
+    /* Step 2: Set token_id if specified (leaves all-zero/native otherwise).
+     * The builder then uses dnac_wallet_select_utxos_token() for the same
+     * token and computes the 0.1% fee from the same token's amount. */
+    if (token_id) {
+        rc = dnac_tx_builder_set_token(builder, token_id);
+        if (rc != DNAC_SUCCESS) {
+            dnac_tx_builder_free(builder);
+            return rc;
+        }
+    }
+
+    /* Step 3: Add output */
+    dnac_tx_output_t output = {0};
+    strncpy(output.recipient_fingerprint, recipient_fingerprint,
+            sizeof(output.recipient_fingerprint) - 1);
+    output.amount = amount;
+    if (memo) {
+        strncpy(output.memo, memo, sizeof(output.memo) - 1);
+    }
+
+    rc = dnac_tx_builder_add_output(builder, &output);
+    if (rc != DNAC_SUCCESS) {
+        dnac_tx_builder_free(builder);
+        return rc;
+    }
+
+    /* Step 4: Build transaction (selects UTXOs, signs) */
+    dnac_transaction_t *tx = NULL;
+    rc = dnac_tx_builder_build(builder, &tx);
+    dnac_tx_builder_free(builder);
+
+    if (rc != DNAC_SUCCESS) {
+        return rc;
+    }
+
+    /* Step 5: Broadcast (gets witness signatures, sends via DHT) */
+    rc = dnac_tx_broadcast(ctx, tx, callback, user_data);
+    if (rc != DNAC_SUCCESS) {
+        dnac_free_transaction(tx);
+        return rc;
+    }
+
+    dnac_free_transaction(tx);
+    return DNAC_SUCCESS;
+}
+
+int dnac_send(dnac_context_t *ctx,
+              const char *recipient_fingerprint,
+              uint64_t amount,
+              const char *memo,
+              dnac_callback_t callback,
+              void *user_data) {
+    return dnac_send_token(ctx, recipient_fingerprint, amount, memo,
+                           NULL, callback, user_data);
+}
+
+int dnac_estimate_fee(dnac_context_t *ctx, uint64_t amount, uint64_t *fee_out) {
+    if (!ctx || !fee_out) return DNAC_ERROR_INVALID_PARAM;
+
+    (void)amount;  /* Fee is flat, not proportional */
+
+    /* Query witness for current dynamic fee */
+    return dnac_get_current_fee(ctx, fee_out);
+}
+
+/* ============================================================================
+ * Context Accessors (for internal use)
+ * ========================================================================== */
+
+sqlite3* dnac_get_db(dnac_context_t *ctx) {
+    return ctx ? ctx->db : NULL;
+}
+
+const char* dnac_get_owner_fingerprint(dnac_context_t *ctx) {
+    return ctx ? ctx->owner_fingerprint : NULL;
+}
+
+dna_engine_t* dnac_get_engine(dnac_context_t *ctx) {
+    return ctx ? ctx->dna_engine : NULL;
+}
+
+/* Phase 13 / Task 13.4 — receipt accessors for CLI display. */
+void dnac_set_last_receipt(dnac_context_t *ctx, uint64_t block_height,
+                             uint32_t tx_index, const uint8_t *tx_hash) {
+    if (!ctx) return;
+    ctx->last_receipt_block_height = block_height;
+    ctx->last_receipt_tx_index = tx_index;
+    if (tx_hash) memcpy(ctx->last_receipt_tx_hash, tx_hash, 64);
+    ctx->last_receipt_valid = true;
+}
+
+int dnac_last_send_receipt(dnac_context_t *ctx, uint64_t *block_height_out,
+                             uint32_t *tx_index_out, uint8_t *tx_hash_out) {
+    if (!ctx) return DNAC_ERROR_INVALID_PARAM;
+    if (!ctx->last_receipt_valid) return DNAC_ERROR_NOT_FOUND;
+    if (block_height_out) *block_height_out = ctx->last_receipt_block_height;
+    if (tx_index_out) *tx_index_out = ctx->last_receipt_tx_index;
+    if (tx_hash_out) memcpy(tx_hash_out, ctx->last_receipt_tx_hash, 64);
+    return DNAC_SUCCESS;
+}
+
+/* ============================================================================
+ * Error Handling
+ * ========================================================================== */
+
+const char* dnac_error_string(int error) {
+    switch (error) {
+        case DNAC_SUCCESS: return "Success";
+        case DNAC_ERROR_INVALID_PARAM: return "Invalid parameter";
+        case DNAC_ERROR_OUT_OF_MEMORY: return "Out of memory";
+        case DNAC_ERROR_NOT_INITIALIZED: return "Not initialized";
+        case DNAC_ERROR_ALREADY_INITIALIZED: return "Already initialized";
+        case DNAC_ERROR_DATABASE: return "Database error";
+        case DNAC_ERROR_CRYPTO: return "Cryptographic error";
+        case DNAC_ERROR_NETWORK: return "Network error";
+        case DNAC_ERROR_INSUFFICIENT_FUNDS: return "Insufficient funds";
+        case DNAC_ERROR_DOUBLE_SPEND: return "Double spend detected";
+        case DNAC_ERROR_INVALID_PROOF: return "Invalid proof";
+        case DNAC_ERROR_WITNESS_FAILED: return "Witness collection failed";
+        case DNAC_ERROR_TIMEOUT: return "Operation timed out";
+        case DNAC_ERROR_NOT_FOUND: return "Not found";
+        case DNAC_ERROR_OVERFLOW: return "Integer overflow in amount";
+        default: return "Unknown error";
+    }
+}

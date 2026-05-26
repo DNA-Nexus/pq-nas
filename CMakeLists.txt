@@ -467,6 +467,46 @@ set_target_properties(pqnas_keygen PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
+
+
+# -----------------------------------------------------------------------------
+# Bundled Nodus client CLI used by Circle Stack federation
+#
+# Build Nodus as an isolated sub-build instead of add_subdirectory().
+# Reason: PQ-NAS uses strict server-wide warning/error flags, while the vendored
+# Nodus tree is a separate C project with its own compile assumptions.
+# -----------------------------------------------------------------------------
+set(PQNAS_BUNDLED_NODUS_DIR "${CMAKE_SOURCE_DIR}/third_party/nodus")
+set(PQNAS_BUNDLED_NODUS_BUILD_DIR "${CMAKE_BINARY_DIR}/third_party/nodus-standalone")
+set(PQNAS_BUNDLED_NODUS_CLI "${CMAKE_BINARY_DIR}/bin/nodus-cli")
+
+if (EXISTS "${PQNAS_BUNDLED_NODUS_DIR}/CMakeLists.txt")
+    add_custom_target(nodus-cli ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+        COMMAND ${CMAKE_COMMAND}
+            -S "${PQNAS_BUNDLED_NODUS_DIR}"
+            -B "${PQNAS_BUNDLED_NODUS_BUILD_DIR}"
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/bin
+            -DCMAKE_C_FLAGS=-D_GNU_SOURCE
+        COMMAND ${CMAKE_COMMAND}
+            --build "${PQNAS_BUNDLED_NODUS_BUILD_DIR}"
+            --target nodus-cli
+            --parallel
+        BYPRODUCTS "${PQNAS_BUNDLED_NODUS_CLI}"
+        COMMENT "Building bundled Nodus CLI"
+        VERBATIM
+    )
+
+    add_custom_target(pqnas_nodus_cli
+        DEPENDS nodus-cli
+    )
+else()
+    message(WARNING "Bundled Nodus tree not found at ${PQNAS_BUNDLED_NODUS_DIR}; nodus-cli will not be built")
+endif()
+
+
+
+
 # -----------------------------------------------------------------------------
 # Run targets
 # -----------------------------------------------------------------------------
