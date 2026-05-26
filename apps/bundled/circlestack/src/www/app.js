@@ -200,27 +200,33 @@ function csRenderFederatedActions(ev) {
     wrap.appendChild(add);
   }
 
-  // FEDERATED_VISIBLE_REACTION_BUTTONS_PATCH_V1
+  // FEDERATED_HOVER_REACTION_PICKER_PATCH_V1
   if (ev && ev.event_type === "circle.post.created") {
-    const reactRow = document.createElement("div");
-    reactRow.className = "cs-federated-reaction-row";
+    const picker = document.createElement("div");
+    picker.className = "cs-reaction-picker cs-federated-reaction-picker";
 
-    const label = document.createElement("span");
-    label.className = "cs-federated-reaction-label";
-    label.textContent = "React:";
-    reactRow.appendChild(label);
+    const trigger = document.createElement("button");
+    trigger.className = "cs-reaction-trigger";
+    trigger.type = "button";
+    trigger.textContent = "🙂 React";
+    trigger.title = "React to this federated post";
+
+    const menu = document.createElement("div");
+    menu.className = "cs-reaction-menu";
 
     for (const reaction of CS_REACTIONS) {
       const btn = document.createElement("button");
-      btn.className = "cs-federated-reaction-button";
+      btn.className = "cs-reaction-menu-button";
       btn.type = "button";
       btn.textContent = reaction;
-      btn.title = "React to federated post";
+      btn.setAttribute("aria-label", `React ${reaction}`);
       btn.addEventListener("click", () => csReactToFederatedPost(ev, reaction, btn));
-      reactRow.appendChild(btn);
+      menu.appendChild(btn);
     }
 
-    wrap.appendChild(reactRow);
+    picker.appendChild(trigger);
+    picker.appendChild(menu);
+    wrap.appendChild(picker);
   }
 
   return wrap.children.length ? wrap : null;
