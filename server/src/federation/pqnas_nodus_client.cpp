@@ -1,6 +1,8 @@
 #include "federation/pqnas_nodus_client.h"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <sstream>
 #include <stdexcept>
@@ -30,9 +32,29 @@ NodusCommandResult run_command_capture(const std::string& command) {
         return result;
     }
 
+    constexpr std::size_t kMaxCommandOutputBytes = 64 * 1024;
+
+    bool output_truncated = false;
     std::array<char, 4096> buffer{};
+
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-        result.output.append(buffer.data());
+        const std::string chunk(buffer.data());
+
+        if (result.output.size() < kMaxCommandOutputBytes) {
+            const std::size_t remaining =
+                kMaxCommandOutputBytes - result.output.size();
+            result.output.append(chunk.data(), std::min(remaining, chunk.size()));
+
+            if (chunk.size() > remaining) {
+                output_truncated = true;
+            }
+        } else {
+            output_truncated = true;
+        }
+    }
+
+    if (output_truncated) {
+        result.output += "\n...[truncated at 65536 bytes]";
     }
 
     const int status = pclose(pipe);
