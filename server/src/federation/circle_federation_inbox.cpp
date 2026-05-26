@@ -1,4 +1,5 @@
 #include "federation/circle_federation_inbox.h"
+#include "federation/circle_federation_limits.h"
 
 #include <sqlite3.h>
 
@@ -142,6 +143,11 @@ bool store_circle_federation_inbox_event(
     if (circle_id.empty() || event_id.empty() || event_type.empty() ||
         origin_nas.empty() || event_key.empty() || event_json.empty()) {
         if (err) *err = "missing required inbox event field";
+        return false;
+    }
+
+    if (event_json.size() > kMaxCircleFederationEventJsonBytes) {
+        if (err) *err = "federation event JSON too large";
         return false;
     }
 

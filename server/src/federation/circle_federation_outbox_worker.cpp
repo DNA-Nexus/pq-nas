@@ -2,6 +2,7 @@
 
 #include "federation/circle_federation_outbox.h"
 #include "federation/circle_federation_inbox.h"
+#include "federation/circle_federation_limits.h"
 #include "federation/circle_federation_remote_feed.h"
 #include "federation/circle_federation_event.h"
 #include "federation/pqnas_nodus_client.h"
@@ -97,6 +98,21 @@ std::string extract_nodus_value(const std::string& output) {
     }
 
     return trim_copy(output.substr(start, end - start));
+}
+
+bool event_json_too_large(
+    const std::string& event_json_raw,
+    const std::string& event_id,
+    const char* source_label) {
+    if (event_json_raw.size() <= kMaxCircleFederationEventJsonBytes) {
+        return false;
+    }
+
+    std::cerr << "[CircleFederationWorker] inbound " << source_label
+              << " event JSON too large event_id=" << event_id
+              << " bytes=" << event_json_raw.size()
+              << " max=" << kMaxCircleFederationEventJsonBytes << "\n";
+    return true;
 }
 
 bool parse_remote_feed_fields_from_event(
@@ -365,6 +381,10 @@ bool worker_pull_latest_remote_head(
         return false;
     }
 
+    if (event_json_too_large(event_json_raw, event_id, "head")) {
+        return false;
+    }
+
     json event;
     try {
         event = json::parse(event_json_raw);
@@ -436,6 +456,10 @@ bool worker_fetch_event_to_inbox(
 
     const std::string event_json_raw = extract_nodus_value(event_get.output);
     if (event_get.exit_code != 0 || event_json_raw.empty()) {
+        return false;
+    }
+
+    if (event_json_too_large(event_json_raw, event_id, source_label)) {
         return false;
     }
 
@@ -583,6 +607,10 @@ void worker_pull_recent_remote_events(
             continue;
         }
 
+        if (event_json_too_large(event_json_raw, event_id, "recent")) {
+            continue;
+        }
+
         json event;
         try {
             event = json::parse(event_json_raw);
@@ -652,6 +680,17 @@ void worker_apply_pending_inbox(
                     "ignored_local_origin",
                     &mark_err)) {
                 std::cerr << "[CircleFederationWorker] inbound mark ignored failed id="
+                          << row.id << ": " << mark_err << "\n";
+            }
+            continue;
+        }
+
+        if (event_json_too_large(row.event_json, row.event_id, "apply")) {
+            if (!mark_circle_federation_inbox_failed(
+                    row.id,
+                    "federation event JSON too large",
+                    &mark_err)) {
+                std::cerr << "[CircleFederationWorker] inbound mark oversized JSON failed id="
                           << row.id << ": " << mark_err << "\n";
             }
             continue;
