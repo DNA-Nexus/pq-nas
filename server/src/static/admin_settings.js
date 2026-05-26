@@ -121,6 +121,22 @@
     const btnDnaIdentityModalClose = $("btnDnaIdentityModalClose");
     const dnaIdentityModalBody = $("dnaIdentityModalBody");
 
+
+    // --- Nodus federation ---
+    const nodusStatusPill = $("nodusStatusPill");
+    const btnNodusRefresh = $("btnNodusRefresh");
+    const btnNodusCreateIdentity = $("btnNodusCreateIdentity");
+    const nodusCliLight = $("nodusCliLight");
+    const nodusCliValue = $("nodusCliValue");
+    const nodusIdentityLight = $("nodusIdentityLight");
+    const nodusIdentityValue = $("nodusIdentityValue");
+    const nodusSeedsLight = $("nodusSeedsLight");
+    const nodusSeedsValue = $("nodusSeedsValue");
+    const nodusPublicUrlLight = $("nodusPublicUrlLight");
+    const nodusPublicUrlValue = $("nodusPublicUrlValue");
+    const nodusWorkerLight = $("nodusWorkerLight");
+    const nodusWorkerValue = $("nodusWorkerValue");
+
     let gDnaConnectIdentity = null;
 
     const ALLOWED_THEMES = new Set(["dark", "bright", "cpunk_orange", "win_classic"]);
@@ -1491,6 +1507,113 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             uploadPill.innerHTML = `<span class="k">Effective:</span> <span class="v">${escapeHtml(eff != null ? fmtBytes(eff) : "—")}</span>`;
         }
     }
+
+    // ---------------------------
+    // Nodus federation status
+    // ---------------------------
+    async function apiNodusStatus() {
+        return await fetchJsonOrThrow("/api/v4/admin/nodus/status", {
+            cache: "no-store"
+        });
+    }
+
+    async function apiNodusCreateIdentity() {
+        return await fetchJsonOrThrow("/api/v4/admin/nodus/identity/init", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+    }
+
+    function setLight(el, kind) {
+        if (!el) return;
+        el.className = "lightDot " + (kind || "warn");
+    }
+
+    function setNodusStatusPill(kind, text) {
+        if (!nodusStatusPill) return;
+        nodusStatusPill.className = "pill " + (kind || "");
+        nodusStatusPill.innerHTML = `<span class="k">Status:</span> <span class="v">${escapeHtml(text || "—")}</span>`;
+    }
+
+    function renderNodusStatus(j) {
+        if (!j || j.ok !== true) {
+            setNodusStatusPill("fail", "error");
+            return;
+        }
+
+        const cli = (j.cli && typeof j.cli === "object") ? j.cli : {};
+        const identity = (j.identity && typeof j.identity === "object") ? j.identity : {};
+        const seeds = (j.seeds_summary && typeof j.seeds_summary === "object") ? j.seeds_summary : {};
+        const worker = (j.worker && typeof j.worker === "object") ? j.worker : {};
+
+        const cliOk = !!cli.installed;
+        const idOk = !!identity.exists;
+        const totalSeeds = Number(seeds.total || 0);
+        const reachableSeeds = Number(seeds.reachable || 0);
+        const seedsOk = totalSeeds > 0 && reachableSeeds > 0;
+        const seedsAllOk = totalSeeds > 0 && reachableSeeds === totalSeeds;
+        const publicUrl = String(j.public_base_url || "").trim();
+        const publicOk = !!publicUrl;
+        const workerEnabled = !!worker.enabled;
+
+        setLight(nodusCliLight, cliOk ? "ok" : "fail");
+        if (nodusCliValue) {
+            nodusCliValue.textContent = cliOk
+                ? `${cli.path || "/usr/local/bin/nodus-cli"}${cli.version ? " • " + cli.version : ""}`
+                : `Missing: ${cli.path || "/usr/local/bin/nodus-cli"}`;
+        }
+
+        setLight(nodusIdentityLight, idOk ? "ok" : "fail");
+        if (nodusIdentityValue) {
+            nodusIdentityValue.textContent = idOk
+                ? `${identity.fingerprint_short || "present"}… • ${identity.dir || ""}`
+                : `Missing in ${identity.dir || "identity dir"}`;
+        }
+
+        setLight(nodusSeedsLight, seedsAllOk ? "ok" : (seedsOk ? "warn" : "fail"));
+        if (nodusSeedsValue) {
+            nodusSeedsValue.textContent = `${reachableSeeds} / ${totalSeeds} reachable`;
+        }
+
+        setLight(nodusPublicUrlLight, publicOk ? "ok" : "warn");
+        if (nodusPublicUrlValue) {
+            nodusPublicUrlValue.textContent = publicOk ? publicUrl : "Not configured";
+        }
+
+        setLight(nodusWorkerLight, workerEnabled ? "ok" : "warn");
+        if (nodusWorkerValue) {
+            nodusWorkerValue.textContent = workerEnabled
+                ? "Enabled"
+                : "Disabled • set PQNAS_CIRCLE_FEDERATION_WORKER=1";
+        }
+
+        const overallOk = cliOk && idOk && seedsOk && publicOk;
+        setNodusStatusPill(
+            overallOk ? "ok" : "warn",
+            overallOk ? "ready" : "needs attention"
+        );
+
+        if (btnNodusCreateIdentity) btnNodusCreateIdentity.disabled = idOk || !cliOk;
+    }
+
+    async function refreshNodusStatus() {
+        setNodusStatusPill("warn", "loading…");
+
+        try {
+            const j = await apiNodusStatus();
+            renderNodusStatus(j);
+        } catch (e) {
+            console.error(e);
+            setNodusStatusPill("fail", "error");
+            setLight(nodusCliLight, "fail");
+            setLight(nodusIdentityLight, "fail");
+            setLight(nodusSeedsLight, "fail");
+            showToast("fail", "Nodus status failed", String(e.message || e));
+        }
+    }
+
     // ---------------------------
     // Main refresh: load all settings
     // ---------------------------
@@ -1538,6 +1661,8 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             applyDnaAlertsToUi(j);
             applyDnaIdentityToUi(j);
 
+            // Nodus federation
+            await refreshNodusStatus();
 
             clearPreview();
             setStatusPill("ok", "ready");
@@ -1630,6 +1755,53 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             closeDnaIdentityModal();
         }
     });
+
+    // ---------------------------
+    // Wire Nodus federation
+    // ---------------------------
+    btnNodusRefresh?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshNodusStatus();
+    });
+
+    btnNodusCreateIdentity?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const ok = await openAdminConfirmModal({
+            title: "Generate Nodus identity?",
+            subtitle: "This creates a local NAS federation identity if missing.",
+            rows: [
+                { label: "Target", value: "/srv/pqnas/config/nodus/identity", mono: true },
+                { label: "Effect", value: "This NAS gets a unique federation origin fingerprint." }
+            ],
+            note: "Do not replace an existing identity unless you intentionally want this NAS to appear as a different node.",
+            confirmText: "Generate identity",
+            cancelText: tr("admin.common.cancel", null, "Cancel"),
+            warn: true
+        });
+
+        if (!ok) return;
+
+        btnNodusCreateIdentity.disabled = true;
+        setNodusStatusPill("warn", "creating identity…");
+
+        try {
+            const j = await apiNodusCreateIdentity();
+            showToast(
+                "ok",
+                j.created ? "Nodus identity created" : "Nodus identity already exists",
+                j.fingerprint_short ? `${j.fingerprint_short}…` : "OK"
+            );
+            await refreshNodusStatus();
+        } catch (e) {
+            console.error(e);
+            showToast("fail", "Nodus identity failed", String(e.message || e));
+            await refreshNodusStatus();
+        } finally {
+            btnNodusCreateIdentity.disabled = false;
+        }
+    });
+
     // ---------------------------
     // Wire retention
     // ---------------------------

@@ -353,6 +353,55 @@
 
         .hidden { display:none !important; }
 
+        .lightDot{
+            width:10px;
+            height:10px;
+            border-radius:999px;
+            display:inline-block;
+            box-shadow:0 0 10px rgba(var(--fg-rgb),0.18);
+            background:rgba(var(--fg-rgb),0.32);
+        }
+
+        .lightDot.ok{ background:#22c55e; box-shadow:0 0 14px rgba(34,197,94,0.55); }
+        .lightDot.warn{ background:#f59e0b; box-shadow:0 0 14px rgba(245,158,11,0.45); }
+        .lightDot.fail{ background:#ef4444; box-shadow:0 0 14px rgba(239,68,68,0.45); }
+
+        .statusGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap:10px;
+            width:100%;
+            margin-top:10px;
+        }
+
+        .statusTile{
+            border:1px solid rgba(var(--fg-rgb),0.12);
+            background:rgba(0,0,0,0.18);
+            border-radius:16px;
+            padding:10px 12px;
+            min-width:0;
+        }
+
+        .statusTile .label{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-size:12px;
+            color:rgba(var(--fg-rgb),0.68);
+            font-weight:900;
+            letter-spacing:0.04em;
+            text-transform:uppercase;
+        }
+
+        .statusTile .value{
+            margin-top:6px;
+            font-family:var(--mono);
+            font-size:12px;
+            color:rgba(var(--fg-rgb),0.94);
+            overflow-wrap:anywhere;
+        }
+
+
         .modalBackdrop{
             position: fixed;
             inset: 0;
@@ -799,6 +848,57 @@
                 </div>
             </div>
 
+
+            <div class="card accordion open" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="true">
+                    <div class="h">Nodus Federation</div>
+                    <div class="pill warn" id="nodusStatusPill">
+                        <span class="k">Status:</span> <span class="v">loading…</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <button id="btnNodusRefresh" class="btn primary" type="button">Refresh Nodus status</button>
+                        <button id="btnNodusCreateIdentity" class="btn" type="button">Generate identity</button>
+                    </div>
+
+                    <div class="statusGrid">
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusCliLight" class="lightDot warn"></span>CLI installed</div>
+                            <div id="nodusCliValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusIdentityLight" class="lightDot warn"></span>Local NAS identity</div>
+                            <div id="nodusIdentityValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusSeedsLight" class="lightDot warn"></span>Bootstrap seeds</div>
+                            <div id="nodusSeedsValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusPublicUrlLight" class="lightDot warn"></span>Public base URL</div>
+                            <div id="nodusPublicUrlValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusWorkerLight" class="lightDot warn"></span>Federation worker</div>
+                            <div id="nodusWorkerValue" class="value">—</div>
+                        </div>
+                    </div>
+
+                    <div class="note">
+                        Nodus identity is the NAS/server identity used for federation origin.
+                        Circle Stack user identity stays separate as <span class="mono">owner_fp</span> / <span class="mono">actor_fp</span>.
+                        Media previews are still fetched directly from the origin DNA-Nexus server, not through Nodus.
+                    </div>
+                </div>
+            </div>
+
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.dna.title">DNA Connect alerts</span></div>
@@ -1022,7 +1122,7 @@ New uploads land in a fast internal pool first and later migrate to capacity sto
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260521-de-et-language-selector-1"></script>
+<script src="/static/admin_settings.js?v=20260526-nodus-status-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

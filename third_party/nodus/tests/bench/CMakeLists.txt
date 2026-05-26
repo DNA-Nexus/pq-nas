@@ -58,9 +58,10 @@ set(DNAC_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../dnac/include")
 set(DNA_SHARED_DIR "${CMAKE_SOURCE_DIR}/../shared")
 
 if(NOT EXISTS "${DNA_LIB_PATH}")
-    message(WARNING
-        "libdna.so not found at ${DNA_LIB_PATH}; dna_bench skipped.\n"
-        "Build messenger first: cd messenger/build && cmake .. && make -j$(nproc)")
+    # DNA-Nexus bundles Nodus for nodus-cli only. dna_bench is optional,
+    # so keep this quiet when libdna.so is not present.
+    message(STATUS "dna_bench skipped: optional libdna.so not found")
+
 else()
     add_executable(dna_bench
         dna_bench.c

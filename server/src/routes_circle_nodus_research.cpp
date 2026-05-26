@@ -10,6 +10,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <fstream>
+#include <cstdio>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <cctype>
@@ -139,6 +142,93 @@ bool require_admin(const CircleNodusResearchRoutesDeps& deps,
     return true;
 }
 
+
+std::string read_first_line_trimmed(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    if (!f) return "";
+
+    std::string line;
+    std::getline(f, line);
+    return trim_copy(line);
+}
+
+std::string nodus_identity_fingerprint_from_dir(const std::string& dir) {
+    if (dir.empty()) return "";
+    return read_first_line_trimmed(std::filesystem::path(dir) / "nodus.fp");
+}
+
+std::string short_fp(const std::string& fp, std::size_t n = 16) {
+    if (fp.size() <= n) return fp;
+    return fp.substr(0, n);
+}
+
+bool truthy_env(const char* name) {
+    const char* raw = std::getenv(name);
+    if (!raw || !raw[0]) return false;
+
+    const std::string v = lower_copy(trim_copy(raw));
+    return v == "1" || v == "true" || v == "yes" || v == "y" || v == "on";
+}
+
+std::string env_string(const char* name) {
+    const char* raw = std::getenv(name);
+    return raw && raw[0] ? std::string(raw) : "";
+}
+
+std::string public_base_url_from_env() {
+    std::string v = env_string("PQNAS_PUBLIC_BASE_URL");
+    if (!v.empty()) return v;
+
+    v = env_string("PQNAS_ORIGIN");
+    if (!v.empty()) return v;
+
+    return "";
+}
+
+std::string run_shell_capture_limited(const std::string& cmd, std::size_t max_len = 4096) {
+    std::array<char, 256> buf{};
+    std::string out;
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+
+    while (fgets(buf.data(), static_cast<int>(buf.size()), pipe)) {
+        out += buf.data();
+        if (out.size() >= max_len) {
+            out.resize(max_len);
+            out += "\n...[truncated]";
+            break;
+        }
+    }
+
+    pclose(pipe);
+    return trim_copy(out);
+}
+
+std::string first_nonempty_line(const std::string& raw) {
+    std::istringstream in(raw);
+    std::string line;
+
+    while (std::getline(in, line)) {
+        line = trim_copy(line);
+        if (!line.empty()) return line;
+    }
+
+    return "";
+}
+
+std::string nodus_cli_version_line(const federation::NodusClientConfig& config) {
+    if (config.nodus_cli_path.empty()) return "";
+
+    const std::string cmd =
+        "timeout 3 " +
+        federation::shell_quote_for_nodus_research(config.nodus_cli_path) +
+        " 2>&1";
+
+    return first_nonempty_line(run_shell_capture_limited(cmd, 2048));
+}
+
+
 federation::NodusClientConfig make_nodus_config() {
     federation::NodusClientConfig config;
 
@@ -146,9 +236,18 @@ federation::NodusClientConfig make_nodus_config() {
         if (p[0]) config.nodus_cli_path = p;
     }
 
-    config.identity_dir = "/srv/pqnas/config/nodus/research_identity";
+    const std::string production_identity_dir = "/srv/pqnas/config/nodus/identity";
+    const std::string legacy_identity_dir = "/srv/pqnas/config/nodus/research_identity";
+
+    config.identity_dir = production_identity_dir;
+
     if (const char* p = std::getenv("PQNAS_NODUS_IDENTITY_DIR")) {
-        if (p[0]) config.identity_dir = p;
+        if (p[0]) {
+            config.identity_dir = p;
+        }
+    } else if (nodus_identity_fingerprint_from_dir(production_identity_dir).empty() &&
+               !nodus_identity_fingerprint_from_dir(legacy_identity_dir).empty()) {
+        config.identity_dir = legacy_identity_dir;
     }
 
     if (const char* p = std::getenv("PQNAS_NODUS_TIMEOUT_SECONDS")) {
@@ -500,11 +599,32 @@ void register_circle_nodus_research_routes(
             const int timeout_ms = query_int(req, "timeout_ms", 1500, 100, 10000);
             const auto config = make_nodus_config();
 
+            const bool cli_installed =
+                !config.nodus_cli_path.empty() &&
+                std::filesystem::is_regular_file(config.nodus_cli_path);
+
+            const std::string version_line =
+                cli_installed ? nodus_cli_version_line(config) : "";
+
+            const std::string fingerprint =
+                nodus_identity_fingerprint_from_dir(config.identity_dir);
+
+            const std::string legacy_identity_dir =
+                "/srv/pqnas/config/nodus/research_identity";
+
+            const bool identity_exists = !fingerprint.empty();
+            const bool legacy_exists =
+                !nodus_identity_fingerprint_from_dir(legacy_identity_dir).empty();
+
+            int reachable_count = 0;
             json seeds = json::array();
+
             for (const auto& seed : federation::default_nodus_seeds()) {
                 std::string err;
                 const bool reachable =
                     tcp_check(seed.host, seed.client_port, timeout_ms, &err);
+
+                if (reachable) ++reachable_count;
 
                 json item = seed_json(seed);
                 item["reachable"] = reachable;
@@ -512,17 +632,125 @@ void register_circle_nodus_research_routes(
                 seeds.push_back(item);
             }
 
+            const bool worker_enabled =
+                truthy_env("PQNAS_CIRCLE_FEDERATION_WORKER");
+
+            const std::string worker_env =
+                env_string("PQNAS_CIRCLE_FEDERATION_WORKER");
+
+            const std::string public_base_url =
+                public_base_url_from_env();
+
             set_json(res, 200, {
                 {"ok", true},
+
+                // Backwards-compatible flat fields.
                 {"nodus_cli_path", config.nodus_cli_path},
                 {"identity_dir", config.identity_dir},
                 {"timeout_seconds", config.timeout_seconds},
                 {"timeout_ms", timeout_ms},
-                {"seeds", seeds}
+                {"seeds", seeds},
+
+                // Rich status for Admin Settings UI.
+                {"cli", {
+                    {"path", config.nodus_cli_path},
+                    {"installed", cli_installed},
+                    {"version", version_line}
+                }},
+                {"identity", {
+                    {"dir", config.identity_dir},
+                    {"exists", identity_exists},
+                    {"fingerprint", fingerprint},
+                    {"fingerprint_short", short_fp(fingerprint)},
+                    {"legacy_dir", legacy_identity_dir},
+                    {"legacy_exists", legacy_exists}
+                }},
+                {"public_base_url", public_base_url},
+                {"worker", {
+                    {"enabled", worker_enabled},
+                    {"env", "PQNAS_CIRCLE_FEDERATION_WORKER"},
+                    {"raw", worker_env}
+                }},
+                {"seeds_summary", {
+                    {"reachable", reachable_count},
+                    {"total", seeds.size()}
+                }}
             });
         });
 
+    server.Post("/api/v4/admin/nodus/identity/init",
+        [deps](const httplib::Request& req, httplib::Response& res) {
+            if (!require_admin(deps, req, res, nullptr)) return;
 
+            const auto config = make_nodus_config();
+
+            if (config.nodus_cli_path.empty() ||
+                !std::filesystem::is_regular_file(config.nodus_cli_path)) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "nodus_cli_missing"},
+                    {"path", config.nodus_cli_path}
+                });
+                return;
+            }
+
+            const std::string existing_fp =
+                nodus_identity_fingerprint_from_dir(config.identity_dir);
+
+            if (!existing_fp.empty()) {
+                set_json(res, 200, {
+                    {"ok", true},
+                    {"created", false},
+                    {"already_exists", true},
+                    {"identity_dir", config.identity_dir},
+                    {"fingerprint", existing_fp},
+                    {"fingerprint_short", short_fp(existing_fp)}
+                });
+                return;
+            }
+
+            std::error_code ec;
+            std::filesystem::create_directories(config.identity_dir, ec);
+            if (ec) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "identity_dir_create_failed"},
+                    {"identity_dir", config.identity_dir},
+                    {"message", ec.message()}
+                });
+                return;
+            }
+
+            const std::string cmd =
+                "timeout " + std::to_string(config.timeout_seconds) + " " +
+                federation::shell_quote_for_nodus_research(config.nodus_cli_path) +
+                " -i " +
+                federation::shell_quote_for_nodus_research(config.identity_dir) +
+                " identity-init 2>&1";
+
+            const std::string output = run_shell_capture_limited(cmd, 4096);
+            const std::string fp =
+                nodus_identity_fingerprint_from_dir(config.identity_dir);
+
+            if (fp.empty()) {
+                set_json(res, 500, {
+                    {"ok", false},
+                    {"error", "identity_init_failed"},
+                    {"identity_dir", config.identity_dir},
+                    {"output", output}
+                });
+                return;
+            }
+
+            set_json(res, 200, {
+                {"ok", true},
+                {"created", true},
+                {"identity_dir", config.identity_dir},
+                {"fingerprint", fp},
+                {"fingerprint_short", short_fp(fp)},
+                {"output", output}
+            });
+        });
 
 
 
@@ -604,6 +832,10 @@ void register_circle_nodus_research_routes(
                 return;
             }
 
+            const auto nodus_config = make_nodus_config();
+            const std::string local_nodus_fp =
+                nodus_identity_fingerprint_from_dir(nodus_config.identity_dir);
+
             json events = json::array();
             int applied = 0;
             int ignored = 0;
@@ -615,7 +847,11 @@ void register_circle_nodus_research_routes(
                 json item = inbox_event_json(row);
                 std::string mark_err;
 
-                if (row.origin_nas == actor_fp) {
+                const bool local_origin =
+                    (!local_nodus_fp.empty() && row.origin_nas == local_nodus_fp) ||
+                    (local_nodus_fp.empty() && row.origin_nas == actor_fp);
+
+                if (local_origin) {
                     if (federation::mark_circle_federation_inbox_ignored(
                             row.id,
                             "ignored_local_origin",
