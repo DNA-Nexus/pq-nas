@@ -116,6 +116,35 @@ bool event_json_too_large(
     return true;
 }
 
+bool is_safe_circle_federation_event_id(const std::string& event_id) {
+    if (event_id.size() < 3 || event_id.size() > 160) {
+        return false;
+    }
+
+    for (unsigned char c : event_id) {
+        if (std::isalnum(c) ||
+            c == '_' ||
+            c == '-' ||
+            c == '.' ||
+            c == ':') {
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
+void log_rejected_remote_event_id(
+    const char* source_label,
+    const NodusSeed& seed,
+    const std::string& event_id) {
+    std::cerr << "[CircleFederationWorker] inbound " << source_label
+              << " rejected unsafe event_id seed=" << seed.name
+              << " bytes=" << event_id.size() << "\n";
+}
+
 std::string canonical_federation_event_without_signature(json event) {
     if (event.is_object()) {
         event.erase("origin_sig");
@@ -448,6 +477,11 @@ bool worker_pull_latest_remote_head(
         return false;
     }
 
+    if (!is_safe_circle_federation_event_id(event_id)) {
+        log_rejected_remote_event_id("head", seed, event_id);
+        return false;
+    }
+
     const std::string event_key = circle_event_key(circle_id, event_id);
 
     NodusCommandResult event_get;
@@ -477,10 +511,6 @@ bool worker_pull_latest_remote_head(
     } catch (...) {
         std::cerr << "[CircleFederationWorker] inbound invalid event JSON event_id="
                   << event_id << "\n";
-        return false;
-    }
-
-    if (!verify_federation_event_signature(event, event_id, "head")) {
         return false;
     }
 
@@ -535,6 +565,11 @@ bool worker_fetch_event_to_inbox(
     const std::string& local_nodus_fp,
     const char* source_label) {
     if (event_id.empty()) return false;
+
+    if (!is_safe_circle_federation_event_id(event_id)) {
+        log_rejected_remote_event_id(source_label, seed, event_id);
+        return false;
+    }
 
     const std::string event_key = circle_event_key(circle_id, event_id);
 
@@ -682,6 +717,11 @@ void worker_pull_recent_remote_events(
 
         const std::string event_id = extract_nodus_value(recent_get.output);
         if (recent_get.exit_code != 0 || event_id.empty()) {
+            continue;
+        }
+
+        if (!is_safe_circle_federation_event_id(event_id)) {
+            log_rejected_remote_event_id("recent", seed, event_id);
             continue;
         }
 
