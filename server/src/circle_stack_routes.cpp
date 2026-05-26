@@ -1782,6 +1782,48 @@ std::string cs_public_base_url_from_env() {
     return out;
 }
 
+std::string cs_federation_media_path_for_public_preview(
+    const std::string& media_path) {
+    if (media_path.empty()) {
+        return "";
+    }
+
+    // Media refs are only useful and safe to publish when the origin has a
+    // valid public HTTPS preview base URL. Text-only federation may still work
+    // without this.
+    if (cs_public_base_url_from_env().empty()) {
+        return "";
+    }
+
+    return media_path;
+}
+
+json cs_make_federation_media_preview_with_policy(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& original_media_path,
+    const std::string& federated_media_path
+) {
+    if (original_media_path.empty()) {
+        return cs_make_federation_media_preview(entity_type, entity_id, "");
+    }
+
+    if (federated_media_path.empty()) {
+        return {
+            {"has_media", true},
+            {"status", "origin_preview_unavailable"},
+            {"count", 0},
+            {"refs", json::array()},
+            {"note", "Media exists on origin PQ-NAS, but no valid public preview base URL is configured; media refs were not federated."}
+        };
+    }
+
+    return cs_make_federation_media_preview(
+        entity_type,
+        entity_id,
+        federated_media_path);
+}
+
 
 std::string cs_trim_copy(const std::string& raw) {
     std::size_t a = 0;
@@ -1991,6 +2033,9 @@ bool cs_enqueue_post_created_federation_best_effort(
     const std::string event_id =
         cs_make_post_created_event_id(post_id, created_epoch);
 
+    const std::string federated_media_path =
+        cs_federation_media_path_for_public_preview(media_path);
+
     std::string event_key;
     std::string head_key;
 
@@ -2019,9 +2064,9 @@ bool cs_enqueue_post_created_federation_best_effort(
             {"text_preview", cs_make_federation_text_preview(text)},
             {"visibility", visibility},
             {"has_media", !media_path.empty()},
-            {"media_count", media_path.empty() ? 0 : 1},
-            {"media_refs", cs_make_federation_media_refs("post", post_id, media_path)},
-            {"media_preview", cs_make_federation_media_preview("post", post_id, media_path)},
+            {"media_count", federated_media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("post", post_id, federated_media_path)},
+            {"media_preview", cs_make_federation_media_preview_with_policy("post", post_id, media_path, federated_media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };
@@ -2109,6 +2154,9 @@ bool cs_enqueue_reply_created_federation_best_effort(
     const std::string event_id =
         cs_make_reply_created_event_id(reply_id, post_id, created_epoch);
 
+    const std::string federated_media_path =
+        cs_federation_media_path_for_public_preview(media_path);
+
     std::string event_key;
     std::string head_key;
 
@@ -2137,9 +2185,9 @@ bool cs_enqueue_reply_created_federation_best_effort(
             {"origin_label", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
             {"text_preview", cs_make_federation_text_preview(text)},
             {"has_media", !media_path.empty()},
-            {"media_count", media_path.empty() ? 0 : 1},
-            {"media_refs", cs_make_federation_media_refs("reply", reply_id, media_path)},
-            {"media_preview", cs_make_federation_media_preview("reply", reply_id, media_path)},
+            {"media_count", federated_media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("reply", reply_id, federated_media_path)},
+            {"media_preview", cs_make_federation_media_preview_with_policy("reply", reply_id, media_path, federated_media_path)},
             {"mention_count", mentions.is_array() ? mentions.size() : 0}
         }}
     };
