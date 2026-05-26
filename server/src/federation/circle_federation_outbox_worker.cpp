@@ -211,7 +211,10 @@ NodusClientConfig make_worker_nodus_config() {
         config.identity_dir = legacy_identity_dir;
     }
 
-    config.timeout_seconds = env_int("PQNAS_NODUS_TIMEOUT_SECONDS", 8, 1, 60);
+    // Keep worker/admin Nodus subprocess calls short enough that a slow seed
+    // cannot stall federation sync for minutes. Operators can still tune this
+    // through PQNAS_NODUS_TIMEOUT_SECONDS, but cap it to a sane research limit.
+    config.timeout_seconds = env_int("PQNAS_NODUS_TIMEOUT_SECONDS", 5, 1, 30);
 
     return config;
 }
