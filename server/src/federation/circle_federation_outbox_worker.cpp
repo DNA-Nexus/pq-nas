@@ -224,7 +224,7 @@ std::string local_federation_origin_fingerprint(
     }
 
     // Compatibility fallback for older unsigned research events.
-    return local_federation_origin_fingerprint(config);
+    return nodus_identity_fingerprint_from_dir(config.identity_dir);
 }
 
 bool parse_remote_feed_fields_from_event(
@@ -598,6 +598,10 @@ bool worker_fetch_event_to_inbox(
     } catch (...) {
         std::cerr << "[CircleFederationWorker] inbound " << source_label
                   << " invalid JSON event_id=" << event_id << "\n";
+        return false;
+    }
+
+    if (!verify_federation_event_signature(event, event_id, source_label)) {
         return false;
     }
 

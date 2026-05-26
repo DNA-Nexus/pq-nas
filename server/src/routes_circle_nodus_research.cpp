@@ -5,6 +5,7 @@
 #include "federation/circle_federation_outbox_worker.h"
 #include "federation/circle_federation_inbox.h"
 #include "federation/circle_federation_remote_feed.h"
+#include "federation/circle_federation_signing.h"
 #include "federation/pqnas_nodus_client.h"
 
 #include <nlohmann/json.hpp>
@@ -155,6 +156,82 @@ std::string read_first_line_trimmed(const std::filesystem::path& path) {
 std::string nodus_identity_fingerprint_from_dir(const std::string& dir) {
     if (dir.empty()) return "";
     return read_first_line_trimmed(std::filesystem::path(dir) / "nodus.fp");
+}
+
+std::string canonical_federation_event_without_signature(json event) {
+    if (event.is_object()) {
+        event.erase("origin_sig");
+    }
+
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+bool verify_admin_federation_event_signature(
+    const json& event,
+    const std::string& event_id,
+    std::string* err) {
+    if (err) *err = "";
+
+    if (!event.is_object()) {
+        if (err) *err = "event_not_object";
+        return false;
+    }
+
+    const std::string origin_nas = event.value("origin_nas", "");
+    const std::string origin_pubkey = event.value("origin_pubkey", "");
+    const std::string origin_sig = event.value("origin_sig", "");
+    const std::string origin_sig_alg = event.value("origin_sig_alg", "");
+
+    if (origin_nas.empty() ||
+        origin_pubkey.empty() ||
+        origin_sig.empty() ||
+        origin_sig_alg != "Ed25519") {
+        if (err) *err = "unsigned_or_unsupported_event_signature";
+        return false;
+    }
+
+    const std::string signing_fp =
+        federation::circle_federation_signing_public_key_fingerprint(origin_pubkey);
+
+    if (signing_fp.empty() || signing_fp != origin_nas) {
+        if (err) *err = "signing_key_fingerprint_mismatch";
+        return false;
+    }
+
+    const std::string canonical =
+        canonical_federation_event_without_signature(event);
+
+    std::string verify_err;
+    if (!federation::verify_circle_federation_canonical_json(
+            origin_pubkey,
+            canonical,
+            origin_sig,
+            &verify_err)) {
+        if (err) *err = verify_err.empty() ? "invalid_event_signature" : verify_err;
+        return false;
+    }
+
+    (void)event_id;
+    return true;
+}
+
+std::string local_federation_origin_fingerprint(
+    const federation::NodusClientConfig& config) {
+    federation::CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (federation::ensure_circle_federation_signing_identity(
+            config.identity_dir,
+            &identity,
+            &err)) {
+        return identity.public_key_fingerprint;
+    }
+
+    return nodus_identity_fingerprint_from_dir(config.identity_dir);
 }
 
 std::string short_fp(const std::string& fp, std::size_t n = 16) {
@@ -865,7 +942,7 @@ void register_circle_nodus_research_routes(
 
             const auto nodus_config = make_nodus_config();
             const std::string local_nodus_fp =
-                nodus_identity_fingerprint_from_dir(nodus_config.identity_dir);
+                local_federation_origin_fingerprint(nodus_config);
 
             json events = json::array();
             int applied = 0;
@@ -910,6 +987,28 @@ void register_circle_nodus_research_routes(
                             &mark_err)) {
                         item["final_status"] = "failed";
                         item["reason"] = "invalid_event_json";
+                    } else {
+                        item["final_status"] = "failed";
+                        item["mark_error"] = mark_err;
+                    }
+
+                    ++failed;
+                    events.push_back(item);
+                    continue;
+                }
+
+                std::string sig_err;
+                if (!verify_admin_federation_event_signature(
+                        event,
+                        row.event_id,
+                        &sig_err)) {
+                    if (federation::mark_circle_federation_inbox_failed(
+                            row.id,
+                            "invalid_event_signature",
+                            &mark_err)) {
+                        item["final_status"] = "failed";
+                        item["reason"] = "invalid_event_signature";
+                        item["message"] = sig_err;
                     } else {
                         item["final_status"] = "failed";
                         item["mark_error"] = mark_err;
