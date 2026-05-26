@@ -188,8 +188,62 @@ bool store_circle_federation_inbox_event(
     }
 
     sqlite3_close(db);
+
+    std::string prune_err;
+    if (!prune_circle_federation_inbox(
+            kMaxCircleFederationInboxRows,
+            &prune_err)) {
+        if (err) *err = prune_err;
+        return false;
+    }
+
     return true;
 }
+
+
+bool prune_circle_federation_inbox(
+    int max_rows,
+    std::string* err) {
+    if (max_rows <= 0) {
+        if (err) *err = "invalid inbox prune max_rows";
+        return false;
+    }
+
+    if (!ensure_circle_federation_inbox(err)) return false;
+
+    sqlite3* db = nullptr;
+    if (!open_inbox_db(&db, err)) return false;
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "DELETE FROM circle_federation_inbox "
+        "WHERE id NOT IN ("
+        "  SELECT id FROM circle_federation_inbox "
+        "  ORDER BY id DESC "
+        "  LIMIT ?"
+        ")";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_bind_int(st, 1, max_rows);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_close(db);
+    return true;
+}
+
 
 std::vector<CircleFederationInboxEvent> list_circle_federation_inbox(
     int limit,

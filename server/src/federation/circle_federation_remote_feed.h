@@ -55,4 +55,8 @@ std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
 
 CircleFederationRemoteFeedStats circle_federation_remote_feed_stats(std::string* err);
 
+bool prune_circle_federation_remote_feed(
+    int max_rows,
+    std::string* err);
+
 } // namespace pqnas::federation

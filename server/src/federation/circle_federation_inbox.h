@@ -47,6 +47,10 @@ std::vector<CircleFederationInboxEvent> list_circle_federation_inbox(
 
 CircleFederationInboxStats circle_federation_inbox_stats(std::string* err);
 
+bool prune_circle_federation_inbox(
+    int max_rows,
+    std::string* err);
+
 bool mark_circle_federation_inbox_applied(
     std::int64_t id,
     std::string* err);
