@@ -1023,7 +1023,15 @@ def chmod_nodus_identity_tree(identity_dir: str) -> None:
 
     os.chmod(identity_dir, 0o700)
 
-    for name in ("nodus.pk", "nodus.sk", "nodus.fp", "nodus.kyber_pk", "nodus.kyber_sk"):
+    for name in (
+            "nodus.pk",
+            "nodus.sk",
+            "nodus.fp",
+            "nodus.kyber_pk",
+            "nodus.kyber_sk",
+            "federation_signing_ed25519.pk",
+            "federation_signing_ed25519.sk",
+    ):
         path = os.path.join(identity_dir, name)
         if os.path.exists(path):
             os.chmod(path, 0o600)
