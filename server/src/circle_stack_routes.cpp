@@ -11,10 +11,12 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <condition_variable>
 #include <ctime>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -25,6 +27,58 @@ namespace {
 
 static sqlite3* g_db = nullptr;
 static constexpr const char* kCircleStackDbPath = "/srv/pqnas/circlestack.db";
+
+
+class CsPreviewGenerationSlot {
+public:
+    explicit CsPreviewGenerationSlot(int max_concurrent)
+        : max_concurrent_(max_concurrent) {
+        std::unique_lock<std::mutex> lock(mutex());
+        cv().wait(lock, [&] {
+            return active_count() < max_concurrent_;
+        });
+        ++active_count();
+        acquired_ = true;
+    }
+
+    CsPreviewGenerationSlot(const CsPreviewGenerationSlot&) = delete;
+    CsPreviewGenerationSlot& operator=(const CsPreviewGenerationSlot&) = delete;
+
+    ~CsPreviewGenerationSlot() {
+        if (!acquired_) return;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex());
+            if (active_count() > 0) {
+                --active_count();
+            }
+        }
+
+        cv().notify_one();
+    }
+
+private:
+    static std::mutex& mutex() {
+        static std::mutex m;
+        return m;
+    }
+
+    static std::condition_variable& cv() {
+        static std::condition_variable c;
+        return c;
+    }
+
+    static int& active_count() {
+        static int count = 0;
+        return count;
+    }
+
+    int max_concurrent_ = 0;
+    bool acquired_ = false;
+};
+
+static constexpr int kMaxCircleStackPreviewFfmpegProcesses = 2;
+
 
 void set_json(httplib::Response& res, const json& body) {
     res.set_content(body.dump(), "application/json; charset=utf-8");
@@ -2542,6 +2596,8 @@ bool cs_generate_federation_preview_jpeg(
         if (out_preview) *out_preview = preview;
         return true;
     }
+
+    CsPreviewGenerationSlot preview_slot(kMaxCircleStackPreviewFfmpegProcesses);
 
     const std::filesystem::path tmp =
         cache_dir / (key + ".tmp." + std::to_string(std::time(nullptr)) + ".jpg");
