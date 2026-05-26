@@ -768,3 +768,24 @@ Verified preview endpoint:
 - returned `content-type: image/jpeg`
 - returned `x-pqnas-preview-status: generated`
 - returned a `640x360` JPEG preview
+
+## VPS cross-origin preview test verified
+
+Tested dev box -> Nodus -> VPS inbound path using real public media event:
+
+- `event_id=post_1779674571_33`
+- `ref_id=post:33:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+- `text_preview=This is federated public test`
+
+Results:
+
+- VPS `pull-event` retrieved the event from Nodus successfully.
+- First apply was ignored as `ignored_local_origin` because VPS temporarily used a copied dev-box Nodus identity.
+- For research validation, the inbox row origin was rewritten to `dev_box_origin_for_vps_test`.
+- Second apply stored the event into the VPS remote federated feed.
+- VPS federated feed exposed the dev-box origin descriptor and media ref.
+- VPS fetched the dev-box origin preview URL successfully.
+- Preview response was `HTTP 200`, `content-type: image/jpeg`, `x-pqnas-preview-status: generated`, `640x360` JPEG.
+
+Important follow-up: real two-NAS tests require each NAS to have a unique Nodus identity. Copying the identity is only acceptable for this temporary research test and correctly triggers local-origin self-echo protection.
