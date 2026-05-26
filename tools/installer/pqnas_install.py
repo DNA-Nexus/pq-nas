@@ -198,7 +198,7 @@ def rollback_binaries(dest_dir: str = "/usr/local/bin") -> None:
     Restore /usr/local/bin/pqnas_server(.bak) and pqnas_keygen(.bak) if present.
     Keeps the .bak files intact (copy -> replace).
     """
-    for name in ("pqnas_server", "pqnas_keygen"):
+    for name in ("pqnas_server", "pqnas_keygen", "nodus-cli"):
         cur = os.path.join(dest_dir, name)
         bak = cur + ".bak"
         if os.path.exists(bak):
@@ -283,6 +283,7 @@ def ensure_runtime_deps_for_server(server_exec: str, log: Optional[Log] = None, 
         # Needed by libdna_lib.so on your VPS (Ubuntu noble)
         "libfmt.so.9": "libfmt9",
         "libjsoncpp.so.25": "libjsoncpp25",
+        "libjson-c.so.5": "libjson-c5",
     }
 
     # Collect missing libs across all checked binaries/DSOs
@@ -931,11 +932,14 @@ def write_env_file(
         f"PQNAS_DATA_ROOT={root}/data",
         "PQNAS_STATIC_ROOT=/opt/pqnas/static",
         f"PQNAS_APPS_ROOT={root}/apps",
+        "",
+        "PQNAS_NODUS_CLI=/usr/local/bin/nodus-cli",
+        "PQNAS_NODUS_IDENTITY_DIR=/srv/pqnas/config/nodus/identity",
     ]
 
     # URL / relying party settings (used by v4 QR auth)
     if origin:
-        lines += ["", f"PQNAS_ORIGIN={origin}"]
+        lines += ["", f"PQNAS_ORIGIN={origin}", f"PQNAS_PUBLIC_BASE_URL={origin}"]
     if rp_id:
         lines += [f"PQNAS_RP_ID={rp_id}"]
 
@@ -1001,52 +1005,177 @@ def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
 
 
 # -----------------------------------------------------------------------------
+# Nodus federation helper install / identity
+# -----------------------------------------------------------------------------
+
+def read_nodus_fingerprint(identity_dir: str) -> str:
+    fp_path = os.path.join(identity_dir, "nodus.fp")
+    try:
+        with open(fp_path, "r", encoding="utf-8") as f:
+            return (f.readline() or "").strip()
+    except FileNotFoundError:
+        return ""
+
+
+def chmod_nodus_identity_tree(identity_dir: str) -> None:
+    if not os.path.isdir(identity_dir):
+        return
+
+    os.chmod(identity_dir, 0o700)
+
+    for name in ("nodus.pk", "nodus.sk", "nodus.fp", "nodus.kyber_pk", "nodus.kyber_sk"):
+        path = os.path.join(identity_dir, name)
+        if os.path.exists(path):
+            os.chmod(path, 0o600)
+
+
+def ensure_nodus_identity(
+        nodus_cli_path: str,
+        identity_dir: str = "/srv/pqnas/config/nodus/identity",
+        *,
+        legacy_identity_dir: str = "/srv/pqnas/config/nodus/research_identity",
+        log: Optional[Log] = None,
+) -> str:
+    """
+    Ensure this NAS has a unique local Nodus identity.
+
+    Production identity:
+      /srv/pqnas/config/nodus/identity
+
+    Migration:
+      If production identity is missing but research_identity exists, copy it
+      once so existing research/dev NAS identity remains stable.
+
+    Never ships or downloads identity files.
+    """
+    if not nodus_cli_path or not os.path.isfile(nodus_cli_path):
+        raise RuntimeError(f"nodus-cli not found: {nodus_cli_path}")
+
+    ensure_service_user("pqnas", log=log)
+
+    nodus_root = os.path.dirname(identity_dir.rstrip("/"))
+    os.makedirs(nodus_root, exist_ok=True)
+
+    subprocess.run(["chown", "-R", "pqnas:pqnas", nodus_root], check=True)
+    os.chmod(nodus_root, 0o750)
+
+    fp = read_nodus_fingerprint(identity_dir)
+    if fp:
+        subprocess.run(["chown", "-R", "pqnas:pqnas", identity_dir], check=True)
+        chmod_nodus_identity_tree(identity_dir)
+        if log:
+            log.write(f"[*] Nodus identity exists: {identity_dir}")
+        return fp
+
+    legacy_fp = read_nodus_fingerprint(legacy_identity_dir)
+    if legacy_fp:
+        if os.path.exists(identity_dir):
+            shutil.rmtree(identity_dir)
+        shutil.copytree(legacy_identity_dir, identity_dir)
+        subprocess.run(["chown", "-R", "pqnas:pqnas", identity_dir], check=True)
+        chmod_nodus_identity_tree(identity_dir)
+
+        if log:
+            log.write(f"[*] Migrated Nodus identity: {legacy_identity_dir} -> {identity_dir}")
+
+        return legacy_fp
+
+    if log:
+        log.write(f"[*] Creating new Nodus identity: {identity_dir}")
+
+    cmd = [
+        "sudo", "-u", "pqnas",
+        nodus_cli_path,
+        "-i", identity_dir,
+        "identity-init",
+    ]
+    p = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if p.returncode != 0:
+        raise RuntimeError("nodus-cli identity-init failed:\n" + (p.stdout or "").strip())
+
+    subprocess.run(["chown", "-R", "pqnas:pqnas", identity_dir], check=True)
+    chmod_nodus_identity_tree(identity_dir)
+
+    fp = read_nodus_fingerprint(identity_dir)
+    if not fp:
+        raise RuntimeError(f"Nodus identity was created but nodus.fp is missing in {identity_dir}")
+
+    verify = subprocess.run(
+        ["sudo", "-u", "pqnas", nodus_cli_path, "-i", identity_dir, "whoami"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if verify.returncode != 0:
+        raise RuntimeError("nodus-cli whoami failed after identity creation:\n" + (verify.stdout or "").strip())
+
+    if log:
+        log.write("[*] Nodus identity created and verified.")
+        log.write((verify.stdout or "").strip())
+
+    return fp
+
+
+# -----------------------------------------------------------------------------
 # Install binaries
 # -----------------------------------------------------------------------------
 
-
-def install_binaries(asset_root: str, dest_dir: str = "/usr/local/bin") -> Tuple[str, Optional[str], bool]:
+def install_binaries(asset_root: str, dest_dir: str = "/usr/local/bin") -> Tuple[str, Optional[str], Optional[str], bool]:
     """
-    Install pqnas_server + pqnas_keygen into /usr/local/bin.
-    Returns: (server_exec, keygen_exec_or_none, was_upgrade)
+    Install pqnas_server + pqnas_keygen + nodus-cli into /usr/local/bin.
+    Returns: (server_exec, keygen_exec_or_none, nodus_cli_exec_or_none, was_upgrade)
     """
     was_upgrade = detect_existing_install(dest_dir)
 
-    # package sources
     pkg_server = os.path.join(asset_root, "pqnas_server")
     pkg_keygen = os.path.join(asset_root, "pqnas_keygen")
+    pkg_nodus = os.path.join(asset_root, "nodus-cli")
 
-    # repo sources
     repo_dir = os.path.join(asset_root, "build", "bin")
     repo_server = os.path.join(repo_dir, "pqnas_server")
     repo_keygen = os.path.join(repo_dir, "pqnas_keygen")
+    repo_nodus = os.path.join(repo_dir, "nodus-cli")
 
     package_mode = os.path.isfile(pkg_server)
 
     if package_mode:
         src_server = pkg_server
         src_keygen = pkg_keygen if os.path.isfile(pkg_keygen) else None
+        src_nodus = pkg_nodus if os.path.isfile(pkg_nodus) else None
+
         if src_keygen is None:
             raise RuntimeError(f"Missing keygen binary in package: {pkg_keygen}")
+        if src_nodus is None:
+            raise RuntimeError(f"Missing bundled nodus-cli in package: {pkg_nodus}")
     else:
         src_server = repo_server
         src_keygen = repo_keygen if os.path.isfile(repo_keygen) else None
+        src_nodus = repo_nodus if os.path.isfile(repo_nodus) else None
 
     if not os.path.isfile(src_server):
         raise RuntimeError(f"Missing server binary (tried): {pkg_server} and {repo_server}")
+
+    if not src_nodus or not os.path.isfile(src_nodus):
+        raise RuntimeError(f"Missing nodus-cli binary (tried): {pkg_nodus} and {repo_nodus}")
 
     os.makedirs(dest_dir, exist_ok=True)
 
     dst_server = os.path.join(dest_dir, "pqnas_server")
     dst_keygen = os.path.join(dest_dir, "pqnas_keygen")
+    dst_nodus = os.path.join(dest_dir, "nodus-cli")
 
-    # Backup current binaries (if present)
     if os.path.exists(dst_server):
         shutil.copy2(dst_server, dst_server + ".bak")
     if src_keygen and os.path.exists(dst_keygen):
         shutil.copy2(dst_keygen, dst_keygen + ".bak")
+    if src_nodus and os.path.exists(dst_nodus):
+        shutil.copy2(dst_nodus, dst_nodus + ".bak")
 
-    # Atomic replace
     tmp_server = dst_server + ".new"
     shutil.copy2(src_server, tmp_server)
     os.chmod(tmp_server, 0o755)
@@ -1060,7 +1189,15 @@ def install_binaries(asset_root: str, dest_dir: str = "/usr/local/bin") -> Tuple
         os.replace(tmp_keygen, dst_keygen)
         out_keygen = dst_keygen
 
-    return dst_server, out_keygen, was_upgrade
+    out_nodus: Optional[str] = None
+    if src_nodus and os.path.isfile(src_nodus):
+        tmp_nodus = dst_nodus + ".new"
+        shutil.copy2(src_nodus, tmp_nodus)
+        os.chmod(tmp_nodus, 0o755)
+        os.replace(tmp_nodus, dst_nodus)
+        out_nodus = dst_nodus
+
+    return dst_server, out_keygen, out_nodus, was_upgrade
 
 
 # -----------------------------------------------------------------------------
@@ -2315,6 +2452,7 @@ class RollbackScreen(Screen):
                 "  • If this was an upgrade, the installer saved previous binaries as:\n"
                 "      /usr/local/bin/pqnas_server.bak\n"
                 "      /usr/local/bin/pqnas_keygen.bak\n"
+                "      /usr/local/bin/nodus-cli.bak\n"
                 "  • Rollback will restore those .bak files and restart pqnas.service.\n\n"
                 "Notes:\n"
                 "  • Rollback changes ONLY binaries, not your data/config.\n"
@@ -2772,19 +2910,22 @@ class ExecuteScreen(Screen):
                     stderr=subprocess.DEVNULL,
                     check=False,
                 )
-                subprocess.run(
-                    ["systemctl", "disable", "--now", "pqnas.service"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
+                # Stop only; do NOT disable during upgrades.
+                #
+                # If the installer is interrupted after stop but before the final
+                # "enable --now", nginx would otherwise be left proxying to a
+                # disabled/dead backend and the public site shows 502 Bad Gateway.
+                #
+                # Finalization still calls:
+                #   systemctl enable --now pqnas.service
+                pass
             else:
                 self.logw.write("pqnas.service not installed yet; skipping stop/disable.")
 
             subprocess.run(["pkill", "-f", r"^/usr/local/bin/pqnas_server$"], check=False)
             subprocess.run(["pkill", "-f", "pqnas_server"], check=False)
 
-            server_exec, keygen_exec, was_upgrade = install_binaries(asset_root, "/usr/local/bin")
+            server_exec, keygen_exec, nodus_exec, was_upgrade = install_binaries(asset_root, "/usr/local/bin")
 
             if was_upgrade:
                 self.logw.write("Upgrade detected: previous binaries saved as /usr/local/bin/*.bak")
@@ -2794,14 +2935,30 @@ class ExecuteScreen(Screen):
             self.logw.write(f"Installed server binary: {server_exec}")
             if keygen_exec:
                 self.logw.write(f"Installed keygen binary: {keygen_exec}")
+            if nodus_exec:
+                self.logw.write(f"Installed Nodus CLI: {nodus_exec}")
 
             self.logw.write("Checking runtime dependencies (ldd) …")
             self.logw.write("This may take a while (apt-get update/install).")
+            extra_runtime_paths = ["/opt/pqnas/lib/dna/libdna_lib.so"]
+            if nodus_exec:
+                extra_runtime_paths.append(nodus_exec)
+
             ensure_runtime_deps_for_server(
                 server_exec,
                 log=self.logw,
-                extra_ldd_paths=["/opt/pqnas/lib/dna/libdna_lib.so"],
+                extra_ldd_paths=extra_runtime_paths,
             )
+
+            self.logw.write("Ensuring Nodus federation identity …")
+            if not nodus_exec:
+                raise RuntimeError("nodus-cli was not installed")
+            nodus_fp = ensure_nodus_identity(
+                nodus_exec,
+                "/srv/pqnas/config/nodus/identity",
+                log=self.logw,
+            )
+            self.logw.write(f"[*] Nodus NAS identity: {nodus_fp[:16]}...")
 
             self.logw.write("Checking required external tools …")
             ensure_external_tools(log=self.logw)
