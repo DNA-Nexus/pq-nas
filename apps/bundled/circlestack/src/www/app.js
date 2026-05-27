@@ -1,50 +1,9 @@
 const CS_API = "/api/v4/circlestack";
 const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
 
-// FEDERATED_LOCAL_REACTION_OVERLAY_V1
-const CS_FEDERATED_LOCAL_REACTIONS_KEY = "circlestack:federatedLocalReactions:v1";
-
-function csLoadFederatedLocalReactions() {
-  try {
-    const raw = localStorage.getItem(CS_FEDERATED_LOCAL_REACTIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function csSaveFederatedLocalReactions(map) {
-  try {
-    localStorage.setItem(CS_FEDERATED_LOCAL_REACTIONS_KEY, JSON.stringify(map || {}));
-  } catch (_) {}
-}
-
-function csRememberFederatedLocalReaction(ev, reaction, data = {}) {
-  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
-  const value = String(reaction || "").trim();
-
-  if (!eventId || !value) return;
-
-  const map = csLoadFederatedLocalReactions();
-  map[eventId] = {
-    reaction: value,
-    updated_epoch: Math.floor(Date.now() / 1000),
-    federation_event_id: data && data.federation_event_id ? String(data.federation_event_id) : ""
-  };
-
-  csSaveFederatedLocalReactions(map);
-}
-
-function csFederatedLocalReactionFor(ev) {
-  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
-  if (!eventId) return null;
-
-  const item = csLoadFederatedLocalReactions()[eventId];
-  if (!item || !item.reaction) return null;
-
-  return item;
-}
+// FEDERATED_LOCAL_REACTION_RENDER_V2
+// Server-side federated local reaction state lives in FEDERATED_LOCAL_REACTIONS_SERVER_UI_V1.
+// Keep only rendering helpers here; persistence/cache helpers are defined below.
 
 function csRenderFederatedLocalReaction(ev) {
   if (!ev || ev.event_type !== "circle.post.created") return null;
