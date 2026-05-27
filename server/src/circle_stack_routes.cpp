@@ -576,7 +576,20 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
         "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_enabled "
         "ON known_remote_origins(enabled, updated_epoch DESC);"
         "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_added_by "
-        "ON known_remote_origins(added_by_fp, updated_epoch DESC);";
+        "ON known_remote_origins(added_by_fp, updated_epoch DESC);"
+        "CREATE TABLE IF NOT EXISTS circle_user_origin_prefs ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "local_user_fp TEXT NOT NULL,"
+        "origin_nas TEXT NOT NULL,"
+        "muted INTEGER NOT NULL DEFAULT 0,"
+        "hidden INTEGER NOT NULL DEFAULT 0,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(local_user_fp, origin_nas)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_user "
+        "ON circle_user_origin_prefs(local_user_fp, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_origin "
+        "ON circle_user_origin_prefs(origin_nas, updated_epoch DESC);";
 
     char* msg = nullptr;
     if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
@@ -3064,6 +3077,7 @@ std::string cs_known_origin_col_text(sqlite3_stmt* st, int col) {
 
 json cs_known_remote_origin_row_json(sqlite3_stmt* st) {
     const std::string origin_nas = cs_known_origin_col_text(st, 1);
+    const int col_count = sqlite3_column_count(st);
 
     return {
         {"id", sqlite3_column_int64(st, 0)},
@@ -3077,11 +3091,13 @@ json cs_known_remote_origin_row_json(sqlite3_stmt* st) {
         {"added_by_short", cs_short_fp(cs_known_origin_col_text(st, 6))},
         {"enabled", sqlite3_column_int(st, 7) != 0},
         {"first_seen_epoch", sqlite3_column_int64(st, 8)},
-        {"updated_epoch", sqlite3_column_int64(st, 9)}
+        {"updated_epoch", sqlite3_column_int64(st, 9)},
+        {"my_muted", col_count > 10 ? (sqlite3_column_int(st, 10) != 0) : false},
+        {"my_hidden", col_count > 11 ? (sqlite3_column_int(st, 11) != 0) : false}
     };
 }
 
-json cs_list_known_remote_origins(std::string* err) {
+json cs_list_known_remote_origins(const std::string& actor_fp, std::string* err) {
     if (err) *err = "";
 
     sqlite3* people_db = nullptr;
@@ -3091,10 +3107,14 @@ json cs_list_known_remote_origins(std::string* err) {
 
     sqlite3_stmt* st = nullptr;
     const char* sql =
-        "SELECT id, origin_nas, public_base_url, display_name, source, "
-        "       source_event_id, added_by_fp, enabled, first_seen_epoch, updated_epoch "
-        "FROM known_remote_origins "
-        "ORDER BY enabled DESC, updated_epoch DESC, id DESC "
+        "SELECT o.id, o.origin_nas, o.public_base_url, o.display_name, o.source, "
+        "       o.source_event_id, o.added_by_fp, o.enabled, o.first_seen_epoch, o.updated_epoch, "
+        "       COALESCE(p.muted, 0) AS my_muted, "
+        "       COALESCE(p.hidden, 0) AS my_hidden "
+        "FROM known_remote_origins o "
+        "LEFT JOIN circle_user_origin_prefs p "
+        "  ON p.origin_nas = o.origin_nas AND p.local_user_fp = ? "
+        "ORDER BY o.enabled DESC, o.updated_epoch DESC, o.id DESC "
         "LIMIT 300";
 
     if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
@@ -3102,6 +3122,8 @@ json cs_list_known_remote_origins(std::string* err) {
         sqlite3_close(people_db);
         return json::array();
     }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
 
     json items = json::array();
 
@@ -3112,6 +3134,64 @@ json cs_list_known_remote_origins(std::string* err) {
     sqlite3_finalize(st);
     sqlite3_close(people_db);
     return items;
+}
+
+
+bool cs_set_user_origin_muted(
+    const std::string& actor_fp,
+    const std::string& origin_raw,
+    bool muted,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    if (actor_fp.empty()) {
+        if (err) *err = "missing_actor_fp";
+        return false;
+    }
+
+    const std::string origin_nas = cs_trim_copy(origin_raw);
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT INTO circle_user_origin_prefs "
+        "(local_user_fp, origin_nas, muted, hidden, updated_epoch) "
+        "VALUES (?, ?, ?, 0, ?) "
+        "ON CONFLICT(local_user_fp, origin_nas) DO UPDATE SET "
+        " muted = excluded.muted,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(st, 3, muted ? 1 : 0);
+    sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+
+    const int rc = sqlite3_step(st);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "user_origin_pref_update_failed";
+        return false;
+    }
+
+    return true;
 }
 
 bool cs_set_known_remote_origin_enabled(
@@ -4174,7 +4254,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             std::string err;
-            json items = cs_list_known_remote_origins(&err);
+            json items = cs_list_known_remote_origins(actor_fp, &err);
 
             if (!err.empty()) {
                 res.status = 500;
@@ -4189,6 +4269,54 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 {"ok", true},
                 {"count", items.size()},
                 {"items", items}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/origins/my-mute",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string origin_nas = body.value("origin_nas", "");
+            const bool muted = body.value("muted", true);
+
+            if (origin_nas.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_origin_nas"}
+                });
+            }
+
+            std::string err;
+            if (!cs_set_user_origin_muted(actor_fp, origin_nas, muted, &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "user_origin_pref_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"origin_nas", origin_nas},
+                {"muted", muted}
             });
         });
 

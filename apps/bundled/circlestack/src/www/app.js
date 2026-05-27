@@ -3,6 +3,7 @@ const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
 let csSelectedMentions = [];
 let csFeedMode = "local";
 let csFederatedFeedLoadSeq = 0;
+let csMutedFederatedOrigins = new Set();
 
 async function csLoadFeed() {
   const feed = document.getElementById("csFeed");
@@ -622,7 +623,13 @@ async function csLoadFederatedFeed() {
 
   feed.textContent = "";
 
-  const events = data && Array.isArray(data.events) ? data.events : [];
+  const rawEvents = data && Array.isArray(data.events) ? data.events : [];
+  await csRefreshMutedOriginSet();
+
+  const events = rawEvents.filter((ev) => {
+    const origin = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
+    return !origin || !csMutedFederatedOrigins.has(origin);
+  });
 
   if (!events.length) {
     const empty = document.createElement("div");
@@ -2756,6 +2763,42 @@ async function csFetchKnownOrigins() {
   return Array.isArray(data.items) ? data.items : [];
 }
 
+async function csSetKnownOriginMuted(originNas, muted) {
+  const res = await fetch(`${CS_API}/federated/origins/my-mute`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      origin_nas: originNas,
+      muted: !!muted
+    })
+  });
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !data.ok) {
+    const err = data.error || data.detail || `HTTP ${res.status}`;
+    throw new Error(err);
+  }
+
+  return data;
+}
+
+async function csRefreshMutedOriginSet() {
+  try {
+    const origins = await csFetchKnownOrigins();
+    csMutedFederatedOrigins = new Set(
+      origins
+        .filter((origin) => origin && (origin.my_muted || origin.my_hidden))
+        .map((origin) => String(origin.origin_nas || "").trim())
+        .filter(Boolean)
+    );
+    return origins;
+  } catch (_) {
+    csMutedFederatedOrigins = new Set();
+    return [];
+  }
+}
+
 async function csSetKnownOriginEnabled(originNas, enabled) {
   const res = await fetch(`${CS_API}/federated/origins/set-enabled`, {
     method: "POST",
@@ -2780,6 +2823,7 @@ function csRenderKnownOriginRow(origin, refresh) {
   const row = document.createElement("article");
   row.className = "cs-known-origin-row";
   if (!origin.enabled) row.classList.add("is-disabled");
+  if (origin.my_muted || origin.my_hidden) row.classList.add("is-muted-for-me"); // USER_ORIGIN_PREFS_MUTED_CLASS_PATCH_V1
 
   const main = document.createElement("div");
   main.className = "cs-known-origin-main";
@@ -2798,7 +2842,8 @@ function csRenderKnownOriginRow(origin, refresh) {
     `origin: ${origin.origin_short || csElideFp(origin.origin_nas) || "unknown"}`,
     `source: ${origin.source || "unknown"}`,
     `added: ${csFormatOriginEpoch(origin.first_seen_epoch)}`,
-    origin.enabled ? "enabled" : "disabled"
+    origin.enabled ? "enabled" : "disabled",
+    origin.my_muted ? "muted for me" : "visible to me"
   ].join(" · ");
 
   main.appendChild(title);
@@ -2834,10 +2879,37 @@ function csRenderKnownOriginRow(origin, refresh) {
     actions.appendChild(copyUrl);
   }
 
+  const mute = document.createElement("button");
+  mute.className = origin.my_muted ? "cs-modal-cancel" : "cs-modal-cancel";
+  mute.type = "button";
+  mute.textContent = origin.my_muted ? "Unmute for me" : "Mute for me";
+  mute.title = "Personal feed setting. This does not stop server polling for other users.";
+  mute.addEventListener("click", async () => {
+    mute.disabled = true;
+
+    try {
+      await csSetKnownOriginMuted(origin.origin_nas, !origin.my_muted);
+      await refresh();
+
+      if (csFeedMode === "federated") {
+        await csLoadFederatedFeed();
+      }
+    } catch (err) {
+      await csShowMessageDialog({
+        title: "Could not update personal mute",
+        message: err && err.message ? err.message : String(err),
+        kind: "error"
+      });
+      mute.disabled = false;
+    }
+  });
+
+  actions.appendChild(mute);
+
   const toggle = document.createElement("button");
   toggle.className = origin.enabled ? "cs-modal-delete" : "cs-modal-cancel";
   toggle.type = "button";
-  toggle.textContent = origin.enabled ? "Disable" : "Enable";
+  toggle.textContent = origin.enabled ? "Disable globally" : "Enable globally";
   toggle.title = "Admin-only global polling control";
 
   toggle.addEventListener("click", async () => {
