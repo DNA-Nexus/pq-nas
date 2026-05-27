@@ -97,6 +97,9 @@
       return filtered;
     }
 
+    const maxWiderPublic = 5;
+    let widerPublicShown = 0;
+
     return filtered
       .map((ev, index) => ({
         ev,
@@ -111,6 +114,22 @@
 
         // Keep the existing feed order inside the same bucket.
         return a.index - b.index;
+      })
+      .filter((item) => {
+        const bucket = item.classification && item.classification.bucket
+          ? item.classification.bucket
+          : "";
+
+        if (bucket !== "wider_public") {
+          return true;
+        }
+
+        if (widerPublicShown >= maxWiderPublic) {
+          return false;
+        }
+
+        widerPublicShown += 1;
+        return true;
       })
       .map((item) => item.ev);
   }
