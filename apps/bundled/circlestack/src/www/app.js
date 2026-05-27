@@ -623,18 +623,32 @@ async function csLoadFederatedFeed() {
 
   feed.textContent = "";
 
+  // CIRCLESTACK_FEED_MODES_HOOKS_V1
   const rawEvents = data && Array.isArray(data.events) ? data.events : [];
-  await csRefreshMutedOriginSet();
 
-  const events = rawEvents.filter((ev) => {
-    const origin = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
-    return !origin || !csMutedFederatedOrigins.has(origin);
-  });
+  let events = rawEvents;
+  let emptyText = "No federated events yet.";
+
+  if (window.CircleStackFeedModes &&
+      typeof window.CircleStackFeedModes.filterFederatedEvents === "function") {
+    events = await window.CircleStackFeedModes.filterFederatedEvents(rawEvents, csFeedMode);
+
+    if (typeof window.CircleStackFeedModes.emptyMessage === "function") {
+      emptyText = window.CircleStackFeedModes.emptyMessage(csFeedMode);
+    }
+  } else {
+    await csRefreshMutedOriginSet();
+
+    events = rawEvents.filter((ev) => {
+      const origin = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
+      return !origin || !csMutedFederatedOrigins.has(origin);
+    });
+  }
 
   if (!events.length) {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
-    empty.textContent = "No federated events yet.";
+    empty.textContent = emptyText;
     feed.appendChild(empty);
     return;
   }
@@ -645,7 +659,11 @@ async function csLoadFederatedFeed() {
 }
 
 async function csSetFeedMode(mode) {
-  csFeedMode = mode === "federated" ? "federated" : "local";
+  const feedModeApi = window.CircleStackFeedModes || null;
+
+  csFeedMode = feedModeApi && typeof feedModeApi.normalizeMode === "function"
+    ? feedModeApi.normalizeMode(mode)
+    : (mode === "federated" ? "federated" : "local");
 
   const localBtn = document.getElementById("csLocalFeedBtn");
   const fedBtn = document.getElementById("csFederatedBtn");
@@ -653,25 +671,34 @@ async function csSetFeedMode(mode) {
   const fedFeed = document.getElementById("csFederatedFeed");
   const intros = document.getElementById("csIntroductions");
 
-  if (localBtn) localBtn.classList.toggle("is-active", csFeedMode === "local");
-  if (fedBtn) fedBtn.classList.toggle("is-active", csFeedMode === "federated");
+  const showingLocal = csFeedMode === "local";
+  const showingFederatedSurface = feedModeApi && typeof feedModeApi.isFederatedSurface === "function"
+    ? feedModeApi.isFederatedSurface(csFeedMode)
+    : csFeedMode === "federated";
+
+  if (feedModeApi && typeof feedModeApi.setActiveButtons === "function") {
+    feedModeApi.setActiveButtons(csFeedMode);
+  } else {
+    if (localBtn) localBtn.classList.toggle("is-active", csFeedMode === "local");
+    if (fedBtn) fedBtn.classList.toggle("is-active", csFeedMode === "federated");
+  }
 
   if (localFeed) {
-    localFeed.hidden = csFeedMode !== "local";
-    localFeed.style.display = csFeedMode === "local" ? "" : "none";
+    localFeed.hidden = !showingLocal;
+    localFeed.style.display = showingLocal ? "" : "none";
   }
 
   if (fedFeed) {
-    fedFeed.hidden = csFeedMode !== "federated";
-    fedFeed.style.display = csFeedMode === "federated" ? "" : "none";
+    fedFeed.hidden = !showingFederatedSurface;
+    fedFeed.style.display = showingFederatedSurface ? "" : "none";
   }
 
   if (intros) {
-    intros.hidden = csFeedMode !== "local";
-    intros.style.display = csFeedMode === "local" ? "" : "none";
+    intros.hidden = !showingLocal;
+    intros.style.display = showingLocal ? "" : "none";
   }
 
-  if (csFeedMode === "federated") {
+  if (showingFederatedSurface) {
     await csLoadFederatedFeed();
   } else {
     await csLoadFeed();
@@ -679,6 +706,12 @@ async function csSetFeedMode(mode) {
 }
 
 function csInitFeedTabs() {
+  if (window.CircleStackFeedModes &&
+      typeof window.CircleStackFeedModes.initButtons === "function" &&
+      window.CircleStackFeedModes.initButtons(csSetFeedMode)) {
+    return;
+  }
+
   const localBtn = document.getElementById("csLocalFeedBtn");
   const fedBtn = document.getElementById("csFederatedBtn");
 
@@ -2891,7 +2924,7 @@ function csRenderKnownOriginRow(origin, refresh) {
       await csSetKnownOriginMuted(origin.origin_nas, !origin.my_muted);
       await refresh();
 
-      if (csFeedMode === "federated") {
+      if (csFeedMode === "federated" || csFeedMode === "my_circle") {
         await csLoadFederatedFeed();
       }
     } catch (err) {
