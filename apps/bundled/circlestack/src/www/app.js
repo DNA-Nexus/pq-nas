@@ -2719,6 +2719,269 @@ function csConfirmDelete() {
 
 
 
+
+// KNOWN_REMOTE_ORIGINS_UI_PANEL_PATCH_V1
+
+function csFormatOriginEpoch(epoch) {
+  const n = Number(epoch || 0);
+  if (!n) return "—";
+  try {
+    return new Date(n * 1000).toLocaleString();
+  } catch (_) {
+    return "—";
+  }
+}
+
+function csOriginDisplayName(origin) {
+  return (
+    (origin && origin.display_name) ||
+    (origin && origin.public_base_url) ||
+    (origin && origin.origin_short) ||
+    csElideFp(origin && origin.origin_nas) ||
+    "Remote NAS"
+  );
+}
+
+async function csFetchKnownOrigins() {
+  const res = await fetch(`${CS_API}/federated/origins`, {
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+  }
+
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+async function csSetKnownOriginEnabled(originNas, enabled) {
+  const res = await fetch(`${CS_API}/federated/origins/set-enabled`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      origin_nas: originNas,
+      enabled: !!enabled
+    })
+  });
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !data.ok) {
+    const err = data.error || data.detail || `HTTP ${res.status}`;
+    throw new Error(err);
+  }
+
+  return data;
+}
+
+function csRenderKnownOriginRow(origin, refresh) {
+  const row = document.createElement("article");
+  row.className = "cs-known-origin-row";
+  if (!origin.enabled) row.classList.add("is-disabled");
+
+  const main = document.createElement("div");
+  main.className = "cs-known-origin-main";
+
+  const title = document.createElement("div");
+  title.className = "cs-known-origin-title";
+  title.textContent = csOriginDisplayName(origin);
+
+  const url = document.createElement("div");
+  url.className = "cs-known-origin-url";
+  url.textContent = origin.public_base_url || "No public URL saved";
+
+  const meta = document.createElement("div");
+  meta.className = "cs-known-origin-meta";
+  meta.textContent = [
+    `origin: ${origin.origin_short || csElideFp(origin.origin_nas) || "unknown"}`,
+    `source: ${origin.source || "unknown"}`,
+    `added: ${csFormatOriginEpoch(origin.first_seen_epoch)}`,
+    origin.enabled ? "enabled" : "disabled"
+  ].join(" · ");
+
+  main.appendChild(title);
+  main.appendChild(url);
+  main.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "cs-known-origin-actions";
+
+  if (navigator.clipboard && origin.origin_nas) {
+    const copyOrigin = document.createElement("button");
+    copyOrigin.className = "cs-modal-cancel";
+    copyOrigin.type = "button";
+    copyOrigin.textContent = "Copy origin";
+    copyOrigin.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(origin.origin_nas);
+      copyOrigin.textContent = "Copied";
+      setTimeout(() => { copyOrigin.textContent = "Copy origin"; }, 1200);
+    });
+    actions.appendChild(copyOrigin);
+  }
+
+  if (navigator.clipboard && origin.public_base_url) {
+    const copyUrl = document.createElement("button");
+    copyUrl.className = "cs-modal-cancel";
+    copyUrl.type = "button";
+    copyUrl.textContent = "Copy URL";
+    copyUrl.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(origin.public_base_url);
+      copyUrl.textContent = "Copied";
+      setTimeout(() => { copyUrl.textContent = "Copy URL"; }, 1200);
+    });
+    actions.appendChild(copyUrl);
+  }
+
+  const toggle = document.createElement("button");
+  toggle.className = origin.enabled ? "cs-modal-delete" : "cs-modal-cancel";
+  toggle.type = "button";
+  toggle.textContent = origin.enabled ? "Disable" : "Enable";
+  toggle.title = "Admin-only global polling control";
+
+  toggle.addEventListener("click", async () => {
+    toggle.disabled = true;
+
+    try {
+      await csSetKnownOriginEnabled(origin.origin_nas, !origin.enabled);
+      await refresh();
+    } catch (err) {
+      await csShowMessageDialog({
+        title: "Could not update origin",
+        message:
+          "Global enable/disable is admin-only. Normal users should later get a personal mute/unfollow control.",
+        detail: err && err.message ? err.message : String(err),
+        kind: "error"
+      });
+      toggle.disabled = false;
+    }
+  });
+
+  actions.appendChild(toggle);
+
+  row.appendChild(main);
+  row.appendChild(actions);
+  return row;
+}
+
+async function csOpenKnownOriginsModal() {
+  const old = document.querySelector(".cs-known-origins-backdrop");
+  if (old) old.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop cs-known-origins-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-known-origins-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const head = document.createElement("div");
+  head.className = "cs-known-origins-head";
+
+  const titleWrap = document.createElement("div");
+
+  const title = document.createElement("div");
+  title.className = "cs-modal-title";
+  title.textContent = "Known remote origins";
+
+  const sub = document.createElement("div");
+  sub.className = "cs-modal-text";
+  sub.textContent =
+    "Remote NAS origins this server knows about. Admins can globally enable or disable polling.";
+
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(sub);
+
+  const closeX = document.createElement("button");
+  closeX.className = "cs-media-close";
+  closeX.type = "button";
+  closeX.textContent = "×";
+  closeX.setAttribute("aria-label", "Close");
+
+  head.appendChild(titleWrap);
+  head.appendChild(closeX);
+
+  const status = document.createElement("div");
+  status.className = "cs-known-origins-status";
+  status.textContent = "Loading…";
+
+  const list = document.createElement("div");
+  list.className = "cs-known-origins-list";
+
+  const actions = document.createElement("div");
+  actions.className = "cs-modal-actions";
+
+  const refreshBtn = document.createElement("button");
+  refreshBtn.className = "cs-modal-cancel";
+  refreshBtn.type = "button";
+  refreshBtn.textContent = "Refresh";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "cs-modal-cancel";
+  closeBtn.type = "button";
+  closeBtn.textContent = "Close";
+
+  actions.appendChild(refreshBtn);
+  actions.appendChild(closeBtn);
+
+  modal.appendChild(head);
+  modal.appendChild(status);
+  modal.appendChild(list);
+  modal.appendChild(actions);
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  function close() {
+    backdrop.remove();
+  }
+
+  closeX.addEventListener("click", close);
+  closeBtn.addEventListener("click", close);
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) close();
+  });
+
+  async function refresh() {
+    status.textContent = "Loading…";
+    list.textContent = "";
+
+    try {
+      const origins = await csFetchKnownOrigins();
+
+      status.textContent = origins.length
+        ? `${origins.length} known origin${origins.length === 1 ? "" : "s"}`
+        : "No known remote origins yet.";
+
+      if (!origins.length) {
+        const empty = document.createElement("div");
+        empty.className = "cs-empty";
+        empty.textContent =
+          "Add a federated person or follow a remote NAS to create the first known origin.";
+        list.appendChild(empty);
+        return;
+      }
+
+      for (const origin of origins) {
+        list.appendChild(csRenderKnownOriginRow(origin, refresh));
+      }
+    } catch (err) {
+      status.textContent = "Could not load known origins.";
+      await csShowMessageDialog({
+        title: "Could not load known origins",
+        message: err && err.message ? err.message : String(err),
+        kind: "error"
+      });
+    }
+  }
+
+  refreshBtn.addEventListener("click", refresh);
+
+  await refresh();
+}
+
 // Expose federated feed helpers for inline button handlers and browser debugging.
 window.csSetFeedMode = csSetFeedMode;
 window.csLoadFederatedFeed = csLoadFederatedFeed;
@@ -2740,6 +3003,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   csRenderMentionComposer();
   csInitCompactCompose();
   csInitFeedTabs();
+
+  const knownOriginsBtn = document.getElementById("csKnownOriginsBtn");
+  if (knownOriginsBtn) {
+    knownOriginsBtn.addEventListener("click", csOpenKnownOriginsModal);
+  }
 
   await csSetFeedMode("local");
 });

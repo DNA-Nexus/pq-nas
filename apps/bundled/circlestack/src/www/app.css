@@ -1875,3 +1875,111 @@ html[data-theme="win_classic"] .cs-message-modal {
   border-radius: 12px;
   box-shadow: 8px 8px 0 rgba(0,0,0,0.26);
 }
+
+
+/* KNOWN_REMOTE_ORIGINS_UI_CSS_V1 */
+.cs-known-origins-backdrop {
+  z-index: 10040;
+  padding: 18px;
+  backdrop-filter: blur(8px);
+}
+
+.cs-known-origins-modal {
+  width: min(760px, calc(100vw - 34px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border-radius: 18px;
+  box-shadow: 0 26px 80px rgba(0,0,0,0.48);
+}
+
+.cs-known-origins-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.cs-known-origins-status {
+  margin: 0 0 12px;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+}
+
+.cs-known-origins-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cs-known-origin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.045);
+}
+
+.cs-known-origin-row.is-disabled {
+  opacity: 0.62;
+}
+
+.cs-known-origin-main {
+  min-width: 0;
+}
+
+.cs-known-origin-title {
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.cs-known-origin-url,
+.cs-known-origin-meta {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: rgba(255,255,255,0.70);
+}
+
+.cs-known-origin-url {
+  margin-bottom: 4px;
+}
+
+.cs-known-origin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cs-known-origin-actions button {
+  white-space: nowrap;
+}
+
+html[data-theme="bright"] .cs-known-origins-status,
+html[data-theme="bright"] .cs-known-origin-url,
+html[data-theme="bright"] .cs-known-origin-meta {
+  color: rgba(17,24,39,0.72);
+}
+
+html[data-theme="bright"] .cs-known-origin-row {
+  background: #f8fafc;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="win_classic"] .cs-known-origins-modal,
+html[data-theme="win_classic"] .cs-known-origin-row {
+  border-radius: 12px;
+}
+
+@media (max-width: 640px) {
+  .cs-known-origin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cs-known-origin-actions {
+    justify-content: flex-start;
+  }
+}
