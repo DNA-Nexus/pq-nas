@@ -801,6 +801,20 @@ std::string circle_origin_recent_index_key_for_worker(
            ":origin:" + origin_nas + ":recent:index";
 }
 
+// ORIGIN_SCOPED_HEAD_WORKER_PATCH_V1
+std::string circle_origin_head_key_for_worker(
+    const std::string& circle_id,
+    const std::string& origin_nas
+) {
+    if (!is_safe_nodus_key_segment_for_worker(circle_id) ||
+        !is_safe_nodus_key_segment_for_worker(origin_nas)) {
+        return "";
+    }
+
+    return "pqnas:circlestack:circle:" + circle_id +
+           ":origin:" + origin_nas + ":head";
+}
+
 std::string event_origin_nas_from_json_for_worker(const std::string& raw) {
     json ev = json::parse(raw, nullptr, false);
     if (!ev.is_object()) return "";
@@ -1009,6 +1023,10 @@ bool publish_one_event_to_seeds(
             const auto recent_index_put =
                 nodus_cli_put(config, seed, recent_index_key, recent_index_json);
 
+            NodusCommandResult origin_head_put{};
+            origin_head_put.exit_code = 0;
+            origin_head_put.output = "skipped: event has no safe origin_nas";
+
             NodusCommandResult origin_recent_index_put{};
             origin_recent_index_put.exit_code = 0;
             origin_recent_index_put.output = "skipped: event has no safe origin_nas";
@@ -1016,8 +1034,16 @@ bool publish_one_event_to_seeds(
             const std::string origin_nas =
                 event_origin_nas_from_json_for_worker(ev.event_json);
 
+            const std::string origin_head_key =
+                circle_origin_head_key_for_worker(ev.circle_id, origin_nas);
+
             const std::string origin_recent_index_key =
                 circle_origin_recent_index_key_for_worker(ev.circle_id, origin_nas);
+
+            if (!origin_head_key.empty()) {
+                origin_head_put =
+                    nodus_cli_put(config, seed, origin_head_key, ev.event_id);
+            }
 
             if (!origin_recent_index_key.empty()) {
                 origin_recent_index_put =
@@ -1027,18 +1053,21 @@ bool publish_one_event_to_seeds(
             if (head_put.exit_code != 0 ||
                 recent_put.exit_code != 0 ||
                 recent_index_put.exit_code != 0 ||
+                origin_head_put.exit_code != 0 ||
                 origin_recent_index_put.exit_code != 0) {
                 all_ok = false;
                 errors << seed.name << " event_exit=" << event_put.exit_code
                        << " head_exit=" << head_put.exit_code
                        << " recent_exit=" << recent_put.exit_code
                        << " recent_index_exit=" << recent_index_put.exit_code
+                       << " origin_head_exit=" << origin_head_put.exit_code
                        << " origin_recent_index_exit=" << origin_recent_index_put.exit_code
                        << "\n"
                        << event_put.output << "\n"
                        << head_put.output << "\n"
                        << recent_put.output << "\n"
                        << recent_index_put.output << "\n"
+                       << origin_head_put.output << "\n"
                        << origin_recent_index_put.output << "\n";
             }
         } catch (const std::exception& e) {
@@ -1299,6 +1328,51 @@ void worker_pull_recent_index_remote_events(
     }
 }
 
+
+
+void worker_pull_origin_head_remote_event(
+    const std::string& circle_id,
+    const std::string& origin_nas,
+    const NodusClientConfig& config,
+    const NodusSeed& seed,
+    const std::string& local_nodus_fp) {
+    const std::string head_key =
+        circle_origin_head_key_for_worker(circle_id, origin_nas);
+
+    if (head_key.empty()) {
+        return;
+    }
+
+    NodusCommandResult head_get;
+    try {
+        head_get = nodus_cli_get(config, seed, head_key);
+    } catch (const std::exception& e) {
+        std::cerr << "[CircleFederationWorker] inbound origin:head get exception seed="
+                  << seed.name << " origin=" << origin_nas.substr(0, 12)
+                  << ": " << e.what() << "\n";
+        return;
+    }
+
+    const std::string event_id = extract_nodus_value(head_get.output);
+    if (head_get.exit_code != 0 || event_id.empty()) {
+        return;
+    }
+
+    if (worker_fetch_event_to_inbox(
+            circle_id,
+            event_id,
+            config,
+            seed,
+            local_nodus_fp,
+            "origin:head")) {
+        if (env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_VERBOSE_PULLS")) {
+            std::cerr << "[CircleFederationWorker] inbound origin:head origin="
+                      << origin_nas.substr(0, 12)
+                      << " event_id=" << event_id
+                      << " seed=" << seed.name << "\n";
+        }
+    }
+}
 
 
 void worker_pull_origin_recent_index_remote_events(
@@ -1691,6 +1765,13 @@ void worker_pull_and_apply_inbound(
         }
 
         for (const auto& remote_origin : effective_remote_origins) {
+            worker_pull_origin_head_remote_event(
+                circle_id,
+                remote_origin,
+                config,
+                seed,
+                local_nodus_fp);
+
             worker_pull_origin_recent_index_remote_events(
                 circle_id,
                 remote_origin,
