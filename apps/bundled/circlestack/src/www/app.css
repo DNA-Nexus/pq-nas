@@ -2052,3 +2052,110 @@ html[data-theme="bright"] .cs-known-origin-row.is-muted-for-me .cs-known-origin-
   background: #fef3c7;
   color: #92400e;
 }
+
+
+/* CIRCLESTACK_TOOLBAR_BUTTONS_POLISH_V1 */
+.cs-intro-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cs-intro-toolbar button,
+#csIntroduceBtn,
+#csLocalFeedBtn,
+#csFederatedBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.08);
+  color: #f4f4f5;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.cs-intro-toolbar button:hover,
+#csIntroduceBtn:hover,
+#csLocalFeedBtn:hover,
+#csFederatedBtn:hover,
+#csMyCircleBtn:hover,
+#csFindPeopleBtn:hover,
+#csKnownOriginsBtn:hover {
+  background: rgba(255,255,255,0.13);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.cs-intro-toolbar button.is-active,
+#csLocalFeedBtn.is-active,
+#csFederatedBtn.is-active,
+#csMyCircleBtn.is-active {
+  background: rgba(96,165,250,0.20);
+  border-color: rgba(96,165,250,0.60);
+  color: #fff;
+}
+
+.cs-intro-toolbar button:focus-visible {
+  outline: 2px solid rgba(96,165,250,0.80);
+  outline-offset: 2px;
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button,
+html[data-theme="bright"] #csIntroduceBtn,
+html[data-theme="bright"] #csLocalFeedBtn,
+html[data-theme="bright"] #csFederatedBtn,
+html[data-theme="bright"] #csMyCircleBtn,
+html[data-theme="bright"] #csFindPeopleBtn,
+html[data-theme="bright"] #csKnownOriginsBtn {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button:hover {
+  background: #e5e7eb;
+  border-color: rgba(0,0,0,0.18);
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button.is-active,
+html[data-theme="bright"] #csLocalFeedBtn.is-active,
+html[data-theme="bright"] #csFederatedBtn.is-active,
+html[data-theme="bright"] #csMyCircleBtn.is-active {
+  background: rgba(37,99,235,0.12);
+  border-color: rgba(37,99,235,0.45);
+  color: #1d4ed8;
+}
+
+html[data-theme="win_classic"] .cs-intro-toolbar button {
+  border-radius: 999px;
+  background: #e8e8e8;
+  color: #000;
+  border: 1px solid #888;
+  box-shadow: none;
+}
+
+html[data-theme="win_classic"] .cs-intro-toolbar button:hover {
+  background: #dcdcdc;
+}
+
+
+/* CIRCLESTACK_FEED_MODE_CYCLE_BUTTON_CSS_V1 */
+#csFeedModeBtn {
+  min-width: 132px;
+}
+
+#csFeedModeBtn.is-active {
+  background: rgba(96,165,250,0.20);
+  border-color: rgba(96,165,250,0.60);
+  color: #fff;
+}
+
+html[data-theme="bright"] #csFeedModeBtn.is-active {
+  background: rgba(37,99,235,0.12);
+  border-color: rgba(37,99,235,0.45);
+  color: #1d4ed8;
+}
