@@ -2900,6 +2900,20 @@ async function csFetchKnownOrigins() {
   return Array.isArray(data.items) ? data.items : [];
 }
 
+async function csFetchFederationStatus() {
+  const res = await fetch(`${CS_API}/federation/status`, {
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+  }
+
+  return data;
+}
+
 async function csSetKnownOriginMuted(originNas, muted) {
   const res = await fetch(`${CS_API}/federated/origins/my-mute`, {
     method: "POST",
@@ -3116,6 +3130,10 @@ async function csOpenKnownOriginsModal() {
   status.className = "cs-known-origins-status";
   status.textContent = "Loading…";
 
+  const federationStatus = document.createElement("div");
+  federationStatus.className = "cs-known-origins-status";
+  federationStatus.textContent = "Loading federation status…";
+
   const list = document.createElement("div");
   list.className = "cs-known-origins-list";
 
@@ -3137,6 +3155,7 @@ async function csOpenKnownOriginsModal() {
 
   modal.appendChild(head);
   modal.appendChild(status);
+  modal.appendChild(federationStatus);
   modal.appendChild(list);
   modal.appendChild(actions);
 
@@ -3175,6 +3194,18 @@ async function csOpenKnownOriginsModal() {
         status.textContent = bits.join(" · ");
       } else {
         status.textContent = "No known remote origins yet.";
+      }
+
+      try {
+        const fed = await csFetchFederationStatus();
+        federationStatus.textContent = [
+          `Federation status: ${Number(fed.known_origins || 0)} known`,
+          `${Number(fed.enabled_origins || 0)} enabled`,
+          `${Number(fed.muted_for_me || 0)} muted for me`,
+          `${Number(fed.federated_local_reactions_for_me || 0)} remembered reaction${Number(fed.federated_local_reactions_for_me || 0) === 1 ? "" : "s"}`
+        ].join(" · ");
+      } catch (_) {
+        federationStatus.textContent = "Federation status unavailable.";
       }
 
       if (!origins.length) {
