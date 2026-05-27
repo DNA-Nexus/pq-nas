@@ -99,10 +99,115 @@ function csFederatedOriginInfo(ev) {
   };
 }
 
+// CIRCLESTACK_CUSTOM_MESSAGE_MODAL_PATCH_V1
+
+function csShowMessageDialog(opts = {}) {
+  return new Promise((resolve) => {
+    const old = document.querySelector(".cs-message-backdrop");
+    if (old) old.remove();
+
+    const previousFocus = document.activeElement;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "cs-modal-backdrop cs-message-backdrop";
+
+    const card = document.createElement("div");
+    card.className = `cs-modal cs-message-modal cs-message-${opts.kind || "info"}`;
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+
+    const title = document.createElement("div");
+    title.className = "cs-modal-title";
+    title.textContent = String(opts.title || "Circle Stack");
+
+    const text = document.createElement("div");
+    text.className = "cs-modal-text";
+    text.textContent = String(opts.message || "");
+
+    card.appendChild(title);
+    if (text.textContent) card.appendChild(text);
+
+    if (opts.detail) {
+      const detail = document.createElement("pre");
+      detail.className = "cs-modal-detail";
+      detail.textContent = String(opts.detail);
+      card.appendChild(detail);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "cs-modal-actions";
+
+    const ok = document.createElement("button");
+    ok.className = "cs-modal-cancel cs-modal-ok";
+    ok.type = "button";
+    ok.textContent = String(opts.okText || "OK");
+
+    function close() {
+      document.removeEventListener("keydown", onKey, true);
+      backdrop.remove();
+      try {
+        if (previousFocus && typeof previousFocus.focus === "function") {
+          previousFocus.focus();
+        }
+      } catch (_) {}
+      resolve(true);
+    }
+
+    function onKey(ev) {
+      if (ev.key === "Escape" || ev.key === "Enter") {
+        ev.preventDefault();
+        close();
+      }
+    }
+
+    ok.addEventListener("click", close);
+    actions.appendChild(ok);
+    card.appendChild(actions);
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => ok.focus(), 0);
+  });
+}
+
+function csRemoteAddSuccessMessage(data) {
+  if (data && data.self) {
+    return {
+      title: "Remote NAS followed",
+      message:
+        "This post belongs to your own fingerprint on another NAS. " +
+        "I did not add yourself as a People contact, but I added that remote NAS as a known Circle Stack origin.",
+      detail: data.remote_origin_nas || "",
+      kind: "success"
+    };
+  }
+
+  if (data && data.polling === "known_remote_origin_added") {
+    return {
+      title: "Added to People",
+      message:
+        "The remote person was added and their NAS origin was saved for Circle Stack polling.",
+      detail: data.remote_origin_nas || "",
+      kind: "success"
+    };
+  }
+
+  return {
+    title: "Added to People",
+    message: "The remote person was added.",
+    kind: "success"
+  };
+}
+
 async function csAddFederatedPerson(ev) {
   const fp = csFederatedActorFingerprint(ev);
-  if (!fp) {
-    alert("No remote fingerprint found for this federated event.");
+  if (!fp && !(ev && ev.event_id)) {
+    await csShowMessageDialog({
+      title: "Cannot add remote person",
+      message: "No remote fingerprint or source event was found for this federated item.",
+      kind: "error"
+    });
     return;
   }
 
@@ -121,11 +226,16 @@ async function csAddFederatedPerson(ev) {
 
   const data = await res.json().catch(() => ({ ok: false }));
   if (!res.ok || !data.ok) {
-    alert(`Could not add remote person: ${data.error || res.status}`);
+    await csShowMessageDialog({
+      title: "Could not add remote person",
+      message: data.error || `HTTP ${res.status}`,
+      detail: data.detail || data.message || "",
+      kind: "error"
+    });
     return;
   }
 
-  alert("Added to People.");
+  await csShowMessageDialog(csRemoteAddSuccessMessage(data));
 }
 
 // FEDERATED_REACTION_CLICK_FEEDBACK_PATCH_V1
@@ -161,7 +271,11 @@ async function csReactToFederatedPost(ev, reaction, button = null) {
           button.textContent = oldText || reaction;
         }, 1600);
       }
-      alert(`Could not queue federated reaction: ${msg}`);
+      await csShowMessageDialog({
+        title: "Could not queue reaction",
+        message: msg,
+        kind: "error"
+      });
       return;
     }
 
@@ -186,7 +300,11 @@ async function csReactToFederatedPost(ev, reaction, button = null) {
         button.textContent = oldText || reaction;
       }, 1600);
     }
-    alert(`Could not queue federated reaction: ${err && err.message ? err.message : err}`);
+    await csShowMessageDialog({
+      title: "Could not queue reaction",
+      message: err && err.message ? err.message : String(err),
+      kind: "error"
+    });
   }
 }
 

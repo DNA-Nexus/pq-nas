@@ -1800,3 +1800,78 @@ body {
 .cs-federated-reaction-button:hover {
   background: rgba(255,255,255,0.18);
 }
+
+
+/* CIRCLESTACK_CUSTOM_MESSAGE_MODAL_CSS_V1 */
+.cs-message-backdrop {
+  z-index: 10050;
+  padding: 18px;
+  backdrop-filter: blur(8px);
+}
+
+.cs-message-modal {
+  width: min(460px, calc(100vw - 34px));
+  border-radius: 18px;
+  box-shadow: 0 26px 80px rgba(0,0,0,0.48);
+}
+
+.cs-message-modal .cs-modal-text {
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.cs-modal-detail {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.22);
+  color: rgba(255,255,255,0.78);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cs-message-success .cs-modal-title {
+  color: #86efac;
+}
+
+.cs-message-error .cs-modal-title {
+  color: #fca5a5;
+}
+
+.cs-modal-ok {
+  min-width: 86px;
+  font-weight: 800;
+}
+
+.cs-message-success .cs-modal-ok {
+  background: rgba(34,197,94,0.22);
+  color: #dcfce7;
+}
+
+.cs-message-error .cs-modal-ok {
+  background: rgba(239,68,68,0.22);
+  color: #fee2e2;
+}
+
+html[data-theme="bright"] .cs-modal-detail {
+  background: #f8fafc;
+  color: #1f2937;
+  border-color: rgba(0,0,0,0.14);
+}
+
+html[data-theme="bright"] .cs-message-success .cs-modal-title {
+  color: #15803d;
+}
+
+html[data-theme="bright"] .cs-message-error .cs-modal-title {
+  color: #b91c1c;
+}
+
+html[data-theme="win_classic"] .cs-message-modal {
+  border-radius: 12px;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.26);
+}
