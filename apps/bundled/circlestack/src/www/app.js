@@ -3160,9 +3160,22 @@ async function csOpenKnownOriginsModal() {
     try {
       const origins = await csFetchKnownOrigins();
 
-      status.textContent = origins.length
-        ? `${origins.length} known origin${origins.length === 1 ? "" : "s"}`
-        : "No known remote origins yet.";
+      if (origins.length) {
+        const enabledCount = origins.filter((origin) => origin && origin.enabled !== false).length;
+        const mutedCount = origins.filter((origin) => origin && (origin.my_muted || origin.my_hidden)).length;
+        const missingUrlCount = origins.filter((origin) => origin && !String(origin.public_base_url || "").trim()).length;
+
+        const bits = [
+          `${origins.length} known origin${origins.length === 1 ? "" : "s"}`,
+          `${enabledCount} enabled`,
+          mutedCount ? `${mutedCount} muted for me` : "none muted",
+          missingUrlCount ? `${missingUrlCount} without public URL` : "all have public URL"
+        ];
+
+        status.textContent = bits.join(" · ");
+      } else {
+        status.textContent = "No known remote origins yet.";
+      }
 
       if (!origins.length) {
         const empty = document.createElement("div");
