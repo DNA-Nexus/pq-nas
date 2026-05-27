@@ -3098,7 +3098,7 @@ async function csOpenKnownOriginsModal() {
   const sub = document.createElement("div");
   sub.className = "cs-modal-text";
   sub.textContent =
-    "Remote NAS origins this server knows about. Admins can globally enable or disable polling.";
+    "Remote NAS origins this server knows about. Personal mute only affects your feed. Admin global disable stops polling for everyone.";
 
   titleWrap.appendChild(title);
   titleWrap.appendChild(sub);
