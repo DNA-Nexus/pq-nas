@@ -3054,6 +3054,123 @@ bool cs_add_known_remote_origin_only(
     return ok;
 }
 
+
+// KNOWN_REMOTE_ORIGINS_API_PATCH_V1
+
+std::string cs_known_origin_col_text(sqlite3_stmt* st, int col) {
+    const char* raw = reinterpret_cast<const char*>(sqlite3_column_text(st, col));
+    return raw ? raw : "";
+}
+
+json cs_known_remote_origin_row_json(sqlite3_stmt* st) {
+    const std::string origin_nas = cs_known_origin_col_text(st, 1);
+
+    return {
+        {"id", sqlite3_column_int64(st, 0)},
+        {"origin_nas", origin_nas},
+        {"origin_short", cs_short_fp(origin_nas)},
+        {"public_base_url", cs_known_origin_col_text(st, 2)},
+        {"display_name", cs_known_origin_col_text(st, 3)},
+        {"source", cs_known_origin_col_text(st, 4)},
+        {"source_event_id", cs_known_origin_col_text(st, 5)},
+        {"added_by_fp", cs_known_origin_col_text(st, 6)},
+        {"added_by_short", cs_short_fp(cs_known_origin_col_text(st, 6))},
+        {"enabled", sqlite3_column_int(st, 7) != 0},
+        {"first_seen_epoch", sqlite3_column_int64(st, 8)},
+        {"updated_epoch", sqlite3_column_int64(st, 9)}
+    };
+}
+
+json cs_list_known_remote_origins(std::string* err) {
+    if (err) *err = "";
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return json::array();
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "SELECT id, origin_nas, public_base_url, display_name, source, "
+        "       source_event_id, added_by_fp, enabled, first_seen_epoch, updated_epoch "
+        "FROM known_remote_origins "
+        "ORDER BY enabled DESC, updated_epoch DESC, id DESC "
+        "LIMIT 300";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return json::array();
+    }
+
+    json items = json::array();
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        items.push_back(cs_known_remote_origin_row_json(st));
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+    return items;
+}
+
+bool cs_set_known_remote_origin_enabled(
+    const std::string& origin_raw,
+    bool enabled,
+    bool* out_found,
+    std::string* err
+) {
+    if (out_found) *out_found = false;
+    if (err) *err = "";
+
+    const std::string origin_nas = cs_trim_copy(origin_raw);
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "UPDATE known_remote_origins "
+        "SET enabled = ?, updated_epoch = ? "
+        "WHERE origin_nas = ?";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_int(st, 1, enabled ? 1 : 0);
+    sqlite3_bind_int64(st, 2, (sqlite3_int64)std::time(nullptr));
+    sqlite3_bind_text(st, 3, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(st);
+    const int changed = sqlite3_changes(people_db);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "known_remote_origin_update_failed";
+        return false;
+    }
+
+    if (out_found) *out_found = changed > 0;
+
+    if (changed <= 0) {
+        if (err) *err = "known_remote_origin_not_found";
+        return false;
+    }
+
+    return true;
+}
+
 bool cs_add_remote_people_contact(
     const pqnas::CircleStackRoutesDeps& deps,
     const std::string& owner_fp,
@@ -4042,6 +4159,98 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             set_json(res, response);
+        });
+
+
+    server.Get("/api/v4/circlestack/federated/origins",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string err;
+            json items = cs_list_known_remote_origins(&err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "known_remote_origins_list_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", items.size()},
+                {"items", items}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/origins/set-enabled",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (actor_role != "admin") {
+                res.status = 403;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "forbidden"}
+                });
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string origin_nas = body.value("origin_nas", "");
+            const bool enabled = body.value("enabled", true);
+
+            if (origin_nas.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_origin_nas"}
+                });
+            }
+
+            bool found = false;
+            std::string err;
+            if (!cs_set_known_remote_origin_enabled(
+                    origin_nas,
+                    enabled,
+                    &found,
+                    &err)) {
+                res.status = found ? 500 : 404;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "known_remote_origin_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"origin_nas", origin_nas},
+                {"enabled", enabled}
+            });
         });
 
 

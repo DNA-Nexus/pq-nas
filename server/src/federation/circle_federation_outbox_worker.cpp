@@ -1628,14 +1628,50 @@ void worker_pull_and_apply_inbound(
     const std::string local_nodus_fp =
         local_federation_origin_fingerprint(config);
 
+    // KNOWN_REMOTE_ORIGINS_EFFECTIVE_LOG_PATCH_V1
+    const auto db_remote_origins =
+        load_known_remote_origins_from_people_db_for_worker();
+
     std::vector<std::string> effective_remote_origins = remote_origins;
-    for (const auto& origin : load_known_remote_origins_from_people_db_for_worker()) {
+    for (const auto& origin : db_remote_origins) {
         append_unique_remote_origin_for_worker(&effective_remote_origins, origin);
     }
 
     const bool effective_poll_global_recent_index =
         env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_GLOBAL_RECENT_INDEX") ||
         effective_remote_origins.empty();
+
+    static int last_env_origin_count = -1;
+    static int last_db_origin_count = -1;
+    static int last_effective_origin_count = -1;
+    static int last_effective_poll_global = -1;
+
+    const int env_origin_count =
+        static_cast<int>(remote_origins.size());
+    const int db_origin_count =
+        static_cast<int>(db_remote_origins.size());
+    const int effective_origin_count =
+        static_cast<int>(effective_remote_origins.size());
+    const int effective_poll_global_int =
+        effective_poll_global_recent_index ? 1 : 0;
+
+    if (env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_VERBOSE_PULLS") ||
+        env_origin_count != last_env_origin_count ||
+        db_origin_count != last_db_origin_count ||
+        effective_origin_count != last_effective_origin_count ||
+        effective_poll_global_int != last_effective_poll_global) {
+        std::cerr << "[CircleFederationWorker] inbound origins env="
+                  << env_origin_count
+                  << " db=" << db_origin_count
+                  << " effective=" << effective_origin_count
+                  << " poll_global_recent_index=" << effective_poll_global_int
+                  << "\n";
+
+        last_env_origin_count = env_origin_count;
+        last_db_origin_count = db_origin_count;
+        last_effective_origin_count = effective_origin_count;
+        last_effective_poll_global = effective_poll_global_int;
+    }
 
     // First clear anything already discovered in a previous loop.
     worker_apply_pending_inbox(config, batch_limit);
