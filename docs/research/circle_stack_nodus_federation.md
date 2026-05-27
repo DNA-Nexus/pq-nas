@@ -1,5 +1,104 @@
 # Circle Stack over Nodus - Research Notes
 
+## Stable checkpoint: federation v1 working
+
+Circle Stack federation v1 is now working between the devbox NAS and VPS NAS.
+
+This checkpoint is the current known-good federation contract before adding larger features or refactoring the worker.
+
+### What works now
+
+- Public Circle Stack posts federate NAS ↔ NAS through Nodus.
+- Image/media preview works from the remote origin NAS.
+- Known origins work.
+- Personal mute/unmute works.
+- Feed mode cycle works:
+  - `Mode: Feed`
+  - `Mode: Federated`
+  - `Mode: My Circle`
+- Remote reactions work automatically:
+  - NAS A reacts to a remote NAS B post.
+  - NAS A publishes a `remote_reaction_*` event.
+  - NAS B worker discovers and applies the reaction automatically.
+  - NAS B UI shows the real reaction on the local post.
+- The reacting NAS remembers server-side “You reacted” state in `people_contacts.sqlite3`.
+- Old browser `localStorage`-only federated reaction state has been removed from Circle Stack frontend code.
+
+### Important recent fix: origin-scoped discovery
+
+Remote reactions became reliable after origin-scoped federation discovery was added/fixed.
+
+The inbound worker now depends on:
+
+1. origin recent index discovery
+2. origin-scoped head fallback discovery
+
+This matters because remote reaction events must be discoverable per origin. A global or stale head path can miss reaction events from a specific remote NAS.
+
+Successful VPS log example:
+
+    [CircleFederationWorker] inbound origin:recent:index origin=d9cf6066e064 pulled=18 seed=EU-1
+    [CircleFederationWorker] inbound applied event_id=remote_reaction_1779871157_10_a8885f40 origin_nas=d9cf6066...
+
+### Reaction flow contract
+
+The current working remote reaction flow is:
+
+1. NAS A displays a federated post that originated on NAS B.
+2. A user on NAS A reacts to that post.
+3. NAS A stores local server-side reaction state so the UI can later show “You reacted”.
+4. NAS A publishes a `remote_reaction_*` federation event through Nodus.
+5. NAS B worker discovers the event using origin-scoped discovery.
+6. NAS B applies the reaction to its local original post.
+7. NAS B UI shows the real reaction on the local post.
+
+Remote reaction UI state must not depend on browser-only `localStorage`.
+
+### Things we must not break
+
+- Remote reactions must survive page reloads.
+- Remote reactions must not rely on old localStorage-only state.
+- The original post owner NAS must be able to discover and apply remote reactions automatically.
+- Personal mute/unmute must remain local to the user.
+- Feed modes must remain distinct:
+  - normal feed
+  - federated feed
+  - my circle feed
+- Media files must stay on the origin NAS.
+- Nodus must carry federation events and safe media references, not the actual media files.
+- Known origins must remain stable across worker restarts.
+
+### Manual smoke test checklist
+
+Before refactoring federation worker code or changing federation event schemas, verify:
+
+- Devbox public post appears on VPS.
+- VPS public post appears on devbox.
+- Remote image/media preview loads from the origin NAS.
+- Muting a remote origin hides that origin for the local user.
+- Unmuting restores the origin.
+- Feed mode button cycles:
+  - `Mode: Feed`
+  - `Mode: Federated`
+  - `Mode: My Circle`
+- Devbox can react to a VPS-originated post.
+- Devbox publishes a `remote_reaction_*` event.
+- VPS worker discovers and applies that event automatically.
+- VPS UI shows the real reaction on the local post.
+- Devbox still shows “You reacted” after page reload.
+
+### Recommended next milestones
+
+The safest next steps are:
+
+1. Keep this working behavior documented as the federation v1 contract.
+2. Add a small manual smoke-test checklist or helper notes.
+3. Add read-only federation status/admin UI polish.
+4. Only after that, split/refactor the federation worker.
+
+The worker split/refactor should happen after this checkpoint because the worker currently contains fragile but working discovery, deduplication, event application, known-origin, mute, and remote-reaction behavior.
+
+
 Date: 2026-05-24
 Branch: feature/circle-stack-nodus-federation
 
