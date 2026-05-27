@@ -189,6 +189,16 @@
     const info = originNas ? originInfoByNas.get(originNas) : null;
 
     if (!originNas) {
+      if (m === "discover") {
+        return {
+          label: "Wider public",
+          detail:
+            "This Discover item did not include a remote NAS origin id. " +
+            "Discover currently uses the public federated feed until Extended Circle ranking is enabled.",
+          tone: "neutral"
+        };
+      }
+
       return {
         label: "Public federated",
         detail: "This event did not include a remote NAS origin id, so it is shown as a generic federated event.",
@@ -222,6 +232,18 @@
       };
     }
 
+    if (m === "discover" && info) {
+      return {
+        label: "Discover",
+        detail:
+          `Shown in Discover because ${info && info.display_name ? info.display_name : "this NAS"} is already a known origin. ` +
+          "Discover currently uses the public federated feed until Extended Circle ranking is enabled. " +
+          `Origin: ${shortOrigin(originNas)}. Source: ${info.source || "known origin"}.` +
+          (info.public_base_url ? ` URL: ${info.public_base_url}.` : ""),
+        tone: "known"
+      };
+    }
+
     if (info) {
       return {
         label: "Known origin",
@@ -230,6 +252,17 @@
           `Origin: ${shortOrigin(originNas)}. Source: ${info.source || "known origin"}.` +
           (info.public_base_url ? ` URL: ${info.public_base_url}.` : ""),
         tone: "known"
+      };
+    }
+
+    if (m === "discover") {
+      return {
+        label: "Wider public",
+        detail:
+          "Shown in Discover as wider public federated content. " +
+          "Discover currently uses the public federated feed until Extended Circle ranking is enabled. " +
+          `Origin: ${shortOrigin(originNas)}.`,
+        tone: "neutral"
       };
     }
 
