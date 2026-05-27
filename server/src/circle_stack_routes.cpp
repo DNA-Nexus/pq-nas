@@ -3153,6 +3153,99 @@ json cs_list_known_remote_origins(const std::string& actor_fp, std::string* err)
 
 
 
+// CIRCLE_FEDERATION_STATUS_ENDPOINT_V1
+long long cs_sql_count_value_for_actor(
+    sqlite3* db,
+    const std::string& sql,
+    const std::string& actor_fp,
+    std::string* err
+) {
+    sqlite3_stmt* st = nullptr;
+
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return 0;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    long long out = 0;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = sqlite3_column_int64(st, 0);
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+json cs_circle_federation_status_for_user(
+    const std::string& actor_fp,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return json::object();
+    }
+
+    const long long known_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins");
+
+    const long long enabled_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled != 0");
+
+    const long long disabled_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled = 0");
+
+    const long long origins_without_public_url = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE TRIM(public_base_url) = ''");
+
+    long long muted_for_me = cs_sql_count_value_for_actor(
+        people_db,
+        "SELECT COUNT(*) FROM circle_user_origin_prefs "
+        "WHERE local_user_fp = ? AND (muted != 0 OR hidden != 0)",
+        actor_fp,
+        err);
+
+    if (err && !err->empty()) {
+        sqlite3_close(people_db);
+        return json::object();
+    }
+
+    long long federated_local_reactions_for_me = cs_sql_count_value_for_actor(
+        people_db,
+        "SELECT COUNT(*) FROM circle_federated_local_reactions "
+        "WHERE actor_fp = ?",
+        actor_fp,
+        err);
+
+    if (err && !err->empty()) {
+        sqlite3_close(people_db);
+        return json::object();
+    }
+
+    sqlite3_close(people_db);
+
+    return {
+        {"known_origins", known_origins},
+        {"enabled_origins", enabled_origins},
+        {"disabled_origins", disabled_origins},
+        {"origins_without_public_url", origins_without_public_url},
+        {"muted_for_me", muted_for_me},
+        {"federated_local_reactions_for_me", federated_local_reactions_for_me},
+        {"federated_reactions_server_state", true},
+        {"worker_touched", false},
+        {"read_only", true}
+    };
+}
+
+
+
 // FEDERATED_LOCAL_REACTIONS_SERVER_PATCH_V1
 
 bool cs_safe_remote_event_id_for_local_reaction(const std::string& value) {
@@ -4452,6 +4545,34 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             set_json(res, response);
+        });
+
+
+    server.Get("/api/v4/circlestack/federation/status",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string err;
+            json status = cs_circle_federation_status_for_user(actor_fp, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circle_federation_status_failed"},
+                    {"detail", err}
+                });
+            }
+
+            status["ok"] = true;
+            set_json(res, status);
         });
 
 
