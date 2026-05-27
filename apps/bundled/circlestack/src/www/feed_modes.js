@@ -79,7 +79,7 @@
     const m = normalizeMode(mode);
     const myCircleOnly = m === "my_circle";
 
-    return (Array.isArray(rawEvents) ? rawEvents : []).filter((ev) => {
+    const filtered = (Array.isArray(rawEvents) ? rawEvents : []).filter((ev) => {
       const origin = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
 
       if (origin && mutedOrigins.has(origin)) {
@@ -92,6 +92,27 @@
 
       return true;
     });
+
+    if (m !== "discover") {
+      return filtered;
+    }
+
+    return filtered
+      .map((ev, index) => ({
+        ev,
+        index,
+        classification: classifyFederatedEvent(ev, m)
+      }))
+      .sort((a, b) => {
+        const pa = Number(a.classification && a.classification.priority || 0);
+        const pb = Number(b.classification && b.classification.priority || 0);
+
+        if (pb !== pa) return pb - pa;
+
+        // Keep the existing feed order inside the same bucket.
+        return a.index - b.index;
+      })
+      .map((item) => item.ev);
   }
 
   function emptyMessage(mode) {
