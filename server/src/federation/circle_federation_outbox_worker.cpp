@@ -1731,8 +1731,19 @@ void worker_loop() {
         env_string("PQNAS_CIRCLE_FEDERATION_WORKER_REMOTE_ORIGINS", "");
     const auto remote_origins =
         split_remote_origins_env_for_worker(remote_origins_raw);
+    // STARTUP_EFFECTIVE_REMOTE_ORIGINS_LOG_PATCH_V1
+    const auto startup_db_remote_origins =
+        load_known_remote_origins_from_people_db_for_worker();
+
+    std::vector<std::string> startup_effective_remote_origins = remote_origins;
+    for (const auto& origin : startup_db_remote_origins) {
+        append_unique_remote_origin_for_worker(
+            &startup_effective_remote_origins,
+            origin);
+    }
+
     const bool poll_global_recent_index =
-        remote_origins.empty() ||
+        startup_effective_remote_origins.empty() ||
         env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_GLOBAL_RECENT_INDEX");
     const std::string seed_selector =
         env_string("PQNAS_CIRCLE_FEDERATION_WORKER_SEED", "EU-1");
@@ -1751,7 +1762,9 @@ void worker_loop() {
               << " recent_index_limit=" << recent_index_limit
               << " poll_legacy_head=" << (poll_legacy_head ? "1" : "0")
               << " poll_global_recent_index=" << (poll_global_recent_index ? "1" : "0")
-              << " remote_origins=" << remote_origins.size()
+              << " env_origins=" << remote_origins.size()
+              << " db_origins=" << startup_db_remote_origins.size()
+              << " effective_origins=" << startup_effective_remote_origins.size()
               << " seeds=" << seed_selector
               << " inbound_circle=" << inbound_circle_id
               << "\n";
