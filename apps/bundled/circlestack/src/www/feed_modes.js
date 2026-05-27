@@ -255,7 +255,13 @@
 
     const detail = document.createElement("div");
     detail.className = "cs-federated-reason-detail";
-    detail.textContent = reason.detail;
+
+    // FEDERATED_REASON_EVENT_ID_DETAIL_V1
+    const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
+    detail.textContent = eventId
+      ? `${reason.detail} Event: ${eventId}.`
+      : reason.detail;
+
     detail.hidden = true;
 
     why.addEventListener("click", () => {

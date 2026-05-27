@@ -629,7 +629,20 @@ function csRenderFederatedEvent(ev) {
 
   const meta = document.createElement("div");
   meta.className = "cs-post-meta";
-  meta.textContent = `${ev.created_epoch ? new Date(ev.created_epoch * 1000).toLocaleString() : ""} · ${ev.event_id || ""}`;
+
+  // FEDERATED_CLEAN_META_FOOTER_V1
+  const createdText = ev.created_epoch
+    ? new Date(ev.created_epoch * 1000).toLocaleString()
+    : "";
+
+  meta.textContent = createdText
+    ? `${createdText} · Federated`
+    : "Federated";
+
+  if (ev.event_id) {
+    meta.title = `Federation event: ${ev.event_id}`;
+  }
+
   card.appendChild(meta);
 
   return card;
