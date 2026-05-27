@@ -559,7 +559,24 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
         "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_name "
         "ON people_contacts(owner_fingerprint, display_name COLLATE NOCASE);"
         "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_kind "
-        "ON people_contacts(owner_fingerprint, subject_kind);";
+        "ON people_contacts(owner_fingerprint, subject_kind);"
+        "CREATE TABLE IF NOT EXISTS known_remote_origins ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "origin_nas TEXT NOT NULL,"
+        "public_base_url TEXT NOT NULL DEFAULT '',"
+        "display_name TEXT NOT NULL DEFAULT '',"
+        "source TEXT NOT NULL DEFAULT '',"
+        "source_event_id TEXT NOT NULL DEFAULT '',"
+        "added_by_fp TEXT NOT NULL DEFAULT '',"
+        "enabled INTEGER NOT NULL DEFAULT 1,"
+        "first_seen_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(origin_nas)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_enabled "
+        "ON known_remote_origins(enabled, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_added_by "
+        "ON known_remote_origins(added_by_fp, updated_epoch DESC);";
 
     char* msg = nullptr;
     if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
@@ -2658,10 +2675,14 @@ bool cs_enqueue_reply_reaction_removed_federation_best_effort(
 
 // FEDERATED_REMOTE_INTERACTION_PATCH_V1
 
+// SELF_REMOTE_ORIGIN_FORWARD_DECL_PATCH_V1
+std::string cs_trim_public_base_url_for_known_origin(std::string raw);
+
 struct CsRemotePostTarget {
     long long post_id = 0;
     std::string event_id;
     std::string origin_nas;
+    std::string public_base_url;
     std::string owner_fp;
     std::string owner_display_name;
 };
@@ -2724,7 +2745,27 @@ bool cs_find_remote_post_target(
                        payload["origin_label"].is_string()) {
                 target.owner_display_name = payload["origin_label"].get<std::string>();
             }
+
+            if (payload.contains("origin") &&
+                payload["origin"].is_object() &&
+                payload["origin"].contains("preview_base_url") &&
+                payload["origin"]["preview_base_url"].is_string()) {
+                target.public_base_url =
+                    payload["origin"]["preview_base_url"].get<std::string>();
+            }
         }
+
+        if (target.public_base_url.empty() &&
+            parsed.contains("origin") &&
+            parsed["origin"].is_object() &&
+            parsed["origin"].contains("preview_base_url") &&
+            parsed["origin"]["preview_base_url"].is_string()) {
+            target.public_base_url =
+                parsed["origin"]["preview_base_url"].get<std::string>();
+        }
+
+        target.public_base_url =
+            cs_trim_public_base_url_for_known_origin(target.public_base_url);
 
         if (target.post_id <= 0 || target.origin_nas.empty()) {
             if (err) *err = "remote_post_target_incomplete";
@@ -2850,12 +2891,177 @@ bool cs_enqueue_remote_post_reaction_federation_best_effort(
     return true;
 }
 
+
+// KNOWN_REMOTE_ORIGINS_FROM_PEOPLE_PATCH_V1
+
+bool cs_safe_federation_origin_key(const std::string& value) {
+    if (value.empty() || value.size() > 180) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+std::string cs_trim_public_base_url_for_known_origin(std::string raw) {
+    raw = cs_trim_copy(raw);
+    while (!raw.empty() && raw.back() == '/') {
+        raw.pop_back();
+    }
+
+    if (raw.empty()) return "";
+    if (raw.size() > 512) return "";
+
+    if (!cs_starts_with_ascii(raw, "https://") &&
+        !(cs_starts_with_ascii(raw, "http://") && cs_env_true("PQNAS_ALLOW_INSECURE_PUBLIC_BASE_URL"))) {
+        return "";
+    }
+
+    if (cs_url_has_unsafe_chars(raw)) {
+        return "";
+    }
+
+    if (cs_is_disallowed_public_base_host(cs_extract_url_host_lower(raw))) {
+        return "";
+    }
+
+    return raw;
+}
+
+bool cs_upsert_known_remote_origin_from_people(
+    sqlite3* people_db,
+    const std::string& origin_nas_raw,
+    const std::string& public_base_url_raw,
+    const std::string& display_name_raw,
+    const std::string& source_event_id_raw,
+    const std::string& added_by_fp,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    const std::string origin_nas = cs_trim_copy(origin_nas_raw);
+    if (origin_nas.empty()) {
+        return true;
+    }
+
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    std::string display_name = cs_trim_copy(display_name_raw);
+    if (display_name.size() > 120) {
+        display_name.resize(120);
+    }
+
+    std::string source_event_id = cs_trim_copy(source_event_id_raw);
+    if (source_event_id.size() > 180) {
+        source_event_id.resize(180);
+    }
+
+    const std::string public_base_url =
+        cs_trim_public_base_url_for_known_origin(public_base_url_raw);
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT INTO known_remote_origins "
+        "(origin_nas, public_base_url, display_name, source, source_event_id, "
+        " added_by_fp, enabled, first_seen_epoch, updated_epoch) "
+        "VALUES (?, ?, ?, 'person_add', ?, ?, 1, ?, ?) "
+        "ON CONFLICT(origin_nas) DO UPDATE SET "
+        " public_base_url = CASE "
+        "   WHEN excluded.public_base_url != '' THEN excluded.public_base_url "
+        "   ELSE known_remote_origins.public_base_url END,"
+        " display_name = CASE "
+        "   WHEN excluded.display_name != '' THEN excluded.display_name "
+        "   ELSE known_remote_origins.display_name END,"
+        " source = excluded.source,"
+        " source_event_id = CASE "
+        "   WHEN excluded.source_event_id != '' THEN excluded.source_event_id "
+        "   ELSE known_remote_origins.source_event_id END,"
+        " added_by_fp = CASE "
+        "   WHEN excluded.added_by_fp != '' THEN excluded.added_by_fp "
+        "   ELSE known_remote_origins.added_by_fp END,"
+        " enabled = 1,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, public_base_url.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, source_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, added_by_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 6, now);
+    sqlite3_bind_int64(st, 7, now);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    return true;
+}
+
+
+// SELF_REMOTE_ORIGIN_ADD_PATCH_V1
+
+bool cs_add_known_remote_origin_only(
+    const std::string& owner_fp,
+    const std::string& remote_origin_nas,
+    const std::string& remote_public_base_url,
+    const std::string& display_name,
+    const std::string& source_event_id,
+    std::string* err
+) {
+    if (owner_fp.empty()) {
+        if (err) *err = "missing_owner_fp";
+        return false;
+    }
+
+    if (remote_origin_nas.empty()) {
+        if (err) *err = "missing_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    const bool ok = cs_upsert_known_remote_origin_from_people(
+        people_db,
+        remote_origin_nas,
+        remote_public_base_url,
+        display_name,
+        source_event_id,
+        owner_fp,
+        now,
+        err);
+
+    sqlite3_close(people_db);
+    return ok;
+}
+
 bool cs_add_remote_people_contact(
     const pqnas::CircleStackRoutesDeps& deps,
     const std::string& owner_fp,
     const std::string& subject_fp,
     const std::string& display_name_raw,
     const std::string& source_event_id,
+    const std::string& remote_origin_nas,
+    const std::string& remote_public_base_url,
     std::string* err
 ) {
     (void)deps;
@@ -2907,13 +3113,27 @@ bool cs_add_remote_people_contact(
 
     const int rc = sqlite3_step(st);
     sqlite3_finalize(st);
-    sqlite3_close(people_db);
 
     if (rc != SQLITE_DONE) {
         if (err) *err = "remote_people_contact_insert_failed";
+        sqlite3_close(people_db);
         return false;
     }
 
+    if (!cs_upsert_known_remote_origin_from_people(
+            people_db,
+            remote_origin_nas,
+            remote_public_base_url,
+            display_name,
+            source_event_id,
+            owner_fp,
+            now,
+            err)) {
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_close(people_db);
     return true;
 }
 
@@ -3844,6 +4064,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
             std::string fp = body.value("fp", "");
             std::string display_name = body.value("display_name", "");
+            std::string remote_origin_nas = body.value("remote_origin_nas", "");
+            std::string remote_public_base_url = body.value("remote_public_base_url", "");
             const std::string source_event_id = body.value("source_event_id", "");
 
             if (fp.empty() && !source_event_id.empty()) {
@@ -3854,12 +4076,55 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     if (display_name.empty()) {
                         display_name = target.owner_display_name;
                     }
+                    if (remote_origin_nas.empty()) {
+                        remote_origin_nas = target.origin_nas;
+                    }
+                    if (remote_public_base_url.empty()) {
+                        remote_public_base_url = target.public_base_url;
+                    }
+                } else {
+                    res.status = 404;
+                    return set_json(res, {
+                        { "ok", false },
+                        { "error", "remote_source_event_not_found" },
+                        { "source_event_id", source_event_id },
+                        { "detail", target_err }
+                    });
                 }
             }
 
-            if (fp.empty() || fp == actor_fp) {
+            if (fp.empty()) {
                 res.status = 400;
                 return set_json(res, {{ "ok", false }, { "error", "invalid_fp" }});
+            }
+
+            if (fp == actor_fp) {
+                std::string origin_err;
+                if (!cs_add_known_remote_origin_only(
+                        actor_fp,
+                        remote_origin_nas,
+                        remote_public_base_url,
+                        display_name,
+                        source_event_id,
+                        &origin_err)) {
+                    res.status = 500;
+                    return set_json(res, {
+                        { "ok", false },
+                        { "error", "self_remote_origin_add_failed" },
+                        { "detail", origin_err }
+                    });
+                }
+
+                return set_json(res, {
+                    { "ok", true },
+                    { "fp", fp },
+                    { "display_name", display_name.empty() ? cs_short_fp(fp) : display_name },
+                    { "remote_origin_nas", remote_origin_nas },
+                    { "remote_public_base_url", remote_public_base_url },
+                    { "source", "self_remote_federated" },
+                    { "self", true },
+                    { "polling", "known_remote_origin_added" }
+                });
             }
 
             std::string add_err;
@@ -3869,6 +4134,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     fp,
                     display_name,
                     source_event_id,
+                    remote_origin_nas,
+                    remote_public_base_url,
                     &add_err)) {
                 res.status = 500;
                 return set_json(res, {
@@ -3882,7 +4149,10 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 { "ok", true },
                 { "fp", fp },
                 { "display_name", display_name.empty() ? cs_short_fp(fp) : display_name },
-                { "source", "remote_federated" }
+                { "remote_origin_nas", remote_origin_nas },
+                { "remote_public_base_url", remote_public_base_url },
+                { "source", "remote_federated" },
+                { "polling", remote_origin_nas.empty() ? "not_added" : "known_remote_origin_added" }
             });
         });
 

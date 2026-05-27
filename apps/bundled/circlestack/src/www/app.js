@@ -72,6 +72,33 @@ function csFederatedActorFingerprint(ev) {
   ).trim();
 }
 
+
+// KNOWN_REMOTE_ORIGINS_FROM_PEOPLE_UI_PATCH_V1
+
+function csFederatedOriginInfo(ev) {
+  const payload = ev && ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+  const eventJson = ev && ev.event && typeof ev.event === "object" ? ev.event : {};
+
+  const origin =
+    payload.origin && typeof payload.origin === "object"
+      ? payload.origin
+      : (
+          eventJson.origin && typeof eventJson.origin === "object"
+            ? eventJson.origin
+            : {}
+        );
+
+  return {
+    origin_nas: String(
+      ev.origin_nas ||
+      eventJson.origin_nas ||
+      origin.nas_id ||
+      ""
+    ).trim(),
+    public_base_url: String(origin.preview_base_url || "").replace(/\/+$/, "")
+  };
+}
+
 async function csAddFederatedPerson(ev) {
   const fp = csFederatedActorFingerprint(ev);
   if (!fp) {
@@ -86,7 +113,9 @@ async function csAddFederatedPerson(ev) {
     body: JSON.stringify({
       fp,
       display_name: csFederatedActorLabel(ev),
-      source_event_id: ev.event_id || ""
+      source_event_id: ev.event_id || "",
+      remote_origin_nas: csFederatedOriginInfo(ev).origin_nas,
+      remote_public_base_url: csFederatedOriginInfo(ev).public_base_url
     })
   });
 

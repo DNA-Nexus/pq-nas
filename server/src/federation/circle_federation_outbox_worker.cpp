@@ -812,6 +812,88 @@ std::string event_origin_nas_from_json_for_worker(const std::string& raw) {
     return "";
 }
 
+
+// KNOWN_REMOTE_ORIGINS_DB_WORKER_PATCH_V1
+
+static constexpr const char* kPeopleContactsDbPathForKnownRemoteOrigins =
+    "/srv/pqnas/config/people_contacts.sqlite3";
+
+void append_unique_remote_origin_for_worker(
+    std::vector<std::string>* out,
+    const std::string& origin_raw
+) {
+    if (!out) return;
+
+    const std::string origin = trim_copy(origin_raw);
+    if (!is_safe_nodus_key_segment_for_worker(origin)) {
+        return;
+    }
+
+    if (std::find(out->begin(), out->end(), origin) != out->end()) {
+        return;
+    }
+
+    out->push_back(origin);
+}
+
+std::vector<std::string> load_known_remote_origins_from_people_db_for_worker() {
+    std::vector<std::string> out;
+
+    sqlite3* db = nullptr;
+    if (sqlite3_open(kPeopleContactsDbPathForKnownRemoteOrigins, &db) != SQLITE_OK) {
+        if (db) sqlite3_close(db);
+        return out;
+    }
+
+    sqlite3_busy_timeout(db, 2000);
+
+    const char* schema_sql =
+        "CREATE TABLE IF NOT EXISTS known_remote_origins ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "origin_nas TEXT NOT NULL,"
+        "public_base_url TEXT NOT NULL DEFAULT '',"
+        "display_name TEXT NOT NULL DEFAULT '',"
+        "source TEXT NOT NULL DEFAULT '',"
+        "source_event_id TEXT NOT NULL DEFAULT '',"
+        "added_by_fp TEXT NOT NULL DEFAULT '',"
+        "enabled INTEGER NOT NULL DEFAULT 1,"
+        "first_seen_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(origin_nas)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_enabled "
+        "ON known_remote_origins(enabled, updated_epoch DESC);";
+
+    char* msg = nullptr;
+    if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
+        if (msg) sqlite3_free(msg);
+        sqlite3_close(db);
+        return out;
+    }
+    if (msg) sqlite3_free(msg);
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT origin_nas FROM known_remote_origins "
+            "WHERE enabled = 1 "
+            "ORDER BY updated_epoch DESC "
+            "LIMIT 200",
+            -1, &st, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return out;
+    }
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* raw =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        append_unique_remote_origin_for_worker(&out, raw ? raw : "");
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+    return out;
+}
+
 std::vector<std::string> split_remote_origins_env_for_worker(std::string raw) {
     for (char& c : raw) {
         if (c == ';' || std::isspace(static_cast<unsigned char>(c))) {
@@ -1542,8 +1624,18 @@ void worker_pull_and_apply_inbound(
     bool poll_legacy_head,
     bool poll_global_recent_index,
     const std::vector<std::string>& remote_origins) {
+    (void)poll_global_recent_index;
     const std::string local_nodus_fp =
         local_federation_origin_fingerprint(config);
+
+    std::vector<std::string> effective_remote_origins = remote_origins;
+    for (const auto& origin : load_known_remote_origins_from_people_db_for_worker()) {
+        append_unique_remote_origin_for_worker(&effective_remote_origins, origin);
+    }
+
+    const bool effective_poll_global_recent_index =
+        env_enabled("PQNAS_CIRCLE_FEDERATION_WORKER_POLL_GLOBAL_RECENT_INDEX") ||
+        effective_remote_origins.empty();
 
     // First clear anything already discovered in a previous loop.
     worker_apply_pending_inbox(config, batch_limit);
@@ -1553,7 +1645,7 @@ void worker_pull_and_apply_inbound(
             worker_pull_latest_remote_head(circle_id, config, seed, local_nodus_fp);
         }
 
-        if (poll_global_recent_index) {
+        if (effective_poll_global_recent_index) {
             worker_pull_recent_index_remote_events(
                 circle_id,
                 config,
@@ -1562,7 +1654,7 @@ void worker_pull_and_apply_inbound(
                 recent_index_limit);
         }
 
-        for (const auto& remote_origin : remote_origins) {
+        for (const auto& remote_origin : effective_remote_origins) {
             worker_pull_origin_recent_index_remote_events(
                 circle_id,
                 remote_origin,
