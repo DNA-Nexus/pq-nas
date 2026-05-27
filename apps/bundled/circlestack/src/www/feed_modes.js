@@ -11,6 +11,7 @@
 
   let knownOrigins = new Set();
   let mutedOrigins = new Set();
+  let originInfoByNas = new Map();
 
   function normalizeMode(mode) {
     if (mode === "federated") return "federated";
@@ -36,23 +37,39 @@
   }
 
   async function refreshOriginSets() {
-    const origins = await fetchKnownOrigins();
+    try {
+      const origins = await fetchKnownOrigins();
 
-    knownOrigins = new Set(
-      origins
-        .filter((origin) => origin && origin.enabled !== false)
-        .map((origin) => String(origin.origin_nas || "").trim())
-        .filter(Boolean)
-    );
+      originInfoByNas = new Map(
+        origins
+          .map((origin) => [
+            String(origin && origin.origin_nas ? origin.origin_nas : "").trim(),
+            origin
+          ])
+          .filter(([originNas]) => !!originNas)
+      );
 
-    mutedOrigins = new Set(
-      origins
-        .filter((origin) => origin && (origin.my_muted || origin.my_hidden))
-        .map((origin) => String(origin.origin_nas || "").trim())
-        .filter(Boolean)
-    );
+      knownOrigins = new Set(
+        origins
+          .filter((origin) => origin && origin.enabled !== false)
+          .map((origin) => String(origin.origin_nas || "").trim())
+          .filter(Boolean)
+      );
 
-    return origins;
+      mutedOrigins = new Set(
+        origins
+          .filter((origin) => origin && (origin.my_muted || origin.my_hidden))
+          .map((origin) => String(origin.origin_nas || "").trim())
+          .filter(Boolean)
+      );
+
+      return origins;
+    } catch (_) {
+      knownOrigins = new Set();
+      mutedOrigins = new Set();
+      originInfoByNas = new Map();
+      return [];
+    }
   }
 
   async function filterFederatedEvents(rawEvents, mode) {
@@ -149,6 +166,117 @@
     return !!(localBtn || fedBtn);
   }
 
+
+  // CIRCLESTACK_FEDERATED_REASON_LABELS_V1
+  function shortOrigin(originNas) {
+    const raw = String(originNas || "").trim();
+    if (!raw) return "";
+    return raw.length > 8 ? raw.slice(0, 8) : raw;
+  }
+
+  function originReason(ev, mode) {
+    const originNas = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
+    const m = normalizeMode(mode);
+    const info = originNas ? originInfoByNas.get(originNas) : null;
+
+    if (!originNas) {
+      return {
+        label: "Public federated",
+        detail: "This event did not include a remote NAS origin id, so it is shown as a generic federated event.",
+        tone: "neutral"
+      };
+    }
+
+    if (mutedOrigins.has(originNas)) {
+      return {
+        label: "Muted for me",
+        detail: "This origin is muted for your user. Normally it should be hidden from your federated feed.",
+        tone: "muted"
+      };
+    }
+
+    if (info && info.enabled === false) {
+      return {
+        label: "Globally disabled",
+        detail: "This origin is disabled globally for the server. Existing cached events may still be visible.",
+        tone: "warning"
+      };
+    }
+
+    if (m === "my_circle") {
+      return {
+        label: "My Circle",
+        detail:
+          `Shown because ${info && info.display_name ? info.display_name : "this NAS"} is in Known origins. ` +
+          `Origin: ${shortOrigin(originNas)}. Source: ${info && info.source ? info.source : "known origin"}.`,
+        tone: "known"
+      };
+    }
+
+    if (info) {
+      return {
+        label: "Known origin",
+        detail:
+          `This came from a NAS origin your server knows. ` +
+          `Origin: ${shortOrigin(originNas)}. Source: ${info.source || "known origin"}.` +
+          (info.public_base_url ? ` URL: ${info.public_base_url}.` : ""),
+        tone: "known"
+      };
+    }
+
+    return {
+      label: "Public federated",
+      detail:
+        `This came from a federated NAS origin that is not currently in your Known origins list. ` +
+        `Origin: ${shortOrigin(originNas)}.`,
+      tone: "neutral"
+    };
+  }
+
+  function decorateFederatedEvent(card, ev, mode) {
+    if (!card || !ev) return;
+
+    const old = card.querySelector(".cs-federated-reason");
+    if (old) old.remove();
+
+    const reason = originReason(ev, mode);
+
+    const row = document.createElement("div");
+    row.className = `cs-federated-reason cs-federated-reason-${reason.tone || "neutral"}`;
+
+    const pill = document.createElement("span");
+    pill.className = "cs-federated-reason-pill";
+    pill.textContent = reason.label;
+
+    const why = document.createElement("button");
+    why.className = "cs-federated-reason-why";
+    why.type = "button";
+    why.textContent = "Why?";
+
+    const detail = document.createElement("div");
+    detail.className = "cs-federated-reason-detail";
+    detail.textContent = reason.detail;
+    detail.hidden = true;
+
+    why.addEventListener("click", () => {
+      detail.hidden = !detail.hidden;
+      why.textContent = detail.hidden ? "Why?" : "Hide";
+    });
+
+    row.appendChild(pill);
+    row.appendChild(why);
+    row.appendChild(detail);
+
+    const header = card.querySelector(".cs-post-header");
+    if (header && header.nextSibling) {
+      card.insertBefore(row, header.nextSibling);
+    } else if (header) {
+      card.appendChild(row);
+    } else {
+      card.prepend(row);
+    }
+  }
+
   window.CircleStackFeedModes = {
     normalizeMode,
     isFederatedSurface,
@@ -156,6 +284,7 @@
     emptyMessage,
     setActiveButtons,
     initButtons,
-    refreshOriginSets
+    refreshOriginSets,
+    decorateFederatedEvent
   };
 })();
