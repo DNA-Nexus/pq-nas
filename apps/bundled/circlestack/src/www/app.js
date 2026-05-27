@@ -794,6 +794,10 @@ async function csLoadFederatedFeed() {
     return;
   }
 
+  if (typeof csLoadFederatedLocalReactionsForEvents === "function") {
+    await csLoadFederatedLocalReactionsForEvents(events);
+  }
+
   for (const ev of events) {
     feed.appendChild(csRenderFederatedEvent(ev));
   }
@@ -3231,6 +3235,131 @@ async function csOpenKnownOriginsModal() {
 // Expose federated feed helpers for inline button handlers and browser debugging.
 window.csSetFeedMode = csSetFeedMode;
 window.csLoadFederatedFeed = csLoadFederatedFeed;
+
+
+// FEDERATED_LOCAL_REACTIONS_SERVER_UI_V1
+let csFederatedLocalReactionServerCache = new Map();
+
+async function csLoadFederatedLocalReactionsForEvents(events) {
+  const eventIds = (Array.isArray(events) ? events : [])
+    .filter((ev) => ev && ev.event_type === "circle.post.created")
+    .map((ev) => String(ev.event_id || "").trim())
+    .filter(Boolean);
+
+  if (!eventIds.length) {
+    csFederatedLocalReactionServerCache = new Map();
+    return;
+  }
+
+  try {
+    const res = await fetch(`${CS_API}/federated/reactions/mine/list`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_ids: eventIds })
+    });
+
+    const data = await res.json().catch(() => ({ ok: false }));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    const next = new Map();
+
+    for (const item of Array.isArray(data.items) ? data.items : []) {
+      const eventId = String(item.remote_event_id || "").trim();
+      const reaction = String(item.reaction || "").trim();
+
+      if (!eventId || !reaction) continue;
+
+      next.set(eventId, {
+        reaction,
+        origin_nas: String(item.origin_nas || ""),
+        federation_event_id: String(item.federation_event_id || ""),
+        created_epoch: Number(item.created_epoch || 0),
+        updated_epoch: Number(item.updated_epoch || 0),
+        server_side: true
+      });
+    }
+
+    csFederatedLocalReactionServerCache = next;
+  } catch (err) {
+    console.warn("Could not load server-side federated local reactions", err);
+    csFederatedLocalReactionServerCache = new Map();
+  }
+}
+
+async function csStoreFederatedLocalReactionOnServer(ev, reaction, data = {}) {
+  const remote_event_id = String(ev && ev.event_id ? ev.event_id : "").trim();
+  if (!remote_event_id) return;
+
+  const body = {
+    remote_event_id,
+    origin_nas: String(ev && ev.origin_nas ? ev.origin_nas : ""),
+    reaction: String(reaction || ""),
+    federation_event_id: data && data.federation_event_id
+      ? String(data.federation_event_id)
+      : ""
+  };
+
+  const res = await fetch(`${CS_API}/federated/reactions/mine/set`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  const out = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || !out.ok) {
+    throw new Error(out.error || `HTTP ${res.status}`);
+  }
+}
+
+function csRememberFederatedLocalReaction(ev, reaction, data = {}) {
+  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
+  const value = String(reaction || "").trim();
+
+  if (!eventId || !value) return;
+
+  csFederatedLocalReactionServerCache.set(eventId, {
+    reaction: value,
+    origin_nas: String(ev && ev.origin_nas ? ev.origin_nas : ""),
+    updated_epoch: Math.floor(Date.now() / 1000),
+    federation_event_id: data && data.federation_event_id
+      ? String(data.federation_event_id)
+      : "",
+    server_side: false
+  });
+
+  csStoreFederatedLocalReactionOnServer(ev, value, data).then(() => {
+    const item = csFederatedLocalReactionServerCache.get(eventId);
+    if (item) {
+      item.server_side = true;
+      csFederatedLocalReactionServerCache.set(eventId, item);
+    }
+  }).catch((err) => {
+    console.warn("Could not persist federated local reaction on server", err);
+  });
+}
+
+function csFederatedLocalReactionFor(ev) {
+  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
+  if (!eventId) return null;
+
+  const serverItem = csFederatedLocalReactionServerCache.get(eventId);
+  if (serverItem && serverItem.reaction) return serverItem;
+
+  // Transitional fallback for reactions made before the server-side table existed.
+  try {
+    const raw = localStorage.getItem("circlestack:federatedLocalReactions:v1");
+    const parsed = raw ? JSON.parse(raw) : {};
+    const item = parsed && parsed[eventId] ? parsed[eventId] : null;
+    if (item && item.reaction) return item;
+  } catch (_) {}
+
+  return null;
+}
+
 
 document.addEventListener("DOMContentLoaded", async () => {
   await csApplyI18n();

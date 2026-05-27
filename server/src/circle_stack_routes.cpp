@@ -589,7 +589,22 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
         "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_user "
         "ON circle_user_origin_prefs(local_user_fp, updated_epoch DESC);"
         "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_origin "
-        "ON circle_user_origin_prefs(origin_nas, updated_epoch DESC);";
+        "ON circle_user_origin_prefs(origin_nas, updated_epoch DESC);"
+        "CREATE TABLE IF NOT EXISTS circle_federated_local_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "actor_fp TEXT NOT NULL,"
+        "remote_event_id TEXT NOT NULL,"
+        "origin_nas TEXT NOT NULL DEFAULT '',"
+        "reaction TEXT NOT NULL,"
+        "federation_event_id TEXT NOT NULL DEFAULT '',"
+        "created_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(actor_fp, remote_event_id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_circle_fed_local_reactions_actor "
+        "ON circle_federated_local_reactions(actor_fp, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_circle_fed_local_reactions_remote_event "
+        "ON circle_federated_local_reactions(remote_event_id);";
 
     char* msg = nullptr;
     if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
@@ -3137,6 +3152,204 @@ json cs_list_known_remote_origins(const std::string& actor_fp, std::string* err)
 }
 
 
+
+// FEDERATED_LOCAL_REACTIONS_SERVER_PATCH_V1
+
+bool cs_safe_remote_event_id_for_local_reaction(const std::string& value) {
+    if (value.empty() || value.size() > 220) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.' || c == ':') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+bool cs_upsert_my_federated_local_reaction(
+    const std::string& actor_fp,
+    const std::string& remote_event_id_raw,
+    const std::string& origin_nas_raw,
+    const std::string& reaction_raw,
+    const std::string& federation_event_id_raw,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    if (actor_fp.empty()) {
+        if (err) *err = "missing_actor_fp";
+        return false;
+    }
+
+    const std::string remote_event_id = cs_trim_copy(remote_event_id_raw);
+    if (!cs_safe_remote_event_id_for_local_reaction(remote_event_id)) {
+        if (err) *err = "invalid_remote_event_id";
+        return false;
+    }
+
+    std::string origin_nas = cs_trim_copy(origin_nas_raw);
+    if (!origin_nas.empty() && !cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    const std::string reaction = cs_trim_copy(reaction_raw);
+    if (!reaction.empty() && !cs_is_supported_reaction(reaction)) {
+        if (err) *err = "unsupported_reaction";
+        return false;
+    }
+
+    std::string federation_event_id = cs_trim_copy(federation_event_id_raw);
+    if (federation_event_id.size() > 220) {
+        federation_event_id.resize(220);
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+
+    if (reaction.empty()) {
+        const char* sql =
+            "DELETE FROM circle_federated_local_reactions "
+            "WHERE actor_fp = ? AND remote_event_id = ?";
+
+        if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(people_db);
+            sqlite3_close(people_db);
+            return false;
+        }
+
+        sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 2, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+
+        const int rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        sqlite3_close(people_db);
+
+        if (rc != SQLITE_DONE) {
+            if (err) *err = "federated_local_reaction_delete_failed";
+            return false;
+        }
+
+        return true;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    const char* sql =
+        "INSERT INTO circle_federated_local_reactions "
+        "(actor_fp, remote_event_id, origin_nas, reaction, federation_event_id, "
+        " created_epoch, updated_epoch) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(actor_fp, remote_event_id) DO UPDATE SET "
+        " origin_nas = excluded.origin_nas,"
+        " reaction = excluded.reaction,"
+        " federation_event_id = excluded.federation_event_id,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, reaction.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, federation_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 6, now);
+    sqlite3_bind_int64(st, 7, now);
+
+    const int rc = sqlite3_step(st);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "federated_local_reaction_upsert_failed";
+        return false;
+    }
+
+    return true;
+}
+
+json cs_list_my_federated_local_reactions(
+    const std::string& actor_fp,
+    const std::vector<std::string>& event_ids,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    json items = json::array();
+
+    if (actor_fp.empty() || event_ids.empty()) {
+        return items;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return items;
+    }
+
+    std::string sql =
+        "SELECT remote_event_id, origin_nas, reaction, federation_event_id, "
+        "       created_epoch, updated_epoch "
+        "FROM circle_federated_local_reactions "
+        "WHERE actor_fp = ? AND remote_event_id IN (";
+
+    for (std::size_t i = 0; i < event_ids.size(); ++i) {
+        if (i) sql += ",";
+        sql += "?";
+    }
+
+    sql += ") ORDER BY updated_epoch DESC";
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(people_db, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return items;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    int bind_index = 2;
+    for (const auto& event_id : event_ids) {
+        sqlite3_bind_text(st, bind_index++, event_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* remote_event_id =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        const char* origin_nas =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+        const char* reaction =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+        const char* federation_event_id =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+        items.push_back({
+            {"remote_event_id", remote_event_id ? remote_event_id : ""},
+            {"origin_nas", origin_nas ? origin_nas : ""},
+            {"reaction", reaction ? reaction : ""},
+            {"federation_event_id", federation_event_id ? federation_event_id : ""},
+            {"created_epoch", sqlite3_column_int64(st, 4)},
+            {"updated_epoch", sqlite3_column_int64(st, 5)}
+        });
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    return items;
+}
+
 bool cs_set_user_origin_muted(
     const std::string& actor_fp,
     const std::string& origin_raw,
@@ -4261,6 +4474,129 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 return set_json(res, {
                     {"ok", false},
                     {"error", "known_remote_origins_list_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", items.size()},
+                {"items", items}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/reactions/mine/set",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string remote_event_id =
+                body.value("remote_event_id", body.value("event_id", ""));
+            const std::string origin_nas = body.value("origin_nas", "");
+            const std::string reaction = body.value("reaction", "");
+            const std::string federation_event_id =
+                body.value("federation_event_id", "");
+
+            std::string err;
+            if (!cs_upsert_my_federated_local_reaction(
+                    actor_fp,
+                    remote_event_id,
+                    origin_nas,
+                    reaction,
+                    federation_event_id,
+                    &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "federated_local_reaction_set_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"remote_event_id", remote_event_id},
+                {"origin_nas", origin_nas},
+                {"reaction", reaction},
+                {"federation_event_id", federation_event_id}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/reactions/mine/list",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const json event_ids_json =
+                body.contains("event_ids") ? body["event_ids"] : json::array();
+
+            if (!event_ids_json.is_array()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "event_ids_must_be_array"}
+                });
+            }
+
+            std::vector<std::string> event_ids;
+            event_ids.reserve(std::min<std::size_t>(event_ids_json.size(), 120));
+
+            for (const auto& item : event_ids_json) {
+                if (!item.is_string()) continue;
+
+                const std::string event_id = cs_trim_copy(item.get<std::string>());
+                if (!cs_safe_remote_event_id_for_local_reaction(event_id)) {
+                    continue;
+                }
+
+                if (std::find(event_ids.begin(), event_ids.end(), event_id) ==
+                    event_ids.end()) {
+                    event_ids.push_back(event_id);
+                }
+
+                if (event_ids.size() >= 120) break;
+            }
+
+            std::string err;
+            json items =
+                cs_list_my_federated_local_reactions(actor_fp, event_ids, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "federated_local_reaction_list_failed"},
                     {"detail", err}
                 });
             }
