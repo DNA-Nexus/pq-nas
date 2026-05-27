@@ -183,6 +183,56 @@
     return raw.length > 8 ? raw.slice(0, 8) : raw;
   }
 
+  // EXTENDED_CIRCLE_BUCKET_CLASSIFIER_V1
+  function classifyFederatedEvent(ev, mode) {
+    const originNas = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
+    const m = normalizeMode(mode);
+    const info = originNas ? originInfoByNas.get(originNas) : null;
+
+    if (originNas && mutedOrigins.has(originNas)) {
+      return {
+        bucket: "hidden_muted",
+        label: "Muted for me",
+        priority: 0,
+        reason: "This origin is muted for your user."
+      };
+    }
+
+    if (info && info.enabled === false) {
+      return {
+        bucket: "hidden_disabled",
+        label: "Globally disabled",
+        priority: 0,
+        reason: "This origin is disabled globally for the server."
+      };
+    }
+
+    if (info) {
+      return {
+        bucket: "my_circle",
+        label: "My Circle",
+        priority: 100,
+        reason: "This origin is already known by your server."
+      };
+    }
+
+    if (m === "discover") {
+      return {
+        bucket: "wider_public",
+        label: "Wider public",
+        priority: 10,
+        reason: "This is public federated content from an origin outside your known circle."
+      };
+    }
+
+    return {
+      bucket: "wider_public",
+      label: "Public federated",
+      priority: 10,
+      reason: "This is public federated content."
+    };
+  }
+
   function originReason(ev, mode) {
     const originNas = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
     const m = normalizeMode(mode);
@@ -281,7 +331,11 @@
     const old = card.querySelector(".cs-federated-reason");
     if (old) old.remove();
 
+    const classification = classifyFederatedEvent(ev, mode);
     const reason = originReason(ev, mode);
+
+    card.dataset.federationBucket = classification.bucket || "";
+    card.dataset.federationPriority = String(classification.priority || 0);
 
     const row = document.createElement("div");
     row.className = `cs-federated-reason cs-federated-reason-${reason.tone || "neutral"}`;
@@ -333,6 +387,7 @@
     setActiveButtons,
     initButtons,
     refreshOriginSets,
+    classifyFederatedEvent,
     decorateFederatedEvent
   };
 })();
