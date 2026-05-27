@@ -16,12 +16,13 @@
   function normalizeMode(mode) {
     if (mode === "federated") return "federated";
     if (mode === "my_circle") return "my_circle";
+    if (mode === "discover") return "discover";
     return "local";
   }
 
   function isFederatedSurface(mode) {
     const m = normalizeMode(mode);
-    return m === "federated" || m === "my_circle";
+    return m === "federated" || m === "my_circle" || m === "discover";
   }
 
   async function fetchKnownOrigins() {
@@ -94,8 +95,14 @@
   }
 
   function emptyMessage(mode) {
-    if (normalizeMode(mode) === "my_circle") {
+    const m = normalizeMode(mode);
+
+    if (m === "my_circle") {
       return "No My Circle federated posts yet. Add or follow a remote person to include their NAS origin here.";
+    }
+
+    if (m === "discover") {
+      return "No Discover posts yet. Discover currently uses the public federated feed until Extended Circle ranking is enabled.";
     }
 
     return "No federated events yet.";
@@ -106,6 +113,7 @@
     const m = normalizeMode(mode);
     if (m === "federated") return "Mode: Federated";
     if (m === "my_circle") return "Mode: My Circle";
+    if (m === "discover") return "Mode: Discover";
     return "Mode: Feed";
   }
 
@@ -113,6 +121,7 @@
     const m = normalizeMode(mode);
     if (m === "local") return "federated";
     if (m === "federated") return "my_circle";
+    if (m === "my_circle") return "discover";
     return "local";
   }
 
