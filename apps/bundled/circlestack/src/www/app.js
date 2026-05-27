@@ -1,5 +1,92 @@
 const CS_API = "/api/v4/circlestack";
 const CS_REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
+
+// FEDERATED_LOCAL_REACTION_OVERLAY_V1
+const CS_FEDERATED_LOCAL_REACTIONS_KEY = "circlestack:federatedLocalReactions:v1";
+
+function csLoadFederatedLocalReactions() {
+  try {
+    const raw = localStorage.getItem(CS_FEDERATED_LOCAL_REACTIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function csSaveFederatedLocalReactions(map) {
+  try {
+    localStorage.setItem(CS_FEDERATED_LOCAL_REACTIONS_KEY, JSON.stringify(map || {}));
+  } catch (_) {}
+}
+
+function csRememberFederatedLocalReaction(ev, reaction, data = {}) {
+  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
+  const value = String(reaction || "").trim();
+
+  if (!eventId || !value) return;
+
+  const map = csLoadFederatedLocalReactions();
+  map[eventId] = {
+    reaction: value,
+    updated_epoch: Math.floor(Date.now() / 1000),
+    federation_event_id: data && data.federation_event_id ? String(data.federation_event_id) : ""
+  };
+
+  csSaveFederatedLocalReactions(map);
+}
+
+function csFederatedLocalReactionFor(ev) {
+  const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
+  if (!eventId) return null;
+
+  const item = csLoadFederatedLocalReactions()[eventId];
+  if (!item || !item.reaction) return null;
+
+  return item;
+}
+
+function csRenderFederatedLocalReaction(ev) {
+  if (!ev || ev.event_type !== "circle.post.created") return null;
+
+  const item = csFederatedLocalReactionFor(ev);
+  if (!item || !item.reaction) return null;
+
+  const row = document.createElement("div");
+  row.className = "cs-federated-local-reaction";
+  row.title = item.federation_event_id
+    ? `Queued as ${item.federation_event_id}`
+    : "Your federated reaction was queued";
+
+  const chip = document.createElement("span");
+  chip.className = "cs-federated-local-reaction-chip";
+  chip.textContent = `${item.reaction} 1`;
+
+  const label = document.createElement("span");
+  label.className = "cs-federated-local-reaction-label";
+  label.textContent = `You ${item.reaction}`;
+
+  row.appendChild(chip);
+  row.appendChild(label);
+  return row;
+}
+
+function csRefreshFederatedLocalReactionInCard(card, ev) {
+  if (!card) return;
+
+  const old = card.querySelector(".cs-federated-local-reaction");
+  if (old) old.remove();
+
+  const next = csRenderFederatedLocalReaction(ev);
+  if (!next) return;
+
+  const meta = card.querySelector(".cs-post-meta");
+  if (meta) {
+    card.insertBefore(next, meta);
+  } else {
+    card.appendChild(next);
+  }
+}
 let csSelectedMentions = [];
 let csFeedMode = "local";
 let csFederatedFeedLoadSeq = 0;
@@ -290,6 +377,9 @@ async function csReactToFederatedPost(ev, reaction, button = null) {
         button.textContent = oldText || reaction;
       }, 1800);
     }
+
+    csRememberFederatedLocalReaction(ev, reaction, data);
+    csRefreshFederatedLocalReactionInCard(button ? button.closest(".cs-federated-post") : null, ev);
 
     console.log("Federated reaction queued", data);
   } catch (err) {
@@ -625,6 +715,11 @@ function csRenderFederatedEvent(ev) {
       ? `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · origin preview validated`
       : `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · preview fetch coming later`;
     card.appendChild(media);
+  }
+
+  const localReaction = csRenderFederatedLocalReaction(ev);
+  if (localReaction) {
+    card.appendChild(localReaction);
   }
 
   const meta = document.createElement("div");

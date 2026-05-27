@@ -2336,3 +2336,44 @@ html[data-theme="win_classic"] .cs-federated-person-actions.cs-federated-actor-m
   border-radius: 10px;
   box-shadow: 6px 6px 0 rgba(0,0,0,0.24);
 }
+
+
+/* FEDERATED_LOCAL_REACTION_OVERLAY_CSS_V1 */
+.cs-federated-local-reaction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 10px;
+  color: rgba(255,255,255,0.78);
+  font-size: 13px;
+}
+
+.cs-federated-local-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(96,165,250,0.38);
+  background: rgba(96,165,250,0.15);
+  color: #dbeafe;
+  font-weight: 900;
+}
+
+.cs-federated-local-reaction-label {
+  color: rgba(255,255,255,0.76);
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction {
+  color: rgba(17,24,39,0.78);
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction-chip {
+  background: rgba(37,99,235,0.10);
+  border-color: rgba(37,99,235,0.30);
+  color: #1d4ed8;
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction-label {
+  color: rgba(17,24,39,0.76);
+}
