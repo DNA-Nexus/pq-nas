@@ -314,6 +314,12 @@ function csRenderFederatedActions(ev) {
   const wrap = document.createElement("div");
   wrap.className = "cs-federated-actions";
 
+  const personActions = document.createElement("div");
+  personActions.className = "cs-federated-person-actions";
+
+  const postActions = document.createElement("div");
+  postActions.className = "cs-federated-post-actions";
+
   if (actorFp) {
     const person = document.createElement("button");
     person.className = "cs-modal-cancel";
@@ -325,7 +331,7 @@ function csRenderFederatedActions(ev) {
         fp_short: ev.actor_fp_short || csElideFp(actorFp)
       });
     });
-    wrap.appendChild(person);
+    personActions.appendChild(person);
 
     if (navigator.clipboard) {
       const copy = document.createElement("button");
@@ -337,7 +343,7 @@ function csRenderFederatedActions(ev) {
         copy.textContent = "Copied";
         setTimeout(() => { copy.textContent = "Copy FP"; }, 1200);
       });
-      wrap.appendChild(copy);
+      personActions.appendChild(copy);
     }
 
     const add = document.createElement("button");
@@ -345,10 +351,9 @@ function csRenderFederatedActions(ev) {
     add.type = "button";
     add.textContent = "Add to People";
     add.addEventListener("click", () => csAddFederatedPerson(ev));
-    wrap.appendChild(add);
+    personActions.appendChild(add);
   }
 
-  // FEDERATED_HOVER_REACTION_PICKER_PATCH_V1
   if (ev && ev.event_type === "circle.post.created") {
     const picker = document.createElement("div");
     picker.className = "cs-reaction-picker cs-federated-reaction-picker";
@@ -374,7 +379,15 @@ function csRenderFederatedActions(ev) {
 
     picker.appendChild(trigger);
     picker.appendChild(menu);
-    wrap.appendChild(picker);
+    postActions.appendChild(picker);
+  }
+
+  if (personActions.children.length) {
+    wrap.appendChild(personActions);
+  }
+
+  if (postActions.children.length) {
+    wrap.appendChild(postActions);
   }
 
   return wrap.children.length ? wrap : null;
@@ -498,13 +511,14 @@ function csRenderFederatedEvent(ev) {
   const titleWrap = document.createElement("div");
   titleWrap.className = "cs-federated-title-wrap";
 
+  // FEDERATED_ACTOR_PRIMARY_HEADER_PATCH_V1
   const title = document.createElement("div");
-  title.className = "cs-post-author";
-  title.textContent = csFederatedTypeLabel(ev.event_type, ev.target_type);
+  title.className = "cs-post-author cs-federated-actor-name";
+  title.textContent = csFederatedActorLabel(ev);
 
   const sub = document.createElement("div");
   sub.className = "cs-federated-sub";
-  sub.textContent = `from ${csFederatedActorLabel(ev)}`;
+  sub.textContent = csFederatedTypeLabel(ev.event_type, ev.target_type);
 
   titleWrap.appendChild(title);
   titleWrap.appendChild(sub);
@@ -517,9 +531,25 @@ function csRenderFederatedEvent(ev) {
   header.appendChild(badge);
   card.appendChild(header);
 
+  // CIRCLESTACK_FEDERATED_REASON_HOOK_V1
+  if (window.CircleStackFeedModes &&
+      typeof window.CircleStackFeedModes.decorateFederatedEvent === "function") {
+    window.CircleStackFeedModes.decorateFederatedEvent(card, ev, csFeedMode);
+  }
+
   const federatedActions = csRenderFederatedActions(ev);
   if (federatedActions) {
-    card.appendChild(federatedActions);
+    const personActions = federatedActions.querySelector(".cs-federated-person-actions");
+
+    if (personActions && personActions.children.length) {
+      titleWrap.classList.add("has-federated-actor-menu");
+      personActions.classList.add("cs-federated-actor-menu");
+      titleWrap.appendChild(personActions);
+    }
+
+    if (federatedActions.children.length) {
+      card.appendChild(federatedActions);
+    }
   }
 
   const payload = ev.payload && typeof ev.payload === "object" ? ev.payload : {};
@@ -535,9 +565,9 @@ function csRenderFederatedEvent(ev) {
   const lines = [];
 
   if (ev.event_type === "circle.post.created") {
-    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
-    if (payload.visibility) lines.push(`Visibility: ${payload.visibility}`);
-    lines.push(csFederatedMediaLabel(payload));
+    // FEDERATED_HIDE_REMOTE_POST_DEBUG_BODY_V1
+    // Normal remote posts should read like social posts, not debug records.
+    // Media is already shown by the preview block below when present.
   } else if (ev.event_type === "circle.reply.created") {
     lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
     lines.push(`Reply id: ${ev.reply_id || payload.reply_id || "unknown"}`);
@@ -553,10 +583,13 @@ function csRenderFederatedEvent(ev) {
     if (ev.reply_id || payload.reply_id) lines.push(`Reply id: ${ev.reply_id || payload.reply_id}`);
   }
 
-  const body = document.createElement("div");
-  body.className = "cs-federated-body";
-  body.textContent = lines.filter(Boolean).join(" · ");
-  card.appendChild(body);
+  const bodyText = lines.filter(Boolean).join(" · ");
+  if (bodyText) {
+    const body = document.createElement("div");
+    body.className = "cs-federated-body";
+    body.textContent = bodyText;
+    card.appendChild(body);
+  }
 
   const mediaPreview = payload.media_preview && typeof payload.media_preview === "object"
     ? payload.media_preview
