@@ -53,7 +53,8 @@
 
     // --- language ---
     const languagePill = $("languagePill");
-    const languageSelect = $("languageSelect");
+    const languageSelect = $("languageSelect"); // legacy fallback if old HTML is still cached
+    const languagePicker = $("languagePicker");
 
     // --- theme ---
     const themePill = $("themePill");
@@ -355,23 +356,31 @@
 
     function languageDisplayName(lang) {
         const l = normalizeLanguage(lang);
-        if (l === "fi") return tr("admin.language.finnish", null, "🇫🇮 Suomi");
-        if (l === "zh") return tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文");
-        if (l === "sv") return tr("admin.language.swedish", null, "🇸🇪 Svenska");
-        if (l === "uk") return tr("admin.language.ukrainian", null, "🇺🇦 Українська");
-        if (l === "de") return tr("admin.language.german", null, "🇩🇪 Deutsch");
-        if (l === "et") return tr("admin.language.estonian", null, "🇪🇪 Eesti");
-        if (l === "pl") return tr("admin.language.polish", null, "🇵🇱 Polski");
-        if (l === "es") return tr("admin.language.spanish", null, "🇪🇸 Español");
-        if (l === "fr") return tr("admin.language.french", null, "🇫🇷 Français");
-        if (l === "it") return tr("admin.language.italian", null, "🇮🇹 Italiano");
-        if (l === "tr") return tr("admin.language.turkish", null, "🇹🇷 Türkçe");
-        return tr("admin.language.english", null, "🇬🇧 English");
+        if (l === "fi") return tr("admin.language.finnish", null, "Suomi");
+        if (l === "zh") return tr("admin.language.chinese_simplified", null, "简体中文");
+        if (l === "sv") return tr("admin.language.swedish", null, "Svenska");
+        if (l === "uk") return tr("admin.language.ukrainian", null, "Українська");
+        if (l === "de") return tr("admin.language.german", null, "Deutsch");
+        if (l === "et") return tr("admin.language.estonian", null, "Eesti");
+        if (l === "pl") return tr("admin.language.polish", null, "Polski");
+        if (l === "es") return tr("admin.language.spanish", null, "Español");
+        if (l === "fr") return tr("admin.language.french", null, "Français");
+        if (l === "it") return tr("admin.language.italian", null, "Italiano");
+        if (l === "tr") return tr("admin.language.turkish", null, "Türkçe");
+        return tr("admin.language.english", null, "English");
     }
 
     function updateLanguagePill(lang) {
         const l = normalizeLanguage(lang);
         if (languageSelect) languageSelect.value = l;
+
+        if (languagePicker) {
+            for (const btn of languagePicker.querySelectorAll("[data-language]")) {
+                const on = btn.getAttribute("data-language") === l;
+                btn.classList.toggle("is-active", on);
+                btn.setAttribute("aria-pressed", on ? "true" : "false");
+            }
+        }
 
         const label = languageDisplayName(l);
 
@@ -2198,6 +2207,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     languageSelect?.addEventListener("change", (ev) => {
         ev.preventDefault();
         applyAdminLanguage(languageSelect.value);
+    });
+
+    languagePicker?.querySelectorAll("[data-language]").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            applyAdminLanguage(btn.getAttribute("data-language") || "en");
+        });
     });
 
     function applyAdminStaticI18n() {

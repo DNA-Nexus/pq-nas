@@ -64,6 +64,46 @@
             transform: none;
         }
 
+        .language-picker{
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+            gap:8px;
+            width:min(100%,680px);
+        }
+
+        .language-choice{
+            border:1px solid rgba(var(--fg-rgb),0.18);
+            background:rgba(0,0,0,0.22);
+            color:var(--fg);
+            border-radius:14px;
+            padding:10px 12px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            cursor:pointer;
+            font-weight:900;
+            text-align:left;
+        }
+
+        .language-choice:hover{
+            border-color:rgba(var(--fg-rgb),0.38);
+            background:rgba(var(--fg-rgb),0.07);
+        }
+
+        .language-choice.is-active{
+            border-color:rgba(var(--fg-rgb),0.52);
+            background:rgba(var(--fg-rgb),0.12);
+        }
+
+        .language-choice img{
+            width:28px;
+            height:21px;
+            border-radius:4px;
+            object-fit:cover;
+            box-shadow:0 0 0 1px rgba(0,0,0,0.24);
+            flex:0 0 auto;
+        }
+
         .pill{
             display:inline-flex;
             align-items:center;
@@ -995,20 +1035,20 @@
 
                 <div class="bd">
                     <div class="row">
-                        <select id="languageSelect" aria-label="UI language">
-                            <option value="en" data-i18n="admin.language.english">🇬🇧 English</option>
-                            <option value="fi" data-i18n="admin.language.finnish">🇫🇮 Suomi</option>
-                            <option value="zh" data-i18n="admin.language.chinese_simplified">🇨🇳 简体中文</option>
-                            <option value="sv" data-i18n="admin.language.swedish">🇸🇪 Svenska</option>
-                            <option value="uk" data-i18n="admin.language.ukrainian">🇺🇦 Українська</option>
-                            <option value="de" data-i18n="admin.language.german">🇩🇪 Deutsch</option>
-                            <option value="et" data-i18n="admin.language.estonian">🇪🇪 Eesti</option>
-                            <option value="pl" data-i18n="admin.language.polish">🇵🇱 Polski</option>
-                            <option value="es" data-i18n="admin.language.spanish">🇪🇸 Español</option>
-                            <option value="fr" data-i18n="admin.language.french">🇫🇷 Français</option>
-                            <option value="it" data-i18n="admin.language.italian">🇮🇹 Italiano</option>
-                            <option value="tr" data-i18n="admin.language.turkish">🇹🇷 Türkçe</option>
-                        </select>
+                        <div id="languagePicker" class="language-picker" role="group" aria-label="UI language">
+                            <button type="button" class="language-choice" data-language="en"><img src="/static/img/flags/en.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.english">English</span></button>
+                            <button type="button" class="language-choice" data-language="fi"><img src="/static/img/flags/fi.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.finnish">Suomi</span></button>
+                            <button type="button" class="language-choice" data-language="zh"><img src="/static/img/flags/zh.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.chinese_simplified">简体中文</span></button>
+                            <button type="button" class="language-choice" data-language="sv"><img src="/static/img/flags/sv.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.swedish">Svenska</span></button>
+                            <button type="button" class="language-choice" data-language="uk"><img src="/static/img/flags/ua.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.ukrainian">Українська</span></button>
+                            <button type="button" class="language-choice" data-language="de"><img src="/static/img/flags/de.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.german">Deutsch</span></button>
+                            <button type="button" class="language-choice" data-language="et"><img src="/static/img/flags/et.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.estonian">Eesti</span></button>
+                            <button type="button" class="language-choice" data-language="pl"><img src="/static/img/flags/pl.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.polish">Polski</span></button>
+                            <button type="button" class="language-choice" data-language="es"><img src="/static/img/flags/es.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.spanish">Español</span></button>
+                            <button type="button" class="language-choice" data-language="fr"><img src="/static/img/flags/fr.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.french">Français</span></button>
+                            <button type="button" class="language-choice" data-language="it"><img src="/static/img/flags/it.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.italian">Italiano</span></button>
+                            <button type="button" class="language-choice" data-language="tr"><img src="/static/img/flags/tr.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.turkish">Türkçe</span></button>
+                        </div>
                     </div>
 
                     <div class="note" data-i18n="admin.language.desc">

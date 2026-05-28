@@ -2075,8 +2075,53 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const activeTheme = currentThemeName();
         const activeLanguage = currentLanguageName();
 
-        const langOption = (code, key, fallback) => `
-                    <option value="${code}" ${activeLanguage === code ? "selected" : ""}>${escapeHtml(fallback)}</option>`;
+        const languageOptions = [
+            { code: "en", flag: "en", key: "settings.language.english", fallback: "English" },
+            { code: "fi", flag: "fi", key: "settings.language.finnish", fallback: "Suomi" },
+            { code: "zh", flag: "zh", key: "settings.language.chinese_simplified", fallback: "简体中文" },
+            { code: "sv", flag: "sv", key: "settings.language.swedish", fallback: "Svenska" },
+            { code: "uk", flag: "ua", key: "settings.language.ukrainian", fallback: "Українська" },
+            { code: "de", flag: "de", key: "settings.language.german", fallback: "Deutsch" },
+            { code: "et", flag: "et", key: "settings.language.estonian", fallback: "Eesti" },
+            { code: "pl", flag: "pl", key: "settings.language.polish", fallback: "Polski" },
+            { code: "es", flag: "es", key: "settings.language.spanish", fallback: "Español" },
+            { code: "fr", flag: "fr", key: "settings.language.french", fallback: "Français" },
+            { code: "it", flag: "it", key: "settings.language.italian", fallback: "Italiano" },
+            { code: "tr", flag: "tr", key: "settings.language.turkish", fallback: "Türkçe" }
+        ];
+
+        const langChoice = (opt) => {
+            const active = activeLanguage === opt.code;
+            const label = tr(opt.key, null, opt.fallback);
+            return `
+                <label
+                    style="
+                        display:flex;
+                        align-items:center;
+                        gap:10px;
+                        padding:10px 12px;
+                        border-radius:14px;
+                        border:1px solid ${active ? "rgba(255,255,255,0.36)" : "rgba(255,255,255,0.14)"};
+                        background:${active ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.20)"};
+                        cursor:pointer;
+                        font-weight:850;
+                    "
+                >
+                    <input
+                        type="radio"
+                        name="userLanguage"
+                        value="${escapeHtml(opt.code)}"
+                        ${active ? "checked" : ""}
+                    >
+                    <img
+                        src="/static/img/flags/${escapeHtml(opt.flag)}.svg"
+                        alt=""
+                        aria-hidden="true"
+                        style="width:28px; height:21px; border-radius:4px; object-fit:cover; box-shadow:0 0 0 1px rgba(0,0,0,0.24); flex:0 0 auto;"
+                    >
+                    <span>${escapeHtml(label)}</span>
+                </label>`;
+        };
         if (!userProfile && !userProfileLoading && !userProfileError && authed) {
             loadUserProfile().then(() => {
                 if (currentView === "user_settings") renderUserSettings();
@@ -2241,33 +2286,18 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     ${escapeHtml(tr("settings.language.desc", null, "Choose the language used by DNA-Nexus on this device."))}
                 </div>
 
-                <select
-                    id="userLanguageSelect"
+                <div
+                    role="radiogroup"
+                    aria-label="${escapeHtml(tr("settings.language.title", null, "Language"))}"
                     style="
-                        min-width:220px;
-                        max-width:100%;
-                        padding:10px 12px;
-                        border-radius:12px;
-                        border:1px solid rgba(255,255,255,0.16);
-                        background:rgba(0,0,0,0.22);
-                        color:var(--fg);
-                        font-family:var(--sans);
-                        font-weight:850;
+                        display:grid;
+                        grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+                        gap:8px;
+                        max-width:640px;
                     "
                 >
-                    ${langOption("en", "settings.language.english", "🇬🇧 English")}
-                    ${langOption("fi", "settings.language.finnish", "🇫🇮 Suomi")}
-                    ${langOption("zh", "settings.language.chinese_simplified", "🇨🇳 简体中文")}
-                    ${langOption("sv", "settings.language.swedish", "🇸🇪 Svenska")}
-                    ${langOption("uk", "settings.language.ukrainian", "🇺🇦 Українська")}
-                    ${langOption("de", "settings.language.german", "🇩🇪 Deutsch")}
-                    ${langOption("et", "settings.language.estonian", "🇪🇪 Eesti")}
-                    ${langOption("pl", "settings.language.polish", "🇵🇱 Polski")}
-                    ${langOption("es", "settings.language.spanish", "🇪🇸 Español")}
-                    ${langOption("fr", "settings.language.french", "🇫🇷 Français")}
-                    ${langOption("it", "settings.language.italian", "🇮🇹 Italiano")}
-                    ${langOption("tr", "settings.language.turkish", "🇹🇷 Türkçe")}
-                </select>
+                    ${languageOptions.map(langChoice).join("")}
+                </div>
             </div>
 
             <div class="card" style="padding:14px; margin-top:12px;">
@@ -2377,10 +2407,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 }
             });
         }
-        const languageSelect = document.getElementById("userLanguageSelect");
-        if (languageSelect) {
-            languageSelect.addEventListener("change", () => {
-                applyUserLanguage(languageSelect.value);
+        for (const input of (homeContent || homeBlurb).querySelectorAll('input[name="userLanguage"]')) {
+            input.addEventListener("change", () => {
+                if (!input.checked) return;
+                applyUserLanguage(input.value);
             });
         }
 
