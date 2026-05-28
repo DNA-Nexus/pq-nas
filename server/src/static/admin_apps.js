@@ -55,6 +55,36 @@
 
     function esc(s){ return String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+    function formatAdminAppsApiError(j, fallback = "") {
+        if (!j || typeof j !== "object") {
+            return fallback || tr("admin.apps.bad_response", null, "bad response");
+        }
+
+        const code = String(j.error || "").trim();
+
+        if (code === "incompatible_server") {
+            const min = String(j.min_server_version || "?");
+            const current = String(j.server_version || "?");
+
+            return tr(
+                "admin.apps.error.incompatible_server",
+                { min, current },
+                `Requires DNA-Nexus Server ${min} or newer. Current server is ${current}.`
+            );
+        }
+
+        if (code === "conflict") {
+            return tr(
+                "admin.apps.error.version_already_installed",
+                null,
+                "This app version is already installed. Uninstall the old version first or use a newer app version."
+            );
+        }
+
+        const raw = [j.error, j.message].filter(Boolean).join(" ").trim();
+        return raw || fallback || tr("admin.apps.bad_response", null, "bad response");
+    }
+
     function updateZipPickName() {
         if (!zipPickName) return;
 
@@ -650,9 +680,10 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             if (!r.ok || !j || !j.ok) {
                 setBadge("err", tr("admin.apps.error", null, "error"));
                 statusLine.textContent = tr("admin.apps.install_failed_http", { status: r.status }, `Install failed: HTTP ${r.status}`);
-                installOut.textContent = (j && (j.message || j.error))
-                    ? `${j.error || ""} ${j.message || ""}`.trim()
-                    : tr("admin.apps.bad_response", null, "bad response");
+                installOut.textContent = formatAdminAppsApiError(
+                    j,
+                    tr("admin.apps.bad_response", null, "bad response")
+                );
                 return;
             }
 

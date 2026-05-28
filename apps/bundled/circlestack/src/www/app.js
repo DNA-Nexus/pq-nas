@@ -955,6 +955,308 @@ async function csOpenPersonCard(fp, fallback = {}) {
 }
 
 
+function csClampZoom(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function csZoomableImageFromTarget(target) {
+  if (!target || typeof target.closest !== "function") return null;
+
+  return target.closest([
+    "img.cs-post-media",
+    "img.cs-reply-media",
+    "img.cs-federated-preview-img",
+    "img.cs-compose-preview-img",
+    "img.cs-memory-node-image",
+    "img.cs-memory-node-item-img"
+  ].join(","));
+}
+
+function csOpenZoomableImage(src, alt = "") {
+  const imageSrc = String(src || "").trim();
+  if (!imageSrc) return;
+
+  document.querySelectorAll(".cs-lightbox").forEach((el) => el.remove());
+
+  const oldBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-lightbox cs-lightbox-zoom";
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-label", "Image preview");
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "cs-lightbox-toolbar";
+
+  const hint = document.createElement("div");
+  hint.className = "cs-lightbox-hint";
+  hint.textContent = "Wheel / pinch to zoom • drag to move";
+
+  const reset = document.createElement("button");
+  reset.className = "cs-lightbox-reset";
+  reset.type = "button";
+  reset.textContent = "Reset";
+
+  const close = document.createElement("button");
+  close.className = "cs-lightbox-close";
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Close image preview");
+
+  toolbar.appendChild(hint);
+  toolbar.appendChild(reset);
+
+  const stage = document.createElement("div");
+  stage.className = "cs-lightbox-stage";
+
+  const img = document.createElement("img");
+  img.className = "cs-lightbox-img";
+  img.src = imageSrc;
+  img.alt = alt || "";
+  img.decoding = "async";
+  img.draggable = false;
+
+  stage.appendChild(img);
+  backdrop.appendChild(toolbar);
+  backdrop.appendChild(close);
+  backdrop.appendChild(stage);
+
+  let scale = 1;
+  let x = 0;
+  let y = 0;
+  let pointerDownStart = null;
+  let pointerMovedSinceDown = false;
+  let pointerDownWasImage = false;
+  const pointers = new Map();
+  let lastPinchDistance = 0;
+  let lastPinchCenter = null;
+
+  function apply() {
+    if (scale <= 1.001) {
+      scale = 1;
+      x = 0;
+      y = 0;
+    }
+
+    img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    hint.textContent = scale <= 1.001
+      ? "Wheel / pinch to zoom • drag to move"
+      : `Zoom ${scale.toFixed(1)}× • drag to move`;
+  }
+
+  function resetZoom() {
+    scale = 1;
+    x = 0;
+    y = 0;
+    lastPinchDistance = 0;
+    lastPinchCenter = null;
+    apply();
+  }
+
+  function closeLightbox() {
+    document.removeEventListener("keydown", onKeyDown);
+    document.body.style.overflow = oldBodyOverflow;
+    backdrop.remove();
+  }
+
+  function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function center(a, b) {
+    return {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2
+    };
+  }
+
+  function onKeyDown(ev) {
+    if (ev.key === "Escape") {
+      closeLightbox();
+    } else if (ev.key === "0") {
+      resetZoom();
+    }
+  }
+
+  close.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  close.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeLightbox();
+  });
+
+  reset.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  reset.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    resetZoom();
+  });
+
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) closeLightbox();
+  });
+
+  function zoomFromWheelDelta(deltaY) {
+    const factor = deltaY < 0 ? 1.14 : 0.88;
+    scale = csClampZoom(scale * factor, 1, 6);
+    apply();
+  }
+
+  backdrop.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    zoomFromWheelDelta(ev.deltaY);
+  }, { passive: false, capture: true });
+
+  img.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (!pointerMovedSinceDown) {
+      closeLightbox();
+    }
+  });
+
+  stage.addEventListener("dblclick", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+  });
+
+  stage.addEventListener("pointerdown", (ev) => {
+    stage.setPointerCapture(ev.pointerId);
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    pointerDownStart = { x: ev.clientX, y: ev.clientY };
+    pointerMovedSinceDown = false;
+    pointerDownWasImage = ev.target === img || (
+      ev.target &&
+      typeof ev.target.closest === "function" &&
+      ev.target.closest("img.cs-lightbox-img")
+    );
+    stage.classList.add("is-dragging");
+
+    if (pointers.size === 2) {
+      const pts = Array.from(pointers.values());
+      lastPinchDistance = distance(pts[0], pts[1]);
+      lastPinchCenter = center(pts[0], pts[1]);
+    }
+  });
+
+  stage.addEventListener("pointermove", (ev) => {
+    const old = pointers.get(ev.pointerId);
+    if (!old) return;
+
+    const next = { x: ev.clientX, y: ev.clientY };
+    pointers.set(ev.pointerId, next);
+
+    if (pointerDownStart &&
+        Math.hypot(next.x - pointerDownStart.x, next.y - pointerDownStart.y) > 6) {
+      pointerMovedSinceDown = true;
+    }
+
+    if (pointers.size >= 2) {
+      pointerMovedSinceDown = true;
+      const pts = Array.from(pointers.values()).slice(0, 2);
+      const d = distance(pts[0], pts[1]);
+      const c = center(pts[0], pts[1]);
+
+      if (lastPinchDistance > 0) {
+        scale = csClampZoom(scale * (d / lastPinchDistance), 1, 6);
+      }
+
+      if (lastPinchCenter && scale > 1.001) {
+        x += c.x - lastPinchCenter.x;
+        y += c.y - lastPinchCenter.y;
+      }
+
+      lastPinchDistance = d;
+      lastPinchCenter = c;
+      apply();
+      return;
+    }
+
+    if (scale > 1.001) {
+      x += next.x - old.x;
+      y += next.y - old.y;
+      apply();
+    }
+  });
+
+  function pointerDone(ev) {
+    const wasFinalPointer = pointers.size <= 1;
+
+    pointers.delete(ev.pointerId);
+
+    const cleanImageClick =
+      wasFinalPointer &&
+      pointerDownWasImage &&
+      !pointerMovedSinceDown &&
+      pointers.size === 0;
+
+    if (pointers.size < 2) {
+      lastPinchDistance = 0;
+      lastPinchCenter = null;
+    }
+
+    if (pointers.size === 0) {
+      stage.classList.remove("is-dragging");
+      pointerDownStart = null;
+      pointerDownWasImage = false;
+      pointerMovedSinceDown = false;
+    }
+
+    if (cleanImageClick) {
+      closeLightbox();
+    }
+  }
+
+  stage.addEventListener("pointerup", pointerDone);
+  stage.addEventListener("pointercancel", pointerDone);
+  stage.addEventListener("pointerleave", pointerDone);
+
+  document.addEventListener("keydown", onKeyDown);
+  document.body.appendChild(backdrop);
+  close.focus();
+  apply();
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target && typeof ev.target.closest === "function" && ev.target.closest(".cs-lightbox")) {
+    return;
+  }
+
+  const img = csZoomableImageFromTarget(ev.target);
+  if (!img) return;
+
+  ev.preventDefault();
+  ev.stopImmediatePropagation();
+
+  csOpenZoomableImage(
+    img.currentSrc || img.src || "",
+    img.alt || "Circle Stack media"
+  );
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+
+  if (ev.target && typeof ev.target.closest === "function" && ev.target.closest(".cs-lightbox")) {
+    return;
+  }
+
+  const img = csZoomableImageFromTarget(ev.target);
+  if (!img) return;
+
+  ev.preventDefault();
+
+  csOpenZoomableImage(
+    img.currentSrc || img.src || "",
+    img.alt || "Circle Stack media"
+  );
+});
+
+
 
 function csReactionTitle(summary) {
   const people = Array.isArray(summary.people) ? summary.people : [];
@@ -3631,30 +3933,8 @@ document.addEventListener("input", (ev) => {
 });
 
 function csOpenImageLightbox(src) {
-  const backdrop = document.createElement("div");
-  backdrop.className = "cs-lightbox";
-  backdrop.innerHTML = `
-    <button class="cs-lightbox-close" type="button">×</button>
-    <img src="${src}" alt="">
-  `;
-
-  backdrop.addEventListener("click", () => {
-    backdrop.remove();
-  });
-
-  document.body.appendChild(backdrop);
+  csOpenZoomableImage(src, "Circle Stack media");
 }
-
-document.addEventListener("click", (ev) => {
-  const img = ev.target.closest(".cs-compose-preview-img, .cs-post-media, .cs-reply-media");
-  if (!img) return;
-  csOpenImageLightbox(img.src);
-});
-
-document.addEventListener("keydown", (ev) => {
-  if (ev.key !== "Escape") return;
-  document.querySelector(".cs-lightbox")?.remove();
-});
 
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".cs-media-clear")) return;

@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} reachable",
   "admin.nodus.not_configured": "Not configured",
   "admin.nodus.enabled": "Enabled",
-  "admin.nodus.worker_disabled": "Disabled • set {env}=1"
+  "admin.nodus.worker_disabled": "Disabled • set {env}=1",
+  "admin.apps.error.incompatible_server": "Requires DNA-Nexus Server {min} or newer. Current server is {current}.",
+  "admin.apps.error.version_already_installed": "This app version is already installed. Uninstall the old version first or use a newer app version.",
+  "shell.apps.incompatible_title": "App requires newer server",
+  "shell.apps.incompatible_message_versions": "This app requires DNA-Nexus Server {min} or newer. Current server is {current}."
 }

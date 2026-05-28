@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} kättesaadavad",
   "admin.nodus.not_configured": "Seadistamata",
   "admin.nodus.enabled": "Lubatud",
-  "admin.nodus.worker_disabled": "Keelatud • määra {env}=1"
+  "admin.nodus.worker_disabled": "Keelatud • määra {env}=1",
+  "admin.apps.error.incompatible_server": "Vajab DNA-Nexus Serveri versiooni {min} või uuemat. Praegune serveriversioon on {current}.",
+  "admin.apps.error.version_already_installed": "See rakenduse versioon on juba paigaldatud. Eemalda esmalt vana versioon või kasuta uuemat rakenduse versiooni.",
+  "shell.apps.incompatible_title": "Rakendus vajab uuemat serverit",
+  "shell.apps.incompatible_message_versions": "See rakendus vajab DNA-Nexus Serveri versiooni {min} või uuemat. Praegune serveriversioon on {current}."
 }

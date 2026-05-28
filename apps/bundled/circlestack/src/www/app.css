@@ -2377,3 +2377,219 @@ html[data-theme="bright"] .cs-federated-local-reaction-chip {
 html[data-theme="bright"] .cs-federated-local-reaction-label {
   color: rgba(17,24,39,0.76);
 }
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_V1 */
+.cs-zoomable-media,
+.cs-post-media,
+.cs-reply-media,
+.cs-federated-preview-img,
+.cs-compose-preview-img,
+.cs-memory-node-image,
+.cs-memory-node-item-img {
+  cursor: zoom-in;
+}
+
+.cs-lightbox-zoom {
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  justify-items: stretch;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.cs-lightbox-toolbar {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  right: 78px;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.cs-lightbox-hint {
+  max-width: min(720px, calc(100vw - 150px));
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(15,23,42,0.72);
+  color: rgba(255,255,255,0.88);
+  font-size: 13px;
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.cs-lightbox-reset {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cs-lightbox-reset:hover {
+  background: rgba(255,255,255,0.22);
+}
+
+.cs-lightbox-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 75vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+
+.cs-lightbox-stage.is-dragging {
+  cursor: grabbing;
+}
+
+.cs-lightbox-zoom img.cs-lightbox-img {
+  max-width: min(1200px, 96vw);
+  max-height: 88vh;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+  will-change: transform;
+  transition: transform 80ms ease-out;
+}
+
+@media (max-width: 720px) {
+  .cs-lightbox-zoom {
+    padding: 10px;
+  }
+
+  .cs-lightbox-toolbar {
+    top: 12px;
+    left: 12px;
+    right: 66px;
+  }
+
+  .cs-lightbox-hint {
+    max-width: calc(100vw - 120px);
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+
+  .cs-lightbox-reset {
+    padding: 7px 10px;
+  }
+
+  .cs-lightbox-zoom img.cs-lightbox-img {
+    max-width: 98vw;
+    max-height: 86vh;
+  }
+}
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_FIX_V2 */
+.cs-lightbox-zoom {
+  cursor: default;
+}
+
+.cs-lightbox-zoom .cs-lightbox-toolbar {
+  z-index: 10004;
+  pointer-events: none;
+}
+
+.cs-lightbox-zoom .cs-lightbox-close,
+.cs-lightbox-zoom .cs-lightbox-reset {
+  position: relative;
+  z-index: 10005;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage {
+  position: relative;
+  z-index: 10001;
+}
+
+.cs-lightbox-zoom .cs-lightbox-img {
+  cursor: grab;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging .cs-lightbox-img {
+  cursor: grabbing;
+}
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_FIX_V3 */
+.cs-lightbox.cs-lightbox-zoom {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  cursor: default !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  z-index: 10001 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  cursor: grab !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging {
+  cursor: grabbing !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-toolbar {
+  position: fixed !important;
+  top: 18px !important;
+  left: 18px !important;
+  right: auto !important;
+  z-index: 10006 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  pointer-events: none !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-reset {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-close {
+  position: fixed !important;
+  top: 18px !important;
+  right: 22px !important;
+  left: auto !important;
+  z-index: 10007 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+.cs-lightbox-zoom img.cs-lightbox-img {
+  position: relative !important;
+  z-index: 10002 !important;
+  max-width: min(1200px, 96vw) !important;
+  max-height: 88vh !important;
+  object-fit: contain !important;
+  cursor: grab !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging img.cs-lightbox-img {
+  cursor: grabbing !important;
+}

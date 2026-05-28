@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} 可达",
   "admin.nodus.not_configured": "未配置",
   "admin.nodus.enabled": "已启用",
-  "admin.nodus.worker_disabled": "已禁用 • 设置 {env}=1"
+  "admin.nodus.worker_disabled": "已禁用 • 设置 {env}=1",
+  "admin.apps.error.incompatible_server": "需要 DNA-Nexus Server {min} 或更新版本。当前服务器版本为 {current}。",
+  "admin.apps.error.version_already_installed": "此应用版本已安装。请先卸载旧版本，或使用更新的应用版本。",
+  "shell.apps.incompatible_title": "应用需要更新的服务器",
+  "shell.apps.incompatible_message_versions": "此应用需要 DNA-Nexus Server {min} 或更新版本。当前服务器版本为 {current}。"
 }

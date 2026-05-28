@@ -36,6 +36,7 @@ Code responsibilities (separation of concerns)
 All verification is fail-closed: any parse/verify/binding mismatch returns an error and logs the failure.
 */
 
+#include "version.h"
 #include <iostream>
 #include <string>
 #include <ctime>
@@ -11744,6 +11745,80 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
         res.set_content(body, "application/javascript; charset=utf-8");
     });
 
+
+    const std::string PQNAS_SERVER_VERSION = PQNAS_VERSION;
+
+    auto app_version_component = [](const std::string& v, std::size_t& pos) -> long long {
+        while (pos < v.size() && v[pos] == '.') ++pos;
+
+        long long n = 0;
+        bool any = false;
+
+        while (pos < v.size() && v[pos] >= '0' && v[pos] <= '9') {
+            any = true;
+            n = (n * 10) + (v[pos] - '0');
+            ++pos;
+        }
+
+        while (pos < v.size() && v[pos] != '.') ++pos;
+        if (pos < v.size() && v[pos] == '.') ++pos;
+
+        return any ? n : 0;
+    };
+
+    auto compare_app_versions = [&](const std::string& a, const std::string& b) -> int {
+        std::size_t ia = 0;
+        std::size_t ib = 0;
+
+        for (int i = 0; i < 4; ++i) {
+            const long long av = app_version_component(a, ia);
+            const long long bv = app_version_component(b, ib);
+
+            if (av < bv) return -1;
+            if (av > bv) return 1;
+        }
+
+        return 0;
+    };
+
+    auto app_manifest_min_server_version = [](const json& mani) -> std::string {
+        try {
+            if (mani.is_object() &&
+                mani.contains("min_server_version") &&
+                mani["min_server_version"].is_string()) {
+                return mani["min_server_version"].get<std::string>();
+            }
+        } catch (...) {
+        }
+
+        return "";
+    };
+
+    auto app_server_version_ok = [&](const std::string& minServerVersion) -> bool {
+        if (minServerVersion.empty()) return true;
+        return compare_app_versions(PQNAS_SERVER_VERSION, minServerVersion) >= 0;
+    };
+
+    auto app_compatibility_message = [&](const std::string& minServerVersion) -> std::string {
+        if (minServerVersion.empty()) return "";
+        return std::string("Requires DNA-Nexus Server ") +
+               minServerVersion +
+               " or newer. Current server is " +
+               PQNAS_SERVER_VERSION +
+               ".";
+    };
+
+    auto apply_app_compatibility_fields = [&](json& item, const json& mani) {
+        const std::string minServerVersion = app_manifest_min_server_version(mani);
+        const bool ok = app_server_version_ok(minServerVersion);
+
+        item["server_version"] = PQNAS_SERVER_VERSION;
+        item["min_server_version"] = minServerVersion;
+        item["compatibility_ok"] = ok;
+        item["compatibility_state"] = ok ? "ok" : "server_too_old";
+        item["compatibility_message"] = ok ? "" : app_compatibility_message(minServerVersion);
+    };
+
     srv.Get("/api/v4/apps", [&](const httplib::Request& req, httplib::Response& res) {
     namespace fs = std::filesystem;
     json out;
@@ -11828,11 +11903,22 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
                         continue; // not a valid install dir
                     }
 
+                    const bool hasManifest = fs::exists(manifest, ec) && !ec;
+
+                    json mj = json::object();
+                    if (hasManifest) {
+                        std::string mb;
+                        if (read_file_to_string(manifest.string(), mb) && !mb.empty()) {
+                            try { mj = json::parse(mb); } catch (...) { mj = json::object(); }
+                        }
+                    }
+
                     json item;
                     item["id"] = appId;
                     item["version"] = ver;
                     item["root"] = rel_to_repo(root.string());
-                    item["has_manifest"] = fs::exists(manifest, ec);
+                    item["has_manifest"] = hasManifest;
+                    apply_app_compatibility_fields(item, mj);
                     out["installed"].push_back(item);
                 }
             }
@@ -43265,6 +43351,8 @@ srv.Get("/api/v4/apps/has", [&](const httplib::Request& req, httplib::Response& 
                     if (mj.contains("icon")) item["icon"] = mj["icon"];
                 }
 
+                apply_app_compatibility_fields(item, mj);
+
                 // convenience: where it is on disk + what URL it should be served from
                 item["path"] = de_ver.path().string();
                 item["base_url"] = std::string("/apps/") + id + "/" + ver + "/";
@@ -43460,6 +43548,39 @@ srv.Get("/api/v4/apps/has", [&](const httplib::Request& req, httplib::Response& 
         cleanupZip();
         reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "manifest id/version invalid"}});
         return;
+    }
+
+    {
+        const std::string minServerVersion = app_manifest_min_server_version(mani);
+        if (!app_server_version_ok(minServerVersion)) {
+            cleanupZip();
+            const std::string msg = app_compatibility_message(minServerVersion);
+            audit_fail(msg);
+            reply(400, {
+                {"ok", false},
+                {"error", "incompatible_server"},
+                {"message", msg},
+                {"server_version", PQNAS_SERVER_VERSION},
+                {"min_server_version", minServerVersion}
+            });
+            return;
+        }
+    }
+
+    {
+        const std::string minServerVersion = app_manifest_min_server_version(mani);
+        if (!app_server_version_ok(minServerVersion)) {
+            const std::string msg = app_compatibility_message(minServerVersion);
+            audit_fail(msg);
+            reply(400, {
+                {"ok", false},
+                {"error", "incompatible_server"},
+                {"message", msg},
+                {"server_version", PQNAS_SERVER_VERSION},
+                {"min_server_version", minServerVersion}
+            });
+            return;
+        }
     }
 
     const std::filesystem::path dst = std::filesystem::path(APPS_INSTALLED_DIR) / id / ver;

@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} tavoitettavissa",
   "admin.nodus.not_configured": "Ei määritetty",
   "admin.nodus.enabled": "Käytössä",
-  "admin.nodus.worker_disabled": "Pois käytöstä • aseta {env}=1"
+  "admin.nodus.worker_disabled": "Pois käytöstä • aseta {env}=1",
+  "admin.apps.error.incompatible_server": "Vaatii DNA-Nexus Server -version {min} tai uudemman. Nykyinen serveriversio on {current}.",
+  "admin.apps.error.version_already_installed": "Tämä sovellusversio on jo asennettu. Poista vanha versio ensin tai käytä uudempaa sovellusversiota.",
+  "shell.apps.incompatible_title": "Sovellus vaatii uudemman serverin",
+  "shell.apps.incompatible_message_versions": "Tämä sovellus vaatii DNA-Nexus Server -version {min} tai uudemman. Nykyinen serveriversio on {current}."
 }

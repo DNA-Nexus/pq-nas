@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} nåbara",
   "admin.nodus.not_configured": "Inte konfigurerad",
   "admin.nodus.enabled": "Aktiverad",
-  "admin.nodus.worker_disabled": "Inaktiverad • sätt {env}=1"
+  "admin.nodus.worker_disabled": "Inaktiverad • sätt {env}=1",
+  "admin.apps.error.incompatible_server": "Kräver DNA-Nexus Server {min} eller nyare. Aktuell serverversion är {current}.",
+  "admin.apps.error.version_already_installed": "Den här appversionen är redan installerad. Avinstallera den gamla versionen först eller använd en nyare appversion.",
+  "shell.apps.incompatible_title": "Appen kräver en nyare server",
+  "shell.apps.incompatible_message_versions": "Den här appen kräver DNA-Nexus Server {min} eller nyare. Aktuell serverversion är {current}."
 }

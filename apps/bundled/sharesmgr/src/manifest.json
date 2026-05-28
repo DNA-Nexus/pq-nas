@@ -1,7 +1,7 @@
 {
   "id": "sharesmgr",
   "name": "Shares Manager",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "entry": "www/index.html",
   "icons": {
     "win_classic": "www/shares_win.png",
@@ -9,5 +9,6 @@
     "dark": "www/shares_dark.png",
     "bright": "www/shares_bright.png",
     "default": "www/shares_dark.png"
-  }
+  },
+  "min_server_version": "1.1.3"
 }

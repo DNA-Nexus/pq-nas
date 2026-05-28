@@ -3588,5 +3588,9 @@
   "admin.nodus.seeds_reachable": "{reachable} / {total} erişilebilir",
   "admin.nodus.not_configured": "Yapılandırılmadı",
   "admin.nodus.enabled": "Etkin",
-  "admin.nodus.worker_disabled": "Devre dışı • {env}=1 ayarla"
+  "admin.nodus.worker_disabled": "Devre dışı • {env}=1 ayarla",
+  "admin.apps.error.incompatible_server": "DNA-Nexus Server {min} veya daha yenisi gerekir. Geçerli sunucu sürümü {current}.",
+  "admin.apps.error.version_already_installed": "Bu uygulama sürümü zaten yüklü. Önce eski sürümü kaldırın veya daha yeni bir uygulama sürümü kullanın.",
+  "shell.apps.incompatible_title": "Uygulama daha yeni sunucu gerektiriyor",
+  "shell.apps.incompatible_message_versions": "Bu uygulama DNA-Nexus Server {min} veya daha yenisini gerektirir. Geçerli sunucu sürümü {current}."
 }

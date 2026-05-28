@@ -2661,6 +2661,24 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             return;
         }
 
+        if (a.compatibility_ok === false) {
+            const min = String(a.min_server_version || "?");
+            const current = String(a.server_version || "?");
+
+            const msg = tr(
+                "shell.apps.incompatible_message_versions",
+                { min, current },
+                `This app requires DNA-Nexus Server ${min} or newer. Current server is ${current}.`
+            );
+
+            openShellAlertDialog({
+                title: tr("shell.apps.incompatible_title", null, "App requires newer server"),
+                message: msg
+            });
+
+            return;
+        }
+
         const app = { id: a.id, ver: a.ver, name: a.name || a.title };
         const mode = resolveLaunchMode(app);
 
@@ -2772,7 +2790,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     // show version once (don’t stomp useful status text every refresh)
                     if (!versionShown && statusLine) {
-                        statusLine.textContent = "DNA-Nexus v1.1.2";
+                        statusLine.textContent = "DNA-Nexus v1.1.3";
                         versionShown = true;
                     }
 
