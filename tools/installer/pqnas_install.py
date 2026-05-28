@@ -2225,9 +2225,19 @@ class ReverseProxyScreen(Screen):
 
             yield Static("\n[b]Login authentication mode:[/b] v5 (stateless) — forced by installer", classes="muted")
 
-            yield Static("\n[b]Hostname or IP[/b] (nginx server_name):", classes="muted")
-            self.host_in = Input(value="", placeholder="nas.example.com  (or 192.168.1.50)")
+            yield Static(
+                "\n[b]Public hostname or IP[/b] "
+                "(used for QR/login origin; also nginx server_name if reverse proxy is enabled):",
+                classes="muted",
+            )
+            self.host_in = Input(value="", placeholder="nas.pqnas-test.uk  (or 192.168.1.50)")
             yield self.host_in
+
+            yield Static(
+                "[dim]For Cloudflare Tunnel with no local nginx, still enter the public hostname here. "
+                "The installer will write PQNAS_ORIGIN/PQNAS_RP_ID for login verification.[/dim]",
+                classes="muted",
+            )
 
             yield Static("\n[b]HTTPS (optional)[/b]", classes="muted")
             self.https_enable = RadioSet(
@@ -2326,6 +2336,10 @@ class ReverseProxyScreen(Screen):
         st.nginx_listen_port = 80
 
         if enabled:
+            if not host:
+                self.err.update("Reverse proxy enabled: enter a hostname or IP.")
+                return
+
             st.https_enabled = any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
             st.https_email = (self.email_in.value or "").strip()
             st.https_redirect = any(btn.value and btn.id == "redir_on" for btn in self.redirect_btn.query(RadioButton))
@@ -2338,6 +2352,14 @@ class ReverseProxyScreen(Screen):
             st.https_enabled = False
             st.https_email = ""
             st.https_redirect = False
+
+            if not host:
+                self.err.update(
+                    "Enter the public hostname/IP for QR login origin, e.g. "
+                    "nas.pqnas-test.uk or 192.168.1.50. "
+                    "This does not enable nginx."
+                )
+                return
 
         st.auth_mode = "v5"
         app.push_screen(ConfirmScreen())
