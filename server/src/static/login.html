@@ -176,6 +176,33 @@
             user-select: none;
         }
 
+        .presentationLinkWrap{
+            margin: 0 0 14px;
+            text-align: center;
+        }
+
+        .presentationLink{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 36px;
+            padding: 8px 13px;
+            border-radius: 999px;
+            border: 1px solid rgba(var(--fg-rgb),0.20);
+            background: rgba(var(--fg-rgb),0.065);
+            color: var(--fg);
+            font-size: 13px;
+            font-weight: 850;
+            letter-spacing: 0.1px;
+            text-decoration: none;
+            box-shadow: 0 0 18px rgba(var(--fg-rgb),0.08);
+        }
+
+        .presentationLink:hover{
+            background: rgba(var(--fg-rgb),0.105);
+            border-color: rgba(var(--fg-rgb),0.32);
+        }
+
         .busy .card { opacity: 0.90; }
 
         .busy::before{
@@ -318,6 +345,13 @@
 
             <div class="hint" data-i18n="login.hint">
                 Open DNA Connect → QR Reader → scan the QR code.
+            </div>
+
+            <div class="presentationLinkWrap">
+                <a class="presentationLink"
+                   href="/static/nexus-presentation/index.html"
+                   target="_blank"
+                   rel="noopener">What is DNA-Nexus?</a>
             </div>
 
             <div class="qr">
