@@ -511,3 +511,231 @@
   border: 1px solid #808080 !important;
   background: #dcdcdc !important;
 }
+
+/* Node avatar and clickable node badges */
+.nodeProfileAvatarButton {
+  padding: 0;
+  border: 1px solid rgba(45,212,191,0.44);
+  cursor: default;
+  overflow: hidden;
+}
+
+button.nodeProfileAvatarButton {
+  cursor: pointer;
+}
+
+button.nodeProfileAvatarButton:hover,
+button.nodeProfileAvatarButton:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 28px rgba(45,212,191,0.18),
+    inset 0 0 18px rgba(255,255,255,0.10);
+  outline: none;
+}
+
+.nodeProfileAvatarImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.nodeProfileBadge.clickable {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.nodeProfileBadge.clickable:hover,
+.nodeProfileBadge.clickable:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 26px rgba(0,0,0,0.22),
+    0 0 22px rgba(45,212,191,0.10);
+  outline: none;
+}
+
+.nodeProfileMiniOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90100;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.42);
+  backdrop-filter: blur(4px);
+}
+
+.nodeProfileBadgeReplay,
+.nodeProfileAvatarPicker {
+  width: min(520px, calc(100vw - 34px));
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(168,85,247,0.18), transparent 38%),
+    rgba(17,18,28,0.97);
+  color: rgba(248,250,252,0.94);
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.48);
+}
+
+.nodeProfileReplayKicker {
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(248,250,252,0.72);
+  margin-bottom: 12px;
+}
+
+.nodeProfileReplayIcon {
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  object-fit: contain;
+  margin: 0 auto 14px;
+  display: block;
+}
+
+.nodeProfileReplayTitle {
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.nodeProfileReplayDesc {
+  margin: 8px auto 0;
+  max-width: 390px;
+  color: rgba(226,232,240,0.72);
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+.nodeProfileReplayTier {
+  display: inline-flex;
+  margin-top: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: rgba(226,232,240,0.74);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.nodeProfileReplayClose {
+  margin-top: 18px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.10);
+  color: rgba(248,250,252,0.94);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.nodeProfileAvatarGrid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+}
+
+.nodeProfileAvatarChoice {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.055);
+  color: rgba(248,250,252,0.90);
+  padding: 10px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.nodeProfileAvatarChoice:hover,
+.nodeProfileAvatarChoice.selected {
+  border-color: rgba(45,212,191,0.52);
+  background: rgba(45,212,191,0.10);
+}
+
+.nodeProfileAvatarChoice img {
+  width: 86px;
+  height: 86px;
+  border-radius: 22px;
+  display: block;
+  object-fit: cover;
+  margin: 0 auto 8px;
+}
+
+.nodeProfileAvatarChoice span {
+  display: block;
+  font-size: 12px;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] {
+  background: rgba(15,23,42,0.20);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileBadgeReplay,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileAvatarPicker {
+  color: #111827;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.97);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayKicker,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayDesc {
+  color: rgba(15,23,42,0.66);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayTier,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayClose,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileAvatarChoice {
+  color: #111827;
+  border-color: rgba(15,23,42,0.14);
+  background: rgba(15,23,42,0.055);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] {
+  background: rgba(0,0,0,0.20);
+  backdrop-filter: none;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileBadgeReplay,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarPicker {
+  color: #000;
+  border-radius: 0;
+  border: 2px solid #808080;
+  background: #ececec;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayKicker,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayDesc {
+  color: #444;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayTier,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayClose,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarChoice {
+  color: #000;
+  border-radius: 0;
+  border-color: #999;
+  background: #f7f7f7;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarChoice.selected {
+  border-color: #008080;
+  background: #f5ffff;
+}
+
+@media (max-width: 680px) {
+  .nodeProfileAvatarGrid {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+}

@@ -14,7 +14,7 @@
 
   function syncNodeProfileTheme() {
     const theme = currentNodeProfileTheme();
-    document.querySelectorAll(".nodeProfileOverlay").forEach((overlay) => {
+    document.querySelectorAll(".nodeProfileOverlay, .nodeProfileMiniOverlay").forEach((overlay) => {
       overlay.setAttribute("data-node-theme", theme);
     });
   }
@@ -37,6 +37,159 @@
   function removeExisting() {
     const old = document.querySelector(".nodeProfileOverlay");
     if (old) old.remove();
+  }
+
+  function openNodeBadgeModal(badge) {
+    const old = document.querySelector(".nodeProfileMiniOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "nodeProfileMiniOverlay";
+    overlay.setAttribute("data-node-theme", currentNodeProfileTheme());
+
+    const modal = document.createElement("div");
+    modal.className = "nodeProfileBadgeReplay";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+
+    const kicker = document.createElement("div");
+    kicker.className = "nodeProfileReplayKicker";
+    kicker.textContent = "Node badge";
+
+    const img = document.createElement("img");
+    img.className = "nodeProfileReplayIcon";
+    img.src = badge.icon_asset || "";
+    img.alt = "";
+
+    const title = document.createElement("div");
+    title.className = "nodeProfileReplayTitle";
+    title.textContent = badge.title || "Node badge";
+
+    const desc = document.createElement("div");
+    desc.className = "nodeProfileReplayDesc";
+    desc.textContent = badge.description || "";
+
+    const tier = document.createElement("div");
+    tier.className = "nodeProfileReplayTier";
+    tier.textContent = badge.tier ? `${badge.category || "node"} · ${badge.tier}` : (badge.category || "node");
+
+    const close = document.createElement("button");
+    close.className = "nodeProfileReplayClose";
+    close.type = "button";
+    close.textContent = "Close";
+
+    close.addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+
+    modal.appendChild(kicker);
+    modal.appendChild(img);
+    modal.appendChild(title);
+    if (desc.textContent) modal.appendChild(desc);
+    if (tier.textContent) modal.appendChild(tier);
+    modal.appendChild(close);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  }
+
+  async function openNodeAvatarPicker(data, avatarImg) {
+    if (!data || data.can_customize_avatar !== true) return;
+
+    const old = document.querySelector(".nodeProfileMiniOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "nodeProfileMiniOverlay";
+    overlay.setAttribute("data-node-theme", currentNodeProfileTheme());
+
+    const modal = document.createElement("div");
+    modal.className = "nodeProfileAvatarPicker";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+
+    const title = document.createElement("div");
+    title.className = "nodeProfileReplayTitle";
+    title.textContent = "Choose Node Avatar";
+
+    const desc = document.createElement("div");
+    desc.className = "nodeProfileReplayDesc";
+    desc.textContent = "Admin-only visual identity for this DNA-Nexus node.";
+
+    const grid = document.createElement("div");
+    grid.className = "nodeProfileAvatarGrid";
+
+    const options = Array.isArray(data.avatar_options) ? data.avatar_options : [];
+    const currentKey = data.node && data.node.avatar_key ? data.node.avatar_key : "";
+
+    for (const opt of options) {
+      const btn = document.createElement("button");
+      btn.className = "nodeProfileAvatarChoice";
+      btn.type = "button";
+      if (opt.key === currentKey) btn.classList.add("selected");
+
+      const img = document.createElement("img");
+      img.src = opt.asset || "";
+      img.alt = "";
+
+      const label = document.createElement("span");
+      label.textContent = opt.title || opt.key || "Node avatar";
+
+      btn.appendChild(img);
+      btn.appendChild(label);
+
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+
+        try {
+          const res = await fetch("/api/v4/circlestack/node-profile/avatar", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({avatar_key: opt.key})
+          });
+
+          const out = await res.json().catch(() => null);
+          if (!res.ok || !out || out.ok === false) {
+            throw new Error((out && (out.error || out.message)) || ("HTTP " + res.status));
+          }
+
+          if (data.node) {
+            data.node.avatar_key = out.avatar_key;
+            data.node.avatar_asset = out.avatar_asset;
+          }
+
+          if (avatarImg) {
+            avatarImg.src = out.avatar_asset;
+          }
+
+          overlay.remove();
+        } catch (err) {
+          btn.disabled = false;
+          alert("Could not update node avatar: " + (err && err.message ? err.message : String(err)));
+        }
+      });
+
+      grid.appendChild(btn);
+    }
+
+    const close = document.createElement("button");
+    close.className = "nodeProfileReplayClose";
+    close.type = "button";
+    close.textContent = "Close";
+    close.addEventListener("click", () => overlay.remove());
+
+    overlay.addEventListener("click", (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+
+    modal.appendChild(title);
+    modal.appendChild(desc);
+    modal.appendChild(grid);
+    modal.appendChild(close);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
   }
 
   function badgeRow(badge) {
@@ -70,6 +223,22 @@
     row.appendChild(img);
     row.appendChild(body);
     row.appendChild(tier);
+
+    if (badge.unlocked) {
+      row.classList.add("clickable");
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.title = "Open node badge";
+
+      const open = () => openNodeBadgeModal(badge);
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          open();
+        }
+      });
+    }
 
     return row;
   }
@@ -192,8 +361,27 @@
     const hero = document.createElement("div");
     hero.className = "nodeProfileHero";
 
-    const orb = document.createElement("div");
-    orb.className = "nodeProfileOrb";
+    const canCustomizeAvatar = data && data.can_customize_avatar === true;
+
+    const orb = document.createElement(canCustomizeAvatar ? "button" : "div");
+    orb.className = "nodeProfileOrb nodeProfileAvatarButton";
+    if (canCustomizeAvatar) {
+      orb.type = "button";
+      orb.title = "Choose node avatar";
+      orb.setAttribute("aria-label", "Choose node avatar");
+    }
+
+    const avatarImg = document.createElement("img");
+    avatarImg.className = "nodeProfileAvatarImage";
+    avatarImg.src = node.avatar_asset || "/static/img/node_avatars/neon-tower.svg";
+    avatarImg.alt = "";
+    avatarImg.loading = "eager";
+    avatarImg.decoding = "sync";
+    orb.appendChild(avatarImg);
+
+    if (canCustomizeAvatar) {
+      orb.addEventListener("click", () => openNodeAvatarPicker(data, avatarImg));
+    }
 
     const hbody = document.createElement("div");
     const h2 = document.createElement("h2");

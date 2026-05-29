@@ -25,6 +25,7 @@
 #include <string>
 
 using json = nlohmann::json;
+#include <system_error>
 
 namespace {
 
@@ -2171,6 +2172,92 @@ json cs_make_federation_origin_descriptor(const std::string& nas_id) {
     }
 
     return origin;
+}
+
+static constexpr const char* kNodeProfileAvatarConfigPath =
+    "/srv/pqnas/config/node_profile_avatar_key";
+
+json cs_node_profile_avatar_options_json() {
+    return json::array({
+        {
+            {"key", "neon-tower"},
+            {"title", "Neon Tower"},
+            {"asset", "/static/img/node_avatars/neon-tower.svg"}
+        },
+        {
+            {"key", "raid-core"},
+            {"title", "RAID Core"},
+            {"asset", "/static/img/node_avatars/raid-core.svg"}
+        },
+        {
+            {"key", "quantum-cube"},
+            {"title", "Quantum Cube"},
+            {"asset", "/static/img/node_avatars/quantum-cube.svg"}
+        },
+        {
+            {"key", "orbit-node"},
+            {"title", "Orbit Node"},
+            {"asset", "/static/img/node_avatars/orbit-node.svg"}
+        }
+    });
+}
+
+bool cs_node_profile_avatar_key_allowed(const std::string& key) {
+    for (const auto& opt : cs_node_profile_avatar_options_json()) {
+        if (opt.is_object() && opt.value("key", "") == key) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::string cs_node_profile_avatar_asset_for_key(const std::string& key) {
+    for (const auto& opt : cs_node_profile_avatar_options_json()) {
+        if (!opt.is_object()) continue;
+        if (opt.value("key", "") == key) {
+            return opt.value("asset", "/static/img/node_avatars/neon-tower.svg");
+        }
+    }
+
+    return "/static/img/node_avatars/neon-tower.svg";
+}
+
+std::string cs_node_profile_avatar_key() {
+    std::string key = cs_read_first_line_trimmed(kNodeProfileAvatarConfigPath);
+    if (!cs_node_profile_avatar_key_allowed(key)) {
+        key = "neon-tower";
+    }
+
+    return key;
+}
+
+bool cs_write_node_profile_avatar_key(const std::string& key, std::string* err) {
+    if (!cs_node_profile_avatar_key_allowed(key)) {
+        if (err) *err = "invalid_avatar_key";
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories("/srv/pqnas/config", ec);
+    if (ec) {
+        if (err) *err = "create_config_dir_failed: " + ec.message();
+        return false;
+    }
+
+    std::ofstream out(kNodeProfileAvatarConfigPath, std::ios::trunc);
+    if (!out.good()) {
+        if (err) *err = "open_avatar_config_failed";
+        return false;
+    }
+
+    out << key << "\n";
+    if (!out.good()) {
+        if (err) *err = "write_avatar_config_failed";
+        return false;
+    }
+
+    return true;
 }
 
 std::string cs_make_post_created_event_id(long long post_id, long long created_epoch) {
@@ -5242,6 +5329,9 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             );
 
             const std::string node_id = cs_local_nodus_identity_fingerprint();
+            const std::string avatar_key = cs_node_profile_avatar_key();
+            const std::string avatar_asset =
+                cs_node_profile_avatar_asset_for_key(avatar_key);
 
             set_json(res, json{
                 {"ok", true},
@@ -5249,7 +5339,9 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 {"node", {
                     {"name", "DNA-Nexus Node"},
                     {"node_id", node_id},
-                    {"node_id_short", cs_short_fp(node_id)}
+                    {"node_id_short", cs_short_fp(node_id)},
+                    {"avatar_key", avatar_key},
+                    {"avatar_asset", avatar_asset}
                 }},
                 {"stats", {
                     {"federation_outbox_total", outbox_stats.total},
@@ -5263,7 +5355,56 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     {"remote_interactions_total", remote_interactions},
                     {"known_origins_total", known_origins}
                 }},
+                {"avatar_options", cs_node_profile_avatar_options_json()},
+                {"can_customize_avatar", actor_role == "admin"},
                 {"badges", badges}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/node-profile/avatar",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (actor_role != "admin") {
+                res.status = 403;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "forbidden"}
+                });
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string avatar_key = body.value("avatar_key", "");
+            std::string err;
+
+            if (!cs_write_node_profile_avatar_key(avatar_key, &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "avatar_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"avatar_key", avatar_key},
+                {"avatar_asset", cs_node_profile_avatar_asset_for_key(avatar_key)}
             });
         });
 
