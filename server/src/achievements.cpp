@@ -1,6 +1,8 @@
 #include "achievements.h"
 
+#include <cctype>
 #include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -80,6 +82,31 @@ long long account_age_days(const std::string& added_at_iso) {
     if (now <= created) return 0;
 
     return (now - created) / 86400LL;
+}
+
+std::string trim_ascii_copy(std::string s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.erase(s.begin());
+    }
+
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+        s.pop_back();
+    }
+
+    return s;
+}
+
+bool dev_force_all_achievements_for_fp(const std::string& fp) {
+    if (fp.empty()) return false;
+
+    std::ifstream in("/srv/pqnas/config/circlestack_achievements_force_all_fp");
+    if (!in.good()) return false;
+
+    std::string target;
+    std::getline(in, target);
+    target = trim_ascii_copy(target);
+
+    return target == "*" || target == fp;
 }
 
 std::string badge_icon_key_from_id(const std::string& id) {
@@ -350,6 +377,18 @@ json stats_for(sqlite3* db, const std::string& fp, const std::string& added_at_i
         "SELECT COUNT(*) FROM circle_edges WHERE user_a_fp = ? OR user_b_fp = ?",
         fp,
         fp);
+
+    if (dev_force_all_achievements_for_fp(fp)) {
+        stats["account_age_days"] = 1001;
+        stats["posts_total"] = 1000;
+        stats["public_posts_total"] = 100;
+        stats["media_posts_total"] = 100;
+        stats["replies_total"] = 100;
+        stats["reactions_given_total"] = 100;
+        stats["post_reactions_received_total"] = 100;
+        stats["replies_received_total"] = 100;
+        stats["circle_edges_total"] = 10;
+    }
 
     return stats;
 }

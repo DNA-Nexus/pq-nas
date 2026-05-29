@@ -87,7 +87,7 @@ function csBadgeIconAsset(badge) {
   return CS_BADGE_ICON_ASSETS[id] || csSafeLocalBadgeAsset(badge && badge.icon_asset);
 }
 
-function csCreateBadgeIconElement(badge, className) {
+function csCreateBadgeIconElement(badge, className, options = {}) {
   const asset = csBadgeIconAsset(badge);
 
   if (asset) {
@@ -95,8 +95,10 @@ function csCreateBadgeIconElement(badge, className) {
     img.className = className || "cs-badge-svg-icon";
     img.src = asset;
     img.alt = "";
-    img.loading = "lazy";
-    img.decoding = "async";
+    img.loading = "eager";
+    img.decoding = "sync";
+    img.fetchPriority = "high";
+
     return img;
   }
 
@@ -104,6 +106,26 @@ function csCreateBadgeIconElement(badge, className) {
   span.className = className || "cs-badge-emoji-icon";
   span.textContent = badge && badge.icon ? badge.icon : "◆";
   return span;
+}
+
+function csPreloadBadgeIconAssets(rawBadges) {
+  const badges = csAchievementListFrom(rawBadges);
+  const assets = Array.from(new Set(
+    badges.map(b => csBadgeIconAsset(b)).filter(Boolean)
+  ));
+
+  if (!assets.length) return Promise.resolve();
+
+  return Promise.allSettled(assets.map(asset => new Promise(resolve => {
+    const img = new Image();
+    img.onload = resolve;
+    img.onerror = resolve;
+    img.src = asset;
+
+    if (img.decode) {
+      img.decode().then(resolve).catch(resolve);
+    }
+  })));
 }
 
 function csRenderAchievementStrip(rawBadges, options = {}) {
@@ -260,7 +282,9 @@ function csShowAchievementUnlockedModal(badge) {
 
     const icon = document.createElement("div");
     icon.className = "cs-achievement-unlock-icon";
-    icon.appendChild(csCreateBadgeIconElement(badge, "cs-achievement-unlock-icon-img"));
+    icon.appendChild(csCreateBadgeIconElement(badge, "cs-achievement-unlock-icon-img", {
+    eager: true
+  }));
 
     const title = document.createElement("div");
     title.className = "cs-achievement-unlock-title";
@@ -344,8 +368,12 @@ async function csRunAchievementUnlockQueue(rawBadges) {
   csAchievementUnlockQueueActive = true;
 
   try {
+    // Preload SVG icons before showing the queue so the modal does not open
+    // with an empty/glowing placeholder while the image decodes.
+    await csPreloadBadgeIconAssets(queue);
+
     // Small delay lets the feed render first, so the modal feels intentional.
-    await new Promise(resolve => setTimeout(resolve, 450));
+    await new Promise(resolve => setTimeout(resolve, 250));
 
     for (const badge of queue) {
       await csShowAchievementUnlockedModal(badge);
@@ -5283,6 +5311,10 @@ async function csOpenMyProfileModal() {
   const achievements = typeof csAchievementListFrom === "function"
     ? csAchievementListFrom(achievementsData.achievements)
     : [];
+
+  if (typeof csPreloadBadgeIconAssets === "function") {
+    await csPreloadBadgeIconAssets(achievements);
+  }
 
   function stat(label, value) {
     const item = document.createElement("div");
