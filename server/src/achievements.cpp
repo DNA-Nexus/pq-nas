@@ -226,6 +226,173 @@ std::string media_kind_from_activity_row(
     return "";
 }
 
+static constexpr const char* kCircleFederationOutboxDbPathLocal =
+    "/srv/pqnas/config/circlestack_federation_outbox.sqlite3";
+
+static constexpr const char* kCircleFederationRemoteFeedDbPathLocal =
+    "/srv/pqnas/config/circlestack_federation_remote_feed.sqlite3";
+
+static constexpr const char* kPeopleContactsDbPathLocal =
+    "/srv/pqnas/config/people_contacts.sqlite3";
+
+bool open_readonly_db_if_exists(const char* path, sqlite3** out_db) {
+    if (out_db) *out_db = nullptr;
+    if (!path || !out_db) return false;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) return false;
+
+    sqlite3* db = nullptr;
+    const int rc = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nullptr);
+    if (rc != SQLITE_OK || !db) {
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_busy_timeout(db, 2000);
+    *out_db = db;
+    return true;
+}
+
+long long scalar_count_sql(sqlite3* db, const char* sql) {
+    if (!db || !sql) return 0;
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    long long out = 0;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = sqlite3_column_int64(st, 0);
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+long long scalar_count_sql_bind_text(sqlite3* db, const char* sql, const std::string& value) {
+    if (!db || !sql) return 0;
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    sqlite3_bind_text(st, 1, value.c_str(), -1, SQLITE_TRANSIENT);
+
+    long long out = 0;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = sqlite3_column_int64(st, 0);
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+std::string string_from_nested_payload_key(const json& event, const char* key) {
+    if (!event.is_object() || !key) return "";
+
+    if (event.contains("payload") && event["payload"].is_object()) {
+        const auto& payload = event["payload"];
+        auto it = payload.find(key);
+        if (it != payload.end() && it->is_string()) {
+            return trim_ascii_copy(it->get<std::string>());
+        }
+    }
+
+    return "";
+}
+
+void add_federation_stats_for_user(json& stats, const std::string& fp) {
+    stats["federation_local_events_done_total"] = 0;
+    stats["federation_local_posts_done_total"] = 0;
+    stats["federation_remote_events_total"] = 0;
+    stats["federation_remote_posts_total"] = 0;
+    stats["federation_remote_interactions_total"] = 0;
+    stats["federation_known_origins_total"] = 0;
+
+    if (fp.empty()) return;
+
+    sqlite3* outbox_db = nullptr;
+    if (open_readonly_db_if_exists(kCircleFederationOutboxDbPathLocal, &outbox_db)) {
+        const char* sql =
+            "SELECT event_type, event_json "
+            "FROM circle_federation_outbox "
+            "WHERE status = 'done'";
+
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(outbox_db, sql, -1, &st, nullptr) == SQLITE_OK) {
+            long long local_events = 0;
+            long long local_posts = 0;
+
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const unsigned char* event_type_raw = sqlite3_column_text(st, 0);
+                const unsigned char* event_json_raw = sqlite3_column_text(st, 1);
+
+                const std::string event_type = event_type_raw
+                    ? reinterpret_cast<const char*>(event_type_raw)
+                    : std::string();
+
+                const std::string raw = event_json_raw
+                    ? reinterpret_cast<const char*>(event_json_raw)
+                    : std::string();
+
+                json event = json::parse(raw, nullptr, false);
+                if (!event.is_object()) continue;
+
+                const std::string owner_fp = string_from_nested_payload_key(event, "owner_fp");
+                const std::string actor_fp = string_from_nested_payload_key(event, "actor_fp");
+
+                if (owner_fp != fp && actor_fp != fp) {
+                    continue;
+                }
+
+                ++local_events;
+                if (event_type == "circle.post.created") {
+                    ++local_posts;
+                }
+            }
+
+            stats["federation_local_events_done_total"] = local_events;
+            stats["federation_local_posts_done_total"] = local_posts;
+        }
+
+        if (st) sqlite3_finalize(st);
+        sqlite3_close(outbox_db);
+    }
+
+    sqlite3* remote_db = nullptr;
+    if (open_readonly_db_if_exists(kCircleFederationRemoteFeedDbPathLocal, &remote_db)) {
+        const long long remote_events =
+            scalar_count_sql(remote_db, "SELECT COUNT(*) FROM circle_federation_remote_feed");
+        const long long remote_posts =
+            scalar_count_sql(remote_db, "SELECT COUNT(*) FROM circle_federation_remote_feed WHERE event_type = 'circle.post.created'");
+        const long long remote_replies =
+            scalar_count_sql(remote_db, "SELECT COUNT(*) FROM circle_federation_remote_feed WHERE event_type = 'circle.reply.created'");
+        const long long remote_reactions =
+            scalar_count_sql(remote_db, "SELECT COUNT(*) FROM circle_federation_remote_feed WHERE event_type = 'circle.reaction.created'");
+
+        stats["federation_remote_events_total"] = remote_events;
+        stats["federation_remote_posts_total"] = remote_posts;
+        stats["federation_remote_interactions_total"] = remote_replies + remote_reactions;
+
+        sqlite3_close(remote_db);
+    }
+
+    sqlite3* people_db = nullptr;
+    if (open_readonly_db_if_exists(kPeopleContactsDbPathLocal, &people_db)) {
+        // User achievement: count only origins added/discovered by this user.
+        // Node-level known-origin badges should be shown later in a separate Node Badges view.
+        stats["federation_known_origins_total"] = scalar_count_sql_bind_text(
+            people_db,
+            "SELECT COUNT(*) FROM known_remote_origins WHERE enabled = 1 AND added_by_fp = ?",
+            fp
+        );
+        sqlite3_close(people_db);
+    }
+}
+
 void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& user_root) {
     stats["shares_created_total"] = 0;
     stats["uploads_total"] = 0;
@@ -462,6 +629,13 @@ std::string badge_icon_key_from_id(const std::string& id) {
     if (id == "media.first_track") return "media-first-track";
     if (id == "media.signal_dj") return "media-signal-dj";
     if (id == "media.sound_vault") return "media-sound-vault";
+
+    if (id == "federation.pioneer") return "federation-pioneer";
+    if (id == "federation.signal_courier") return "federation-signal-courier";
+    if (id == "federation.first_remote_signal") return "federation-first-remote-signal";
+    if (id == "federation.cross_node_conversation") return "federation-cross-node-conversation";
+    if (id == "federation.known_origin") return "federation-known-origin";
+    if (id == "federation.bridge_builder") return "federation-bridge-builder";
 
     return "";
 }
@@ -721,6 +895,7 @@ json stats_for(
         fp);
 
     add_activity_stats_for_user_root(stats, user_root);
+    add_federation_stats_for_user(stats, fp);
 
     if (dev_force_all_achievements_for_fp(fp)) {
         stats["account_age_days"] = 1001;
@@ -748,6 +923,13 @@ json stats_for(
         stats["video_upload_bytes_total"] = 100LL * 1024LL * 1024LL * 1024LL;
         stats["audio_uploads_total"] = 500;
         stats["audio_upload_bytes_total"] = 20LL * 1024LL * 1024LL * 1024LL;
+
+        stats["federation_local_events_done_total"] = 25;
+        stats["federation_local_posts_done_total"] = 5;
+        stats["federation_remote_events_total"] = 25;
+        stats["federation_remote_posts_total"] = 5;
+        stats["federation_remote_interactions_total"] = 5;
+        stats["federation_known_origins_total"] = 5;
     }
 
     return stats;
@@ -867,6 +1049,25 @@ json badges_from_stats(const json& stats) {
         badge("media.signal_dj", "Signal DJ", "Uploaded at least 100 audio tracks.", "🎧", "media", "silver"));
     maybe_add(out, audio_uploads >= 500,
         badge("media.sound_vault", "Sound Vault", "Uploaded at least 500 audio tracks.", "🔊", "media", "gold"));
+
+    const long long federation_local_events_done =
+        stats.value("federation_local_events_done_total", 0LL);
+    const long long federation_local_posts_done =
+        stats.value("federation_local_posts_done_total", 0LL);
+    const long long federation_known_origins =
+        stats.value("federation_known_origins_total", 0LL);
+
+    maybe_add(out, federation_local_posts_done >= 1,
+        badge("federation.pioneer", "Federation Pioneer", "Published the first local public Circle Stack post through federation.", "🌐", "federation", "bronze"));
+    maybe_add(out, federation_local_events_done >= 10,
+        badge("federation.signal_courier", "Signal Courier", "Delivered several local Circle Stack signals through federation.", "📡", "federation", "silver"));
+
+    // Personal federation trophies: origins this user added/discovered.
+    // Node-wide remote-feed milestones will become separate Node Badges later.
+    maybe_add(out, federation_known_origins >= 1,
+        badge("federation.known_origin", "Known Origin", "Discovered or added your first remote NAS origin.", "🧭", "federation", "bronze"));
+    maybe_add(out, federation_known_origins >= 3,
+        badge("federation.bridge_builder", "Bridge Builder", "Built bridges with several remote NAS origins.", "🌉", "federation", "gold"));
 
     return out;
 }

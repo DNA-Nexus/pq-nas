@@ -1,0 +1,230 @@
+.nodeProfileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90000;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.38);
+  backdrop-filter: blur(3px);
+}
+
+.nodeProfileWindow {
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--fg-rgb),0.22);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(168,85,247,0.16), transparent 38%),
+    rgba(17,18,28,0.96);
+  color: var(--fg);
+  box-shadow:
+    0 28px 90px rgba(0,0,0,0.52),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.nodeProfileTitlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(var(--fg-rgb),0.10);
+  user-select: none;
+  cursor: grab;
+}
+
+.nodeProfileTitlebar:active {
+  cursor: grabbing;
+}
+
+.nodeProfileKicker {
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(var(--fg-rgb),0.74);
+}
+
+.nodeProfileSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(var(--fg-rgb),0.52);
+}
+
+.nodeProfileClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--fg-rgb),0.18);
+  background: rgba(var(--fg-rgb),0.10);
+  color: var(--fg);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nodeProfileBody {
+  padding: 18px;
+  overflow: auto;
+  max-height: calc(min(760px, 100vh - 36px) - 66px);
+}
+
+.nodeProfileHero {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.nodeProfileOrb {
+  width: 78px;
+  height: 78px;
+  border-radius: 24px;
+  border: 1px solid rgba(45,212,191,0.44);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(45,212,191,0.55), transparent 42%),
+    radial-gradient(circle at 75% 78%, rgba(168,85,247,0.48), transparent 42%),
+    rgba(15,23,42,0.92);
+  box-shadow:
+    0 0 28px rgba(45,212,191,0.12),
+    inset 0 0 18px rgba(255,255,255,0.08);
+}
+
+.nodeProfileHero h2 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.nodeProfileNodeId {
+  margin-top: 5px;
+  color: rgba(var(--fg-rgb),0.66);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.nodeProfileStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.nodeProfileStat {
+  border-radius: 14px;
+  border: 1px solid rgba(var(--fg-rgb),0.12);
+  background: rgba(var(--fg-rgb),0.045);
+  padding: 12px;
+}
+
+.nodeProfileStat strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.nodeProfileStat span {
+  display: block;
+  margin-top: 6px;
+  color: rgba(var(--fg-rgb),0.54);
+  font-size: 12px;
+}
+
+.nodeProfileSectionTitle {
+  margin: 18px 0 10px;
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(var(--fg-rgb),0.86);
+}
+
+.nodeProfileBadges {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+.nodeProfileBadge {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  border-radius: 15px;
+  border: 1px solid rgba(var(--fg-rgb),0.12);
+  background: rgba(var(--fg-rgb),0.045);
+  padding: 10px 12px;
+}
+
+.nodeProfileBadge.unlocked {
+  border-color: rgba(45,212,191,0.36);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.11), transparent 44%),
+    rgba(var(--fg-rgb),0.05);
+}
+
+.nodeProfileBadge.locked {
+  opacity: 0.62;
+  filter: grayscale(1) saturate(0);
+  border-style: dashed;
+}
+
+.nodeProfileBadgeIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  object-fit: contain;
+}
+
+.nodeProfileBadgeTitle {
+  font-weight: 950;
+  font-size: 14px;
+}
+
+.nodeProfileBadgeDesc {
+  margin-top: 3px;
+  color: rgba(var(--fg-rgb),0.58);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.nodeProfileBadgeTier {
+  border-radius: 999px;
+  border: 1px solid rgba(var(--fg-rgb),0.13);
+  background: rgba(var(--fg-rgb),0.07);
+  padding: 5px 8px;
+  color: rgba(var(--fg-rgb),0.62);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.nodeProfileError {
+  border-radius: 14px;
+  border: 1px solid rgba(248,113,113,0.28);
+  background: rgba(248,113,113,0.09);
+  padding: 12px;
+  color: rgba(var(--fg-rgb),0.82);
+}
+
+@media (max-width: 720px) {
+  .nodeProfileStats {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+
+  .nodeProfileHero {
+    grid-template-columns: 1fr;
+  }
+
+  .nodeProfileBadge {
+    grid-template-columns: 40px 1fr;
+  }
+
+  .nodeProfileBadgeTier {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

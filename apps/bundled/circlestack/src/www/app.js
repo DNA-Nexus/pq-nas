@@ -101,7 +101,14 @@ const CS_BADGE_ICON_ASSETS = {
 
   "media.first_track": "badges/media-first-track.svg",
   "media.signal_dj": "badges/media-signal-dj.svg",
-  "media.sound_vault": "badges/media-sound-vault.svg"
+  "media.sound_vault": "badges/media-sound-vault.svg",
+
+  "federation.pioneer": "badges/federation-pioneer.svg",
+  "federation.signal_courier": "badges/federation-signal-courier.svg",
+  "federation.first_remote_signal": "badges/federation-first-remote-signal.svg",
+  "federation.cross_node_conversation": "badges/federation-cross-node-conversation.svg",
+  "federation.known_origin": "badges/federation-known-origin.svg",
+  "federation.bridge_builder": "badges/federation-bridge-builder.svg"
 };
 
 function csSafeLocalBadgeAsset(raw) {
@@ -651,6 +658,50 @@ function csAllAchievementPlaceholders() {
       icon_asset: "badges/media-sound-vault.svg",
       locked_text: "Create a serious self-hosted sound vault.",
       disclosure: "hint"
+    },
+
+    {
+      id: "federation.pioneer",
+      title: "Federation Pioneer",
+      category: "federation",
+      tier: "bronze",
+      icon_key: "federation-pioneer",
+      icon_asset: "badges/federation-pioneer.svg",
+      locked_text: "Publish your first public Circle Stack post through federation.",
+      disclosure: "exact"
+    },
+    {
+      id: "federation.signal_courier",
+      title: "Signal Courier",
+      category: "federation",
+      tier: "silver",
+      icon_key: "federation-signal-courier",
+      icon_asset: "badges/federation-signal-courier.svg",
+      locked_text: "Keep sending meaningful signals through federation.",
+      disclosure: "hint"
+    },
+    /* Node-level federation badges such as First Remote Signal and
+       Cross-Node Conversation are intentionally not shown in My Profile.
+       They will belong in a future Node Badges view. */
+    {
+      id: "federation.known_origin",
+      title: "Known Origin",
+      category: "federation",
+      tier: "bronze",
+      icon_key: "federation-known-origin",
+      icon_asset: "badges/federation-known-origin.svg",
+      locked_text: "Discover or add your first remote NAS origin.",
+      disclosure: "exact"
+    },
+    {
+      id: "federation.bridge_builder",
+      title: "Bridge Builder",
+      category: "federation",
+      tier: "gold",
+      icon_key: "federation-bridge-builder",
+      icon_asset: "badges/federation-bridge-builder.svg",
+      locked_text: "Build bridges with several remote NAS origins.",
+      disclosure: "hint"
     }
   ];
 }
@@ -866,7 +917,25 @@ function csAchievementReplayText(badge) {
       "You are building a music/audio collection. Signal DJ is about turning your NAS into a private listening base.",
 
     "media.sound_vault":
-      "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories."
+      "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories.",
+
+    "federation.pioneer":
+      "Your NAS has sent its first public Circle Stack signal into the wider DNA-Nexus network. This is the moment your node stops being only local.",
+
+    "federation.signal_courier":
+      "Your NAS is carrying signals across the network. Signal Courier is about reliable participation, not just one successful test.",
+
+    "federation.first_remote_signal":
+      "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack.",
+
+    "federation.cross_node_conversation":
+      "Conversation has crossed node boundaries. This badge marks real social activity between separate DNA-Nexus servers.",
+
+    "federation.known_origin":
+      "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers.",
+
+    "federation.bridge_builder":
+      "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable."
   };
 
   return texts[id] || "";

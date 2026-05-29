@@ -5125,6 +5125,149 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
         });
 
 
+    server.Get("/api/v4/circlestack/node-profile",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string outbox_err;
+            const auto outbox_stats =
+                pqnas::federation::circle_federation_outbox_stats(&outbox_err);
+
+            std::string remote_err;
+            const auto remote_stats =
+                pqnas::federation::circle_federation_remote_feed_stats(&remote_err);
+
+            long long known_origins = 0;
+            {
+                sqlite3* people_db = nullptr;
+                std::string people_err;
+
+                if (cs_open_people_db(&people_db, &people_err) && people_db) {
+                    sqlite3_stmt* st = nullptr;
+                    const char* sql =
+                        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled = 1";
+
+                    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) == SQLITE_OK) {
+                        if (sqlite3_step(st) == SQLITE_ROW) {
+                            known_origins = sqlite3_column_int64(st, 0);
+                        }
+                    }
+
+                    if (st) sqlite3_finalize(st);
+                    sqlite3_close(people_db);
+                }
+            }
+
+            const long long remote_interactions =
+                static_cast<long long>(remote_stats.replies + remote_stats.reaction_created);
+
+            const long long total_remote_events =
+                static_cast<long long>(remote_stats.total);
+
+            json badges = json::array();
+
+            auto add_badge = [&](const std::string& id,
+                                 const std::string& title,
+                                 const std::string& description,
+                                 const std::string& category,
+                                 const std::string& tier,
+                                 const std::string& icon_asset,
+                                 bool unlocked) {
+                badges.push_back(json{
+                    {"id", id},
+                    {"title", title},
+                    {"description", description},
+                    {"category", category},
+                    {"tier", tier},
+                    {"icon_asset", icon_asset},
+                    {"unlocked", unlocked}
+                });
+            };
+
+            add_badge(
+                "node.first_remote_signal",
+                "First Remote Signal",
+                "This NAS received its first remote federated Circle Stack post.",
+                "node · federation",
+                "bronze",
+                "/static/img/node_badges/first-remote-signal.svg",
+                remote_stats.posts >= 1
+            );
+
+            add_badge(
+                "node.cross_node_conversation",
+                "Cross-Node Conversation",
+                "This NAS received a remote federated reply or reaction.",
+                "node · federation",
+                "silver",
+                "/static/img/node_badges/cross-node-conversation.svg",
+                remote_interactions >= 1
+            );
+
+            add_badge(
+                "node.remote_listener",
+                "Remote Listener",
+                "This NAS has received several remote federation events.",
+                "node · federation",
+                "silver",
+                "/static/img/node_badges/remote-listener.svg",
+                total_remote_events >= 25
+            );
+
+            add_badge(
+                "node.bridge_node",
+                "Bridge Node",
+                "This NAS knows several remote DNA-Nexus origins.",
+                "node · federation",
+                "gold",
+                "/static/img/node_badges/bridge-node.svg",
+                known_origins >= 3
+            );
+
+            add_badge(
+                "node.federation_steward",
+                "Federation Steward",
+                "This NAS is actively participating in both sending and receiving federated signals.",
+                "node · federation",
+                "legendary",
+                "/static/img/node_badges/federation-steward.svg",
+                outbox_stats.done >= 10 && total_remote_events >= 10
+            );
+
+            const std::string node_id = cs_local_nodus_identity_fingerprint();
+
+            set_json(res, json{
+                {"ok", true},
+                {"kind", "node_profile.v1"},
+                {"node", {
+                    {"name", "DNA-Nexus Node"},
+                    {"node_id", node_id},
+                    {"node_id_short", cs_short_fp(node_id)}
+                }},
+                {"stats", {
+                    {"federation_outbox_total", outbox_stats.total},
+                    {"federation_outbox_done", outbox_stats.done},
+                    {"federation_outbox_pending", outbox_stats.pending},
+                    {"federation_outbox_failed", outbox_stats.failed},
+                    {"remote_events_total", remote_stats.total},
+                    {"remote_posts_total", remote_stats.posts},
+                    {"remote_replies_total", remote_stats.replies},
+                    {"remote_reactions_total", remote_stats.reaction_created},
+                    {"remote_interactions_total", remote_interactions},
+                    {"known_origins_total", known_origins}
+                }},
+                {"badges", badges}
+            });
+        });
+
+
     server.Post("/api/v4/circlestack/posts/create",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;
