@@ -5,6 +5,13 @@
 
   const API = "/api/v4/circlestack";
 
+  function memT(key, vars = null, fallback = undefined) {
+    if (typeof window.csT === "function") {
+      return window.csT(key, vars, fallback);
+    }
+    return String(fallback ?? key);
+  }
+
   function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -54,7 +61,7 @@
     }
 
     const label = el("div", "cs-memory-picked-label", mediaName(path));
-    const kind = /\.(mp4|webm|mov|m4v)$/i.test(path) ? "Video" : "Image";
+    const kind = /\.(mp4|webm|mov|m4v)$/i.test(path) ? memT("memory.kind.video", "Video") : memT("memory.kind.image", "Image");
 
     const badge = el("span", "cs-memory-kind", kind);
     label.prepend(badge);
@@ -140,26 +147,26 @@
 
     const title = document.createElement("input");
     title.className = "cs-memory-input";
-    title.placeholder = "Title, e.g. Saturday match";
+    title.placeholder = memT("memory.titlePlaceholder", "Title, e.g. Saturday match");
 
     const body = document.createElement("textarea");
     body.className = "cs-memory-textarea";
-    body.placeholder = "Tell what this Memory Node is about...";
+    body.placeholder = memT("memory.bodyPlaceholder", "Tell what this Memory Node is about...");
 
     const visibility = document.createElement("select");
     visibility.className = "cs-memory-input";
     visibility.innerHTML = `
-      <option value="circle">Circle</option>
-      <option value="public">Public</option>
-      <option value="private">Private</option>
+      <option value="circle">${memT("visibility.circle", "👥 Circle").replace(/^\S+\s+/, "")}</option>
+      <option value="public">${memT("visibility.public", "🌍 Public").replace(/^\S+\s+/, "")}</option>
+      <option value="private">${memT("visibility.private", "🔒 Private").replace(/^\S+\s+/, "")}</option>
     `;
 
     const mediaRow = el("div", "cs-memory-media-row");
     const mediaInput = document.createElement("input");
     mediaInput.className = "cs-memory-input";
-    mediaInput.placeholder = "Optional first image/video path";
+    mediaInput.placeholder = memT("memory.optionalFirstMedia", "Optional first image/video path");
 
-    const browse = el("button", "cs-memory-secondary", "Browse");
+    const browse = el("button", "cs-memory-secondary", memT("common.browse", "Browse"));
     browse.type = "button";
 
     const pickedPreview = el("div", "cs-memory-picked");
@@ -169,13 +176,13 @@
 
     const caption = document.createElement("input");
     caption.className = "cs-memory-input";
-    caption.placeholder = "Optional caption for first media";
+    caption.placeholder = memT("memory.optionalFirstCaption", "Optional caption for first media");
 
     mediaRow.appendChild(mediaInput);
     mediaRow.appendChild(browse);
 
     const actions = el("div", "cs-modal-actions");
-    const cancel = el("button", "cs-modal-cancel", "Cancel");
+    const cancel = el("button", "cs-modal-cancel", memT("common.cancel", "Cancel"));
     cancel.type = "button";
 
     const create = el("button", "cs-modal-primary", "Open Memory Node");
@@ -198,7 +205,7 @@
       }
 
       create.disabled = true;
-      create.textContent = "Opening…";
+      create.textContent = memT("memory.opening", "Opening…");
 
       try {
         await createMemoryNode(payload);
@@ -208,10 +215,10 @@
           await window.csLoadFeed();
         }
       } catch (e) {
-        alert(`Memory Node failed: ${e.message || e}`);
+        alert(memT("memory.nodeFailed", { error: e.message || e }, `Memory Node failed: ${e.message || e}`));
       } finally {
         create.disabled = false;
-        create.textContent = "Open Memory Node";
+        create.textContent = memT("memory.openNode", "Open Memory Node");
       }
     });
 
@@ -231,17 +238,17 @@
 
   function openAddItemModal(node, onAdded) {
     const { modal, close } = modalShell(
-      "Add to Memory Node",
-      "Pick an image or video from your own NAS files. The media stays in your storage."
+      memT("memory.addToNode", "Add to Memory Node"),
+      memT("memory.addSubtitle", "Pick an image or video from your own NAS files. The media stays in your storage.")
     );
 
     const mediaRow = el("div", "cs-memory-media-row");
 
     const mediaInput = document.createElement("input");
     mediaInput.className = "cs-memory-input";
-    mediaInput.placeholder = "Image/video path";
+    mediaInput.placeholder = memT("memory.imageVideoPath", "Image/video path");
 
-    const browse = el("button", "cs-memory-secondary", "Browse");
+    const browse = el("button", "cs-memory-secondary", memT("common.browse", "Browse"));
     browse.type = "button";
 
     const pickedPreview = el("div", "cs-memory-picked");
@@ -251,16 +258,16 @@
 
     const caption = document.createElement("input");
     caption.className = "cs-memory-input";
-    caption.placeholder = "Optional caption";
+    caption.placeholder = memT("memory.optionalCaption", "Optional caption");
 
     mediaRow.appendChild(mediaInput);
     mediaRow.appendChild(browse);
 
     const actions = el("div", "cs-modal-actions");
-    const cancel = el("button", "cs-modal-cancel", "Cancel");
+    const cancel = el("button", "cs-modal-cancel", memT("common.cancel", "Cancel"));
     cancel.type = "button";
 
-    const add = el("button", "cs-modal-delete", "Add media");
+    const add = el("button", "cs-modal-delete", memT("memory.addMedia", "Add media"));
     add.type = "button";
 
     cancel.addEventListener("click", close);
@@ -273,7 +280,7 @@
       }
 
       add.disabled = true;
-      add.textContent = "Adding…";
+      add.textContent = memT("memory.adding", "Adding…");
 
       try {
         const item = await addMemoryItem(node.id, {
@@ -289,10 +296,10 @@
           await window.csLoadFeed();
         }
       } catch (e) {
-        alert(`Add failed: ${e.message || e}`);
+        alert(memT("memory.addFailed", { error: e.message || e }, `Add failed: ${e.message || e}`));
       } finally {
         add.disabled = false;
-        add.textContent = "Add media";
+        add.textContent = memT("memory.addMedia", "Add media");
       }
     });
 
@@ -313,7 +320,7 @@
     const backdrop = el("div", "cs-memory-lightbox");
     const closeBtn = el("button", "cs-memory-lightbox-close", "×");
     closeBtn.type = "button";
-    closeBtn.setAttribute("aria-label", "Close image");
+    closeBtn.setAttribute("aria-label", memT("memory.closeImage", "Close image"));
 
     const figure = document.createElement("figure");
     figure.className = "cs-memory-lightbox-figure";
@@ -371,8 +378,8 @@
   function confirmRemoveMemoryItem(item) {
     return new Promise((resolve) => {
       const { modal, close } = modalShell(
-        "Remove media?",
-        "This removes the media from this Memory Node. The original file stays in the owner's NAS storage."
+        memT("memory.removeMediaTitle", "Remove media?"),
+        memT("memory.removeMediaText", "This removes the media from this Memory Node. The original file stays in the owner's NAS storage.")
       );
 
       const detail = el("div", "cs-memory-remove-detail");
@@ -393,10 +400,10 @@
 
       const actions = el("div", "cs-modal-actions");
 
-      const cancel = el("button", "cs-modal-cancel", "Cancel");
+      const cancel = el("button", "cs-modal-cancel", memT("common.cancel", "Cancel"));
       cancel.type = "button";
 
-      const remove = el("button", "cs-modal-delete cs-memory-remove-confirm", "Remove");
+      const remove = el("button", "cs-modal-delete cs-memory-remove-confirm", memT("common.remove", "Remove"));
       remove.type = "button";
 
       const done = (value) => {
@@ -474,7 +481,7 @@
           const next = renderMemoryItemReactionBar(item);
           wrap.replaceWith(next);
         } catch (e) {
-          alert(`Reaction failed: ${e.message || e}`);
+          alert(memT("reaction.failed", { error: e.message || e }, `Reaction failed: ${e.message || e}`));
         }
       });
 
@@ -489,7 +496,7 @@
       const btn = el("button", "cs-memory-item-reaction-button", reaction);
       btn.type = "button";
       btn.classList.toggle("is-active", isMine);
-      btn.setAttribute("aria-label", isMine ? `Remove ${reaction}` : `React ${reaction}`);
+      btn.setAttribute("aria-label", isMine ? memT("memory.removeReactionEmoji", { reaction }, `Remove ${reaction}`) : memT("reaction.reactEmoji", { reaction }, `React ${reaction}`));
 
       btn.addEventListener("click", async (ev) => {
         ev.stopPropagation();
@@ -502,7 +509,7 @@
           const next = renderMemoryItemReactionBar(item);
           wrap.replaceWith(next);
         } catch (e) {
-          alert(`Reaction failed: ${e.message || e}`);
+          alert(memT("reaction.failed", { error: e.message || e }, `Reaction failed: ${e.message || e}`));
         }
       });
 
@@ -538,8 +545,8 @@
       frame.classList.add("is-clickable");
       frame.tabIndex = 0;
       frame.setAttribute("role", "button");
-      frame.setAttribute("aria-label", "Open image");
-      frame.title = "Open image";
+      frame.setAttribute("aria-label", memT("memory.openImage", "Open image"));
+      frame.title = memT("memory.openImage", "Open image");
 
       frame.addEventListener("click", () => openMemoryImageLightbox(item));
       frame.addEventListener("keydown", (ev) => {
@@ -566,7 +573,7 @@
     meta.appendChild(renderMemoryItemReactionBar(item));
 
     if (item.can_delete) {
-      const del = el("button", "cs-memory-delete", "Remove");
+      const del = el("button", "cs-memory-delete", memT("common.remove", "Remove"));
       del.type = "button";
       del.addEventListener("click", async (ev) => {
         ev.stopPropagation();
@@ -576,15 +583,15 @@
 
         try {
           del.disabled = true;
-          del.textContent = "Removing…";
+          del.textContent = memT("common.removing", "Removing…");
 
           await deleteMemoryItem(item.id);
           tile.remove();
           if (typeof onDeleted === "function") onDeleted(item);
         } catch (e) {
           del.disabled = false;
-          del.textContent = "Remove";
-          alert(`Remove failed: ${e.message || e}`);
+          del.textContent = memT("common.remove", "Remove");
+          alert(memT("common.removeFailed", { error: e.message || e }, `Remove failed: ${e.message || e}`));
         }
       });
       meta.appendChild(del);
@@ -629,17 +636,17 @@
     const label = el(
       "span",
       "cs-memory-stats-label",
-      `${mediaCount} media · ${contributorCount} contributors`
+      memT("memory.stats", { media: mediaCount, contributors: contributorCount }, `${mediaCount} media · ${contributorCount} contributors`)
     );
     statsEl.appendChild(label);
 
     const pop = el("div", "cs-memory-contributors-popover");
 
-    const title = el("div", "cs-memory-contributors-title", "Contributors");
+    const title = el("div", "cs-memory-contributors-title", memT("memory.contributors", "Contributors"));
     pop.appendChild(title);
 
     if (!contributors.length) {
-      pop.appendChild(el("div", "cs-memory-contributor-empty", "No contributors yet"));
+      pop.appendChild(el("div", "cs-memory-contributor-empty", memT("memory.noContributors", "No contributors yet")));
     } else {
       for (const person of contributors) {
         const row = el("div", "cs-memory-contributor-row");
@@ -719,17 +726,17 @@
     const pill = el("div", "cs-memory-ownership");
     pill.tabIndex = 0;
 
-    const label = el("span", "cs-memory-ownership-label", "No copies");
+    const label = el("span", "cs-memory-ownership-label", memT("memory.noCopies", "No copies"));
     pill.appendChild(label);
 
     const pop = el("div", "cs-memory-ownership-popover");
-    pop.appendChild(el("div", "cs-memory-ownership-title", "Data ownership"));
+    pop.appendChild(el("div", "cs-memory-ownership-title", memT("memory.dataOwnership", "Data ownership")));
 
     const rows = memoryNodeOwnershipRows(node);
     const totalBytes = rows.reduce((sum, row) => sum + Number(row.bytes || 0), 0);
 
     if (!rows.length) {
-      pop.appendChild(el("div", "cs-memory-ownership-empty", "No media yet"));
+      pop.appendChild(el("div", "cs-memory-ownership-empty", memT("memory.noMediaYet", "No media yet")));
     } else {
       for (const row of rows) {
         const item = el("div", "cs-memory-ownership-row");
@@ -738,7 +745,7 @@
         const value = el(
           "span",
           "cs-memory-ownership-value",
-          `${row.count} file${row.count === 1 ? "" : "s"} · ${formatMemoryBytes(row.bytes)}`
+          memT("memory.fileCountBytes", { count: row.count, size: formatMemoryBytes(row.bytes) }, `${row.count} file${row.count === 1 ? "" : "s"} · ${formatMemoryBytes(row.bytes)}`)
         );
 
         item.appendChild(name);
@@ -748,11 +755,11 @@
     }
 
     const total = el("div", "cs-memory-ownership-total");
-    total.textContent = `Referenced media total: ${formatMemoryBytes(totalBytes)}`;
+    total.textContent = memT("memory.referencedTotal", { size: formatMemoryBytes(totalBytes) }, `Referenced media total: ${formatMemoryBytes(totalBytes)}`);
     pop.appendChild(total);
 
     const note = el("div", "cs-memory-ownership-note");
-    note.textContent = "No duplicate copies created. Circle Stack stores references to owners' NAS files.";
+    note.textContent = memT("memory.noDuplicateCopies", "No duplicate copies created. Circle Stack stores references to owners' NAS files.");
     pop.appendChild(note);
 
     pill.appendChild(pop);
@@ -765,8 +772,8 @@
     const head = el("div", "cs-memory-head");
 
     const titleWrap = el("div", "cs-memory-title-wrap");
-    titleWrap.appendChild(el("div", "cs-memory-eyebrow", "Memory Node"));
-    titleWrap.appendChild(el("div", "cs-memory-title", node.title || "Memory Node"));
+    titleWrap.appendChild(el("div", "cs-memory-eyebrow", memT("memory.nodeLabel", "Memory Node")));
+    titleWrap.appendChild(el("div", "cs-memory-title", node.title || memT("memory.nodeLabel", "Memory Node")));
 
     const stats = el("div", "cs-memory-stats");
     updateMemoryStats(stats, node);
@@ -787,7 +794,7 @@
 
     const items = Array.isArray(node.items) ? node.items : [];
     if (!items.length) {
-      grid.appendChild(el("div", "cs-memory-empty", "No media yet. Be the first to add something."));
+      grid.appendChild(el("div", "cs-memory-empty", memT("memory.emptyGrid", "No media yet. Be the first to add something.")));
     } else {
       for (const item of items) {
         grid.appendChild(renderItem(item, () => {
@@ -801,7 +808,7 @@
     card.appendChild(grid);
 
     const actions = el("div", "cs-memory-actions");
-    const add = el("button", "cs-memory-add", "Add your media");
+    const add = el("button", "cs-memory-add", memT("memory.addYourMedia", "Add your media"));
     add.type = "button";
 
     add.addEventListener("click", () => {
@@ -838,8 +845,8 @@
       const icon = memoryNodeIcon("cs-memory-spotlight-icon");
       const text = el("div", "cs-memory-spotlight-text");
 
-      text.appendChild(el("div", "cs-memory-spotlight-title", "Collaborative Memory Node"));
-      text.appendChild(el("div", "cs-memory-spotlight-sub", "Friends can add media from their own NAS storage"));
+      text.appendChild(el("div", "cs-memory-spotlight-title", memT("memory.collaborativeTitle", "Collaborative Memory Node")));
+      text.appendChild(el("div", "cs-memory-spotlight-sub", memT("memory.collaborativeSub", "Friends can add media from their own NAS storage")));
 
       left.appendChild(icon);
       left.appendChild(text);
@@ -847,7 +854,7 @@
       const pill = el(
         "div",
         "cs-memory-spotlight-pill",
-        `${Number(post.memory_node.item_count || 0)} media`
+        memT("memory.mediaCount", { count: Number(post.memory_node.item_count || 0) }, `${Number(post.memory_node.item_count || 0)} media`)
       );
 
       spotlight.appendChild(left);
@@ -878,10 +885,10 @@
 
     const btn = el("button", "cs-memory-open-btn");
     btn.appendChild(memoryNodeIcon("cs-memory-button-icon"));
-    btn.appendChild(el("span", "", "Memory Node"));
+    btn.appendChild(el("span", "", memT("memory.nodeLabel", "Memory Node")));
     btn.id = "csOpenMemoryNodeBtn";
     btn.type = "button";
-    btn.title = "Open a shared Memory Node";
+    btn.title = memT("memory.openSharedTitle", "Open a shared Memory Node");
 
     btn.addEventListener("click", () => {
       if (typeof window.csSetComposeExpanded === "function") {

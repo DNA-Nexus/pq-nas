@@ -995,7 +995,7 @@ function csShowAchievementUnlockedModal(badge, options = {}) {
     const close = document.createElement("button");
     close.className = "cs-modal-cancel";
     close.type = "button";
-    close.textContent = modalOptions.replay ? "Close" : "Nice";
+    close.textContent = modalOptions.replay ? csT("common.close", "Close") : csT("common.nice", "Nice");
 
     let closed = false;
 
@@ -1123,6 +1123,44 @@ let csFeedMode = "local";
 let csFederatedFeedLoadSeq = 0;
 let csMutedFederatedOrigins = new Set();
 
+function csI18nKey(key) {
+  const raw = String(key || "");
+  return raw.startsWith("circlestack.") ? raw : `circlestack.${raw}`;
+}
+
+function csT(key, vars = null, fallback = undefined) {
+  if (typeof vars === "string" && fallback === undefined) {
+    fallback = vars;
+    vars = null;
+  }
+
+  const fullKey = csI18nKey(key);
+  const i18n = window.PQNAS_I18N;
+
+  if (i18n && typeof i18n.t === "function") {
+    return i18n.t(fullKey, vars || null, fallback ?? fullKey);
+  }
+
+  return String(fallback ?? fullKey);
+}
+
+async function csApplyI18n(root = document) {
+  const i18n = window.PQNAS_I18N;
+  if (!i18n) return;
+
+  if (typeof i18n.ready === "function") {
+    await i18n.ready();
+  }
+
+  if (typeof i18n.apply === "function") {
+    i18n.apply(root || document);
+  }
+}
+
+window.csT = csT;
+window.csApplyI18n = csApplyI18n;
+
+
 async function csLoadFeed() {
   csCheckAchievementUnlocks();
 
@@ -1138,7 +1176,7 @@ async function csLoadFeed() {
   if (!posts.length) {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
-    empty.textContent = csT("feed.empty");
+    empty.textContent = csT("feed.empty", "No moments yet.");
     feed.appendChild(empty);
     return;
   }
@@ -1464,7 +1502,7 @@ function csRenderFederatedActions(ev) {
       copy.textContent = "Copy FP";
       copy.addEventListener("click", async () => {
         await navigator.clipboard.writeText(actorFp);
-        copy.textContent = "Copied";
+        copy.textContent = csT("common.copied", "Copied");
         setTimeout(() => { copy.textContent = "Copy FP"; }, 1200);
       });
       personActions.appendChild(copy);
@@ -1939,7 +1977,7 @@ function csProfileFingerprintBlock(fp) {
 
   const label = document.createElement("div");
   label.className = "cs-profile-label";
-  label.textContent = "Fingerprint";
+  label.textContent = csT("profile.fingerprint", "Fingerprint");
 
   const value = document.createElement("div");
   value.className = "cs-profile-fingerprint";
@@ -2124,11 +2162,11 @@ async function csOpenMyProfilePage() {
     const copy = document.createElement("button");
     copy.className = "cs-modal-cancel";
     copy.type = "button";
-    copy.textContent = "Copy fingerprint";
+    copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint");
     copy.addEventListener("click", async () => {
       await navigator.clipboard.writeText(fp);
-      copy.textContent = "Copied";
-      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+      copy.textContent = csT("common.copied", "Copied");
+      setTimeout(() => { copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint"); }, 1200);
     });
     actions.appendChild(copy);
   }
@@ -2268,7 +2306,7 @@ async function csOpenPersonCard(fp, fallback = {}) {
 
   const fpLabel = document.createElement("div");
   fpLabel.className = "cs-profile-label";
-  fpLabel.textContent = "Fingerprint";
+  fpLabel.textContent = csT("profile.fingerprint", "Fingerprint");
 
   const fpValue = document.createElement("div");
   fpValue.className = "cs-profile-fingerprint";
@@ -2289,11 +2327,11 @@ async function csOpenPersonCard(fp, fallback = {}) {
     const copy = document.createElement("button");
     copy.className = "cs-modal-cancel";
     copy.type = "button";
-    copy.textContent = "Copy fingerprint";
+    copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint");
     copy.addEventListener("click", async () => {
       await navigator.clipboard.writeText(safeFp);
-      copy.textContent = "Copied";
-      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+      copy.textContent = csT("common.copied", "Copied");
+      setTimeout(() => { copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint"); }, 1200);
     });
     actions.appendChild(copy);
   }
@@ -2301,7 +2339,7 @@ async function csOpenPersonCard(fp, fallback = {}) {
   const closeBtn = document.createElement("button");
   closeBtn.className = "cs-modal-cancel";
   closeBtn.type = "button";
-  closeBtn.textContent = "Close";
+  closeBtn.textContent = csT("common.close", "Close");
   closeBtn.addEventListener("click", close);
   actions.appendChild(closeBtn);
 
@@ -2718,8 +2756,8 @@ function csRenderReactionBar(post) {
   const trigger = document.createElement("button");
   trigger.className = "cs-reaction-trigger";
   trigger.type = "button";
-  trigger.textContent = post.my_reaction ? `${post.my_reaction} React` : "🙂 React";
-  trigger.title = "React to this post";
+  trigger.textContent = post.my_reaction ? `${post.my_reaction} ${csT("reaction.react", "React")}` : `🙂 ${csT("reaction.react", "React")}`;
+  trigger.title = csT("reaction.reactToPost", "React to this post");
 
   const menu = document.createElement("div");
   menu.className = "cs-reaction-menu";
@@ -2732,7 +2770,7 @@ function csRenderReactionBar(post) {
     if (isMine) btn.classList.add("is-active");
     btn.type = "button";
     btn.textContent = reaction;
-    btn.setAttribute("aria-label", isMine ? "Remove reaction" : `React ${reaction}`);
+    btn.setAttribute("aria-label", isMine ? csT("reaction.remove", "Remove reaction") : csT("reaction.reactEmoji", { reaction }, `React ${reaction}`));
 
     btn.addEventListener("click", async () => {
       await csReactToPost(post.id, isMine ? "" : reaction);
@@ -2790,10 +2828,10 @@ function csRenderReplies(post) {
   const toggle = document.createElement("button");
   toggle.className = "cs-reply-toggle";
   toggle.type = "button";
-  toggle.textContent = replies.length ? `Reply (${replies.length})` : "Reply";
+  toggle.textContent = replies.length ? csT("reply.count", { count: replies.length }, `Reply (${replies.length})`) : csT("reply.action", "Reply");
 
   const updateReplyCount = () => {
-    toggle.textContent = replies.length ? `Reply (${replies.length})` : "Reply";
+    toggle.textContent = replies.length ? csT("reply.count", { count: replies.length }, `Reply (${replies.length})`) : csT("reply.action", "Reply");
   };
 
   const composer = csRenderReplyComposer(post.id, (reply) => {
@@ -2866,8 +2904,8 @@ function csRenderReplyReactionBar(reply) {
   const trigger = document.createElement("button");
   trigger.className = "cs-reaction-trigger";
   trigger.type = "button";
-  trigger.textContent = reply.my_reaction ? `${reply.my_reaction} React` : "🙂 React";
-  trigger.title = "React to this reply";
+  trigger.textContent = reply.my_reaction ? `${reply.my_reaction} ${csT("reaction.react", "React")}` : `🙂 ${csT("reaction.react", "React")}`;
+  trigger.title = csT("reaction.reactToReply", "React to this reply");
 
   const menu = document.createElement("div");
   menu.className = "cs-reaction-menu";
@@ -2880,7 +2918,7 @@ function csRenderReplyReactionBar(reply) {
     if (isMine) btn.classList.add("is-active");
     btn.type = "button";
     btn.textContent = reaction;
-    btn.setAttribute("aria-label", isMine ? "Remove reaction" : `React ${reaction}`);
+    btn.setAttribute("aria-label", isMine ? csT("reaction.remove", "Remove reaction") : csT("reaction.reactEmoji", { reaction }, `React ${reaction}`));
 
     btn.addEventListener("click", async () => {
       await csReactToReply(reply.id, isMine ? "" : reaction);
@@ -2929,7 +2967,7 @@ function csRenderReply(reply) {
   const avatar = document.createElement("button");
   avatar.className = "cs-reply-avatar";
   avatar.type = "button";
-  avatar.title = "Open person card";
+  avatar.title = csT("profile.openPersonCard", "Open person card");
 
   if (reply.actor_avatar_url) {
     const img = document.createElement("img");
@@ -2957,7 +2995,7 @@ function csRenderReply(reply) {
   const name = document.createElement("button");
   name.className = "cs-reply-author";
   name.type = "button";
-  name.textContent = reply.actor_display_name || reply.actor_fp_short || "unknown";
+  name.textContent = reply.actor_display_name || reply.actor_fp_short || csT("common.unknown", "unknown");
   name.addEventListener("click", () => {
     csOpenPersonCard(reply.actor_fp || "", {
       display_name: reply.actor_display_name || "",
@@ -2981,16 +3019,16 @@ function csRenderReply(reply) {
 
     const edit = document.createElement("button");
     edit.type = "button";
-    edit.textContent = "Edit";
+    edit.textContent = csT("common.edit", "Edit");
     edit.addEventListener("click", () => {
       csOpenReplyEdit(row, reply);
     });
 
     const del = document.createElement("button");
     del.type = "button";
-    del.textContent = "Delete";
+    del.textContent = csT("common.delete", "Delete");
     del.addEventListener("click", async () => {
-      if (!confirm("Delete this reply?")) return;
+      if (!confirm(csT("reply.deleteConfirm", "Delete this reply?"))) return;
 
       const ok = await csDeleteReply(reply.id);
       if (ok) {
@@ -3027,7 +3065,7 @@ function csRenderReplyMentions(reply) {
 
   const label = document.createElement("span");
   label.className = "cs-post-mentions-label";
-  label.textContent = "Tagged:";
+  label.textContent = csT("mention.tagged", "Tagged:");
   wrap.appendChild(label);
 
   for (const m of mentions) {
@@ -3061,12 +3099,12 @@ async function csOpenReplyMentionPicker(selectedMentions, onChange) {
   modal.className = "cs-modal cs-intro-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">Tag friend</div>
-    <div class="cs-modal-text">Pick people to tag in this reply.</div>
-    <input id="csReplyMentionSearch" placeholder="Search people...">
+    <div class="cs-modal-title">${csT("mention.tagFriend", "Tag friend")}</div>
+    <div class="cs-modal-text">${csT("mention.pickPeopleReply", "Pick people to tag in this reply.")}</div>
+    <input id="csReplyMentionSearch" placeholder="${csT("mention.searchPeople", "Search people...")}">
     <div id="csReplyMentionResults" class="cs-mention-results"></div>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel" type="button">Close</button>
+      <button class="cs-modal-cancel" type="button">${csT("common.close", "Close")}</button>
     </div>
   `;
 
@@ -3086,7 +3124,7 @@ async function csOpenReplyMentionPicker(selectedMentions, onChange) {
     if (!filtered.length) {
       const empty = document.createElement("div");
       empty.className = "cs-search-hint";
-      empty.textContent = "No people found";
+      empty.textContent = csT("mention.noPeopleFound", "No people found");
       results.appendChild(empty);
       return;
     }
@@ -3191,7 +3229,7 @@ function csUpdateReplyCountNear(row) {
   const toggle = replies.querySelector(".cs-reply-toggle");
 
   if (toggle) {
-    toggle.textContent = count ? `Reply (${count})` : "Reply";
+    toggle.textContent = count ? csT("reply.count", { count }, `Reply (${count})`) : csT("reply.action", "Reply");
   }
 }
 
@@ -3221,12 +3259,12 @@ function csOpenReplyEdit(row, reply) {
 
   const mediaInput = document.createElement("input");
   mediaInput.className = "cs-reply-media-input";
-  mediaInput.placeholder = "Optional image path";
+  mediaInput.placeholder = csT("reply.optionalImagePath", "Optional image path");
 
   const browse = document.createElement("button");
   browse.className = "cs-reply-browse";
   browse.type = "button";
-  browse.textContent = "Browse";
+  browse.textContent = csT("common.browse", "Browse");
 
   const actions = document.createElement("div");
   actions.className = "cs-reply-edit-actions";
@@ -3234,12 +3272,12 @@ function csOpenReplyEdit(row, reply) {
   const cancel = document.createElement("button");
   cancel.className = "cs-reply-browse";
   cancel.type = "button";
-  cancel.textContent = "Cancel";
+  cancel.textContent = csT("common.cancel", "Cancel");
 
   const save = document.createElement("button");
   save.className = "cs-reply-submit";
   save.type = "button";
-  save.textContent = "Save";
+  save.textContent = csT("common.save", "Save");
 
   browse.addEventListener("click", async () => {
     const picked = await csOpenMediaPicker();
@@ -3358,7 +3396,7 @@ function csRequestCloseReplyComposer(composer) {
   if (!composer) return false;
 
   if (csReplyComposerHasDraft(composer)) {
-    const ok = confirm("Discard this reply draft?");
+    const ok = confirm(csT("reply.discardDraft", "Discard this reply draft?"));
     if (!ok) return false;
 
     return csCloseReplyComposer(composer, { discard: true });
@@ -3408,27 +3446,27 @@ function csRenderReplyComposer(postId, onReplyCreated) {
   close.className = "cs-reply-composer-close";
   close.type = "button";
   close.textContent = "×";
-  close.title = "Close reply composer";
-  close.setAttribute("aria-label", "Close reply composer");
+  close.title = csT("reply.closeComposer", "Close reply composer");
+  close.setAttribute("aria-label", csT("reply.closeComposer", "Close reply composer"));
   close.addEventListener("click", () => {
     csRequestCloseReplyComposer(box);
   });
 
   const textarea = document.createElement("textarea");
   textarea.className = "cs-reply-textarea";
-  textarea.placeholder = "Write a reply...";
+  textarea.placeholder = csT("reply.writePlaceholder", "Write a reply...");
 
   const mediaRow = document.createElement("div");
   mediaRow.className = "cs-reply-media-row";
 
   const mediaInput = document.createElement("input");
   mediaInput.className = "cs-reply-media-input";
-  mediaInput.placeholder = "Optional image path";
+  mediaInput.placeholder = csT("reply.optionalImagePath", "Optional image path");
 
   const browse = document.createElement("button");
   browse.className = "cs-reply-browse";
   browse.type = "button";
-  browse.textContent = "Browse";
+  browse.textContent = csT("common.browse", "Browse");
 
   const mentionChips = document.createElement("div");
   mentionChips.className = "cs-reply-mention-chips";
@@ -3446,7 +3484,7 @@ function csRenderReplyComposer(postId, onReplyCreated) {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "×";
-      remove.title = "Remove tag";
+      remove.title = csT("mention.removeTag", "Remove tag");
       remove.addEventListener("click", () => {
         selectedMentions = selectedMentions.filter(
           p => p.fingerprint !== person.fingerprint
@@ -3463,7 +3501,7 @@ function csRenderReplyComposer(postId, onReplyCreated) {
   const tagBtn = document.createElement("button");
   tagBtn.className = "cs-reply-tag";
   tagBtn.type = "button";
-  tagBtn.textContent = "Tag friend";
+  tagBtn.textContent = csT("mention.tagFriend", "Tag friend");
   tagBtn.addEventListener("click", async () => {
     await csOpenReplyMentionPicker(selectedMentions, (next) => {
       selectedMentions = next;
@@ -3474,7 +3512,7 @@ function csRenderReplyComposer(postId, onReplyCreated) {
   const submit = document.createElement("button");
   submit.className = "cs-reply-submit";
   submit.type = "button";
-  submit.textContent = "Send";
+  submit.textContent = csT("common.send", "Send");
 
   browse.addEventListener("click", async () => {
     const picked = await csOpenMediaPicker();
@@ -4046,7 +4084,7 @@ function csRenderPostMentions(post) {
 
   const label = document.createElement("span");
   label.className = "cs-post-mentions-label";
-  label.textContent = "Tagged:";
+  label.textContent = csT("mention.tagged", "Tagged:");
   wrap.appendChild(label);
 
   for (const m of mentions) {
@@ -4086,7 +4124,7 @@ function csRenderMentionComposer() {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "×";
-    remove.title = "Remove tag";
+    remove.title = csT("mention.removeTag", "Remove tag");
     remove.addEventListener("click", () => {
       csSelectedMentions = csSelectedMentions.filter(
         p => p.fingerprint !== person.fingerprint
@@ -4141,12 +4179,12 @@ async function csOpenMentionPicker() {
   modal.className = "cs-modal cs-intro-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">Tag friend</div>
-    <div class="cs-modal-text">Pick people from your Circle / contacts.</div>
-    <input id="csMentionSearch" placeholder="Search people...">
+    <div class="cs-modal-title">${csT("mention.tagFriend", "Tag friend")}</div>
+    <div class="cs-modal-text">${csT("mention.pickPeopleCircle", "Pick people from your Circle / contacts.")}</div>
+    <input id="csMentionSearch" placeholder="${csT("mention.searchPeople", "Search people...")}">
     <div id="csMentionResults" class="cs-mention-results"></div>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel" type="button">Close</button>
+      <button class="cs-modal-cancel" type="button">${csT("common.close", "Close")}</button>
     </div>
   `;
 
@@ -4167,7 +4205,7 @@ async function csOpenMentionPicker() {
     if (!filtered.length) {
       const empty = document.createElement("div");
       empty.className = "cs-search-hint";
-      empty.textContent = "No people found";
+      empty.textContent = csT("mention.noPeopleFound", "No people found");
       results.appendChild(empty);
       return;
     }
@@ -4243,8 +4281,8 @@ function csRenderPost(post) {
   const author = document.createElement("button");
   author.className = "cs-post-author cs-post-author-button";
   author.type = "button";
-  author.textContent = post.owner_display_name || post.owner_fp_short || "anon";
-  author.title = "Open person card";
+  author.textContent = post.owner_display_name || post.owner_fp_short || csT("common.anon", "anon");
+  author.title = csT("profile.openPersonCard", "Open person card");
   author.addEventListener("click", () => {
     csOpenPersonCard(post.owner_fp || "", {
       display_name: post.owner_display_name || "",
@@ -4269,8 +4307,8 @@ function csRenderPost(post) {
   del.className = "cs-post-delete";
   del.type = "button";
   del.textContent = "✕";
-  del.title = "Delete post";
-  del.setAttribute("aria-label", "Delete post");
+  del.title = csT("post.delete", "Delete post");
+  del.setAttribute("aria-label", csT("post.delete", "Delete post"));
   del.addEventListener("click", () => csDeletePost(post.id));
   header.appendChild(del);
 
@@ -4380,12 +4418,12 @@ function csEnsureComposeCloseButton() {
   close.id = "csComposeClose";
   close.type = "button";
   close.textContent = "×";
-  close.title = "Close composer";
-  close.setAttribute("aria-label", "Close composer");
+  close.title = csT("compose.close", "Close composer");
+  close.setAttribute("aria-label", csT("compose.close", "Close composer"));
 
   close.addEventListener("click", () => {
     if (csComposeHasDraft()) {
-      const ok = confirm("Discard this post draft?");
+      const ok = confirm(csT("compose.discardDraft", "Discard this post draft?"));
       if (!ok) return;
       csCloseCompose({ discard: true });
       return;
@@ -4495,11 +4533,11 @@ function csConfirmDelete() {
 
     const title = document.createElement("div");
     title.className = "cs-modal-title";
-    title.textContent = "Delete post?";
+    title.textContent = csT("deletePost.title", "Delete post?");
 
     const text = document.createElement("div");
     text.className = "cs-modal-text";
-    text.textContent = "This cannot be undone.";
+    text.textContent = csT("deletePost.text", "This cannot be undone.");
 
     const actions = document.createElement("div");
     actions.className = "cs-modal-actions";
@@ -4507,12 +4545,12 @@ function csConfirmDelete() {
     const cancel = document.createElement("button");
     cancel.className = "cs-modal-cancel";
     cancel.type = "button";
-    cancel.textContent = "Cancel";
+    cancel.textContent = csT("common.cancel", "Cancel");
 
     const del = document.createElement("button");
     del.className = "cs-modal-delete";
     del.type = "button";
-    del.textContent = "Delete";
+    del.textContent = csT("common.delete", "Delete");
 
     const close = (value) => {
       backdrop.remove();
@@ -4797,7 +4835,7 @@ async function csOpenKnownOriginsModal() {
   closeX.className = "cs-media-close";
   closeX.type = "button";
   closeX.textContent = "×";
-  closeX.setAttribute("aria-label", "Close");
+  closeX.setAttribute("aria-label", csT("common.close", "Close"));
 
   head.appendChild(titleWrap);
   head.appendChild(closeX);
@@ -4824,7 +4862,7 @@ async function csOpenKnownOriginsModal() {
   const closeBtn = document.createElement("button");
   closeBtn.className = "cs-modal-cancel";
   closeBtn.type = "button";
-  closeBtn.textContent = "Close";
+  closeBtn.textContent = csT("common.close", "Close");
 
   actions.appendChild(refreshBtn);
   actions.appendChild(closeBtn);
@@ -5131,15 +5169,15 @@ async function csOpenMediaPicker() {
     card.innerHTML = `
       <div class="cs-media-head">
         <div>
-          <div class="cs-modal-title">Choose media</div>
+          <div class="cs-modal-title">${csT("media.chooseTitle", "Choose media")}</div>
           <div class="cs-media-path">/</div>
         </div>
-        <button class="cs-media-close" type="button">×</button>
+        <button class="cs-media-close" type="button" aria-label="${csT("common.close", "Close")}">×</button>
       </div>
       <div class="cs-media-body"></div>
       <div class="cs-modal-actions">
-        <button class="cs-modal-cancel" type="button">Cancel</button>
-        <button class="cs-media-choose" type="button">Choose</button>
+        <button class="cs-modal-cancel" type="button">${csT("common.cancel", "Cancel")}</button>
+        <button class="cs-media-choose" type="button">${csT("common.choose", "Choose")}</button>
       </div>
     `;
 
@@ -5161,7 +5199,7 @@ async function csOpenMediaPicker() {
         ? `/api/v4/files/list?path=${encodeURIComponent(cur)}`
         : "/api/v4/files/list";
 
-      body.textContent = "Loading…";
+      body.textContent = csT("common.loading", "Loading…");
 
       const res = await fetch(url, { credentials: "same-origin" });
       const data = await res.json();
@@ -5293,7 +5331,7 @@ function csSetMediaPreview(path) {
   const clear = document.createElement("button");
   clear.className = "cs-media-clear";
   clear.type = "button";
-  clear.textContent = "Remove image";
+  clear.textContent = csT("media.removeImage", "Remove image");
 
   box.appendChild(img);
   box.appendChild(clear);
@@ -5339,16 +5377,16 @@ async function csOpenIntroduceModal() {
   modal.className = "cs-modal cs-intro-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">Introduce people</div>
-    <div class="cs-modal-text">Pick two people you know.</div>
+    <div class="cs-modal-title">${csT("intro.title", "Introduce people")}</div>
+    <div class="cs-modal-text">${csT("intro.text", "Pick two people you know.")}</div>
     <div class="cs-intro-grid">
       <select id="csIntroA"></select>
       <select id="csIntroB"></select>
     </div>
-    <textarea id="csIntroMsg" placeholder="Optional message"></textarea>
+    <textarea id="csIntroMsg" placeholder="${csT("intro.optionalMessage", "Optional message")}"></textarea>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel">Cancel</button>
-      <button class="cs-modal-delete">Send</button>
+      <button class="cs-modal-cancel">${csT("common.cancel", "Cancel")}</button>
+      <button class="cs-modal-delete">${csT("common.send", "Send")}</button>
     </div>
   `;
 
@@ -5437,10 +5475,10 @@ async function csOpenMyCircle() {
   modal.className = "cs-modal cs-intro-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">My Circle</div>
+    <div class="cs-modal-title">${csT("circle.myCircle", "My Circle")}</div>
     <div class="cs-modal-body" id="csMyCircleBody"></div>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel">Close</button>
+      <button class="cs-modal-cancel">${csT("common.close", "Close")}</button>
     </div>
   `;
 
@@ -5469,7 +5507,7 @@ const list = Array.from(merged.values());
 
 
   if (!items.length) {
-    body.innerHTML = `<div class="cs-empty">Your circle is empty.</div>`;
+    body.innerHTML = `<div class="cs-empty">${csT("circle.empty", "Your circle is empty.")}</div>`;
   } else {
     for (const it of items) {
       const row = document.createElement("div");
@@ -5478,14 +5516,14 @@ const list = Array.from(merged.values());
 const name = csUserLabel(it.fp, usersByFp);
 
 const badge =
-    it.source === "circle" ? "Circle" :
-        it.source === "manual" ? "Manual" :
-            "Workspace";
+    it.source === "circle" ? csT("circle.source.circle", "Circle") :
+        it.source === "manual" ? csT("circle.source.manual", "Manual") :
+            csT("circle.source.workspace", "Workspace");
 
 row.innerHTML = `
   <span>${name}</span>
   <span class="cs-badge">${badge}</span>
-  <button class="cs-circle-remove">Forget</button>
+  <button class="cs-circle-remove">${csT("circle.forget", "Forget")}</button>
 `;
 
 row.querySelector("button").onclick = () => {
@@ -5514,13 +5552,13 @@ function csConfirmRemove(fp, name) {
   modal.className = "cs-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">Remove from Circle?</div>
+    <div class="cs-modal-title">${csT("circle.removeTitle", "Remove from Circle?")}</div>
     <div class="cs-modal-text">
-      This will remove <b>${name}</b> from your circle.
+      ${csT("circle.removeTextHtml", { name: `<b>${name}</b>` }, `This will remove <b>${name}</b> from your circle.`)}
     </div>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel">Cancel</button>
-      <button class="cs-modal-delete">Remove</button>
+      <button class="cs-modal-cancel">${csT("common.cancel", "Cancel")}</button>
+      <button class="cs-modal-delete">${csT("common.remove", "Remove")}</button>
     </div>
   `;
 
@@ -5550,14 +5588,14 @@ async function csOpenFindPeople() {
   modal.className = "cs-modal cs-intro-modal";
 
   modal.innerHTML = `
-    <div class="cs-modal-title">Find people</div>
-    <div class="cs-modal-text">Search users and send contact requests.</div>
-    <div class="cs-modal-title" style="font-size:16px;margin-top:12px">Requests</div>
+    <div class="cs-modal-title">${csT("people.findTitle", "Find people")}</div>
+    <div class="cs-modal-text">${csT("people.findText", "Search users and send contact requests.")}</div>
+    <div class="cs-modal-title" style="font-size:16px;margin-top:12px">${csT("people.requests", "Requests")}</div>
     <div id="csContactRequests"></div>
-    <input id="csFindInput" placeholder="Search users..." />
+    <input id="csFindInput" placeholder="${csT("people.searchUsers", "Search users...")}" />
     <div id="csFindResults"></div>
     <div class="cs-modal-actions">
-      <button class="cs-modal-cancel">Close</button>
+      <button class="cs-modal-cancel">${csT("common.close", "Close")}</button>
     </div>
   `;
 
@@ -5583,7 +5621,7 @@ async function csOpenFindPeople() {
     const outgoing = (requestsData.outgoing || []).filter(r => r.status === "pending");
 
     if (!notifications.length && !outgoing.length) {
-      requestsBox.innerHTML = `<div class="cs-search-hint">No pending requests</div>`;
+      requestsBox.innerHTML = `<div class="cs-search-hint">${csT("people.noPendingRequests", "No pending requests")}</div>`;
       return;
     }
 
@@ -5595,17 +5633,17 @@ async function csOpenFindPeople() {
       label.className = "cs-notification-label";
 
       if (n.type === "contact_request") {
-        label.textContent = `Contact request: ${n.from_display_name || csElideFp(n.from_fp)}`;
+        label.textContent = csT("people.contactRequestFrom", { name: n.from_display_name || csElideFp(n.from_fp) }, `Contact request: ${n.from_display_name || csElideFp(n.from_fp)}`);
 
         const accept = document.createElement("button");
         accept.type = "button";
         accept.className = "cs-mini-action cs-mini-action-primary";
-        accept.textContent = "Accept";
+        accept.textContent = csT("common.accept", "Accept");
 
         const reject = document.createElement("button");
         reject.type = "button";
         reject.className = "cs-mini-action";
-        reject.textContent = "Reject";
+        reject.textContent = csT("common.reject", "Reject");
 
         accept.onclick = async () => {
           await fetch("/api/v4/circlestack/contact/respond", {
@@ -5640,8 +5678,10 @@ async function csOpenFindPeople() {
 
         const title = document.createElement("div");
         title.className = "cs-notification-title";
-        title.textContent =
-          `Introduction: ${n.introducer_display_name || csElideFp(n.introducer_fp)} introduced you to ${n.other_display_name || csElideFp(n.other_fp)}`;
+        title.textContent = csT("people.introductionText", {
+          introducer: n.introducer_display_name || csElideFp(n.introducer_fp),
+          other: n.other_display_name || csElideFp(n.other_fp)
+        }, `Introduction: ${n.introducer_display_name || csElideFp(n.introducer_fp)} introduced you to ${n.other_display_name || csElideFp(n.other_fp)}`);
         label.appendChild(title);
 
         const msg = String(n.message || "").trim();
@@ -5655,12 +5695,12 @@ async function csOpenFindPeople() {
         const accept = document.createElement("button");
         accept.type = "button";
         accept.className = "cs-mini-action cs-mini-action-primary";
-        accept.textContent = "Accept";
+        accept.textContent = csT("common.accept", "Accept");
 
         const dismiss = document.createElement("button");
         dismiss.type = "button";
         dismiss.className = "cs-mini-action";
-        dismiss.textContent = "Dismiss";
+        dismiss.textContent = csT("common.dismiss", "Dismiss");
 
         accept.onclick = async () => {
           await fetch("/api/v4/circlestack/introductions/respond", {
@@ -5692,7 +5732,7 @@ async function csOpenFindPeople() {
         row.appendChild(accept);
         row.appendChild(dismiss);
       } else {
-        label.textContent = "Notification";
+        label.textContent = csT("people.notification", "Notification");
         row.appendChild(label);
       }
 
@@ -5705,10 +5745,10 @@ async function csOpenFindPeople() {
 
       const label = document.createElement("span");
       label.className = "cs-notification-label";
-      label.textContent = `Outgoing: ${csElideFp(r.to_fp)}`;
+      label.textContent = csT("people.outgoingTo", { name: csElideFp(r.to_fp) }, `Outgoing: ${csElideFp(r.to_fp)}`);
 
       const status = document.createElement("span");
-      status.textContent = "Pending";
+      status.textContent = csT("people.pending", "Pending");
 
       row.appendChild(label);
       row.appendChild(status);
@@ -5724,7 +5764,7 @@ async function csOpenFindPeople() {
     clearTimeout(timer);
 
     if (q.length < 2) {
-      results.innerHTML = `<div class="cs-search-hint">Type at least 2 characters</div>`;
+      results.innerHTML = `<div class="cs-search-hint">${csT("people.typeAtLeast2", "Type at least 2 characters")}</div>`;
       return;
     }
 
@@ -5744,7 +5784,7 @@ async function csOpenFindPeople() {
 
         row.innerHTML = `
           <span>${name}</span>
-          <button type="button">Send request</button>
+          <button type="button">${csT("people.sendRequest", "Send request")}</button>
         `;
 
         row.querySelector("button").onclick = async () => {
@@ -5755,7 +5795,7 @@ async function csOpenFindPeople() {
             body: JSON.stringify({ fp: u.fingerprint })
           });
 
-          row.innerHTML = `<span>${name}</span><span>✓ Request sent</span>`;
+          row.innerHTML = `<span>${name}</span><span>✓ ${csT("people.requestSent", "Request sent")}</span>`;
           await loadRequests();
         };
 
@@ -5794,7 +5834,7 @@ async function csUpdateFindPeopleBadge() {
       const dot = document.createElement("span");
       dot.className = "cs-badge-dot";
       dot.textContent = count > 9 ? "9+" : String(count);
-      btn.title = count === 1 ? "1 pending notification" : `${count} pending notifications`;
+      btn.title = count === 1 ? csT("people.pendingNotificationOne", "1 pending notification") : csT("people.pendingNotificationMany", { count }, `${count} pending notifications`);
       btn.appendChild(dot);
     }
   } catch (_) {
@@ -5938,7 +5978,7 @@ async function csOpenMyProfileModal() {
   closeTop.className = "cs-my-profile-close";
   closeTop.type = "button";
   closeTop.textContent = "×";
-  closeTop.title = "Close";
+  closeTop.title = csT("common.close", "Close");
   closeTop.setAttribute("aria-label", "Close profile");
 
   titlebar.appendChild(titlebarLabel);
@@ -6129,7 +6169,7 @@ async function csOpenMyProfileModal() {
 
   const fpLabel = document.createElement("div");
   fpLabel.className = "cs-profile-label";
-  fpLabel.textContent = "Fingerprint";
+  fpLabel.textContent = csT("profile.fingerprint", "Fingerprint");
 
   const fpValue = document.createElement("div");
   fpValue.className = "cs-profile-fingerprint";
@@ -6199,11 +6239,11 @@ async function csOpenMyProfileModal() {
     const copy = document.createElement("button");
     copy.className = "cs-modal-cancel";
     copy.type = "button";
-    copy.textContent = "Copy fingerprint";
+    copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint");
     copy.addEventListener("click", async () => {
       await navigator.clipboard.writeText(fp);
-      copy.textContent = "Copied";
-      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+      copy.textContent = csT("common.copied", "Copied");
+      setTimeout(() => { copy.textContent = csT("profile.copyFingerprint", "Copy fingerprint"); }, 1200);
     });
     actions.appendChild(copy);
   }
@@ -6211,7 +6251,7 @@ async function csOpenMyProfileModal() {
   const closeBtn = document.createElement("button");
   closeBtn.className = "cs-modal-cancel";
   closeBtn.type = "button";
-  closeBtn.textContent = "Close";
+  closeBtn.textContent = csT("common.close", "Close");
   closeBtn.addEventListener("click", close);
   actions.appendChild(closeBtn);
 
