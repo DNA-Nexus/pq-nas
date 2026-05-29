@@ -178,7 +178,7 @@
     const cancel = el("button", "cs-modal-cancel", "Cancel");
     cancel.type = "button";
 
-    const create = el("button", "cs-modal-delete", "Open Memory Node");
+    const create = el("button", "cs-modal-primary", "Open Memory Node");
     create.type = "button";
 
     cancel.addEventListener("click", close);

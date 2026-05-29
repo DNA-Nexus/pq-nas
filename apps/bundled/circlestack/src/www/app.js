@@ -6253,3 +6253,113 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
     csOpenMyProfileModal();
   }, true);
 }
+
+// Theme helper: tag only the small floating reaction emoji popup.
+// Earlier broad detection could accidentally tag a post/card container.
+(function () {
+  if (window.__circleStackReactionThemeTaggerV2) return;
+  window.__circleStackReactionThemeTaggerV2 = true;
+
+  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
+
+  function reactionHits(el) {
+    const text = el && el.textContent ? el.textContent : "";
+    return REACTION_EMOJIS.filter(e => text.includes(e)).length;
+  }
+
+  function looksLikeFloatingReactionMenu(el) {
+    if (!el || el.nodeType !== 1) return false;
+
+    const hits = reactionHits(el);
+    if (hits < 4) return false;
+
+    const buttons = el.querySelectorAll ? el.querySelectorAll("button") : [];
+    if (buttons.length < 4 || buttons.length > 10) return false;
+
+    const rect = el.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+
+    // Reaction popup should be compact. This prevents post/cards from being tagged.
+    if (rect.width > 360 || rect.height > 170) return false;
+
+    const style = window.getComputedStyle(el);
+    const pos = style ? style.position : "";
+    const z = style ? style.zIndex : "auto";
+
+    // Floating popup is normally absolute/fixed/sticky or has z-index.
+    const floating =
+      pos === "absolute" ||
+      pos === "fixed" ||
+      pos === "sticky" ||
+      z !== "auto";
+
+    if (!floating) return false;
+
+    // Direct button-heavy containers are much safer than arbitrary parents.
+    const directButtons = Array.from(el.children || [])
+      .filter(child => child && child.tagName === "BUTTON").length;
+
+    return directButtons >= 3;
+  }
+
+  function cleanupBadTags() {
+    document.querySelectorAll(".cs-reaction-theme-menu").forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      const tooBig = rect && (rect.width > 360 || rect.height > 170);
+
+      // Never allow feed/post/card/layout elements to keep popup styling.
+      const forbidden =
+        el.classList.contains("cs-post") ||
+        el.classList.contains("cs-feed") ||
+        el.classList.contains("cs-shell") ||
+        el.closest(".cs-post") === el ||
+        tooBig;
+
+      if (forbidden || !looksLikeFloatingReactionMenu(el)) {
+        el.classList.remove("cs-reaction-theme-menu");
+      }
+    });
+  }
+
+  function tagReactionMenus(root) {
+    cleanupBadTags();
+
+    const base = root && root.querySelectorAll ? root : document;
+    base.querySelectorAll("div, section").forEach((el) => {
+      if (looksLikeFloatingReactionMenu(el)) {
+        el.classList.add("cs-reaction-theme-menu");
+      }
+    });
+  }
+
+  tagReactionMenus(document);
+
+  const obs = new MutationObserver((records) => {
+    for (const rec of records) {
+      for (const node of rec.addedNodes || []) {
+        if (!node || node.nodeType !== 1) continue;
+
+        if (looksLikeFloatingReactionMenu(node)) {
+          node.classList.add("cs-reaction-theme-menu");
+        }
+
+        tagReactionMenus(node);
+      }
+    }
+  });
+
+  obs.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+
+  document.addEventListener("mouseover", () => {
+    setTimeout(() => tagReactionMenus(document), 0);
+  }, true);
+
+  document.addEventListener("focusin", () => {
+    setTimeout(() => tagReactionMenus(document), 0);
+  }, true);
+})();
+
+
