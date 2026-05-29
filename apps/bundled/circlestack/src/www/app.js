@@ -232,71 +232,128 @@ async function csDismissAchievementUnlock(achievementId) {
   } catch (_) {}
 }
 
+let csAchievementUnlockQueueActive = false;
+
 function csShowAchievementUnlockedModal(badge) {
-  if (!badge || !badge.id) return;
+  return new Promise((resolve) => {
+    if (!badge || !badge.id) {
+      resolve(false);
+      return;
+    }
 
-  const old = document.querySelector(".cs-achievement-unlock-backdrop");
-  if (old) old.remove();
+    const old = document.querySelector(".cs-achievement-unlock-backdrop");
+    if (old) old.remove();
 
-  const backdrop = document.createElement("div");
-  backdrop.className = "cs-modal-backdrop cs-achievement-unlock-backdrop";
+    const previousFocus = document.activeElement;
 
-  const modal = document.createElement("div");
-  modal.className = "cs-modal cs-achievement-unlock-modal";
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
+    const backdrop = document.createElement("div");
+    backdrop.className = "cs-modal-backdrop cs-achievement-unlock-backdrop";
 
-  const kicker = document.createElement("div");
-  kicker.className = "cs-achievement-unlock-kicker";
-  kicker.textContent = "Achievement unlocked";
+    const modal = document.createElement("div");
+    modal.className = "cs-modal cs-achievement-unlock-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
 
-  const icon = document.createElement("div");
-  icon.className = "cs-achievement-unlock-icon";
-  icon.appendChild(csCreateBadgeIconElement(badge, "cs-achievement-unlock-icon-img"));
+    const kicker = document.createElement("div");
+    kicker.className = "cs-achievement-unlock-kicker";
+    kicker.textContent = "Achievement unlocked";
 
-  const title = document.createElement("div");
-  title.className = "cs-achievement-unlock-title";
-  title.textContent = badge.title || "New achievement";
+    const icon = document.createElement("div");
+    icon.className = "cs-achievement-unlock-icon";
+    icon.appendChild(csCreateBadgeIconElement(badge, "cs-achievement-unlock-icon-img"));
 
-  const desc = document.createElement("div");
-  desc.className = "cs-achievement-unlock-desc";
-  desc.textContent = badge.description || "";
+    const title = document.createElement("div");
+    title.className = "cs-achievement-unlock-title";
+    title.textContent = badge.title || "New achievement";
 
-  const tier = document.createElement("div");
-  tier.className = "cs-achievement-unlock-tier";
-  tier.textContent = badge.tier ? `${badge.category || "achievement"} · ${badge.tier}` : (badge.category || "");
+    const desc = document.createElement("div");
+    desc.className = "cs-achievement-unlock-desc";
+    desc.textContent = badge.description || "";
 
-  const actions = document.createElement("div");
-  actions.className = "cs-modal-actions";
+    const tier = document.createElement("div");
+    tier.className = "cs-achievement-unlock-tier";
+    tier.textContent = badge.tier ? `${badge.category || "achievement"} · ${badge.tier}` : (badge.category || "");
 
-  const close = document.createElement("button");
-  close.className = "cs-modal-cancel";
-  close.type = "button";
-  close.textContent = "Nice";
+    const actions = document.createElement("div");
+    actions.className = "cs-modal-actions";
 
-  const dismissAndClose = () => {
-    csDismissAchievementUnlock(badge.id);
-    backdrop.remove();
-  };
+    const close = document.createElement("button");
+    close.className = "cs-modal-cancel";
+    close.type = "button";
+    close.textContent = "Nice";
 
-  close.addEventListener("click", dismissAndClose);
+    let closed = false;
 
-  actions.appendChild(close);
+    const dismissAndClose = () => {
+      if (closed) return;
+      closed = true;
 
-  modal.appendChild(kicker);
-  modal.appendChild(icon);
-  modal.appendChild(title);
-  if (desc.textContent) modal.appendChild(desc);
-  if (tier.textContent) modal.appendChild(tier);
-  modal.appendChild(actions);
+      document.removeEventListener("keydown", onKey, true);
 
-  backdrop.appendChild(modal);
-  backdrop.addEventListener("click", (ev) => {
-    if (ev.target === backdrop) dismissAndClose();
+      Promise.resolve(csDismissAchievementUnlock(badge.id))
+        .catch(() => {})
+        .finally(() => {
+          backdrop.remove();
+
+          try {
+            if (previousFocus && typeof previousFocus.focus === "function") {
+              previousFocus.focus();
+            }
+          } catch (_) {}
+
+          resolve(true);
+        });
+    };
+
+    function onKey(ev) {
+      if (ev.key === "Escape" || ev.key === "Enter") {
+        ev.preventDefault();
+        dismissAndClose();
+      }
+    }
+
+    close.addEventListener("click", dismissAndClose);
+
+    actions.appendChild(close);
+
+    modal.appendChild(kicker);
+    modal.appendChild(icon);
+    modal.appendChild(title);
+    if (desc.textContent) modal.appendChild(desc);
+    if (tier.textContent) modal.appendChild(tier);
+    modal.appendChild(actions);
+
+    backdrop.appendChild(modal);
+    backdrop.addEventListener("click", (ev) => {
+      if (ev.target === backdrop) dismissAndClose();
+    });
+
+    document.body.appendChild(backdrop);
+    document.addEventListener("keydown", onKey, true);
+    close.focus();
   });
+}
 
-  document.body.appendChild(backdrop);
-  close.focus();
+async function csRunAchievementUnlockQueue(rawBadges) {
+  const queue = csAchievementListFrom(rawBadges)
+    .filter(b => b && b.id);
+
+  if (!queue.length) return;
+  if (csAchievementUnlockQueueActive) return;
+
+  csAchievementUnlockQueueActive = true;
+
+  try {
+    // Small delay lets the feed render first, so the modal feels intentional.
+    await new Promise(resolve => setTimeout(resolve, 450));
+
+    for (const badge of queue) {
+      await csShowAchievementUnlockedModal(badge);
+      await new Promise(resolve => setTimeout(resolve, 140));
+    }
+  } finally {
+    csAchievementUnlockQueueActive = false;
+  }
 }
 
 async function csCheckAchievementUnlocks() {
@@ -319,7 +376,7 @@ async function csCheckAchievementUnlocks() {
   if (data && Array.isArray(data.newly_unlocked)) {
     const serverNewlyUnlocked = csAchievementListFrom(data.newly_unlocked);
     if (serverNewlyUnlocked.length) {
-      setTimeout(() => csShowAchievementUnlockedModal(serverNewlyUnlocked[0]), 450);
+      csRunAchievementUnlockQueue(serverNewlyUnlocked);
     }
     return;
   }
@@ -334,7 +391,7 @@ async function csCheckAchievementUnlocks() {
   csSaveSeenAchievementIds(seen);
 
   if (newlyUnlocked.length) {
-    setTimeout(() => csShowAchievementUnlockedModal(newlyUnlocked[0]), 450);
+    csRunAchievementUnlockQueue(newlyUnlocked);
   }
 }
 
