@@ -147,6 +147,85 @@ long long json_int64_any_key(const json& j, std::initializer_list<const char*> k
     return 0;
 }
 
+std::string json_string_any_key(const json& j, std::initializer_list<const char*> keys) {
+    if (!j.is_object()) return "";
+
+    for (const char* key : keys) {
+        if (!key) continue;
+
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_string()) continue;
+
+        std::string v = trim_ascii_copy(it->get<std::string>());
+        if (!v.empty()) return v;
+    }
+
+    return "";
+}
+
+std::string lowercase_copy_ascii(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+std::string extension_lower_from_pathish(const std::string& pathish) {
+    if (pathish.empty()) return "";
+
+    std::string s = pathish;
+    const std::size_t q = s.find_first_of("?#");
+    if (q != std::string::npos) s.resize(q);
+
+    const std::size_t slash = s.find_last_of("/\\");
+    const std::string name = slash == std::string::npos ? s : s.substr(slash + 1);
+
+    const std::size_t dot = name.find_last_of('.');
+    if (dot == std::string::npos || dot + 1 >= name.size()) return "";
+
+    return lowercase_copy_ascii(name.substr(dot + 1));
+}
+
+bool is_photo_ext(const std::string& ext) {
+    return ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" ||
+           ext == "gif" || ext == "bmp" || ext == "tif" || ext == "tiff" ||
+           ext == "heic" || ext == "heif" || ext == "avif";
+}
+
+bool is_video_ext(const std::string& ext) {
+    return ext == "mp4" || ext == "m4v" || ext == "mov" || ext == "webm" ||
+           ext == "mkv" || ext == "avi" || ext == "mpeg" || ext == "mpg" ||
+           ext == "3gp" || ext == "ogv";
+}
+
+bool is_audio_ext(const std::string& ext) {
+    return ext == "mp3" || ext == "flac" || ext == "wav" || ext == "ogg" ||
+           ext == "oga" || ext == "m4a" || ext == "aac" || ext == "opus" ||
+           ext == "wma" || ext == "aiff" || ext == "alac";
+}
+
+std::string media_kind_from_activity_row(
+    const std::string& target_name,
+    const std::string& target_path,
+    const json& details
+) {
+    const std::string detail_path = json_string_any_key(
+        details,
+        {"original_rel_path", "rel_path", "path", "target_path", "stored_filename", "filename", "name"}
+    );
+
+    const std::string ext = extension_lower_from_pathish(
+        !detail_path.empty() ? detail_path :
+        (!target_path.empty() ? target_path : target_name)
+    );
+
+    if (is_photo_ext(ext)) return "photo";
+    if (is_video_ext(ext)) return "video";
+    if (is_audio_ext(ext)) return "audio";
+
+    return "";
+}
+
 void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& user_root) {
     stats["shares_created_total"] = 0;
     stats["uploads_total"] = 0;
@@ -156,6 +235,13 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     stats["trusted_devices_paired_total"] = 0;
     stats["echostack_archives_total"] = 0;
     stats["echostack_archive_bytes_total"] = 0;
+
+    stats["photo_uploads_total"] = 0;
+    stats["photo_upload_bytes_total"] = 0;
+    stats["video_uploads_total"] = 0;
+    stats["video_upload_bytes_total"] = 0;
+    stats["audio_uploads_total"] = 0;
+    stats["audio_upload_bytes_total"] = 0;
 
     const auto db_path = activity_db_path_for_user_root_best_effort(user_root);
     if (db_path.empty()) return;
@@ -177,7 +263,7 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     }
 
     const char* sql =
-        "SELECT event_type, COALESCE(details_json, '') "
+        "SELECT event_type, COALESCE(target_name, ''), COALESCE(target_path, ''), COALESCE(details_json, '') "
         "FROM activity_events";
 
     sqlite3_stmt* st = nullptr;
@@ -195,12 +281,29 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     long long echostack_archives = 0;
     long long echostack_archive_bytes = 0;
 
+    long long photo_uploads = 0;
+    long long photo_upload_bytes = 0;
+    long long video_uploads = 0;
+    long long video_upload_bytes = 0;
+    long long audio_uploads = 0;
+    long long audio_upload_bytes = 0;
+
     while (sqlite3_step(st) == SQLITE_ROW) {
         const unsigned char* et_raw = sqlite3_column_text(st, 0);
-        const unsigned char* details_raw = sqlite3_column_text(st, 1);
+        const unsigned char* target_name_raw = sqlite3_column_text(st, 1);
+        const unsigned char* target_path_raw = sqlite3_column_text(st, 2);
+        const unsigned char* details_raw = sqlite3_column_text(st, 3);
 
         const std::string event_type = et_raw
             ? reinterpret_cast<const char*>(et_raw)
+            : std::string();
+
+        const std::string target_name = target_name_raw
+            ? reinterpret_cast<const char*>(target_name_raw)
+            : std::string();
+
+        const std::string target_path = target_path_raw
+            ? reinterpret_cast<const char*>(target_path_raw)
             : std::string();
 
         const std::string details_s = details_raw
@@ -230,19 +333,49 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
         if (event_type == "dropzone.uploaded") {
             ++dropzone_uploads;
             ++uploads;
-            uploaded_bytes += json_int64_any_key(
+
+            const long long bytes = json_int64_any_key(
                 details,
                 {"size_bytes", "bytes", "file_size", "upload_bytes", "uploaded_bytes", "total_bytes"}
             );
+            uploaded_bytes += bytes;
+
+            const std::string kind = media_kind_from_activity_row(target_name, target_path, details);
+            if (kind == "photo") {
+                ++photo_uploads;
+                photo_upload_bytes += bytes;
+            } else if (kind == "video") {
+                ++video_uploads;
+                video_upload_bytes += bytes;
+            } else if (kind == "audio") {
+                ++audio_uploads;
+                audio_upload_bytes += bytes;
+            }
+
             continue;
         }
 
         if (event_type == "file.uploaded") {
             ++uploads;
-            uploaded_bytes += json_int64_any_key(
+
+            const long long bytes = json_int64_any_key(
                 details,
                 {"size_bytes", "bytes", "file_size", "upload_bytes", "uploaded_bytes", "total_bytes"}
             );
+            uploaded_bytes += bytes;
+
+            const std::string kind = media_kind_from_activity_row(target_name, target_path, details);
+            if (kind == "photo") {
+                ++photo_uploads;
+                photo_upload_bytes += bytes;
+            } else if (kind == "video") {
+                ++video_uploads;
+                video_upload_bytes += bytes;
+            } else if (kind == "audio") {
+                ++audio_uploads;
+                audio_upload_bytes += bytes;
+            }
+
             continue;
         }
 
@@ -272,6 +405,13 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     stats["trusted_devices_paired_total"] = trusted_devices;
     stats["echostack_archives_total"] = echostack_archives;
     stats["echostack_archive_bytes_total"] = echostack_archive_bytes;
+
+    stats["photo_uploads_total"] = photo_uploads;
+    stats["photo_upload_bytes_total"] = photo_upload_bytes;
+    stats["video_uploads_total"] = video_uploads;
+    stats["video_upload_bytes_total"] = video_upload_bytes;
+    stats["audio_uploads_total"] = audio_uploads;
+    stats["audio_upload_bytes_total"] = audio_upload_bytes;
 }
 
 std::string badge_icon_key_from_id(const std::string& id) {
@@ -310,6 +450,18 @@ std::string badge_icon_key_from_id(const std::string& id) {
     if (id == "echostack.web_preserver") return "echo-web-preserver";
     if (id == "echostack.memory_vault") return "echo-memory-vault";
     if (id == "echostack.deep_archive") return "echo-deep-archive";
+
+    if (id == "media.first_snapshot") return "media-first-snapshot";
+    if (id == "media.memory_keeper") return "media-memory-keeper";
+    if (id == "media.gallery_curator") return "media-gallery-curator";
+
+    if (id == "media.first_reel") return "media-first-reel";
+    if (id == "media.video_vault") return "media-video-vault";
+    if (id == "media.cinema_keeper") return "media-cinema-keeper";
+
+    if (id == "media.first_track") return "media-first-track";
+    if (id == "media.signal_dj") return "media-signal-dj";
+    if (id == "media.sound_vault") return "media-sound-vault";
 
     return "";
 }
@@ -589,6 +741,13 @@ json stats_for(
         stats["trusted_devices_paired_total"] = 1;
         stats["echostack_archives_total"] = 100;
         stats["echostack_archive_bytes_total"] = 500LL * 1024LL * 1024LL;
+
+        stats["photo_uploads_total"] = 500;
+        stats["photo_upload_bytes_total"] = 10LL * 1024LL * 1024LL * 1024LL;
+        stats["video_uploads_total"] = 100;
+        stats["video_upload_bytes_total"] = 100LL * 1024LL * 1024LL * 1024LL;
+        stats["audio_uploads_total"] = 500;
+        stats["audio_upload_bytes_total"] = 20LL * 1024LL * 1024LL * 1024LL;
     }
 
     return stats;
@@ -683,6 +842,31 @@ json badges_from_stats(const json& stats) {
         badge("echostack.memory_vault", "Memory Vault", "Archived at least 100 web pages.", "🧠", "echostack", "gold"));
     maybe_add(out, echostack_archive_bytes >= 100LL * 1024LL * 1024LL,
         badge("echostack.deep_archive", "Deep Archive", "Stored at least 100 MB of archived web snapshots.", "📚", "echostack", "gold"));
+
+    const long long photo_uploads = stats.value("photo_uploads_total", 0LL);
+    const long long video_uploads = stats.value("video_uploads_total", 0LL);
+    const long long audio_uploads = stats.value("audio_uploads_total", 0LL);
+
+    maybe_add(out, photo_uploads >= 1,
+        badge("media.first_snapshot", "First Snapshot", "Uploaded the first photo.", "📷", "media", "bronze"));
+    maybe_add(out, photo_uploads >= 100,
+        badge("media.memory_keeper", "Memory Keeper", "Uploaded at least 100 photos.", "🖼️", "media", "silver"));
+    maybe_add(out, photo_uploads >= 500,
+        badge("media.gallery_curator", "Gallery Curator", "Uploaded at least 500 photos.", "🌄", "media", "gold"));
+
+    maybe_add(out, video_uploads >= 1,
+        badge("media.first_reel", "First Reel", "Uploaded the first video.", "🎞️", "media", "bronze"));
+    maybe_add(out, video_uploads >= 25,
+        badge("media.video_vault", "Video Vault", "Uploaded at least 25 videos.", "📼", "media", "silver"));
+    maybe_add(out, video_uploads >= 100,
+        badge("media.cinema_keeper", "Cinema Keeper", "Uploaded at least 100 videos.", "🎬", "media", "gold"));
+
+    maybe_add(out, audio_uploads >= 1,
+        badge("media.first_track", "First Track", "Uploaded the first audio track.", "🎵", "media", "bronze"));
+    maybe_add(out, audio_uploads >= 100,
+        badge("media.signal_dj", "Signal DJ", "Uploaded at least 100 audio tracks.", "🎧", "media", "silver"));
+    maybe_add(out, audio_uploads >= 500,
+        badge("media.sound_vault", "Sound Vault", "Uploaded at least 500 audio tracks.", "🔊", "media", "gold"));
 
     return out;
 }

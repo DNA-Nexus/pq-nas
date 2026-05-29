@@ -89,7 +89,19 @@ const CS_BADGE_ICON_ASSETS = {
   "echostack.first_archive": "badges/echo-first-archive.svg",
   "echostack.web_preserver": "badges/echo-web-preserver.svg",
   "echostack.memory_vault": "badges/echo-memory-vault.svg",
-  "echostack.deep_archive": "badges/echo-deep-archive.svg"
+  "echostack.deep_archive": "badges/echo-deep-archive.svg",
+
+  "media.first_snapshot": "badges/media-first-snapshot.svg",
+  "media.memory_keeper": "badges/media-memory-keeper.svg",
+  "media.gallery_curator": "badges/media-gallery-curator.svg",
+
+  "media.first_reel": "badges/media-first-reel.svg",
+  "media.video_vault": "badges/media-video-vault.svg",
+  "media.cinema_keeper": "badges/media-cinema-keeper.svg",
+
+  "media.first_track": "badges/media-first-track.svg",
+  "media.signal_dj": "badges/media-signal-dj.svg",
+  "media.sound_vault": "badges/media-sound-vault.svg"
 };
 
 function csSafeLocalBadgeAsset(raw) {
@@ -546,6 +558,99 @@ function csAllAchievementPlaceholders() {
       icon_asset: "badges/echo-deep-archive.svg",
       locked_text: "Store larger archived web snapshots over time.",
       disclosure: "hint"
+    },
+
+    {
+      id: "media.first_snapshot",
+      title: "First Snapshot",
+      category: "media",
+      tier: "bronze",
+      icon_key: "media-first-snapshot",
+      icon_asset: "badges/media-first-snapshot.svg",
+      locked_text: "Upload your first photo.",
+      disclosure: "exact"
+    },
+    {
+      id: "media.memory_keeper",
+      title: "Memory Keeper",
+      category: "media",
+      tier: "silver",
+      icon_key: "media-memory-keeper",
+      icon_asset: "badges/media-memory-keeper.svg",
+      locked_text: "Build your photo memory collection over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "media.gallery_curator",
+      title: "Gallery Curator",
+      category: "media",
+      tier: "gold",
+      icon_key: "media-gallery-curator",
+      icon_asset: "badges/media-gallery-curator.svg",
+      locked_text: "Create a serious personal photo library.",
+      disclosure: "hint"
+    },
+
+    {
+      id: "media.first_reel",
+      title: "First Reel",
+      category: "media",
+      tier: "bronze",
+      icon_key: "media-first-reel",
+      icon_asset: "badges/media-first-reel.svg",
+      locked_text: "Upload your first video.",
+      disclosure: "exact"
+    },
+    {
+      id: "media.video_vault",
+      title: "Video Vault",
+      category: "media",
+      tier: "silver",
+      icon_key: "media-video-vault",
+      icon_asset: "badges/media-video-vault.svg",
+      locked_text: "Build your video collection over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "media.cinema_keeper",
+      title: "Cinema Keeper",
+      category: "media",
+      tier: "gold",
+      icon_key: "media-cinema-keeper",
+      icon_asset: "badges/media-cinema-keeper.svg",
+      locked_text: "Create a serious self-hosted video library.",
+      disclosure: "hint"
+    },
+
+    {
+      id: "media.first_track",
+      title: "First Track",
+      category: "media",
+      tier: "bronze",
+      icon_key: "media-first-track",
+      icon_asset: "badges/media-first-track.svg",
+      locked_text: "Upload your first audio track.",
+      disclosure: "exact"
+    },
+    {
+      id: "media.signal_dj",
+      title: "Signal DJ",
+      category: "media",
+      tier: "silver",
+      icon_key: "media-signal-dj",
+      icon_asset: "badges/media-signal-dj.svg",
+      locked_text: "Build your music/audio collection over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "media.sound_vault",
+      title: "Sound Vault",
+      category: "media",
+      tier: "gold",
+      icon_key: "media-sound-vault",
+      icon_asset: "badges/media-sound-vault.svg",
+      locked_text: "Create a serious self-hosted sound vault.",
+      disclosure: "hint"
     }
   ];
 }
@@ -734,7 +839,34 @@ function csAchievementReplayText(badge) {
       "Your Echo Stack is becoming a real knowledge vault. This badge means you are building memory, not just collecting bookmarks.",
 
     "echostack.deep_archive":
-      "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes."
+      "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes.",
+
+    "media.first_snapshot":
+      "You uploaded your first photo. This is where your NAS starts becoming a personal memory machine, not just a file bucket.",
+
+    "media.memory_keeper":
+      "You are building a real photo history. Memory Keeper is about keeping your own visual memories under your own control.",
+
+    "media.gallery_curator":
+      "Your photo library is becoming serious. Gallery Curator marks a NAS that is starting to feel like a private photo cloud.",
+
+    "media.first_reel":
+      "You uploaded your first video. Reel Stack starts with one clip, but grows into a self-hosted video vault over time.",
+
+    "media.video_vault":
+      "You are keeping videos on your own storage. Video Vault is about moving memories and media away from disposable cloud silos.",
+
+    "media.cinema_keeper":
+      "Your NAS is becoming a real video library. Cinema Keeper is for users who preserve larger moving memories and media collections.",
+
+    "media.first_track":
+      "You uploaded your first audio track. NeonWave starts when your NAS begins to carry sound, not only files.",
+
+    "media.signal_dj":
+      "You are building a music/audio collection. Signal DJ is about turning your NAS into a private listening base.",
+
+    "media.sound_vault":
+      "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories."
   };
 
   return texts[id] || "";
