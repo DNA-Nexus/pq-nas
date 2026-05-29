@@ -228,3 +228,286 @@
     justify-self: start;
   }
 }
+
+/* Theme-aware Node Profile polish.
+   The base window is dark/glass for dark/cpunk themes, but bright and
+   win_classic need explicit light surfaces so text does not become black-on-dark. */
+.nodeProfileWindow {
+  color: rgba(248,250,252,0.94);
+}
+
+.nodeProfileHero h2,
+.nodeProfileKicker,
+.nodeProfileStat strong,
+.nodeProfileBadgeTitle {
+  color: rgba(248,250,252,0.94);
+}
+
+.nodeProfileSub,
+.nodeProfileNodeId,
+.nodeProfileStat span,
+.nodeProfileBadgeDesc {
+  color: rgba(226,232,240,0.66);
+}
+
+.nodeProfileSectionTitle {
+  color: rgba(248,250,252,0.88);
+}
+
+.nodeProfileBadgeTier {
+  color: rgba(226,232,240,0.72);
+}
+
+.nodeProfileClose {
+  color: rgba(248,250,252,0.92);
+}
+
+/* Bright theme */
+:root[data-theme="bright"] .nodeProfileOverlay {
+  background: rgba(15,23,42,0.18);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-theme="bright"] .nodeProfileWindow {
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.96);
+  box-shadow:
+    0 28px 90px rgba(15,23,42,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.80);
+}
+
+:root[data-theme="bright"] .nodeProfileTitlebar {
+  border-bottom-color: rgba(15,23,42,0.10);
+}
+
+:root[data-theme="bright"] .nodeProfileHero h2,
+:root[data-theme="bright"] .nodeProfileKicker,
+:root[data-theme="bright"] .nodeProfileStat strong,
+:root[data-theme="bright"] .nodeProfileBadgeTitle,
+:root[data-theme="bright"] .nodeProfileSectionTitle {
+  color: #111827;
+}
+
+:root[data-theme="bright"] .nodeProfileSub,
+:root[data-theme="bright"] .nodeProfileNodeId,
+:root[data-theme="bright"] .nodeProfileStat span,
+:root[data-theme="bright"] .nodeProfileBadgeDesc {
+  color: rgba(15,23,42,0.66);
+}
+
+:root[data-theme="bright"] .nodeProfileStat,
+:root[data-theme="bright"] .nodeProfileBadge {
+  border-color: rgba(15,23,42,0.12);
+  background: rgba(15,23,42,0.035);
+}
+
+:root[data-theme="bright"] .nodeProfileBadge.unlocked {
+  border-color: rgba(13,148,136,0.46);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(15,23,42,0.035);
+}
+
+:root[data-theme="bright"] .nodeProfileBadgeTier {
+  color: rgba(15,23,42,0.62);
+  border-color: rgba(15,23,42,0.13);
+  background: rgba(15,23,42,0.055);
+}
+
+:root[data-theme="bright"] .nodeProfileClose {
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
+  background: rgba(15,23,42,0.07);
+}
+
+/* Windows classic theme */
+:root[data-theme="win_classic"] .nodeProfileOverlay {
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: none;
+}
+
+:root[data-theme="win_classic"] .nodeProfileWindow {
+  color: #000;
+  border-radius: 0;
+  border: 2px solid #808080;
+  background: #ececec;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28);
+}
+
+:root[data-theme="win_classic"] .nodeProfileTitlebar {
+  border-bottom: 2px solid #b8b8b8;
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8);
+}
+
+:root[data-theme="win_classic"] .nodeProfileHero h2,
+:root[data-theme="win_classic"] .nodeProfileKicker,
+:root[data-theme="win_classic"] .nodeProfileStat strong,
+:root[data-theme="win_classic"] .nodeProfileBadgeTitle,
+:root[data-theme="win_classic"] .nodeProfileSectionTitle {
+  color: #000;
+}
+
+:root[data-theme="win_classic"] .nodeProfileSub,
+:root[data-theme="win_classic"] .nodeProfileNodeId,
+:root[data-theme="win_classic"] .nodeProfileStat span,
+:root[data-theme="win_classic"] .nodeProfileBadgeDesc {
+  color: #444;
+}
+
+:root[data-theme="win_classic"] .nodeProfileStat,
+:root[data-theme="win_classic"] .nodeProfileBadge {
+  border-radius: 0;
+  border: 1px solid #9a9a9a;
+  background: #f7f7f7;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadge.unlocked {
+  border-color: #008080;
+  background: #f5ffff;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadge.locked {
+  opacity: 0.72;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadgeTier {
+  color: #222;
+  border-color: #999;
+  background: #e4e4e4;
+}
+
+:root[data-theme="win_classic"] .nodeProfileClose {
+  color: #000;
+  border-radius: 0;
+  border: 1px solid #808080;
+  background: #dcdcdc;
+}
+
+/* Robust theme matching via overlay data-node-theme.
+   This avoids depending on where the global data-theme attribute is read from. */
+.nodeProfileOverlay[data-node-theme="bright"] {
+  background: rgba(15,23,42,0.18) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileWindow {
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.97) !important;
+  box-shadow:
+    0 28px 90px rgba(15,23,42,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.80) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileTitlebar {
+  border-bottom-color: rgba(15,23,42,0.10) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileHero h2,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileKicker,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat strong,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTitle,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSectionTitle {
+  color: #111827 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSub,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileNodeId,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat span,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeDesc {
+  color: rgba(15,23,42,0.68) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge {
+  border-color: rgba(15,23,42,0.12) !important;
+  background: rgba(15,23,42,0.035) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge.unlocked {
+  border-color: rgba(13,148,136,0.46) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(15,23,42,0.035) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTier {
+  color: rgba(15,23,42,0.66) !important;
+  border-color: rgba(15,23,42,0.13) !important;
+  background: rgba(15,23,42,0.055) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileClose {
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  background: rgba(15,23,42,0.07) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] {
+  background: rgba(0,0,0,0.18) !important;
+  backdrop-filter: none !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileWindow {
+  color: #000 !important;
+  border-radius: 0 !important;
+  border: 2px solid #808080 !important;
+  background: #ececec !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileTitlebar {
+  border-bottom: 2px solid #b8b8b8 !important;
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileHero h2,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileKicker,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat strong,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTitle,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSectionTitle {
+  color: #000 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSub,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileNodeId,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat span,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeDesc {
+  color: #444 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge {
+  border-radius: 0 !important;
+  border: 1px solid #9a9a9a !important;
+  background: #f7f7f7 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.unlocked {
+  border-color: #008080 !important;
+  background: #f5ffff !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.locked {
+  opacity: 0.72 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTier {
+  color: #222 !important;
+  border-color: #999 !important;
+  background: #e4e4e4 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileClose {
+  color: #000 !important;
+  border-radius: 0 !important;
+  border: 1px solid #808080 !important;
+  background: #dcdcdc !important;
+}

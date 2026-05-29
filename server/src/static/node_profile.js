@@ -1,6 +1,24 @@
 (function () {
   "use strict";
 
+  function currentNodeProfileTheme() {
+    const theme =
+      document.documentElement.getAttribute("data-theme") ||
+      document.body.getAttribute("data-theme") ||
+      "dark";
+
+    return ["dark", "bright", "cpunk_orange", "win_classic"].includes(theme)
+      ? theme
+      : "dark";
+  }
+
+  function syncNodeProfileTheme() {
+    const theme = currentNodeProfileTheme();
+    document.querySelectorAll(".nodeProfileOverlay").forEach((overlay) => {
+      overlay.setAttribute("data-node-theme", theme);
+    });
+  }
+
   function shortNodeId(value) {
     value = String(value || "");
     return value.length >= 12 ? value.slice(0, 12) + "…" : value;
@@ -77,6 +95,8 @@
 
     const overlay = document.createElement("div");
     overlay.className = "nodeProfileOverlay";
+
+    overlay.setAttribute("data-node-theme", currentNodeProfileTheme());
 
     const win = document.createElement("div");
     win.className = "nodeProfileWindow";
@@ -247,6 +267,24 @@
     if (!btn) return;
 
     btn.addEventListener("click", openNodeProfile);
+
+    if (!window.__nodeProfileThemeSyncInstalled) {
+      window.__nodeProfileThemeSyncInstalled = true;
+
+      const observer = new MutationObserver(syncNodeProfileTheme);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"]
+      });
+
+      window.addEventListener("storage", (ev) => {
+        if (!ev || ev.key === "pqnas_theme") {
+          setTimeout(syncNodeProfileTheme, 0);
+        }
+      });
+
+      window.addEventListener("pqnas-theme-changed", syncNodeProfileTheme);
+    }
   }
 
   document.addEventListener("DOMContentLoaded", init);
