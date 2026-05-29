@@ -2794,3 +2794,642 @@ img.cs-profile-achievement-icon {
   height: 78px;
   object-fit: contain;
 }
+
+/* My Profile page */
+.cs-profile-page {
+  width: min(980px, calc(100vw - 24px));
+  margin: 18px auto 32px;
+}
+
+.cs-my-profile-card {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.12), transparent 30%),
+    radial-gradient(circle at 95% 8%, rgba(168,85,247,0.12), transparent 28%),
+    rgba(17, 18, 28, 0.94);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.34);
+  padding: 20px;
+}
+
+.cs-my-profile-loading {
+  color: rgba(255,255,255,0.68);
+  font-weight: 750;
+}
+
+.cs-my-profile-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.cs-my-profile-avatar {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.cs-my-profile-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cs-my-profile-title {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-name {
+  color: #f8fafc;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.cs-my-profile-sub {
+  color: #93c5fd;
+  font-size: 13px;
+}
+
+.cs-my-profile-fp-block {
+  margin: 16px 0 18px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.035);
+}
+
+.cs-my-profile-section-title {
+  margin: 18px 0 10px;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.cs-my-profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cs-my-profile-stat {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.045);
+  padding: 12px;
+}
+
+.cs-my-profile-stat-value {
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.cs-my-profile-stat-label {
+  margin-top: 4px;
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cs-my-profile-achievements {
+  margin-top: 18px;
+}
+
+.cs-my-profile-actions {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .cs-profile-page {
+    width: calc(100vw - 16px);
+    margin: 12px auto 24px;
+  }
+
+  .cs-my-profile-card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .cs-my-profile-header {
+    align-items: flex-start;
+  }
+
+  .cs-my-profile-avatar {
+    width: 68px;
+    height: 68px;
+  }
+
+  .cs-my-profile-name {
+    font-size: 24px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cs-my-profile-actions {
+    justify-content: stretch;
+  }
+
+  .cs-my-profile-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* Detached My Profile modal */
+.cs-my-profile-detached-modal {
+  width: min(920px, calc(100vw - 24px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  padding: 0;
+}
+
+.cs-my-profile-detached-shell {
+  position: relative;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.12), transparent 30%),
+    radial-gradient(circle at 95% 8%, rgba(168,85,247,0.12), transparent 28%);
+}
+
+.cs-my-profile-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cs-my-profile-close:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.cs-my-profile-loading {
+  color: rgba(255,255,255,0.68);
+  font-weight: 750;
+}
+
+.cs-my-profile-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0 42px 18px 0;
+}
+
+.cs-my-profile-modal-avatar {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.cs-my-profile-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cs-my-profile-title {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-name {
+  color: #f8fafc;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.cs-my-profile-sub {
+  color: #93c5fd;
+  font-size: 13px;
+}
+
+.cs-my-profile-fp-block {
+  margin: 16px 0 18px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.035);
+}
+
+.cs-my-profile-section-title {
+  margin: 18px 0 10px;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.cs-my-profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cs-my-profile-stat {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.045);
+  padding: 12px;
+}
+
+.cs-my-profile-stat-value {
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.cs-my-profile-stat-label {
+  margin-top: 4px;
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cs-my-profile-achievements {
+  margin-top: 0;
+}
+
+.cs-my-profile-actions {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    width: calc(100vw - 12px);
+    max-height: calc(100vh - 12px);
+  }
+
+  .cs-my-profile-detached-shell {
+    padding: 16px;
+  }
+
+  .cs-my-profile-header {
+    align-items: flex-start;
+    margin-right: 40px;
+  }
+
+  .cs-my-profile-modal-avatar {
+    width: 66px;
+    height: 66px;
+  }
+
+  .cs-my-profile-name {
+    font-size: 23px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cs-my-profile-actions {
+    justify-content: stretch;
+  }
+
+  .cs-my-profile-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* Detached My Profile modal polish v2 */
+.cs-my-profile-modal-backdrop {
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.cs-my-profile-detached-modal {
+  width: min(760px, calc(100vw - 28px));
+  max-height: min(820px, calc(100vh - 32px));
+  margin: auto;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background:
+    linear-gradient(135deg, rgba(17,24,39,0.98), rgba(24,24,38,0.98));
+  box-shadow:
+    0 34px 110px rgba(0,0,0,0.62),
+    0 0 0 1px rgba(45,212,191,0.05),
+    0 0 64px rgba(45,212,191,0.12);
+  overflow: hidden;
+}
+
+.cs-my-profile-detached-modal::before {
+  content: "";
+  display: block;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(45,212,191,0.95),
+    rgba(251,191,36,0.85),
+    rgba(168,85,247,0.95)
+  );
+}
+
+.cs-my-profile-detached-shell {
+  max-height: calc(min(820px, calc(100vh - 32px)) - 4px);
+  overflow: auto;
+  padding: 22px;
+}
+
+.cs-my-profile-close {
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  background: rgba(255,255,255,0.10);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.26);
+}
+
+.cs-my-profile-header {
+  padding-right: 46px;
+}
+
+.cs-my-profile-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cs-my-profile-fp-block,
+.cs-my-profile-stat,
+.cs-my-profile-detached-shell .cs-profile-achievement {
+  background: rgba(255,255,255,0.045);
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-modal-backdrop {
+    padding: 8px;
+    align-items: flex-start;
+  }
+
+  .cs-my-profile-detached-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 18px;
+    margin-top: 8px;
+  }
+
+  .cs-my-profile-detached-shell {
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Truly detached My Profile floating window */
+.cs-my-profile-modal-backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding: 0 !important;
+}
+
+.cs-my-profile-detached-modal {
+  position: fixed !important;
+  top: 86px;
+  right: 24px;
+  left: auto;
+  width: min(560px, calc(100vw - 24px)) !important;
+  max-height: calc(100vh - 110px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  background:
+    linear-gradient(135deg, rgba(18,24,34,0.98), rgba(28,24,42,0.98)) !important;
+  box-shadow:
+    0 28px 80px rgba(0,0,0,0.58),
+    0 0 0 1px rgba(45,212,191,0.08),
+    0 0 46px rgba(45,212,191,0.14) !important;
+}
+
+.cs-my-profile-detached-modal::before {
+  display: none !important;
+}
+
+.cs-my-profile-detached-shell {
+  padding: 0 !important;
+  max-height: calc(100vh - 110px) !important;
+  overflow: auto !important;
+}
+
+.cs-my-profile-windowbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 10px 8px 14px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  background:
+    linear-gradient(90deg, rgba(45,212,191,0.16), rgba(168,85,247,0.14)),
+    rgba(15,23,42,0.96);
+}
+
+.cs-my-profile-windowbar:active {
+  cursor: grabbing;
+}
+
+.cs-my-profile-windowbar-label {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.cs-my-profile-windowbar-title {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-windowbar-hint {
+  color: rgba(255,255,255,0.50);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cs-my-profile-close {
+  position: static !important;
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 auto;
+  background: rgba(255,255,255,0.10) !important;
+  box-shadow: none !important;
+}
+
+.cs-my-profile-header,
+.cs-my-profile-fp-block,
+.cs-my-profile-section-title,
+.cs-my-profile-stats-grid,
+.cs-my-profile-achievements,
+.cs-my-profile-actions,
+.cs-my-profile-loading {
+  margin-left: 16px !important;
+  margin-right: 16px !important;
+}
+
+.cs-my-profile-header {
+  margin-top: 16px !important;
+  padding-right: 0 !important;
+}
+
+.cs-my-profile-actions {
+  padding-bottom: 16px;
+}
+
+.cs-my-profile-modal-avatar {
+  width: 64px !important;
+  height: 64px !important;
+}
+
+.cs-my-profile-name {
+  font-size: 23px !important;
+}
+
+.cs-my-profile-stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.cs-my-profile-stat {
+  padding: 10px !important;
+}
+
+.cs-my-profile-stat-value {
+  font-size: 19px !important;
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    top: 70px !important;
+    right: 8px !important;
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 82px) !important;
+  }
+
+  .cs-my-profile-detached-shell {
+    max-height: calc(100vh - 82px) !important;
+  }
+}
+
+/* My Profile detached window polish v3 */
+.cs-my-profile-detached-shell {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(45,212,191,0.55) rgba(15,23,42,0.55);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-track {
+  background: rgba(15,23,42,0.55);
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(45,212,191,0.72),
+      rgba(168,85,247,0.68)
+    );
+  border-radius: 999px;
+  border: 2px solid rgba(15,23,42,0.72);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(45,212,191,0.90),
+      rgba(168,85,247,0.86)
+    );
+}
+
+/* Avoid duplicate "Achievements" label inside My Profile. */
+.cs-my-profile-achievements > .cs-profile-label {
+  display: none;
+}
+
+.cs-my-profile-achievements {
+  padding-top: 0 !important;
+  border-top: 0 !important;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-grid {
+  gap: 7px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-title {
+  font-size: 12.5px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-desc {
+  font-size: 11.5px;
+}
+
+.cs-my-profile-detached-shell .cs-my-profile-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-my-profile-detached-shell .cs-my-profile-section-title::after {
+  content: "";
+  height: 1px;
+  flex: 1 1 auto;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.12),
+    transparent
+  );
+}
+
+.cs-my-profile-stat {
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.cs-my-profile-stat:hover {
+  transform: translateY(-1px);
+  border-color: rgba(45,212,191,0.22);
+  background: rgba(255,255,255,0.065);
+}

@@ -1165,6 +1165,257 @@ async function csSetFeedMode(mode) {
   }
 }
 
+
+function csHideMyProfilePage() {
+  const profilePage = document.getElementById("csProfilePage");
+  const profileBtn = document.getElementById("csMyProfileBtn");
+  const compose = document.querySelector(".cs-compose");
+
+  if (profilePage) {
+    profilePage.hidden = true;
+    profilePage.style.display = "none";
+  }
+
+  if (profileBtn) {
+    profileBtn.classList.remove("is-active");
+  }
+
+  if (compose) {
+    compose.hidden = false;
+    compose.style.display = "";
+  }
+}
+
+function csFormatProfileNumber(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString();
+}
+
+function csProfileStat(label, value) {
+  const item = document.createElement("div");
+  item.className = "cs-my-profile-stat";
+
+  const num = document.createElement("div");
+  num.className = "cs-my-profile-stat-value";
+  num.textContent = csFormatProfileNumber(value);
+
+  const lab = document.createElement("div");
+  lab.className = "cs-my-profile-stat-label";
+  lab.textContent = label;
+
+  item.appendChild(num);
+  item.appendChild(lab);
+  return item;
+}
+
+function csProfileFingerprintBlock(fp) {
+  const wrap = document.createElement("div");
+  wrap.className = "cs-my-profile-fp-block";
+
+  const label = document.createElement("div");
+  label.className = "cs-profile-label";
+  label.textContent = "Fingerprint";
+
+  const value = document.createElement("div");
+  value.className = "cs-profile-fingerprint";
+  value.textContent = fp || "unknown";
+
+  wrap.appendChild(label);
+  wrap.appendChild(value);
+  return wrap;
+}
+
+async function csOpenMyProfilePage() {
+  const profilePage = document.getElementById("csProfilePage");
+  if (!profilePage) {
+    console.warn("Circle Stack My Profile: #csProfilePage missing");
+    return;
+  }
+
+  const localFeed = document.getElementById("csFeed");
+  const fedFeed = document.getElementById("csFederatedFeed");
+  const intros = document.getElementById("csIntroductions");
+  const compose = document.querySelector(".cs-compose");
+  const profileBtn = document.getElementById("csMyProfileBtn");
+
+  if (localFeed) {
+    localFeed.hidden = true;
+    localFeed.style.display = "none";
+  }
+  if (fedFeed) {
+    fedFeed.hidden = true;
+    fedFeed.style.display = "none";
+  }
+  if (intros) {
+    intros.hidden = true;
+    intros.style.display = "none";
+  }
+  if (compose) {
+    compose.hidden = true;
+    compose.style.display = "none";
+  }
+
+  document.querySelectorAll(".cs-intro-toolbar button").forEach(btn => {
+    btn.classList.toggle("is-active", btn === profileBtn);
+  });
+
+  profilePage.hidden = false;
+  profilePage.style.display = "";
+
+  profilePage.innerHTML = `
+    <div class="cs-my-profile-card">
+      <div class="cs-my-profile-loading">Loading profile…</div>
+    </div>
+  `;
+
+  let achievementsData = null;
+  let me = null;
+
+  try {
+    const [achRes, usersRes] = await Promise.all([
+      fetch(`${CS_API}/achievements/me`, { credentials: "same-origin" }),
+      fetch(`${CS_API}/users`, { credentials: "same-origin" })
+    ]);
+
+    achievementsData = await achRes.json();
+    const usersData = await usersRes.json();
+    me = Array.isArray(usersData.users)
+      ? usersData.users.find(u => u && u.is_me)
+      : null;
+  } catch (err) {
+    profilePage.innerHTML = `
+      <div class="cs-my-profile-card">
+        <div class="cs-modal-title">My Profile</div>
+        <div class="cs-modal-text">Could not load profile.</div>
+      </div>
+    `;
+    return;
+  }
+
+  const fp = String((me && me.fingerprint) || achievementsData.user_fp || "");
+  const name = String((me && me.name) || (me && me.fp_short) || csElideFp(fp) || "Me");
+  const role = String((me && me.role) || (achievementsData.stats && achievementsData.stats.role) || "");
+  const fpShort = String((me && me.fp_short) || csElideFp(fp));
+  const avatarUrl = String((me && me.avatar_url) || "");
+  const stats = achievementsData.stats || {};
+  const achievements = csAchievementListFrom(achievementsData.achievements);
+
+  profilePage.textContent = "";
+
+  const card = document.createElement("div");
+  card.className = "cs-my-profile-card";
+
+  const header = document.createElement("div");
+  header.className = "cs-my-profile-header";
+
+  const avatar = document.createElement("div");
+  avatar.className = "cs-profile-avatar cs-my-profile-avatar";
+
+  if (avatarUrl) {
+    const img = document.createElement("img");
+    img.src = avatarUrl;
+    img.alt = "";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = name.slice(0, 1).toUpperCase();
+  }
+
+  const headText = document.createElement("div");
+  headText.className = "cs-my-profile-title-wrap";
+
+  const title = document.createElement("div");
+  title.className = "cs-my-profile-title";
+  title.textContent = "My Profile";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "cs-my-profile-name";
+  nameEl.textContent = name;
+
+  const sub = document.createElement("div");
+  sub.className = "cs-my-profile-sub";
+  sub.textContent = role ? `${role} · ${fpShort}` : fpShort;
+
+  const badgeStrip = csRenderAchievementStrip(achievements, {
+    profile: true,
+    max: 3
+  });
+
+  headText.appendChild(title);
+  headText.appendChild(nameEl);
+  headText.appendChild(sub);
+  if (badgeStrip) headText.appendChild(badgeStrip);
+
+  header.appendChild(avatar);
+  header.appendChild(headText);
+  card.appendChild(header);
+
+  card.appendChild(csProfileFingerprintBlock(fp));
+
+  const statsTitle = document.createElement("div");
+  statsTitle.className = "cs-my-profile-section-title";
+  statsTitle.textContent = "Circle Stack stats";
+  card.appendChild(statsTitle);
+
+  const statsGrid = document.createElement("div");
+  statsGrid.className = "cs-my-profile-stats-grid";
+  statsGrid.appendChild(csProfileStat("Posts", stats.posts_total));
+  statsGrid.appendChild(csProfileStat("Public posts", stats.public_posts_total));
+  statsGrid.appendChild(csProfileStat("Media posts", stats.media_posts_total));
+  statsGrid.appendChild(csProfileStat("Replies written", stats.replies_total));
+  statsGrid.appendChild(csProfileStat("Reactions given", stats.reactions_given_total));
+  statsGrid.appendChild(csProfileStat("Replies received", stats.replies_received_total));
+  statsGrid.appendChild(csProfileStat("Reactions received", stats.post_reactions_received_total));
+  statsGrid.appendChild(csProfileStat("Circle connections", stats.circle_edges_total));
+  statsGrid.appendChild(csProfileStat("Account days", stats.account_age_days));
+  card.appendChild(statsGrid);
+
+  const achBlock = csRenderAchievementProfileBlock(achievements);
+  if (achBlock) {
+    achBlock.classList.add("cs-my-profile-achievements");
+    card.appendChild(achBlock);
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "cs-empty";
+    empty.textContent = "No achievements unlocked yet.";
+    card.appendChild(empty);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "cs-modal-actions cs-my-profile-actions";
+
+  if (fp && navigator.clipboard) {
+    const copy = document.createElement("button");
+    copy.className = "cs-modal-cancel";
+    copy.type = "button";
+    copy.textContent = "Copy fingerprint";
+    copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(fp);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+    });
+    actions.appendChild(copy);
+  }
+
+  const back = document.createElement("button");
+  back.className = "cs-modal-cancel";
+  back.type = "button";
+  back.textContent = "Back to feed";
+  back.addEventListener("click", () => {
+    if (typeof csSetFeedMode === "function") {
+      csSetFeedMode(csFeedMode);
+    } else {
+      location.reload();
+    }
+  });
+  actions.appendChild(back);
+
+  card.appendChild(actions);
+  profilePage.appendChild(card);
+  profilePage.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+
 function csInitFeedTabs() {
   if (window.CircleStackFeedModes &&
       typeof window.CircleStackFeedModes.initButtons === "function" &&
@@ -4864,3 +5115,350 @@ if (!window.__circleStackFederatedTabHardFallback) {
   document.addEventListener("click", csHandleFeedTabEvent, true);
 }
 
+// My Profile toolbar button fallback.
+// Delegated so it still works if toolbar HTML changes or is re-rendered.
+if (!window.__circleStackMyProfileDelegated) {
+  window.__circleStackMyProfileDelegated = true;
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target && ev.target.closest
+      ? ev.target.closest("#csMyProfileBtn")
+      : null;
+
+    if (!btn) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    csOpenMyProfileModal();
+  }, true);
+}
+
+async function csOpenMyProfileModal() {
+  document.querySelectorAll(".cs-my-profile-modal-backdrop").forEach(el => el.remove());
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop cs-my-profile-modal-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-my-profile-detached-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const shell = document.createElement("div");
+  shell.className = "cs-my-profile-detached-shell";
+
+  const titlebar = document.createElement("div");
+  titlebar.className = "cs-my-profile-windowbar";
+
+  const titlebarText = document.createElement("div");
+  titlebarText.className = "cs-my-profile-windowbar-title";
+  titlebarText.textContent = "My Profile";
+
+  const titlebarHint = document.createElement("div");
+  titlebarHint.className = "cs-my-profile-windowbar-hint";
+  titlebarHint.textContent = "Detached window";
+
+  const titlebarLabel = document.createElement("div");
+  titlebarLabel.className = "cs-my-profile-windowbar-label";
+  titlebarLabel.appendChild(titlebarText);
+  titlebarLabel.appendChild(titlebarHint);
+
+  const closeTop = document.createElement("button");
+  closeTop.className = "cs-my-profile-close";
+  closeTop.type = "button";
+  closeTop.textContent = "×";
+  closeTop.title = "Close";
+  closeTop.setAttribute("aria-label", "Close profile");
+
+  titlebar.appendChild(titlebarLabel);
+  titlebar.appendChild(closeTop);
+
+  const close = () => backdrop.remove();
+
+  closeTop.addEventListener("click", close);
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) close();
+  });
+
+  const onKey = (ev) => {
+    if (ev.key === "Escape") {
+      document.removeEventListener("keydown", onKey, true);
+      close();
+    }
+  };
+  document.addEventListener("keydown", onKey, true);
+
+  shell.appendChild(titlebar);
+
+  const loading = document.createElement("div");
+  loading.className = "cs-my-profile-loading";
+  loading.textContent = "Loading profile…";
+  shell.appendChild(loading);
+
+  modal.appendChild(shell);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  let dragState = null;
+
+  titlebar.addEventListener("pointerdown", (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest("button")) return;
+
+    const rect = modal.getBoundingClientRect();
+
+    modal.style.left = `${rect.left}px`;
+    modal.style.top = `${rect.top}px`;
+    modal.style.right = "auto";
+    modal.style.margin = "0";
+
+    dragState = {
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      left: rect.left,
+      top: rect.top
+    };
+
+    try {
+      titlebar.setPointerCapture(ev.pointerId);
+    } catch (_) {}
+
+    ev.preventDefault();
+  });
+
+  titlebar.addEventListener("pointermove", (ev) => {
+    if (!dragState || dragState.pointerId !== ev.pointerId) return;
+
+    const nextLeft = dragState.left + (ev.clientX - dragState.startX);
+    const nextTop = dragState.top + (ev.clientY - dragState.startY);
+
+    const maxLeft = Math.max(8, window.innerWidth - modal.offsetWidth - 8);
+    const maxTop = Math.max(8, window.innerHeight - 80);
+
+    modal.style.left = `${Math.max(8, Math.min(maxLeft, nextLeft))}px`;
+    modal.style.top = `${Math.max(8, Math.min(maxTop, nextTop))}px`;
+  });
+
+  titlebar.addEventListener("pointerup", (ev) => {
+    if (dragState && dragState.pointerId === ev.pointerId) {
+      dragState = null;
+      try {
+        titlebar.releasePointerCapture(ev.pointerId);
+      } catch (_) {}
+    }
+  });
+
+  titlebar.addEventListener("pointercancel", () => {
+    dragState = null;
+  });
+
+  let achievementsData = null;
+  let me = null;
+
+  try {
+    const [achRes, usersRes] = await Promise.all([
+      fetch(`${CS_API}/achievements/me`, { credentials: "same-origin" }),
+      fetch(`${CS_API}/users`, { credentials: "same-origin" })
+    ]);
+
+    achievementsData = await achRes.json();
+    const usersData = await usersRes.json();
+
+    me = Array.isArray(usersData.users)
+      ? usersData.users.find(u => u && u.is_me)
+      : null;
+  } catch (_) {
+    loading.textContent = "Could not load profile.";
+    return;
+  }
+
+  const stats = achievementsData.stats || {};
+  const fp = String((me && me.fingerprint) || achievementsData.user_fp || "");
+  const name = String((me && me.name) || (me && me.fp_short) || csElideFp(fp) || "Me");
+  const role = String((me && me.role) || stats.role || "");
+  const fpShort = String((me && me.fp_short) || csElideFp(fp));
+  const avatarUrl = String((me && me.avatar_url) || "");
+  const achievements = typeof csAchievementListFrom === "function"
+    ? csAchievementListFrom(achievementsData.achievements)
+    : [];
+
+  function stat(label, value) {
+    const item = document.createElement("div");
+    item.className = "cs-my-profile-stat";
+
+    const num = document.createElement("div");
+    num.className = "cs-my-profile-stat-value";
+
+    const n = Number(value || 0);
+    num.textContent = Number.isFinite(n) ? n.toLocaleString() : "0";
+
+    const lab = document.createElement("div");
+    lab.className = "cs-my-profile-stat-label";
+    lab.textContent = label;
+
+    item.appendChild(num);
+    item.appendChild(lab);
+    return item;
+  }
+
+  shell.textContent = "";
+  shell.appendChild(titlebar);
+
+  const header = document.createElement("div");
+  header.className = "cs-my-profile-header";
+
+  const avatar = document.createElement("div");
+  avatar.className = "cs-profile-avatar cs-my-profile-modal-avatar";
+
+  if (avatarUrl) {
+    const img = document.createElement("img");
+    img.src = avatarUrl;
+    img.alt = "";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = name.slice(0, 1).toUpperCase();
+  }
+
+  const headText = document.createElement("div");
+  headText.className = "cs-my-profile-title-wrap";
+
+  const kicker = document.createElement("div");
+  kicker.className = "cs-my-profile-title";
+  kicker.textContent = "My Profile";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "cs-my-profile-name";
+  nameEl.textContent = name;
+
+  const sub = document.createElement("div");
+  sub.className = "cs-my-profile-sub";
+  sub.textContent = role ? `${role} · ${fpShort}` : fpShort;
+
+  headText.appendChild(kicker);
+  headText.appendChild(nameEl);
+  headText.appendChild(sub);
+
+  if (typeof csRenderAchievementStrip === "function") {
+    const strip = csRenderAchievementStrip(achievements, { profile: true, max: 3 });
+    if (strip) headText.appendChild(strip);
+  }
+
+  header.appendChild(avatar);
+  header.appendChild(headText);
+  shell.appendChild(header);
+
+  const fpBlock = document.createElement("div");
+  fpBlock.className = "cs-my-profile-fp-block";
+
+  const fpLabel = document.createElement("div");
+  fpLabel.className = "cs-profile-label";
+  fpLabel.textContent = "Fingerprint";
+
+  const fpValue = document.createElement("div");
+  fpValue.className = "cs-profile-fingerprint";
+  fpValue.textContent = fp || "unknown";
+
+  fpBlock.appendChild(fpLabel);
+  fpBlock.appendChild(fpValue);
+  shell.appendChild(fpBlock);
+
+  const statsTitle = document.createElement("div");
+  statsTitle.className = "cs-my-profile-section-title";
+  statsTitle.textContent = "Circle Stack stats";
+  shell.appendChild(statsTitle);
+
+  const statsGrid = document.createElement("div");
+  statsGrid.className = "cs-my-profile-stats-grid";
+  statsGrid.appendChild(stat("Posts", stats.posts_total));
+  statsGrid.appendChild(stat("Public posts", stats.public_posts_total));
+  statsGrid.appendChild(stat("Media posts", stats.media_posts_total));
+  statsGrid.appendChild(stat("Replies written", stats.replies_total));
+  statsGrid.appendChild(stat("Reactions given", stats.reactions_given_total));
+  statsGrid.appendChild(stat("Replies received", stats.replies_received_total));
+  statsGrid.appendChild(stat("Reactions received", stats.post_reactions_received_total));
+  statsGrid.appendChild(stat("Circle connections", stats.circle_edges_total));
+  statsGrid.appendChild(stat("Account days", stats.account_age_days));
+  shell.appendChild(statsGrid);
+
+  const achievementTitle = document.createElement("div");
+  achievementTitle.className = "cs-my-profile-section-title";
+  achievementTitle.textContent = "Achievements";
+  shell.appendChild(achievementTitle);
+
+  if (typeof csRenderAchievementProfileBlock === "function") {
+    const block = csRenderAchievementProfileBlock(achievements);
+    if (block) {
+      block.classList.add("cs-my-profile-achievements");
+      shell.appendChild(block);
+    }
+  }
+
+  if (!achievements.length) {
+    const empty = document.createElement("div");
+    empty.className = "cs-empty";
+    empty.textContent = "No achievements unlocked yet.";
+    shell.appendChild(empty);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "cs-modal-actions cs-my-profile-actions";
+
+  if (fp && navigator.clipboard) {
+    const copy = document.createElement("button");
+    copy.className = "cs-modal-cancel";
+    copy.type = "button";
+    copy.textContent = "Copy fingerprint";
+    copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(fp);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy fingerprint"; }, 1200);
+    });
+    actions.appendChild(copy);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "cs-modal-cancel";
+  closeBtn.type = "button";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", close);
+  actions.appendChild(closeBtn);
+
+  shell.appendChild(actions);
+
+  // Keep detached profile windows opening at the top.
+  // Focusing the bottom Close button makes browsers scroll the modal to bottom.
+  shell.scrollTop = 0;
+  modal.scrollTop = 0;
+
+  requestAnimationFrame(() => {
+    shell.scrollTop = 0;
+    modal.scrollTop = 0;
+
+    try {
+      closeTop.focus({ preventScroll: true });
+    } catch (_) {
+      closeTop.focus();
+      shell.scrollTop = 0;
+      modal.scrollTop = 0;
+    }
+  });
+}
+
+// Detached My Profile button handler.
+if (!window.__circleStackDetachedMyProfileDelegated) {
+  window.__circleStackDetachedMyProfileDelegated = true;
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target && ev.target.closest
+      ? ev.target.closest("#csMyProfileBtn")
+      : null;
+
+    if (!btn) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    csOpenMyProfileModal();
+  }, true);
+}
