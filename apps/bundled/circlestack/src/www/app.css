@@ -3448,3 +3448,149 @@ img.cs-profile-achievement-icon {
     transform: translateX(-50%);
   }
 }
+
+/* Locked achievement placeholders */
+.cs-my-profile-locked-achievements {
+  margin-top: 0;
+}
+
+.cs-my-profile-locked-achievements > .cs-profile-label {
+  display: none;
+}
+
+.cs-locked-achievement-hint {
+  margin: -2px 0 10px;
+  color: rgba(255,255,255,0.52);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cs-profile-achievement-locked {
+  position: relative;
+  opacity: 0.78;
+  border-style: dashed;
+  filter: saturate(0.78);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-title {
+  color: rgba(255,255,255,0.82);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.50);
+}
+
+.cs-locked-achievement-icon-wrap {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.cs-locked-achievement-icon-wrap .cs-profile-achievement-icon {
+  width: 28px;
+  height: 28px;
+  opacity: 0.70;
+  filter: grayscale(0.25);
+}
+
+.cs-locked-achievement-lock {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(15,23,42,0.92);
+  color: rgba(255,255,255,0.66);
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 2px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cs-profile-achievement-locked.disclosure-hint::after {
+  content: "Hint";
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  color: rgba(255,255,255,0.42);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cs-profile-achievement-locked.disclosure-exact::after {
+  content: "Goal";
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  color: rgba(45,212,191,0.58);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Locked trophies: monochrome/silhouette mode */
+.cs-profile-achievement-locked,
+.cs-profile-achievement-locked.tier-bronze,
+.cs-profile-achievement-locked.tier-silver,
+.cs-profile-achievement-locked.tier-gold,
+.cs-profile-achievement-locked.tier-legendary,
+.cs-profile-achievement-locked.tier-special {
+  border-color: rgba(255,255,255,0.13) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.040), rgba(255,255,255,0.020)) !important;
+  opacity: 0.82;
+  filter: none;
+}
+
+.cs-profile-achievement-locked:hover {
+  border-color: rgba(255,255,255,0.20) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.060), rgba(255,255,255,0.030)) !important;
+}
+
+.cs-locked-achievement-icon-wrap {
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.12), transparent 48%),
+    rgba(255,255,255,0.035);
+}
+
+.cs-locked-achievement-icon-wrap .cs-profile-achievement-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.46;
+  filter:
+    grayscale(1)
+    saturate(0)
+    brightness(0.92)
+    contrast(1.18);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-title {
+  color: rgba(255,255,255,0.72);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.43);
+}
+
+.cs-profile-achievement-locked.disclosure-hint::after,
+.cs-profile-achievement-locked.disclosure-exact::after {
+  color: rgba(255,255,255,0.34);
+}
+
+.cs-locked-achievement-lock {
+  border-color: rgba(255,255,255,0.13);
+  background: rgba(15,23,42,0.96);
+  color: rgba(255,255,255,0.56);
+}

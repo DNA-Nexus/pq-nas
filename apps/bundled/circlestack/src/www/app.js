@@ -220,6 +220,211 @@ function csFederatedActorBadges(ev) {
   );
 }
 
+function csAllAchievementPlaceholders() {
+  return [
+    {
+      id: "account.established_signal",
+      title: "Established Signal",
+      category: "account",
+      tier: "bronze",
+      icon_key: "established-signal",
+      icon_asset: "badges/established-signal.svg",
+      locked_text: "Account has existed for at least 100 days.",
+      disclosure: "exact"
+    },
+    {
+      id: "account.old_guard",
+      title: "Old Guard",
+      category: "account",
+      tier: "gold",
+      icon_key: "old-guard",
+      icon_asset: "badges/old-guard.svg",
+      locked_text: "Account has existed for at least 500 days.",
+      disclosure: "exact"
+    },
+    {
+      id: "account.legacy_node",
+      title: "Legacy Node",
+      category: "account",
+      tier: "legendary",
+      icon_key: "legacy-node",
+      icon_asset: "badges/legacy-node.svg",
+      locked_text: "Account has existed for at least 1000 days.",
+      disclosure: "exact"
+    },
+    {
+      id: "circlestack.first_signal",
+      title: "First Signal",
+      category: "circlestack",
+      tier: "bronze",
+      icon_key: "first-signal",
+      icon_asset: "badges/first-signal.svg",
+      locked_text: "Create your first Circle Stack post.",
+      disclosure: "exact"
+    },
+
+    {
+      id: "circlestack.signal_sender",
+      title: "Signal Sender",
+      category: "circlestack",
+      tier: "silver",
+      icon_key: "signal-sender",
+      icon_asset: "badges/signal-sender.svg",
+      locked_text: "Keep contributing meaningful Circle Stack posts over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.broadcast_node",
+      title: "Broadcast Node",
+      category: "circlestack",
+      tier: "gold",
+      icon_key: "broadcast-node",
+      icon_asset: "badges/broadcast-node.svg",
+      locked_text: "Become a steady voice in your Circle Stack community.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.anchor_voice",
+      title: "Anchor Voice",
+      category: "circlestack",
+      tier: "legendary",
+      icon_key: "anchor-voice",
+      icon_asset: "badges/anchor-voice.svg",
+      locked_text: "Build a long-term posting history.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.public_voice",
+      title: "Public Voice",
+      category: "circlestack",
+      tier: "silver",
+      icon_key: "public-voice",
+      icon_asset: "badges/public-voice.svg",
+      locked_text: "Share useful public posts over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.media_runner",
+      title: "Media Runner",
+      category: "circlestack",
+      tier: "silver",
+      icon_key: "media-runner",
+      icon_asset: "badges/media-runner.svg",
+      locked_text: "Share media-rich posts over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.conversation_spark",
+      title: "Conversation Spark",
+      category: "social",
+      tier: "silver",
+      icon_key: "conversation-spark",
+      icon_asset: "badges/conversation-spark.svg",
+      locked_text: "Take part in discussions.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.signal_amplifier",
+      title: "Signal Amplifier",
+      category: "social",
+      tier: "silver",
+      icon_key: "signal-amplifier",
+      icon_asset: "badges/signal-amplifier.svg",
+      locked_text: "React to posts and help surface useful content.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.crowd_spark",
+      title: "Crowd Spark",
+      category: "social",
+      tier: "gold",
+      icon_key: "crowd-spark",
+      icon_asset: "badges/crowd-spark.svg",
+      locked_text: "Create posts that others respond to.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.thread_starter",
+      title: "Thread Starter",
+      category: "social",
+      tier: "gold",
+      icon_key: "thread-starter",
+      icon_asset: "badges/thread-starter.svg",
+      locked_text: "Start conversations that receive replies.",
+      disclosure: "hint"
+    },
+    {
+      id: "circlestack.circle_builder",
+      title: "Circle Builder",
+      category: "social",
+      tier: "silver",
+      icon_key: "circle-builder",
+      icon_asset: "badges/circle-builder.svg",
+      locked_text: "Build trusted Circle connections.",
+      disclosure: "hint"
+    }
+  ];
+}
+
+function csRenderLockedAchievementPlaceholders(earnedBadges) {
+  const earnedIds = new Set(
+    csAchievementListFrom(earnedBadges).map(b => String(b.id || ""))
+  );
+
+  const locked = csAllAchievementPlaceholders()
+    .filter(b => b && b.id && !earnedIds.has(b.id));
+
+  if (!locked.length) return null;
+
+  const section = document.createElement("div");
+  section.className = "cs-profile-achievements cs-my-profile-locked-achievements";
+
+  const label = document.createElement("div");
+  label.className = "cs-profile-label";
+  label.textContent = "Locked achievements";
+  section.appendChild(label);
+
+  const grid = document.createElement("div");
+  grid.className = "cs-profile-achievement-grid";
+
+  for (const badge of locked) {
+    const item = document.createElement("div");
+    item.className = "cs-profile-achievement cs-profile-achievement-locked";
+    if (badge.tier) item.classList.add(`tier-${String(badge.tier).toLowerCase()}`);
+    if (badge.disclosure) item.classList.add(`disclosure-${String(badge.disclosure).toLowerCase()}`);
+
+    const iconWrap = document.createElement("div");
+    iconWrap.className = "cs-locked-achievement-icon-wrap";
+    iconWrap.appendChild(csCreateBadgeIconElement(badge, "cs-profile-achievement-icon"));
+
+    const lock = document.createElement("span");
+    lock.className = "cs-locked-achievement-lock";
+    lock.textContent = "Locked";
+    iconWrap.appendChild(lock);
+
+    const body = document.createElement("span");
+    body.className = "cs-profile-achievement-body";
+
+    const title = document.createElement("span");
+    title.className = "cs-profile-achievement-title";
+    title.textContent = badge.title || "Locked achievement";
+
+    const desc = document.createElement("span");
+    desc.className = "cs-profile-achievement-desc";
+    desc.textContent = badge.locked_text || "Keep using Circle Stack to discover this achievement.";
+
+    body.appendChild(title);
+    body.appendChild(desc);
+
+    item.appendChild(iconWrap);
+    item.appendChild(body);
+    grid.appendChild(item);
+  }
+
+  section.appendChild(grid);
+  return section;
+}
+
 function csAchievementStorageKey() {
   return "pqnas.circlestack.achievements.seen.v1";
 }
@@ -5416,7 +5621,7 @@ async function csOpenMyProfileModal() {
 
   const achievementTitle = document.createElement("div");
   achievementTitle.className = "cs-my-profile-section-title";
-  achievementTitle.textContent = "Achievements";
+  achievementTitle.textContent = "Earned achievements";
   shell.appendChild(achievementTitle);
 
   if (typeof csRenderAchievementProfileBlock === "function") {
@@ -5432,6 +5637,21 @@ async function csOpenMyProfileModal() {
     empty.className = "cs-empty";
     empty.textContent = "No achievements unlocked yet.";
     shell.appendChild(empty);
+  }
+
+  const lockedTitle = document.createElement("div");
+  lockedTitle.className = "cs-my-profile-section-title";
+  lockedTitle.textContent = "Locked achievements";
+  shell.appendChild(lockedTitle);
+
+  const lockedBlock = csRenderLockedAchievementPlaceholders(achievements);
+  if (lockedBlock) {
+    shell.appendChild(lockedBlock);
+  } else {
+    const allUnlocked = document.createElement("div");
+    allUnlocked.className = "cs-empty";
+    allUnlocked.textContent = "All visible achievements unlocked.";
+    shell.appendChild(allUnlocked);
   }
 
   const actions = document.createElement("div");
