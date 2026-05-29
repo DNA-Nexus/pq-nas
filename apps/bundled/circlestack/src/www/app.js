@@ -47,6 +47,100 @@ function csRefreshFederatedLocalReactionInCard(card, ev) {
   }
 }
 let csSelectedMentions = [];
+
+function csAchievementListFrom(value) {
+  return Array.isArray(value)
+    ? value.filter(b => b && typeof b === "object" && b.id && b.title)
+    : [];
+}
+
+function csRenderAchievementStrip(rawBadges, options = {}) {
+  const badges = csAchievementListFrom(rawBadges);
+  if (!badges.length) return null;
+
+  const max = Number(options.max || 4);
+  const wrap = document.createElement("div");
+  wrap.className = options.profile
+    ? "cs-achievement-strip cs-achievement-strip-profile"
+    : "cs-achievement-strip";
+
+  for (const badge of badges.slice(0, max)) {
+    const chip = document.createElement("span");
+    chip.className = "cs-achievement-chip";
+    if (badge.tier) chip.classList.add(`tier-${String(badge.tier).toLowerCase()}`);
+    chip.title = badge.description || badge.title || "";
+    chip.textContent = `${badge.icon || "◆"} ${badge.title || "Badge"}`;
+    wrap.appendChild(chip);
+  }
+
+  if (badges.length > max) {
+    const more = document.createElement("span");
+    more.className = "cs-achievement-more";
+    more.textContent = `+${badges.length - max}`;
+    wrap.appendChild(more);
+  }
+
+  return wrap;
+}
+
+function csRenderAchievementProfileBlock(rawBadges) {
+  const badges = csAchievementListFrom(rawBadges);
+  if (!badges.length) return null;
+
+  const section = document.createElement("div");
+  section.className = "cs-profile-achievements";
+
+  const label = document.createElement("div");
+  label.className = "cs-profile-label";
+  label.textContent = "Achievements";
+  section.appendChild(label);
+
+  const grid = document.createElement("div");
+  grid.className = "cs-profile-achievement-grid";
+
+  for (const badge of badges) {
+    const item = document.createElement("div");
+    item.className = "cs-profile-achievement";
+    if (badge.tier) item.classList.add(`tier-${String(badge.tier).toLowerCase()}`);
+
+    const icon = document.createElement("span");
+    icon.className = "cs-profile-achievement-icon";
+    icon.textContent = badge.icon || "◆";
+
+    const body = document.createElement("span");
+    body.className = "cs-profile-achievement-body";
+
+    const title = document.createElement("span");
+    title.className = "cs-profile-achievement-title";
+    title.textContent = badge.title || "Badge";
+
+    const desc = document.createElement("span");
+    desc.className = "cs-profile-achievement-desc";
+    desc.textContent = badge.description || "";
+
+    body.appendChild(title);
+    if (desc.textContent) body.appendChild(desc);
+
+    item.appendChild(icon);
+    item.appendChild(body);
+    grid.appendChild(item);
+  }
+
+  section.appendChild(grid);
+  return section;
+}
+
+function csFederatedActorBadges(ev) {
+  const payload = ev && ev.payload && typeof ev.payload === "object" ? ev.payload : {};
+  return csAchievementListFrom(
+    ev.owner_badges ||
+    ev.actor_badges ||
+    payload.owner_badges ||
+    payload.actor_badges ||
+    []
+  );
+}
+
 let csFeedMode = "local";
 let csFederatedFeedLoadSeq = 0;
 let csMutedFederatedOrigins = new Set();
@@ -377,7 +471,8 @@ function csRenderFederatedActions(ev) {
     person.addEventListener("click", () => {
       csOpenPersonCard(actorFp, {
         display_name: csFederatedActorLabel(ev),
-        fp_short: ev.actor_fp_short || csElideFp(actorFp)
+        fp_short: ev.actor_fp_short || csElideFp(actorFp),
+        achievements: csFederatedActorBadges(ev)
       });
     });
     personActions.appendChild(person);
@@ -571,6 +666,11 @@ function csRenderFederatedEvent(ev) {
 
   titleWrap.appendChild(title);
   titleWrap.appendChild(sub);
+
+  const federatedBadgeStrip = csRenderAchievementStrip(csFederatedActorBadges(ev), { max: 3 });
+  if (federatedBadgeStrip) {
+    titleWrap.appendChild(federatedBadgeStrip);
+  }
 
   const badge = document.createElement("span");
   badge.className = "cs-federated-badge";
@@ -864,6 +964,13 @@ async function csOpenPersonCard(fp, fallback = {}) {
   const role = (user && user.role) || "";
   const avatarUrl = (user && user.avatar_url) || fallback.avatar_url || "";
   const fpShort = (user && user.fp_short) || fallback.fp_short || csElideFp(safeFp);
+  const achievements = csAchievementListFrom(
+    (user && user.achievements) ||
+    fallback.achievements ||
+    fallback.owner_badges ||
+    fallback.actor_badges ||
+    []
+  );
 
   const backdrop = document.createElement("div");
   backdrop.className = "cs-modal-backdrop";
@@ -902,6 +1009,14 @@ async function csOpenPersonCard(fp, fallback = {}) {
   titleWrap.appendChild(title);
   titleWrap.appendChild(sub);
 
+  const profileBadgeStrip = csRenderAchievementStrip(achievements, {
+    profile: true,
+    max: 3
+  });
+  if (profileBadgeStrip) {
+    titleWrap.appendChild(profileBadgeStrip);
+  }
+
   head.appendChild(avatar);
   head.appendChild(titleWrap);
 
@@ -918,6 +1033,11 @@ async function csOpenPersonCard(fp, fallback = {}) {
 
   body.appendChild(fpLabel);
   body.appendChild(fpValue);
+
+  const achievementBlock = csRenderAchievementProfileBlock(achievements);
+  if (achievementBlock) {
+    body.appendChild(achievementBlock);
+  }
 
   const actions = document.createElement("div");
   actions.className = "cs-modal-actions";
@@ -2886,10 +3006,21 @@ function csRenderPost(post) {
     csOpenPersonCard(post.owner_fp || "", {
       display_name: post.owner_display_name || "",
       fp_short: post.owner_fp_short || "",
-      avatar_url: post.owner_avatar_url || ""
+      avatar_url: post.owner_avatar_url || "",
+      achievements: post.owner_badges || []
     });
   });
-  header.appendChild(author);
+
+  const authorWrap = document.createElement("div");
+  authorWrap.className = "cs-post-author-wrap";
+  authorWrap.appendChild(author);
+
+  const postBadgeStrip = csRenderAchievementStrip(post.owner_badges || [], { max: 3 });
+  if (postBadgeStrip) {
+    authorWrap.appendChild(postBadgeStrip);
+  }
+
+  header.appendChild(authorWrap);
 
   const del = document.createElement("button");
   del.className = "cs-post-delete";

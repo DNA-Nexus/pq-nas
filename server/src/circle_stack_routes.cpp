@@ -6,6 +6,7 @@
 #include "federation/circle_federation_signing.h"
 #include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
+#include "achievements.h"
 #include "storage_resolver.h"
 
 #include <nlohmann/json.hpp>
@@ -372,6 +373,32 @@ std::string cs_display_name_for_fp(
     }
 
     return name;
+}
+
+json cs_public_badges_for_fp(
+    sqlite3* db,
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& fp
+) {
+    if (fp.empty()) return json::array();
+
+    std::string added_at;
+    std::string role;
+
+    if (deps.users) {
+        auto u = deps.users->get(fp);
+        if (u.has_value()) {
+            added_at = u->added_at;
+            role = u->role;
+        }
+    }
+
+    return pqnas::achievements::circle_stack_public_badges(
+        db,
+        fp,
+        added_at,
+        role
+    );
 }
 
 
@@ -1645,6 +1672,15 @@ json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFe
         {"source", "federated"}
     };
 
+    if (payload.is_object()) {
+        if (payload.contains("owner_badges") && payload["owner_badges"].is_array()) {
+            item["owner_badges"] = payload["owner_badges"];
+        }
+        if (payload.contains("actor_badges") && payload["actor_badges"].is_array()) {
+            item["actor_badges"] = payload["actor_badges"];
+        }
+    }
+
     if (!parsed.is_discarded()) {
         item["event"] = parsed;
     }
@@ -2140,6 +2176,7 @@ bool cs_enqueue_post_created_federation_best_effort(
     const std::string& visibility,
     const std::string& media_path,
     const json& mentions,
+    const json& owner_badges,
     std::string* out_event_id,
     std::string* out_error
 ) {
@@ -2196,6 +2233,8 @@ bool cs_enqueue_post_created_federation_best_effort(
             {"owner_fp_short", cs_short_fp(actor_fp)},
             {"owner_display_name", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
             {"origin_label", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
+            {"owner_badges", owner_badges.is_array() ? owner_badges : json::array()},
+            {"actor_badges", owner_badges.is_array() ? owner_badges : json::array()},
             {"text_preview", cs_make_federation_text_preview(text)},
             {"visibility", visibility},
             {"has_media", !media_path.empty()},
@@ -2263,6 +2302,7 @@ bool cs_enqueue_reply_created_federation_best_effort(
     const std::string& text,
     const std::string& media_path,
     const json& mentions,
+    const json& actor_badges,
     std::string* out_event_id,
     std::string* out_error
 ) {
@@ -2318,6 +2358,7 @@ bool cs_enqueue_reply_created_federation_best_effort(
             {"actor_fp_short", cs_short_fp(actor_fp)},
             {"actor_display_name", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
             {"origin_label", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
+            {"actor_badges", actor_badges.is_array() ? actor_badges : json::array()},
             {"text_preview", cs_make_federation_text_preview(text)},
             {"has_media", !media_path.empty()},
             {"media_count", federated_media_path.empty() ? 0 : 1},
@@ -4209,6 +4250,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
                 std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
                 std::string owner_avatar_url;
+                json owner_badges = json::array();
 
                 if (deps.users && !owner_fp.empty()) {
                     auto u = deps.users->get(owner_fp);
@@ -4220,6 +4262,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     }
                 }
 
+                owner_badges = cs_public_badges_for_fp(g_db, deps, owner_fp);
+
                 p["id"] = id;
                 p["text"] = text ? text : "";
                 p["created_epoch"] = created;
@@ -4230,6 +4274,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     : owner_fp;
                 p["owner_avatar_url"] = owner_avatar_url;
                 p["visibility"] = visibility;
+                p["owner_badges"] = owner_badges;
 
                 std::string my_reaction;
                 p["reactions"] = cs_load_post_reactions(
@@ -4278,11 +4323,50 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     item["role"] = u.role;
                     item["avatar_url"] = u.avatar_url;
                     item["is_me"] = (u.fingerprint == actor_fp);
+                    item["achievements"] = pqnas::achievements::circle_stack_public_badges(
+                        g_db,
+                        u.fingerprint,
+                        u.added_at,
+                        u.role
+                    );
                     out["users"].push_back(item);
                 }
             }
 
             set_json(res, out);
+        });
+
+
+    server.Get("/api/v4/circlestack/achievements/me",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            std::string added_at;
+            std::string role = actor_role;
+
+            if (deps.users) {
+                auto u = deps.users->get(actor_fp);
+                if (u.has_value()) {
+                    added_at = u->added_at;
+                    role = u->role;
+                }
+            }
+
+            set_json(res, pqnas::achievements::circle_stack_profile_json(
+                g_db,
+                actor_fp,
+                added_at,
+                role,
+                true
+            ));
         });
 
 
@@ -5082,6 +5166,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     visibility,
                     media_path,
                     mentions,
+                    cs_public_badges_for_fp(g_db, deps, actor_fp),
                     &federation_event_id,
                     &federation_error
                 );
@@ -5292,6 +5377,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     text,
                     media_path,
                     mentions,
+                    cs_public_badges_for_fp(g_db, deps, actor_fp),
                     &federation_event_id,
                     &federation_error
                 );

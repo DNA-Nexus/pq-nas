@@ -2593,3 +2593,103 @@ html[data-theme="bright"] .cs-federated-local-reaction-label {
 .cs-lightbox-zoom .cs-lightbox-stage.is-dragging img.cs-lightbox-img {
   cursor: grabbing !important;
 }
+
+
+/* Circle Stack achievements / GitHub-style profile badges */
+.cs-post-author-wrap {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cs-achievement-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.cs-achievement-chip,
+.cs-achievement-more {
+  display: inline-flex;
+  align-items: center;
+  max-width: 190px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.055);
+  color: rgba(255,255,255,0.82);
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cs-achievement-chip.tier-gold,
+.cs-profile-achievement.tier-gold {
+  border-color: rgba(251,191,36,0.42);
+  background: rgba(251,191,36,0.12);
+}
+
+.cs-achievement-chip.tier-legendary,
+.cs-profile-achievement.tier-legendary {
+  border-color: rgba(192,132,252,0.50);
+  background: rgba(168,85,247,0.14);
+}
+
+.cs-achievement-chip.tier-special,
+.cs-profile-achievement.tier-special {
+  border-color: rgba(45,212,191,0.42);
+  background: rgba(20,184,166,0.13);
+}
+
+.cs-achievement-strip-profile {
+  margin-top: 8px;
+}
+
+.cs-profile-achievements {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.cs-profile-achievement-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.cs-profile-achievement {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.045);
+}
+
+.cs-profile-achievement-icon {
+  width: 24px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.cs-profile-achievement-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cs-profile-achievement-title {
+  font-weight: 850;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.3;
+}

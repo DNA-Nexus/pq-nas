@@ -238,6 +238,8 @@ add_executable(pqnas_server
         server/src/dropzone_routes.cpp
         server/src/dropzone_index.cpp
         server/src/echo_stack_routes.cpp
+        server/src/achievements.cpp
+        server/src/achievements.h
         server/src/circle_stack_routes.cpp
         server/src/circle_stack_memory_nodes.cpp
         server/src/federation/pqnas_nodus_client.cpp
