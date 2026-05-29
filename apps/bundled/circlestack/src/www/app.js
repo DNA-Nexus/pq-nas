@@ -202,8 +202,439 @@ function csRenderAchievementStrip(rawBadges, options = {}) {
   return wrap;
 }
 
+
+function csAchievementCategoryLabel(category) {
+  const raw = String(category || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return csT(`profile.achievementCategory.${key}`, raw);
+}
+
+function csAchievementTierLabel(tier) {
+  const raw = String(tier || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return csT(`profile.achievementTier.${key}`, raw);
+}
+
+function csAchievementMetaLabel(badge) {
+  if (!badge) return "";
+  const category = csAchievementCategoryLabel(badge.category || "");
+  const tier = csAchievementTierLabel(badge.tier || "");
+  if (category && tier) return `${category} · ${tier}`;
+  return category || tier || "";
+}
+
+
+function csAchievementSlugFromBadge(badge) {
+  const normalize = (value) => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const direct = {
+    node_steward: "nodeSteward",
+    steward: "nodeSteward",
+    first_signal: "firstSignal",
+    signal: "firstSignal",
+    first_share: "firstShare",
+    share: "firstShare",
+    drop_zone_operator: "dropZoneOperator",
+    dropzone_operator: "dropZoneOperator",
+    trusted_device: "trustedDevice",
+    first_snapshot: "firstSnapshot",
+    snapshot: "firstSnapshot",
+    first_reel: "firstReel",
+    reel: "firstReel",
+    federation_pioneer: "federationPioneer",
+    signal_courier: "signalCourier",
+    deep_archive: "deepArchive",
+    first_remote_signal: "firstRemoteSignal",
+    federation_known_origin: "knownOrigin",
+    known_origin: "knownOrigin",
+    bridge_builder: "bridgeBuilder"
+  };
+
+  const candidates = [
+    badge && badge.id,
+    badge && badge.badge_id,
+    badge && badge.achievement_id,
+    badge && badge.key,
+    badge && badge.slug,
+    badge && badge.icon_key,
+    badge && badge.title,
+    badge && badge.name
+  ].map(normalize).filter(Boolean);
+
+  for (const c of candidates) {
+    if (direct[c]) return direct[c];
+
+    for (const [needle, slug] of Object.entries(direct)) {
+      if (c === needle || c.endsWith(`_${needle}`) || c.includes(needle)) {
+        return slug;
+      }
+    }
+  }
+
+  return "";
+}
+
+
+
+function csAchievementLockedTextKeyFromFallback(text) {
+  const raw = String(text || "").trim();
+
+  const direct = {
+    "Account has existed for at least 100 days.": "account100Days",
+    "Account has existed for at least 500 days.": "account500Days",
+    "Account has existed for at least 1000 days.": "account1000Days",
+    "Create your first Circle Stack post.": "firstSignal",
+    "Keep contributing meaningful Circle Stack posts over time.": "steadySignal",
+    "Become a steady voice in your Circle Stack community.": "circleVoice",
+    "Build a long-term posting history.": "longTermPoster",
+    "Share useful public posts over time.": "publicPoster",
+    "Share media-rich posts over time.": "mediaPoster",
+    "Take part in discussions.": "discussionParticipant",
+    "React to posts and help surface useful content.": "reactionGiver",
+    "Create posts that others respond to.": "responseMagnet",
+    "Start conversations that receive replies.": "conversationStarter",
+    "Build trusted Circle connections.": "circleConnector",
+    "Create your first share link.": "firstShare",
+    "Share files with others over time.": "fileSharer",
+    "Become a long-term sharing hub.": "sharingHub",
+    "Start building your personal data vault.": "dataVaultStarter",
+    "Keep growing your stored data over time.": "dataVaultBuilder",
+    "Maintain a large personal data vault.": "largeDataVault",
+    "Build a serious long-term storage archive.": "storageArchivist",
+    "Create your first Drop Zone.": "dropZoneOperator",
+    "Receive uploads through Drop Zone over time.": "dropZoneReceiver",
+    "Pair your first trusted device.": "trustedDevice",
+    "Archive your first web page in Echo Stack.": "echoStackFirstArchive",
+    "Preserve useful pages over time.": "echoStackKeeper",
+    "Build a serious personal web memory vault.": "echoStackVault",
+    "Store larger archived web snapshots over time.": "deepArchive",
+    "Upload your first photo.": "firstSnapshot",
+    "Build your photo memory collection over time.": "photoCollector",
+    "Create a serious personal photo library.": "photoLibrary",
+    "Upload your first video.": "firstReel",
+    "Build your video collection over time.": "videoCollector",
+    "Create a serious self-hosted video library.": "videoLibrary",
+    "Upload your first audio track.": "firstTrack",
+    "Build your music/audio collection over time.": "audioCollector",
+    "Create a serious self-hosted sound vault.": "soundVault",
+    "Publish your first public Circle Stack post through federation.": "federationPioneer",
+    "Keep sending meaningful signals through federation.": "signalCourier",
+    "Discover or add your first remote NAS origin.": "knownOrigin",
+    "Build bridges with several remote NAS origins.": "bridgeBuilder"
+  };
+
+  return direct[raw] || "";
+}
+
+function csAchievementLockedText(badge) {
+  const fallback = String((badge && badge.locked_text) || "");
+  const defaultText = csT(
+    "profile.lockedAchievementDefaultDesc",
+    "Keep using Circle Stack to discover this achievement."
+  );
+
+  const slug = csAchievementSlugFromBadge(badge);
+  if (slug) {
+    const missing = "__PQNAS_LOCKED_TEXT_MISSING__";
+    const translated = csT(`profile.achDesc.${slug}.locked`, missing);
+    if (translated !== missing) return translated;
+  }
+
+  const textKey = csAchievementLockedTextKeyFromFallback(fallback);
+  if (textKey) {
+    return csT(`profile.achLocked.${textKey}`, fallback || defaultText);
+  }
+
+  return fallback || defaultText;
+}
+
+
+function csAchievementReviewAllEnabled() {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    if (params.get("all_achievements") === "1") return true;
+    return localStorage.getItem("circlestack.reviewAllAchievements") === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function csAchievementIdentity(badge) {
+  return String(
+    (badge && (
+      badge.id ||
+      badge.badge_id ||
+      badge.achievement_id ||
+      badge.key ||
+      badge.slug ||
+      badge.title ||
+      badge.name
+    )) || ""
+  ).trim().toLowerCase();
+}
+
+function csAchievementReviewPromoteBadge(badge) {
+  const copy = Object.assign({}, badge || {});
+  copy.unlocked = true;
+  copy.earned = true;
+  copy.is_unlocked = true;
+  copy.is_earned = true;
+  copy.locked = false;
+  copy.unlocked_epoch = copy.unlocked_epoch || Math.floor(Date.now() / 1000);
+  copy.earned_epoch = copy.earned_epoch || copy.unlocked_epoch;
+  copy.created_epoch = copy.created_epoch || copy.unlocked_epoch;
+  copy.description = csAchievementDescriptionText(copy, "short") || copy.description || copy.desc || "";
+  copy.long_description = csAchievementDescriptionText(copy, "long") || copy.long_description || copy.description || "";
+  return copy;
+}
+
+function csAchievementReviewMergeUnlocked(earned, locked) {
+  const out = Array.isArray(earned) ? earned.map(csAchievementReviewPromoteBadge) : [];
+  const seen = new Set(out.map(csAchievementIdentity).filter(Boolean));
+
+  for (const badge of (Array.isArray(locked) ? locked : [])) {
+    const id = csAchievementIdentity(badge);
+    if (id && seen.has(id)) continue;
+    out.push(csAchievementReviewPromoteBadge(badge));
+    if (id) seen.add(id);
+  }
+
+  return out;
+}
+
+function csAchievementReviewMaybeHideLockedSection(el) {
+  if (!csAchievementReviewAllEnabled()) return;
+  if (el && el.style) el.style.display = "none";
+}
+
+
+
+function csAchievementShortText(badge) {
+  const id = String((badge && badge.id) || "");
+
+  const texts = {
+    "account.node_steward":
+      csT("profile.achShort.account.nodeSteward", "Admin or steward of this DNA-Nexus node."),
+
+    "account.established_signal":
+      csT("profile.achShort.account.establishedSignal", "Account has existed for at least 100 days."),
+
+    "account.old_guard":
+      csT("profile.achShort.account.oldGuard", "Account has existed for at least 500 days."),
+
+    "account.legacy_node":
+      csT("profile.achShort.account.legacyNode", "Account has existed for at least 1000 days."),
+
+    "circlestack.first_signal":
+      csT("profile.achShort.circlestack.firstSignal", "Created the first Circle Stack post."),
+
+    "circlestack.signal_sender":
+      csT("profile.achShort.circlestack.signalSender", "Keep contributing meaningful Circle Stack posts over time."),
+
+    "circlestack.broadcast_node":
+      csT("profile.achShort.circlestack.broadcastNode", "Become a steady voice in your Circle Stack community."),
+
+    "circlestack.anchor_voice":
+      csT("profile.achShort.circlestack.anchorVoice", "Build a long-term posting history."),
+
+    "circlestack.public_voice":
+      csT("profile.achShort.circlestack.publicVoice", "Share useful public posts over time."),
+
+    "circlestack.media_runner":
+      csT("profile.achShort.circlestack.mediaRunner", "Share media-rich posts over time."),
+
+    "circlestack.conversation_spark":
+      csT("profile.achShort.circlestack.conversationSpark", "Take part in discussions."),
+
+    "circlestack.signal_amplifier":
+      csT("profile.achShort.circlestack.signalAmplifier", "React to posts and help surface useful content."),
+
+    "circlestack.crowd_spark":
+      csT("profile.achShort.circlestack.crowdSpark", "Create posts that others respond to."),
+
+    "circlestack.thread_starter":
+      csT("profile.achShort.circlestack.threadStarter", "Start conversations that receive replies."),
+
+    "circlestack.circle_builder":
+      csT("profile.achShort.circlestack.circleBuilder", "Build trusted Circle connections."),
+
+    "shares.first_share":
+      csT("profile.achShort.shares.firstShare", "Created the first share link."),
+
+    "shares.packet_runner":
+      csT("profile.achShort.shares.packetRunner", "Share files with others over time."),
+
+    "shares.distribution_node":
+      csT("profile.achShort.shares.distributionNode", "Become a long-term sharing hub."),
+
+    "storage.data_seed":
+      csT("profile.achShort.storage.dataSeed", "Start building your personal data vault."),
+
+    "storage.vault_keeper":
+      csT("profile.achShort.storage.vaultKeeper", "Keep growing your stored data over time."),
+
+    "storage.keeper_500gb":
+      csT("profile.achShort.storage.keeper500gb", "Maintain a large personal data vault."),
+
+    "storage.terabyte_guardian":
+      csT("profile.achShort.storage.terabyteGuardian", "Build a serious long-term storage archive."),
+
+    "dropzone.operator":
+      csT("profile.achShort.dropzone.operator", "Created the first Drop Zone."),
+
+    "dropzone.gatekeeper":
+      csT("profile.achShort.dropzone.gatekeeper", "Receive uploads through Drop Zone over time."),
+
+    "security.trusted_device":
+      csT("profile.achShort.security.trustedDevice", "Paired the first trusted device."),
+
+    "echostack.first_archive":
+      csT("profile.achShort.echostack.firstArchive", "Archive your first web page in Echo Stack."),
+
+    "echostack.web_preserver":
+      csT("profile.achShort.echostack.webPreserver", "Preserve useful pages over time."),
+
+    "echostack.memory_vault":
+      csT("profile.achShort.echostack.memoryVault", "Build a serious personal web memory vault."),
+
+    "echostack.deep_archive":
+      csT("profile.achShort.echostack.deepArchive", "Store larger archived web snapshots over time."),
+
+    "media.first_snapshot":
+      csT("profile.achShort.media.firstSnapshot", "Uploaded the first photo."),
+
+    "media.memory_keeper":
+      csT("profile.achShort.media.memoryKeeper", "Build your photo memory collection over time."),
+
+    "media.gallery_curator":
+      csT("profile.achShort.media.galleryCurator", "Create a serious personal photo library."),
+
+    "media.first_reel":
+      csT("profile.achShort.media.firstReel", "Uploaded the first video."),
+
+    "media.video_vault":
+      csT("profile.achShort.media.videoVault", "Build your video collection over time."),
+
+    "media.cinema_keeper":
+      csT("profile.achShort.media.cinemaKeeper", "Create a serious self-hosted video library."),
+
+    "media.first_track":
+      csT("profile.achShort.media.firstTrack", "Upload your first audio track."),
+
+    "media.signal_dj":
+      csT("profile.achShort.media.signalDj", "Build your music/audio collection over time."),
+
+    "media.sound_vault":
+      csT("profile.achShort.media.soundVault", "Create a serious self-hosted sound vault."),
+
+    "federation.pioneer":
+      csT("profile.achShort.federation.pioneer", "Published the first local public Circle Stack post through federation."),
+
+    "federation.signal_courier":
+      csT("profile.achShort.federation.signalCourier", "Delivered several local Circle Stack signals through federation."),
+
+    "federation.first_remote_signal":
+      csT("profile.achShort.federation.firstRemoteSignal", "Received the first remote federation signal."),
+
+    "federation.cross_node_conversation":
+      csT("profile.achShort.federation.crossNodeConversation", "Created a cross-node conversation."),
+
+    "federation.known_origin":
+      csT("profile.achShort.federation.knownOrigin", "Added or discovered a remote NAS origin."),
+
+    "federation.bridge_builder":
+      csT("profile.achShort.federation.bridgeBuilder", "Connected this NAS with several remote origins.")
+  };
+
+  return texts[id] || "";
+}
+
+function csAchievementDescriptionText(badge, mode = "short") {
+  if (mode !== "long") {
+    const shortText = csAchievementShortText(badge);
+    if (shortText) return shortText;
+  }
+
+  const fallback = String(
+    (badge && (
+      (mode === "long" && (badge.long_description || badge.detail || badge.details || badge.full_description)) ||
+      badge.description ||
+      badge.desc ||
+      badge.long_description ||
+      badge.locked_text ||
+      badge.text
+    )) ||
+    ""
+  );
+
+  const suffix = mode === "long" ? "long" : "short";
+
+  const slug = csAchievementSlugFromBadge(badge);
+  if (slug) {
+    const missing = "__PQNAS_ACH_DESC_MISSING__";
+    const translated = csT(`profile.achDesc.${slug}.${suffix}`, missing);
+    if (translated !== missing) return translated;
+  }
+
+  const exact = {
+    "Admin or steward of this DNA-Nexus node.": "nodeSteward",
+    "Created the first Circle Stack post.": "firstSignal",
+    "Created the first share link.": "firstShare",
+    "Created the first Drop Zone.": "dropZoneOperator",
+    "Paired the first trusted device.": "trustedDevice",
+    "Uploaded the first photo.": "firstSnapshot",
+    "Uploaded the first video.": "firstReel",
+    "Published the first local public Circle Stack post through federation.": "federationPioneer",
+    "Delivered several local Circle Stack signals through federation.": "signalCourier",
+
+    "You are an admin or steward of this DNA-Nexus node.": "nodeSteward",
+    "You created your first Circle Stack post.": "firstSignal",
+    "You created your first share link. Sharing is one of the core NAS powers: letting someone access exactly what you choose, when you choose.": "firstShare",
+    "You created your first Drop Zone.": "dropZoneOperator",
+    "You paired your first trusted device.": "trustedDevice",
+    "You uploaded your first photo.": "firstSnapshot",
+    "You uploaded your first video.": "firstReel",
+    "Every network starts with one signal. This badge marks the moment your Circle Stack identity stopped being empty and started becoming part of the feed.": "firstSignal",
+    "First shares are how a NAS starts reaching outside itself. This badge marks the moment you created your first controlled access path.": "firstShare",
+    "Drop Zone starts with one open door, carefully controlled. This badge marks the moment you created your first outside upload path.": "dropZoneOperator",
+    "Trusted devices turn secure access into something smoother. This badge marks the first device you paired with your account.": "trustedDevice",
+    "One photo is the beginning of a memory library. This badge marks the first image you uploaded into your self-hosted collection.": "firstSnapshot",
+    "You uploaded your first video. Reel Stack starts with one clip, but grows into a self-hosted video vault over time.": "firstReel",
+    "You uploaded your first photo. Photo Gallery starts with one image, but grows into a personal memory library over time.": "firstSnapshot",
+    "You created your first Drop Zone. Drop Zone lets outsiders send files inward without giving them full NAS access.": "dropZoneOperator",
+    "You paired your first trusted device. Trusted devices make secure access easier while keeping control tied to your account.": "trustedDevice",
+    "You created your first Circle Stack post. Circle Stack starts with one signal, then grows into a private social layer around your NAS.": "firstSignal",
+    "You are an admin or steward of this DNA-Nexus node. Stewardship means keeping the node useful, safe, and alive.": "nodeSteward",
+    "You published the first local public Circle Stack post through federation.": "federationPioneer",
+    "You delivered several local Circle Stack signals through federation.": "signalCourier",
+
+    "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes.": "deepArchive",
+    "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack.": "firstRemoteSignal",
+    "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers.": "knownOrigin",
+    "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable.": "bridgeBuilder"
+  };
+
+  const exactSlug = exact[fallback] || "";
+  if (exactSlug) {
+    return csT(`profile.achDesc.${exactSlug}.${suffix}`, fallback);
+  }
+
+  return fallback;
+}
+
+
 function csRenderAchievementProfileBlock(rawBadges) {
-  const badges = csAchievementListFrom(rawBadges);
+  let badges = csAchievementListFrom(rawBadges);
+  if (csAchievementReviewAllEnabled()) {
+    badges = csAchievementReviewMergeUnlocked(badges, csAllAchievementPlaceholders());
+  }
   if (!badges.length) return null;
 
   const section = document.createElement("div");
@@ -211,7 +642,7 @@ function csRenderAchievementProfileBlock(rawBadges) {
 
   const label = document.createElement("div");
   label.className = "cs-profile-label";
-  label.textContent = "Achievements";
+  label.textContent = csT("profile.achievements", "Achievements");
   section.appendChild(label);
 
   const grid = document.createElement("div");
@@ -233,7 +664,7 @@ function csRenderAchievementProfileBlock(rawBadges) {
 
     const desc = document.createElement("span");
     desc.className = "cs-profile-achievement-desc";
-    desc.textContent = badge.description || "";
+    desc.textContent = csAchievementDescriptionText(badge, "short");
 
     body.appendChild(title);
     if (desc.textContent) body.appendChild(desc);
@@ -244,7 +675,7 @@ function csRenderAchievementProfileBlock(rawBadges) {
     item.classList.add("cs-profile-achievement-earned");
     item.setAttribute("role", "button");
     item.setAttribute("tabindex", "0");
-    item.title = "Open achievement";
+    item.title = csT("profile.openAchievement", "Open achievement");
 
     const openAchievement = () => {
       if (typeof csShowAchievementUnlockedModal === "function") {
@@ -690,7 +1121,7 @@ function csAllAchievementPlaceholders() {
       tier: "bronze",
       icon_key: "federation-known-origin",
       icon_asset: "badges/federation-known-origin.svg",
-      locked_text: "Discover or add your first remote NAS origin.",
+      locked_text: csT("profile.badgeDesc.lockedKnownOrigin", "Discover or add your first remote NAS origin."),
       disclosure: "exact"
     },
     {
@@ -700,13 +1131,15 @@ function csAllAchievementPlaceholders() {
       tier: "gold",
       icon_key: "federation-bridge-builder",
       icon_asset: "badges/federation-bridge-builder.svg",
-      locked_text: "Build bridges with several remote NAS origins.",
+      locked_text: csT("profile.badgeDesc.lockedBridgeBuilder", "Build bridges with several remote NAS origins."),
       disclosure: "hint"
     }
   ];
 }
 
 function csRenderLockedAchievementPlaceholders(earnedBadges) {
+  if (csAchievementReviewAllEnabled()) return null;
+
   const earnedIds = new Set(
     csAchievementListFrom(earnedBadges).map(b => String(b.id || ""))
   );
@@ -721,8 +1154,10 @@ function csRenderLockedAchievementPlaceholders(earnedBadges) {
 
   const label = document.createElement("div");
   label.className = "cs-profile-label";
-  label.textContent = "Locked achievements";
-  section.appendChild(label);
+  label.textContent = csT("profile.lockedAchievements", "Locked achievements");
+
+  csAchievementReviewMaybeHideLockedSection(label.closest(".cs-profile-section") || label.parentElement);
+section.appendChild(label);
 
   const grid = document.createElement("div");
   grid.className = "cs-profile-achievement-grid";
@@ -747,11 +1182,11 @@ function csRenderLockedAchievementPlaceholders(earnedBadges) {
 
     const title = document.createElement("span");
     title.className = "cs-profile-achievement-title";
-    title.textContent = badge.title || "Locked achievement";
+    title.textContent = badge.title || csT("profile.lockedAchievement", "Locked achievement");
 
     const desc = document.createElement("span");
     desc.className = "cs-profile-achievement-desc";
-    desc.textContent = badge.locked_text || "Keep using Circle Stack to discover this achievement.";
+    desc.textContent = csAchievementLockedText(badge);
 
     body.appendChild(title);
     body.appendChild(desc);
@@ -801,141 +1236,142 @@ async function csDismissAchievementUnlock(achievementId) {
 
 let csAchievementUnlockQueueActive = false;
 
+
 function csAchievementReplayText(badge) {
   const id = String((badge && badge.id) || "");
 
   const texts = {
     "account.node_steward":
-      "You help keep this DNA-Nexus node alive. Steward badges are about responsibility: maintaining the server, supporting users, and keeping the space trustworthy.",
+      csT("profile.achReplay.account.nodeSteward", "You help keep this DNA-Nexus node alive. Steward badges are about responsibility: maintaining the server, supporting users, and keeping the space trustworthy."),
 
     "account.established_signal":
-      "Your identity has started to build history. Time matters in DNA-Nexus because long-lived accounts are harder to fake than one-day identities.",
+      csT("profile.achReplay.account.establishedSignal", "Your identity has started to build history. Time matters in DNA-Nexus because long-lived accounts are harder to fake than one-day identities."),
 
     "account.old_guard":
-      "This account has been around for a long time. Old Guard badges show continuity, patience, and a persistent identity inside your own network.",
+      csT("profile.achReplay.account.oldGuard", "This account has been around for a long time. Old Guard badges show continuity, patience, and a persistent identity inside your own network."),
 
     "account.legacy_node":
-      "A long-lived node becomes part of the story. Legacy Node marks an identity that has survived across time, updates, and changing communities.",
+      csT("profile.achReplay.account.legacyNode", "A long-lived node becomes part of the story. Legacy Node marks an identity that has survived across time, updates, and changing communities."),
 
     "circlestack.first_signal":
-      "Every network starts with one signal. This badge marks the moment your Circle Stack identity stopped being empty and started becoming part of the feed.",
+      csT("profile.achReplay.circlestack.firstSignal", "Every network starts with one signal. This badge marks the moment your Circle Stack identity stopped being empty and started becoming part of the feed."),
 
     "circlestack.signal_sender":
-      "You keep contributing to the conversation. This badge is about showing up over time, not just making noise once.",
+      csT("profile.achReplay.circlestack.signalSender", "You keep contributing to the conversation. This badge is about showing up over time, not just making noise once."),
 
     "circlestack.broadcast_node":
-      "Your Circle Stack presence has become steady. A broadcast node helps keep the community alive by adding regular signals to the network.",
+      csT("profile.achReplay.circlestack.broadcastNode", "Your Circle Stack presence has become steady. A broadcast node helps keep the community alive by adding regular signals to the network."),
 
     "circlestack.anchor_voice":
-      "Anchor voices shape the memory of a circle. This badge is for long-term posting history and continued presence.",
+      csT("profile.achReplay.circlestack.anchorVoice", "Anchor voices shape the memory of a circle. This badge is for long-term posting history and continued presence."),
 
     "circlestack.public_voice":
-      "You have shared beyond your private circle. Public Voice means some of your posts help the wider DNA-Nexus network feel alive.",
+      csT("profile.achReplay.circlestack.publicVoice", "You have shared beyond your private circle. Public Voice means some of your posts help the wider DNA-Nexus network feel alive."),
 
     "circlestack.media_runner":
-      "You enrich posts with media. Images, videos, and other files turn a feed from plain text into shared memory.",
+      csT("profile.achReplay.circlestack.mediaRunner", "You enrich posts with media. Images, videos, and other files turn a feed from plain text into shared memory."),
 
     "circlestack.conversation_spark":
-      "You take part in discussions instead of only posting alone. Replies are one of the strongest signs that a circle is becoming social.",
+      csT("profile.achReplay.circlestack.conversationSpark", "You take part in discussions instead of only posting alone. Replies are one of the strongest signs that a circle is becoming social."),
 
     "circlestack.signal_amplifier":
-      "You help surface other people’s posts. Reactions are small signals, but together they tell the community what matters.",
+      csT("profile.achReplay.circlestack.signalAmplifier", "You help surface other people’s posts. Reactions are small signals, but together they tell the community what matters."),
 
     "circlestack.crowd_spark":
-      "Your posts invite response. This badge means your activity is not only visible — it is getting reactions from others.",
+      csT("profile.achReplay.circlestack.crowdSpark", "Your posts invite response. This badge means your activity is not only visible — it is getting reactions from others."),
 
     "circlestack.thread_starter":
-      "You start conversations that others join. Thread Starter is about creating openings for discussion, not only broadcasting.",
+      csT("profile.achReplay.circlestack.threadStarter", "You start conversations that others join. Thread Starter is about creating openings for discussion, not only broadcasting."),
 
     "circlestack.circle_builder":
-      "You are building trusted connections. Circle Builder is about turning isolated identities into a real social graph.",
+      csT("profile.achReplay.circlestack.circleBuilder", "You are building trusted connections. Circle Builder is about turning isolated identities into a real social graph."),
 
     "shares.first_share":
-      "You created your first share link. Sharing is one of the core NAS powers: letting someone access exactly what you choose, when you choose.",
+      csT("profile.achReplay.shares.firstShare", "You created your first share link. Sharing is one of the core NAS powers: letting someone access exactly what you choose, when you choose."),
 
     "shares.packet_runner":
-      "You use your NAS as a distribution point. Packet Runner reflects repeated sharing without needing a centralized cloud service.",
+      csT("profile.achReplay.shares.packetRunner", "You use your NAS as a distribution point. Packet Runner reflects repeated sharing without needing a centralized cloud service."),
 
     "shares.distribution_node":
-      "Your server is becoming a serious distribution node. This badge marks long-term sharing activity from your own infrastructure.",
+      csT("profile.achReplay.shares.distributionNode", "Your server is becoming a serious distribution node. This badge marks long-term sharing activity from your own infrastructure."),
 
     "storage.data_seed":
-      "You started growing your personal data vault. Small uploads become the seed of a long-term archive.",
+      csT("profile.achReplay.storage.dataSeed", "You started growing your personal data vault. Small uploads become the seed of a long-term archive."),
 
     "storage.vault_keeper":
-      "You are keeping meaningful data under your own control. Vault Keeper is about building a private archive instead of scattering files everywhere.",
+      csT("profile.achReplay.storage.vaultKeeper", "You are keeping meaningful data under your own control. Vault Keeper is about building a private archive instead of scattering files everywhere."),
 
     "storage.keeper_500gb":
-      "Your storage is no longer just experimental. A large vault means your NAS is becoming part of your real digital life.",
+      csT("profile.achReplay.storage.keeper500gb", "Your storage is no longer just experimental. A large vault means your NAS is becoming part of your real digital life."),
 
     "storage.terabyte_guardian":
-      "You are guarding a serious archive. Terabyte Guardian marks commitment to long-term self-hosted storage.",
+      csT("profile.achReplay.storage.terabyteGuardian", "You are guarding a serious archive. Terabyte Guardian marks commitment to long-term self-hosted storage."),
 
     "dropzone.operator":
-      "You opened a controlled upload path for others. Drop Zones let people send files to you without giving them full access to your NAS.",
+      csT("profile.achReplay.dropzone.operator", "You opened a controlled upload path for others. Drop Zones let people send files to you without giving them full access to your NAS."),
 
     "dropzone.gatekeeper":
-      "You show strong engagement by letting others send data into your storage through controlled gates. Keep managing those gates well.",
+      csT("profile.achReplay.dropzone.gatekeeper", "You show strong engagement by letting others send data into your storage through controlled gates. Keep managing those gates well."),
 
     "security.trusted_device":
-      "You paired a trusted device. Security badges are about strengthening identity and making access safer without losing convenience.",
+      csT("profile.achReplay.security.trustedDevice", "You paired a trusted device. Security badges are about strengthening identity and making access safer without losing convenience."),
 
     "echostack.first_archive":
-      "You saved your first page into Echo Stack. This is the start of your own web memory, kept on your NAS instead of disappearing into browser tabs.",
+      csT("profile.achReplay.echostack.firstArchive", "You saved your first page into Echo Stack. This is the start of your own web memory, kept on your NAS instead of disappearing into browser tabs."),
 
     "echostack.web_preserver":
-      "You are preserving useful pieces of the web. Web Preserver is about turning passing links into a library you control.",
+      csT("profile.achReplay.echostack.webPreserver", "You are preserving useful pieces of the web. Web Preserver is about turning passing links into a library you control."),
 
     "echostack.memory_vault":
-      "Your Echo Stack is becoming a real knowledge vault. This badge means you are building memory, not just collecting bookmarks.",
+      csT("profile.achReplay.echostack.memoryVault", "Your Echo Stack is becoming a real knowledge vault. This badge means you are building memory, not just collecting bookmarks."),
 
     "echostack.deep_archive":
-      "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes.",
+      csT("profile.achReplay.echostack.deepArchive", "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes."),
 
     "media.first_snapshot":
-      "You uploaded your first photo. This is where your NAS starts becoming a personal memory machine, not just a file bucket.",
+      csT("profile.achReplay.media.firstSnapshot", "You uploaded your first photo. This is where your NAS starts becoming a personal memory machine, not just a file bucket."),
 
     "media.memory_keeper":
-      "You are building a real photo history. Memory Keeper is about keeping your own visual memories under your own control.",
+      csT("profile.achReplay.media.memoryKeeper", "You are building a real photo history. Memory Keeper is about keeping your own visual memories under your own control."),
 
     "media.gallery_curator":
-      "Your photo library is becoming serious. Gallery Curator marks a NAS that is starting to feel like a private photo cloud.",
+      csT("profile.achReplay.media.galleryCurator", "Your photo library is becoming serious. Gallery Curator marks a NAS that is starting to feel like a private photo cloud."),
 
     "media.first_reel":
-      "You uploaded your first video. Reel Stack starts with one clip, but grows into a self-hosted video vault over time.",
+      csT("profile.achReplay.media.firstReel", "You uploaded your first video. Reel Stack starts with one clip, but grows into a self-hosted video vault over time."),
 
     "media.video_vault":
-      "You are keeping videos on your own storage. Video Vault is about moving memories and media away from disposable cloud silos.",
+      csT("profile.achReplay.media.videoVault", "You are keeping videos on your own storage. Video Vault is about moving memories and media away from disposable cloud silos."),
 
     "media.cinema_keeper":
-      "Your NAS is becoming a real video library. Cinema Keeper is for users who preserve larger moving memories and media collections.",
+      csT("profile.achReplay.media.cinemaKeeper", "Your NAS is becoming a real video library. Cinema Keeper is for users who preserve larger moving memories and media collections."),
 
     "media.first_track":
-      "You uploaded your first audio track. NeonWave starts when your NAS begins to carry sound, not only files.",
+      csT("profile.achReplay.media.firstTrack", "You uploaded your first audio track. NeonWave starts when your NAS begins to carry sound, not only files."),
 
     "media.signal_dj":
-      "You are building a music/audio collection. Signal DJ is about turning your NAS into a private listening base.",
+      csT("profile.achReplay.media.signalDj", "You are building a music/audio collection. Signal DJ is about turning your NAS into a private listening base."),
 
     "media.sound_vault":
-      "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories.",
+      csT("profile.achReplay.media.soundVault", "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories."),
 
     "federation.pioneer":
-      "Your NAS has sent its first public Circle Stack signal into the wider DNA-Nexus network. This is the moment your node stops being only local.",
+      csT("profile.achReplay.federation.pioneer", "Your NAS has sent its first public Circle Stack signal into the wider DNA-Nexus network. This is the moment your node stops being only local."),
 
     "federation.signal_courier":
-      "Your NAS is carrying signals across the network. Signal Courier is about reliable participation, not just one successful test.",
+      csT("profile.achReplay.federation.signalCourier", "Your NAS is carrying signals across the network. Signal Courier is about reliable participation, not just one successful test."),
 
     "federation.first_remote_signal":
-      "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack.",
+      csT("profile.achReplay.federation.firstRemoteSignal", "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack."),
 
     "federation.cross_node_conversation":
-      "Conversation has crossed node boundaries. This badge marks real social activity between separate DNA-Nexus servers.",
+      csT("profile.achReplay.federation.crossNodeConversation", "Conversation has crossed node boundaries. This badge marks real social activity between separate DNA-Nexus servers."),
 
     "federation.known_origin":
-      "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers.",
+      csT("profile.achReplay.federation.knownOrigin", "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers."),
 
     "federation.bridge_builder":
-      "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable."
+      csT("profile.achReplay.federation.bridgeBuilder", "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable.")
   };
 
   return texts[id] || "";
@@ -975,19 +1411,19 @@ function csShowAchievementUnlockedModal(badge, options = {}) {
 
     const title = document.createElement("div");
     title.className = "cs-achievement-unlock-title";
-    title.textContent = badge.title || "New achievement";
+    title.textContent = badge.title || csT("profile.newAchievement", "New achievement");
 
     const desc = document.createElement("div");
     desc.className = "cs-achievement-unlock-desc";
-    desc.textContent = badge.description || "";
+    desc.textContent = csAchievementDescriptionText(badge, "short");
 
     const tier = document.createElement("div");
     tier.className = "cs-achievement-unlock-tier";
-    tier.textContent = badge.tier ? `${badge.category || "achievement"} · ${badge.tier}` : (badge.category || "");
+    tier.textContent = csAchievementMetaLabel(badge);
 
     const replayText = document.createElement("div");
     replayText.className = "cs-achievement-replay-text";
-    replayText.textContent = modalOptions.replay ? csAchievementReplayText(badge) : "";
+    replayText.textContent = csAchievementReplayText(badge) || csAchievementDescriptionText(badge, "long");
 
     const actions = document.createElement("div");
     actions.className = "cs-modal-actions";
@@ -1191,7 +1627,7 @@ function csFederatedTypeLabel(type, targetType = "") {
   if (type === "circle.post.created") return "Remote post";
   if (type === "circle.reply.created") return "Remote reply";
   if (type === "circle.reaction.created") {
-    return targetType === "reply" ? "Remote reply reaction" : "Remote post reaction";
+    return targetType === "reply" ? "Remote reply reaction" : csT("federation.remotePostReaction", "Remote post reaction");
   }
   if (type === "circle.reaction.removed") {
     return targetType === "reply" ? "Remote reply reaction removed" : "Remote post reaction removed";
@@ -1619,7 +2055,7 @@ function csRenderFederatedMediaPreview(ev, payload) {
 
   img.addEventListener("error", () => {
     wrap.classList.add("is-error");
-    wrap.textContent = "Preview unavailable from origin NAS";
+    wrap.textContent = csT("federation.previewUnavailable", "Preview unavailable from origin NAS");
   }, { once: true });
 
   wrap.appendChild(img);
@@ -1789,7 +2225,7 @@ function csRenderFederatedEvent(ev) {
     const count = Number(payload.media_count || mediaRefs.length || (payload.has_media ? 1 : 0));
     const kindText = kinds.length ? ` · ${kinds.join(", ")}` : "";
     media.textContent = previewEl
-      ? `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · origin preview validated`
+      ? csT("federation.remoteMediaValidated", { count: count || 1, kind: kindText }, `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · origin preview validated`)
       : `${count || 1} remote media item${count === 1 ? "" : "s"}${kindText} · preview fetch coming later`;
     card.appendChild(media);
   }
@@ -1809,7 +2245,7 @@ function csRenderFederatedEvent(ev) {
 
   meta.textContent = createdText
     ? `${createdText} · Federated`
-    : "Federated";
+    : csT("federation.federated", "Federated");
 
   if (ev.event_id) {
     meta.title = `Federation event: ${ev.event_id}`;
@@ -2060,7 +2496,7 @@ async function csOpenMyProfilePage() {
   } catch (err) {
     profilePage.innerHTML = `
       <div class="cs-my-profile-card">
-        <div class="cs-modal-title">My Profile</div>
+        <div class="cs-modal-title">${csT("profile.myProfile", "My Profile")}</div>
         <div class="cs-modal-text">Could not load profile.</div>
       </div>
     `;
@@ -2100,7 +2536,7 @@ async function csOpenMyProfilePage() {
 
   const title = document.createElement("div");
   title.className = "cs-my-profile-title";
-  title.textContent = "My Profile";
+  title.textContent = csT("profile.myProfile", "My Profile");
 
   const nameEl = document.createElement("div");
   nameEl.className = "cs-my-profile-name";
@@ -2128,20 +2564,20 @@ async function csOpenMyProfilePage() {
 
   const statsTitle = document.createElement("div");
   statsTitle.className = "cs-my-profile-section-title";
-  statsTitle.textContent = "Circle Stack stats";
+  statsTitle.textContent = csT("profile.circleStackStats", "Circle Stack stats");
   card.appendChild(statsTitle);
 
   const statsGrid = document.createElement("div");
   statsGrid.className = "cs-my-profile-stats-grid";
-  statsGrid.appendChild(csProfileStat("Posts", stats.posts_total));
-  statsGrid.appendChild(csProfileStat("Public posts", stats.public_posts_total));
-  statsGrid.appendChild(csProfileStat("Media posts", stats.media_posts_total));
-  statsGrid.appendChild(csProfileStat("Replies written", stats.replies_total));
-  statsGrid.appendChild(csProfileStat("Reactions given", stats.reactions_given_total));
-  statsGrid.appendChild(csProfileStat("Replies received", stats.replies_received_total));
-  statsGrid.appendChild(csProfileStat("Reactions received", stats.post_reactions_received_total));
-  statsGrid.appendChild(csProfileStat("Circle connections", stats.circle_edges_total));
-  statsGrid.appendChild(csProfileStat("Account days", stats.account_age_days));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.posts", "Posts"), stats.posts_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.publicPosts", "Public posts"), stats.public_posts_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.mediaPosts", "Media posts"), stats.media_posts_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.repliesWritten", "Replies written"), stats.replies_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.reactionsGiven", "Reactions given"), stats.reactions_given_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.repliesReceived", "Replies received"), stats.replies_received_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.reactionsReceived", "Reactions received"), stats.post_reactions_received_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.circleConnections", "Circle connections"), stats.circle_edges_total));
+  statsGrid.appendChild(csProfileStat(csT("profile.stats.accountDays", "Account days"), stats.account_age_days));
   card.appendChild(statsGrid);
 
   const achBlock = csRenderAchievementProfileBlock(achievements);
@@ -2151,7 +2587,7 @@ async function csOpenMyProfilePage() {
   } else {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
-    empty.textContent = "No achievements unlocked yet.";
+    empty.textContent = csT("profile.noAchievementsUnlocked", "No achievements unlocked yet.");
     card.appendChild(empty);
   }
 
@@ -4699,16 +5135,16 @@ function csRenderKnownOriginRow(origin, refresh) {
 
   const url = document.createElement("div");
   url.className = "cs-known-origin-url";
-  url.textContent = origin.public_base_url || "No public URL saved";
+  url.textContent = origin.public_base_url || csT("origins.noPublicUrl", "No public URL saved");
 
   const meta = document.createElement("div");
   meta.className = "cs-known-origin-meta";
   meta.textContent = [
-    `origin: ${origin.origin_short || csElideFp(origin.origin_nas) || "unknown"}`,
-    `source: ${origin.source || "unknown"}`,
-    `added: ${csFormatOriginEpoch(origin.first_seen_epoch)}`,
-    origin.enabled ? "enabled" : "disabled",
-    origin.my_muted ? "muted for me" : "visible to me"
+    csT("origins.meta.origin", { value: origin.origin_short || csElideFp(origin.origin_nas) || "unknown" }, `origin: ${origin.origin_short || csElideFp(origin.origin_nas) || "unknown"}`),
+    csT("origins.meta.source", { value: origin.source || "unknown" }, `source: ${origin.source || "unknown"}`),
+    csT("origins.meta.added", { value: csFormatOriginEpoch(origin.first_seen_epoch) }, `added: ${csFormatOriginEpoch(origin.first_seen_epoch)}`),
+    origin.enabled ? csT("origins.enabled", "enabled") : csT("origins.disabled", "disabled"),
+    origin.my_muted ? csT("origins.mutedForMe", "muted for me") : csT("origins.visibleToMe", "visible to me")
   ].join(" · ");
 
   main.appendChild(title);
@@ -4722,11 +5158,11 @@ function csRenderKnownOriginRow(origin, refresh) {
     const copyOrigin = document.createElement("button");
     copyOrigin.className = "cs-modal-cancel";
     copyOrigin.type = "button";
-    copyOrigin.textContent = "Copy origin";
+    copyOrigin.textContent = csT("origins.copyOrigin", "Copy origin");
     copyOrigin.addEventListener("click", async () => {
       await navigator.clipboard.writeText(origin.origin_nas);
-      copyOrigin.textContent = "Copied";
-      setTimeout(() => { copyOrigin.textContent = "Copy origin"; }, 1200);
+      copyOrigin.textContent = csT("common.copied", "Copied");
+      setTimeout(() => { copyOrigin.textContent = csT("origins.copyOrigin", "Copy origin"); }, 1200);
     });
     actions.appendChild(copyOrigin);
   }
@@ -4735,11 +5171,11 @@ function csRenderKnownOriginRow(origin, refresh) {
     const copyUrl = document.createElement("button");
     copyUrl.className = "cs-modal-cancel";
     copyUrl.type = "button";
-    copyUrl.textContent = "Copy URL";
+    copyUrl.textContent = csT("origins.copyUrl", "Copy URL");
     copyUrl.addEventListener("click", async () => {
       await navigator.clipboard.writeText(origin.public_base_url);
-      copyUrl.textContent = "Copied";
-      setTimeout(() => { copyUrl.textContent = "Copy URL"; }, 1200);
+      copyUrl.textContent = csT("common.copied", "Copied");
+      setTimeout(() => { copyUrl.textContent = csT("origins.copyUrl", "Copy URL"); }, 1200);
     });
     actions.appendChild(copyUrl);
   }
@@ -4747,7 +5183,7 @@ function csRenderKnownOriginRow(origin, refresh) {
   const mute = document.createElement("button");
   mute.className = origin.my_muted ? "cs-modal-cancel" : "cs-modal-cancel";
   mute.type = "button";
-  mute.textContent = origin.my_muted ? "Unmute for me" : "Mute for me";
+  mute.textContent = origin.my_muted ? csT("origins.unmuteForMe", "Unmute for me") : csT("origins.muteForMe", "Mute for me");
   mute.title = "Personal feed setting. This does not stop server polling for other users.";
   mute.addEventListener("click", async () => {
     mute.disabled = true;
@@ -4774,7 +5210,7 @@ function csRenderKnownOriginRow(origin, refresh) {
   const toggle = document.createElement("button");
   toggle.className = origin.enabled ? "cs-modal-delete" : "cs-modal-cancel";
   toggle.type = "button";
-  toggle.textContent = origin.enabled ? "Disable globally" : "Enable globally";
+  toggle.textContent = origin.enabled ? csT("origins.disableGlobally", "Disable globally") : csT("origins.enableGlobally", "Enable globally");
   toggle.title = "Admin-only global polling control";
 
   toggle.addEventListener("click", async () => {
@@ -4785,7 +5221,7 @@ function csRenderKnownOriginRow(origin, refresh) {
       await refresh();
     } catch (err) {
       await csShowMessageDialog({
-        title: "Could not update origin",
+        title: csT("origins.updateFailedTitle", "Could not update origin"),
         message:
           "Global enable/disable is admin-only. Normal users should later get a personal mute/unfollow control.",
         detail: err && err.message ? err.message : String(err),
@@ -4821,12 +5257,12 @@ async function csOpenKnownOriginsModal() {
 
   const title = document.createElement("div");
   title.className = "cs-modal-title";
-  title.textContent = "Known remote origins";
+  title.textContent = csT("origins.modalTitle", "Known remote origins");
 
   const sub = document.createElement("div");
   sub.className = "cs-modal-text";
   sub.textContent =
-    "Remote NAS origins this server knows about. Personal mute only affects your feed. Admin global disable stops polling for everyone.";
+    csT("origins.modalDesc", "Remote NAS origins this server knows about. Personal mute only affects your feed. Admin global disable stops polling for everyone.");
 
   titleWrap.appendChild(title);
   titleWrap.appendChild(sub);
@@ -4857,7 +5293,7 @@ async function csOpenKnownOriginsModal() {
   const refreshBtn = document.createElement("button");
   refreshBtn.className = "cs-modal-cancel";
   refreshBtn.type = "button";
-  refreshBtn.textContent = "Refresh";
+  refreshBtn.textContent = csT("common.refresh", "Refresh");
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "cs-modal-cancel";
@@ -4899,23 +5335,23 @@ async function csOpenKnownOriginsModal() {
         const missingUrlCount = origins.filter((origin) => origin && !String(origin.public_base_url || "").trim()).length;
 
         const bits = [
-          `${origins.length} known origin${origins.length === 1 ? "" : "s"}`,
-          `${enabledCount} enabled`,
-          mutedCount ? `${mutedCount} muted for me` : "none muted",
-          missingUrlCount ? `${missingUrlCount} without public URL` : "all have public URL"
+          csT("origins.summary.knownOrigins", { count: origins.length }, `${origins.length} known origin${origins.length === 1 ? "" : "s"}`),
+          csT("origins.summary.enabled", { count: enabledCount }, `${enabledCount} enabled`),
+          mutedCount ? `${mutedCount} muted for me` : csT("origins.summary.noneMuted", "none muted"),
+          missingUrlCount ? `${missingUrlCount} without public URL` : csT("origins.summary.allHavePublicUrl", "all have public URL")
         ];
 
         status.textContent = bits.join(" · ");
       } else {
-        status.textContent = "No known remote origins yet.";
+        status.textContent = csT("origins.noneYet", "No known remote origins yet.");
       }
 
       try {
         const fed = await csFetchFederationStatus();
         federationStatus.textContent = [
-          `Federation status: ${Number(fed.known_origins || 0)} known`,
-          `${Number(fed.enabled_origins || 0)} enabled`,
-          `${Number(fed.muted_for_me || 0)} muted for me`,
+          csT("origins.federationStatus.known", { count: Number(fed.known_origins || 0) }, `Federation status: ${Number(fed.known_origins || 0)} known`),
+          csT("origins.federationStatus.enabled", { count: Number(fed.enabled_origins || 0) }, `${Number(fed.enabled_origins || 0)} enabled`),
+          csT("origins.federationStatus.mutedForMe", { count: Number(fed.muted_for_me || 0) }, `${Number(fed.muted_for_me || 0)} muted for me`),
           `${Number(fed.federated_local_reactions_for_me || 0)} remembered reaction${Number(fed.federated_local_reactions_for_me || 0) === 1 ? "" : "s"}`
         ].join(" · ");
       } catch (_) {
@@ -4925,8 +5361,10 @@ async function csOpenKnownOriginsModal() {
       if (!origins.length) {
         const empty = document.createElement("div");
         empty.className = "cs-empty";
-        empty.textContent =
-          "Add a federated person or follow a remote NAS to create the first known origin.";
+        empty.textContent = csT(
+          "origins.emptyHelp",
+          "Add a federated person or follow a remote NAS to create the first known origin."
+        );
         list.appendChild(empty);
         return;
       }
@@ -4935,9 +5373,9 @@ async function csOpenKnownOriginsModal() {
         list.appendChild(csRenderKnownOriginRow(origin, refresh));
       }
     } catch (err) {
-      status.textContent = "Could not load known origins.";
+      status.textContent = csT("origins.loadFailed", "Could not load known origins.");
       await csShowMessageDialog({
-        title: "Could not load known origins",
+        title: csT("origins.loadFailedTitle", "Could not load known origins"),
         message: err && err.message ? err.message : String(err),
         kind: "error"
       });
@@ -5483,7 +5921,7 @@ async function csOpenMyCircle() {
   `;
 
   const body = modal.querySelector("#csMyCircleBody");
-  
+
 const items = data.items || [];
 
 const peopleRes = await fetch("/api/v4/circlestack/people", { credentials: "same-origin" });
@@ -5512,7 +5950,7 @@ const list = Array.from(merged.values());
     for (const it of items) {
       const row = document.createElement("div");
       row.className = "cs-circle-row";
-      
+
 const name = csUserLabel(it.fp, usersByFp);
 
 const badge =
@@ -5962,7 +6400,7 @@ async function csOpenMyProfileModal() {
 
   const titlebarText = document.createElement("div");
   titlebarText.className = "cs-my-profile-windowbar-title";
-  titlebarText.textContent = "My Profile";
+  titlebarText.textContent = csT("profile.myProfile", "My Profile");
 
   const titlebarHint = document.createElement("div");
   titlebarHint.className = "cs-my-profile-windowbar-hint";
@@ -6141,7 +6579,7 @@ async function csOpenMyProfileModal() {
 
   const kicker = document.createElement("div");
   kicker.className = "cs-my-profile-title";
-  kicker.textContent = "My Profile";
+  kicker.textContent = csT("profile.myProfile", "My Profile");
 
   const nameEl = document.createElement("div");
   nameEl.className = "cs-my-profile-name";
@@ -6181,25 +6619,25 @@ async function csOpenMyProfileModal() {
 
   const statsTitle = document.createElement("div");
   statsTitle.className = "cs-my-profile-section-title";
-  statsTitle.textContent = "Circle Stack stats";
+  statsTitle.textContent = csT("profile.circleStackStats", "Circle Stack stats");
   shell.appendChild(statsTitle);
 
   const statsGrid = document.createElement("div");
   statsGrid.className = "cs-my-profile-stats-grid";
-  statsGrid.appendChild(stat("Posts", stats.posts_total));
-  statsGrid.appendChild(stat("Public posts", stats.public_posts_total));
-  statsGrid.appendChild(stat("Media posts", stats.media_posts_total));
-  statsGrid.appendChild(stat("Replies written", stats.replies_total));
-  statsGrid.appendChild(stat("Reactions given", stats.reactions_given_total));
-  statsGrid.appendChild(stat("Replies received", stats.replies_received_total));
-  statsGrid.appendChild(stat("Reactions received", stats.post_reactions_received_total));
-  statsGrid.appendChild(stat("Circle connections", stats.circle_edges_total));
-  statsGrid.appendChild(stat("Account days", stats.account_age_days));
+  statsGrid.appendChild(stat(csT("profile.stats.posts", "Posts"), stats.posts_total));
+  statsGrid.appendChild(stat(csT("profile.stats.publicPosts", "Public posts"), stats.public_posts_total));
+  statsGrid.appendChild(stat(csT("profile.stats.mediaPosts", "Media posts"), stats.media_posts_total));
+  statsGrid.appendChild(stat(csT("profile.stats.repliesWritten", "Replies written"), stats.replies_total));
+  statsGrid.appendChild(stat(csT("profile.stats.reactionsGiven", "Reactions given"), stats.reactions_given_total));
+  statsGrid.appendChild(stat(csT("profile.stats.repliesReceived", "Replies received"), stats.replies_received_total));
+  statsGrid.appendChild(stat(csT("profile.stats.reactionsReceived", "Reactions received"), stats.post_reactions_received_total));
+  statsGrid.appendChild(stat(csT("profile.stats.circleConnections", "Circle connections"), stats.circle_edges_total));
+  statsGrid.appendChild(stat(csT("profile.stats.accountDays", "Account days"), stats.account_age_days));
   shell.appendChild(statsGrid);
 
   const achievementTitle = document.createElement("div");
   achievementTitle.className = "cs-my-profile-section-title";
-  achievementTitle.textContent = "Earned achievements";
+  achievementTitle.textContent = csT("profile.earnedAchievements", "Earned achievements");
   shell.appendChild(achievementTitle);
 
   if (typeof csRenderAchievementProfileBlock === "function") {
@@ -6213,14 +6651,17 @@ async function csOpenMyProfileModal() {
   if (!achievements.length) {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
-    empty.textContent = "No achievements unlocked yet.";
+    empty.textContent = csT("profile.noAchievementsUnlocked", "No achievements unlocked yet.");
     shell.appendChild(empty);
   }
 
   const lockedTitle = document.createElement("div");
   lockedTitle.className = "cs-my-profile-section-title";
-  lockedTitle.textContent = "Locked achievements";
-  shell.appendChild(lockedTitle);
+  lockedTitle.textContent = csT("profile.lockedAchievements", "Locked achievements");
+  if (csAchievementReviewAllEnabled()) lockedTitle.style.display = "none";
+
+  csAchievementReviewMaybeHideLockedSection(lockedTitle.closest(".cs-profile-section") || lockedTitle.parentElement);
+shell.appendChild(lockedTitle);
 
   const lockedBlock = csRenderLockedAchievementPlaceholders(achievements);
   if (lockedBlock) {
@@ -6228,7 +6669,7 @@ async function csOpenMyProfileModal() {
   } else {
     const allUnlocked = document.createElement("div");
     allUnlocked.className = "cs-empty";
-    allUnlocked.textContent = "All visible achievements unlocked.";
+    allUnlocked.textContent = csT("profile.allVisibleAchievementsUnlocked", "All visible achievements unlocked.");
     shell.appendChild(allUnlocked);
   }
 
@@ -6422,7 +6863,7 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
       if (!text) return;
 
       // Small pills/labels.
-      if (text === "Known origin" || text === "Unknown origin") {
+      if (text === csT("federation.knownOrigin", csT("federation.knownOrigin", "Known origin")) || text === csT("federation.unknownOrigin", csT("federation.unknownOrigin", "Unknown origin"))) {
         el.classList.add("cs-fed-origin-pill-theme");
       }
 
@@ -6432,8 +6873,8 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
 
       // The Why? expanded explanation.
       if (
-        text.startsWith("This came from a NAS origin") ||
-        text.includes("Origin:") && text.includes("Source:") && text.includes("Event:")
+        text.startsWith(csT("federation.originDetailIntro", "This came from a NAS origin")) || text.startsWith("This came from a NAS origin") ||
+        text.includes(csT("federation.originLabel", "Origin:")) && text.includes(csT("federation.sourceLabel", "Source:")) && text.includes(csT("federation.eventLabel", "Event:"))
       ) {
         el.classList.add("cs-fed-why-note-theme");
       }
@@ -6449,7 +6890,7 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
       }
 
       // Remote post/reaction subtitles.
-      if (text === "Remote post" || text === "Remote post reaction") {
+      if (text === "Remote post" || text === csT("federation.remotePostReaction", "Remote post reaction")) {
         el.classList.add("cs-fed-subtitle-theme");
       }
     });
@@ -6497,7 +6938,7 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
       const text = textOf(el);
       if (!text) return;
 
-      if (text.startsWith("Target:") || text.startsWith("Target post") || text.includes("Post id:")) {
+      if (text.startsWith(csT("federation.targetLabel", "Target:")) || text.startsWith("Target post") || text.includes(csT("federation.postIdLabel", "Post id:"))) {
         el.classList.add("cs-fed-target-theme");
       }
 
