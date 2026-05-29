@@ -3433,3 +3433,18 @@ img.cs-profile-achievement-icon {
   border-color: rgba(45,212,191,0.22);
   background: rgba(255,255,255,0.065);
 }
+
+/* My Profile detached window centered open position */
+.cs-my-profile-detached-modal {
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+  }
+}

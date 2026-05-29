@@ -5211,6 +5211,7 @@ async function csOpenMyProfileModal() {
     modal.style.top = `${rect.top}px`;
     modal.style.right = "auto";
     modal.style.margin = "0";
+    modal.style.transform = "none";
 
     dragState = {
       pointerId: ev.pointerId,
