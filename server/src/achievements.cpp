@@ -154,6 +154,8 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     stats["dropzones_created_total"] = 0;
     stats["dropzone_uploads_received_total"] = 0;
     stats["trusted_devices_paired_total"] = 0;
+    stats["echostack_archives_total"] = 0;
+    stats["echostack_archive_bytes_total"] = 0;
 
     const auto db_path = activity_db_path_for_user_root_best_effort(user_root);
     if (db_path.empty()) return;
@@ -190,6 +192,8 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     long long dropzones_created = 0;
     long long dropzone_uploads = 0;
     long long trusted_devices = 0;
+    long long echostack_archives = 0;
+    long long echostack_archive_bytes = 0;
 
     while (sqlite3_step(st) == SQLITE_ROW) {
         const unsigned char* et_raw = sqlite3_column_text(st, 0);
@@ -246,6 +250,15 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
             ++trusted_devices;
             continue;
         }
+
+        if (event_type == "echostack.archive.created") {
+            ++echostack_archives;
+            echostack_archive_bytes += json_int64_any_key(
+                details,
+                {"size_bytes", "archive_bytes", "bytes", "total_bytes"}
+            );
+            continue;
+        }
     }
 
     sqlite3_finalize(st);
@@ -257,6 +270,8 @@ void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& 
     stats["dropzones_created_total"] = dropzones_created;
     stats["dropzone_uploads_received_total"] = dropzone_uploads;
     stats["trusted_devices_paired_total"] = trusted_devices;
+    stats["echostack_archives_total"] = echostack_archives;
+    stats["echostack_archive_bytes_total"] = echostack_archive_bytes;
 }
 
 std::string badge_icon_key_from_id(const std::string& id) {
@@ -290,6 +305,11 @@ std::string badge_icon_key_from_id(const std::string& id) {
     if (id == "dropzone.gatekeeper") return "gatekeeper";
 
     if (id == "security.trusted_device") return "trusted-device";
+
+    if (id == "echostack.first_archive") return "echo-first-archive";
+    if (id == "echostack.web_preserver") return "echo-web-preserver";
+    if (id == "echostack.memory_vault") return "echo-memory-vault";
+    if (id == "echostack.deep_archive") return "echo-deep-archive";
 
     return "";
 }
@@ -567,6 +587,8 @@ json stats_for(
         stats["dropzones_created_total"] = 1;
         stats["dropzone_uploads_received_total"] = 100;
         stats["trusted_devices_paired_total"] = 1;
+        stats["echostack_archives_total"] = 100;
+        stats["echostack_archive_bytes_total"] = 500LL * 1024LL * 1024LL;
     }
 
     return stats;
@@ -649,6 +671,18 @@ json badges_from_stats(const json& stats) {
 
     maybe_add(out, trusted_devices >= 1,
         badge("security.trusted_device", "Trusted Device", "Paired the first trusted device.", "🔐", "security", "bronze"));
+
+    const long long echostack_archives = stats.value("echostack_archives_total", 0LL);
+    const long long echostack_archive_bytes = stats.value("echostack_archive_bytes_total", 0LL);
+
+    maybe_add(out, echostack_archives >= 1,
+        badge("echostack.first_archive", "First Archive", "Archived the first web page in Echo Stack.", "📄", "echostack", "bronze"));
+    maybe_add(out, echostack_archives >= 25,
+        badge("echostack.web_preserver", "Web Preserver", "Archived at least 25 web pages.", "🕸️", "echostack", "silver"));
+    maybe_add(out, echostack_archives >= 100,
+        badge("echostack.memory_vault", "Memory Vault", "Archived at least 100 web pages.", "🧠", "echostack", "gold"));
+    maybe_add(out, echostack_archive_bytes >= 100LL * 1024LL * 1024LL,
+        badge("echostack.deep_archive", "Deep Archive", "Stored at least 100 MB of archived web snapshots.", "📚", "echostack", "gold"));
 
     return out;
 }

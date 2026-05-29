@@ -1,5 +1,6 @@
 #include "echo_stack_routes.h"
 #include "echo_stack_search_routes.h"
+#include "activity_log.h"
 #include "user_quota.h"
 
 #include <nlohmann/json.hpp>
@@ -4218,6 +4219,44 @@ deps.reply_json(res, 200, json{
                 {"message", "archive was written but database update failed"}
             }.dump());
             return;
+        }
+
+        {
+            pqnas::activity::ActivityEvent ev;
+            ev.owner_user_id = fp;
+            ev.actor.user_id = fp;
+            ev.actor.kind = "user";
+
+            if (deps.users) {
+                try {
+                    auto u = deps.users->get(fp);
+                    if (u.has_value()) {
+                        ev.actor.display_name = u->name;
+                    }
+                } catch (...) {
+                }
+            }
+
+            ev.event_type = "echostack.archive.created";
+            ev.scope_type = "user";
+            ev.target_kind = "archive";
+            ev.target_name = rec.title.empty() ? rec.url : rec.title;
+            ev.target_path = rec.url;
+            ev.details = {
+                {"item_id", rec.id},
+                {"url", rec.url},
+                {"final_url", rec.final_url},
+                {"archive_rel_dir", rec.archive_rel_dir},
+                {"size_bytes", staged_bytes},
+                {"archive_bytes", staged_bytes},
+                {"image_count", archived_image_count},
+                {"image_bytes", archived_image_bytes},
+                {"css_count", archived_css_count},
+                {"css_bytes", archived_css_bytes}
+            };
+
+            std::string activity_err;
+            (void)pqnas::activity::record_user_activity(user_dir, ev, &activity_err);
         }
 
         audit_local(deps, "v4.echostack_archive_ok", "ok", {

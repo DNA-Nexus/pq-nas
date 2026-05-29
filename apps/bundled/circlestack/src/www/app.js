@@ -84,7 +84,12 @@ const CS_BADGE_ICON_ASSETS = {
   "dropzone.operator": "badges/dropzone-operator.svg",
   "dropzone.gatekeeper": "badges/gatekeeper.svg",
 
-  "security.trusted_device": "badges/trusted-device.svg"
+  "security.trusted_device": "badges/trusted-device.svg",
+
+  "echostack.first_archive": "badges/echo-first-archive.svg",
+  "echostack.web_preserver": "badges/echo-web-preserver.svg",
+  "echostack.memory_vault": "badges/echo-memory-vault.svg",
+  "echostack.deep_archive": "badges/echo-deep-archive.svg"
 };
 
 function csSafeLocalBadgeAsset(raw) {
@@ -500,6 +505,47 @@ function csAllAchievementPlaceholders() {
       icon_asset: "badges/trusted-device.svg",
       locked_text: "Pair your first trusted device.",
       disclosure: "exact"
+    },
+
+    {
+      id: "echostack.first_archive",
+      title: "First Archive",
+      category: "echostack",
+      tier: "bronze",
+      icon_key: "echo-first-archive",
+      icon_asset: "badges/echo-first-archive.svg",
+      locked_text: "Archive your first web page in Echo Stack.",
+      disclosure: "exact"
+    },
+    {
+      id: "echostack.web_preserver",
+      title: "Web Preserver",
+      category: "echostack",
+      tier: "silver",
+      icon_key: "echo-web-preserver",
+      icon_asset: "badges/echo-web-preserver.svg",
+      locked_text: "Preserve useful pages over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "echostack.memory_vault",
+      title: "Memory Vault",
+      category: "echostack",
+      tier: "gold",
+      icon_key: "echo-memory-vault",
+      icon_asset: "badges/echo-memory-vault.svg",
+      locked_text: "Build a serious personal web memory vault.",
+      disclosure: "hint"
+    },
+    {
+      id: "echostack.deep_archive",
+      title: "Deep Archive",
+      category: "echostack",
+      tier: "gold",
+      icon_key: "echo-deep-archive",
+      icon_asset: "badges/echo-deep-archive.svg",
+      locked_text: "Store larger archived web snapshots over time.",
+      disclosure: "hint"
     }
   ];
 }
@@ -676,7 +722,19 @@ function csAchievementReplayText(badge) {
       "You show strong engagement by letting others send data into your storage through controlled gates. Keep managing those gates well.",
 
     "security.trusted_device":
-      "You paired a trusted device. Security badges are about strengthening identity and making access safer without losing convenience."
+      "You paired a trusted device. Security badges are about strengthening identity and making access safer without losing convenience.",
+
+    "echostack.first_archive":
+      "You saved your first page into Echo Stack. This is the start of your own web memory, kept on your NAS instead of disappearing into browser tabs.",
+
+    "echostack.web_preserver":
+      "You are preserving useful pieces of the web. Web Preserver is about turning passing links into a library you control.",
+
+    "echostack.memory_vault":
+      "Your Echo Stack is becoming a real knowledge vault. This badge means you are building memory, not just collecting bookmarks.",
+
+    "echostack.deep_archive":
+      "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes."
   };
 
   return texts[id] || "";

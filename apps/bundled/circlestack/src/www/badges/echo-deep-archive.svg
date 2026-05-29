@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#60a5fa" stop-opacity="0.42"/>
+      <stop offset="0.55" stop-color="#111827" stop-opacity="1"/>
+      <stop offset="1" stop-color="#a855f7" stop-opacity="0.38"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="20" y1="20" x2="236" y2="236">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="54" fill="url(#bg)" stroke="url(#ring)" stroke-width="4"/>
+  <circle cx="128" cy="128" r="88" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
+  
+  <path d="M72 82 H170 Q188 82 188 100 V178 Q188 192 174 192 H72 Z"
+        fill="#f8fafc" fill-opacity="0.88" stroke="#67e8f9" stroke-width="8"/>
+  <path d="M72 82 Q96 98 72 114 V192" fill="none" stroke="#0f172a" stroke-opacity="0.26" stroke-width="7"/>
+  <path d="M104 112 H156 M104 138 H162 M104 164 H146" stroke="#0f172a" stroke-opacity="0.36" stroke-width="7" stroke-linecap="round"/>
+  <path d="M188 112 L206 128 L188 144" fill="none" stroke="#fbbf24" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+</svg>
