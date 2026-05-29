@@ -218,6 +218,20 @@ function csSaveSeenAchievementIds(ids) {
   } catch (_) {}
 }
 
+async function csDismissAchievementUnlock(achievementId) {
+  const id = String(achievementId || "").trim();
+  if (!id) return;
+
+  try {
+    await fetch(`${CS_API}/achievements/dismiss`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ achievement_id: id })
+    });
+  } catch (_) {}
+}
+
 function csShowAchievementUnlockedModal(badge) {
   if (!badge || !badge.id) return;
 
@@ -259,7 +273,13 @@ function csShowAchievementUnlockedModal(badge) {
   close.className = "cs-modal-cancel";
   close.type = "button";
   close.textContent = "Nice";
-  close.addEventListener("click", () => backdrop.remove());
+
+  const dismissAndClose = () => {
+    csDismissAchievementUnlock(badge.id);
+    backdrop.remove();
+  };
+
+  close.addEventListener("click", dismissAndClose);
 
   actions.appendChild(close);
 
@@ -272,7 +292,7 @@ function csShowAchievementUnlockedModal(badge) {
 
   backdrop.appendChild(modal);
   backdrop.addEventListener("click", (ev) => {
-    if (ev.target === backdrop) backdrop.remove();
+    if (ev.target === backdrop) dismissAndClose();
   });
 
   document.body.appendChild(backdrop);
@@ -295,6 +315,16 @@ async function csCheckAchievementUnlocks() {
   const badges = csAchievementListFrom(data && data.achievements);
   if (!badges.length) return;
 
+  // V2 backend returns newly_unlocked. When present, trust server-side unlock history.
+  if (data && Array.isArray(data.newly_unlocked)) {
+    const serverNewlyUnlocked = csAchievementListFrom(data.newly_unlocked);
+    if (serverNewlyUnlocked.length) {
+      setTimeout(() => csShowAchievementUnlockedModal(serverNewlyUnlocked[0]), 450);
+    }
+    return;
+  }
+
+  // Fallback for older backends.
   const seen = csLoadSeenAchievementIds();
   const newlyUnlocked = badges.filter(b => b && b.id && !seen.has(b.id));
 
@@ -304,7 +334,6 @@ async function csCheckAchievementUnlocks() {
   csSaveSeenAchievementIds(seen);
 
   if (newlyUnlocked.length) {
-    // Show one modal at a time. The highest/current first badge is enough for v1.
     setTimeout(() => csShowAchievementUnlockedModal(newlyUnlocked[0]), 450);
   }
 }

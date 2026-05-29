@@ -4370,6 +4370,66 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
         });
 
 
+    server.Post("/api/v4/circlestack/achievements/dismiss",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string achievement_id = body.value("achievement_id", "");
+            if (achievement_id.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_achievement_id"}
+                });
+            }
+
+            cs_db_init();
+
+            if (!g_db) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circlestack_db_unavailable"}
+                });
+            }
+
+            std::string err;
+            if (!pqnas::achievements::mark_achievement_dismissed(
+                    g_db,
+                    actor_fp,
+                    achievement_id,
+                    &err)) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "achievement_dismiss_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"achievement_id", achievement_id},
+                {"dismissed", true}
+            });
+        });
+
+
     server.Get("/api/v4/circlestack/search_users",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp, actor_role;

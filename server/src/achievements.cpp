@@ -133,6 +133,164 @@ void maybe_add(json& out, bool ok, const json& b) {
     if (ok) out.push_back(b);
 }
 
+bool exec_sql(sqlite3* db, const char* sql, std::string* err) {
+    if (err) *err = "";
+    if (!db || !sql) {
+        if (err) *err = "invalid_sqlite_exec";
+        return false;
+    }
+
+    char* raw_err = nullptr;
+    const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &raw_err);
+    if (rc != SQLITE_OK) {
+        if (err) {
+            *err = raw_err ? raw_err : sqlite3_errmsg(db);
+        }
+        if (raw_err) sqlite3_free(raw_err);
+        return false;
+    }
+
+    return true;
+}
+
+bool ensure_unlock_table(sqlite3* db, std::string* err) {
+    return exec_sql(db,
+        "CREATE TABLE IF NOT EXISTS user_achievement_unlocks ("
+        " user_fp TEXT NOT NULL,"
+        " achievement_id TEXT NOT NULL,"
+        " unlocked_epoch INTEGER NOT NULL,"
+        " first_seen_epoch INTEGER NOT NULL DEFAULT 0,"
+        " last_seen_epoch INTEGER NOT NULL DEFAULT 0,"
+        " dismissed_epoch INTEGER NOT NULL DEFAULT 0,"
+        " visible INTEGER NOT NULL DEFAULT 1,"
+        " pinned INTEGER NOT NULL DEFAULT 0,"
+        " PRIMARY KEY(user_fp, achievement_id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_user_achievement_unlocks_user "
+        "ON user_achievement_unlocks(user_fp);",
+        err);
+}
+
+bool insert_unlock_if_missing(
+    sqlite3* db,
+    const std::string& user_fp,
+    const std::string& achievement_id,
+    long long now_epoch
+) {
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT OR IGNORE INTO user_achievement_unlocks "
+        "(user_fp, achievement_id, unlocked_epoch, first_seen_epoch, last_seen_epoch, dismissed_epoch, visible, pinned) "
+        "VALUES (?, ?, ?, 0, ?, 0, 1, 0)";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, user_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, achievement_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 3, now_epoch);
+    sqlite3_bind_int64(st, 4, now_epoch);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    return rc == SQLITE_DONE;
+}
+
+bool touch_unlock_seen(
+    sqlite3* db,
+    const std::string& user_fp,
+    const std::string& achievement_id,
+    long long now_epoch
+) {
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "UPDATE user_achievement_unlocks "
+        "SET last_seen_epoch = ?, "
+        "    first_seen_epoch = CASE WHEN first_seen_epoch = 0 THEN ? ELSE first_seen_epoch END "
+        "WHERE user_fp = ? AND achievement_id = ?";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, now_epoch);
+    sqlite3_bind_int64(st, 2, now_epoch);
+    sqlite3_bind_text(st, 3, user_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, achievement_id.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    return rc == SQLITE_DONE;
+}
+
+long long unlock_dismissed_epoch(
+    sqlite3* db,
+    const std::string& user_fp,
+    const std::string& achievement_id
+) {
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "SELECT dismissed_epoch FROM user_achievement_unlocks "
+        "WHERE user_fp = ? AND achievement_id = ?";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    sqlite3_bind_text(st, 1, user_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, achievement_id.c_str(), -1, SQLITE_TRANSIENT);
+
+    long long out = 0;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = sqlite3_column_int64(st, 0);
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+json sync_unlock_history(
+    sqlite3* db,
+    const std::string& user_fp,
+    const json& current_badges
+) {
+    json newly_unlocked = json::array();
+
+    if (!db || user_fp.empty() || !current_badges.is_array()) {
+        return newly_unlocked;
+    }
+
+    std::string err;
+    if (!ensure_unlock_table(db, &err)) {
+        return newly_unlocked;
+    }
+
+    const long long now_epoch = static_cast<long long>(std::time(nullptr));
+
+    for (const auto& badge : current_badges) {
+        if (!badge.is_object()) continue;
+
+        const std::string achievement_id = badge.value("id", "");
+        if (achievement_id.empty()) continue;
+
+        if (!insert_unlock_if_missing(db, user_fp, achievement_id, now_epoch)) {
+            continue;
+        }
+
+        touch_unlock_seen(db, user_fp, achievement_id, now_epoch);
+
+        const long long dismissed = unlock_dismissed_epoch(db, user_fp, achievement_id);
+        if (dismissed == 0) {
+            newly_unlocked.push_back(badge);
+        }
+    }
+
+    return newly_unlocked;
+}
+
 json stats_for(sqlite3* db, const std::string& fp, const std::string& added_at_iso, const std::string& role) {
     json stats = json::object();
 
@@ -270,13 +428,79 @@ json circle_stack_profile_json(
     out["user_fp"] = user_fp;
 
     const json stats = stats_for(circle_db, user_fp, added_at_iso, role);
-    out["achievements"] = badges_from_stats(stats);
+    const json achievements = badges_from_stats(stats);
+
+    out["achievements"] = achievements;
+    out["newly_unlocked"] = include_private_stats
+        ? sync_unlock_history(circle_db, user_fp, achievements)
+        : json::array();
 
     if (include_private_stats) {
         out["stats"] = stats;
     }
 
     return out;
+}
+
+bool mark_achievement_dismissed(
+    sqlite3* circle_db,
+    const std::string& user_fp,
+    const std::string& achievement_id,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    if (!circle_db) {
+        if (err) *err = "circle_db_unavailable";
+        return false;
+    }
+
+    if (user_fp.empty() || achievement_id.empty()) {
+        if (err) *err = "missing_user_or_achievement";
+        return false;
+    }
+
+    if (!ensure_unlock_table(circle_db, err)) {
+        return false;
+    }
+
+    const long long now_epoch = static_cast<long long>(std::time(nullptr));
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT INTO user_achievement_unlocks "
+        "(user_fp, achievement_id, unlocked_epoch, first_seen_epoch, last_seen_epoch, dismissed_epoch, visible, pinned) "
+        "VALUES (?, ?, ?, ?, ?, ?, 1, 0) "
+        "ON CONFLICT(user_fp, achievement_id) DO UPDATE SET "
+        " first_seen_epoch = CASE "
+        "   WHEN user_achievement_unlocks.first_seen_epoch = 0 THEN excluded.first_seen_epoch "
+        "   ELSE user_achievement_unlocks.first_seen_epoch END,"
+        " last_seen_epoch = excluded.last_seen_epoch,"
+        " dismissed_epoch = CASE "
+        "   WHEN user_achievement_unlocks.dismissed_epoch = 0 THEN excluded.dismissed_epoch "
+        "   ELSE user_achievement_unlocks.dismissed_epoch END";
+
+    if (sqlite3_prepare_v2(circle_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(circle_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, user_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, achievement_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 3, now_epoch);
+    sqlite3_bind_int64(st, 4, now_epoch);
+    sqlite3_bind_int64(st, 5, now_epoch);
+    sqlite3_bind_int64(st, 6, now_epoch);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(circle_db);
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace pqnas::achievements

@@ -20,4 +20,10 @@ nlohmann::json circle_stack_profile_json(
     const std::string& role,
     bool include_private_stats);
 
+bool mark_achievement_dismissed(
+    sqlite3* circle_db,
+    const std::string& user_fp,
+    const std::string& achievement_id,
+    std::string* err);
+
 } // namespace pqnas::achievements
