@@ -384,6 +384,7 @@ json cs_public_badges_for_fp(
 
     std::string added_at;
     std::string role;
+    std::filesystem::path user_root;
 
     if (deps.users) {
         auto u = deps.users->get(fp);
@@ -391,10 +392,19 @@ json cs_public_badges_for_fp(
             added_at = u->added_at;
             role = u->role;
         }
+
+        if (deps.user_dir_for_fp) {
+            try {
+                user_root = deps.user_dir_for_fp(*deps.users, fp);
+            } catch (...) {
+                user_root.clear();
+            }
+        }
     }
 
     return pqnas::achievements::circle_stack_public_badges(
         db,
+        user_root,
         fp,
         added_at,
         role
@@ -4323,8 +4333,18 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     item["role"] = u.role;
                     item["avatar_url"] = u.avatar_url;
                     item["is_me"] = (u.fingerprint == actor_fp);
+                    std::filesystem::path user_root;
+                    if (deps.user_dir_for_fp && deps.users) {
+                        try {
+                            user_root = deps.user_dir_for_fp(*deps.users, u.fingerprint);
+                        } catch (...) {
+                            user_root.clear();
+                        }
+                    }
+
                     item["achievements"] = pqnas::achievements::circle_stack_public_badges(
                         g_db,
+                        user_root,
                         u.fingerprint,
                         u.added_at,
                         u.role
@@ -4360,8 +4380,18 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 }
             }
 
+            std::filesystem::path user_root;
+            if (deps.user_dir_for_fp && deps.users) {
+                try {
+                    user_root = deps.user_dir_for_fp(*deps.users, actor_fp);
+                } catch (...) {
+                    user_root.clear();
+                }
+            }
+
             set_json(res, pqnas::achievements::circle_stack_profile_json(
                 g_db,
+                user_root,
                 actor_fp,
                 added_at,
                 role,

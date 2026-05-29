@@ -3594,3 +3594,44 @@ img.cs-profile-achievement-icon {
   background: rgba(15,23,42,0.96);
   color: rgba(255,255,255,0.56);
 }
+
+/* Clickable earned achievements */
+.cs-profile-achievement-earned {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.cs-profile-achievement-earned:hover,
+.cs-profile-achievement-earned:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(45,212,191,0.44);
+  background: rgba(255,255,255,0.065);
+  box-shadow:
+    0 12px 28px rgba(0,0,0,0.22),
+    0 0 22px rgba(45,212,191,0.08);
+  outline: none;
+}
+
+.cs-profile-achievement-earned:active {
+  transform: translateY(0);
+}
+
+/* Extra explanation when replaying an earned achievement */
+.cs-achievement-replay-text {
+  margin: 14px auto 12px;
+  max-width: 360px;
+  padding: 12px 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(45,212,191,0.18);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.10), transparent 36%),
+    rgba(255,255,255,0.045);
+  color: rgba(255,255,255,0.70);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}

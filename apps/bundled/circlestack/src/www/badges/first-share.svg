@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.42"/>
+      <stop offset="0.55" stop-color="#111827" stop-opacity="1"/>
+      <stop offset="1" stop-color="#2dd4bf" stop-opacity="0.38"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="20" y1="20" x2="236" y2="236">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="54" fill="url(#bg)" stroke="url(#ring)" stroke-width="4"/>
+  <circle cx="128" cy="128" r="88" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
+  
+  <path d="M92 132 C70 132 54 116 54 96 C54 76 70 60 92 60 H116"
+        fill="none" stroke="#f8fafc" stroke-width="16" stroke-linecap="round"/>
+  <path d="M140 60 H164 C186 60 202 76 202 96 C202 116 186 132 164 132 H140"
+        fill="none" stroke="#67e8f9" stroke-width="16" stroke-linecap="round"/>
+  <path d="M104 96 H152" stroke="#fbbf24" stroke-width="14" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M90 168 H166" stroke="#f8fafc" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+
+</svg>

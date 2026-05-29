@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -109,6 +110,155 @@ bool dev_force_all_achievements_for_fp(const std::string& fp) {
     return target == "*" || target == fp;
 }
 
+std::filesystem::path activity_db_path_for_user_root_best_effort(const std::filesystem::path& user_root) {
+    if (user_root.empty()) return {};
+    return user_root / ".pqnas_activity" / "activity.sqlite";
+}
+
+long long json_int64_any_key(const json& j, std::initializer_list<const char*> keys) {
+    if (!j.is_object()) return 0;
+
+    for (const char* key : keys) {
+        if (!key) continue;
+
+        auto it = j.find(key);
+        if (it == j.end()) continue;
+
+        try {
+            if (it->is_number_integer() || it->is_number_unsigned()) {
+                return it->get<long long>();
+            }
+
+            if (it->is_number_float()) {
+                return static_cast<long long>(it->get<double>());
+            }
+
+            if (it->is_string()) {
+                const std::string raw = trim_ascii_copy(it->get<std::string>());
+                if (!raw.empty()) {
+                    return std::stoll(raw);
+                }
+            }
+        } catch (...) {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+void add_activity_stats_for_user_root(json& stats, const std::filesystem::path& user_root) {
+    stats["shares_created_total"] = 0;
+    stats["uploads_total"] = 0;
+    stats["uploaded_bytes_total"] = 0;
+    stats["dropzones_created_total"] = 0;
+    stats["dropzone_uploads_received_total"] = 0;
+    stats["trusted_devices_paired_total"] = 0;
+
+    const auto db_path = activity_db_path_for_user_root_best_effort(user_root);
+    if (db_path.empty()) return;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(db_path, ec) || ec) return;
+
+    sqlite3* db = nullptr;
+    const int open_rc = sqlite3_open_v2(
+        db_path.string().c_str(),
+        &db,
+        SQLITE_OPEN_READONLY,
+        nullptr
+    );
+
+    if (open_rc != SQLITE_OK || !db) {
+        if (db) sqlite3_close(db);
+        return;
+    }
+
+    const char* sql =
+        "SELECT event_type, COALESCE(details_json, '') "
+        "FROM activity_events";
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return;
+    }
+
+    long long shares_created = 0;
+    long long uploads = 0;
+    long long uploaded_bytes = 0;
+    long long dropzones_created = 0;
+    long long dropzone_uploads = 0;
+    long long trusted_devices = 0;
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const unsigned char* et_raw = sqlite3_column_text(st, 0);
+        const unsigned char* details_raw = sqlite3_column_text(st, 1);
+
+        const std::string event_type = et_raw
+            ? reinterpret_cast<const char*>(et_raw)
+            : std::string();
+
+        const std::string details_s = details_raw
+            ? reinterpret_cast<const char*>(details_raw)
+            : std::string();
+
+        json details = json::object();
+        if (!details_s.empty()) {
+            try {
+                details = json::parse(details_s);
+                if (!details.is_object()) details = json::object();
+            } catch (...) {
+                details = json::object();
+            }
+        }
+
+        if (event_type == "share.created") {
+            ++shares_created;
+            continue;
+        }
+
+        if (event_type == "dropzone.created") {
+            ++dropzones_created;
+            continue;
+        }
+
+        if (event_type == "dropzone.uploaded") {
+            ++dropzone_uploads;
+            ++uploads;
+            uploaded_bytes += json_int64_any_key(
+                details,
+                {"size_bytes", "bytes", "file_size", "upload_bytes", "uploaded_bytes", "total_bytes"}
+            );
+            continue;
+        }
+
+        if (event_type == "file.uploaded") {
+            ++uploads;
+            uploaded_bytes += json_int64_any_key(
+                details,
+                {"size_bytes", "bytes", "file_size", "upload_bytes", "uploaded_bytes", "total_bytes"}
+            );
+            continue;
+        }
+
+        if (event_type == "security.device_paired") {
+            ++trusted_devices;
+            continue;
+        }
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+
+    stats["shares_created_total"] = shares_created;
+    stats["uploads_total"] = uploads;
+    stats["uploaded_bytes_total"] = uploaded_bytes;
+    stats["dropzones_created_total"] = dropzones_created;
+    stats["dropzone_uploads_received_total"] = dropzone_uploads;
+    stats["trusted_devices_paired_total"] = trusted_devices;
+}
+
 std::string badge_icon_key_from_id(const std::string& id) {
     if (id == "account.node_steward") return "node-steward";
     if (id == "account.established_signal") return "established-signal";
@@ -126,6 +276,20 @@ std::string badge_icon_key_from_id(const std::string& id) {
     if (id == "circlestack.crowd_spark") return "crowd-spark";
     if (id == "circlestack.thread_starter") return "thread-starter";
     if (id == "circlestack.circle_builder") return "circle-builder";
+
+    if (id == "shares.first_share") return "first-share";
+    if (id == "shares.packet_runner") return "packet-runner";
+    if (id == "shares.distribution_node") return "distribution-node";
+
+    if (id == "storage.data_seed") return "data-seed";
+    if (id == "storage.vault_keeper") return "vault-keeper";
+    if (id == "storage.keeper_500gb") return "keeper-500gb";
+    if (id == "storage.terabyte_guardian") return "terabyte-guardian";
+
+    if (id == "dropzone.operator") return "dropzone-operator";
+    if (id == "dropzone.gatekeeper") return "gatekeeper";
+
+    if (id == "security.trusted_device") return "trusted-device";
 
     return "";
 }
@@ -318,7 +482,13 @@ json sync_unlock_history(
     return newly_unlocked;
 }
 
-json stats_for(sqlite3* db, const std::string& fp, const std::string& added_at_iso, const std::string& role) {
+json stats_for(
+    sqlite3* db,
+    const std::filesystem::path& user_root,
+    const std::string& fp,
+    const std::string& added_at_iso,
+    const std::string& role
+) {
     json stats = json::object();
 
     stats["account_age_days"] = account_age_days(added_at_iso);
@@ -378,6 +548,8 @@ json stats_for(sqlite3* db, const std::string& fp, const std::string& added_at_i
         fp,
         fp);
 
+    add_activity_stats_for_user_root(stats, user_root);
+
     if (dev_force_all_achievements_for_fp(fp)) {
         stats["account_age_days"] = 1001;
         stats["posts_total"] = 1000;
@@ -388,6 +560,13 @@ json stats_for(sqlite3* db, const std::string& fp, const std::string& added_at_i
         stats["post_reactions_received_total"] = 100;
         stats["replies_received_total"] = 100;
         stats["circle_edges_total"] = 10;
+
+        stats["shares_created_total"] = 1000;
+        stats["uploads_total"] = 1000;
+        stats["uploaded_bytes_total"] = 1099511627776LL;
+        stats["dropzones_created_total"] = 1;
+        stats["dropzone_uploads_received_total"] = 100;
+        stats["trusted_devices_paired_total"] = 1;
     }
 
     return stats;
@@ -441,6 +620,36 @@ json badges_from_stats(const json& stats) {
     maybe_add(out, circle_edges >= 10,
         badge("circlestack.circle_builder", "Circle Builder", "Connected with at least 10 Circle members.", "🫂", "social", "silver"));
 
+    const long long shares_created = stats.value("shares_created_total", 0LL);
+    const long long uploaded_bytes = stats.value("uploaded_bytes_total", 0LL);
+    const long long dropzones_created = stats.value("dropzones_created_total", 0LL);
+    const long long dropzone_uploads = stats.value("dropzone_uploads_received_total", 0LL);
+    const long long trusted_devices = stats.value("trusted_devices_paired_total", 0LL);
+
+    maybe_add(out, shares_created >= 1,
+        badge("shares.first_share", "First Share", "Created the first share link.", "🔗", "sharing", "bronze"));
+    maybe_add(out, shares_created >= 100,
+        badge("shares.packet_runner", "Packet Runner", "Created at least 100 share links.", "📦", "sharing", "silver"));
+    maybe_add(out, shares_created >= 1000,
+        badge("shares.distribution_node", "Distribution Node", "Created at least 1000 share links.", "🛰️", "sharing", "legendary"));
+
+    maybe_add(out, uploaded_bytes >= 10LL * 1024LL * 1024LL * 1024LL,
+        badge("storage.data_seed", "Data Seed", "Uploaded at least 10 GB.", "🌱", "storage", "bronze"));
+    maybe_add(out, uploaded_bytes >= 100LL * 1024LL * 1024LL * 1024LL,
+        badge("storage.vault_keeper", "Vault Keeper", "Uploaded at least 100 GB.", "🧰", "storage", "silver"));
+    maybe_add(out, uploaded_bytes >= 500LL * 1024LL * 1024LL * 1024LL,
+        badge("storage.keeper_500gb", "500GB Keeper", "Uploaded at least 500 GB.", "💾", "storage", "gold"));
+    maybe_add(out, uploaded_bytes >= 1024LL * 1024LL * 1024LL * 1024LL,
+        badge("storage.terabyte_guardian", "Terabyte Guardian", "Uploaded at least 1 TB.", "🛡️", "storage", "legendary"));
+
+    maybe_add(out, dropzones_created >= 1,
+        badge("dropzone.operator", "Drop Zone Operator", "Created the first Drop Zone.", "📥", "dropzone", "bronze"));
+    maybe_add(out, dropzone_uploads >= 100,
+        badge("dropzone.gatekeeper", "Gatekeeper", "Received at least 100 Drop Zone uploads.", "🚪", "dropzone", "gold"));
+
+    maybe_add(out, trusted_devices >= 1,
+        badge("security.trusted_device", "Trusted Device", "Paired the first trusted device.", "🔐", "security", "bronze"));
+
     return out;
 }
 
@@ -451,12 +660,38 @@ json circle_stack_public_badges(
     const std::string& user_fp,
     const std::string& added_at_iso,
     const std::string& role) {
+    return circle_stack_public_badges(circle_db, std::filesystem::path(), user_fp, added_at_iso, role);
+}
+
+json circle_stack_public_badges(
+    sqlite3* circle_db,
+    const std::filesystem::path& user_root,
+    const std::string& user_fp,
+    const std::string& added_at_iso,
+    const std::string& role) {
     if (user_fp.empty()) return json::array();
-    return badges_from_stats(stats_for(circle_db, user_fp, added_at_iso, role));
+    return badges_from_stats(stats_for(circle_db, user_root, user_fp, added_at_iso, role));
 }
 
 json circle_stack_profile_json(
     sqlite3* circle_db,
+    const std::string& user_fp,
+    const std::string& added_at_iso,
+    const std::string& role,
+    bool include_private_stats) {
+    return circle_stack_profile_json(
+        circle_db,
+        std::filesystem::path(),
+        user_fp,
+        added_at_iso,
+        role,
+        include_private_stats
+    );
+}
+
+json circle_stack_profile_json(
+    sqlite3* circle_db,
+    const std::filesystem::path& user_root,
     const std::string& user_fp,
     const std::string& added_at_iso,
     const std::string& role,
@@ -466,7 +701,7 @@ json circle_stack_profile_json(
     out["schema"] = "pqnas.achievements.v1";
     out["user_fp"] = user_fp;
 
-    const json stats = stats_for(circle_db, user_fp, added_at_iso, role);
+    const json stats = stats_for(circle_db, user_root, user_fp, added_at_iso, role);
     const json achievements = badges_from_stats(stats);
 
     out["achievements"] = achievements;

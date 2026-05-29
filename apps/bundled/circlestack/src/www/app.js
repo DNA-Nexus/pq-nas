@@ -70,7 +70,21 @@ const CS_BADGE_ICON_ASSETS = {
   "circlestack.signal_amplifier": "badges/signal-amplifier.svg",
   "circlestack.crowd_spark": "badges/crowd-spark.svg",
   "circlestack.thread_starter": "badges/thread-starter.svg",
-  "circlestack.circle_builder": "badges/circle-builder.svg"
+  "circlestack.circle_builder": "badges/circle-builder.svg",
+
+  "shares.first_share": "badges/first-share.svg",
+  "shares.packet_runner": "badges/packet-runner.svg",
+  "shares.distribution_node": "badges/distribution-node.svg",
+
+  "storage.data_seed": "badges/data-seed.svg",
+  "storage.vault_keeper": "badges/vault-keeper.svg",
+  "storage.keeper_500gb": "badges/keeper-500gb.svg",
+  "storage.terabyte_guardian": "badges/terabyte-guardian.svg",
+
+  "dropzone.operator": "badges/dropzone-operator.svg",
+  "dropzone.gatekeeper": "badges/gatekeeper.svg",
+
+  "security.trusted_device": "badges/trusted-device.svg"
 };
 
 function csSafeLocalBadgeAsset(raw) {
@@ -202,6 +216,26 @@ function csRenderAchievementProfileBlock(rawBadges) {
 
     item.appendChild(icon);
     item.appendChild(body);
+
+    item.classList.add("cs-profile-achievement-earned");
+    item.setAttribute("role", "button");
+    item.setAttribute("tabindex", "0");
+    item.title = "Open achievement";
+
+    const openAchievement = () => {
+      if (typeof csShowAchievementUnlockedModal === "function") {
+        csShowAchievementUnlockedModal(badge, { replay: true });
+      }
+    };
+
+    item.addEventListener("click", openAchievement);
+    item.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        openAchievement();
+      }
+    });
+
     grid.appendChild(item);
   }
 
@@ -362,6 +396,110 @@ function csAllAchievementPlaceholders() {
       icon_asset: "badges/circle-builder.svg",
       locked_text: "Build trusted Circle connections.",
       disclosure: "hint"
+    },
+
+    {
+      id: "shares.first_share",
+      title: "First Share",
+      category: "sharing",
+      tier: "bronze",
+      icon_key: "first-share",
+      icon_asset: "badges/first-share.svg",
+      locked_text: "Create your first share link.",
+      disclosure: "exact"
+    },
+    {
+      id: "shares.packet_runner",
+      title: "Packet Runner",
+      category: "sharing",
+      tier: "silver",
+      icon_key: "packet-runner",
+      icon_asset: "badges/packet-runner.svg",
+      locked_text: "Share files with others over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "shares.distribution_node",
+      title: "Distribution Node",
+      category: "sharing",
+      tier: "legendary",
+      icon_key: "distribution-node",
+      icon_asset: "badges/distribution-node.svg",
+      locked_text: "Become a long-term sharing hub.",
+      disclosure: "hint"
+    },
+
+    {
+      id: "storage.data_seed",
+      title: "Data Seed",
+      category: "storage",
+      tier: "bronze",
+      icon_key: "data-seed",
+      icon_asset: "badges/data-seed.svg",
+      locked_text: "Start building your personal data vault.",
+      disclosure: "hint"
+    },
+    {
+      id: "storage.vault_keeper",
+      title: "Vault Keeper",
+      category: "storage",
+      tier: "silver",
+      icon_key: "vault-keeper",
+      icon_asset: "badges/vault-keeper.svg",
+      locked_text: "Keep growing your stored data over time.",
+      disclosure: "hint"
+    },
+    {
+      id: "storage.keeper_500gb",
+      title: "500GB Keeper",
+      category: "storage",
+      tier: "gold",
+      icon_key: "keeper-500gb",
+      icon_asset: "badges/keeper-500gb.svg",
+      locked_text: "Maintain a large personal data vault.",
+      disclosure: "hint"
+    },
+    {
+      id: "storage.terabyte_guardian",
+      title: "Terabyte Guardian",
+      category: "storage",
+      tier: "legendary",
+      icon_key: "terabyte-guardian",
+      icon_asset: "badges/terabyte-guardian.svg",
+      locked_text: "Build a serious long-term storage archive.",
+      disclosure: "hint"
+    },
+
+    {
+      id: "dropzone.operator",
+      title: "Drop Zone Operator",
+      category: "dropzone",
+      tier: "bronze",
+      icon_key: "dropzone-operator",
+      icon_asset: "badges/dropzone-operator.svg",
+      locked_text: "Create your first Drop Zone.",
+      disclosure: "exact"
+    },
+    {
+      id: "dropzone.gatekeeper",
+      title: "Gatekeeper",
+      category: "dropzone",
+      tier: "gold",
+      icon_key: "gatekeeper",
+      icon_asset: "badges/gatekeeper.svg",
+      locked_text: "Receive uploads through Drop Zone over time.",
+      disclosure: "hint"
+    },
+
+    {
+      id: "security.trusted_device",
+      title: "Trusted Device",
+      category: "security",
+      tier: "bronze",
+      icon_key: "trusted-device",
+      icon_asset: "badges/trusted-device.svg",
+      locked_text: "Pair your first trusted device.",
+      disclosure: "exact"
     }
   ];
 }
@@ -461,7 +599,92 @@ async function csDismissAchievementUnlock(achievementId) {
 
 let csAchievementUnlockQueueActive = false;
 
-function csShowAchievementUnlockedModal(badge) {
+function csAchievementReplayText(badge) {
+  const id = String((badge && badge.id) || "");
+
+  const texts = {
+    "account.node_steward":
+      "You help keep this DNA-Nexus node alive. Steward badges are about responsibility: maintaining the server, supporting users, and keeping the space trustworthy.",
+
+    "account.established_signal":
+      "Your identity has started to build history. Time matters in DNA-Nexus because long-lived accounts are harder to fake than one-day identities.",
+
+    "account.old_guard":
+      "This account has been around for a long time. Old Guard badges show continuity, patience, and a persistent identity inside your own network.",
+
+    "account.legacy_node":
+      "A long-lived node becomes part of the story. Legacy Node marks an identity that has survived across time, updates, and changing communities.",
+
+    "circlestack.first_signal":
+      "Every network starts with one signal. This badge marks the moment your Circle Stack identity stopped being empty and started becoming part of the feed.",
+
+    "circlestack.signal_sender":
+      "You keep contributing to the conversation. This badge is about showing up over time, not just making noise once.",
+
+    "circlestack.broadcast_node":
+      "Your Circle Stack presence has become steady. A broadcast node helps keep the community alive by adding regular signals to the network.",
+
+    "circlestack.anchor_voice":
+      "Anchor voices shape the memory of a circle. This badge is for long-term posting history and continued presence.",
+
+    "circlestack.public_voice":
+      "You have shared beyond your private circle. Public Voice means some of your posts help the wider DNA-Nexus network feel alive.",
+
+    "circlestack.media_runner":
+      "You enrich posts with media. Images, videos, and other files turn a feed from plain text into shared memory.",
+
+    "circlestack.conversation_spark":
+      "You take part in discussions instead of only posting alone. Replies are one of the strongest signs that a circle is becoming social.",
+
+    "circlestack.signal_amplifier":
+      "You help surface other people’s posts. Reactions are small signals, but together they tell the community what matters.",
+
+    "circlestack.crowd_spark":
+      "Your posts invite response. This badge means your activity is not only visible — it is getting reactions from others.",
+
+    "circlestack.thread_starter":
+      "You start conversations that others join. Thread Starter is about creating openings for discussion, not only broadcasting.",
+
+    "circlestack.circle_builder":
+      "You are building trusted connections. Circle Builder is about turning isolated identities into a real social graph.",
+
+    "shares.first_share":
+      "You created your first share link. Sharing is one of the core NAS powers: letting someone access exactly what you choose, when you choose.",
+
+    "shares.packet_runner":
+      "You use your NAS as a distribution point. Packet Runner reflects repeated sharing without needing a centralized cloud service.",
+
+    "shares.distribution_node":
+      "Your server is becoming a serious distribution node. This badge marks long-term sharing activity from your own infrastructure.",
+
+    "storage.data_seed":
+      "You started growing your personal data vault. Small uploads become the seed of a long-term archive.",
+
+    "storage.vault_keeper":
+      "You are keeping meaningful data under your own control. Vault Keeper is about building a private archive instead of scattering files everywhere.",
+
+    "storage.keeper_500gb":
+      "Your storage is no longer just experimental. A large vault means your NAS is becoming part of your real digital life.",
+
+    "storage.terabyte_guardian":
+      "You are guarding a serious archive. Terabyte Guardian marks commitment to long-term self-hosted storage.",
+
+    "dropzone.operator":
+      "You opened a controlled upload path for others. Drop Zones let people send files to you without giving them full access to your NAS.",
+
+    "dropzone.gatekeeper":
+      "You show strong engagement by letting others send data into your storage through controlled gates. Keep managing those gates well.",
+
+    "security.trusted_device":
+      "You paired a trusted device. Security badges are about strengthening identity and making access safer without losing convenience."
+  };
+
+  return texts[id] || "";
+}
+
+function csShowAchievementUnlockedModal(badge, options = {}) {
+  const modalOptions = options && typeof options === "object" ? options : {};
+
   return new Promise((resolve) => {
     if (!badge || !badge.id) {
       resolve(false);
@@ -483,7 +706,7 @@ function csShowAchievementUnlockedModal(badge) {
 
     const kicker = document.createElement("div");
     kicker.className = "cs-achievement-unlock-kicker";
-    kicker.textContent = "Achievement unlocked";
+    kicker.textContent = modalOptions.replay ? "Achievement" : "Achievement unlocked";
 
     const icon = document.createElement("div");
     icon.className = "cs-achievement-unlock-icon";
@@ -503,13 +726,17 @@ function csShowAchievementUnlockedModal(badge) {
     tier.className = "cs-achievement-unlock-tier";
     tier.textContent = badge.tier ? `${badge.category || "achievement"} · ${badge.tier}` : (badge.category || "");
 
+    const replayText = document.createElement("div");
+    replayText.className = "cs-achievement-replay-text";
+    replayText.textContent = modalOptions.replay ? csAchievementReplayText(badge) : "";
+
     const actions = document.createElement("div");
     actions.className = "cs-modal-actions";
 
     const close = document.createElement("button");
     close.className = "cs-modal-cancel";
     close.type = "button";
-    close.textContent = "Nice";
+    close.textContent = modalOptions.replay ? "Close" : "Nice";
 
     let closed = false;
 
@@ -519,7 +746,11 @@ function csShowAchievementUnlockedModal(badge) {
 
       document.removeEventListener("keydown", onKey, true);
 
-      Promise.resolve(csDismissAchievementUnlock(badge.id))
+      const closePromise = modalOptions.replay
+        ? Promise.resolve()
+        : Promise.resolve(csDismissAchievementUnlock(badge.id));
+
+      closePromise
         .catch(() => {})
         .finally(() => {
           backdrop.remove();
@@ -550,6 +781,7 @@ function csShowAchievementUnlockedModal(badge) {
     modal.appendChild(title);
     if (desc.textContent) modal.appendChild(desc);
     if (tier.textContent) modal.appendChild(tier);
+    if (replayText.textContent) modal.appendChild(replayText);
     modal.appendChild(actions);
 
     backdrop.appendChild(modal);
