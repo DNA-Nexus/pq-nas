@@ -82,6 +82,27 @@ long long account_age_days(const std::string& added_at_iso) {
     return (now - created) / 86400LL;
 }
 
+std::string badge_icon_key_from_id(const std::string& id) {
+    if (id == "account.node_steward") return "node-steward";
+    if (id == "account.established_signal") return "established-signal";
+    if (id == "account.old_guard") return "old-guard";
+    if (id == "account.legacy_node") return "legacy-node";
+
+    if (id == "circlestack.first_signal") return "first-signal";
+    if (id == "circlestack.signal_sender") return "signal-sender";
+    if (id == "circlestack.broadcast_node") return "broadcast-node";
+    if (id == "circlestack.anchor_voice") return "anchor-voice";
+    if (id == "circlestack.public_voice") return "public-voice";
+    if (id == "circlestack.media_runner") return "media-runner";
+    if (id == "circlestack.conversation_spark") return "conversation-spark";
+    if (id == "circlestack.signal_amplifier") return "signal-amplifier";
+    if (id == "circlestack.crowd_spark") return "crowd-spark";
+    if (id == "circlestack.thread_starter") return "thread-starter";
+    if (id == "circlestack.circle_builder") return "circle-builder";
+
+    return "";
+}
+
 json badge(
     const std::string& id,
     const std::string& title,
@@ -89,7 +110,7 @@ json badge(
     const std::string& icon,
     const std::string& category,
     const std::string& tier) {
-    return json{
+    json out = {
         {"id", id},
         {"title", title},
         {"description", description},
@@ -98,6 +119,14 @@ json badge(
         {"tier", tier},
         {"schema", "pqnas.achievements.v1"}
     };
+
+    const std::string icon_key = badge_icon_key_from_id(id);
+    if (!icon_key.empty()) {
+        out["icon_key"] = icon_key;
+        out["icon_asset"] = "badges/" + icon_key + ".svg";
+    }
+
+    return out;
 }
 
 void maybe_add(json& out, bool ok, const json& b) {

@@ -54,6 +54,58 @@ function csAchievementListFrom(value) {
     : [];
 }
 
+const CS_BADGE_ICON_ASSETS = {
+  "account.node_steward": "badges/node-steward.svg",
+  "account.established_signal": "badges/established-signal.svg",
+  "account.old_guard": "badges/old-guard.svg",
+  "account.legacy_node": "badges/legacy-node.svg",
+
+  "circlestack.first_signal": "badges/first-signal.svg",
+  "circlestack.signal_sender": "badges/signal-sender.svg",
+  "circlestack.broadcast_node": "badges/broadcast-node.svg",
+  "circlestack.anchor_voice": "badges/anchor-voice.svg",
+  "circlestack.public_voice": "badges/public-voice.svg",
+  "circlestack.media_runner": "badges/media-runner.svg",
+  "circlestack.conversation_spark": "badges/conversation-spark.svg",
+  "circlestack.signal_amplifier": "badges/signal-amplifier.svg",
+  "circlestack.crowd_spark": "badges/crowd-spark.svg",
+  "circlestack.thread_starter": "badges/thread-starter.svg",
+  "circlestack.circle_builder": "badges/circle-builder.svg"
+};
+
+function csSafeLocalBadgeAsset(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (!value.startsWith("badges/")) return "";
+  if (value.includes("..") || value.includes(":") || value.includes("\\")) return "";
+  if (!/^[A-Za-z0-9_./-]+\.svg$/.test(value)) return "";
+  return value;
+}
+
+function csBadgeIconAsset(badge) {
+  const id = String((badge && badge.id) || "");
+  return CS_BADGE_ICON_ASSETS[id] || csSafeLocalBadgeAsset(badge && badge.icon_asset);
+}
+
+function csCreateBadgeIconElement(badge, className) {
+  const asset = csBadgeIconAsset(badge);
+
+  if (asset) {
+    const img = document.createElement("img");
+    img.className = className || "cs-badge-svg-icon";
+    img.src = asset;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    return img;
+  }
+
+  const span = document.createElement("span");
+  span.className = className || "cs-badge-emoji-icon";
+  span.textContent = badge && badge.icon ? badge.icon : "◆";
+  return span;
+}
+
 function csRenderAchievementStrip(rawBadges, options = {}) {
   const badges = csAchievementListFrom(rawBadges);
   if (!badges.length) return null;
@@ -69,7 +121,14 @@ function csRenderAchievementStrip(rawBadges, options = {}) {
     chip.className = "cs-achievement-chip";
     if (badge.tier) chip.classList.add(`tier-${String(badge.tier).toLowerCase()}`);
     chip.title = badge.description || badge.title || "";
-    chip.textContent = `${badge.icon || "◆"} ${badge.title || "Badge"}`;
+
+    const chipIcon = csCreateBadgeIconElement(badge, "cs-achievement-chip-icon");
+    const chipTitle = document.createElement("span");
+    chipTitle.className = "cs-achievement-chip-title";
+    chipTitle.textContent = badge.title || "Badge";
+
+    chip.appendChild(chipIcon);
+    chip.appendChild(chipTitle);
     wrap.appendChild(chip);
   }
 
@@ -103,9 +162,7 @@ function csRenderAchievementProfileBlock(rawBadges) {
     item.className = "cs-profile-achievement";
     if (badge.tier) item.classList.add(`tier-${String(badge.tier).toLowerCase()}`);
 
-    const icon = document.createElement("span");
-    icon.className = "cs-profile-achievement-icon";
-    icon.textContent = badge.icon || "◆";
+    const icon = csCreateBadgeIconElement(badge, "cs-profile-achievement-icon");
 
     const body = document.createElement("span");
     body.className = "cs-profile-achievement-body";
@@ -141,11 +198,124 @@ function csFederatedActorBadges(ev) {
   );
 }
 
+function csAchievementStorageKey() {
+  return "pqnas.circlestack.achievements.seen.v1";
+}
+
+function csLoadSeenAchievementIds() {
+  try {
+    const raw = localStorage.getItem(csAchievementStorageKey());
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.filter(Boolean) : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function csSaveSeenAchievementIds(ids) {
+  try {
+    localStorage.setItem(csAchievementStorageKey(), JSON.stringify(Array.from(ids)));
+  } catch (_) {}
+}
+
+function csShowAchievementUnlockedModal(badge) {
+  if (!badge || !badge.id) return;
+
+  const old = document.querySelector(".cs-achievement-unlock-backdrop");
+  if (old) old.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "cs-modal-backdrop cs-achievement-unlock-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "cs-modal cs-achievement-unlock-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const kicker = document.createElement("div");
+  kicker.className = "cs-achievement-unlock-kicker";
+  kicker.textContent = "Achievement unlocked";
+
+  const icon = document.createElement("div");
+  icon.className = "cs-achievement-unlock-icon";
+  icon.appendChild(csCreateBadgeIconElement(badge, "cs-achievement-unlock-icon-img"));
+
+  const title = document.createElement("div");
+  title.className = "cs-achievement-unlock-title";
+  title.textContent = badge.title || "New achievement";
+
+  const desc = document.createElement("div");
+  desc.className = "cs-achievement-unlock-desc";
+  desc.textContent = badge.description || "";
+
+  const tier = document.createElement("div");
+  tier.className = "cs-achievement-unlock-tier";
+  tier.textContent = badge.tier ? `${badge.category || "achievement"} · ${badge.tier}` : (badge.category || "");
+
+  const actions = document.createElement("div");
+  actions.className = "cs-modal-actions";
+
+  const close = document.createElement("button");
+  close.className = "cs-modal-cancel";
+  close.type = "button";
+  close.textContent = "Nice";
+  close.addEventListener("click", () => backdrop.remove());
+
+  actions.appendChild(close);
+
+  modal.appendChild(kicker);
+  modal.appendChild(icon);
+  modal.appendChild(title);
+  if (desc.textContent) modal.appendChild(desc);
+  if (tier.textContent) modal.appendChild(tier);
+  modal.appendChild(actions);
+
+  backdrop.appendChild(modal);
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) backdrop.remove();
+  });
+
+  document.body.appendChild(backdrop);
+  close.focus();
+}
+
+async function csCheckAchievementUnlocks() {
+  let data = null;
+
+  try {
+    const res = await fetch(`${CS_API}/achievements/me`, {
+      credentials: "same-origin"
+    });
+    if (!res.ok) return;
+    data = await res.json();
+  } catch (_) {
+    return;
+  }
+
+  const badges = csAchievementListFrom(data && data.achievements);
+  if (!badges.length) return;
+
+  const seen = csLoadSeenAchievementIds();
+  const newlyUnlocked = badges.filter(b => b && b.id && !seen.has(b.id));
+
+  for (const badge of badges) {
+    if (badge && badge.id) seen.add(badge.id);
+  }
+  csSaveSeenAchievementIds(seen);
+
+  if (newlyUnlocked.length) {
+    // Show one modal at a time. The highest/current first badge is enough for v1.
+    setTimeout(() => csShowAchievementUnlockedModal(newlyUnlocked[0]), 450);
+  }
+}
+
 let csFeedMode = "local";
 let csFederatedFeedLoadSeq = 0;
 let csMutedFederatedOrigins = new Set();
 
 async function csLoadFeed() {
+  csCheckAchievementUnlocks();
+
   const feed = document.getElementById("csFeed");
   if (!feed) return;
 

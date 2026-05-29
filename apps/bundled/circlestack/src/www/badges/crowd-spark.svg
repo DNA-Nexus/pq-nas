@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#fb7185" stop-opacity="0.42"/>
+      <stop offset="0.55" stop-color="#111827" stop-opacity="1"/>
+      <stop offset="1" stop-color="#f97316" stop-opacity="0.38"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="20" y1="20" x2="236" y2="236">
+      <stop offset="0" stop-color="#fb7185"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="54" fill="url(#bg)" stroke="url(#ring)" stroke-width="4"/>
+  <circle cx="128" cy="128" r="88" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
+  
+  <path d="M128 196 C90 166 64 140 64 104 C64 80 82 66 104 66 C116 66 124 72 128 82 C132 72 140 66 152 66 C174 66 192 80 192 104 C192 140 166 166 128 196 Z"
+        fill="#fb7185" stroke="#fecdd3" stroke-width="8" filter="url(#glow)"/>
+  <path d="M98 112 C112 122 144 122 158 112" fill="none" stroke="#fff1f2" stroke-width="7" stroke-linecap="round"/>
+
+</svg>
