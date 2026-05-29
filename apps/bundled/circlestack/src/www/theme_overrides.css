@@ -768,3 +768,262 @@ button[data-action="disable"] {
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #b0b0b0 !important;
 }
+
+/* Circle Stack federated feed polish v6
+   Make federated labels/notes readable in bright and win_classic. */
+
+/* Known origin / Unknown origin pill */
+.cs-fed-origin-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-origin-pill-theme {
+  background: rgba(13,148,136,0.12) !important;
+  color: #065f46 !important;
+  border: 1px solid rgba(13,148,136,0.36) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-origin-pill-theme {
+  background: #eaffff !important;
+  color: #004040 !important;
+  border: 1px solid #008080 !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .cs-fed-origin-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-origin-pill-theme {
+  background: rgba(45,212,191,0.12) !important;
+  color: #99f6e4 !important;
+  border: 1px solid rgba(45,212,191,0.32) !important;
+}
+
+/* FEDERATED pill on the right side of remote cards */
+.cs-fed-status-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  padding: 5px 12px !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-status-pill-theme {
+  background: rgba(37,99,235,0.08) !important;
+  color: #1d4ed8 !important;
+  border: 1px solid rgba(37,99,235,0.26) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-status-pill-theme {
+  background: #e8e8ff !important;
+  color: #000080 !important;
+  border: 1px solid #000080 !important;
+  border-radius: 999px !important;
+}
+
+:root[data-theme="dark"] .cs-fed-status-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-status-pill-theme {
+  background: rgba(96,165,250,0.12) !important;
+  color: #bfdbfe !important;
+  border: 1px solid rgba(96,165,250,0.32) !important;
+}
+
+/* Remote post / reaction subtitle */
+:root[data-theme="bright"] .cs-fed-subtitle-theme {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-subtitle-theme {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Why? explanation bubble */
+.cs-fed-why-note-theme {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+  margin: 10px 0 !important;
+  overflow-wrap: anywhere !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-why-note-theme {
+  background: rgba(15,23,42,0.055) !important;
+  color: rgba(15,23,42,0.76) !important;
+  border: 1px solid rgba(15,23,42,0.13) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-why-note-theme {
+  background: #e8e8e8 !important;
+  color: #202020 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+:root[data-theme="dark"] .cs-fed-why-note-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-why-note-theme {
+  background: rgba(255,255,255,0.08) !important;
+  color: rgba(248,250,252,0.78) !important;
+  border: 1px solid rgba(255,255,255,0.13) !important;
+}
+
+/* Media validation note under remote image */
+.cs-fed-media-note-theme {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 12px !important;
+  padding: 9px 12px !important;
+  margin: 8px 0 10px !important;
+  overflow-wrap: anywhere !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-media-note-theme {
+  background: rgba(13,148,136,0.08) !important;
+  color: #0f766e !important;
+  border: 1px dashed rgba(13,148,136,0.42) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-note-theme {
+  background: #eaffff !important;
+  color: #004040 !important;
+  border: 1px dashed #008080 !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="dark"] .cs-fed-media-note-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-media-note-theme {
+  background: rgba(45,212,191,0.08) !important;
+  color: rgba(153,246,228,0.86) !important;
+  border: 1px dashed rgba(45,212,191,0.34) !important;
+}
+
+/* Federated cards often contain generated metadata. Keep it readable in light themes. */
+:root[data-theme="bright"] .cs-post .cs-fed-origin-pill-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-status-pill-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-why-note-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-media-note-theme {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-post .cs-fed-origin-pill-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-status-pill-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-why-note-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-media-note-theme {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Circle Stack federated feed polish v7
+   Fix Why? hide/show behavior, remote media frame, and reaction text readability. */
+
+/* Never let our theme class override app hide/show logic. */
+.cs-fed-why-note-theme[hidden],
+.cs-fed-why-note-theme[aria-hidden="true"],
+.cs-fed-why-note-theme[style*="display: none"],
+.cs-fed-why-note-theme[style*="display:none"] {
+  display: none !important;
+}
+
+/* Target/reaction metadata that was too pale in bright/win_classic. */
+:root[data-theme="bright"] .cs-fed-target-theme,
+:root[data-theme="bright"] .cs-fed-reaction-line-theme,
+:root[data-theme="bright"] .cs-fed-reaction-line-theme * {
+  color: rgba(15,23,42,0.72) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-target-theme,
+:root[data-theme="win_classic"] .cs-fed-reaction-line-theme,
+:root[data-theme="win_classic"] .cs-fed-reaction-line-theme * {
+  color: #303030 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .cs-fed-reaction-line-theme,
+:root[data-theme="dark"] .cs-fed-reaction-line-theme *,
+:root[data-theme="cpunk_orange"] .cs-fed-reaction-line-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-reaction-line-theme * {
+  color: rgba(248,250,252,0.78) !important;
+}
+
+/* Remote media frame: avoid heavy dark sidebars in light themes. */
+:root[data-theme="bright"] .cs-fed-media-frame-theme {
+  background:
+    linear-gradient(135deg, rgba(224,242,254,0.76), rgba(240,253,250,0.86)) !important;
+  border: 1px solid rgba(13,148,136,0.22) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme {
+  background: #e6e6e6 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
+
+:root[data-theme="bright"] .cs-fed-media-image-theme,
+:root[data-theme="win_classic"] .cs-fed-media-image-theme {
+  background: transparent !important;
+}
+
+/* If the dark sidebars come from the media element itself/container, soften only
+   federated media frames in light themes. */
+:root[data-theme="bright"] .cs-fed-media-frame-theme img,
+:root[data-theme="bright"] .cs-fed-media-frame-theme video {
+  background:
+    linear-gradient(135deg, rgba(224,242,254,0.70), rgba(240,253,250,0.82)) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme img,
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme video {
+  background: #e6e6e6 !important;
+}
+
+/* Media validation note: make it readable but less neon/pale. */
+:root[data-theme="bright"] .cs-fed-media-note-theme,
+:root[data-theme="bright"] .cs-fed-media-note-theme * {
+  color: #0f766e !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-note-theme,
+:root[data-theme="win_classic"] .cs-fed-media-note-theme * {
+  color: #004040 !important;
+  text-shadow: none !important;
+}
+
+/* Why note children inherit readable color too. */
+:root[data-theme="bright"] .cs-fed-why-note-theme,
+:root[data-theme="bright"] .cs-fed-why-note-theme * {
+  color: rgba(15,23,42,0.76) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-why-note-theme,
+:root[data-theme="win_classic"] .cs-fed-why-note-theme * {
+  color: #202020 !important;
+  text-shadow: none !important;
+}

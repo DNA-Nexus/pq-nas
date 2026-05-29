@@ -6362,4 +6362,147 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
   }, true);
 })();
 
+// Theme helper: tag federated feed labels/notes that are generated without
+// stable styling hooks. Keep this conservative: exact short labels only.
+(function () {
+  if (window.__circleStackFederatedThemeTagger) return;
+  window.__circleStackFederatedThemeTagger = true;
+
+  function cleanText(el) {
+    return String(el && el.textContent ? el.textContent : "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function tagFederatedThemeBits(root) {
+    const base = root && root.querySelectorAll ? root : document;
+
+    base.querySelectorAll("span, div, button, small, p").forEach((el) => {
+      const text = cleanText(el);
+      if (!text) return;
+
+      // Small pills/labels.
+      if (text === "Known origin" || text === "Unknown origin") {
+        el.classList.add("cs-fed-origin-pill-theme");
+      }
+
+      if (text === "FEDERATED") {
+        el.classList.add("cs-fed-status-pill-theme");
+      }
+
+      // The Why? expanded explanation.
+      if (
+        text.startsWith("This came from a NAS origin") ||
+        text.includes("Origin:") && text.includes("Source:") && text.includes("Event:")
+      ) {
+        el.classList.add("cs-fed-why-note-theme");
+      }
+
+      // Media validation note under the remote preview.
+      if (
+        text.includes("remote media item") ||
+        text.includes("origin preview validated") ||
+        text.includes("origin preview") ||
+        text.includes("preview validated")
+      ) {
+        el.classList.add("cs-fed-media-note-theme");
+      }
+
+      // Remote post/reaction subtitles.
+      if (text === "Remote post" || text === "Remote post reaction") {
+        el.classList.add("cs-fed-subtitle-theme");
+      }
+    });
+  }
+
+  tagFederatedThemeBits(document);
+
+  const obs = new MutationObserver((records) => {
+    for (const rec of records) {
+      for (const node of rec.addedNodes || []) {
+        if (!node || node.nodeType !== 1) continue;
+        tagFederatedThemeBits(node);
+      }
+    }
+  });
+
+  obs.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
+
+// Theme helper: extra federated media/reaction tagging.
+// Keeps CSS selectors exact without relying on broad post-level overrides.
+(function () {
+  if (window.__circleStackFederatedMediaThemeTagger) return;
+  window.__circleStackFederatedMediaThemeTagger = true;
+
+  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "👏", "🔥"];
+
+  function textOf(el) {
+    return String(el && el.textContent ? el.textContent : "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function hasReactionEmoji(text) {
+    return REACTION_EMOJIS.some(e => text.includes(e));
+  }
+
+  function tagFederatedMediaBits(root) {
+    const base = root && root.querySelectorAll ? root : document;
+
+    base.querySelectorAll("span, div, small, p").forEach((el) => {
+      const text = textOf(el);
+      if (!text) return;
+
+      if (text.startsWith("Target:") || text.startsWith("Target post") || text.includes("Post id:")) {
+        el.classList.add("cs-fed-target-theme");
+      }
+
+      if (
+        (text === "You" || text.startsWith("You ")) &&
+        hasReactionEmoji(text)
+      ) {
+        el.classList.add("cs-fed-reaction-line-theme");
+      }
+
+      if (
+        text.includes("remote media item") ||
+        text.includes("origin preview validated") ||
+        text.includes("origin preview") ||
+        text.includes("preview validated")
+      ) {
+        el.classList.add("cs-fed-media-note-theme");
+
+        const post = el.closest(".cs-post");
+        const prev = el.previousElementSibling;
+
+        if (prev && post && post.contains(prev)) {
+          prev.classList.add("cs-fed-media-frame-theme");
+          prev.querySelectorAll("img, video").forEach((media) => {
+            media.classList.add("cs-fed-media-image-theme");
+          });
+        }
+      }
+    });
+  }
+
+  tagFederatedMediaBits(document);
+
+  const obs = new MutationObserver((records) => {
+    for (const rec of records) {
+      for (const node of rec.addedNodes || []) {
+        if (!node || node.nodeType !== 1) continue;
+        tagFederatedMediaBits(node);
+      }
+    }
+  });
+
+  obs.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
 
