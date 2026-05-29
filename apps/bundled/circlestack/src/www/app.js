@@ -6506,3 +6506,102 @@ if (!window.__circleStackDetachedMyProfileDelegated) {
   });
 })();
 
+// Theme helper: tag exact LOCKED pill text in achievement/profile views.
+(function () {
+  if (window.__circleStackLockedPillTagger) return;
+  window.__circleStackLockedPillTagger = true;
+
+  function cleanText(el) {
+    return String(el && el.textContent ? el.textContent : "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function tagLockedPills(root) {
+    const base = root && root.querySelectorAll ? root : document;
+
+    base.querySelectorAll("span, div, small, p, strong").forEach((el) => {
+      const text = cleanText(el);
+      if (!text) return;
+
+      if (text === "LOCKED") {
+        el.classList.add("cs-ach-locked-pill-theme");
+      }
+    });
+  }
+
+  tagLockedPills(document);
+
+  const obs = new MutationObserver((records) => {
+    for (const rec of records) {
+      for (const node of rec.addedNodes || []) {
+        if (!node || node.nodeType !== 1) continue;
+        tagLockedPills(node);
+      }
+    }
+  });
+
+  obs.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
+
+// Theme helper: safely tag direct locked achievement rows.
+// Only .cs-profile-achievement rows after the "Locked achievements" heading are tagged.
+// Do not tag inner title/desc/icon children.
+(function () {
+  if (window.__circleStackLockedSectionTaggerV4) return;
+  window.__circleStackLockedSectionTaggerV4 = true;
+
+  function cleanText(el) {
+    return String(el && el.textContent ? el.textContent : "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function follows(a, b) {
+    return !!(a && b && (b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }
+
+  function tagLockedRows() {
+    document.querySelectorAll(".cs-ach-locked-row-theme").forEach((row) => {
+      row.classList.remove("cs-ach-locked-row-theme");
+    });
+
+    const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,div,p,strong,span"))
+      .filter((el) => cleanText(el) === "Locked achievements");
+
+    for (const heading of headings) {
+      const scope =
+        heading.closest(".cs-my-profile-detached-shell") ||
+        heading.closest(".cs-profile-modal") ||
+        heading.parentElement;
+
+      if (!scope) continue;
+
+      const rows = Array.from(scope.querySelectorAll(".cs-profile-achievement"))
+        .filter((row) => follows(row, heading));
+
+      for (const row of rows) {
+        row.classList.add("cs-ach-locked-row-theme");
+
+        // Hide real LOCKED text nodes/elements if they exist.
+        row.querySelectorAll("span,div,small,strong").forEach((el) => {
+          if (cleanText(el) === "LOCKED") {
+            el.classList.add("cs-ach-locked-pill-theme");
+          }
+        });
+      }
+    }
+  }
+
+  tagLockedRows();
+
+  const obs = new MutationObserver(() => tagLockedRows());
+  obs.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
+

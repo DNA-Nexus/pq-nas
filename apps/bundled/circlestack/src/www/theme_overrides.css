@@ -1027,3 +1027,180 @@ button[data-action="disable"] {
   color: #202020 !important;
   text-shadow: none !important;
 }
+
+/* Circle Stack locked achievement pill polish v8
+   Make the small LOCKED badge under grayscale trophy icons readable. */
+
+.cs-ach-locked-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 18px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+  box-sizing: border-box !important;
+}
+
+/* bright */
+:root[data-theme="bright"] .cs-ach-locked-pill-theme {
+  background: #e5e7eb !important;
+  color: #374151 !important;
+  border: 1px solid #9ca3af !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.65) !important;
+}
+
+/* win_classic */
+:root[data-theme="win_classic"] .cs-ach-locked-pill-theme {
+  background: #dcdcdc !important;
+  color: #202020 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 999px !important;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+/* dark / orange still readable too */
+:root[data-theme="dark"] .cs-ach-locked-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-ach-locked-pill-theme {
+  background: rgba(255,255,255,0.10) !important;
+  color: rgba(248,250,252,0.84) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+
+/* If inner nested element carries its own color, inherit the pill color. */
+.cs-ach-locked-pill-theme * {
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack locked achievement recovery v11
+   Safe locked-row styling: only direct .cs-profile-achievement rows are touched. */
+
+/* Hide real LOCKED text if JS tagged it. */
+.cs-ach-locked-pill-theme {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Also hide pseudo LOCKED stamps, but only inside safely tagged rows. */
+.cs-ach-locked-row-theme::before,
+.cs-ach-locked-row-theme::after,
+.cs-ach-locked-row-theme > *::before,
+.cs-ach-locked-row-theme > *::after {
+  content: none !important;
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Direct locked rows get breathing room. */
+.cs-my-profile-detached-shell .cs-ach-locked-row-theme,
+.cs-profile-modal .cs-ach-locked-row-theme {
+  margin: 8px 16px !important;
+  width: auto !important;
+  max-width: calc(100% - 32px) !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Do not let child elements become row/layout blocks. */
+.cs-ach-locked-row-theme > * {
+  min-width: 0 !important;
+}
+
+/* Bright locked rows. */
+:root[data-theme="bright"] .cs-ach-locked-row-theme {
+  background:
+    linear-gradient(90deg, rgba(241,245,249,0.98), rgba(255,255,255,0.96)) !important;
+  border: 1px solid rgba(100,116,139,0.42) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(100,116,139,0.40),
+    0 1px 0 rgba(15,23,42,0.04) !important;
+}
+
+:root[data-theme="bright"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
+  color: #111827 !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="bright"] .cs-ach-locked-row-theme .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.68) !important;
+}
+
+/* Win classic locked rows. */
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme {
+  background: #f7f7f7 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 3px 0 0 #808080,
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
+  color: #000 !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme .cs-profile-achievement-desc {
+  color: #303030 !important;
+}
+
+/* Circle Stack locked achievement exact pill fix v12
+   Real DOM class from DevTools:
+   <span class="cs-locked-achievement-lock">Locked</span>
+*/
+
+.cs-locked-achievement-lock {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 15px !important;
+  padding: 2px 6px !important;
+  border-radius: 999px !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.03em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+  box-sizing: border-box !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+:root[data-theme="bright"] .cs-locked-achievement-lock {
+  background: #e5e7eb !important;
+  color: #374151 !important;
+  border: 1px solid #9ca3af !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72) !important;
+}
+
+:root[data-theme="win_classic"] .cs-locked-achievement-lock {
+  background: #dcdcdc !important;
+  color: #202020 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 999px !important;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+:root[data-theme="dark"] .cs-locked-achievement-lock,
+:root[data-theme="cpunk_orange"] .cs-locked-achievement-lock {
+  background: rgba(255,255,255,0.12) !important;
+  color: rgba(248,250,252,0.84) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+
+/* Keep the locked pill from visually colliding with the icon/title area. */
+.cs-profile-achievement .cs-locked-achievement-lock {
+  margin-top: 2px !important;
+}
