@@ -3,7 +3,55 @@
 <head>
   <meta charset="utf-8">
   <title>Circle Stack</title>
-  <link rel="stylesheet" href="app.css">
+  <script>
+    (function () {
+      "use strict";
+
+      var KEY = "pqnas_theme";
+      var THEMES = new Set(["dark", "bright", "cpunk_orange", "win_classic"]);
+
+      function normalizeTheme(value) {
+        value = String(value || "").trim();
+        return THEMES.has(value) ? value : "dark";
+      }
+
+      function readTheme() {
+        try {
+          return normalizeTheme(localStorage.getItem(KEY));
+        } catch (_) {
+          return "dark";
+        }
+      }
+
+      function applyTheme(value) {
+        document.documentElement.setAttribute("data-theme", normalizeTheme(value));
+      }
+
+      applyTheme(readTheme());
+
+      window.addEventListener("storage", function (ev) {
+        if (!ev || ev.key === KEY) {
+          applyTheme(readTheme());
+        }
+      });
+
+      window.addEventListener("message", function (ev) {
+        var data = ev && ev.data;
+        if (!data || typeof data !== "object") return;
+        if (data.type === "pqnas-theme-changed") {
+          applyTheme(data.theme);
+        }
+      });
+
+      setInterval(function () {
+        var next = readTheme();
+        if (document.documentElement.getAttribute("data-theme") !== next) {
+          applyTheme(next);
+        }
+      }, 1000);
+    })();
+  </script>
+  <link rel="stylesheet" href="app.css?v=20260529-theme8">
   <link rel="stylesheet" href="memory_nodes.css?v=20260523-svgicon1">
   <link rel="stylesheet" href="brand_logo.css?v=20260523-brandlogo1">
 </head>
@@ -53,7 +101,7 @@
   </main>
 
   <script src="i18n.js"></script>
-  <script src="app.js?v=20260527-knownorigins1"></script>
+  <script src="app.js?v=20260529-myprofile-detached8"></script>
   <script src="feed_modes.js?v=20260527-discovercap1"></script>
   <script src="memory_nodes.js?v=20260523-simpleicon1"></script>
   <script src="brand_logo.js?v=20260523-brandlogo1"></script>

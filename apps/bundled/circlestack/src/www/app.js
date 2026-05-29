@@ -1951,6 +1951,18 @@ function csProfileFingerprintBlock(fp) {
 }
 
 async function csOpenMyProfilePage() {
+  // Legacy inline profile page is kept only as a fallback.
+  // Toolbar/profile entry points should use the detached window.
+  if (typeof csOpenMyProfileModal === "function") {
+    return csOpenMyProfileModal();
+  }
+
+  // The old inline profile page is kept for compatibility, but the toolbar
+  // should always open the detached My Profile window now.
+  if (typeof csOpenMyProfileModal === "function") {
+    return csOpenMyProfileModal();
+  }
+
   const profilePage = document.getElementById("csProfilePage");
   if (!profilePage) {
     console.warn("Circle Stack My Profile: #csProfilePage missing");
@@ -5859,6 +5871,13 @@ if (!window.__circleStackMyProfileDelegated) {
 }
 
 async function csOpenMyProfileModal() {
+  const legacyProfilePage = document.getElementById("csProfilePage");
+  if (legacyProfilePage) {
+    legacyProfilePage.hidden = true;
+    legacyProfilePage.style.display = "none";
+    legacyProfilePage.textContent = "";
+  }
+
   document.querySelectorAll(".cs-my-profile-modal-backdrop").forEach(el => el.remove());
 
   const backdrop = document.createElement("div");
@@ -5872,6 +5891,32 @@ async function csOpenMyProfileModal() {
   const shell = document.createElement("div");
   shell.className = "cs-my-profile-detached-shell";
 
+  const setModalStyle = (name, value) => {
+    modal.style.setProperty(name, value, "important");
+  };
+
+  const setShellStyle = (name, value) => {
+    shell.style.setProperty(name, value, "important");
+  };
+
+  // Open centered as a real detached window. Dragging below will switch
+  // transform to none and update left/top with important inline styles.
+  setModalStyle("position", "fixed");
+  setModalStyle("top", "50%");
+  setModalStyle("left", "50%");
+  setModalStyle("right", "auto");
+  setModalStyle("bottom", "auto");
+  setModalStyle("transform", "translate(-50%, -50%)");
+  setModalStyle("margin", "0");
+  setModalStyle("overflow", "hidden");
+  setModalStyle("width", "min(760px, calc(100vw - 36px))");
+  setModalStyle("max-height", "calc(100vh - 36px)");
+
+  setShellStyle("max-height", "calc(100vh - 36px)");
+  setShellStyle("overflow-y", "auto");
+  setShellStyle("overflow-x", "hidden");
+  setShellStyle("overscroll-behavior", "contain");
+
   const titlebar = document.createElement("div");
   titlebar.className = "cs-my-profile-windowbar";
 
@@ -5881,7 +5926,8 @@ async function csOpenMyProfileModal() {
 
   const titlebarHint = document.createElement("div");
   titlebarHint.className = "cs-my-profile-windowbar-hint";
-  titlebarHint.textContent = "Detached window";
+  titlebarHint.textContent = "";
+  titlebarHint.hidden = true;
 
   const titlebarLabel = document.createElement("div");
   titlebarLabel.className = "cs-my-profile-windowbar-label";
@@ -5931,11 +5977,12 @@ async function csOpenMyProfileModal() {
 
     const rect = modal.getBoundingClientRect();
 
-    modal.style.left = `${rect.left}px`;
-    modal.style.top = `${rect.top}px`;
-    modal.style.right = "auto";
-    modal.style.margin = "0";
-    modal.style.transform = "none";
+    setModalStyle("left", `${rect.left}px`);
+    setModalStyle("top", `${rect.top}px`);
+    setModalStyle("right", "auto");
+    setModalStyle("bottom", "auto");
+    setModalStyle("margin", "0");
+    setModalStyle("transform", "none");
 
     dragState = {
       pointerId: ev.pointerId,
@@ -5961,8 +6008,8 @@ async function csOpenMyProfileModal() {
     const maxLeft = Math.max(8, window.innerWidth - modal.offsetWidth - 8);
     const maxTop = Math.max(8, window.innerHeight - 80);
 
-    modal.style.left = `${Math.max(8, Math.min(maxLeft, nextLeft))}px`;
-    modal.style.top = `${Math.max(8, Math.min(maxTop, nextTop))}px`;
+    setModalStyle("left", `${Math.max(8, Math.min(maxLeft, nextLeft))}px`);
+    setModalStyle("top", `${Math.max(8, Math.min(maxTop, nextTop))}px`);
   });
 
   titlebar.addEventListener("pointerup", (ev) => {

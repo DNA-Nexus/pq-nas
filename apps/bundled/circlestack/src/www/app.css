@@ -3635,3 +3635,1205 @@ img.cs-profile-achievement-icon {
   line-height: 1.45;
   text-align: left;
 }
+
+/* Circle Stack theme support v1
+   This intentionally sits at the end of app.css and overrides the older hard-coded dark colors. */
+:root {
+  color-scheme: dark;
+
+  --cs-bg: #101014;
+  --cs-surface: #181820;
+  --cs-surface-2: #20202a;
+  --cs-surface-3: #272733;
+  --cs-border: rgba(255,255,255,0.14);
+  --cs-border-strong: rgba(96,165,250,0.55);
+  --cs-text: #f4f4f5;
+  --cs-text-soft: #d1d5db;
+  --cs-muted: #92929e;
+  --cs-faint: rgba(255,255,255,0.55);
+  --cs-accent: #60a5fa;
+  --cs-accent-2: #2dd4bf;
+  --cs-accent-bg: rgba(96,165,250,0.16);
+  --cs-danger: #f87171;
+  --cs-button: rgba(255,255,255,0.08);
+  --cs-button-hover: rgba(255,255,255,0.12);
+  --cs-input-bg: #181820;
+  --cs-modal-bg: #181820;
+  --cs-shadow: rgba(0,0,0,0.42);
+}
+
+:root[data-theme="cpunk_orange"] {
+  color-scheme: dark;
+
+  --cs-bg: #100b08;
+  --cs-surface: #1c120d;
+  --cs-surface-2: #25170f;
+  --cs-surface-3: #332015;
+  --cs-border: rgba(251,146,60,0.22);
+  --cs-border-strong: rgba(251,146,60,0.65);
+  --cs-text: #fff7ed;
+  --cs-text-soft: #fed7aa;
+  --cs-muted: rgba(254,215,170,0.64);
+  --cs-faint: rgba(254,215,170,0.52);
+  --cs-accent: #fb923c;
+  --cs-accent-2: #f59e0b;
+  --cs-accent-bg: rgba(251,146,60,0.18);
+  --cs-danger: #fb7185;
+  --cs-button: rgba(251,146,60,0.12);
+  --cs-button-hover: rgba(251,146,60,0.18);
+  --cs-input-bg: #1c120d;
+  --cs-modal-bg: #1c120d;
+  --cs-shadow: rgba(0,0,0,0.48);
+}
+
+:root[data-theme="bright"] {
+  color-scheme: light;
+
+  --cs-bg: #f5f7fb;
+  --cs-surface: #ffffff;
+  --cs-surface-2: #f1f5f9;
+  --cs-surface-3: #e2e8f0;
+  --cs-border: rgba(15,23,42,0.14);
+  --cs-border-strong: rgba(37,99,235,0.46);
+  --cs-text: #111827;
+  --cs-text-soft: #334155;
+  --cs-muted: rgba(15,23,42,0.58);
+  --cs-faint: rgba(15,23,42,0.50);
+  --cs-accent: #2563eb;
+  --cs-accent-2: #0d9488;
+  --cs-accent-bg: rgba(37,99,235,0.10);
+  --cs-danger: #dc2626;
+  --cs-button: rgba(15,23,42,0.055);
+  --cs-button-hover: rgba(15,23,42,0.09);
+  --cs-input-bg: #ffffff;
+  --cs-modal-bg: #ffffff;
+  --cs-shadow: rgba(15,23,42,0.18);
+}
+
+:root[data-theme="win_classic"] {
+  color-scheme: light;
+
+  --cs-bg: #dcdcdc;
+  --cs-surface: #f0f0f0;
+  --cs-surface-2: #e6e6e6;
+  --cs-surface-3: #d0d0d0;
+  --cs-border: #808080;
+  --cs-border-strong: #000080;
+  --cs-text: #000000;
+  --cs-text-soft: #202020;
+  --cs-muted: #404040;
+  --cs-faint: #505050;
+  --cs-accent: #000080;
+  --cs-accent-2: #008080;
+  --cs-accent-bg: #c7d8ff;
+  --cs-danger: #800000;
+  --cs-button: #dfdfdf;
+  --cs-button-hover: #f7f7f7;
+  --cs-input-bg: #ffffff;
+  --cs-modal-bg: #f0f0f0;
+  --cs-shadow: rgba(0,0,0,0.24);
+}
+
+/* Base surfaces */
+html,
+body {
+  background: var(--cs-bg) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-shell {
+  color: var(--cs-text) !important;
+}
+
+.cs-header p,
+.cs-post-meta,
+.cs-media-path,
+.cs-search-hint,
+.cs-empty,
+.cs-intro-verb,
+.cs-intro-msg {
+  color: var(--cs-muted) !important;
+}
+
+/* Inputs and text areas */
+.cs-compose textarea,
+.cs-compose input,
+.cs-intro-modal select,
+.cs-intro-modal textarea,
+#csUserSearch,
+#csFindInput {
+  background: var(--cs-input-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-compose textarea::placeholder,
+.cs-compose input::placeholder,
+#csUserSearch::placeholder,
+#csFindInput::placeholder {
+  color: var(--cs-muted) !important;
+}
+
+/* Cards, posts, empty states */
+.cs-post,
+.cs-empty,
+.cs-circle-row,
+.cs-search-selected,
+.cs-profile-page,
+.cs-profile-card,
+.cs-profile-panel,
+.cs-profile-stat,
+.cs-profile-achievement,
+.cs-profile-achievement-row,
+.cs-profile-achievement-locked,
+.cs-known-origin-row,
+.cs-origin-row,
+.cs-remote-origin-row,
+.cs-people-row,
+.cs-person-row {
+  background: var(--cs-surface) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-post {
+  box-shadow: 0 12px 34px var(--cs-shadow);
+}
+
+.cs-post-author,
+.cs-intro-from,
+.cs-intro-to {
+  color: var(--cs-text) !important;
+}
+
+/* Buttons */
+#csPostButton,
+#csIntroduceBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn,
+#csMyProfileBtn,
+#csFeedModeBtn,
+#csPickMedia,
+.cs-media-choose,
+.cs-media-clear,
+.cs-modal-cancel,
+.cs-modal-delete,
+.cs-intro-actions button,
+.cs-circle-remove,
+.cs-post button,
+.cs-post-reply,
+.cs-reply-btn,
+.cs-person-button,
+.cs-origin-button,
+.cs-profile-button,
+button {
+  border-color: var(--cs-border) !important;
+}
+
+#csIntroduceBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn,
+#csMyProfileBtn,
+#csFeedModeBtn,
+#csPickMedia,
+.cs-media-clear,
+.cs-modal-cancel,
+.cs-intro-actions button:last-child,
+.cs-profile-button,
+.cs-person-button,
+.cs-origin-button {
+  background: var(--cs-button) !important;
+  color: var(--cs-text) !important;
+}
+
+#csPostButton,
+.cs-media-choose,
+#csIntroduceBtn.is-active,
+#csFeedModeBtn.is-active {
+  background: var(--cs-accent) !important;
+  color: #fff !important;
+}
+
+:root[data-theme="cpunk_orange"] #csPostButton,
+:root[data-theme="cpunk_orange"] .cs-media-choose,
+:root[data-theme="cpunk_orange"] #csIntroduceBtn.is-active,
+:root[data-theme="cpunk_orange"] #csFeedModeBtn.is-active {
+  color: #111 !important;
+}
+
+:root[data-theme="bright"] #csPostButton,
+:root[data-theme="bright"] .cs-media-choose,
+:root[data-theme="bright"] #csIntroduceBtn.is-active,
+:root[data-theme="bright"] #csFeedModeBtn.is-active {
+  color: #fff !important;
+}
+
+:root[data-theme="win_classic"] #csPostButton,
+:root[data-theme="win_classic"] .cs-media-choose,
+:root[data-theme="win_classic"] #csIntroduceBtn.is-active,
+:root[data-theme="win_classic"] #csFeedModeBtn.is-active {
+  color: #fff !important;
+}
+
+button:hover,
+#csPickMedia:hover,
+#csMyCircleBtn:hover,
+#csFindPeopleBtn:hover,
+#csKnownOriginsBtn:hover,
+#csMyProfileBtn:hover,
+#csFeedModeBtn:hover,
+.cs-profile-button:hover,
+.cs-person-button:hover,
+.cs-origin-button:hover {
+  background: var(--cs-button-hover) !important;
+}
+
+/* Visibility segmented buttons */
+#csVisibility,
+.cs-visibility .cs-vis-option,
+.cs-vis-option {
+  background: var(--cs-surface) !important;
+  color: var(--cs-text-soft) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-visibility .cs-vis-option:hover,
+.cs-vis-option:hover {
+  background: var(--cs-surface-2) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-visibility .cs-vis-option.is-active,
+.cs-visibility .cs-vis-option.is-active:hover,
+.cs-vis-option.is-active,
+.cs-vis-option.is-active:hover {
+  background: var(--cs-accent-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border-strong) !important;
+}
+
+/* Modals */
+.cs-modal-backdrop,
+.cs-lightbox,
+.cs-achievement-unlock-backdrop,
+.cs-profile-detached-backdrop {
+  background: rgba(0,0,0,0.52) !important;
+}
+
+.cs-modal,
+.cs-media-modal,
+.cs-achievement-unlock-modal,
+.cs-profile-modal,
+.cs-profile-detached-window,
+.cs-profile-window,
+.cs-known-origins-modal,
+.cs-find-people-modal,
+.cs-intro-modal {
+  background: var(--cs-modal-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+  box-shadow: 0 24px 80px var(--cs-shadow);
+}
+
+.cs-modal-text,
+.cs-profile-muted,
+.cs-profile-subtitle,
+.cs-achievement-unlock-desc,
+.cs-achievement-replay-text,
+.cs-profile-stat-label,
+.cs-profile-achievement-desc {
+  color: var(--cs-muted) !important;
+}
+
+/* Media picker/list rows */
+.cs-media-item,
+.cs-find-row,
+.cs-search-row {
+  background: var(--cs-surface-2) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-media-item:hover,
+.cs-find-row:hover,
+.cs-search-row:hover {
+  background: var(--cs-surface-3) !important;
+}
+
+.cs-media-thumb,
+.cs-compose-preview-img,
+.cs-post-media {
+  border-color: var(--cs-border) !important;
+  background: var(--cs-surface-2) !important;
+}
+
+/* Badges and achievements */
+.cs-achievement-pill,
+.cs-profile-badge,
+.cs-post-badge,
+.cs-badge,
+.cs-profile-achievement-earned,
+.cs-profile-achievement-locked {
+  border-color: var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-profile-achievement-earned,
+.cs-achievement-pill.is-unlocked,
+.cs-profile-badge.is-unlocked {
+  border-color: rgba(45,212,191,0.44) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    var(--cs-surface) !important;
+}
+
+.cs-profile-achievement-locked,
+.cs-achievement-pill.is-locked,
+.cs-profile-badge.is-locked {
+  opacity: 0.62;
+  filter: grayscale(1) saturate(0);
+}
+
+/* Win classic special flattening */
+:root[data-theme="win_classic"] .cs-post,
+:root[data-theme="win_classic"] .cs-empty,
+:root[data-theme="win_classic"] .cs-modal,
+:root[data-theme="win_classic"] .cs-media-modal,
+:root[data-theme="win_classic"] .cs-profile-detached-window,
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal,
+:root[data-theme="win_classic"] .cs-compose textarea,
+:root[data-theme="win_classic"] .cs-compose input,
+:root[data-theme="win_classic"] button,
+:root[data-theme="win_classic"] .cs-media-item,
+:root[data-theme="win_classic"] .cs-profile-stat,
+:root[data-theme="win_classic"] .cs-profile-achievement-earned,
+:root[data-theme="win_classic"] .cs-profile-achievement-locked {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-post {
+  border: 1px solid #808080 !important;
+}
+
+:root[data-theme="win_classic"] button {
+  border: 1px solid #808080 !important;
+}
+
+/* Circle Stack bright/win_classic polish v2
+   Refines the first broad theme pass so light themes feel intentional. */
+
+/* Shared light-theme layout tuning */
+:root[data-theme="bright"] .cs-shell,
+:root[data-theme="win_classic"] .cs-shell {
+  max-width: 860px;
+}
+
+:root[data-theme="bright"] .cs-header,
+:root[data-theme="win_classic"] .cs-header {
+  margin-bottom: 18px;
+}
+
+:root[data-theme="bright"] .cs-header h1,
+:root[data-theme="win_classic"] .cs-header h1 {
+  color: var(--cs-text) !important;
+}
+
+:root[data-theme="bright"] .cs-compose,
+:root[data-theme="win_classic"] .cs-compose {
+  margin-bottom: 18px;
+}
+
+/* Bright theme: modern light cards */
+:root[data-theme="bright"] body {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(45,212,191,0.10), transparent 28%),
+    radial-gradient(circle at 100% 10%, rgba(37,99,235,0.08), transparent 34%),
+    #eef3f8 !important;
+}
+
+:root[data-theme="bright"] .cs-post,
+:root[data-theme="bright"] .cs-empty,
+:root[data-theme="bright"] .cs-compose textarea,
+:root[data-theme="bright"] .cs-compose input {
+  border-color: rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="bright"] .cs-post,
+:root[data-theme="bright"] .cs-empty {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96)) !important;
+  box-shadow:
+    0 18px 45px rgba(15,23,42,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.90) !important;
+}
+
+:root[data-theme="bright"] .cs-compose textarea,
+:root[data-theme="bright"] .cs-compose input {
+  background: rgba(255,255,255,0.98) !important;
+  box-shadow: inset 0 1px 0 rgba(15,23,42,0.03);
+}
+
+:root[data-theme="bright"] .cs-compose textarea:focus,
+:root[data-theme="bright"] .cs-compose input:focus,
+:root[data-theme="bright"] #csFindInput:focus,
+:root[data-theme="bright"] #csUserSearch:focus {
+  outline: 2px solid rgba(37,99,235,0.28);
+  border-color: rgba(37,99,235,0.48) !important;
+}
+
+/* Win classic: classic but readable */
+:root[data-theme="win_classic"] body {
+  background: #d7d7d7 !important;
+}
+
+:root[data-theme="win_classic"] .cs-shell {
+  background: transparent !important;
+}
+
+:root[data-theme="win_classic"] .cs-post,
+:root[data-theme="win_classic"] .cs-empty {
+  background: #f4f4f4 !important;
+  border: 1px solid #8a8a8a !important;
+  padding: 16px !important;
+}
+
+:root[data-theme="win_classic"] .cs-compose textarea,
+:root[data-theme="win_classic"] .cs-compose input,
+:root[data-theme="win_classic"] #csFindInput,
+:root[data-theme="win_classic"] #csUserSearch {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  box-shadow: inset 1px 1px 0 #bcbcbc;
+}
+
+/* Fix boxed/awkward author header look in light themes */
+:root[data-theme="bright"] .cs-post-header,
+:root[data-theme="win_classic"] .cs-post-header {
+  align-items: flex-start;
+}
+
+:root[data-theme="bright"] .cs-post-author,
+:root[data-theme="bright"] .cs-post-author button,
+:root[data-theme="bright"] .cs-author,
+:root[data-theme="bright"] .cs-author-name,
+:root[data-theme="win_classic"] .cs-post-author,
+:root[data-theme="win_classic"] .cs-post-author button,
+:root[data-theme="win_classic"] .cs-author,
+:root[data-theme="win_classic"] .cs-author-name {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--cs-text) !important;
+  padding: 0 !important;
+}
+
+:root[data-theme="bright"] .cs-post-author,
+:root[data-theme="win_classic"] .cs-post-author {
+  font-weight: 850;
+}
+
+/* Better toolbar buttons for light themes */
+:root[data-theme="bright"] .cs-intro-toolbar button,
+:root[data-theme="bright"] #csIntroduceBtn,
+:root[data-theme="bright"] #csMyCircleBtn,
+:root[data-theme="bright"] #csFindPeopleBtn,
+:root[data-theme="bright"] #csKnownOriginsBtn,
+:root[data-theme="bright"] #csMyProfileBtn,
+:root[data-theme="bright"] #csFeedModeBtn {
+  border: 1px solid rgba(15,23,42,0.14) !important;
+  background: rgba(255,255,255,0.78) !important;
+  color: #111827 !important;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.06);
+}
+
+:root[data-theme="bright"] .cs-intro-toolbar button:hover,
+:root[data-theme="bright"] #csIntroduceBtn:hover,
+:root[data-theme="bright"] #csMyCircleBtn:hover,
+:root[data-theme="bright"] #csFindPeopleBtn:hover,
+:root[data-theme="bright"] #csKnownOriginsBtn:hover,
+:root[data-theme="bright"] #csMyProfileBtn:hover,
+:root[data-theme="bright"] #csFeedModeBtn:hover {
+  background: #fff !important;
+  border-color: rgba(37,99,235,0.28) !important;
+}
+
+:root[data-theme="bright"] .cs-intro-toolbar button.is-active,
+:root[data-theme="bright"] #csFeedModeBtn.is-active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #fff !important;
+}
+
+:root[data-theme="win_classic"] .cs-intro-toolbar button,
+:root[data-theme="win_classic"] #csIntroduceBtn,
+:root[data-theme="win_classic"] #csMyCircleBtn,
+:root[data-theme="win_classic"] #csFindPeopleBtn,
+:root[data-theme="win_classic"] #csKnownOriginsBtn,
+:root[data-theme="win_classic"] #csMyProfileBtn,
+:root[data-theme="win_classic"] #csFeedModeBtn {
+  border: 1px solid #808080 !important;
+  background: #e8e8e8 !important;
+  color: #000 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+  padding: 8px 14px !important;
+}
+
+:root[data-theme="win_classic"] .cs-intro-toolbar button.is-active,
+:root[data-theme="win_classic"] #csFeedModeBtn.is-active {
+  background: #000080 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* Badge readability: posts + profiles */
+:root[data-theme="bright"] .cs-achievement-pill,
+:root[data-theme="bright"] .cs-post-badge,
+:root[data-theme="bright"] .cs-profile-badge,
+:root[data-theme="bright"] .cs-badge {
+  color: #0f172a !important;
+  background: rgba(255,255,255,0.82) !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-pill.is-unlocked,
+:root[data-theme="bright"] .cs-post-badge.is-unlocked,
+:root[data-theme="bright"] .cs-profile-badge.is-unlocked,
+:root[data-theme="bright"] .cs-badge.is-unlocked {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.16), transparent 42%),
+    rgba(255,255,255,0.92) !important;
+  border-color: rgba(13,148,136,0.38) !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-pill,
+:root[data-theme="win_classic"] .cs-post-badge,
+:root[data-theme="win_classic"] .cs-profile-badge,
+:root[data-theme="win_classic"] .cs-badge {
+  color: #000 !important;
+  background: #f0f0f0 !important;
+  border: 1px solid #888 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-pill.is-unlocked,
+:root[data-theme="win_classic"] .cs-post-badge.is-unlocked,
+:root[data-theme="win_classic"] .cs-profile-badge.is-unlocked,
+:root[data-theme="win_classic"] .cs-badge.is-unlocked {
+  background: #eaffff !important;
+  border-color: #008080 !important;
+}
+
+/* Some badge elements are plain spans without is-unlocked */
+:root[data-theme="bright"] [class*="badge"],
+:root[data-theme="bright"] [class*="achievement-pill"] {
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] [class*="badge"],
+:root[data-theme="win_classic"] [class*="achievement-pill"] {
+  text-shadow: none !important;
+}
+
+/* Reaction / reply buttons */
+:root[data-theme="bright"] .cs-post-reply,
+:root[data-theme="bright"] .cs-reply-btn,
+:root[data-theme="bright"] .cs-reaction-button,
+:root[data-theme="bright"] .cs-post button {
+  color: #111827 !important;
+  background: rgba(15,23,42,0.055) !important;
+  border: 1px solid rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="bright"] .cs-post-reply:hover,
+:root[data-theme="bright"] .cs-reply-btn:hover,
+:root[data-theme="bright"] .cs-reaction-button:hover,
+:root[data-theme="bright"] .cs-post button:hover {
+  background: rgba(37,99,235,0.10) !important;
+  border-color: rgba(37,99,235,0.25) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post-reply,
+:root[data-theme="win_classic"] .cs-reply-btn,
+:root[data-theme="win_classic"] .cs-reaction-button,
+:root[data-theme="win_classic"] .cs-post button {
+  color: #000 !important;
+  background: #e8e8e8 !important;
+  border: 1px solid #808080 !important;
+}
+
+/* Make metadata and reaction names readable */
+:root[data-theme="bright"] .cs-post-meta,
+:root[data-theme="bright"] .cs-reaction-line,
+:root[data-theme="bright"] .cs-reaction-names,
+:root[data-theme="bright"] .cs-post-reactions {
+  color: rgba(15,23,42,0.62) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post-meta,
+:root[data-theme="win_classic"] .cs-reaction-line,
+:root[data-theme="win_classic"] .cs-reaction-names,
+:root[data-theme="win_classic"] .cs-post-reactions {
+  color: #404040 !important;
+}
+
+/* Memory Node banner */
+:root[data-theme="bright"] .memory-node-banner,
+:root[data-theme="bright"] .cs-memory-node,
+:root[data-theme="bright"] [class*="memory-node"] {
+  color: #0f172a !important;
+  border-color: rgba(13,148,136,0.30) !important;
+}
+
+:root[data-theme="win_classic"] .memory-node-banner,
+:root[data-theme="win_classic"] .cs-memory-node,
+:root[data-theme="win_classic"] [class*="memory-node"] {
+  color: #000 !important;
+  border-color: #808080 !important;
+}
+
+/* Detached profile and achievement modal light cleanup */
+:root[data-theme="bright"] .cs-profile-detached-window,
+:root[data-theme="bright"] .cs-achievement-unlock-modal,
+:root[data-theme="bright"] .cs-profile-modal,
+:root[data-theme="bright"] .cs-media-modal,
+:root[data-theme="bright"] .cs-modal {
+  background: rgba(255,255,255,0.98) !important;
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.14) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-detached-window,
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal,
+:root[data-theme="win_classic"] .cs-profile-modal,
+:root[data-theme="win_classic"] .cs-media-modal,
+:root[data-theme="win_classic"] .cs-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+}
+
+/* Keep images pleasant in light modes */
+:root[data-theme="bright"] .cs-post-media,
+:root[data-theme="bright"] .cs-compose-preview-img {
+  box-shadow: 0 12px 28px rgba(15,23,42,0.12);
+}
+
+:root[data-theme="win_classic"] .cs-post-media,
+:root[data-theme="win_classic"] .cs-compose-preview-img {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Circle Stack bright/win_classic recovery v7
+   Exact selectors only. Keep dark/cpunk behavior intact. */
+
+/* ------------------------------------------------------------
+   Reply composer: light themes only
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-post textarea,
+:root[data-theme="bright"] .cs-post input,
+:root[data-theme="bright"] textarea[placeholder*="reply" i],
+:root[data-theme="bright"] input[placeholder*="image path" i] {
+  background: #fff !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  box-shadow: inset 0 1px 0 rgba(15,23,42,0.035) !important;
+}
+
+:root[data-theme="bright"] .cs-post textarea::placeholder,
+:root[data-theme="bright"] .cs-post input::placeholder,
+:root[data-theme="bright"] textarea[placeholder*="reply" i]::placeholder,
+:root[data-theme="bright"] input[placeholder*="image path" i]::placeholder {
+  color: rgba(15,23,42,0.48) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post textarea,
+:root[data-theme="win_classic"] .cs-post input,
+:root[data-theme="win_classic"] textarea[placeholder*="reply" i],
+:root[data-theme="win_classic"] input[placeholder*="image path" i] {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow: inset 1px 1px 0 #bcbcbc !important;
+}
+
+:root[data-theme="win_classic"] .cs-post textarea::placeholder,
+:root[data-theme="win_classic"] .cs-post input::placeholder,
+:root[data-theme="win_classic"] textarea[placeholder*="reply" i]::placeholder,
+:root[data-theme="win_classic"] input[placeholder*="image path" i]::placeholder {
+  color: #555 !important;
+}
+
+/* ------------------------------------------------------------
+   Achievement chips under author/profile names
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-achievement-strip,
+:root[data-theme="win_classic"] .cs-achievement-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip,
+:root[data-theme="bright"] .cs-achievement-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 22px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(15,23,42,0.22) !important;
+  background: linear-gradient(180deg, #ffffff, #eef2f7) !important;
+  color: #0f172a !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip * {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px !important;
+  border-radius: 4px !important;
+  filter: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip.tier-gold {
+  border-color: rgba(202,138,4,0.48) !important;
+  background: linear-gradient(180deg, #fffaf0, #fef3c7) !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip,
+:root[data-theme="win_classic"] .cs-achievement-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 21px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid #808080 !important;
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip * {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px !important;
+  border-radius: 3px !important;
+  filter: none !important;
+}
+
+/* ------------------------------------------------------------
+   Detached My Profile: exact classes only
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-my-profile-modal-backdrop,
+:root[data-theme="win_classic"] .cs-my-profile-modal-backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-modal,
+:root[data-theme="win_classic"] .cs-my-profile-detached-modal {
+  position: fixed !important;
+  top: 86px !important;
+  right: 24px !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: min(560px, calc(100vw - 24px)) !important;
+  max-height: calc(100vh - 110px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+  overflow: hidden !important;
+  display: block !important;
+  z-index: 100000 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-modal {
+  border-radius: 18px !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.10), transparent 34%),
+    radial-gradient(circle at 100% 0%, rgba(37,99,235,0.08), transparent 36%),
+    rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  box-shadow: 0 28px 90px rgba(15,23,42,0.26) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-detached-modal {
+  border-radius: 0 !important;
+  border: 2px solid #808080 !important;
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell {
+  max-height: calc(100vh - 110px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  padding: 0 !important;
+  color: inherit !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  min-height: 46px !important;
+  padding: 8px 10px 8px 14px !important;
+  cursor: grab !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar {
+  background:
+    linear-gradient(90deg, rgba(45,212,191,0.12), rgba(37,99,235,0.08)),
+    rgba(255,255,255,0.96) !important;
+  border-bottom: 1px solid rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar {
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8) !important;
+  border-bottom: 2px solid #b8b8b8 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-title,
+:root[data-theme="bright"] .cs-my-profile-windowbar-label,
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="bright"] .cs-my-profile-detached-shell,
+:root[data-theme="bright"] .cs-my-profile-name,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stat-value,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="bright"] .cs-my-profile-sub,
+:root[data-theme="bright"] .cs-my-profile-stat-label,
+:root[data-theme="bright"] .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-fingerprint,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-title,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-label,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell,
+:root[data-theme="win_classic"] .cs-my-profile-name,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stat-value,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-sub,
+:root[data-theme="win_classic"] .cs-my-profile-stat-label,
+:root[data-theme="win_classic"] .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-fingerprint,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-header,
+:root[data-theme="bright"] .cs-my-profile-fp-block,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stats-grid,
+:root[data-theme="bright"] .cs-my-profile-achievements,
+:root[data-theme="bright"] .cs-my-profile-actions,
+:root[data-theme="bright"] .cs-my-profile-loading,
+:root[data-theme="win_classic"] .cs-my-profile-header,
+:root[data-theme="win_classic"] .cs-my-profile-fp-block,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stats-grid,
+:root[data-theme="win_classic"] .cs-my-profile-achievements,
+:root[data-theme="win_classic"] .cs-my-profile-actions,
+:root[data-theme="win_classic"] .cs-my-profile-loading {
+  margin-left: 16px !important;
+  margin-right: 16px !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-header,
+:root[data-theme="win_classic"] .cs-my-profile-header {
+  margin-top: 16px !important;
+  padding-right: 0 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-actions,
+:root[data-theme="win_classic"] .cs-my-profile-actions {
+  padding-bottom: 16px !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-fp-block,
+:root[data-theme="bright"] .cs-my-profile-stat,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(255,255,255,0.94) !important;
+  border: 1px solid rgba(13,148,136,0.40) !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-fp-block,
+:root[data-theme="win_classic"] .cs-my-profile-stat,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background: #f7f7f7 !important;
+  border: 1px solid #909090 !important;
+  color: #000 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ------------------------------------------------------------
+   Normal person profile modal readability in light themes
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-name,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-fingerprint {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-sub,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(255,255,255,0.94) !important;
+  border: 1px solid rgba(13,148,136,0.40) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-name,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-fingerprint {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-sub,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* ------------------------------------------------------------
+   Achievement replay modal: dark overlay behind trophy, not white page
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-modal-backdrop:has(.cs-achievement-unlock-modal),
+:root[data-theme="win_classic"] .cs-modal-backdrop:has(.cs-achievement-unlock-modal) {
+  background: rgba(0,0,0,0.52) !important;
+  backdrop-filter: blur(2px) !important;
+  display: grid !important;
+  place-items: center !important;
+  pointer-events: auto !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-modal {
+  background: rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-title,
+:root[data-theme="bright"] .cs-achievement-unlock-kicker,
+:root[data-theme="bright"] .cs-achievement-unlock-tier,
+:root[data-theme="bright"] .cs-achievement-replay-text {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-desc {
+  color: rgba(15,23,42,0.70) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-title,
+:root[data-theme="win_classic"] .cs-achievement-unlock-kicker,
+:root[data-theme="win_classic"] .cs-achievement-unlock-tier,
+:root[data-theme="win_classic"] .cs-achievement-replay-text {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack My Profile light-theme text polish v8
+   Keep the detached window + gradient achievement rows, but fix over-bright text. */
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint {
+  display: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-title,
+:root[data-theme="bright"] .cs-my-profile-name,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stat-value,
+:root[data-theme="bright"] .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-my-profile-detached-shell strong,
+:root[data-theme="bright"] .cs-my-profile-detached-shell b {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-title {
+  color: rgba(15,23,42,0.62) !important;
+  letter-spacing: 0.14em;
+}
+
+:root[data-theme="bright"] .cs-my-profile-sub,
+:root[data-theme="bright"] .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-fingerprint,
+:root[data-theme="bright"] .cs-my-profile-stat-label,
+:root[data-theme="bright"] .cs-profile-achievement-desc,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.66) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.13), transparent 46%),
+    rgba(255,255,255,0.94) !important;
+  border-color: rgba(13,148,136,0.38) !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement.locked,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement.is-locked {
+  background: rgba(248,250,252,0.82) !important;
+  border-color: rgba(15,23,42,0.13) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-title,
+:root[data-theme="win_classic"] .cs-my-profile-name,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stat-value,
+:root[data-theme="win_classic"] .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell strong,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell b {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-title {
+  color: #404040 !important;
+  letter-spacing: 0.14em;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-sub,
+:root[data-theme="win_classic"] .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-fingerprint,
+:root[data-theme="win_classic"] .cs-my-profile-stat-label,
+:root[data-theme="win_classic"] .cs-profile-achievement-desc,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Trophy replay modal text polish in light modes */
+:root[data-theme="bright"] .cs-achievement-unlock-title,
+:root[data-theme="bright"] .cs-achievement-unlock-kicker,
+:root[data-theme="bright"] .cs-achievement-unlock-tier {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-desc,
+:root[data-theme="bright"] .cs-achievement-replay-text {
+  color: rgba(15,23,42,0.72) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-title,
+:root[data-theme="win_classic"] .cs-achievement-unlock-kicker,
+:root[data-theme="win_classic"] .cs-achievement-unlock-tier {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-desc,
+:root[data-theme="win_classic"] .cs-achievement-replay-text {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
