@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Sai esimese kaugföderatsiooni signaali.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Lõi sõlmedeülese vestluse.",
   "circlestack.profile.achShort.federation.knownOrigin": "Lisas või avastas kaug-NAS-i päritolu.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Ühendas selle NAS-i mitme kaugpäritoluga."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Ühendas selle NAS-i mitme kaugpäritoluga.",
+  "circlestack.feedMode.feed": "Režiim: voog",
+  "circlestack.feedMode.federated": "Režiim: födereeritud",
+  "circlestack.feedMode.myCircle": "Režiim: minu ring",
+  "circlestack.feedMode.discover": "Režiim: avasta",
+  "circlestack.feedMode.switchTitle": "Vaheta voo režiimi",
+  "circlestack.feedMode.why": "Miks?",
+  "circlestack.feedMode.hide": "Peida",
+  "circlestack.federation.person": "Isik",
+  "circlestack.federation.copyFp": "Kopeeri FP",
+  "circlestack.federation.addToPeople": "Lisa kontaktidesse",
+  "circlestack.federation.react": "🙂 Reageeri",
+  "circlestack.federation.reactTitle": "Reageeri sellele födereeritud postitusele",
+  "circlestack.federation.reactAria": "Reageeri {reaction}"
 }

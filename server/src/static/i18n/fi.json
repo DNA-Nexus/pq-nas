@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Vastaanotti ensimmäisen etäfederointisignaalin.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Loi solmujen välisen keskustelun.",
   "circlestack.profile.achShort.federation.knownOrigin": "Lisäsi tai löysi etä-NAS-alkuperän.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Yhdisti tämän NASin useisiin etäalkuperiin."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Yhdisti tämän NASin useisiin etäalkuperiin.",
+  "circlestack.feedMode.feed": "Tila: syöte",
+  "circlestack.feedMode.federated": "Tila: federoitu",
+  "circlestack.feedMode.myCircle": "Tila: oma piiri",
+  "circlestack.feedMode.discover": "Tila: löydä",
+  "circlestack.feedMode.switchTitle": "Vaihda syötteen tilaa",
+  "circlestack.feedMode.why": "Miksi?",
+  "circlestack.feedMode.hide": "Piilota",
+  "circlestack.federation.person": "Henkilö",
+  "circlestack.federation.copyFp": "Kopioi FP",
+  "circlestack.federation.addToPeople": "Lisää henkilöihin",
+  "circlestack.federation.react": "🙂 Reagoi",
+  "circlestack.federation.reactTitle": "Reagoi tähän federoituun julkaisuun",
+  "circlestack.federation.reactAria": "Reagoi {reaction}"
 }

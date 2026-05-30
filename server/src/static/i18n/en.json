@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Received the first remote federation signal.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Created a cross-node conversation.",
   "circlestack.profile.achShort.federation.knownOrigin": "Added or discovered a remote NAS origin.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Connected this NAS with several remote origins."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Connected this NAS with several remote origins.",
+  "circlestack.feedMode.feed": "Mode: Feed",
+  "circlestack.feedMode.federated": "Mode: Federated",
+  "circlestack.feedMode.myCircle": "Mode: My Circle",
+  "circlestack.feedMode.discover": "Mode: Discover",
+  "circlestack.feedMode.switchTitle": "Click to switch feed mode",
+  "circlestack.feedMode.why": "Why?",
+  "circlestack.feedMode.hide": "Hide",
+  "circlestack.federation.person": "Person",
+  "circlestack.federation.copyFp": "Copy FP",
+  "circlestack.federation.addToPeople": "Add to People",
+  "circlestack.federation.react": "🙂 React",
+  "circlestack.federation.reactTitle": "React to this federated post",
+  "circlestack.federation.reactAria": "React {reaction}"
 }

@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Отримано перший віддалений федеративний сигнал.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Створено розмову між вузлами.",
   "circlestack.profile.achShort.federation.knownOrigin": "Додано або знайдено віддалене NAS-джерело.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Цей NAS з’єднано з кількома віддаленими джерелами."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Цей NAS з’єднано з кількома віддаленими джерелами.",
+  "circlestack.feedMode.feed": "Режим: стрічка",
+  "circlestack.feedMode.federated": "Режим: федерація",
+  "circlestack.feedMode.myCircle": "Режим: моє коло",
+  "circlestack.feedMode.discover": "Режим: знайти",
+  "circlestack.feedMode.switchTitle": "Перемкнути режим стрічки",
+  "circlestack.feedMode.why": "Чому?",
+  "circlestack.feedMode.hide": "Сховати",
+  "circlestack.federation.person": "Особа",
+  "circlestack.federation.copyFp": "Копіювати FP",
+  "circlestack.federation.addToPeople": "Додати до контактів",
+  "circlestack.federation.react": "🙂 Реагувати",
+  "circlestack.federation.reactTitle": "Реагувати на цей федеративний допис",
+  "circlestack.federation.reactAria": "Реагувати {reaction}"
 }

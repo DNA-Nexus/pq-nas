@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Das erste entfernte Föderationssignal empfangen.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Ein knotenübergreifendes Gespräch erstellt.",
   "circlestack.profile.achShort.federation.knownOrigin": "Einen entfernten NAS-Ursprung hinzugefügt oder entdeckt.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Dieses NAS mit mehreren entfernten Ursprüngen verbunden."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Dieses NAS mit mehreren entfernten Ursprüngen verbunden.",
+  "circlestack.feedMode.feed": "Modus: Feed",
+  "circlestack.feedMode.federated": "Modus: föderiert",
+  "circlestack.feedMode.myCircle": "Modus: mein Kreis",
+  "circlestack.feedMode.discover": "Modus: entdecken",
+  "circlestack.feedMode.switchTitle": "Feed-Modus wechseln",
+  "circlestack.feedMode.why": "Warum?",
+  "circlestack.feedMode.hide": "Ausblenden",
+  "circlestack.federation.person": "Person",
+  "circlestack.federation.copyFp": "FP kopieren",
+  "circlestack.federation.addToPeople": "Zu Kontakten hinzufügen",
+  "circlestack.federation.react": "🙂 Reagieren",
+  "circlestack.federation.reactTitle": "Auf diesen föderierten Beitrag reagieren",
+  "circlestack.federation.reactAria": "Reagieren {reaction}"
 }

@@ -1921,7 +1921,7 @@ function csRenderFederatedActions(ev) {
     const person = document.createElement("button");
     person.className = "cs-modal-cancel";
     person.type = "button";
-    person.textContent = "Person";
+    person.textContent = csT("federation.person", "Person");
     person.addEventListener("click", () => {
       csOpenPersonCard(actorFp, {
         display_name: csFederatedActorLabel(ev),
@@ -1935,11 +1935,11 @@ function csRenderFederatedActions(ev) {
       const copy = document.createElement("button");
       copy.className = "cs-modal-cancel";
       copy.type = "button";
-      copy.textContent = "Copy FP";
+      copy.textContent = csT("federation.copyFp", "Copy FP");
       copy.addEventListener("click", async () => {
         await navigator.clipboard.writeText(actorFp);
         copy.textContent = csT("common.copied", "Copied");
-        setTimeout(() => { copy.textContent = "Copy FP"; }, 1200);
+        setTimeout(() => { copy.textContent = csT("federation.copyFp", "Copy FP"); }, 1200);
       });
       personActions.appendChild(copy);
     }
@@ -1947,7 +1947,7 @@ function csRenderFederatedActions(ev) {
     const add = document.createElement("button");
     add.className = "cs-modal-cancel";
     add.type = "button";
-    add.textContent = "Add to People";
+    add.textContent = csT("federation.addToPeople", "Add to People");
     add.addEventListener("click", () => csAddFederatedPerson(ev));
     personActions.appendChild(add);
   }
@@ -1959,8 +1959,8 @@ function csRenderFederatedActions(ev) {
     const trigger = document.createElement("button");
     trigger.className = "cs-reaction-trigger";
     trigger.type = "button";
-    trigger.textContent = "🙂 React";
-    trigger.title = "React to this federated post";
+    trigger.textContent = csT("federation.react", "🙂 React");
+    trigger.title = csT("federation.reactTitle", "React to this federated post");
 
     const menu = document.createElement("div");
     menu.className = "cs-reaction-menu";
@@ -1970,7 +1970,7 @@ function csRenderFederatedActions(ev) {
       btn.className = "cs-reaction-menu-button";
       btn.type = "button";
       btn.textContent = reaction;
-      btn.setAttribute("aria-label", `React ${reaction}`);
+      btn.setAttribute("aria-label", csT("federation.reactAria", { reaction }, `React ${reaction}`));
       btn.addEventListener("click", () => csReactToFederatedPost(ev, reaction, btn));
       menu.appendChild(btn);
     }

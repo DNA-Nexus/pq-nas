@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Odebrano pierwszy zdalny sygnał federacji.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Utworzono rozmowę między węzłami.",
   "circlestack.profile.achShort.federation.knownOrigin": "Dodano lub odkryto zdalne źródło NAS.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Połączono ten NAS z kilkoma zdalnymi źródłami."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Połączono ten NAS z kilkoma zdalnymi źródłami.",
+  "circlestack.feedMode.feed": "Tryb: kanał",
+  "circlestack.feedMode.federated": "Tryb: federacja",
+  "circlestack.feedMode.myCircle": "Tryb: mój krąg",
+  "circlestack.feedMode.discover": "Tryb: odkrywaj",
+  "circlestack.feedMode.switchTitle": "Przełącz tryb kanału",
+  "circlestack.feedMode.why": "Dlaczego?",
+  "circlestack.feedMode.hide": "Ukryj",
+  "circlestack.federation.person": "Osoba",
+  "circlestack.federation.copyFp": "Kopiuj FP",
+  "circlestack.federation.addToPeople": "Dodaj do kontaktów",
+  "circlestack.federation.react": "🙂 Zareaguj",
+  "circlestack.federation.reactTitle": "Zareaguj na ten federowany wpis",
+  "circlestack.federation.reactAria": "Zareaguj {reaction}"
 }

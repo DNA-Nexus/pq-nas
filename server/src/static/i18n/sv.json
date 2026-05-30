@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "Tog emot den första fjärrfederationssignalen.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Skapade ett samtal mellan noder.",
   "circlestack.profile.achShort.federation.knownOrigin": "Lade till eller upptäckte ett fjärr-NAS-ursprung.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Anslöt denna NAS till flera fjärrursprung."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Anslöt denna NAS till flera fjärrursprung.",
+  "circlestack.feedMode.feed": "Läge: flöde",
+  "circlestack.feedMode.federated": "Läge: federerat",
+  "circlestack.feedMode.myCircle": "Läge: min cirkel",
+  "circlestack.feedMode.discover": "Läge: upptäck",
+  "circlestack.feedMode.switchTitle": "Byt flödesläge",
+  "circlestack.feedMode.why": "Varför?",
+  "circlestack.feedMode.hide": "Dölj",
+  "circlestack.federation.person": "Person",
+  "circlestack.federation.copyFp": "Kopiera FP",
+  "circlestack.federation.addToPeople": "Lägg till i kontakter",
+  "circlestack.federation.react": "🙂 Reagera",
+  "circlestack.federation.reactTitle": "Reagera på detta federerade inlägg",
+  "circlestack.federation.reactAria": "Reagera {reaction}"
 }

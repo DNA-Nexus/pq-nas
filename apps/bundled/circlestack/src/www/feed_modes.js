@@ -9,6 +9,19 @@
 
   const CS_API_LOCAL = "/api/v4/circlestack";
 
+  function t(key, vars = null, fallback = undefined) {
+    if (typeof vars === "string" && fallback === undefined) {
+      fallback = vars;
+      vars = null;
+    }
+
+    if (window.csT && typeof window.csT === "function") {
+      return window.csT(key, vars, fallback);
+    }
+
+    return String(fallback ?? key);
+  }
+
   let knownOrigins = new Set();
   let mutedOrigins = new Set();
   let originInfoByNas = new Map();
@@ -151,10 +164,10 @@
   // CIRCLESTACK_FEED_MODE_CYCLE_BUTTON_V1
   function modeLabel(mode) {
     const m = normalizeMode(mode);
-    if (m === "federated") return "Mode: Federated";
-    if (m === "my_circle") return "Mode: My Circle";
-    if (m === "discover") return "Mode: Discover";
-    return "Mode: Feed";
+    if (m === "federated") return t("feedMode.federated", "Mode: Federated");
+    if (m === "my_circle") return t("feedMode.myCircle", "Mode: My Circle");
+    if (m === "discover") return t("feedMode.discover", "Mode: Discover");
+    return t("feedMode.feed", "Mode: Feed");
   }
 
   function nextMode(mode) {
@@ -176,7 +189,7 @@
       cycleBtn.classList.add("is-active");
       cycleBtn.textContent = modeLabel(m);
       cycleBtn.dataset.mode = m;
-      cycleBtn.title = "Click to switch feed mode";
+      cycleBtn.title = t("feedMode.switchTitle", "Click to switch feed mode");
     }
 
     // Backward compatibility if old buttons exist in cached/runtime HTML.
@@ -387,7 +400,7 @@
     const why = document.createElement("button");
     why.className = "cs-federated-reason-why";
     why.type = "button";
-    why.textContent = "Why?";
+    why.textContent = t("feedMode.why", "Why?");
 
     const detail = document.createElement("div");
     detail.className = "cs-federated-reason-detail";
@@ -402,7 +415,7 @@
 
     why.addEventListener("click", () => {
       detail.hidden = !detail.hidden;
-      why.textContent = detail.hidden ? "Why?" : "Hide";
+      why.textContent = detail.hidden ? t("feedMode.why", "Why?") : t("feedMode.hide", "Hide");
     });
 
     row.appendChild(pill);

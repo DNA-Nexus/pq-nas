@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "İlk uzak federasyon sinyalini aldı.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "Düğümler arası bir konuşma oluşturdu.",
   "circlestack.profile.achShort.federation.knownOrigin": "Uzak bir NAS kökeni ekledi veya keşfetti.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "Bu NAS'ı birkaç uzak kökenle bağladı."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "Bu NAS'ı birkaç uzak kökenle bağladı.",
+  "circlestack.feedMode.feed": "Mod: akış",
+  "circlestack.feedMode.federated": "Mod: federe",
+  "circlestack.feedMode.myCircle": "Mod: çevrem",
+  "circlestack.feedMode.discover": "Mod: keşfet",
+  "circlestack.feedMode.switchTitle": "Akış modunu değiştir",
+  "circlestack.feedMode.why": "Neden?",
+  "circlestack.feedMode.hide": "Gizle",
+  "circlestack.federation.person": "Kişi",
+  "circlestack.federation.copyFp": "FP kopyala",
+  "circlestack.federation.addToPeople": "Kişilere ekle",
+  "circlestack.federation.react": "🙂 Tepki ver",
+  "circlestack.federation.reactTitle": "Bu federe gönderiye tepki ver",
+  "circlestack.federation.reactAria": "Tepki ver {reaction}"
 }

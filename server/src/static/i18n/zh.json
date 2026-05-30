@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "收到了第一个远程联邦信号。",
   "circlestack.profile.achShort.federation.crossNodeConversation": "创建了跨节点对话。",
   "circlestack.profile.achShort.federation.knownOrigin": "添加或发现了远程 NAS 来源。",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "将此 NAS 与多个远程来源连接起来。"
+  "circlestack.profile.achShort.federation.bridgeBuilder": "将此 NAS 与多个远程来源连接起来。",
+  "circlestack.feedMode.feed": "模式：动态",
+  "circlestack.feedMode.federated": "模式：联邦",
+  "circlestack.feedMode.myCircle": "模式：我的圈子",
+  "circlestack.feedMode.discover": "模式：发现",
+  "circlestack.feedMode.switchTitle": "点击切换动态模式",
+  "circlestack.feedMode.why": "为什么？",
+  "circlestack.feedMode.hide": "隐藏",
+  "circlestack.federation.person": "联系人",
+  "circlestack.federation.copyFp": "复制指纹",
+  "circlestack.federation.addToPeople": "添加到联系人",
+  "circlestack.federation.react": "🙂 反应",
+  "circlestack.federation.reactTitle": "对此联邦帖子作出反应",
+  "circlestack.federation.reactAria": "反应 {reaction}"
 }

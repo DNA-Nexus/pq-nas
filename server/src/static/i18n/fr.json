@@ -3993,5 +3993,18 @@
   "circlestack.profile.achShort.federation.firstRemoteSignal": "A reçu le premier signal de fédération distant.",
   "circlestack.profile.achShort.federation.crossNodeConversation": "A créé une conversation entre nœuds.",
   "circlestack.profile.achShort.federation.knownOrigin": "A ajouté ou découvert une origine NAS distante.",
-  "circlestack.profile.achShort.federation.bridgeBuilder": "A connecté ce NAS à plusieurs origines distantes."
+  "circlestack.profile.achShort.federation.bridgeBuilder": "A connecté ce NAS à plusieurs origines distantes.",
+  "circlestack.feedMode.feed": "Mode : fil",
+  "circlestack.feedMode.federated": "Mode : fédéré",
+  "circlestack.feedMode.myCircle": "Mode : mon cercle",
+  "circlestack.feedMode.discover": "Mode : découvrir",
+  "circlestack.feedMode.switchTitle": "Changer le mode du fil",
+  "circlestack.feedMode.why": "Pourquoi ?",
+  "circlestack.feedMode.hide": "Masquer",
+  "circlestack.federation.person": "Personne",
+  "circlestack.federation.copyFp": "Copier FP",
+  "circlestack.federation.addToPeople": "Ajouter aux contacts",
+  "circlestack.federation.react": "🙂 Réagir",
+  "circlestack.federation.reactTitle": "Réagir à cette publication fédérée",
+  "circlestack.federation.reactAria": "Réagir {reaction}"
 }
