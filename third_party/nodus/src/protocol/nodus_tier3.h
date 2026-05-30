@@ -1,0 +1,558 @@
+/**
+ * Nodus — Tier 3 Protocol (Witness BFT Consensus)
+ *
+ * CBOR encode/decode for witness-to-witness BFT messages.
+ * All messages use "w_" prefixed methods, self-authenticated via
+ * per-message Dilithium5 signature ("wsig" field).
+ *
+ * Wire format:
+ *   { "t": txn_id, "y": "q", "q": "w_propose",
+ *     "wh": { "v":2, "rnd":N, "vw":V, "sid":bstr32, "ts":T, "nc":nonce, "cid":bstr32 },
+ *     "a":  { method-specific fields },
+ *     "wsig": bstr4627 }
+ *
+ * Sign payload (for wsig computation):
+ *   { "q": method, "wh": header, "a": args }
+ *
+ * Decoded messages use zero-copy pointers for large fields (tx_data,
+ * pubkeys, signatures). These pointers reference the input CBOR buffer
+ * and are only valid while that buffer is alive.
+ *
+ * @file nodus_tier3.h
+ */
+
+#ifndef NODUS_TIER3_H
+#define NODUS_TIER3_H
+
+#include "nodus/nodus_types.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Maximum encode buffer size (fits any T3 message) */
+#define NODUS_T3_MAX_MSG_SIZE  131072
+
+/* Phase 11 / Task 11.3 — three-tier sync_rsp size guard.
+ *
+ * Multi-tx sync_rsp can carry up to NODUS_W_MAX_BLOCK_TXS * tx_len
+ * plus cert data, which exceeds the 128 KB NODUS_T3_MAX_MSG_SIZE.
+ * Sync senders/receivers use this larger 1 MB cap instead. The
+ * decoder enforces:
+ *
+ *   tier 1: tx_count <= NODUS_W_MAX_BLOCK_TXS (10)
+ *   tier 2: per-TX tx_len <= NODUS_T3_MAX_TX_SIZE (64 KB)
+ *   tier 3: aggregate wire bytes <= NODUS_W_MAX_SYNC_RSP_SIZE (1 MB)
+ */
+#define NODUS_W_MAX_SYNC_RSP_SIZE  (1024 * 1024)
+
+/* PR 3 Yol B — bootstrap protocol bounds.
+ *
+ * NODUS_W_MAX_CHAIN_DEF_BLOB caps the chain_def_blob size carried in a
+ * w_genesis_rsp message. H-2 mitigation against resource-exhaustion DoS
+ * (A7 in design Section 5): decoder rejects oversize cdb BEFORE running
+ * the Dilithium5 wsig verify so an attacker cannot waste verify cycles
+ * with arbitrarily large payloads. Realistic chain_def is ~5-10 KB; the
+ * 64 KB cap leaves headroom without enabling abuse.
+ *
+ * NODUS_W_BOOTSTRAP_NONCE_LEN sized for collision resistance in the
+ * w_chain_q → w_chain_r round (C-4 mitigation): 16 random bytes echoed
+ * in the response sig preimage prevent replay across chain wipes. */
+#define NODUS_W_MAX_CHAIN_DEF_BLOB   (64 * 1024)
+#define NODUS_W_BOOTSTRAP_NONCE_LEN  16
+
+/* ── Message types ───────────────────────────────────────────────── */
+
+typedef enum {
+    NODUS_T3_PROPOSE    = 1,
+    NODUS_T3_PREVOTE    = 2,
+    NODUS_T3_PRECOMMIT  = 3,
+    NODUS_T3_COMMIT     = 4,
+    NODUS_T3_VIEWCHG    = 5,
+    NODUS_T3_NEWVIEW    = 6,
+    NODUS_T3_FWD_REQ    = 7,
+    NODUS_T3_FWD_RSP    = 8,
+    NODUS_T3_ROST_Q     = 9,
+    NODUS_T3_ROST_R     = 10,
+    NODUS_T3_IDENT      = 11,
+    NODUS_T3_SYNC_REQ   = 12,
+    NODUS_T3_SYNC_RSP   = 13,
+    /* Hard-Fork v1 Stage C.2 — chain_config vote-collect RPC. */
+    NODUS_T3_CC_VOTE_REQ = 14,  /* proposer asks peer to sign a proposal */
+    NODUS_T3_CC_VOTE_RSP = 15,  /* peer returns (witness_id, signature) or reject */
+    /* PR 3 Yol B — witness auto-bootstrap discovery + chain fetch. */
+    NODUS_T3_CHAIN_Q     = 16,  /* fresh node asks peer "what chain are you on?" */
+    NODUS_T3_CHAIN_R     = 17,  /* peer replies cid + tip + gh + cdh + nonce echo */
+    NODUS_T3_GENESIS_REQ = 18,  /* fresh node fetches chain_def + genesis from agreeing peer */
+    NODUS_T3_GENESIS_RSP = 19,  /* peer sends chain_def_blob + genesis anchor */
+} nodus_t3_msg_type_t;
+
+/* ── Common witness header ───────────────────────────────────────── */
+
+typedef struct {
+    uint8_t     version;
+    uint64_t    round;
+    uint32_t    view;
+    uint8_t     sender_id[NODUS_T3_WITNESS_ID_LEN];
+    uint64_t    timestamp;
+    uint64_t    nonce;
+    uint8_t     chain_id[32];
+} nodus_t3_header_t;
+
+/* ── Per-type argument structs ───────────────────────────────────── */
+
+/** Single TX entry in a batch proposal/commit */
+typedef struct {
+    uint8_t         tx_hash[NODUS_T3_TX_HASH_LEN];
+    uint8_t         nullifier_count;
+    const uint8_t  *nullifiers[NODUS_T3_MAX_TX_INPUTS];  /* ptrs to 64-byte each */
+    uint8_t         tx_type;
+    const uint8_t  *tx_data;                              /* ptr, tx_len bytes */
+    uint32_t        tx_len;
+    const uint8_t  *client_pubkey;                        /* ptr, NODUS_PK_BYTES */
+    const uint8_t  *client_sig;                           /* ptr, NODUS_SIG_BYTES */
+    uint64_t        fee;
+} nodus_t3_batch_tx_t;
+
+/** w_propose: Leader proposes a transaction batch for consensus.
+ * Phase 9 / Task 9.1 — legacy single-TX fields removed.
+ * Phase 9 / Task 9.4 — block_hash field renamed to tx_root (it is the
+ * RFC 6962 Merkle root over the batch's TX hashes, NOT the full block
+ * header hash — that is computed by nodus_witness_compute_block_hash).
+ * A2 fix — block_height is the leader-claimed proposed-block height
+ * (= leader's local height + 1). Carried on the wire so all witnesses
+ * sign the PREPARED preimage with the same height (preventing the
+ * cert_sig verify FAILED loop when followers have drifted). The follower
+ * MUST validate prop->block_height == nodus_witness_block_height(w) + 1
+ * before signing — leader's claim is locally checkable, no F-CONS-06
+ * fast-path is introduced (the field anchors the round, it does not
+ * substitute for state recompute). */
+typedef struct {
+    int             batch_count;
+    nodus_t3_batch_tx_t batch_txs[NODUS_W_MAX_BLOCK_TXS];
+    uint8_t         tx_root[NODUS_T3_TX_HASH_LEN];
+    uint64_t        block_height;
+} nodus_t3_propose_t;
+
+/** w_prevote / w_precommit: Witness votes on a proposal.
+ * Phase 9 / Task 9.5 — the field carrying the in-progress block hash
+ * is named vote_target (wire key vh) so it does not get confused with
+ * a per-TX hash. Vote signatures bind the target via cert_sig below. */
+typedef struct {
+    uint8_t     vote_target[NODUS_T3_TX_HASH_LEN];
+    uint32_t    vote;           /* 0=approve, 1=reject */
+    char        reason[256];
+    /* Phase 7.5 / Task 7.5.2 — cert preimage signature.
+     * Only meaningful for PRECOMMIT; PREVOTE encoders set this to all
+     * zeros and PREVOTE decoders ignore it. The signature is over the
+     * 144-byte preimage produced by nodus_witness_compute_cert_preimage
+     * (block_hash, voter_id = sender_id, height = local block_height + 1
+     * at the moment of signing, chain_id). Wire-independent: the same
+     * bytes are signed and verified regardless of T3 envelope shape. */
+    uint8_t     cert_sig[NODUS_SIG_BYTES];
+} nodus_t3_vote_t;
+
+/** Precommit certificate entry (voter_id + signature) */
+typedef struct {
+    uint8_t     voter_id[NODUS_T3_WITNESS_ID_LEN];
+    uint8_t     signature[NODUS_SIG_BYTES];
+} nodus_t3_cert_entry_t;
+
+/** w_commit: Leader broadcasts commit after quorum.
+ * Phase 9 / Task 9.1 — legacy single-TX fields removed. Every commit
+ * is batch-shaped post Phase 7.
+ *
+ * 2026-05-02 — A2 simetrisi: block_height field added (matches the
+ * propose-side A2 fix). Without it, a follower that missed round N's
+ * PRECOMMIT/COMMIT messages and receives round N+1's COMMIT cannot
+ * detect the round skip — commit_batch defaults to local_chain_head+1
+ * which mismatches the leader's actual height. Live cluster bug
+ * 2026-05-01: US-1 halted at h=114 because of this exact path.
+ *
+ * Backward-compat: legacy peers (pre-Faz 2) emit block_height=0 by
+ * struct zero-init; handle_commit treats 0 as "missing/legacy" and
+ * rejects with sync trigger (mirrors enc_propose_args A2 fix).
+ *
+ * Wire key: "bh" (uint). */
+typedef struct {
+    uint64_t        proposal_timestamp;
+    uint8_t         proposer_id[NODUS_T3_WITNESS_ID_LEN];
+    uint64_t        block_height;                /* A2 simetrisi (2026-05-02) */
+    uint32_t        n_precommits;
+    uint8_t         state_root[NODUS_KEY_BYTES]; /* RFC 6962 Merkle root over UTXO set */
+    nodus_t3_cert_entry_t certs[NODUS_T3_MAX_WITNESSES]; /* Precommit signatures */
+
+    int             batch_count;
+    nodus_t3_batch_tx_t batch_txs[NODUS_W_MAX_BLOCK_TXS];
+    uint8_t         tx_root[NODUS_T3_TX_HASH_LEN];
+} nodus_t3_commit_t;
+
+/** w_viewchg: Witness requests view change.
+ *
+ * C5 — PBFT prepared-certificate extension. When has_prepared=true, the
+ * sender is advertising "the highest (view, height, tx_hash) I observed
+ * reach PREVOTE quorum locally, with 2f+1 witness sigs over the
+ * PREPARED preimage (view(4B BE) || height(8B BE) || tx_hash(64B))".
+ * The new leader uses this to pick the re-proposal per PBFT rule. When
+ * has_prepared=false, this sender has no prepared-but-uncommitted block
+ * to protect — the rest of the fields are ignored. */
+typedef struct {
+    uint32_t    new_view;
+    uint64_t    last_committed_round;
+    bool        has_prepared;
+    uint64_t    prepared_height;
+    uint32_t    prepared_view;
+    uint8_t     prepared_tx_hash[NODUS_T3_TX_HASH_LEN];
+    uint32_t    prepared_n_sigs;
+    nodus_t3_cert_entry_t prepared_sigs[NODUS_T3_MAX_WITNESSES];
+} nodus_t3_viewchg_t;
+
+/** w_newview: New leader after view change.
+ *
+ * C5 — PBFT re-proposal constraint. When has_reproposal=true, the new
+ * leader is committing to re-propose (reproposal_tx_hash, reproposal_height)
+ * as the first PROPOSE under new_view. Followers verify this against
+ * their own local VIEW_CHANGE log (w->view_changes[]) — the
+ * reproposal_tx_hash MUST match one of the prepared-cert tx_hashes the
+ * follower saw in a VIEW_CHANGE for this new_view. When
+ * has_reproposal=false, no VIEW_CHANGE carried a prepared cert, so the
+ * new leader is free to propose any TX from the mempool.
+ *
+ * n_proofs stays as observability field; quorum is established
+ * client-side from the follower's own view_changes[] log, NOT from
+ * wire-carried proofs. */
+typedef struct {
+    uint32_t    new_view;
+    uint32_t    n_proofs;
+    bool        has_reproposal;
+    uint64_t    reproposal_height;
+    uint8_t     reproposal_tx_hash[NODUS_T3_TX_HASH_LEN];
+} nodus_t3_newview_t;
+
+/** w_fwd_req: Non-leader forwards client request to leader */
+typedef struct {
+    uint8_t         tx_hash[NODUS_T3_TX_HASH_LEN];
+    const uint8_t  *tx_data;
+    uint32_t        tx_len;
+    const uint8_t  *client_pubkey;
+    const uint8_t  *client_sig;
+    uint64_t        fee;
+    uint8_t         forwarder_id[NODUS_T3_WITNESS_ID_LEN];
+} nodus_t3_fwd_req_t;
+
+/** Witness signature entry (used in w_fwd_rsp) */
+typedef struct {
+    const uint8_t  *witness_id;     /* ptr, 32 bytes */
+    const uint8_t  *signature;      /* ptr, NODUS_SIG_BYTES */
+    const uint8_t  *pubkey;         /* ptr, NODUS_PK_BYTES */
+    uint64_t        timestamp;
+} nodus_t3_witness_sig_t;
+
+/** w_fwd_rsp: Leader responds to forward request */
+typedef struct {
+    uint32_t    status;
+    uint8_t     tx_hash[NODUS_T3_TX_HASH_LEN];
+    uint32_t    witness_count;
+    nodus_t3_witness_sig_t witnesses[NODUS_T3_MAX_TX_WITNESSES];
+    /* Phase 13 / Task 13.2 — full receipt data passed through to the
+     * forwarder so the original client sees block_height / tx_index /
+     * chain_id in the spend result. Without these fields on the wire the
+     * forwarder had to hardcode 0/0 and the client UI would display zero
+     * block height even though the TX committed. */
+    uint64_t    block_height;
+    uint32_t    tx_index;
+    uint8_t     chain_id[32];
+} nodus_t3_fwd_rsp_t;
+
+/** w_rost_q: Request roster from peer */
+typedef struct {
+    uint32_t    version;    /* Minimum version requested */
+} nodus_t3_rost_q_t;
+
+/** Roster entry (used in w_rost_r) */
+typedef struct {
+    const uint8_t  *witness_id;     /* ptr, 32 bytes */
+    const uint8_t  *pubkey;         /* ptr, NODUS_PK_BYTES */
+    char            address[256];
+    uint64_t        joined_epoch;
+    bool            active;
+} nodus_t3_roster_entry_t;
+
+/** w_rost_r: Roster response */
+typedef struct {
+    uint32_t    version;
+    uint32_t    n_witnesses;
+    nodus_t3_roster_entry_t witnesses[NODUS_T3_MAX_WITNESSES];
+    const uint8_t  *roster_sig;     /* ptr, NODUS_SIG_BYTES */
+} nodus_t3_rost_r_t;
+
+/** w_ident: Witness identification on connect */
+typedef struct {
+    const uint8_t  *witness_id;     /* ptr, 32 bytes */
+    const uint8_t  *pubkey;         /* ptr, NODUS_PK_BYTES */
+    char            address[256];
+    uint64_t        block_height;                       /* current chain height */
+    uint8_t         state_root[NODUS_KEY_BYTES];        /* RFC 6962 Merkle root over UTXO set */
+    uint32_t        current_view;                       /* BFT view number */
+    uint32_t        roster_size;                        /* sender's roster n_witnesses */
+    uint64_t        ts_local;                           /* Phase 10 / Task 10.4 — sender wall clock for skew probe */
+    bool            has_block_height;                   /* true if bh/sr/view present */
+    /* CC-OPS-002 / Q14 — binary-skew detection. Fields carry the sender's
+     * packed (MAJOR<<16)|(MINOR<<8)|PATCH nodus version and the
+     * chain_config schema version the sender was compiled with. Legacy
+     * peers (pre hard-fork v1) don't send these — decoder leaves both
+     * at 0, which receivers interpret as "legacy binary". */
+    uint32_t        nodus_version;                      /* 0 = legacy peer */
+    uint32_t        chain_config_schema;                /* 0 = legacy peer */
+    /* 2026-05-02 audit C-1: heartbeat checksum signature.
+     *
+     * Dilithium5 signature over the 152-byte preimage:
+     *   "wid\0\0\0\0\0" (8) || sender witness_id (32) || chain_id (32) ||
+     *   ts_local (8 LE) || block_height (8 LE) || state_root (64) = 152
+     *
+     * Receiver verifies before any halt-recovery-quorum tally consults
+     * peer.remote_checksum. Without this, a single Byzantine peer
+     * could spoof remote_checksum to coerce halt_recovery_check into
+     * either spurious DB drops or denial-of-recovery on honest halted
+     * nodes (B-3 + C-1 combined risk).
+     *
+     * Wire key: "csg" (bstr 4627B). Backward-compat: legacy peers
+     * (pre Faz 4F) emit zeros; receiver treats all-zero as unsigned
+     * heartbeat — accepted for non-recovery uses (skew probe, height
+     * advertisement) but ignored by halt_recovery_check. */
+    uint8_t         checksum_sig[NODUS_SIG_BYTES];
+} nodus_t3_ident_t;
+
+/** w_sync_req: Request block at height N for sync */
+typedef struct {
+    uint64_t    height;         /* requested block height (0 = genesis) */
+} nodus_t3_sync_req_t;
+
+/** Sync response certificate entry */
+typedef struct {
+    uint8_t     voter_id[NODUS_T3_WITNESS_ID_LEN];
+    uint8_t     signature[NODUS_SIG_BYTES];
+} nodus_t3_sync_cert_t;
+
+/** w_cc_vote_req: Proposer asks a committee peer to sign a chain_config
+ *  proposal preimage. Hard-Fork v1 Stage C.2. The peer runs its local
+ *  signing-policy check (params-in-range + other soft rules) before
+ *  deciding to sign; see nodus_witness_handle_cc_vote_req. */
+typedef struct {
+    uint8_t     param_id;
+    uint64_t    new_value;
+    uint64_t    effective_block_height;
+    uint64_t    proposal_nonce;
+    uint64_t    signed_at_block;
+    uint64_t    valid_before_block;
+    /* chain_id lives in the T3 header "cid" field — same binding as
+     * proposal preimage (see nodus_chain_config_compute_digest). Not
+     * duplicated here. */
+} nodus_t3_cc_vote_req_t;
+
+/** w_cc_vote_rsp: Peer's response to a vote request. Either carries a
+ *  signed vote (accepted=true) or a reject with a human-readable reason
+ *  (accepted=false). */
+typedef struct {
+    bool            accepted;
+    /* Valid only when accepted == true: */
+    uint8_t         witness_id[32];
+    uint8_t         signature[NODUS_SIG_BYTES];
+    /* Valid only when accepted == false (UTF-8, NUL-terminated): */
+    char            reject_reason[128];
+} nodus_t3_cc_vote_rsp_t;
+
+/* ── PR 3 Yol B — witness auto-bootstrap (chain discovery + fetch) ── */
+
+/** w_chain_q: Fresh node asks any peer "what chain are you on?".
+ *
+ * Sent broadcast-style during the DISCOVER bootstrap state. Receivers
+ * that are themselves DISCOVER (no chain DB) MUST NOT respond — that's
+ * the C-2 cabal protection that prevents two fresh nodes from agreeing
+ * on a fictitious chain.
+ *
+ * The 16-byte nonce protects against replay: it's covered by the
+ * w_chain_r sig preimage so a captured response cannot be replayed to a
+ * different fresh node (different nonce = different sig).
+ *
+ * Wire keys: "n" (16B nonce). */
+typedef struct {
+    uint8_t     nonce[NODUS_W_BOOTSTRAP_NONCE_LEN];
+} nodus_t3_w_chain_q_t;
+
+/** w_chain_r: HAVE_CHAIN peer responds with chain identity + nonce echo.
+ *
+ * Fresh node collects responses from all auth'd peers, requires
+ * 2f+1-of-seed_nodes agreement on (cid, cdh) before advancing to
+ * FETCH_GENESIS. The "tip" field is informational and does not feed the
+ * quorum decision.
+ *
+ * Wire keys: "cid" (32B), "tip" (uint), "gh" (64B), "cdh" (64B), "n" (16B). */
+typedef struct {
+    uint8_t     cid[32];                                /* peer's chain_id */
+    uint64_t    tip;                                    /* peer's block_height */
+    uint8_t     gh[NODUS_T3_TX_HASH_LEN];               /* genesis block hash, 64B */
+    uint8_t     cdh[NODUS_T3_TX_HASH_LEN];              /* SHA3-512(chain_def_blob), 64B */
+    uint8_t     nonce[NODUS_W_BOOTSTRAP_NONCE_LEN];     /* echo of w_chain_q nonce */
+} nodus_t3_w_chain_r_t;
+
+/** w_genesis_req: Fresh node fetches chain_def + genesis anchor.
+ *
+ * Sent ONLY after w_chain_r quorum agrees on a (cid, cdh). Target peer
+ * is randomly selected from the agreeing-quorum set with a deterministic
+ * PRNG seeded from SHA3(local_chain_q_nonce) — Section 4 #2 invariant.
+ *
+ * Wire keys: "cid" (32B). */
+typedef struct {
+    uint8_t     cid[32];                                /* requested chain_id */
+} nodus_t3_w_genesis_req_t;
+
+/** w_genesis_rsp: Peer sends chain_def_blob + genesis anchor.
+ *
+ * Receiver MUST validate before any DB write:
+ *   1. cdb_len <= NODUS_W_MAX_CHAIN_DEF_BLOB (64 KB) — H-2 mitigation
+ *   2. SHA3-512(cdb) == quorum-agreed cdh from w_chain_r — A6 mitigation
+ *   3. gth (genesis tx_hash) matches the genesis anchor inside cdb
+ * Steps 1-3 happen BEFORE the Dilithium5 wsig is even verified at
+ * dispatch level so an oversize/forged response cannot waste verify
+ * cycles.
+ *
+ * cdb is a zero-copy pointer into the decode buffer (matches tx_data
+ * pattern elsewhere in tier3); valid only while the input CBOR buffer
+ * is alive.
+ *
+ * Wire keys: "cid" (32B), "cdb" (var, ≤64KB), "gth" (64B), "gts" (uint),
+ * "gpid" (32B). */
+typedef struct {
+    uint8_t         cid[32];                            /* must match request */
+    const uint8_t  *cdb;                                /* ptr into decode buf */
+    uint32_t        cdb_len;
+    uint8_t         gth[NODUS_T3_TX_HASH_LEN];          /* genesis tx_hash, 64B */
+    uint64_t        gts;                                /* genesis timestamp (informational) */
+    uint8_t         gpid[NODUS_T3_WITNESS_ID_LEN];      /* genesis proposer_id, 32B */
+} nodus_t3_w_genesis_rsp_t;
+
+/** w_sync_rsp: Full block data for sync (Phase 11 / Task 11.1).
+ *
+ * Multi-tx replay payload: the sender serializes EVERY committed
+ * transaction in the requested block, ordered by tx_index. The
+ * receiver MUST recompute tx_root locally via merkle_tx_root over the
+ * decoded body and feed the recomputed value into compute_block_hash
+ * before verify_sync_certs (Task 11.4 step b/c). NEVER trust the
+ * wire-supplied tx_root field on its own.
+ *
+ * Three-tier wire size guard (Task 11.3):
+ *   tx_count <= NODUS_W_MAX_BLOCK_TXS (10),
+ *   per-TX tx_len <= NODUS_T3_MAX_TX_SIZE (64 KB),
+ *   aggregate <= 1 MB enforced at the encoder/decoder. */
+typedef struct {
+    bool        found;
+    uint64_t    height;
+    uint64_t    timestamp;
+    uint8_t     proposer_id[NODUS_T3_WITNESS_ID_LEN];
+    uint8_t     prev_hash[NODUS_T3_TX_HASH_LEN];
+    uint8_t     tx_root[NODUS_T3_TX_HASH_LEN];   /* sender's claim — receiver MUST recompute */
+    uint8_t     state_root[NODUS_KEY_BYTES];     /* C3 fix follow-up (2026-05-02): sender's
+                                                   * post-block state root. Receiver passes
+                                                   * to replay_block as expected_state_root
+                                                   * so finalize_block can reject Byzantine
+                                                   * blocks before any state mutation.
+                                                   * Wire key: "sr". */
+
+    int         tx_count;
+    nodus_t3_batch_tx_t batch_txs[NODUS_W_MAX_BLOCK_TXS];
+
+    uint32_t    cert_count;
+    nodus_t3_sync_cert_t certs[NODUS_T3_MAX_WITNESSES];
+} nodus_t3_sync_rsp_t;
+
+/* ── Full decoded message ────────────────────────────────────────── */
+
+typedef struct {
+    uint32_t            txn_id;
+    nodus_t3_msg_type_t type;
+    char                method[16];
+    nodus_t3_header_t   header;
+    const uint8_t      *wsig;       /* ptr into decode buffer, NODUS_SIG_BYTES */
+
+    union {
+        nodus_t3_propose_t  propose;
+        nodus_t3_vote_t     vote;       /* prevote or precommit */
+        nodus_t3_commit_t   commit;
+        nodus_t3_viewchg_t  viewchg;
+        nodus_t3_newview_t  newview;
+        nodus_t3_fwd_req_t  fwd_req;
+        nodus_t3_fwd_rsp_t  fwd_rsp;
+        nodus_t3_rost_q_t   rost_q;
+        nodus_t3_rost_r_t   rost_r;
+        nodus_t3_ident_t    ident;
+        nodus_t3_sync_req_t sync_req;
+        nodus_t3_sync_rsp_t sync_rsp;
+        nodus_t3_cc_vote_req_t cc_vote_req;
+        nodus_t3_cc_vote_rsp_t cc_vote_rsp;
+        nodus_t3_w_chain_q_t     w_chain_q;
+        nodus_t3_w_chain_r_t     w_chain_r;
+        nodus_t3_w_genesis_req_t w_genesis_req;
+        nodus_t3_w_genesis_rsp_t w_genesis_rsp;
+    };
+} nodus_t3_msg_t;
+
+/* ── Encode ──────────────────────────────────────────────────────── */
+
+/**
+ * Encode a Tier 3 BFT message into CBOR wire format.
+ * Signs the canonical payload {method, header, args} with sk.
+ *
+ * Caller must set msg->type, msg->txn_id, msg->header, and the
+ * appropriate union fields (including all pointer fields).
+ *
+ * @param msg      Filled-in message
+ * @param sk       Secret key for wsig (Dilithium5)
+ * @param buf      Output buffer (recommend NODUS_T3_MAX_MSG_SIZE)
+ * @param cap      Buffer capacity
+ * @param out_len  Bytes written
+ * @return 0 on success, -1 on error
+ */
+int nodus_t3_encode(const nodus_t3_msg_t *msg, const nodus_seckey_t *sk,
+                     uint8_t *buf, size_t cap, size_t *out_len);
+
+/* ── Decode ──────────────────────────────────────────────────────── */
+
+/**
+ * Decode a Tier 3 CBOR payload into structured message.
+ * Does NOT verify the wsig signature — call nodus_t3_verify() separately.
+ *
+ * Pointer fields in the decoded message reference the input buffer.
+ * The decoded message is only valid while buf remains alive.
+ *
+ * @param buf  Raw CBOR payload
+ * @param len  Payload length
+ * @param msg  Output message struct (caller-owned)
+ * @return 0 on success, -1 on decode error
+ */
+int nodus_t3_decode(const uint8_t *buf, size_t len, nodus_t3_msg_t *msg);
+
+/* ── Verify ──────────────────────────────────────────────────────── */
+
+/**
+ * Verify the wsig of a decoded T3 message.
+ * Re-encodes the sign payload and verifies against pk.
+ *
+ * @param msg  Decoded message (pointer fields must still be valid)
+ * @param pk   Signer's public key (from roster)
+ * @return 0 if valid, -1 if invalid or error
+ */
+int nodus_t3_verify(const nodus_t3_msg_t *msg, const nodus_pubkey_t *pk);
+
+/* ── Method/type helpers ─────────────────────────────────────────── */
+
+const char *nodus_t3_type_to_method(nodus_t3_msg_type_t type);
+nodus_t3_msg_type_t nodus_t3_method_to_type(const char *method);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NODUS_TIER3_H */

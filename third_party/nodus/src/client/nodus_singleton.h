@@ -1,0 +1,91 @@
+/**
+ * Nodus — Singleton Client Instance
+ *
+ * Global client for use by the messenger engine.
+ * Thread-safe init/connect/poll/close lifecycle.
+ *
+ * @file nodus_singleton.h
+ */
+
+#ifndef NODUS_SINGLETON_H
+#define NODUS_SINGLETON_H
+
+#include "nodus/nodus.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * Initialize the global Nodus client.
+ * Must be called once before any other nodus_singleton_* call.
+ *
+ * @param config  Client configuration (servers, callbacks, etc.)
+ * @param identity  Caller's identity (keypair + node_id)
+ * @return 0 on success, -1 on error
+ */
+int nodus_singleton_init(const nodus_client_config_t *config,
+                          const nodus_identity_t *identity);
+
+/**
+ * Connect to a Nodus server (tries configured servers in order).
+ * @return 0 on success, -1 if all servers unreachable
+ */
+int nodus_singleton_connect(void);
+
+/**
+ * Get the global client instance (increments refcount).
+ * Caller MUST call nodus_singleton_release() when done.
+ * @return Pointer to client, or NULL if not initialized
+ */
+nodus_client_t *nodus_singleton_get(void);
+
+/**
+ * Release a reference obtained from nodus_singleton_get().
+ * Must be called once for each successful get().
+ */
+void nodus_singleton_release(void);
+
+/**
+ * Check if the singleton is initialized and connected.
+ */
+bool nodus_singleton_is_ready(void);
+
+/**
+ * Poll for events. Call from your event loop.
+ * @return Number of events, or -1 on error
+ */
+int nodus_singleton_poll(int timeout_ms);
+
+/**
+ * Get the singleton's identity.
+ */
+const nodus_identity_t *nodus_singleton_identity(void);
+
+/**
+ * Disconnect and clean up the global client.
+ */
+void nodus_singleton_close(void);
+
+/**
+ * Force-disconnect TCP to interrupt blocking operations.
+ * Does not free memory. Use before joining threads that may be blocked.
+ */
+void nodus_singleton_force_disconnect(void);
+void nodus_singleton_suspend(void);
+void nodus_singleton_resume(void);
+
+/**
+ * Lock/unlock the singleton mutex.
+ * Must be held around any sequence of nodus_client_* calls
+ * (send request + wait response) to prevent concurrent access.
+ * The nodus client is single-threaded; the mutex serializes callers.
+ */
+void nodus_singleton_lock(void);
+void nodus_singleton_unlock(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NODUS_SINGLETON_H */

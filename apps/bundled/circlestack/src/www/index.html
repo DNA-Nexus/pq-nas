@@ -3,53 +3,108 @@
 <head>
   <meta charset="utf-8">
   <title>Circle Stack</title>
-  <link rel="stylesheet" href="app.css">
+  <script>
+    (function () {
+      "use strict";
+
+      var KEY = "pqnas_theme";
+      var THEMES = new Set(["dark", "bright", "cpunk_orange", "win_classic"]);
+
+      function normalizeTheme(value) {
+        value = String(value || "").trim();
+        return THEMES.has(value) ? value : "dark";
+      }
+
+      function readTheme() {
+        try {
+          return normalizeTheme(localStorage.getItem(KEY));
+        } catch (_) {
+          return "dark";
+        }
+      }
+
+      function applyTheme(value) {
+        document.documentElement.setAttribute("data-theme", normalizeTheme(value));
+      }
+
+      applyTheme(readTheme());
+
+      window.addEventListener("storage", function (ev) {
+        if (!ev || ev.key === KEY) {
+          applyTheme(readTheme());
+        }
+      });
+
+      window.addEventListener("message", function (ev) {
+        var data = ev && ev.data;
+        if (!data || typeof data !== "object") return;
+        if (data.type === "pqnas-theme-changed") {
+          applyTheme(data.theme);
+        }
+      });
+
+      setInterval(function () {
+        var next = readTheme();
+        if (document.documentElement.getAttribute("data-theme") !== next) {
+          applyTheme(next);
+        }
+      }, 1000);
+    })();
+  </script>
+  <link rel="stylesheet" href="app.css?v=20260529-theme8">
   <link rel="stylesheet" href="memory_nodes.css?v=20260523-svgicon1">
   <link rel="stylesheet" href="brand_logo.css?v=20260523-brandlogo1">
+  <link rel="stylesheet" href="theme_overrides.css?v=20260529-theme-overrides12">
+  <script src="/static/i18n.js"></script>
 </head>
 <body>
   <main class="cs-shell">
     <header class="cs-header">
-      <h1 data-i18n="app.title"></h1>
-      <p data-i18n="app.tagline"></p>
+      <h1 data-i18n="circlestack.app.title" data-i18n-fallback="Circle Stack">Circle Stack</h1>
+      <p data-i18n="circlestack.app.tagline" data-i18n-fallback="Moments become circles. Circles become memories.">Moments become circles. Circles become memories.</p>
     </header>
 
     <section class="cs-compose">
-      <textarea id="csText" data-i18n-placeholder="compose.placeholder"></textarea>
+      <textarea id="csText" data-i18n-placeholder="circlestack.compose.placeholder" placeholder="Share a moment..."></textarea>
       <div class="cs-media-row">
-        <input id="csMediaPath" data-i18n-placeholder="compose.mediaPath">
-        <button id="csPickMedia" type="button">Browse</button>
+        <input id="csMediaPath" data-i18n-placeholder="circlestack.compose.mediaPath" placeholder="/Photos/... media path">
+        <button id="csPickMedia" type="button" data-i18n="circlestack.common.browse" data-i18n-fallback="Browse">Browse</button>
       </div>
       <div id="csMediaPreview" class="cs-media-preview" hidden></div>
 
       <div id="csVisibility" class="cs-visibility" data-value="public">
-        <button type="button" class="cs-vis-option is-active" data-value="public">🌍 Public</button>
-        <button type="button" class="cs-vis-option" data-value="private">🔒 Private</button>
-        <button type="button" class="cs-vis-option" data-value="circle">👥 Circle</button>
+        <button type="button" class="cs-vis-option is-active" data-value="public" data-i18n="circlestack.visibility.public" data-i18n-fallback="🌍 Public">🌍 Public</button>
+        <button type="button" class="cs-vis-option" data-value="private" data-i18n="circlestack.visibility.private" data-i18n-fallback="🔒 Private">🔒 Private</button>
+        <button type="button" class="cs-vis-option" data-value="circle" data-i18n="circlestack.visibility.circle" data-i18n-fallback="👥 Circle">👥 Circle</button>
       </div>
 
       <div id="csCircleUsers" class="cs-circle-users" hidden></div>
 
       <div id="csMentionComposer" class="cs-mention-composer">
         <div id="csMentionChips" class="cs-mention-chips"></div>
-        <button id="csAddMentionBtn" type="button">Tag friend</button>
+        <button id="csAddMentionBtn" type="button" data-i18n="circlestack.mention.tagFriend" data-i18n-fallback="Tag friend">Tag friend</button>
       </div>
 
-      <button id="csPostButton" data-i18n="compose.post"></button>
+      <button id="csPostButton" data-i18n="circlestack.compose.post" data-i18n-fallback="Post">Post</button>
     </section>
 
     <div class="cs-intro-toolbar">
-  <button id="csIntroduceBtn" type="button">Introduce people</button>
-  <button id="csMyCircleBtn" type="button">My Circle</button>
-  <button id="csFindPeopleBtn" type="button">Find people</button>
-</div>
+  <button id="csFeedModeBtn" type="button" class="is-active" title="Cycle feed mode">Mode: Feed</button>
+  <button id="csIntroduceBtn" type="button" data-i18n="circlestack.toolbar.introduce" data-i18n-fallback="Introduce people">Introduce people</button>
+  <button id="csMyCircleBtn" type="button" data-i18n="circlestack.toolbar.myCircle" data-i18n-fallback="My Circle">My Circle</button>
+  <button id="csFindPeopleBtn" type="button" data-i18n="circlestack.toolbar.findPeople" data-i18n-fallback="Find people">Find people</button>
+  <button id="csKnownOriginsBtn" type="button" data-i18n="circlestack.origins.knownOriginsButton" data-i18n-fallback="Known origins">Known origins</button>
+
+   <button id="csMyProfileBtn" type="button" data-i18n="circlestack.profile.myProfile" data-i18n-fallback="My Profile">My Profile</button></div>
 <section id="csIntroductions" class="cs-feed"></section>
+<section id="csProfilePage" class="cs-profile-page" hidden></section>
 <section id="csFeed" class="cs-feed"></section>
+<section id="csFederatedFeed" class="cs-feed" hidden></section>
   </main>
 
-  <script src="i18n.js"></script>
-  <script src="app.js?v=20260523-reaction-tooltipfix1"></script>
-  <script src="memory_nodes.js?v=20260523-simpleicon1"></script>
+  <script src="app.js?v=20260529-shared-i18n1"></script>
+  <script src="feed_modes.js?v=20260527-discovercap1"></script>
+  <script src="memory_nodes.js?v=20260529-primary-actions1"></script>
   <script src="brand_logo.js?v=20260523-brandlogo1"></script>
   <script src="version_badge.js?v=20260523-version1"></script>
 </body>

@@ -53,7 +53,8 @@
 
     // --- language ---
     const languagePill = $("languagePill");
-    const languageSelect = $("languageSelect");
+    const languageSelect = $("languageSelect"); // legacy fallback if old HTML is still cached
+    const languagePicker = $("languagePicker");
 
     // --- theme ---
     const themePill = $("themePill");
@@ -121,6 +122,22 @@
     const btnDnaIdentityModalClose = $("btnDnaIdentityModalClose");
     const dnaIdentityModalBody = $("dnaIdentityModalBody");
 
+
+    // --- Nodus federation ---
+    const nodusStatusPill = $("nodusStatusPill");
+    const btnNodusRefresh = $("btnNodusRefresh");
+    const btnNodusCreateIdentity = $("btnNodusCreateIdentity");
+    const nodusCliLight = $("nodusCliLight");
+    const nodusCliValue = $("nodusCliValue");
+    const nodusIdentityLight = $("nodusIdentityLight");
+    const nodusIdentityValue = $("nodusIdentityValue");
+    const nodusSeedsLight = $("nodusSeedsLight");
+    const nodusSeedsValue = $("nodusSeedsValue");
+    const nodusPublicUrlLight = $("nodusPublicUrlLight");
+    const nodusPublicUrlValue = $("nodusPublicUrlValue");
+    const nodusWorkerLight = $("nodusWorkerLight");
+    const nodusWorkerValue = $("nodusWorkerValue");
+
     let gDnaConnectIdentity = null;
 
     const ALLOWED_THEMES = new Set(["dark", "bright", "cpunk_orange", "win_classic"]);
@@ -173,6 +190,8 @@
         if (s === "ready") return tr("admin.common.ready", null, "ready");
         if (s === "error") return tr("admin.common.error", null, "error");
         if (s === "saving…" || s === "saving...") return tr("admin.common.saving", null, "saving…");
+        if (s === "needs attention") return tr("admin.nodus.status.needs_attention", null, "needs attention");
+        if (s === "creating identity…" || s === "creating identity...") return tr("admin.nodus.status.creating_identity", null, "creating identity…");
         return s;
     }
 
@@ -310,7 +329,7 @@
             "tr-tr": "tr",
             "it-ch": "it"
         };
-        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it"]);
+        const allowed = new Set(["en", "fi", "zh", "sv", "uk", "de", "et", "pl", "es", "fr", "it", "tr"]);
         const aliased = aliases[raw] || raw;
 
         if (allowed.has(aliased)) return aliased;
@@ -337,19 +356,31 @@
 
     function languageDisplayName(lang) {
         const l = normalizeLanguage(lang);
-        if (l === "fi") return tr("admin.language.finnish", null, "🇫🇮 Suomi");
-        if (l === "zh") return tr("admin.language.chinese_simplified", null, "🇨🇳 简体中文");
-        if (l === "sv") return tr("admin.language.swedish", null, "🇸🇪 Svenska");
-        if (l === "uk") return tr("admin.language.ukrainian", null, "🇺🇦 Українська");
-        if (l === "de") return tr("admin.language.german", null, "🇩🇪 Deutsch");
-        if (l === "et") return tr("admin.language.estonian", null, "🇪🇪 Eesti");
-        if (l === "pl") return tr("admin.language.polish", null, "🇵🇱 Polski");
-        return tr("admin.language.english", null, "🇬🇧 English");
+        if (l === "fi") return tr("admin.language.finnish", null, "Suomi");
+        if (l === "zh") return tr("admin.language.chinese_simplified", null, "简体中文");
+        if (l === "sv") return tr("admin.language.swedish", null, "Svenska");
+        if (l === "uk") return tr("admin.language.ukrainian", null, "Українська");
+        if (l === "de") return tr("admin.language.german", null, "Deutsch");
+        if (l === "et") return tr("admin.language.estonian", null, "Eesti");
+        if (l === "pl") return tr("admin.language.polish", null, "Polski");
+        if (l === "es") return tr("admin.language.spanish", null, "Español");
+        if (l === "fr") return tr("admin.language.french", null, "Français");
+        if (l === "it") return tr("admin.language.italian", null, "Italiano");
+        if (l === "tr") return tr("admin.language.turkish", null, "Türkçe");
+        return tr("admin.language.english", null, "English");
     }
 
     function updateLanguagePill(lang) {
         const l = normalizeLanguage(lang);
         if (languageSelect) languageSelect.value = l;
+
+        if (languagePicker) {
+            for (const btn of languagePicker.querySelectorAll("[data-language]")) {
+                const on = btn.getAttribute("data-language") === l;
+                btn.classList.toggle("is-active", on);
+                btn.setAttribute("aria-pressed", on ? "true" : "false");
+            }
+        }
 
         const label = languageDisplayName(l);
 
@@ -1491,6 +1522,113 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             uploadPill.innerHTML = `<span class="k">Effective:</span> <span class="v">${escapeHtml(eff != null ? fmtBytes(eff) : "—")}</span>`;
         }
     }
+
+    // ---------------------------
+    // Nodus federation status
+    // ---------------------------
+    async function apiNodusStatus() {
+        return await fetchJsonOrThrow("/api/v4/admin/nodus/status", {
+            cache: "no-store"
+        });
+    }
+
+    async function apiNodusCreateIdentity() {
+        return await fetchJsonOrThrow("/api/v4/admin/nodus/identity/init", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+    }
+
+    function setLight(el, kind) {
+        if (!el) return;
+        el.className = "lightDot " + (kind || "warn");
+    }
+
+    function setNodusStatusPill(kind, text) {
+        if (!nodusStatusPill) return;
+        nodusStatusPill.className = "pill " + (kind || "");
+        nodusStatusPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(adminStatusText(text || "—"))}</span>`;
+    }
+
+    function renderNodusStatus(j) {
+        if (!j || j.ok !== true) {
+            setNodusStatusPill("fail", "error");
+            return;
+        }
+
+        const cli = (j.cli && typeof j.cli === "object") ? j.cli : {};
+        const identity = (j.identity && typeof j.identity === "object") ? j.identity : {};
+        const seeds = (j.seeds_summary && typeof j.seeds_summary === "object") ? j.seeds_summary : {};
+        const worker = (j.worker && typeof j.worker === "object") ? j.worker : {};
+
+        const cliOk = !!cli.installed;
+        const idOk = !!identity.exists;
+        const totalSeeds = Number(seeds.total || 0);
+        const reachableSeeds = Number(seeds.reachable || 0);
+        const seedsOk = totalSeeds > 0 && reachableSeeds > 0;
+        const seedsAllOk = totalSeeds > 0 && reachableSeeds === totalSeeds;
+        const publicUrl = String(j.public_base_url || "").trim();
+        const publicOk = !!publicUrl;
+        const workerEnabled = !!worker.enabled;
+
+        setLight(nodusCliLight, cliOk ? "ok" : "fail");
+        if (nodusCliValue) {
+            nodusCliValue.textContent = cliOk
+                ? `${cli.path || "/usr/local/bin/nodus-cli"}${cli.version ? " • " + cli.version : ""}`
+                : tr("admin.nodus.cli_missing", { path: cli.path || "/usr/local/bin/nodus-cli" }, `Missing: ${cli.path || "/usr/local/bin/nodus-cli"}`);
+        }
+
+        setLight(nodusIdentityLight, idOk ? "ok" : "fail");
+        if (nodusIdentityValue) {
+            nodusIdentityValue.textContent = idOk
+                ? tr("admin.nodus.identity_present", { fp: identity.fingerprint_short || "present", dir: identity.dir || "" }, `${identity.fingerprint_short || "present"}… • ${identity.dir || ""}`)
+                : tr("admin.nodus.identity_missing", { dir: identity.dir || "identity dir" }, `Missing in ${identity.dir || "identity dir"}`);
+        }
+
+        setLight(nodusSeedsLight, seedsAllOk ? "ok" : (seedsOk ? "warn" : "fail"));
+        if (nodusSeedsValue) {
+            nodusSeedsValue.textContent = tr("admin.nodus.seeds_reachable", { reachable: reachableSeeds, total: totalSeeds }, `${reachableSeeds} / ${totalSeeds} reachable`);
+        }
+
+        setLight(nodusPublicUrlLight, publicOk ? "ok" : "warn");
+        if (nodusPublicUrlValue) {
+            nodusPublicUrlValue.textContent = publicOk ? publicUrl : tr("admin.nodus.not_configured", null, "Not configured");
+        }
+
+        setLight(nodusWorkerLight, workerEnabled ? "ok" : "warn");
+        if (nodusWorkerValue) {
+            nodusWorkerValue.textContent = workerEnabled
+                ? tr("admin.nodus.enabled", null, "Enabled")
+                : tr("admin.nodus.worker_disabled", { env: "PQNAS_CIRCLE_FEDERATION_WORKER" }, "Disabled • set PQNAS_CIRCLE_FEDERATION_WORKER=1");
+        }
+
+        const overallOk = cliOk && idOk && seedsOk && publicOk;
+        setNodusStatusPill(
+            overallOk ? "ok" : "warn",
+            overallOk ? "ready" : "needs attention"
+        );
+
+        if (btnNodusCreateIdentity) btnNodusCreateIdentity.disabled = idOk || !cliOk;
+    }
+
+    async function refreshNodusStatus() {
+        setNodusStatusPill("warn", "loading…");
+
+        try {
+            const j = await apiNodusStatus();
+            renderNodusStatus(j);
+        } catch (e) {
+            console.error(e);
+            setNodusStatusPill("fail", "error");
+            setLight(nodusCliLight, "fail");
+            setLight(nodusIdentityLight, "fail");
+            setLight(nodusSeedsLight, "fail");
+            showToast("fail", tr("admin.nodus.status_failed", null, "Nodus status failed"), String(e.message || e));
+        }
+    }
+
     // ---------------------------
     // Main refresh: load all settings
     // ---------------------------
@@ -1538,6 +1676,8 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             applyDnaAlertsToUi(j);
             applyDnaIdentityToUi(j);
 
+            // Nodus federation
+            await refreshNodusStatus();
 
             clearPreview();
             setStatusPill("ok", "ready");
@@ -1630,6 +1770,53 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             closeDnaIdentityModal();
         }
     });
+
+    // ---------------------------
+    // Wire Nodus federation
+    // ---------------------------
+    btnNodusRefresh?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshNodusStatus();
+    });
+
+    btnNodusCreateIdentity?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const ok = await openAdminConfirmModal({
+            title: tr("admin.nodus.identity_confirm_title", null, "Generate Nodus identity?"),
+            subtitle: tr("admin.nodus.identity_confirm_subtitle", null, "This creates a local NAS federation identity if missing."),
+            rows: [
+                { label: tr("admin.nodus.identity_confirm_target", null, "Target"), value: "/srv/pqnas/config/nodus/identity", mono: true },
+                { label: tr("admin.nodus.identity_confirm_effect", null, "Effect"), value: tr("admin.nodus.identity_confirm_effect_value", null, "This NAS gets a unique federation origin fingerprint.") }
+            ],
+            note: tr("admin.nodus.identity_confirm_note", null, "Do not replace an existing identity unless you intentionally want this NAS to appear as a different node."),
+            confirmText: tr("admin.nodus.identity_confirm_button", null, "Generate identity"),
+            cancelText: tr("admin.common.cancel", null, "Cancel"),
+            warn: true
+        });
+
+        if (!ok) return;
+
+        btnNodusCreateIdentity.disabled = true;
+        setNodusStatusPill("warn", "creating identity…");
+
+        try {
+            const j = await apiNodusCreateIdentity();
+            showToast(
+                "ok",
+                j.created ? tr("admin.nodus.identity_created", null, "Nodus identity created") : tr("admin.nodus.identity_exists", null, "Nodus identity already exists"),
+                j.fingerprint_short ? `${j.fingerprint_short}…` : tr("admin.common.ok", null, "OK")
+            );
+            await refreshNodusStatus();
+        } catch (e) {
+            console.error(e);
+            showToast("fail", tr("admin.nodus.identity_failed", null, "Nodus identity failed"), String(e.message || e));
+            await refreshNodusStatus();
+        } finally {
+            btnNodusCreateIdentity.disabled = false;
+        }
+    });
+
     // ---------------------------
     // Wire retention
     // ---------------------------
@@ -2020,6 +2207,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     languageSelect?.addEventListener("change", (ev) => {
         ev.preventDefault();
         applyAdminLanguage(languageSelect.value);
+    });
+
+    languagePicker?.querySelectorAll("[data-language]").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            applyAdminLanguage(btn.getAttribute("data-language") || "en");
+        });
     });
 
     function applyAdminStaticI18n() {

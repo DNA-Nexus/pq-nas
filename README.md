@@ -254,45 +254,61 @@ DNA-Nexus Server is intentionally lightweight.
 
 The server is designed to use very little memory and disk space compared to container-heavy NAS systems.
 
-Earlier real installation measurements for the core runtime were approximately:
+A fresh DNA-Nexus Server installation remains small, but the exact disk footprint depends on which release package, bundled apps, runtime tools, and system dependencies are installed.
+
+Recent real installation measurements from a fresh Ubuntu Server based install:
 
 | Resource | Usage |
 |---|---:|
-| RAM | ~11 MB |
-| Application disk footprint | ~7–8 MB |
-| Storage metadata overhead | ~300 KB |
+| Server RAM | ~11 MB RSS |
+| DNA-Nexus storage root | ~21 MB |
+| Static/runtime assets | ~16 MB |
+| Configuration files | ~224 KB |
+| Runtime state before user data | ~0 MB |
 
-Example measurements from an earlier installation:
-
-```text
-/srv/pqnas        316K
-/opt/pqnas        7.1M
-/etc/pqnas        28K
-```
-
-Server memory usage:
+Example measured paths:
 
 ```text
-RSS: ~11 MB
+/srv/pqnas        21M
+/opt/pqnas        16M
+/etc/pqnas        224K
+/var/lib/pqnas    0
 ```
 
-Actual usage depends on enabled apps, storage configuration, number of users, background tasks, thumbnails, metadata indexing, and future features.
+The observed total OS filesystem increase during a full test install was approximately:
+
+```text
+Before install: 10.73 GiB used
+After install:  12.20 GiB used
+Increase:       ~1.47 GiB
+```
+
+That larger number includes operating system packages, installer support files, runtime dependencies, package caches, Cloudflare Tunnel tooling when installed, and other host-level components. It is not only the DNA-Nexus application data directory.
+
+Actual usage depends on enabled apps, storage configuration, number of users, background tasks, thumbnails, metadata indexing, archive generation, media previews, and future features.
 
 ## Installation Requirements
 
-The installer may use a temporary Python environment for the Textual TUI installer.
+The installer may use a temporary Python environment for the Textual TUI installer and may install required runtime tools through the host package manager.
 
-Typical temporary installation space may include:
+Typical temporary or host-level installation space may include:
 
 | Component | Approximate Size |
 |---|---:|
 | Installer environment | ~40–50 MB |
-| System dependencies | up to ~400–500 MB |
+| DNA-Nexus installed files | ~40 MB before user data |
+| System dependencies and package cache | up to ~1–2 GB depending on host state |
 
 Recommended minimum free disk space before installation:
 
 ```text
-500 MB
+2 GB
+```
+
+Recommended comfortable free disk space before installation:
+
+```text
+5 GB+
 ```
 
 For real storage use, the actual storage pool should of course be much larger.

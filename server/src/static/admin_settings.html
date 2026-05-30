@@ -64,6 +64,46 @@
             transform: none;
         }
 
+        .language-picker{
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+            gap:8px;
+            width:min(100%,680px);
+        }
+
+        .language-choice{
+            border:1px solid rgba(var(--fg-rgb),0.18);
+            background:rgba(0,0,0,0.22);
+            color:var(--fg);
+            border-radius:14px;
+            padding:10px 12px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            cursor:pointer;
+            font-weight:900;
+            text-align:left;
+        }
+
+        .language-choice:hover{
+            border-color:rgba(var(--fg-rgb),0.38);
+            background:rgba(var(--fg-rgb),0.07);
+        }
+
+        .language-choice.is-active{
+            border-color:rgba(var(--fg-rgb),0.52);
+            background:rgba(var(--fg-rgb),0.12);
+        }
+
+        .language-choice img{
+            width:28px;
+            height:21px;
+            border-radius:4px;
+            object-fit:cover;
+            box-shadow:0 0 0 1px rgba(0,0,0,0.24);
+            flex:0 0 auto;
+        }
+
         .pill{
             display:inline-flex;
             align-items:center;
@@ -352,6 +392,55 @@
         }
 
         .hidden { display:none !important; }
+
+        .lightDot{
+            width:10px;
+            height:10px;
+            border-radius:999px;
+            display:inline-block;
+            box-shadow:0 0 10px rgba(var(--fg-rgb),0.18);
+            background:rgba(var(--fg-rgb),0.32);
+        }
+
+        .lightDot.ok{ background:#22c55e; box-shadow:0 0 14px rgba(34,197,94,0.55); }
+        .lightDot.warn{ background:#f59e0b; box-shadow:0 0 14px rgba(245,158,11,0.45); }
+        .lightDot.fail{ background:#ef4444; box-shadow:0 0 14px rgba(239,68,68,0.45); }
+
+        .statusGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap:10px;
+            width:100%;
+            margin-top:10px;
+        }
+
+        .statusTile{
+            border:1px solid rgba(var(--fg-rgb),0.12);
+            background:rgba(0,0,0,0.18);
+            border-radius:16px;
+            padding:10px 12px;
+            min-width:0;
+        }
+
+        .statusTile .label{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-size:12px;
+            color:rgba(var(--fg-rgb),0.68);
+            font-weight:900;
+            letter-spacing:0.04em;
+            text-transform:uppercase;
+        }
+
+        .statusTile .value{
+            margin-top:6px;
+            font-family:var(--mono);
+            font-size:12px;
+            color:rgba(var(--fg-rgb),0.94);
+            overflow-wrap:anywhere;
+        }
+
 
         .modalBackdrop{
             position: fixed;
@@ -799,6 +888,55 @@
                 </div>
             </div>
 
+
+            <div class="card accordion open" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="true">
+                    <div class="h"><span data-i18n="admin.nodus.title">Nodus Federation</span></div>
+                    <div class="pill warn" id="nodusStatusPill">
+                        <span class="k"><span data-i18n="admin.common.status">Status</span>:</span> <span class="v" data-i18n="admin.common.loading">loading…</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <button id="btnNodusRefresh" class="btn primary" type="button"><span data-i18n="admin.nodus.refresh">Refresh Nodus status</span></button>
+                        <button id="btnNodusCreateIdentity" class="btn" type="button"><span data-i18n="admin.nodus.generate_identity">Generate identity</span></button>
+                    </div>
+
+                    <div class="statusGrid">
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusCliLight" class="lightDot warn"></span><span data-i18n="admin.nodus.cli_installed">CLI installed</span></div>
+                            <div id="nodusCliValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusIdentityLight" class="lightDot warn"></span><span data-i18n="admin.nodus.local_identity">Local NAS identity</span></div>
+                            <div id="nodusIdentityValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusSeedsLight" class="lightDot warn"></span><span data-i18n="admin.nodus.bootstrap_seeds">Bootstrap seeds</span></div>
+                            <div id="nodusSeedsValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusPublicUrlLight" class="lightDot warn"></span><span data-i18n="admin.nodus.public_base_url">Public base URL</span></div>
+                            <div id="nodusPublicUrlValue" class="value">—</div>
+                        </div>
+
+                        <div class="statusTile">
+                            <div class="label"><span id="nodusWorkerLight" class="lightDot warn"></span><span data-i18n="admin.nodus.worker">Federation worker</span></div>
+                            <div id="nodusWorkerValue" class="value">—</div>
+                        </div>
+                    </div>
+
+                    <div class="note">
+                        <span data-i18n="admin.nodus.note">Nodus federation is used by Circle Stack’s worldwide public feed to send and receive public messages between DNA-Nexus servers. Nodus carries the federation messages; media previews are fetched directly from the origin DNA-Nexus server.</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.dna.title">DNA Connect alerts</span></div>
@@ -897,20 +1035,20 @@
 
                 <div class="bd">
                     <div class="row">
-                        <select id="languageSelect" aria-label="UI language">
-                            <option value="en" data-i18n="admin.language.english">🇬🇧 English</option>
-                            <option value="fi" data-i18n="admin.language.finnish">🇫🇮 Suomi</option>
-                            <option value="zh" data-i18n="admin.language.chinese_simplified">🇨🇳 简体中文</option>
-                            <option value="sv" data-i18n="admin.language.swedish">🇸🇪 Svenska</option>
-                            <option value="uk" data-i18n="admin.language.ukrainian">🇺🇦 Українська</option>
-                            <option value="de" data-i18n="admin.language.german">🇩🇪 Deutsch</option>
-                            <option value="et" data-i18n="admin.language.estonian">🇪🇪 Eesti</option>
-                            <option value="pl" data-i18n="admin.language.polish">🇵🇱 Polski</option>
-                            <option value="es" data-i18n="admin.language.spanish">🇪🇸 Español</option>
-                            <option value="fr" data-i18n="admin.language.french">🇫🇷 Français</option>
-                            <option value="it" data-i18n="admin.language.italian">🇮🇹 Italiano</option>
-                            <option value="tr" data-i18n="admin.language.turkish">🇹🇷 Türkçe</option>
-                        </select>
+                        <div id="languagePicker" class="language-picker" role="group" aria-label="UI language">
+                            <button type="button" class="language-choice" data-language="en"><img src="/static/img/flags/en.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.english">English</span></button>
+                            <button type="button" class="language-choice" data-language="fi"><img src="/static/img/flags/fi.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.finnish">Suomi</span></button>
+                            <button type="button" class="language-choice" data-language="zh"><img src="/static/img/flags/zh.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.chinese_simplified">简体中文</span></button>
+                            <button type="button" class="language-choice" data-language="sv"><img src="/static/img/flags/sv.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.swedish">Svenska</span></button>
+                            <button type="button" class="language-choice" data-language="uk"><img src="/static/img/flags/ua.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.ukrainian">Українська</span></button>
+                            <button type="button" class="language-choice" data-language="de"><img src="/static/img/flags/de.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.german">Deutsch</span></button>
+                            <button type="button" class="language-choice" data-language="et"><img src="/static/img/flags/et.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.estonian">Eesti</span></button>
+                            <button type="button" class="language-choice" data-language="pl"><img src="/static/img/flags/pl.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.polish">Polski</span></button>
+                            <button type="button" class="language-choice" data-language="es"><img src="/static/img/flags/es.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.spanish">Español</span></button>
+                            <button type="button" class="language-choice" data-language="fr"><img src="/static/img/flags/fr.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.french">Français</span></button>
+                            <button type="button" class="language-choice" data-language="it"><img src="/static/img/flags/it.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.italian">Italiano</span></button>
+                            <button type="button" class="language-choice" data-language="tr"><img src="/static/img/flags/tr.svg" alt="" aria-hidden="true"><span data-i18n="admin.language.turkish">Türkçe</span></button>
+                        </div>
                     </div>
 
                     <div class="note" data-i18n="admin.language.desc">
@@ -1022,7 +1160,7 @@ New uploads land in a fast internal pool first and later migrate to capacity sto
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260521-de-et-language-selector-1"></script>
+<script src="/static/admin_settings.js?v=20260526-nodus-i18n-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

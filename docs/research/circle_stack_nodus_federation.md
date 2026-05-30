@@ -1,0 +1,912 @@
+# Circle Stack over Nodus - Research Notes
+
+## Stable checkpoint: federation v1 working
+
+Circle Stack federation v1 is now working between the devbox NAS and VPS NAS.
+
+This checkpoint is the current known-good federation contract before adding larger features or refactoring the worker.
+
+### What works now
+
+- Public Circle Stack posts federate NAS ↔ NAS through Nodus.
+- Image/media preview works from the remote origin NAS.
+- Known origins work.
+- Personal mute/unmute works.
+- Feed mode cycle works:
+  - `Mode: Feed`
+  - `Mode: Federated`
+  - `Mode: My Circle`
+- Remote reactions work automatically:
+  - NAS A reacts to a remote NAS B post.
+  - NAS A publishes a `remote_reaction_*` event.
+  - NAS B worker discovers and applies the reaction automatically.
+  - NAS B UI shows the real reaction on the local post.
+- The reacting NAS remembers server-side “You reacted” state in `people_contacts.sqlite3`.
+- Old browser `localStorage`-only federated reaction state has been removed from Circle Stack frontend code.
+
+### Important recent fix: origin-scoped discovery
+
+Remote reactions became reliable after origin-scoped federation discovery was added/fixed.
+
+The inbound worker now depends on:
+
+1. origin recent index discovery
+2. origin-scoped head fallback discovery
+
+This matters because remote reaction events must be discoverable per origin. A global or stale head path can miss reaction events from a specific remote NAS.
+
+Successful VPS log example:
+
+    [CircleFederationWorker] inbound origin:recent:index origin=d9cf6066e064 pulled=18 seed=EU-1
+    [CircleFederationWorker] inbound applied event_id=remote_reaction_1779871157_10_a8885f40 origin_nas=d9cf6066...
+
+### Reaction flow contract
+
+The current working remote reaction flow is:
+
+1. NAS A displays a federated post that originated on NAS B.
+2. A user on NAS A reacts to that post.
+3. NAS A stores local server-side reaction state so the UI can later show “You reacted”.
+4. NAS A publishes a `remote_reaction_*` federation event through Nodus.
+5. NAS B worker discovers the event using origin-scoped discovery.
+6. NAS B applies the reaction to its local original post.
+7. NAS B UI shows the real reaction on the local post.
+
+Remote reaction UI state must not depend on browser-only `localStorage`.
+
+### Things we must not break
+
+- Remote reactions must survive page reloads.
+- Remote reactions must not rely on old localStorage-only state.
+- The original post owner NAS must be able to discover and apply remote reactions automatically.
+- Personal mute/unmute must remain local to the user.
+- Feed modes must remain distinct:
+  - normal feed
+  - federated feed
+  - my circle feed
+- Media files must stay on the origin NAS.
+- Nodus must carry federation events and safe media references, not the actual media files.
+- Known origins must remain stable across worker restarts.
+
+### Manual smoke test checklist
+
+Before refactoring federation worker code or changing federation event schemas, verify:
+
+- Devbox public post appears on VPS.
+- VPS public post appears on devbox.
+- Remote image/media preview loads from the origin NAS.
+- Muting a remote origin hides that origin for the local user.
+- Unmuting restores the origin.
+- Feed mode button cycles:
+  - `Mode: Feed`
+  - `Mode: Federated`
+  - `Mode: My Circle`
+- Devbox can react to a VPS-originated post.
+- Devbox publishes a `remote_reaction_*` event.
+- VPS worker discovers and applies that event automatically.
+- VPS UI shows the real reaction on the local post.
+- Devbox still shows “You reacted” after page reload.
+
+### Recommended next milestones
+
+The safest next steps are:
+
+1. Keep this working behavior documented as the federation v1 contract.
+2. Add a small manual smoke-test checklist or helper notes.
+3. Add read-only federation status/admin UI polish.
+4. Only after that, split/refactor the federation worker.
+
+The worker split/refactor should happen after this checkpoint because the worker currently contains fragile but working discovery, deduplication, event application, known-origin, mute, and remote-reaction behavior.
+
+
+Date: 2026-05-24
+Branch: feature/circle-stack-nodus-federation
+
+## Goal
+
+Research and prepare the first DNA-Nexus / PQ-NAS integration layer for using Nodus as the federation backbone for Circle Stack.
+
+Architecture idea:
+
+    Circle Stack
+      -> PQ-NAS federation adapter
+      -> Nodus client / local Nodus daemon / Nodus CLI during research
+      -> Nodus network
+
+Nodus is used as the control, discovery, and event-delivery layer. User media remains on the origin PQ-NAS.
+
+## Verified Nodus cluster
+
+These Nodus nodes responded on TCP client port 4001 with successful connect, auth, and ping:
+
+    US-1 154.38.182.161:4001
+    EU-1 161.97.85.25:4001
+    EU-2 156.67.24.125:4001
+    EU-3 156.67.25.251:4001
+    EU-4 164.68.105.227:4001
+    EU-5 164.68.116.180:4001
+    EU-6 75.119.141.51:4001
+
+## Verified tests
+
+### Random identity put/get
+
+A test value was written to:
+
+    pqnas:circlestack:smoke:<timestamp>
+
+The value was readable from all 7 Nodus nodes.
+
+### Persistent identity
+
+A persistent research identity was generated by starting local nodus-server with:
+
+    -i /tmp/pqnas-nodus-research-id
+    -d /tmp/pqnas-nodus-research-data
+
+Generated files:
+
+    nodus.sk
+    nodus.pk
+    nodus.fp
+    nodus.kyber_sk
+    nodus.kyber_pk
+
+Research fingerprint:
+
+    c42342cfa049856987d1fd6d07611adc82ca116129dedf744a96d4f00e9655cef59a2d45643577641dfd5ceaf04e96b1b1974ddad72bad4e1e793d2b32faaa1c
+
+The persistent identity could be loaded by nodus-cli -i /tmp/pqnas-nodus-research-id.
+
+### Persistent identity put/get
+
+A test value was written using the persistent identity and successfully read from all 7 nodes.
+
+### Realtime listen
+
+A listener connected to:
+
+    161.97.85.25:4001
+
+A writer connected to:
+
+    154.38.182.161:4001
+
+The writer updated:
+
+    pqnas:circlestack:listen:test
+
+The listener immediately received the notification.
+
+### Circle event pointer model
+
+A Circle Stack event was written using a two-key model:
+
+    Head key:
+    pqnas:circlestack:circle:testcircle:head
+
+    Event key:
+    pqnas:circlestack:circle:testcircle:event:evt_1779586905
+
+Event JSON:
+
+    {
+      "type": "circle.ping",
+      "event_id": "evt_1779586905",
+      "circle_id": "testcircle",
+      "origin_nas": "pqnas-test",
+      "created_at": "2026-05-24T04:41:45+03:00",
+      "payload": {
+        "message": "hello from Circle Stack over Nodus"
+      }
+    }
+
+Result:
+
+    listen(head_key) -> evt_1779586905
+    get(event_key)   -> full Circle event JSON
+
+The event JSON was readable from all 7 Nodus nodes.
+
+## Proposed MVP key model
+
+    pqnas:circlestack:circle:<circle_id>:head
+      -> latest event_id
+
+    pqnas:circlestack:circle:<circle_id>:event:<event_id>
+      -> signed/encrypted event JSON
+
+    pqnas:circlestack:nas:<nas_fingerprint>:presence
+      -> signed NAS presence record
+
+## Important design choice
+
+Do not store photos or videos in Nodus.
+
+Use Nodus for:
+
+    - discovery
+    - presence
+    - event pointers
+    - signed/encrypted event delivery
+    - listen notifications
+
+Use PQ-NAS for:
+
+    - media storage
+    - user permissions
+    - Circle Stack feed UI
+    - comments/reactions local state
+    - media access tickets
+
+## Initial implementation status
+
+This branch starts with compile-safe helper modules:
+
+    server/src/federation/pqnas_nodus_client.h
+    server/src/federation/pqnas_nodus_client.cpp
+    server/src/federation/circle_federation_event.h
+    server/src/federation/circle_federation_event.cpp
+
+The first version is intentionally not wired into HTTP routes yet.
+
+## Next step
+
+Add admin-only research endpoints:
+
+    GET  /api/v4/federation/nodus/status
+    POST /api/v4/federation/nodus/put-test
+    GET  /api/v4/federation/nodus/get-test
+    POST /api/v4/federation/circle/ping
+
+Then replace CLI-shell integration with a real Nodus client API integration or local daemon TCP client.
+
+## 2026-05-24 PQ-NAS admin endpoint test
+
+Admin-only PQ-NAS research endpoints were added for:
+
+- `GET /api/v4/admin/nodus/status`
+- `POST /api/v4/admin/nodus/put-test`
+- `GET /api/v4/admin/nodus/get-test?key=...`
+- `POST /api/v4/admin/nodus/circle/ping`
+
+Runtime identity was generated outside the repo at:
+
+`/srv/pqnas/config/nodus/research_identity`
+
+The Circle event pointer model was tested successfully from PQ-NAS:
+
+`pqnas:circlestack:circle:research-circle:head -> latest event_id`
+`pqnas:circlestack:circle:research-circle:event:<event_id> -> event JSON`
+
+Confirmed results:
+
+- EU-1 `circle.ping` wrote both event JSON and head pointer.
+- `get-test` read back the head pointer.
+- `get-test` read back the event JSON.
+- Writing through all 7 configured Nodus seeds succeeded:
+  - US-1 event=true head=true
+  - EU-1 event=true head=true
+  - EU-2 event=true head=true
+  - EU-3 event=true head=true
+  - EU-4 event=true head=true
+  - EU-5 event=true head=true
+  - EU-6 event=true head=true
+
+Notes:
+
+- Nodus is used only for discovery/presence/event delivery.
+- Circle Stack media remains on the origin PQ-NAS.
+- `nodus-cli -i <identity_dir>` requires an existing identity.
+- A one-shot `nodus-server -i <identity_dir>` run generated the persistent PQ-NAS research identity.
+
+## Scale-first design constraints
+
+Circle Stack federation over Nodus should be designed for 10k, 100k, and eventually 1M+ users without requiring a full rewrite.
+
+Core constraints:
+
+- Nodus carries small signed federation events only.
+- Photos, videos, thumbnails, and other media remain on the origin PQ-NAS.
+- User-facing Circle Stack actions must save locally first and must not wait synchronously for Nodus publishing.
+- Federation publishing should use a local durable `federation_outbox` queue with retries and backoff.
+- Research endpoints may write to all Nodus seeds, but production publishing should use nearest/healthy nodes or quorum-style replication.
+- Avoid one global hot key for large/public circles.
+- Use per-origin heads, sharded heads, or event-DAG style linkage for high-volume circles.
+- Remote PQ-NAS instances should merge events by signed event metadata rather than trusting one last-write-wins head pointer.
+- Add metrics early: publish latency, get latency, listen propagation delay, queue depth, retry count, error rate, and per-node health.
+- Plan for abuse controls: rate limits, event size limits, identity reputation, and spam filtering.
+
+The current `circle:<circle_id>:head -> latest event_id` model is acceptable for research and small circles, but production large-circle federation should evolve toward per-origin or sharded heads before public-scale use.
+
+## 2026-05-24 Nodus benchmark baseline
+
+Baseline was measured through the PQ-NAS admin research endpoints, which currently use `popen(nodus-cli ...)` per Nodus operation. This includes HTTP, Cloudflare/proxy path, PQ-NAS route handling, process startup, TCP connect, Nodus authentication, and the DHT command.
+
+Single EU-1 `put-test`:
+
+- count: 20
+- avg: 414.55 ms
+- min: 343 ms
+- max: 536 ms
+- median: about 407 ms
+
+All-seed `circle.ping`:
+
+- count: 10
+- avg: 4859.2 ms
+- min: 4475 ms
+- max: 5273 ms
+- median: about 4881 ms
+
+Interpretation:
+
+- Single-seed publishing is acceptable for a background federation worker.
+- All-seed synchronous publishing is too slow for user-facing actions.
+- The all-seed test performs 14 Nodus operations per request: 7 seeds × event put + head put.
+- Production Circle Stack should save locally first, enqueue federation work, and publish asynchronously.
+- Production publishing should use nearest/healthy nodes or quorum-style replication, not synchronous writes to every seed.
+
+## 2026-05-24 parallel publishing benchmark
+
+A parallel benchmark was run to separate Nodus network capacity from the current PQ-NAS research adapter.
+
+Persistent PQ-NAS identity through admin endpoint:
+
+- 50 parallel HTTP requests to `/api/v4/admin/nodus/put-test`
+- Same persistent identity dir: `/srv/pqnas/config/nodus/research_identity`
+- Result: 2 / 50 succeeded
+- Failed calls reached TCP connect and authentication, but did not reach `PUT ok`
+- Failed raw exit status was 256
+
+Direct `nodus-cli` with random identity, no `-i`:
+
+- 50 parallel PUTs
+- Result: 50 / 50 succeeded
+- Average latency: 545.54 ms
+- Min latency: 303 ms
+- Max latency: 735 ms
+
+Interpretation:
+
+- Nodus handled this small parallel PUT test successfully when identities were independent.
+- The current PQ-NAS research adapter should not spawn many parallel `nodus-cli` processes using the same persistent identity.
+- Production Circle Stack should publish through a durable `federation_outbox` and a controlled background publisher.
+- Long-term, PQ-NAS should use a persistent Nodus client daemon or direct C++ integration instead of `popen(nodus-cli ...)` per event.
+
+## 2026-05-24 serialized CLI adapter result
+
+After the parallel same-identity benchmark showed only 2 / 50 successful endpoint PUTs, the research `nodus-cli` adapter was guarded with a process-local mutex.
+
+Retest through `/api/v4/admin/nodus/put-test`:
+
+- 20 parallel HTTP requests
+- concurrency: `xargs -P 5`
+- same persistent PQ-NAS identity
+- result: 20 / 20 succeeded
+- average latency: 1431.95 ms
+- min latency: 389 ms
+- max latency: 1645 ms
+
+Interpretation:
+
+- Serialization fixes reliability for the temporary research adapter.
+- Higher latency is expected because calls queue behind one another.
+- This confirms the production design should use a durable federation outbox and controlled background publisher, not user-facing synchronous parallel `nodus-cli` calls.
+- Long-term replacement should be a persistent Nodus client daemon or direct C++ integration.
+
+
+## Federation outbox foundation
+
+A durable Circle Stack federation outbox was added as the scale-first bridge between local Circle Stack actions and Nodus publishing.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/outbox/stats`
+- `GET /api/v4/admin/nodus/outbox/list?limit=50`
+- `POST /api/v4/admin/nodus/outbox/enqueue-ping`
+
+The outbox stores small signed/serializable federation events and pointer keys. Production Circle Stack should save user actions locally, enqueue federation events, and let a controlled background publisher drain this outbox asynchronously.
+
+
+## Outbox lease recovery
+
+Outbox publishing uses a lease-style `publishing` state. If PQ-NAS crashes after claiming events but before marking them `done`, stale rows are recovered back to `pending` when `next_attempt_epoch` expires.
+
+Research endpoint:
+
+- `POST /api/v4/admin/nodus/outbox/recover-leases`
+
+The drain path also performs stale lease recovery before claiming new pending events.
+
+
+## Optional background outbox worker
+
+An optional process-local background worker can drain the Circle Stack federation outbox.
+
+It is disabled by default. Enable with:
+
+```text
+PQNAS_CIRCLE_FEDERATION_WORKER=1
+```
+
+Useful environment knobs:
+
+- `PQNAS_CIRCLE_FEDERATION_WORKER_INTERVAL_SECONDS` default `10`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_BATCH` default `5`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_LEASE_SECONDS` default `300`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_MAX_ATTEMPTS` default `5`
+- `PQNAS_CIRCLE_FEDERATION_WORKER_SEED` default `EU-1`
+
+The worker is intentionally controlled and conservative because the current adapter still uses serialized `nodus-cli` calls. Long-term, this should be replaced by a persistent Nodus client daemon or direct C++ integration.
+
+
+## Real post creation enqueue
+
+Circle Stack `posts/create` now enqueues a `circle.post.created` federation event for public posts.
+
+Current safety behavior:
+
+- public posts enqueue a small federation event into the durable outbox
+- private and circle-restricted posts are skipped for now
+- the event does not include raw media paths or full post text
+- media remains on the origin PQ-NAS
+
+The initial circle id is `local-public-feed`. This is suitable for the first real end-to-end path, but large-scale federation should later move toward per-origin or sharded feed heads.
+
+## Real public post federation verified
+
+A real Circle Stack public post was created through `/api/v4/circlestack/posts/create` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- federation event id: `post_1779669289_30`
+- circle id: `local-public-feed`
+- event type: `circle.post.created`
+- outbox status: `done`
+- Nodus head key readback succeeded: `pqnas:circlestack:circle:local-public-feed:head -> post_1779669289_30`
+- Nodus event key readback succeeded and returned the event JSON.
+
+A private post was also tested and correctly skipped federation:
+
+- `federation_queued=false`
+- `federation_note=skipped_non_public_visibility`
+- outbox total did not increase
+
+
+## Reply creation enqueue
+
+Circle Stack `posts/reply` now enqueues a `circle.reply.created` federation event when the parent post is public.
+
+Current safety behavior:
+
+- replies to public posts enqueue a small federation event into the durable outbox
+- replies to private/circle-restricted posts are skipped for now
+- the event does not include raw media paths or full reply text
+- media remains on the origin PQ-NAS
+
+## Real public reply federation verified
+
+A real Circle Stack reply to a public post was created through `/api/v4/circlestack/posts/reply` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- reply id: `6`
+- federation event id: `reply_1779669505_30_6`
+- circle id: `local-public-feed`
+- event type: `circle.reply.created`
+- outbox status: `done`
+- worker log confirmed publish: `published id=4 event_id=reply_1779669505_30_6`
+
+
+## Post reaction creation enqueue
+
+Circle Stack `posts/react` now enqueues a `circle.reaction.created` federation event when reacting to a public post.
+
+Current safety behavior:
+
+- non-empty reactions on public posts enqueue a small federation event into the durable outbox
+- reactions on private/circle-restricted posts are skipped for now
+- reaction removal is not federated yet; it should become `circle.reaction.removed` later
+- the event contains target type, post id, actor fingerprint, and reaction only
+
+## Real public post reaction federation verified
+
+A real Circle Stack reaction on a public post was created through `/api/v4/circlestack/posts/react` and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- reaction: `❤️`
+- federation event id: `reaction_1779669674_30_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.created`
+- outbox status: `done`
+- worker log confirmed publish: `published id=5 event_id=reaction_1779669674_30_a8885f40`
+
+
+## Post reaction removal enqueue
+
+Circle Stack `posts/react` now enqueues a `circle.reaction.removed` federation event when an existing reaction is removed from a public post.
+
+Current safety behavior:
+
+- empty reaction deletes the local post reaction
+- if an existing reaction was deleted and the post is public, a `circle.reaction.removed` event is queued
+- removals on private/circle-restricted posts are skipped for now
+- if there was no existing reaction, federation is skipped with `skipped_no_existing_reaction`
+
+## Real public post reaction removal federation verified
+
+A real Circle Stack reaction removal on a public post was created through `/api/v4/circlestack/posts/react` with an empty reaction and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- federation event id: `reaction_removed_1779669809_30_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.removed`
+- outbox status: `done`
+- worker log confirmed publish: `published id=6 event_id=reaction_removed_1779669809_30_a8885f40`
+
+## Real public post reaction removal federation verified
+
+A real Circle Stack reaction removal on a public post was created through `/api/v4/circlestack/posts/react` with an empty reaction and successfully federated through the outbox worker.
+
+Verified event:
+
+- post id: `30`
+- federation event id: `reaction_removed_1779669809_30_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.removed`
+- outbox status: `done`
+- worker log confirmed publish: `published id=6 event_id=reaction_removed_1779669809_30_a8885f40`
+
+
+## Reply reaction enqueue
+
+Circle Stack `replies/react` now enqueues federation events for reactions on replies whose parent post is public.
+
+Events:
+
+- `circle.reaction.created` with `target_type=reply`
+- `circle.reaction.removed` with `target_type=reply`
+
+Current safety behavior:
+
+- reply reactions under public posts are federated
+- reply reactions under private/circle-restricted posts are skipped for now
+- removing a non-existing reaction is skipped with `skipped_no_existing_reaction`
+
+## Real public reply reaction federation verified
+
+Real Circle Stack reactions on a reply under a public post were created through `/api/v4/circlestack/replies/react` and successfully federated through the outbox worker.
+
+Verified created event:
+
+- post id: `30`
+- reply id: `6`
+- reaction: `👍`
+- federation event id: `reply_reaction_1779669949_30_6_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.created`
+- outbox status: `done`
+
+Verified removed event:
+
+- post id: `30`
+- reply id: `6`
+- federation event id: `reply_reaction_removed_1779669959_30_6_a8885f40`
+- circle id: `local-public-feed`
+- event type: `circle.reaction.removed`
+- outbox status: `done`
+- worker log confirmed both publishes.
+
+
+## Inbound federation inbox foundation
+
+A durable Circle Stack federation inbox was added for inbound Nodus events.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/inbox/stats`
+- `GET /api/v4/admin/nodus/inbox/list?limit=50`
+- `POST /api/v4/admin/nodus/inbox/pull-once`
+
+The first pull path reads the latest `circle:<circle_id>:head` from Nodus, reads the matching event JSON, validates basic event fields, and stores it in `circle_federation_inbox`.
+
+This is only the first inbound milestone. It pulls the current head event only. Large-scale federation should later use per-origin or sharded heads plus event history traversal.
+
+
+## Explicit inbound event pull
+
+The initial `pull-once` endpoint successfully stored an inbound event from Nodus, but it also showed that the single mutable `local-public-feed:head` key can return an older event than expected.
+
+A second research endpoint was added:
+
+- `POST /api/v4/admin/nodus/inbox/pull-event`
+
+This endpoint pulls an explicit `circle_id + event_id` from Nodus and stores the event in the local inbox. This avoids relying on one global mutable head pointer during testing.
+
+Design implication: production-scale Circle Stack federation should not rely only on one `circle:<circle_id>:head` key. It should move toward per-origin heads, sharded heads, event IDs from listen notifications, or event-DAG traversal.
+
+
+## Inbound inbox apply-once
+
+An admin-only `POST /api/v4/admin/nodus/inbox/apply-once` endpoint was added for first inbound processing.
+
+Current behavior:
+
+- local-origin events are marked `ignored` with reason `ignored_local_origin`
+- remote-origin events are marked `ignored` with reason `remote_apply_not_implemented`
+- no inbound event is written into the local Circle Stack posts table yet
+
+This prevents self-echo duplication while preparing for a future federated public feed storage table.
+
+## Inbound local-origin ignore verified
+
+Inbound `apply-once` was tested with two events previously published by the same local PQ-NAS identity.
+
+Result:
+
+- pending inbound events: `2`
+- applied: `0`
+- ignored: `2`
+- failed: `0`
+- final reason: `ignored_local_origin`
+
+This confirms that self-echoed federation events are not duplicated back into the local Circle Stack database.
+
+
+## Remote federated feed storage
+
+A separate `circle_federation_remote_feed` storage path was added for remote-origin inbound events.
+
+Research endpoints:
+
+- `GET /api/v4/admin/nodus/remote-feed/stats`
+- `GET /api/v4/admin/nodus/remote-feed/list?limit=50`
+
+Inbound `apply-once` now stores remote-origin events into this read-only remote feed table and marks the inbox row `applied`. Local-origin events are still ignored as self-echoes.
+
+Remote events are intentionally not inserted into local Circle Stack `posts`, `post_replies`, or reaction tables. The UI should later combine local content and remote-feed records at read time.
+
+
+## Remote federated feed apply verified
+
+A fake remote-origin `circle.post.created` event was inserted into the inbound inbox and processed through `apply-once`.
+
+Result:
+
+- inbox `applied` increased to `1`
+- remote-feed `total` increased to `1`
+- remote-feed `posts` increased to `1`
+- local-origin self-echo events remained ignored
+
+Parser note: `circle.post.created` payload uses `owner_fp`, so remote-feed parsing now falls back from `actor_fp` to `owner_fp`.
+
+## Remote federated feed apply verified
+
+A fake remote-origin `circle.post.created` event was inserted into the inbound inbox and processed through `apply-once`.
+
+Result:
+
+- inbox `applied` increased.
+- remote-feed `total` increased to `2`.
+- remote-feed `posts` increased to `2`.
+- local-origin self-echo events remained ignored.
+- parser fallback from `actor_fp` to `owner_fp` was verified with `remote_test_nas_002`.
+
+Current remote-feed test row:
+
+- event id: `remote_test_post_1779670606`
+- origin NAS: `remote_test_nas_002`
+- actor fp: `remote_test_nas_002`
+- post id: `900002`
+
+
+## App-side federated feed read API
+
+A user-authenticated app-side read endpoint was added:
+
+- `GET /api/v4/circlestack/federated/feed?limit=50`
+
+It returns read-only records from `circle_federation_remote_feed` and does not mix remote events into the local Circle Stack `posts`, `post_replies`, or reaction tables.
+
+This gives the UI a safe future path for showing a separate Federated / From other NAS section.
+
+
+## Richer remote federated feed events
+
+Circle Stack federation events were enriched for better remote feed display.
+
+Added to `circle.post.created` payload:
+
+- `text_preview`
+- `owner_display_name`
+- `owner_fp_short`
+- `origin_label`
+- `media_preview` placeholder
+
+Added to `circle.reply.created` payload:
+
+- `text_preview`
+- `actor_display_name`
+- `actor_fp_short`
+- `origin_label`
+- `media_preview` placeholder
+
+The remote feed UI now shows preview text when present and a media placeholder when the event says media exists. Actual media fetch from the origin PQ-NAS remains a later milestone.
+
+
+## Federated media references
+
+Federated `circle.post.created` and `circle.reply.created` events now include safe media references when local media exists.
+
+Payload additions:
+
+- `media_count`
+- `media_refs[]`
+- `media_refs[].ref_id`
+- `media_refs[].kind` (`image`, `video`, or `file`)
+- `media_refs[].preview_status = origin_fetch_todo`
+- `media_refs[].fetch_policy = origin_public_preview_required`
+
+The actual local `media_path` is intentionally not published. Future remote preview fetching should use `event_id + ref_id` against the origin PQ-NAS, and the origin must validate public/federated access before returning a thumbnail or preview.
+
+
+## Origin media preview endpoint phase 1
+
+Added public origin-side validation endpoint:
+
+- `GET /api/v4/circlestack/federation/media-preview?event_id=...&ref_id=...`
+
+Phase 1 behavior:
+
+- validates `ref_id` format such as `post:<id>:media:primary` or `reply:<id>:media:primary`
+- validates that the referenced local post/reply has media
+- validates that the parent post visibility is `public`
+- validates that the supplied `event_id` matches the deterministic local federation event id
+- returns a generated SVG placeholder preview only
+- does not return the original file and does not expose the local `media_path`
+
+This prepares the protocol path for later real thumbnail generation while keeping the origin NAS access-control boundary explicit.
+
+
+## Federated preview rendering phase 2a
+
+The Circle Stack Federated tab now renders media previews by calling the origin preview endpoint for the first media ref:
+
+- `/api/v4/circlestack/federation/media-preview?event_id=...&ref_id=...`
+
+Current behavior shows the validated SVG placeholder returned by the origin endpoint. This proves the UI-to-origin preview path without exposing original media files. Later the endpoint can return a real generated thumbnail while keeping the UI contract unchanged.
+
+
+## Real generated media previews phase 2b
+
+The origin-side media preview endpoint now attempts to generate cached JPEG previews for image/video media using `ffmpeg`.
+
+Behavior:
+
+- validates `event_id + ref_id` exactly as before
+- resolves the local media file only after public visibility and ref validation
+- rejects symlink components below the owner root
+- generates 640x360 JPEG previews under `/srv/pqnas/cache/circlestack/federation-previews/`
+- returns `X-PQNAS-Preview-Status: generated` when a real preview is served
+- falls back to the SVG placeholder when ffmpeg is missing, generation fails, or the kind is unsupported
+- still never exposes local `media_path` and never serves the original full file from this endpoint
+
+
+## Federated origin addressing
+
+Federated post/reply events now include an origin descriptor for future cross-NAS preview fetching.
+
+Origin descriptor fields:
+
+- `nas_id`
+- `preview_endpoint`
+- optional `preview_base_url` from `PQNAS_PUBLIC_BASE_URL`
+
+The Federated UI now builds media preview URLs from this origin descriptor when present, and falls back to same-origin relative preview URLs when `preview_base_url` is absent.
+
+## Public origin descriptor verified
+
+Set systemd environment:
+
+- `PQNAS_PUBLIC_BASE_URL=https://pqnas-dev.pqnas-test.uk`
+
+Created a new public media post and verified the Nodus event payload includes:
+
+- top-level `origin.preview_base_url`
+- top-level `origin.preview_endpoint`
+- payload `origin.preview_base_url`
+- payload `media_refs[]`
+- `fetch_policy=origin_public_preview_required`
+
+Verified event:
+
+- `post_1779673969_32`
+- `ref_id=post:32:media:primary`
+
+## Absolute origin preview URL verified
+
+Inserted a simulated remote-feed row with `origin.preview_base_url` set to the configured public base URL.
+
+Verified:
+
+- `PQNAS_PUBLIC_BASE_URL=https://pqnas-dev.pqnas-test.uk` was visible in the systemd environment.
+- Nodus event `post_1779673969_32` contains top-level and payload origin descriptors.
+- Federated feed row includes `payload.origin.preview_base_url` and `payload.media_refs[]`.
+- Browser Network tab showed `media-preview?event_id=post_1779673969_32...` returning `200` as `jpeg`.
+- Older fake media-ref rows with non-existing refs correctly returned `404`.
+
+Test row:
+
+- `origin_label=Remote Absolute Origin Test`
+- `event_id=post_1779673969_32`
+- `ref_id=post:32:media:primary`
+
+## Real test-user public media event verified
+
+Created a real public Circle Stack media post as a test user on the dev box.
+
+Verified Nodus event:
+
+- `event_id=post_1779674571_33`
+- `ref_id=post:33:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+- `preview_endpoint=/api/v4/circlestack/federation/media-preview`
+- `text_preview=This is federated public test`
+- `owner_display_name=Timo`
+
+Verified preview endpoint:
+
+- returned `HTTP 200`
+- returned `content-type: image/jpeg`
+- returned `x-pqnas-preview-status: generated`
+- returned a `640x360` JPEG preview
+
+## VPS cross-origin preview test verified
+
+Tested dev box -> Nodus -> VPS inbound path using real public media event:
+
+- `event_id=post_1779674571_33`
+- `ref_id=post:33:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+- `text_preview=This is federated public test`
+
+Results:
+
+- VPS `pull-event` retrieved the event from Nodus successfully.
+- First apply was ignored as `ignored_local_origin` because VPS temporarily used a copied dev-box Nodus identity.
+- For research validation, the inbox row origin was rewritten to `dev_box_origin_for_vps_test`.
+- Second apply stored the event into the VPS remote federated feed.
+- VPS federated feed exposed the dev-box origin descriptor and media ref.
+- VPS fetched the dev-box origin preview URL successfully.
+- Preview response was `HTTP 200`, `content-type: image/jpeg`, `x-pqnas-preview-status: generated`, `640x360` JPEG.
+
+Important follow-up: real two-NAS tests require each NAS to have a unique Nodus identity. Copying the identity is only acceptable for this temporary research test and correctly triggers local-origin self-echo protection.
+
+## Clean two-NAS origin identity federation test verified
+
+Verified dev box -> Nodus -> VPS with distinct NAS identities.
+
+Test event:
+
+- `event_id=post_1779757399_37`
+- `origin_nas=d35a046411d6e6788431e9e7b21ba9bcf277f967161937f197ac16d25de6e0f86bd97e5ae2917b05a92d7a75b0b3867c9fc27fa499517b1562fbffe370e0bb9e`
+- `owner_fp=a8885f40...`
+- `origin_label=Timo`
+- `text_preview=testing`
+- `ref_id=post:37:media:primary`
+- `preview_base_url=https://pqnas-dev.pqnas-test.uk`
+
+VPS verified:
+
+- Federated feed displayed the remote post.
+- Preview URL fetched from dev-box origin.
+- Preview response was `HTTP 200`, `content-type: image/jpeg`, `x-pqnas-preview-status: generated`, `640x360` JPEG.
+
+This confirms the corrected identity model: `origin_nas` is the NAS/Nodus identity, while `owner_fp` / `actor_fp` remain Circle Stack user identities.

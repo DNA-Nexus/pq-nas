@@ -1,25 +1,88 @@
 #include "circle_stack_routes.h"
+#include "routes_circle_nodus_research.h"
+#include "federation/circle_federation_outbox.h"
+#include "federation/circle_federation_remote_feed.h"
+#include "federation/circle_federation_event.h"
+#include "federation/circle_federation_signing.h"
 #include "circle_stack_memory_nodes.h"
 #include "activity_log.h"
+#include "achievements.h"
 #include "storage_resolver.h"
 
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <ctime>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
 
 using json = nlohmann::json;
+#include <system_error>
 
 namespace {
 
 static sqlite3* g_db = nullptr;
 static constexpr const char* kCircleStackDbPath = "/srv/pqnas/circlestack.db";
+
+
+class CsPreviewGenerationSlot {
+public:
+    explicit CsPreviewGenerationSlot(int max_concurrent)
+        : max_concurrent_(max_concurrent) {
+        std::unique_lock<std::mutex> lock(mutex());
+        cv().wait(lock, [&] {
+            return active_count() < max_concurrent_;
+        });
+        ++active_count();
+        acquired_ = true;
+    }
+
+    CsPreviewGenerationSlot(const CsPreviewGenerationSlot&) = delete;
+    CsPreviewGenerationSlot& operator=(const CsPreviewGenerationSlot&) = delete;
+
+    ~CsPreviewGenerationSlot() {
+        if (!acquired_) return;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex());
+            if (active_count() > 0) {
+                --active_count();
+            }
+        }
+
+        cv().notify_one();
+    }
+
+private:
+    static std::mutex& mutex() {
+        static std::mutex m;
+        return m;
+    }
+
+    static std::condition_variable& cv() {
+        static std::condition_variable c;
+        return c;
+    }
+
+    static int& active_count() {
+        static int count = 0;
+        return count;
+    }
+
+    int max_concurrent_ = 0;
+    bool acquired_ = false;
+};
+
+static constexpr int kMaxCircleStackPreviewFfmpegProcesses = 2;
+
 
 void set_json(httplib::Response& res, const json& body) {
     res.set_content(body.dump(), "application/json; charset=utf-8");
@@ -203,6 +266,29 @@ static void cs_db_init() {
         nullptr, nullptr, nullptr);
 
     sqlite3_exec(g_db,
+        "CREATE TABLE IF NOT EXISTS federated_post_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "local_post_id INTEGER NOT NULL,"
+        "target_event_id TEXT NOT NULL,"
+        "remote_event_id TEXT NOT NULL,"
+        "remote_origin_nas TEXT NOT NULL,"
+        "actor_fp TEXT NOT NULL,"
+        "actor_display_name TEXT NOT NULL DEFAULT '',"
+        "reaction TEXT NOT NULL,"
+        "created_epoch INTEGER NOT NULL,"
+        "removed_epoch INTEGER NOT NULL DEFAULT 0,"
+        "UNIQUE(remote_event_id),"
+        "UNIQUE(local_post_id, remote_origin_nas, actor_fp)"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    sqlite3_exec(g_db,
+        "CREATE INDEX IF NOT EXISTS idx_federated_post_reactions_local_post "
+        "ON federated_post_reactions(local_post_id, removed_epoch)",
+        nullptr, nullptr, nullptr);
+
+    // FEDERATED_POST_REACTIONS_MERGE_PATCH_V1
+    sqlite3_exec(g_db,
         "CREATE INDEX IF NOT EXISTS idx_reply_mentions_reply_id "
         "ON reply_mentions(reply_id)",
         nullptr, nullptr, nullptr);
@@ -288,6 +374,42 @@ std::string cs_display_name_for_fp(
     }
 
     return name;
+}
+
+json cs_public_badges_for_fp(
+    sqlite3* db,
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& fp
+) {
+    if (fp.empty()) return json::array();
+
+    std::string added_at;
+    std::string role;
+    std::filesystem::path user_root;
+
+    if (deps.users) {
+        auto u = deps.users->get(fp);
+        if (u.has_value()) {
+            added_at = u->added_at;
+            role = u->role;
+        }
+
+        if (deps.user_dir_for_fp) {
+            try {
+                user_root = deps.user_dir_for_fp(*deps.users, fp);
+            } catch (...) {
+                user_root.clear();
+            }
+        }
+    }
+
+    return pqnas::achievements::circle_stack_public_badges(
+        db,
+        user_root,
+        fp,
+        added_at,
+        role
+    );
 }
 
 
@@ -475,7 +597,52 @@ bool cs_open_people_db(sqlite3** out_db, std::string* err) {
         "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_name "
         "ON people_contacts(owner_fingerprint, display_name COLLATE NOCASE);"
         "CREATE INDEX IF NOT EXISTS idx_people_contacts_owner_kind "
-        "ON people_contacts(owner_fingerprint, subject_kind);";
+        "ON people_contacts(owner_fingerprint, subject_kind);"
+        "CREATE TABLE IF NOT EXISTS known_remote_origins ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "origin_nas TEXT NOT NULL,"
+        "public_base_url TEXT NOT NULL DEFAULT '',"
+        "display_name TEXT NOT NULL DEFAULT '',"
+        "source TEXT NOT NULL DEFAULT '',"
+        "source_event_id TEXT NOT NULL DEFAULT '',"
+        "added_by_fp TEXT NOT NULL DEFAULT '',"
+        "enabled INTEGER NOT NULL DEFAULT 1,"
+        "first_seen_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(origin_nas)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_enabled "
+        "ON known_remote_origins(enabled, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_known_remote_origins_added_by "
+        "ON known_remote_origins(added_by_fp, updated_epoch DESC);"
+        "CREATE TABLE IF NOT EXISTS circle_user_origin_prefs ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "local_user_fp TEXT NOT NULL,"
+        "origin_nas TEXT NOT NULL,"
+        "muted INTEGER NOT NULL DEFAULT 0,"
+        "hidden INTEGER NOT NULL DEFAULT 0,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(local_user_fp, origin_nas)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_user "
+        "ON circle_user_origin_prefs(local_user_fp, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_circle_user_origin_prefs_origin "
+        "ON circle_user_origin_prefs(origin_nas, updated_epoch DESC);"
+        "CREATE TABLE IF NOT EXISTS circle_federated_local_reactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "actor_fp TEXT NOT NULL,"
+        "remote_event_id TEXT NOT NULL,"
+        "origin_nas TEXT NOT NULL DEFAULT '',"
+        "reaction TEXT NOT NULL,"
+        "federation_event_id TEXT NOT NULL DEFAULT '',"
+        "created_epoch INTEGER NOT NULL,"
+        "updated_epoch INTEGER NOT NULL,"
+        "UNIQUE(actor_fp, remote_event_id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_circle_fed_local_reactions_actor "
+        "ON circle_federated_local_reactions(actor_fp, updated_epoch DESC);"
+        "CREATE INDEX IF NOT EXISTS idx_circle_fed_local_reactions_remote_event "
+        "ON circle_federated_local_reactions(remote_event_id);";
 
     char* msg = nullptr;
     if (sqlite3_exec(db, schema_sql, nullptr, nullptr, &msg) != SQLITE_OK) {
@@ -1180,6 +1347,61 @@ json cs_load_post_reactions(
 
     sqlite3_finalize(st);
 
+    st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT actor_fp, actor_display_name, reaction, remote_origin_nas "
+            "FROM federated_post_reactions "
+            "WHERE local_post_id = ? AND removed_epoch = 0 "
+            "ORDER BY created_epoch ASC",
+            -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(st, 1, post_id);
+
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char* actor_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* name_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+            const char* reaction_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+            const char* origin_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+            const std::string remote_actor_fp = actor_raw ? actor_raw : "";
+            const std::string remote_name = name_raw ? name_raw : "";
+            const std::string reaction = reaction_raw ? reaction_raw : "";
+            const std::string remote_origin_nas = origin_raw ? origin_raw : "";
+
+            if (remote_actor_fp.empty() || !cs_is_supported_reaction(reaction)) {
+                continue;
+            }
+
+            if (!by_reaction.contains(reaction)) {
+                by_reaction[reaction] = {
+                    {"reaction", reaction},
+                    {"count", 0},
+                    {"reacted_by_me", false},
+                    {"people", json::array()}
+                };
+            }
+
+            by_reaction[reaction]["count"] =
+                by_reaction[reaction].value("count", 0) + 1;
+
+            const std::string display_name =
+                !remote_name.empty()
+                    ? remote_name
+                    : (cs_short_fp(remote_actor_fp) + " · remote NAS");
+
+            by_reaction[reaction]["people"].push_back({
+                {"fp", remote_actor_fp},
+                {"fp_short", cs_short_fp(remote_actor_fp)},
+                {"display_name", display_name},
+                {"avatar_url", ""},
+                {"remote", true},
+                {"origin_nas", remote_origin_nas},
+                {"origin_nas_short", cs_short_fp(remote_origin_nas)}
+            });
+        }
+
+        sqlite3_finalize(st);
+    }
+
     json out = json::array();
 
     const char* order[] = {"👍", "❤️", "😂", "😮", "👏", "🔥"};
@@ -1396,12 +1618,2640 @@ json cs_admin_stats_json(sqlite3* db) {
 }
 
 
+
+
+json cs_remote_feed_event_json(const pqnas::federation::CircleFederationRemoteFeedEvent& ev) {
+    json parsed;
+    json payload;
+
+    std::string display_actor_fp = ev.actor_fp;
+
+    if (!ev.event_json.empty()) {
+        parsed = json::parse(ev.event_json, nullptr, false);
+        if (!parsed.is_discarded() &&
+            parsed.contains("payload") &&
+            parsed["payload"].is_object()) {
+            payload = parsed["payload"];
+
+            if (display_actor_fp.empty()) {
+                if (payload.contains("actor_fp") && payload["actor_fp"].is_string()) {
+                    display_actor_fp = payload["actor_fp"].get<std::string>();
+                } else if (payload.contains("owner_fp") && payload["owner_fp"].is_string()) {
+                    display_actor_fp = payload["owner_fp"].get<std::string>();
+                }
+            }
+        }
+    }
+
+    json item = {
+        {"id", ev.id},
+        {"received_epoch", ev.received_epoch},
+        {"created_epoch", ev.created_epoch},
+        {"circle_id", ev.circle_id},
+        {"event_id", ev.event_id},
+        {"event_type", ev.event_type},
+        {"origin_nas", ev.origin_nas},
+        {"target_type", ev.target_type},
+        {"post_id", ev.post_id},
+        {"reply_id", ev.reply_id},
+        {"actor_fp", display_actor_fp},
+        {"actor_fp_short", display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp},
+        {"actor_display_name",
+            payload.is_object() && payload.contains("actor_display_name") && payload["actor_display_name"].is_string()
+                ? payload["actor_display_name"].get<std::string>()
+                : (
+                    payload.is_object() && payload.contains("owner_display_name") && payload["owner_display_name"].is_string()
+                        ? payload["owner_display_name"].get<std::string>()
+                        : (display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp)
+                  )
+        },
+        {"origin_label",
+            payload.is_object() && payload.contains("origin_label") && payload["origin_label"].is_string()
+                ? payload["origin_label"].get<std::string>()
+                : (
+                    payload.is_object() && payload.contains("owner_display_name") && payload["owner_display_name"].is_string()
+                        ? payload["owner_display_name"].get<std::string>()
+                        : (display_actor_fp.size() >= 8 ? display_actor_fp.substr(0, 8) : display_actor_fp)
+                  )
+        },
+        {"text_preview",
+            payload.is_object() && payload.contains("text_preview") && payload["text_preview"].is_string()
+                ? payload["text_preview"].get<std::string>()
+                : ""
+        },
+        {"reaction", ev.reaction},
+        {"source", "federated"}
+    };
+
+    if (payload.is_object()) {
+        if (payload.contains("owner_badges") && payload["owner_badges"].is_array()) {
+            item["owner_badges"] = payload["owner_badges"];
+        }
+        if (payload.contains("actor_badges") && payload["actor_badges"].is_array()) {
+            item["actor_badges"] = payload["actor_badges"];
+        }
+    }
+
+    if (!parsed.is_discarded()) {
+        item["event"] = parsed;
+    }
+
+    if (!payload.is_null()) {
+        item["payload"] = payload;
+    }
+
+    return item;
+}
+
+
+
+std::string cs_make_federation_text_preview(const std::string& text) {
+    std::string out = text;
+    constexpr std::size_t kMaxPreview = 280;
+
+    if (out.size() > kMaxPreview) {
+        out.resize(kMaxPreview);
+        out += "...";
+    }
+
+    return out;
+}
+
+std::string cs_federation_media_kind_for_path(const std::string& media_path) {
+    std::string ext = std::filesystem::path(media_path).extension().string();
+
+    for (auto& c : ext) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+        ext == ".webp" || ext == ".gif") {
+        return "image";
+    }
+
+    if (ext == ".mp4" || ext == ".webm" || ext == ".mov" ||
+        ext == ".m4v" || ext == ".avi" || ext == ".mkv") {
+        return "video";
+    }
+
+    return "file";
+}
+
+json cs_make_federation_media_refs(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& media_path
+) {
+    if (media_path.empty() || entity_id <= 0 || entity_type.empty()) {
+        return json::array();
+    }
+
+    const std::string kind = cs_federation_media_kind_for_path(media_path);
+
+    return json::array({
+        {
+            {"ref_id", entity_type + ":" + std::to_string(entity_id) + ":media:primary"},
+            {"role", "primary"},
+            {"kind", kind},
+            {"preview_status", "origin_fetch_todo"},
+            {"fetch_policy", "origin_public_preview_required"}
+        }
+    });
+}
+
+json cs_make_federation_media_preview(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& media_path
+) {
+    if (media_path.empty()) {
+        return {
+            {"has_media", false},
+            {"status", "none"},
+            {"refs", json::array()}
+        };
+    }
+
+    const json refs = cs_make_federation_media_refs(entity_type, entity_id, media_path);
+
+    return {
+        {"has_media", true},
+        {"status", "origin_fetch_todo"},
+        {"count", refs.size()},
+        {"refs", refs},
+        {"note", "Media stays on origin PQ-NAS; remote preview fetch is not implemented yet."}
+    };
+}
+
+
+std::string cs_trim_trailing_slashes(std::string s) {
+    while (!s.empty() && s.back() == '/') {
+        s.pop_back();
+    }
+    return s;
+}
+
+bool cs_starts_with_ascii(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() &&
+           s.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string cs_lower_ascii_copy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool cs_env_true(const char* name) {
+    const char* raw = std::getenv(name);
+    if (!raw) return false;
+
+    const std::string v = cs_lower_ascii_copy(raw);
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool cs_url_has_unsafe_chars(const std::string& url) {
+    for (unsigned char c : url) {
+        if (c <= 0x20 || c >= 0x7f) return true;
+
+        switch (c) {
+            case '"':
+            case '\'':
+            case '<':
+            case '>':
+            case '\\':
+                return true;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+std::string cs_extract_url_host_lower(const std::string& url) {
+    const auto scheme_pos = url.find("://");
+    if (scheme_pos == std::string::npos) return "";
+
+    const std::size_t authority_start = scheme_pos + 3;
+    if (authority_start >= url.size()) return "";
+
+    const auto authority_end = url.find_first_of("/?#", authority_start);
+    if (authority_end != std::string::npos) {
+        return "";
+    }
+
+    std::string authority = url.substr(authority_start);
+    if (authority.empty() || authority.find('@') != std::string::npos) {
+        return "";
+    }
+
+    std::string host;
+
+    if (authority.front() == '[') {
+        const auto close = authority.find(']');
+        if (close == std::string::npos) return "";
+        host = authority.substr(1, close - 1);
+
+        const std::string rest = authority.substr(close + 1);
+        if (!rest.empty() && rest.front() != ':') return "";
+    } else {
+        const auto colon = authority.find(':');
+        host = authority.substr(0, colon);
+    }
+
+    if (host.empty()) return "";
+    return cs_lower_ascii_copy(host);
+}
+
+bool cs_is_disallowed_public_base_host(const std::string& host) {
+    if (host.empty()) return true;
+
+    if (host == "localhost" ||
+        host == "::1" ||
+        host == "0.0.0.0" ||
+        host == "127.0.0.1") {
+        return true;
+    }
+
+    if (host.size() > 10 &&
+        host.compare(host.size() - 10, 10, ".localhost") == 0) {
+        return true;
+    }
+
+    if (cs_starts_with_ascii(host, "127.") ||
+        cs_starts_with_ascii(host, "10.") ||
+        cs_starts_with_ascii(host, "192.168.")) {
+        return true;
+    }
+
+    if (cs_starts_with_ascii(host, "172.")) {
+        const auto second_dot = host.find('.', 4);
+        if (second_dot != std::string::npos) {
+            try {
+                const int octet = std::stoi(host.substr(4, second_dot - 4));
+                if (octet >= 16 && octet <= 31) return true;
+            } catch (...) {
+                // Non-IPv4 hostnames beginning with 172. are handled below.
+            }
+        }
+    }
+
+    if (cs_starts_with_ascii(host, "fc") ||
+        cs_starts_with_ascii(host, "fd") ||
+        cs_starts_with_ascii(host, "fe80")) {
+        return true;
+    }
+
+    return false;
+}
+
+bool cs_public_base_url_is_safe(const std::string& url) {
+    if (url.empty() || url.size() > 512) {
+        return false;
+    }
+
+    if (cs_url_has_unsafe_chars(url)) {
+        return false;
+    }
+
+    const bool is_https = cs_starts_with_ascii(url, "https://");
+    const bool is_http = cs_starts_with_ascii(url, "http://");
+
+    if (!is_https &&
+        !(is_http && cs_env_true("PQNAS_ALLOW_INSECURE_PUBLIC_BASE_URL"))) {
+        return false;
+    }
+
+    const std::string host = cs_extract_url_host_lower(url);
+    if (cs_is_disallowed_public_base_host(host)) {
+        return false;
+    }
+
+    return true;
+}
+
+std::string cs_public_base_url_from_env() {
+    const char* raw = std::getenv("PQNAS_PUBLIC_BASE_URL");
+    if (!raw) return "";
+
+    std::string out = raw;
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.front()))) {
+        out.erase(out.begin());
+    }
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back()))) {
+        out.pop_back();
+    }
+
+    out = cs_trim_trailing_slashes(out);
+
+    if (!cs_public_base_url_is_safe(out)) {
+        return "";
+    }
+
+    return out;
+}
+
+std::string cs_federation_media_path_for_public_preview(
+    const std::string& media_path) {
+    if (media_path.empty()) {
+        return "";
+    }
+
+    // Media refs are only useful and safe to publish when the origin has a
+    // valid public HTTPS preview base URL. Text-only federation may still work
+    // without this.
+    if (cs_public_base_url_from_env().empty()) {
+        return "";
+    }
+
+    return media_path;
+}
+
+json cs_make_federation_media_preview_with_policy(
+    const std::string& entity_type,
+    long long entity_id,
+    const std::string& original_media_path,
+    const std::string& federated_media_path
+) {
+    if (original_media_path.empty()) {
+        return cs_make_federation_media_preview(entity_type, entity_id, "");
+    }
+
+    if (federated_media_path.empty()) {
+        return {
+            {"has_media", true},
+            {"status", "origin_preview_unavailable"},
+            {"count", 0},
+            {"refs", json::array()},
+            {"note", "Media exists on origin PQ-NAS, but no valid public preview base URL is configured; media refs were not federated."}
+        };
+    }
+
+    return cs_make_federation_media_preview(
+        entity_type,
+        entity_id,
+        federated_media_path);
+}
+
+
+std::string cs_trim_copy(const std::string& raw) {
+    std::size_t a = 0;
+    while (a < raw.size() && std::isspace(static_cast<unsigned char>(raw[a]))) ++a;
+
+    std::size_t b = raw.size();
+    while (b > a && std::isspace(static_cast<unsigned char>(raw[b - 1]))) --b;
+
+    return raw.substr(a, b - a);
+}
+
+std::string cs_read_first_line_trimmed(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    if (!f) return "";
+
+    std::string line;
+    std::getline(f, line);
+    return cs_trim_copy(line);
+}
+
+std::string cs_local_nodus_identity_fingerprint() {
+    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
+
+    std::vector<std::filesystem::path> dirs;
+
+    if (env_dir && env_dir[0]) {
+        dirs.emplace_back(env_dir);
+    }
+
+    // Production path first, research path as compatibility fallback.
+    dirs.emplace_back("/srv/pqnas/config/nodus/identity");
+    dirs.emplace_back("/srv/pqnas/config/nodus/research_identity");
+
+    for (const auto& dir : dirs) {
+        const std::string fp = cs_read_first_line_trimmed(dir / "nodus.fp");
+        if (!fp.empty()) return fp;
+    }
+
+    return "";
+}
+
+std::string cs_local_nodus_identity_dir() {
+    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
+    if (env_dir && env_dir[0]) {
+        return env_dir;
+    }
+
+    const std::filesystem::path production =
+        "/srv/pqnas/config/nodus/identity";
+    const std::filesystem::path legacy =
+        "/srv/pqnas/config/nodus/research_identity";
+
+    if (!cs_read_first_line_trimmed(production / "nodus.fp").empty()) {
+        return production.string();
+    }
+
+    if (!cs_read_first_line_trimmed(legacy / "nodus.fp").empty()) {
+        return legacy.string();
+    }
+
+    return production.string();
+}
+
+std::string cs_federation_event_json_for_storage(const json& event) {
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+std::string cs_canonical_federation_event_json_for_signing(json event) {
+    if (event.is_object()) {
+        event.erase("origin_sig");
+    }
+
+    return event.dump(
+        -1,
+        ' ',
+        false,
+        nlohmann::json::error_handler_t::strict);
+}
+
+bool cs_sign_federation_event(
+    json* event,
+    std::string* out_error) {
+    if (!event || !event->is_object()) {
+        if (out_error) *out_error = "invalid_federation_event_to_sign";
+        return false;
+    }
+
+    const std::string identity_dir = cs_local_nodus_identity_dir();
+
+    pqnas::federation::CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (!pqnas::federation::ensure_circle_federation_signing_identity(
+            identity_dir,
+            &identity,
+            &err)) {
+        if (out_error) *out_error = "federation_signing_identity_failed: " + err;
+        return false;
+    }
+
+    (*event)["origin_nas"] = identity.public_key_fingerprint;
+    (*event)["origin_pubkey"] = identity.public_key_b64;
+    (*event)["origin_sig_alg"] = "Ed25519";
+
+    if (event->contains("origin") && (*event)["origin"].is_object()) {
+        (*event)["origin"]["nas_id"] = identity.public_key_fingerprint;
+    }
+
+    if (event->contains("payload") &&
+        (*event)["payload"].is_object() &&
+        (*event)["payload"].contains("origin") &&
+        (*event)["payload"]["origin"].is_object()) {
+        (*event)["payload"]["origin"]["nas_id"] = identity.public_key_fingerprint;
+    }
+
+    const std::string canonical = cs_canonical_federation_event_json_for_signing(*event);
+
+    std::string sig_b64;
+    if (!pqnas::federation::sign_circle_federation_canonical_json(
+            identity_dir,
+            canonical,
+            &sig_b64,
+            &err)) {
+        if (out_error) *out_error = "federation_event_sign_failed: " + err;
+        return false;
+    }
+
+    (*event)["origin_sig"] = sig_b64;
+    return true;
+}
+
+bool cs_require_local_nodus_origin(
+    std::string* out_origin_nas,
+    std::string* out_error
+) {
+    if (out_origin_nas) *out_origin_nas = "";
+
+    const std::string nodus_fp = cs_local_nodus_identity_fingerprint();
+    if (nodus_fp.empty()) {
+        if (out_error) {
+            *out_error =
+                "nodus_identity_missing: run nodus-cli -i /srv/pqnas/config/nodus/identity identity-init";
+        }
+        return false;
+    }
+
+    pqnas::federation::CircleFederationSigningIdentity identity;
+    std::string err;
+
+    if (!pqnas::federation::ensure_circle_federation_signing_identity(
+            cs_local_nodus_identity_dir(),
+            &identity,
+            &err)) {
+        if (out_error) *out_error = "federation_signing_identity_failed: " + err;
+        return false;
+    }
+
+    if (out_origin_nas) *out_origin_nas = identity.public_key_fingerprint;
+    return true;
+}
+
+
+json cs_make_federation_origin_descriptor(const std::string& nas_id) {
+    json origin = {
+        {"nas_id", nas_id},
+        {"preview_endpoint", "/api/v4/circlestack/federation/media-preview"}
+    };
+
+    const std::string base_url = cs_public_base_url_from_env();
+    if (!base_url.empty()) {
+        origin["preview_base_url"] = base_url;
+    }
+
+    return origin;
+}
+
+static constexpr const char* kNodeProfileAvatarConfigPath =
+    "/srv/pqnas/config/node_profile_avatar_key";
+
+json cs_node_profile_avatar_options_json() {
+    return json::array({
+        {
+            {"key", "neon-tower"},
+            {"title", "Neon Tower"},
+            {"asset", "/static/img/node_avatars/neon-tower.svg"}
+        },
+        {
+            {"key", "raid-core"},
+            {"title", "RAID Core"},
+            {"asset", "/static/img/node_avatars/raid-core.svg"}
+        },
+        {
+            {"key", "quantum-cube"},
+            {"title", "Quantum Cube"},
+            {"asset", "/static/img/node_avatars/quantum-cube.svg"}
+        },
+        {
+            {"key", "orbit-node"},
+            {"title", "Orbit Node"},
+            {"asset", "/static/img/node_avatars/orbit-node.svg"}
+        }
+    });
+}
+
+bool cs_node_profile_avatar_key_allowed(const std::string& key) {
+    for (const auto& opt : cs_node_profile_avatar_options_json()) {
+        if (opt.is_object() && opt.value("key", "") == key) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::string cs_node_profile_avatar_asset_for_key(const std::string& key) {
+    for (const auto& opt : cs_node_profile_avatar_options_json()) {
+        if (!opt.is_object()) continue;
+        if (opt.value("key", "") == key) {
+            return opt.value("asset", "/static/img/node_avatars/neon-tower.svg");
+        }
+    }
+
+    return "/static/img/node_avatars/neon-tower.svg";
+}
+
+std::string cs_node_profile_avatar_key() {
+    std::string key = cs_read_first_line_trimmed(kNodeProfileAvatarConfigPath);
+    if (!cs_node_profile_avatar_key_allowed(key)) {
+        key = "neon-tower";
+    }
+
+    return key;
+}
+
+bool cs_write_node_profile_avatar_key(const std::string& key, std::string* err) {
+    if (!cs_node_profile_avatar_key_allowed(key)) {
+        if (err) *err = "invalid_avatar_key";
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories("/srv/pqnas/config", ec);
+    if (ec) {
+        if (err) *err = "create_config_dir_failed: " + ec.message();
+        return false;
+    }
+
+    std::ofstream out(kNodeProfileAvatarConfigPath, std::ios::trunc);
+    if (!out.good()) {
+        if (err) *err = "open_avatar_config_failed";
+        return false;
+    }
+
+    out << key << "\n";
+    if (!out.good()) {
+        if (err) *err = "write_avatar_config_failed";
+        return false;
+    }
+
+    return true;
+}
+
+std::string cs_make_post_created_event_id(long long post_id, long long created_epoch) {
+    return "post_" + std::to_string(created_epoch) + "_" + std::to_string(post_id);
+}
+
+bool cs_enqueue_post_created_federation_best_effort(
+    long long post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& owner_display_name,
+    const std::string& text,
+    const std::string& visibility,
+    const std::string& media_path,
+    const json& mentions,
+    const json& owner_badges,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    // First production-safety rule:
+    // do not publish private/circle-restricted post metadata to Nodus until
+    // encrypted or authorized federation delivery is designed.
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (post_id <= 0 || actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_post_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_post_created_event_id(post_id, created_epoch);
+
+    const std::string federated_media_path =
+        cs_federation_media_path_for_public_preview(media_path);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.post.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"post_id", post_id},
+            {"owner_fp", actor_fp},
+            {"owner_fp_short", cs_short_fp(actor_fp)},
+            {"owner_display_name", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
+            {"origin_label", owner_display_name.empty() ? cs_short_fp(actor_fp) : owner_display_name},
+            {"owner_badges", owner_badges.is_array() ? owner_badges : json::array()},
+            {"actor_badges", owner_badges.is_array() ? owner_badges : json::array()},
+            {"text_preview", cs_make_federation_text_preview(text)},
+            {"visibility", visibility},
+            {"has_media", !media_path.empty()},
+            {"media_count", federated_media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("post", post_id, federated_media_path)},
+            {"media_preview", cs_make_federation_media_preview_with_policy("post", post_id, media_path, federated_media_path)},
+            {"mention_count", mentions.is_array() ? mentions.size() : 0}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.post.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+std::string cs_post_visibility(sqlite3* db, int post_id) {
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT visibility FROM posts WHERE id = ?",
+            -1, &st, nullptr) != SQLITE_OK) {
+        return "";
+    }
+
+    sqlite3_bind_int(st, 1, post_id);
+
+    std::string visibility;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char* raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        visibility = raw ? raw : "";
+    }
+
+    sqlite3_finalize(st);
+    return visibility;
+}
+
+std::string cs_make_reply_created_event_id(sqlite3_int64 reply_id, int post_id, long long created_epoch) {
+    return "reply_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + std::to_string(reply_id);
+}
+
+bool cs_enqueue_reply_created_federation_best_effort(
+    sqlite3* db,
+    sqlite3_int64 reply_id,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& actor_display_name,
+    const std::string& text,
+    const std::string& media_path,
+    const json& mentions,
+    const json& actor_badges,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (reply_id <= 0 || post_id <= 0 || actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_reply_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_reply_created_event_id(reply_id, post_id, created_epoch);
+
+    const std::string federated_media_path =
+        cs_federation_media_path_for_public_preview(media_path);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.reply.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"post_id", post_id},
+            {"reply_id", reply_id},
+            {"actor_fp", actor_fp},
+            {"actor_fp_short", cs_short_fp(actor_fp)},
+            {"actor_display_name", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
+            {"origin_label", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name},
+            {"actor_badges", actor_badges.is_array() ? actor_badges : json::array()},
+            {"text_preview", cs_make_federation_text_preview(text)},
+            {"has_media", !media_path.empty()},
+            {"media_count", federated_media_path.empty() ? 0 : 1},
+            {"media_refs", cs_make_federation_media_refs("reply", reply_id, federated_media_path)},
+            {"media_preview", cs_make_federation_media_preview_with_policy("reply", reply_id, media_path, federated_media_path)},
+            {"mention_count", mentions.is_array() ? mentions.size() : 0}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reply.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
+std::string cs_make_post_reaction_event_id(int post_id, long long created_epoch, const std::string& actor_fp) {
+    const std::string actor_short = actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+    return "reaction_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + actor_short;
+}
+
+bool cs_enqueue_post_reaction_created_federation_best_effort(
+    sqlite3* db,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& reaction,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (post_id <= 0 || actor_fp.empty() || reaction.empty()) {
+        if (out_error) *out_error = "invalid_reaction_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_post_reaction_event_id(post_id, created_epoch, actor_fp);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.reaction.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"target_type", "post"},
+            {"post_id", post_id},
+            {"actor_fp", actor_fp},
+            {"reaction", reaction}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reaction.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
+std::string cs_make_post_reaction_removed_event_id(int post_id, long long created_epoch, const std::string& actor_fp) {
+    const std::string actor_short = actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+    return "reaction_removed_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + actor_short;
+}
+
+bool cs_enqueue_post_reaction_removed_federation_best_effort(
+    sqlite3* db,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (post_id <= 0 || actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_reaction_removed_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_post_reaction_removed_event_id(post_id, created_epoch, actor_fp);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.reaction.removed"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"target_type", "post"},
+            {"post_id", post_id},
+            {"actor_fp", actor_fp}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reaction.removed",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
+std::string cs_make_reply_reaction_event_id(int reply_id, int post_id, long long created_epoch, const std::string& actor_fp) {
+    const std::string actor_short = actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+    return "reply_reaction_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + std::to_string(reply_id) + "_" + actor_short;
+}
+
+std::string cs_make_reply_reaction_removed_event_id(int reply_id, int post_id, long long created_epoch, const std::string& actor_fp) {
+    const std::string actor_short = actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+    return "reply_reaction_removed_" + std::to_string(created_epoch) + "_" +
+           std::to_string(post_id) + "_" + std::to_string(reply_id) + "_" + actor_short;
+}
+
+bool cs_enqueue_reply_reaction_created_federation_best_effort(
+    sqlite3* db,
+    int reply_id,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& reaction,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (reply_id <= 0 || post_id <= 0 || actor_fp.empty() || reaction.empty()) {
+        if (out_error) *out_error = "invalid_reply_reaction_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_reply_reaction_event_id(reply_id, post_id, created_epoch, actor_fp);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.reaction.created"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"target_type", "reply"},
+            {"post_id", post_id},
+            {"reply_id", reply_id},
+            {"actor_fp", actor_fp},
+            {"reaction", reaction}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reaction.created",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+bool cs_enqueue_reply_reaction_removed_federation_best_effort(
+    sqlite3* db,
+    int reply_id,
+    int post_id,
+    long long created_epoch,
+    const std::string& actor_fp,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    const std::string visibility = cs_post_visibility(db, post_id);
+    if (visibility != "public") {
+        if (out_error) *out_error = "skipped_non_public_visibility";
+        return false;
+    }
+
+    if (reply_id <= 0 || post_id <= 0 || actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_reply_reaction_removed_event";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_id =
+        cs_make_reply_reaction_removed_event_id(reply_id, post_id, created_epoch, actor_fp);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json event = {
+        {"type", "circle.reaction.removed"},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", {
+            {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+            {"target_type", "reply"},
+            {"post_id", post_id},
+            {"reply_id", reply_id},
+            {"actor_fp", actor_fp}
+        }}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            "circle.reaction.removed",
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+
+
+// FEDERATED_REMOTE_INTERACTION_PATCH_V1
+
+// SELF_REMOTE_ORIGIN_FORWARD_DECL_PATCH_V1
+std::string cs_trim_public_base_url_for_known_origin(std::string raw);
+
+struct CsRemotePostTarget {
+    long long post_id = 0;
+    std::string event_id;
+    std::string origin_nas;
+    std::string public_base_url;
+    std::string owner_fp;
+    std::string owner_display_name;
+};
+
+bool cs_find_remote_post_target(
+    const std::string& event_id,
+    CsRemotePostTarget* out,
+    std::string* err
+) {
+    if (out) *out = CsRemotePostTarget{};
+    if (err) *err = "";
+
+    if (event_id.empty()) {
+        if (err) *err = "missing_event_id";
+        return false;
+    }
+
+    std::string list_err;
+    const auto rows = pqnas::federation::list_circle_federation_remote_feed(500, &list_err);
+    if (!list_err.empty()) {
+        if (err) *err = list_err;
+        return false;
+    }
+
+    for (const auto& row : rows) {
+        if (row.event_id != event_id) continue;
+        if (row.event_type != "circle.post.created") {
+            if (err) *err = "not_a_remote_post_event";
+            return false;
+        }
+
+        CsRemotePostTarget target;
+        target.post_id = row.post_id;
+        target.event_id = row.event_id;
+        target.origin_nas = row.origin_nas;
+        target.owner_fp = row.actor_fp;
+
+        json parsed = json::parse(row.event_json, nullptr, false);
+        if (!parsed.is_discarded() &&
+            parsed.contains("payload") &&
+            parsed["payload"].is_object()) {
+            const auto& payload = parsed["payload"];
+
+            if (target.post_id <= 0 &&
+                payload.contains("post_id") &&
+                payload["post_id"].is_number_integer()) {
+                target.post_id = payload["post_id"].get<long long>();
+            }
+
+            if (target.owner_fp.empty() &&
+                payload.contains("owner_fp") &&
+                payload["owner_fp"].is_string()) {
+                target.owner_fp = payload["owner_fp"].get<std::string>();
+            }
+
+            if (payload.contains("owner_display_name") &&
+                payload["owner_display_name"].is_string()) {
+                target.owner_display_name = payload["owner_display_name"].get<std::string>();
+            } else if (payload.contains("origin_label") &&
+                       payload["origin_label"].is_string()) {
+                target.owner_display_name = payload["origin_label"].get<std::string>();
+            }
+
+            if (payload.contains("origin") &&
+                payload["origin"].is_object() &&
+                payload["origin"].contains("preview_base_url") &&
+                payload["origin"]["preview_base_url"].is_string()) {
+                target.public_base_url =
+                    payload["origin"]["preview_base_url"].get<std::string>();
+            }
+        }
+
+        if (target.public_base_url.empty() &&
+            parsed.contains("origin") &&
+            parsed["origin"].is_object() &&
+            parsed["origin"].contains("preview_base_url") &&
+            parsed["origin"]["preview_base_url"].is_string()) {
+            target.public_base_url =
+                parsed["origin"]["preview_base_url"].get<std::string>();
+        }
+
+        target.public_base_url =
+            cs_trim_public_base_url_for_known_origin(target.public_base_url);
+
+        if (target.post_id <= 0 || target.origin_nas.empty()) {
+            if (err) *err = "remote_post_target_incomplete";
+            return false;
+        }
+
+        if (out) *out = target;
+        return true;
+    }
+
+    if (err) *err = "remote_post_event_not_found";
+    return false;
+}
+
+std::string cs_make_remote_post_reaction_event_id(
+    const CsRemotePostTarget& target,
+    long long created_epoch,
+    const std::string& actor_fp,
+    bool removed
+) {
+    const std::string actor_short =
+        actor_fp.size() >= 8 ? actor_fp.substr(0, 8) : actor_fp;
+
+    return std::string(removed ? "remote_reaction_removed_" : "remote_reaction_") +
+           std::to_string(created_epoch) + "_" +
+           std::to_string(target.post_id) + "_" +
+           actor_short;
+}
+
+// FEDERATED_REMOTE_REACTION_DISPLAY_NAME_PATCH_V1
+bool cs_enqueue_remote_post_reaction_federation_best_effort(
+    const CsRemotePostTarget& target,
+    long long created_epoch,
+    const std::string& actor_fp,
+    const std::string& actor_display_name,
+    const std::string& reaction,
+    bool removed,
+    std::string* out_event_id,
+    std::string* out_error
+) {
+    if (out_event_id) *out_event_id = "";
+    if (out_error) *out_error = "";
+
+    if (target.event_id.empty() ||
+        target.post_id <= 0 ||
+        target.origin_nas.empty() ||
+        actor_fp.empty()) {
+        if (out_error) *out_error = "invalid_remote_reaction_target";
+        return false;
+    }
+
+    if (!removed && reaction.empty()) {
+        if (out_error) *out_error = "missing_reaction";
+        return false;
+    }
+
+    std::string origin_nas;
+    if (!cs_require_local_nodus_origin(&origin_nas, out_error)) {
+        return false;
+    }
+
+    const std::string circle_id = "local-public-feed";
+    const std::string event_type =
+        removed ? "circle.reaction.removed" : "circle.reaction.created";
+
+    const std::string event_id =
+        cs_make_remote_post_reaction_event_id(target, created_epoch, actor_fp, removed);
+
+    std::string event_key;
+    std::string head_key;
+
+    try {
+        event_key = pqnas::federation::circle_event_key(circle_id, event_id);
+        head_key = pqnas::federation::circle_head_key(circle_id);
+    } catch (const std::exception& e) {
+        if (out_error) *out_error = e.what();
+        return false;
+    }
+
+    json payload = {
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"target_type", "post"},
+        {"post_id", target.post_id},
+        {"target_event_id", target.event_id},
+        {"target_origin_nas", target.origin_nas},
+        {"actor_fp", actor_fp},
+        {"actor_fp_short", cs_short_fp(actor_fp)},
+        {"actor_display_name", actor_display_name.empty() ? cs_short_fp(actor_fp) : actor_display_name}
+    };
+
+    if (!removed) {
+        payload["reaction"] = reaction;
+    }
+
+    json event = {
+        {"type", event_type},
+        {"event_id", event_id},
+        {"circle_id", circle_id},
+        {"origin_nas", origin_nas},
+        {"origin", cs_make_federation_origin_descriptor(origin_nas)},
+        {"created_epoch", created_epoch},
+        {"payload", payload}
+    };
+
+    if (!cs_sign_federation_event(&event, out_error)) {
+        return false;
+    }
+
+    std::string err;
+    if (!pqnas::federation::enqueue_circle_federation_event(
+            event_type,
+            circle_id,
+            event_id,
+            event_key,
+            head_key,
+            cs_federation_event_json_for_storage(event),
+            &err)) {
+        if (out_error) *out_error = err;
+        return false;
+    }
+
+    if (out_event_id) *out_event_id = event_id;
+    return true;
+}
+
+
+// KNOWN_REMOTE_ORIGINS_FROM_PEOPLE_PATCH_V1
+
+bool cs_safe_federation_origin_key(const std::string& value) {
+    if (value.empty() || value.size() > 180) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+std::string cs_trim_public_base_url_for_known_origin(std::string raw) {
+    raw = cs_trim_copy(raw);
+    while (!raw.empty() && raw.back() == '/') {
+        raw.pop_back();
+    }
+
+    if (raw.empty()) return "";
+    if (raw.size() > 512) return "";
+
+    if (!cs_starts_with_ascii(raw, "https://") &&
+        !(cs_starts_with_ascii(raw, "http://") && cs_env_true("PQNAS_ALLOW_INSECURE_PUBLIC_BASE_URL"))) {
+        return "";
+    }
+
+    if (cs_url_has_unsafe_chars(raw)) {
+        return "";
+    }
+
+    if (cs_is_disallowed_public_base_host(cs_extract_url_host_lower(raw))) {
+        return "";
+    }
+
+    return raw;
+}
+
+bool cs_upsert_known_remote_origin_from_people(
+    sqlite3* people_db,
+    const std::string& origin_nas_raw,
+    const std::string& public_base_url_raw,
+    const std::string& display_name_raw,
+    const std::string& source_event_id_raw,
+    const std::string& added_by_fp,
+    sqlite3_int64 now,
+    std::string* err
+) {
+    const std::string origin_nas = cs_trim_copy(origin_nas_raw);
+    if (origin_nas.empty()) {
+        return true;
+    }
+
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    std::string display_name = cs_trim_copy(display_name_raw);
+    if (display_name.size() > 120) {
+        display_name.resize(120);
+    }
+
+    std::string source_event_id = cs_trim_copy(source_event_id_raw);
+    if (source_event_id.size() > 180) {
+        source_event_id.resize(180);
+    }
+
+    const std::string public_base_url =
+        cs_trim_public_base_url_for_known_origin(public_base_url_raw);
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT INTO known_remote_origins "
+        "(origin_nas, public_base_url, display_name, source, source_event_id, "
+        " added_by_fp, enabled, first_seen_epoch, updated_epoch) "
+        "VALUES (?, ?, ?, 'person_add', ?, ?, 1, ?, ?) "
+        "ON CONFLICT(origin_nas) DO UPDATE SET "
+        " public_base_url = CASE "
+        "   WHEN excluded.public_base_url != '' THEN excluded.public_base_url "
+        "   ELSE known_remote_origins.public_base_url END,"
+        " display_name = CASE "
+        "   WHEN excluded.display_name != '' THEN excluded.display_name "
+        "   ELSE known_remote_origins.display_name END,"
+        " source = excluded.source,"
+        " source_event_id = CASE "
+        "   WHEN excluded.source_event_id != '' THEN excluded.source_event_id "
+        "   ELSE known_remote_origins.source_event_id END,"
+        " added_by_fp = CASE "
+        "   WHEN excluded.added_by_fp != '' THEN excluded.added_by_fp "
+        "   ELSE known_remote_origins.added_by_fp END,"
+        " enabled = 1,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, public_base_url.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, source_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, added_by_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 6, now);
+    sqlite3_bind_int64(st, 7, now);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        return false;
+    }
+
+    return true;
+}
+
+
+// SELF_REMOTE_ORIGIN_ADD_PATCH_V1
+
+bool cs_add_known_remote_origin_only(
+    const std::string& owner_fp,
+    const std::string& remote_origin_nas,
+    const std::string& remote_public_base_url,
+    const std::string& display_name,
+    const std::string& source_event_id,
+    std::string* err
+) {
+    if (owner_fp.empty()) {
+        if (err) *err = "missing_owner_fp";
+        return false;
+    }
+
+    if (remote_origin_nas.empty()) {
+        if (err) *err = "missing_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    const bool ok = cs_upsert_known_remote_origin_from_people(
+        people_db,
+        remote_origin_nas,
+        remote_public_base_url,
+        display_name,
+        source_event_id,
+        owner_fp,
+        now,
+        err);
+
+    sqlite3_close(people_db);
+    return ok;
+}
+
+
+// KNOWN_REMOTE_ORIGINS_API_PATCH_V1
+
+std::string cs_known_origin_col_text(sqlite3_stmt* st, int col) {
+    const char* raw = reinterpret_cast<const char*>(sqlite3_column_text(st, col));
+    return raw ? raw : "";
+}
+
+json cs_known_remote_origin_row_json(sqlite3_stmt* st) {
+    const std::string origin_nas = cs_known_origin_col_text(st, 1);
+    const int col_count = sqlite3_column_count(st);
+
+    return {
+        {"id", sqlite3_column_int64(st, 0)},
+        {"origin_nas", origin_nas},
+        {"origin_short", cs_short_fp(origin_nas)},
+        {"public_base_url", cs_known_origin_col_text(st, 2)},
+        {"display_name", cs_known_origin_col_text(st, 3)},
+        {"source", cs_known_origin_col_text(st, 4)},
+        {"source_event_id", cs_known_origin_col_text(st, 5)},
+        {"added_by_fp", cs_known_origin_col_text(st, 6)},
+        {"added_by_short", cs_short_fp(cs_known_origin_col_text(st, 6))},
+        {"enabled", sqlite3_column_int(st, 7) != 0},
+        {"first_seen_epoch", sqlite3_column_int64(st, 8)},
+        {"updated_epoch", sqlite3_column_int64(st, 9)},
+        {"my_muted", col_count > 10 ? (sqlite3_column_int(st, 10) != 0) : false},
+        {"my_hidden", col_count > 11 ? (sqlite3_column_int(st, 11) != 0) : false}
+    };
+}
+
+json cs_list_known_remote_origins(const std::string& actor_fp, std::string* err) {
+    if (err) *err = "";
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return json::array();
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "SELECT o.id, o.origin_nas, o.public_base_url, o.display_name, o.source, "
+        "       o.source_event_id, o.added_by_fp, o.enabled, o.first_seen_epoch, o.updated_epoch, "
+        "       COALESCE(p.muted, 0) AS my_muted, "
+        "       COALESCE(p.hidden, 0) AS my_hidden "
+        "FROM known_remote_origins o "
+        "LEFT JOIN circle_user_origin_prefs p "
+        "  ON p.origin_nas = o.origin_nas AND p.local_user_fp = ? "
+        "ORDER BY o.enabled DESC, o.updated_epoch DESC, o.id DESC "
+        "LIMIT 300";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return json::array();
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    json items = json::array();
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        items.push_back(cs_known_remote_origin_row_json(st));
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+    return items;
+}
+
+
+
+// CIRCLE_FEDERATION_STATUS_ENDPOINT_V1
+long long cs_sql_count_value_for_actor(
+    sqlite3* db,
+    const std::string& sql,
+    const std::string& actor_fp,
+    std::string* err
+) {
+    sqlite3_stmt* st = nullptr;
+
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return 0;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    long long out = 0;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out = sqlite3_column_int64(st, 0);
+    }
+
+    sqlite3_finalize(st);
+    return out;
+}
+
+json cs_circle_federation_status_for_user(
+    const std::string& actor_fp,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return json::object();
+    }
+
+    const long long known_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins");
+
+    const long long enabled_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled != 0");
+
+    const long long disabled_origins = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled = 0");
+
+    const long long origins_without_public_url = cs_sql_count_value(
+        people_db,
+        "SELECT COUNT(*) FROM known_remote_origins WHERE TRIM(public_base_url) = ''");
+
+    long long muted_for_me = cs_sql_count_value_for_actor(
+        people_db,
+        "SELECT COUNT(*) FROM circle_user_origin_prefs "
+        "WHERE local_user_fp = ? AND (muted != 0 OR hidden != 0)",
+        actor_fp,
+        err);
+
+    if (err && !err->empty()) {
+        sqlite3_close(people_db);
+        return json::object();
+    }
+
+    long long federated_local_reactions_for_me = cs_sql_count_value_for_actor(
+        people_db,
+        "SELECT COUNT(*) FROM circle_federated_local_reactions "
+        "WHERE actor_fp = ?",
+        actor_fp,
+        err);
+
+    if (err && !err->empty()) {
+        sqlite3_close(people_db);
+        return json::object();
+    }
+
+    sqlite3_close(people_db);
+
+    return {
+        {"known_origins", known_origins},
+        {"enabled_origins", enabled_origins},
+        {"disabled_origins", disabled_origins},
+        {"origins_without_public_url", origins_without_public_url},
+        {"muted_for_me", muted_for_me},
+        {"federated_local_reactions_for_me", federated_local_reactions_for_me},
+        {"federated_reactions_server_state", true},
+        {"worker_touched", false},
+        {"read_only", true}
+    };
+}
+
+
+
+// FEDERATED_LOCAL_REACTIONS_SERVER_PATCH_V1
+
+bool cs_safe_remote_event_id_for_local_reaction(const std::string& value) {
+    if (value.empty() || value.size() > 220) return false;
+
+    for (unsigned char c : value) {
+        if (std::isalnum(c) || c == '_' || c == '-' || c == '.' || c == ':') {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+bool cs_upsert_my_federated_local_reaction(
+    const std::string& actor_fp,
+    const std::string& remote_event_id_raw,
+    const std::string& origin_nas_raw,
+    const std::string& reaction_raw,
+    const std::string& federation_event_id_raw,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    if (actor_fp.empty()) {
+        if (err) *err = "missing_actor_fp";
+        return false;
+    }
+
+    const std::string remote_event_id = cs_trim_copy(remote_event_id_raw);
+    if (!cs_safe_remote_event_id_for_local_reaction(remote_event_id)) {
+        if (err) *err = "invalid_remote_event_id";
+        return false;
+    }
+
+    std::string origin_nas = cs_trim_copy(origin_nas_raw);
+    if (!origin_nas.empty() && !cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    const std::string reaction = cs_trim_copy(reaction_raw);
+    if (!reaction.empty() && !cs_is_supported_reaction(reaction)) {
+        if (err) *err = "unsupported_reaction";
+        return false;
+    }
+
+    std::string federation_event_id = cs_trim_copy(federation_event_id_raw);
+    if (federation_event_id.size() > 220) {
+        federation_event_id.resize(220);
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+
+    if (reaction.empty()) {
+        const char* sql =
+            "DELETE FROM circle_federated_local_reactions "
+            "WHERE actor_fp = ? AND remote_event_id = ?";
+
+        if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(people_db);
+            sqlite3_close(people_db);
+            return false;
+        }
+
+        sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 2, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+
+        const int rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        sqlite3_close(people_db);
+
+        if (rc != SQLITE_DONE) {
+            if (err) *err = "federated_local_reaction_delete_failed";
+            return false;
+        }
+
+        return true;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    const char* sql =
+        "INSERT INTO circle_federated_local_reactions "
+        "(actor_fp, remote_event_id, origin_nas, reaction, federation_event_id, "
+        " created_epoch, updated_epoch) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(actor_fp, remote_event_id) DO UPDATE SET "
+        " origin_nas = excluded.origin_nas,"
+        " reaction = excluded.reaction,"
+        " federation_event_id = excluded.federation_event_id,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, remote_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, reaction.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, federation_event_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 6, now);
+    sqlite3_bind_int64(st, 7, now);
+
+    const int rc = sqlite3_step(st);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "federated_local_reaction_upsert_failed";
+        return false;
+    }
+
+    return true;
+}
+
+json cs_list_my_federated_local_reactions(
+    const std::string& actor_fp,
+    const std::vector<std::string>& event_ids,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    json items = json::array();
+
+    if (actor_fp.empty() || event_ids.empty()) {
+        return items;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return items;
+    }
+
+    std::string sql =
+        "SELECT remote_event_id, origin_nas, reaction, federation_event_id, "
+        "       created_epoch, updated_epoch "
+        "FROM circle_federated_local_reactions "
+        "WHERE actor_fp = ? AND remote_event_id IN (";
+
+    for (std::size_t i = 0; i < event_ids.size(); ++i) {
+        if (i) sql += ",";
+        sql += "?";
+    }
+
+    sql += ") ORDER BY updated_epoch DESC";
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(people_db, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return items;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    int bind_index = 2;
+    for (const auto& event_id : event_ids) {
+        sqlite3_bind_text(st, bind_index++, event_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* remote_event_id =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+        const char* origin_nas =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+        const char* reaction =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 2));
+        const char* federation_event_id =
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+        items.push_back({
+            {"remote_event_id", remote_event_id ? remote_event_id : ""},
+            {"origin_nas", origin_nas ? origin_nas : ""},
+            {"reaction", reaction ? reaction : ""},
+            {"federation_event_id", federation_event_id ? federation_event_id : ""},
+            {"created_epoch", sqlite3_column_int64(st, 4)},
+            {"updated_epoch", sqlite3_column_int64(st, 5)}
+        });
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    return items;
+}
+
+bool cs_set_user_origin_muted(
+    const std::string& actor_fp,
+    const std::string& origin_raw,
+    bool muted,
+    std::string* err
+) {
+    if (err) *err = "";
+
+    if (actor_fp.empty()) {
+        if (err) *err = "missing_actor_fp";
+        return false;
+    }
+
+    const std::string origin_nas = cs_trim_copy(origin_raw);
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT INTO circle_user_origin_prefs "
+        "(local_user_fp, origin_nas, muted, hidden, updated_epoch) "
+        "VALUES (?, ?, ?, 0, ?) "
+        "ON CONFLICT(local_user_fp, origin_nas) DO UPDATE SET "
+        " muted = excluded.muted,"
+        " updated_epoch = excluded.updated_epoch";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(st, 3, muted ? 1 : 0);
+    sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+
+    const int rc = sqlite3_step(st);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "user_origin_pref_update_failed";
+        return false;
+    }
+
+    return true;
+}
+
+bool cs_set_known_remote_origin_enabled(
+    const std::string& origin_raw,
+    bool enabled,
+    bool* out_found,
+    std::string* err
+) {
+    if (out_found) *out_found = false;
+    if (err) *err = "";
+
+    const std::string origin_nas = cs_trim_copy(origin_raw);
+    if (!cs_safe_federation_origin_key(origin_nas)) {
+        if (err) *err = "unsafe_remote_origin_nas";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "UPDATE known_remote_origins "
+        "SET enabled = ?, updated_epoch = ? "
+        "WHERE origin_nas = ?";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_int(st, 1, enabled ? 1 : 0);
+    sqlite3_bind_int64(st, 2, (sqlite3_int64)std::time(nullptr));
+    sqlite3_bind_text(st, 3, origin_nas.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(st);
+    const int changed = sqlite3_changes(people_db);
+
+    sqlite3_finalize(st);
+    sqlite3_close(people_db);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "known_remote_origin_update_failed";
+        return false;
+    }
+
+    if (out_found) *out_found = changed > 0;
+
+    if (changed <= 0) {
+        if (err) *err = "known_remote_origin_not_found";
+        return false;
+    }
+
+    return true;
+}
+
+bool cs_add_remote_people_contact(
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& owner_fp,
+    const std::string& subject_fp,
+    const std::string& display_name_raw,
+    const std::string& source_event_id,
+    const std::string& remote_origin_nas,
+    const std::string& remote_public_base_url,
+    std::string* err
+) {
+    (void)deps;
+
+    if (owner_fp.empty() || subject_fp.empty() || owner_fp == subject_fp) {
+        if (err) *err = "invalid_remote_contact";
+        return false;
+    }
+
+    sqlite3* people_db = nullptr;
+    if (!cs_open_people_db(&people_db, err)) {
+        return false;
+    }
+
+    std::string display_name = cs_trim_copy(display_name_raw);
+    if (display_name.empty()) {
+        display_name = cs_short_fp(subject_fp);
+    }
+    if (display_name.size() > 120) {
+        display_name.resize(120);
+    }
+
+    std::string notes = "Federated Circle Stack contact";
+    if (!source_event_id.empty()) {
+        notes += " from event " + source_event_id;
+    }
+
+    const sqlite3_int64 now = (sqlite3_int64)std::time(nullptr);
+
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "INSERT OR IGNORE INTO people_contacts "
+        "(owner_fingerprint, subject_user_id, subject_fingerprint, subject_kind, "
+        " display_name, nickname, notes, created_at_epoch, updated_at_epoch) "
+        "VALUES (?, '', ?, 'remote_federated', ?, '', ?, ?, ?)";
+
+    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(people_db);
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_bind_text(st, 1, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, subject_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, display_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, notes.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 5, now);
+    sqlite3_bind_int64(st, 6, now);
+
+    const int rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+
+    if (rc != SQLITE_DONE) {
+        if (err) *err = "remote_people_contact_insert_failed";
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    if (!cs_upsert_known_remote_origin_from_people(
+            people_db,
+            remote_origin_nas,
+            remote_public_base_url,
+            display_name,
+            source_event_id,
+            owner_fp,
+            now,
+            err)) {
+        sqlite3_close(people_db);
+        return false;
+    }
+
+    sqlite3_close(people_db);
+    return true;
+}
+
+bool cs_parse_federation_media_ref_id(
+    const std::string& ref_id,
+    std::string* entity_type,
+    long long* entity_id
+) {
+    if (entity_type) *entity_type = "";
+    if (entity_id) *entity_id = 0;
+
+    const std::string suffix = ":media:primary";
+    if (ref_id.size() <= suffix.size()) return false;
+
+    if (ref_id.compare(ref_id.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+
+    const std::string head = ref_id.substr(0, ref_id.size() - suffix.size());
+    const auto pos = head.find(':');
+    if (pos == std::string::npos) return false;
+
+    const std::string type = head.substr(0, pos);
+    const std::string id_raw = head.substr(pos + 1);
+
+    if (type != "post" && type != "reply") return false;
+    if (id_raw.empty()) return false;
+
+    long long id = 0;
+    try {
+        id = std::stoll(id_raw);
+    } catch (...) {
+        return false;
+    }
+
+    if (id <= 0) return false;
+
+    if (entity_type) *entity_type = type;
+    if (entity_id) *entity_id = id;
+    return true;
+}
+
+std::string cs_svg_escape(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+
+    for (char c : raw) {
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            case '\'': out += "&apos;"; break;
+            default: out.push_back(c); break;
+        }
+    }
+
+    return out;
+}
+
+void cs_set_federation_media_preview_placeholder(
+    httplib::Response& res,
+    const std::string& kind,
+    const std::string& event_id,
+    const std::string& ref_id
+) {
+    const std::string title =
+        kind == "image" ? "Image preview" :
+        kind == "video" ? "Video preview" :
+        "Media preview";
+
+    const std::string svg =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"640\" height=\"360\" viewBox=\"0 0 640 360\">"
+        "<defs>"
+        "<linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">"
+        "<stop offset=\"0\" stop-color=\"#062b2f\"/>"
+        "<stop offset=\"1\" stop-color=\"#111827\"/>"
+        "</linearGradient>"
+        "</defs>"
+        "<rect width=\"640\" height=\"360\" rx=\"26\" fill=\"url(#g)\"/>"
+        "<rect x=\"24\" y=\"24\" width=\"592\" height=\"312\" rx=\"22\" fill=\"none\" stroke=\"#22c55e\" stroke-opacity=\"0.45\" stroke-width=\"2\" stroke-dasharray=\"8 8\"/>"
+        "<text x=\"320\" y=\"145\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"30\" font-weight=\"700\" fill=\"#dcfce7\">" +
+        cs_svg_escape(title) +
+        "</text>"
+        "<text x=\"320\" y=\"188\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"18\" fill=\"#a7f3d0\">"
+        "Origin PQ-NAS validated this public media reference"
+        "</text>"
+        "<text x=\"320\" y=\"228\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"13\" fill=\"#94a3b8\">" +
+        cs_svg_escape(ref_id) +
+        "</text>"
+        "</svg>";
+
+    res.set_header("Cache-Control", "no-store");
+    res.set_header("X-PQNAS-Preview-Status", "placeholder");
+    res.set_header("X-PQNAS-Media-Kind", kind);
+    res.set_header("X-PQNAS-Federation-Event", event_id);
+    res.set_content(svg, "image/svg+xml; charset=utf-8");
+}
+
+
+
+std::string cs_shell_quote(const std::string& raw) {
+    std::string out = "'";
+    for (char c : raw) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out += "'";
+    return out;
+}
+
+std::string cs_federation_preview_cache_key(
+    const std::string& event_id,
+    const std::string& ref_id
+) {
+    // FNV-1a 64-bit. Good enough for non-security cache filenames.
+    unsigned long long h = 1469598103934665603ULL;
+    const std::string in = event_id + "\n" + ref_id;
+
+    for (unsigned char c : in) {
+        h ^= static_cast<unsigned long long>(c);
+        h *= 1099511628211ULL;
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << h;
+    return oss.str();
+}
+
+bool cs_send_file_response(
+    httplib::Response& res,
+    const std::filesystem::path& file,
+    const std::string& mime
+) {
+    std::ifstream f(file, std::ios::binary);
+    if (!f) return false;
+
+    std::stringstream ss;
+    ss << f.rdbuf();
+
+    res.set_header("Cache-Control", "public, max-age=3600");
+    res.set_content(ss.str(), mime.c_str());
+    return true;
+}
+
+bool cs_resolve_public_federation_media_ref_source(
+    sqlite3* db,
+    const pqnas::CircleStackRoutesDeps& deps,
+    const std::string& event_id,
+    const std::string& ref_id,
+    std::filesystem::path* out_source,
+    std::string* out_kind,
+    std::string* err
+) {
+    if (out_source) *out_source = std::filesystem::path();
+    if (out_kind) *out_kind = "";
+    if (err) *err = "";
+
+    std::string entity_type;
+    long long entity_id = 0;
+
+    if (!cs_parse_federation_media_ref_id(ref_id, &entity_type, &entity_id)) {
+        if (err) *err = "invalid_ref_id";
+        return false;
+    }
+
+    std::string media_path;
+    std::string owner_fp;
+    std::string visibility;
+    long long created_epoch = 0;
+    int post_id = 0;
+
+    if (entity_type == "post") {
+        sqlite3_stmt* st = nullptr;
+
+        if (sqlite3_prepare_v2(db,
+                "SELECT media_path, visibility, created_epoch, owner_fp "
+                "FROM posts WHERE id = ?",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
+
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 1));
+            const char* owner_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+
+            media_path = media_raw ? media_raw : "";
+            visibility = vis_raw ? vis_raw : "";
+            created_epoch = sqlite3_column_int64(st, 2);
+            owner_fp = owner_raw ? owner_raw : "";
+        }
+
+        sqlite3_finalize(st);
+
+        if (media_path.empty() || owner_fp.empty()) {
+            if (err) *err = "media_not_found";
+            return false;
+        }
+
+        if (visibility != "public") {
+            if (err) *err = "not_public";
+            return false;
+        }
+
+        const std::string expected_event_id =
+            cs_make_post_created_event_id(entity_id, created_epoch);
+
+        if (event_id != expected_event_id) {
+            if (err) *err = "event_ref_mismatch";
+            return false;
+        }
+    } else if (entity_type == "reply") {
+        sqlite3_stmt* st = nullptr;
+
+        if (sqlite3_prepare_v2(db,
+                "SELECT r.media_path, r.created_epoch, r.post_id, r.actor_fp, p.visibility "
+                "FROM post_replies r "
+                "JOIN posts p ON p.id = r.post_id "
+                "WHERE r.id = ?",
+                -1, &st, nullptr) != SQLITE_OK) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+
+        sqlite3_bind_int64(st, 1, (sqlite3_int64)entity_id);
+
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            const char* media_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
+            const char* owner_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 3));
+            const char* vis_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 4));
+
+            media_path = media_raw ? media_raw : "";
+            created_epoch = sqlite3_column_int64(st, 1);
+            post_id = sqlite3_column_int(st, 2);
+            owner_fp = owner_raw ? owner_raw : "";
+            visibility = vis_raw ? vis_raw : "";
+        }
+
+        sqlite3_finalize(st);
+
+        if (media_path.empty() || owner_fp.empty() || post_id <= 0) {
+            if (err) *err = "media_not_found";
+            return false;
+        }
+
+        if (visibility != "public") {
+            if (err) *err = "not_public";
+            return false;
+        }
+
+        const std::string expected_event_id =
+            cs_make_reply_created_event_id(entity_id, post_id, created_epoch);
+
+        if (event_id != expected_event_id) {
+            if (err) *err = "event_ref_mismatch";
+            return false;
+        }
+    } else {
+        if (err) *err = "unsupported_ref_type";
+        return false;
+    }
+
+    std::string rel_norm;
+    std::string norm_err;
+
+    if (!pqnas::normalize_user_rel_path_strict(media_path, &rel_norm, &norm_err)) {
+        if (err) *err = "INVALID_MEDIA_PATH";
+        return false;
+    }
+
+    if (!deps.users || !deps.user_dir_for_fp) {
+        if (err) *err = "users_unavailable";
+        return false;
+    }
+
+    const std::filesystem::path owner_root =
+        deps.user_dir_for_fp(*deps.users, owner_fp);
+
+    const std::filesystem::path requested = owner_root / rel_norm;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(requested, ec) || ec) {
+        if (err) *err = "media_not_found";
+        return false;
+    }
+
+    std::string symlink_err;
+    if (!cs_path_has_no_symlink_components_below_root(
+            owner_root, requested, &symlink_err)) {
+        if (err) *err = "SYMLINK_REJECTED";
+        return false;
+    }
+
+    if (out_source) *out_source = requested;
+    if (out_kind) *out_kind = cs_federation_media_kind_for_path(media_path);
+    return true;
+}
+
+
+void cs_cleanup_old_federation_preview_cache(
+    const std::filesystem::path& cache_dir) {
+    static std::mutex cleanup_mutex;
+    static std::int64_t last_cleanup_epoch = 0;
+
+    const std::int64_t now =
+        static_cast<std::int64_t>(std::time(nullptr));
+
+    // Avoid doing directory scans on every preview request.
+    if (now - last_cleanup_epoch < 3600) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(cleanup_mutex);
+
+    if (now - last_cleanup_epoch < 3600) {
+        return;
+    }
+
+    last_cleanup_epoch = now;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(cache_dir, ec) || ec) {
+        return;
+    }
+
+    const auto cutoff =
+        std::filesystem::file_time_type::clock::now() -
+        std::chrono::hours(24 * 7);
+
+    int scanned = 0;
+    int removed = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(cache_dir, ec)) {
+        if (ec) break;
+
+        if (++scanned > 2000) {
+            break;
+        }
+
+        const auto path = entry.path();
+        const std::string name = path.filename().string();
+
+        if (entry.is_directory(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+
+        const bool looks_like_preview =
+            path.extension() == ".jpg" ||
+            name.find(".tmp.") != std::string::npos;
+
+        if (!looks_like_preview) {
+            continue;
+        }
+
+        const auto mtime = std::filesystem::last_write_time(path, ec);
+        if (ec) {
+            ec.clear();
+            continue;
+        }
+
+        if (mtime < cutoff) {
+            std::filesystem::remove(path, ec);
+            ec.clear();
+
+            if (++removed >= 200) {
+                break;
+            }
+        }
+    }
+}
+
+
+bool cs_generate_federation_preview_jpeg(
+    const std::filesystem::path& source,
+    const std::string& media_kind,
+    const std::string& event_id,
+    const std::string& ref_id,
+    std::filesystem::path* out_preview,
+    std::string* err
+) {
+    if (out_preview) *out_preview = std::filesystem::path();
+    if (err) *err = "";
+
+    if (media_kind != "image" && media_kind != "video") {
+        if (err) *err = "unsupported_preview_kind";
+        return false;
+    }
+
+    if (std::system("command -v ffmpeg >/dev/null 2>&1") != 0) {
+        if (err) *err = "ffmpeg_missing";
+        return false;
+    }
+
+    const std::filesystem::path cache_dir =
+        "/srv/pqnas/cache/circlestack/federation-previews";
+
+    std::error_code ec;
+    std::filesystem::create_directories(cache_dir, ec);
+    if (ec) {
+        if (err) *err = "cache_dir_failed: " + ec.message();
+        return false;
+    }
+
+    cs_cleanup_old_federation_preview_cache(cache_dir);
+
+    const std::string key = cs_federation_preview_cache_key(event_id, ref_id);
+    const std::filesystem::path preview = cache_dir / (key + ".jpg");
+
+    if (std::filesystem::exists(preview, ec) &&
+        !ec &&
+        std::filesystem::file_size(preview, ec) > 0 &&
+        !ec) {
+        if (out_preview) *out_preview = preview;
+        return true;
+    }
+
+    CsPreviewGenerationSlot preview_slot(kMaxCircleStackPreviewFfmpegProcesses);
+
+    const std::filesystem::path tmp =
+        cache_dir / (key + ".tmp." + std::to_string(std::time(nullptr)) + ".jpg");
+
+    const std::string filter =
+        "scale=w=640:h=360:force_original_aspect_ratio=decrease,"
+        "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=0x111827";
+
+    const std::string cmd =
+        "timeout 20 ffmpeg -y -hide_banner -loglevel error -nostdin "
+        "-i " + cs_shell_quote(source.string()) + " "
+        "-vf " + cs_shell_quote(filter) + " "
+        "-frames:v 1 -q:v 5 " + cs_shell_quote(tmp.string()) +
+        " >/dev/null 2>&1";
+
+    const int rc = std::system(cmd.c_str());
+
+    if (rc != 0 ||
+        !std::filesystem::exists(tmp, ec) ||
+        ec ||
+        std::filesystem::file_size(tmp, ec) == 0 ||
+        ec) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "preview_generation_failed";
+        return false;
+    }
+
+    std::filesystem::rename(tmp, preview, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        if (err) *err = "preview_cache_rename_failed: " + ec.message();
+        return false;
+    }
+
+    if (out_preview) *out_preview = preview;
+    return true;
+}
+
+
+
 } // namespace
 
 namespace pqnas {
 
 void register_circle_stack_routes(httplib::Server& server, const CircleStackRoutesDeps& deps) {
     register_circle_stack_memory_node_routes(server, deps);
+
+    CircleNodusResearchRoutesDeps nodus_deps;
+    nodus_deps.users = deps.users;
+    nodus_deps.cookie_key = deps.cookie_key;
+    nodus_deps.require_user_auth_users_actor = deps.require_user_auth_users_actor;
+    register_circle_nodus_research_routes(server, nodus_deps);
     server.Get("/api/v4/admin/stats/circlestack",
         [&](const httplib::Request& req, httplib::Response& res) {
             std::string actor_fp;
@@ -1497,6 +4347,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
                 std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
                 std::string owner_avatar_url;
+                json owner_badges = json::array();
 
                 if (deps.users && !owner_fp.empty()) {
                     auto u = deps.users->get(owner_fp);
@@ -1508,6 +4359,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     }
                 }
 
+                owner_badges = cs_public_badges_for_fp(g_db, deps, owner_fp);
+
                 p["id"] = id;
                 p["text"] = text ? text : "";
                 p["created_epoch"] = created;
@@ -1518,6 +4371,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     : owner_fp;
                 p["owner_avatar_url"] = owner_avatar_url;
                 p["visibility"] = visibility;
+                p["owner_badges"] = owner_badges;
 
                 std::string my_reaction;
                 p["reactions"] = cs_load_post_reactions(
@@ -1566,11 +4420,130 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                     item["role"] = u.role;
                     item["avatar_url"] = u.avatar_url;
                     item["is_me"] = (u.fingerprint == actor_fp);
+                    std::filesystem::path user_root;
+                    if (deps.user_dir_for_fp && deps.users) {
+                        try {
+                            user_root = deps.user_dir_for_fp(*deps.users, u.fingerprint);
+                        } catch (...) {
+                            user_root.clear();
+                        }
+                    }
+
+                    item["achievements"] = pqnas::achievements::circle_stack_public_badges(
+                        g_db,
+                        user_root,
+                        u.fingerprint,
+                        u.added_at,
+                        u.role
+                    );
                     out["users"].push_back(item);
                 }
             }
 
             set_json(res, out);
+        });
+
+
+    server.Get("/api/v4/circlestack/achievements/me",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            cs_db_init();
+
+            std::string added_at;
+            std::string role = actor_role;
+
+            if (deps.users) {
+                auto u = deps.users->get(actor_fp);
+                if (u.has_value()) {
+                    added_at = u->added_at;
+                    role = u->role;
+                }
+            }
+
+            std::filesystem::path user_root;
+            if (deps.user_dir_for_fp && deps.users) {
+                try {
+                    user_root = deps.user_dir_for_fp(*deps.users, actor_fp);
+                } catch (...) {
+                    user_root.clear();
+                }
+            }
+
+            set_json(res, pqnas::achievements::circle_stack_profile_json(
+                g_db,
+                user_root,
+                actor_fp,
+                added_at,
+                role,
+                true
+            ));
+        });
+
+
+    server.Post("/api/v4/circlestack/achievements/dismiss",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string achievement_id = body.value("achievement_id", "");
+            if (achievement_id.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_achievement_id"}
+                });
+            }
+
+            cs_db_init();
+
+            if (!g_db) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circlestack_db_unavailable"}
+                });
+            }
+
+            std::string err;
+            if (!pqnas::achievements::mark_achievement_dismissed(
+                    g_db,
+                    actor_fp,
+                    achievement_id,
+                    &err)) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "achievement_dismiss_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"achievement_id", achievement_id},
+                {"dismissed", true}
+            });
         });
 
 
@@ -1626,6 +4599,813 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             set_json(res, out);
+        });
+
+
+
+
+
+    server.Get("/api/v4/circlestack/federation/media-preview",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            const std::string event_id =
+                req.has_param("event_id") ? req.get_param_value("event_id") : "";
+            const std::string ref_id =
+                req.has_param("ref_id") ? req.get_param_value("ref_id") : "";
+
+            if (event_id.empty() || ref_id.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_event_or_ref_id"}
+                });
+            }
+
+            cs_db_init();
+
+            if (!g_db) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circlestack_db_unavailable"}
+                });
+            }
+
+            std::filesystem::path source_file;
+            std::string media_kind;
+            std::string err;
+
+            if (!cs_resolve_public_federation_media_ref_source(
+                    g_db,
+                    deps,
+                    event_id,
+                    ref_id,
+                    &source_file,
+                    &media_kind,
+                    &err)) {
+                // Do not leak filesystem paths or private media details.
+                res.status = (err == "not_public") ? 403 : 404;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "media_preview_not_found" : err}
+                });
+            }
+
+            std::filesystem::path preview_file;
+            std::string preview_err;
+
+            if (cs_generate_federation_preview_jpeg(
+                    source_file,
+                    media_kind,
+                    event_id,
+                    ref_id,
+                    &preview_file,
+                    &preview_err)) {
+                res.set_header("X-PQNAS-Preview-Status", "generated");
+                res.set_header("X-PQNAS-Media-Kind", media_kind.empty() ? "file" : media_kind);
+                res.set_header("X-PQNAS-Federation-Event", event_id);
+
+                if (cs_send_file_response(res, preview_file, "image/jpeg")) {
+                    return;
+                }
+            }
+
+            // Safe fallback. This keeps the endpoint useful even before ffmpeg
+            // exists or for unsupported file types.
+            res.set_header("X-PQNAS-Preview-Fallback", preview_err.empty() ? "unknown" : preview_err);
+
+            cs_set_federation_media_preview_placeholder(
+                res,
+                media_kind.empty() ? "file" : media_kind,
+                event_id,
+                ref_id
+            );
+        });
+
+
+    server.Get("/api/v4/circlestack/federated/feed",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                    limit = 50;
+                }
+            }
+
+            limit = std::clamp(limit, 1, 200);
+
+            std::string err;
+            const auto rows =
+                pqnas::federation::list_circle_federation_remote_feed(limit, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "remote_feed_error"},
+                    {"message", err}
+                });
+            }
+
+            json events = json::array();
+            for (const auto& row : rows) {
+                events.push_back(cs_remote_feed_event_json(row));
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", events.size()},
+                {"events", events}
+            });
+        });
+
+
+
+    server.Post("/api/v4/circlestack/federated/posts/react",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_json" }});
+            }
+
+            const std::string event_id = body.value("event_id", "");
+            const std::string reaction = body.value("reaction", "");
+
+            if (event_id.empty()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "missing_event_id" }});
+            }
+
+            const bool removed = reaction.empty();
+            if (!removed && !cs_is_supported_reaction(reaction)) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "unsupported_reaction" }});
+            }
+
+            CsRemotePostTarget target;
+            std::string target_err;
+            if (!cs_find_remote_post_target(event_id, &target, &target_err)) {
+                res.status = target_err == "remote_post_event_not_found" ? 404 : 400;
+                return set_json(res, {
+                    { "ok", false },
+                    { "error", target_err.empty() ? "remote_post_target_failed" : target_err }
+                });
+            }
+
+            const auto created_epoch = static_cast<long long>(std::time(nullptr));
+
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_remote_post_reaction_federation_best_effort(
+                    target,
+                    created_epoch,
+                    actor_fp,
+                    cs_display_name_for_fp(deps, actor_fp),
+                    reaction,
+                    removed,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
+                { "ok", federation_queued },
+                { "target_event_id", event_id },
+                { "target_origin_nas", target.origin_nas },
+                { "post_id", target.post_id },
+                { "reaction", reaction },
+                { "federation_queued", federation_queued }
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["error"] = federation_error;
+            }
+
+            set_json(res, response);
+        });
+
+
+    server.Get("/api/v4/circlestack/federation/status",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string err;
+            json status = cs_circle_federation_status_for_user(actor_fp, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "circle_federation_status_failed"},
+                    {"detail", err}
+                });
+            }
+
+            status["ok"] = true;
+            set_json(res, status);
+        });
+
+
+    server.Get("/api/v4/circlestack/federated/origins",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string err;
+            json items = cs_list_known_remote_origins(actor_fp, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "known_remote_origins_list_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", items.size()},
+                {"items", items}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/reactions/mine/set",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string remote_event_id =
+                body.value("remote_event_id", body.value("event_id", ""));
+            const std::string origin_nas = body.value("origin_nas", "");
+            const std::string reaction = body.value("reaction", "");
+            const std::string federation_event_id =
+                body.value("federation_event_id", "");
+
+            std::string err;
+            if (!cs_upsert_my_federated_local_reaction(
+                    actor_fp,
+                    remote_event_id,
+                    origin_nas,
+                    reaction,
+                    federation_event_id,
+                    &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "federated_local_reaction_set_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"remote_event_id", remote_event_id},
+                {"origin_nas", origin_nas},
+                {"reaction", reaction},
+                {"federation_event_id", federation_event_id}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/reactions/mine/list",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const json event_ids_json =
+                body.contains("event_ids") ? body["event_ids"] : json::array();
+
+            if (!event_ids_json.is_array()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "event_ids_must_be_array"}
+                });
+            }
+
+            std::vector<std::string> event_ids;
+            event_ids.reserve(std::min<std::size_t>(event_ids_json.size(), 120));
+
+            for (const auto& item : event_ids_json) {
+                if (!item.is_string()) continue;
+
+                const std::string event_id = cs_trim_copy(item.get<std::string>());
+                if (!cs_safe_remote_event_id_for_local_reaction(event_id)) {
+                    continue;
+                }
+
+                if (std::find(event_ids.begin(), event_ids.end(), event_id) ==
+                    event_ids.end()) {
+                    event_ids.push_back(event_id);
+                }
+
+                if (event_ids.size() >= 120) break;
+            }
+
+            std::string err;
+            json items =
+                cs_list_my_federated_local_reactions(actor_fp, event_ids, &err);
+
+            if (!err.empty()) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "federated_local_reaction_list_failed"},
+                    {"detail", err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"count", items.size()},
+                {"items", items}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/origins/my-mute",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string origin_nas = body.value("origin_nas", "");
+            const bool muted = body.value("muted", true);
+
+            if (origin_nas.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_origin_nas"}
+                });
+            }
+
+            std::string err;
+            if (!cs_set_user_origin_muted(actor_fp, origin_nas, muted, &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "user_origin_pref_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"origin_nas", origin_nas},
+                {"muted", muted}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/origins/set-enabled",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (actor_role != "admin") {
+                res.status = 403;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "forbidden"}
+                });
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string origin_nas = body.value("origin_nas", "");
+            const bool enabled = body.value("enabled", true);
+
+            if (origin_nas.empty()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "missing_origin_nas"}
+                });
+            }
+
+            bool found = false;
+            std::string err;
+            if (!cs_set_known_remote_origin_enabled(
+                    origin_nas,
+                    enabled,
+                    &found,
+                    &err)) {
+                res.status = found ? 500 : 404;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "known_remote_origin_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"origin_nas", origin_nas},
+                {"enabled", enabled}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/federated/people/add",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_json" }});
+            }
+
+            std::string fp = body.value("fp", "");
+            std::string display_name = body.value("display_name", "");
+            std::string remote_origin_nas = body.value("remote_origin_nas", "");
+            std::string remote_public_base_url = body.value("remote_public_base_url", "");
+            const std::string source_event_id = body.value("source_event_id", "");
+
+            if (fp.empty() && !source_event_id.empty()) {
+                CsRemotePostTarget target;
+                std::string target_err;
+                if (cs_find_remote_post_target(source_event_id, &target, &target_err)) {
+                    fp = target.owner_fp;
+                    if (display_name.empty()) {
+                        display_name = target.owner_display_name;
+                    }
+                    if (remote_origin_nas.empty()) {
+                        remote_origin_nas = target.origin_nas;
+                    }
+                    if (remote_public_base_url.empty()) {
+                        remote_public_base_url = target.public_base_url;
+                    }
+                } else {
+                    res.status = 404;
+                    return set_json(res, {
+                        { "ok", false },
+                        { "error", "remote_source_event_not_found" },
+                        { "source_event_id", source_event_id },
+                        { "detail", target_err }
+                    });
+                }
+            }
+
+            if (fp.empty()) {
+                res.status = 400;
+                return set_json(res, {{ "ok", false }, { "error", "invalid_fp" }});
+            }
+
+            if (fp == actor_fp) {
+                std::string origin_err;
+                if (!cs_add_known_remote_origin_only(
+                        actor_fp,
+                        remote_origin_nas,
+                        remote_public_base_url,
+                        display_name,
+                        source_event_id,
+                        &origin_err)) {
+                    res.status = 500;
+                    return set_json(res, {
+                        { "ok", false },
+                        { "error", "self_remote_origin_add_failed" },
+                        { "detail", origin_err }
+                    });
+                }
+
+                return set_json(res, {
+                    { "ok", true },
+                    { "fp", fp },
+                    { "display_name", display_name.empty() ? cs_short_fp(fp) : display_name },
+                    { "remote_origin_nas", remote_origin_nas },
+                    { "remote_public_base_url", remote_public_base_url },
+                    { "source", "self_remote_federated" },
+                    { "self", true },
+                    { "polling", "known_remote_origin_added" }
+                });
+            }
+
+            std::string add_err;
+            if (!cs_add_remote_people_contact(
+                    deps,
+                    actor_fp,
+                    fp,
+                    display_name,
+                    source_event_id,
+                    remote_origin_nas,
+                    remote_public_base_url,
+                    &add_err)) {
+                res.status = 500;
+                return set_json(res, {
+                    { "ok", false },
+                    { "error", "remote_people_add_failed" },
+                    { "detail", add_err }
+                });
+            }
+
+            set_json(res, {
+                { "ok", true },
+                { "fp", fp },
+                { "display_name", display_name.empty() ? cs_short_fp(fp) : display_name },
+                { "remote_origin_nas", remote_origin_nas },
+                { "remote_public_base_url", remote_public_base_url },
+                { "source", "remote_federated" },
+                { "polling", remote_origin_nas.empty() ? "not_added" : "known_remote_origin_added" }
+            });
+        });
+
+
+    server.Get("/api/v4/circlestack/node-profile",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            std::string outbox_err;
+            const auto outbox_stats =
+                pqnas::federation::circle_federation_outbox_stats(&outbox_err);
+
+            std::string remote_err;
+            const auto remote_stats =
+                pqnas::federation::circle_federation_remote_feed_stats(&remote_err);
+
+            long long known_origins = 0;
+            {
+                sqlite3* people_db = nullptr;
+                std::string people_err;
+
+                if (cs_open_people_db(&people_db, &people_err) && people_db) {
+                    sqlite3_stmt* st = nullptr;
+                    const char* sql =
+                        "SELECT COUNT(*) FROM known_remote_origins WHERE enabled = 1";
+
+                    if (sqlite3_prepare_v2(people_db, sql, -1, &st, nullptr) == SQLITE_OK) {
+                        if (sqlite3_step(st) == SQLITE_ROW) {
+                            known_origins = sqlite3_column_int64(st, 0);
+                        }
+                    }
+
+                    if (st) sqlite3_finalize(st);
+                    sqlite3_close(people_db);
+                }
+            }
+
+            const long long remote_interactions =
+                static_cast<long long>(remote_stats.replies + remote_stats.reaction_created);
+
+            const long long total_remote_events =
+                static_cast<long long>(remote_stats.total);
+
+            json badges = json::array();
+
+            auto add_badge = [&](const std::string& id,
+                                 const std::string& title,
+                                 const std::string& description,
+                                 const std::string& category,
+                                 const std::string& tier,
+                                 const std::string& icon_asset,
+                                 bool unlocked) {
+                badges.push_back(json{
+                    {"id", id},
+                    {"title", title},
+                    {"description", description},
+                    {"category", category},
+                    {"tier", tier},
+                    {"icon_asset", icon_asset},
+                    {"unlocked", unlocked}
+                });
+            };
+
+            add_badge(
+                "node.first_remote_signal",
+                "First Remote Signal",
+                "This NAS received its first remote federated Circle Stack post.",
+                "node · federation",
+                "bronze",
+                "/static/img/node_badges/first-remote-signal.svg",
+                remote_stats.posts >= 1
+            );
+
+            add_badge(
+                "node.cross_node_conversation",
+                "Cross-Node Conversation",
+                "This NAS received a remote federated reply or reaction.",
+                "node · federation",
+                "silver",
+                "/static/img/node_badges/cross-node-conversation.svg",
+                remote_interactions >= 1
+            );
+
+            add_badge(
+                "node.remote_listener",
+                "Remote Listener",
+                "This NAS has received several remote federation events.",
+                "node · federation",
+                "silver",
+                "/static/img/node_badges/remote-listener.svg",
+                total_remote_events >= 25
+            );
+
+            add_badge(
+                "node.bridge_node",
+                "Bridge Node",
+                "This NAS knows several remote DNA-Nexus origins.",
+                "node · federation",
+                "gold",
+                "/static/img/node_badges/bridge-node.svg",
+                known_origins >= 3
+            );
+
+            add_badge(
+                "node.federation_steward",
+                "Federation Steward",
+                "This NAS is actively participating in both sending and receiving federated signals.",
+                "node · federation",
+                "legendary",
+                "/static/img/node_badges/federation-steward.svg",
+                outbox_stats.done >= 10 && total_remote_events >= 10
+            );
+
+            const std::string node_id = cs_local_nodus_identity_fingerprint();
+            const std::string avatar_key = cs_node_profile_avatar_key();
+            const std::string avatar_asset =
+                cs_node_profile_avatar_asset_for_key(avatar_key);
+
+            set_json(res, json{
+                {"ok", true},
+                {"kind", "node_profile.v1"},
+                {"node", {
+                    {"name", "DNA-Nexus Node"},
+                    {"node_id", node_id},
+                    {"node_id_short", cs_short_fp(node_id)},
+                    {"avatar_key", avatar_key},
+                    {"avatar_asset", avatar_asset}
+                }},
+                {"stats", {
+                    {"federation_outbox_total", outbox_stats.total},
+                    {"federation_outbox_done", outbox_stats.done},
+                    {"federation_outbox_pending", outbox_stats.pending},
+                    {"federation_outbox_failed", outbox_stats.failed},
+                    {"remote_events_total", remote_stats.total},
+                    {"remote_posts_total", remote_stats.posts},
+                    {"remote_replies_total", remote_stats.replies},
+                    {"remote_reactions_total", remote_stats.reaction_created},
+                    {"remote_interactions_total", remote_interactions},
+                    {"known_origins_total", known_origins}
+                }},
+                {"avatar_options", cs_node_profile_avatar_options_json()},
+                {"can_customize_avatar", actor_role == "admin"},
+                {"badges", badges}
+            });
+        });
+
+
+    server.Post("/api/v4/circlestack/node-profile/avatar",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            std::string actor_fp;
+            std::string actor_role;
+
+            if (!deps.require_user_auth_users_actor ||
+                !deps.require_user_auth_users_actor(
+                    req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+                return;
+            }
+
+            if (actor_role != "admin") {
+                res.status = 403;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "forbidden"}
+                });
+            }
+
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object()) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "invalid_json"}
+                });
+            }
+
+            const std::string avatar_key = body.value("avatar_key", "");
+            std::string err;
+
+            if (!cs_write_node_profile_avatar_key(avatar_key, &err)) {
+                res.status = 400;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", err.empty() ? "avatar_update_failed" : err}
+                });
+            }
+
+            set_json(res, {
+                {"ok", true},
+                {"avatar_key", avatar_key},
+                {"avatar_asset", cs_node_profile_avatar_asset_for_key(avatar_key)}
+            });
         });
 
 
@@ -1748,7 +5528,38 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 id
             );
 
-            set_json(res, {{"ok", true}, {"id", id}});
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_post_created_federation_best_effort(
+                    id,
+                    created_epoch,
+                    actor_fp,
+                    actor_name,
+                    text,
+                    visibility,
+                    media_path,
+                    mentions,
+                    cs_public_badges_for_fp(g_db, deps, actor_fp),
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
+                {"ok", true},
+                {"id", id},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
     server.Post("/api/v4/circlestack/posts/reply",
@@ -1816,11 +5627,13 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
             }
 
+            const auto reply_created_epoch = static_cast<sqlite3_int64>(std::time(nullptr));
+
             sqlite3_bind_int(st, 1, post_id);
             sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 3, text.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 4, media_path.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(st, 5, (sqlite3_int64)std::time(nullptr));
+            sqlite3_bind_int64(st, 5, reply_created_epoch);
 
             if (sqlite3_step(st) != SQLITE_DONE) {
                 sqlite3_finalize(st);
@@ -1925,12 +5738,41 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 id
             );
 
-            set_json(res, {
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_reply_created_federation_best_effort(
+                    g_db,
+                    id,
+                    post_id,
+                    (long long)reply_created_epoch,
+                    actor_fp,
+                    actor_display,
+                    text,
+                    media_path,
+                    mentions,
+                    cs_public_badges_for_fp(g_db, deps, actor_fp),
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
                 {"ok", true},
                 {"id", id},
                 {"post_id", post_id},
-                {"reply", reply}
-            });
+                {"reply", reply},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
 
@@ -2002,6 +5844,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
 
                 const int rc = sqlite3_step(st);
+                const int deleted_count = sqlite3_changes(g_db);
                 sqlite3_finalize(st);
 
                 if (rc != SQLITE_DONE) {
@@ -2009,12 +5852,45 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
                 }
 
-                return set_json(res, {
+                bool federation_queued = false;
+                std::string federation_event_id;
+                std::string federation_error;
+
+                if (deleted_count > 0) {
+                    const auto reaction_removed_epoch =
+                        static_cast<sqlite3_int64>(std::time(nullptr));
+
+                    federation_queued =
+                        cs_enqueue_reply_reaction_removed_federation_best_effort(
+                            g_db,
+                            reply_id,
+                            post_id,
+                            (long long)reaction_removed_epoch,
+                            actor_fp,
+                            &federation_event_id,
+                            &federation_error
+                        );
+                } else {
+                    federation_error = "skipped_no_existing_reaction";
+                }
+
+                json response = {
                     {"ok", true},
                     {"reply_id", reply_id},
                     {"post_id", post_id},
-                    {"reaction", ""}
-                });
+                    {"reaction", ""},
+                    {"federation_queued", federation_queued}
+                };
+
+                if (!federation_event_id.empty()) {
+                    response["federation_event_id"] = federation_event_id;
+                }
+
+                if (!federation_queued && !federation_error.empty()) {
+                    response["federation_note"] = federation_error;
+                }
+
+                return set_json(res, response);
             }
 
             if (!cs_is_supported_reaction(reaction)) {
@@ -2056,10 +5932,12 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
             }
 
+            const auto reply_reaction_created_epoch = static_cast<sqlite3_int64>(std::time(nullptr));
+
             sqlite3_bind_int(st, 1, reply_id);
             sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 3, reaction.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+            sqlite3_bind_int64(st, 4, reply_reaction_created_epoch);
 
             if (sqlite3_step(st) != SQLITE_DONE) {
                 sqlite3_finalize(st);
@@ -2076,12 +5954,37 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_commit_failed"}});
             }
 
-            set_json(res, {
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_reply_reaction_created_federation_best_effort(
+                    g_db,
+                    reply_id,
+                    post_id,
+                    (long long)reply_reaction_created_epoch,
+                    actor_fp,
+                    reaction,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
                 {"ok", true},
                 {"reply_id", reply_id},
                 {"post_id", post_id},
-                {"reaction", reaction}
-            });
+                {"reaction", reaction},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
 
@@ -2407,6 +6310,7 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
 
                 const int rc = sqlite3_step(st);
+                const int deleted_count = sqlite3_changes(g_db);
                 sqlite3_finalize(st);
 
                 if (rc != SQLITE_DONE) {
@@ -2414,11 +6318,43 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                     return set_json(res, {{"ok", false}, {"error", "db_delete_failed"}});
                 }
 
-                return set_json(res, {
+                bool federation_queued = false;
+                std::string federation_event_id;
+                std::string federation_error;
+
+                if (deleted_count > 0) {
+                    const auto reaction_removed_epoch =
+                        static_cast<sqlite3_int64>(std::time(nullptr));
+
+                    federation_queued =
+                        cs_enqueue_post_reaction_removed_federation_best_effort(
+                            g_db,
+                            post_id,
+                            (long long)reaction_removed_epoch,
+                            actor_fp,
+                            &federation_event_id,
+                            &federation_error
+                        );
+                } else {
+                    federation_error = "skipped_no_existing_reaction";
+                }
+
+                json response = {
                     {"ok", true},
                     {"post_id", post_id},
-                    {"reaction", ""}
-                });
+                    {"reaction", ""},
+                    {"federation_queued", federation_queued}
+                };
+
+                if (!federation_event_id.empty()) {
+                    response["federation_event_id"] = federation_event_id;
+                }
+
+                if (!federation_queued && !federation_error.empty()) {
+                    response["federation_note"] = federation_error;
+                }
+
+                return set_json(res, response);
             }
 
             if (!cs_is_supported_reaction(reaction)) {
@@ -2460,10 +6396,12 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_prepare_failed"}});
             }
 
+            const auto reaction_created_epoch = static_cast<sqlite3_int64>(std::time(nullptr));
+
             sqlite3_bind_int(st, 1, post_id);
             sqlite3_bind_text(st, 2, actor_fp.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 3, reaction.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(st, 4, (sqlite3_int64)std::time(nullptr));
+            sqlite3_bind_int64(st, 4, reaction_created_epoch);
 
             if (sqlite3_step(st) != SQLITE_DONE) {
                 sqlite3_finalize(st);
@@ -2480,11 +6418,35 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
                 return set_json(res, {{"ok", false}, {"error", "db_commit_failed"}});
             }
 
-            set_json(res, {
+            std::string federation_event_id;
+            std::string federation_error;
+            const bool federation_queued =
+                cs_enqueue_post_reaction_created_federation_best_effort(
+                    g_db,
+                    post_id,
+                    (long long)reaction_created_epoch,
+                    actor_fp,
+                    reaction,
+                    &federation_event_id,
+                    &federation_error
+                );
+
+            json response = {
                 {"ok", true},
                 {"post_id", post_id},
-                {"reaction", reaction}
-            });
+                {"reaction", reaction},
+                {"federation_queued", federation_queued}
+            };
+
+            if (!federation_event_id.empty()) {
+                response["federation_event_id"] = federation_event_id;
+            }
+
+            if (!federation_queued && !federation_error.empty()) {
+                response["federation_note"] = federation_error;
+            }
+
+            set_json(res, response);
         });
 
 

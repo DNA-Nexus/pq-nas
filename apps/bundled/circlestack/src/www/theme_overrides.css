@@ -1,0 +1,1206 @@
+/* Circle Stack final theme overrides.
+   Loaded after app.css/memory_nodes.css/brand_logo.css. */
+
+/* ============================================================
+   Light theme modal readability
+   ============================================================ */
+
+:root[data-theme="bright"] .cs-modal:not(.cs-achievement-unlock-modal),
+:root[data-theme="bright"] .cs-find-people-modal,
+:root[data-theme="bright"] .cs-known-origins-modal,
+:root[data-theme="bright"] .cs-my-circle-modal,
+:root[data-theme="bright"] .cs-circle-modal,
+:root[data-theme="bright"] .cs-intro-modal {
+  background: rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  box-shadow: 0 28px 90px rgba(15,23,42,0.24) !important;
+}
+
+:root[data-theme="bright"] .cs-modal:not(.cs-achievement-unlock-modal) :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="bright"] .cs-find-people-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="bright"] .cs-known-origins-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="bright"] .cs-my-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="bright"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="bright"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-modal-text,
+:root[data-theme="bright"] .cs-modal-subtitle,
+:root[data-theme="bright"] .cs-modal small,
+:root[data-theme="bright"] .cs-known-origin-row small,
+:root[data-theme="bright"] .cs-origin-row small,
+:root[data-theme="bright"] .cs-request-row small,
+:root[data-theme="bright"] .cs-circle-row small {
+  color: rgba(15,23,42,0.66) !important;
+}
+
+/* ============================================================
+   Win classic modal readability
+   ============================================================ */
+
+:root[data-theme="win_classic"] .cs-modal:not(.cs-achievement-unlock-modal),
+:root[data-theme="win_classic"] .cs-find-people-modal,
+:root[data-theme="win_classic"] .cs-known-origins-modal,
+:root[data-theme="win_classic"] .cs-my-circle-modal,
+:root[data-theme="win_classic"] .cs-circle-modal,
+:root[data-theme="win_classic"] .cs-intro-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+:root[data-theme="win_classic"] .cs-modal:not(.cs-achievement-unlock-modal) :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="win_classic"] .cs-find-people-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="win_classic"] .cs-known-origins-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="win_classic"] .cs-my-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="win_classic"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
+:root[data-theme="win_classic"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-modal-text,
+:root[data-theme="win_classic"] .cs-modal-subtitle,
+:root[data-theme="win_classic"] .cs-modal small,
+:root[data-theme="win_classic"] .cs-known-origin-row small,
+:root[data-theme="win_classic"] .cs-origin-row small,
+:root[data-theme="win_classic"] .cs-request-row small,
+:root[data-theme="win_classic"] .cs-circle-row small {
+  color: #404040 !important;
+}
+
+/* ============================================================
+   Rows inside Find people / Known origins / My Circle
+   ============================================================ */
+
+:root[data-theme="bright"] .cs-request-row,
+:root[data-theme="bright"] .cs-known-origin-row,
+:root[data-theme="bright"] .cs-origin-row,
+:root[data-theme="bright"] .cs-circle-row,
+:root[data-theme="bright"] .cs-person-row,
+:root[data-theme="bright"] .cs-find-row {
+  background: rgba(248,250,252,0.92) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.16) !important;
+}
+
+:root[data-theme="win_classic"] .cs-request-row,
+:root[data-theme="win_classic"] .cs-known-origin-row,
+:root[data-theme="win_classic"] .cs-origin-row,
+:root[data-theme="win_classic"] .cs-circle-row,
+:root[data-theme="win_classic"] .cs-person-row,
+:root[data-theme="win_classic"] .cs-find-row {
+  background: #f7f7f7 !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Inputs in modal windows */
+:root[data-theme="bright"] .cs-modal input,
+:root[data-theme="bright"] .cs-modal textarea,
+:root[data-theme="bright"] .cs-modal select {
+  background: #fff !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+}
+
+:root[data-theme="win_classic"] .cs-modal input,
+:root[data-theme="win_classic"] .cs-modal textarea,
+:root[data-theme="win_classic"] .cs-modal select {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+}
+
+/* Buttons in light modals */
+:root[data-theme="bright"] .cs-modal button:not(.cs-modal-delete),
+:root[data-theme="bright"] .cs-find-people-modal button:not(.cs-modal-delete),
+:root[data-theme="bright"] .cs-known-origins-modal button:not(.cs-modal-delete),
+:root[data-theme="bright"] .cs-my-circle-modal button:not(.cs-modal-delete) {
+  background: rgba(15,23,42,0.055) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+}
+
+:root[data-theme="bright"] .cs-modal button:not(.cs-modal-delete):hover,
+:root[data-theme="bright"] .cs-find-people-modal button:not(.cs-modal-delete):hover,
+:root[data-theme="bright"] .cs-known-origins-modal button:not(.cs-modal-delete):hover,
+:root[data-theme="bright"] .cs-my-circle-modal button:not(.cs-modal-delete):hover {
+  background: rgba(37,99,235,0.10) !important;
+  border-color: rgba(37,99,235,0.30) !important;
+}
+
+:root[data-theme="win_classic"] .cs-modal button:not(.cs-modal-delete),
+:root[data-theme="win_classic"] .cs-find-people-modal button:not(.cs-modal-delete),
+:root[data-theme="win_classic"] .cs-known-origins-modal button:not(.cs-modal-delete),
+:root[data-theme="win_classic"] .cs-my-circle-modal button:not(.cs-modal-delete) {
+  background: #e8e8e8 !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+}
+
+/* Preserve important colored action buttons */
+:root[data-theme="bright"] .cs-modal .cs-modal-delete,
+:root[data-theme="win_classic"] .cs-modal .cs-modal-delete {
+  color: #fff !important;
+}
+
+/* ============================================================
+   Reaction popup
+   ============================================================ */
+
+:root[data-theme="bright"] .cs-reaction-theme-menu {
+  background: rgba(255,255,255,0.98) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  box-shadow:
+    0 20px 45px rgba(15,23,42,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.90) !important;
+}
+
+:root[data-theme="bright"] .cs-reaction-theme-menu button {
+  background: rgba(15,23,42,0.055) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.13) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-reaction-theme-menu button:hover {
+  background: rgba(37,99,235,0.10) !important;
+  border-color: rgba(37,99,235,0.26) !important;
+}
+
+:root[data-theme="win_classic"] .cs-reaction-theme-menu {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a,
+    8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+:root[data-theme="win_classic"] .cs-reaction-theme-menu button {
+  background: #e8e8e8 !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+}
+
+/* ============================================================
+   My Profile final light text polish
+   ============================================================ */
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint {
+  display: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-title,
+:root[data-theme="bright"] .cs-my-profile-name,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stat-value,
+:root[data-theme="bright"] .cs-profile-achievement-title {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-sub,
+:root[data-theme="bright"] .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-fingerprint,
+:root[data-theme="bright"] .cs-my-profile-stat-label,
+:root[data-theme="bright"] .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.66) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-title,
+:root[data-theme="win_classic"] .cs-my-profile-name,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stat-value,
+:root[data-theme="win_classic"] .cs-profile-achievement-title {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-sub,
+:root[data-theme="win_classic"] .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-fingerprint,
+:root[data-theme="win_classic"] .cs-my-profile-stat-label,
+:root[data-theme="win_classic"] .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack final modal polish v2
+   Fix modal input overflow and make light/win_classic modal rows feel intentional. */
+
+/* Everything inside Circle Stack modals should size sanely. */
+.cs-modal,
+.cs-modal *,
+.cs-modal-backdrop,
+.cs-find-people-modal,
+.cs-find-people-modal *,
+.cs-known-origins-modal,
+.cs-known-origins-modal *,
+.cs-my-circle-modal,
+.cs-my-circle-modal *,
+.cs-circle-modal,
+.cs-circle-modal * {
+  box-sizing: border-box !important;
+}
+
+/* Fix Find people search input escaping on the right. */
+:root[data-theme="bright"] .cs-modal input,
+:root[data-theme="bright"] .cs-modal textarea,
+:root[data-theme="bright"] .cs-modal select,
+:root[data-theme="bright"] .cs-find-people-modal input,
+:root[data-theme="bright"] .cs-known-origins-modal input,
+:root[data-theme="bright"] .cs-my-circle-modal input,
+:root[data-theme="win_classic"] .cs-modal input,
+:root[data-theme="win_classic"] .cs-modal textarea,
+:root[data-theme="win_classic"] .cs-modal select,
+:root[data-theme="win_classic"] .cs-find-people-modal input,
+:root[data-theme="win_classic"] .cs-known-origins-modal input,
+:root[data-theme="win_classic"] .cs-my-circle-modal input {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  display: block !important;
+}
+
+/* Keep modal bodies inside viewport. */
+:root[data-theme="bright"] .cs-modal:not(.cs-achievement-unlock-modal),
+:root[data-theme="bright"] .cs-find-people-modal,
+:root[data-theme="bright"] .cs-known-origins-modal,
+:root[data-theme="bright"] .cs-my-circle-modal,
+:root[data-theme="bright"] .cs-circle-modal,
+:root[data-theme="win_classic"] .cs-modal:not(.cs-achievement-unlock-modal),
+:root[data-theme="win_classic"] .cs-find-people-modal,
+:root[data-theme="win_classic"] .cs-known-origins-modal,
+:root[data-theme="win_classic"] .cs-my-circle-modal,
+:root[data-theme="win_classic"] .cs-circle-modal {
+  width: min(760px, calc(100vw - 44px)) !important;
+  max-width: calc(100vw - 44px) !important;
+  overflow-x: hidden !important;
+}
+
+/* More intentional row layout for Find people / Known origins / My Circle. */
+:root[data-theme="bright"] .cs-request-row,
+:root[data-theme="bright"] .cs-known-origin-row,
+:root[data-theme="bright"] .cs-origin-row,
+:root[data-theme="bright"] .cs-circle-row,
+:root[data-theme="bright"] .cs-person-row,
+:root[data-theme="bright"] .cs-find-row,
+:root[data-theme="win_classic"] .cs-request-row,
+:root[data-theme="win_classic"] .cs-known-origin-row,
+:root[data-theme="win_classic"] .cs-origin-row,
+:root[data-theme="win_classic"] .cs-circle-row,
+:root[data-theme="win_classic"] .cs-person-row,
+:root[data-theme="win_classic"] .cs-find-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 14px !important;
+  margin: 10px 0 !important;
+}
+
+/* If row text has long URLs/fingerprints, let it wrap instead of pushing buttons out. */
+:root[data-theme="bright"] .cs-request-row *,
+:root[data-theme="bright"] .cs-known-origin-row *,
+:root[data-theme="bright"] .cs-origin-row *,
+:root[data-theme="bright"] .cs-circle-row *,
+:root[data-theme="bright"] .cs-person-row *,
+:root[data-theme="bright"] .cs-find-row *,
+:root[data-theme="win_classic"] .cs-request-row *,
+:root[data-theme="win_classic"] .cs-known-origin-row *,
+:root[data-theme="win_classic"] .cs-origin-row *,
+:root[data-theme="win_classic"] .cs-circle-row *,
+:root[data-theme="win_classic"] .cs-person-row *,
+:root[data-theme="win_classic"] .cs-find-row * {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Classic rows: keep classic feel, but less raw/ugly. */
+:root[data-theme="win_classic"] .cs-request-row,
+:root[data-theme="win_classic"] .cs-known-origin-row,
+:root[data-theme="win_classic"] .cs-origin-row,
+:root[data-theme="win_classic"] .cs-circle-row,
+:root[data-theme="win_classic"] .cs-person-row,
+:root[data-theme="win_classic"] .cs-find-row {
+  background: #f7f7f7 !important;
+  border: 1px solid #8a8a8a !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+/* Bright rows: softer card look. */
+:root[data-theme="bright"] .cs-request-row,
+:root[data-theme="bright"] .cs-known-origin-row,
+:root[data-theme="bright"] .cs-origin-row,
+:root[data-theme="bright"] .cs-circle-row,
+:root[data-theme="bright"] .cs-person-row,
+:root[data-theme="bright"] .cs-find-row {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94)) !important;
+  border: 1px solid rgba(15,23,42,0.14) !important;
+  border-radius: 12px !important;
+}
+
+/* My Circle should visually match dark spacing better in light modes. */
+:root[data-theme="bright"] .cs-my-circle-modal .cs-circle-row,
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row,
+:root[data-theme="bright"] .cs-circle-modal .cs-circle-row,
+:root[data-theme="win_classic"] .cs-circle-modal .cs-circle-row {
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+}
+
+/* Known origins often has long URL/fingerprint text; use a wider modal. */
+:root[data-theme="bright"] .cs-known-origins-modal,
+:root[data-theme="win_classic"] .cs-known-origins-modal {
+  width: min(860px, calc(100vw - 44px)) !important;
+}
+
+/* Specifically style containers that contain the common reaction emoji set. */
+:root[data-theme="bright"] .cs-reaction-theme-menu,
+:root[data-theme="bright"] [class*="reaction"][class*="menu"],
+:root[data-theme="bright"] [class*="reaction"][class*="popover"],
+:root[data-theme="bright"] [class*="emoji"][class*="menu"],
+:root[data-theme="bright"] [class*="emoji"][class*="popover"] {
+  background: rgba(255,255,255,0.98) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  box-shadow:
+    0 20px 45px rgba(15,23,42,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.90) !important;
+}
+
+:root[data-theme="win_classic"] .cs-reaction-theme-menu,
+:root[data-theme="win_classic"] [class*="reaction"][class*="menu"],
+:root[data-theme="win_classic"] [class*="reaction"][class*="popover"],
+:root[data-theme="win_classic"] [class*="emoji"][class*="menu"],
+:root[data-theme="win_classic"] [class*="emoji"][class*="popover"] {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a,
+    8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+/* Reaction buttons themselves. */
+:root[data-theme="bright"] .cs-reaction-theme-menu button,
+:root[data-theme="bright"] [class*="reaction"][class*="menu"] button,
+:root[data-theme="bright"] [class*="reaction"][class*="popover"] button,
+:root[data-theme="bright"] [class*="emoji"][class*="menu"] button,
+:root[data-theme="bright"] [class*="emoji"][class*="popover"] button {
+  background: rgba(15,23,42,0.055) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.13) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-reaction-theme-menu button,
+:root[data-theme="win_classic"] [class*="reaction"][class*="menu"] button,
+:root[data-theme="win_classic"] [class*="reaction"][class*="popover"] button,
+:root[data-theme="win_classic"] [class*="emoji"][class*="menu"] button,
+:root[data-theme="win_classic"] [class*="emoji"][class*="popover"] button {
+  background: #e8e8e8 !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+}
+
+/* Dark/cpunk My Circle already looks good; do not touch it here. */
+
+/* Circle Stack reaction/menu polish v3
+   Prevent wrongly-tagged large containers from looking like reaction popups. */
+
+.cs-reaction-theme-menu {
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 320px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  box-sizing: border-box !important;
+}
+
+.cs-reaction-theme-menu button {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 20px !important;
+  line-height: 1 !important;
+}
+
+/* My Circle: keep the Forget button visually dangerous in light themes too. */
+:root[data-theme="bright"] .cs-my-circle-modal .cs-circle-row button:last-child,
+:root[data-theme="bright"] .cs-circle-modal .cs-circle-row button:last-child {
+  background: rgba(220,38,38,0.10) !important;
+  color: #b91c1c !important;
+  border-color: rgba(220,38,38,0.35) !important;
+}
+
+:root[data-theme="bright"] .cs-my-circle-modal .cs-circle-row button:last-child:hover,
+:root[data-theme="bright"] .cs-circle-modal .cs-circle-row button:last-child:hover {
+  background: rgba(220,38,38,0.16) !important;
+  border-color: rgba(220,38,38,0.50) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row button:last-child,
+:root[data-theme="win_classic"] .cs-circle-modal .cs-circle-row button:last-child {
+  background: #f8d7da !important;
+  color: #800000 !important;
+  border: 1px solid #800000 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+/* Classic role chip in My Circle should not look like a broken input. */
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row strong,
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row span,
+:root[data-theme="win_classic"] .cs-circle-modal .cs-circle-row strong,
+:root[data-theme="win_classic"] .cs-circle-modal .cs-circle-row span {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* If a post/card was tagged before this patch during same page lifetime, neutralize oversized tagged elements. */
+.cs-post.cs-reaction-theme-menu,
+.cs-feed.cs-reaction-theme-menu,
+.cs-shell.cs-reaction-theme-menu {
+  display: block !important;
+  width: auto !important;
+  max-width: none !important;
+  padding: initial !important;
+  background: inherit !important;
+  border: inherit !important;
+  box-shadow: inherit !important;
+}
+
+/* Circle Stack profile/reaction recovery v4
+   Keep reaction popup compact and make other people's profile modal scroll correctly. */
+
+/* Reaction popup must stay compact. If a large container accidentally gets tagged,
+   neutralize it instead of turning the post into a popup-looking box. */
+.cs-reaction-theme-menu {
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 320px !important;
+  min-height: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  overflow: visible !important;
+}
+
+.cs-reaction-theme-menu:not(:has(> button:nth-of-type(3))) {
+  display: revert !important;
+  width: revert !important;
+  max-width: revert !important;
+  padding: revert !important;
+  background: revert !important;
+  border: revert !important;
+  box-shadow: revert !important;
+}
+
+.cs-post.cs-reaction-theme-menu,
+.cs-feed.cs-reaction-theme-menu,
+.cs-shell.cs-reaction-theme-menu,
+.cs-profile-modal.cs-reaction-theme-menu,
+.cs-modal.cs-reaction-theme-menu {
+  display: block !important;
+  width: auto !important;
+  max-width: none !important;
+  padding: inherit !important;
+  background: inherit !important;
+  border: inherit !important;
+  box-shadow: inherit !important;
+}
+
+/* Other people's profile modal: center it and give the modal itself a scrollbar. */
+:root[data-theme="bright"] .cs-modal-backdrop:has(.cs-profile-modal),
+:root[data-theme="win_classic"] .cs-modal-backdrop:has(.cs-profile-modal) {
+  display: grid !important;
+  place-items: center !important;
+  align-items: center !important;
+  justify-items: center !important;
+  padding: 18px !important;
+  overflow: hidden !important;
+  background: rgba(0,0,0,0.52) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal,
+:root[data-theme="win_classic"] .cs-profile-modal {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  margin: 0 auto !important;
+  width: min(620px, calc(100vw - 36px)) !important;
+  max-width: calc(100vw - 36px) !important;
+  max-height: calc(100vh - 36px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.10), transparent 34%),
+    radial-gradient(circle at 100% 0%, rgba(37,99,235,0.08), transparent 36%),
+    rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.20) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 28px 90px rgba(15,23,42,0.30) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+/* Better contrast for achievement rows in profile modals.
+   Keep the nice light gradient, but add clearer edges and darker text. */
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background:
+    linear-gradient(90deg, rgba(224,255,251,0.96), rgba(255,255,255,0.96) 42%, rgba(248,250,252,0.96)) !important;
+  border: 1px solid rgba(13,148,136,0.52) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(45,212,191,0.42),
+    0 1px 0 rgba(15,23,42,0.04) !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-desc,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.70) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background: #f7f7f7 !important;
+  border: 1px solid #707070 !important;
+  box-shadow:
+    inset 3px 0 0 #008080,
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #000 !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-desc,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: #303030 !important;
+}
+
+/* Danger button in My Circle: red in all themes where it was visually lost. */
+:root[data-theme="dark"] .cs-my-circle-modal .cs-circle-row button:last-child,
+:root[data-theme="cpunk_orange"] .cs-my-circle-modal .cs-circle-row button:last-child,
+:root[data-theme="bright"] .cs-my-circle-modal .cs-circle-row button:last-child,
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row button:last-child {
+  background: rgba(220,38,38,0.14) !important;
+  color: #ef4444 !important;
+  border-color: rgba(220,38,38,0.38) !important;
+}
+
+:root[data-theme="bright"] .cs-my-circle-modal .cs-circle-row button:last-child {
+  color: #b91c1c !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-circle-modal .cs-circle-row button:last-child {
+  color: #800000 !important;
+  background: #f8d7da !important;
+  border-color: #800000 !important;
+}
+
+/* Circle Stack primary modal action polish v5
+   Primary/create/send actions must not use red danger styling. */
+
+/* Generic primary action class. */
+.cs-modal-primary {
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+/* Memory Node create/open and Introduce send are positive actions. */
+.cs-memory-modal .cs-modal-primary,
+.cs-memory-modal .cs-modal-actions button:last-child,
+.cs-intro-modal .cs-modal-actions button:last-child,
+.cs-intro-modal button[type="submit"],
+.cs-intro-modal button[data-action="send"],
+.cs-intro-modal button[data-action="introduce"] {
+  background: linear-gradient(135deg, #2dd4bf, #60a5fa) !important;
+  color: #07111f !important;
+  border: 1px solid rgba(45,212,191,0.58) !important;
+  box-shadow:
+    0 10px 24px rgba(45,212,191,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.22) !important;
+}
+
+.cs-memory-modal .cs-modal-primary:hover,
+.cs-memory-modal .cs-modal-actions button:last-child:hover,
+.cs-intro-modal .cs-modal-actions button:last-child:hover,
+.cs-intro-modal button[type="submit"]:hover,
+.cs-intro-modal button[data-action="send"]:hover,
+.cs-intro-modal button[data-action="introduce"]:hover {
+  filter: brightness(1.06) !important;
+}
+
+/* Bright theme primary actions. */
+:root[data-theme="bright"] .cs-memory-modal .cs-modal-primary,
+:root[data-theme="bright"] .cs-memory-modal .cs-modal-actions button:last-child,
+:root[data-theme="bright"] .cs-intro-modal .cs-modal-actions button:last-child,
+:root[data-theme="bright"] .cs-intro-modal button[type="submit"],
+:root[data-theme="bright"] .cs-intro-modal button[data-action="send"],
+:root[data-theme="bright"] .cs-intro-modal button[data-action="introduce"] {
+  background: linear-gradient(135deg, #0d9488, #2563eb) !important;
+  color: #fff !important;
+  border-color: rgba(37,99,235,0.46) !important;
+  box-shadow: 0 10px 22px rgba(37,99,235,0.16) !important;
+}
+
+/* Win classic primary actions: classic blue, not red. */
+:root[data-theme="win_classic"] .cs-memory-modal .cs-modal-primary,
+:root[data-theme="win_classic"] .cs-memory-modal .cs-modal-actions button:last-child,
+:root[data-theme="win_classic"] .cs-intro-modal .cs-modal-actions button:last-child,
+:root[data-theme="win_classic"] .cs-intro-modal button[type="submit"],
+:root[data-theme="win_classic"] .cs-intro-modal button[data-action="send"],
+:root[data-theme="win_classic"] .cs-intro-modal button[data-action="introduce"] {
+  background: #000080 !important;
+  color: #fff !important;
+  border: 1px solid #000 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #c7d8ff,
+    inset -1px -1px 0 #000040 !important;
+}
+
+/* Keep true destructive buttons red. */
+.cs-modal-delete,
+.cs-danger,
+button[data-action="delete"],
+button[data-action="forget"],
+button[data-action="remove"],
+button[data-action="disable"] {
+  background: rgba(220,38,38,0.14) !important;
+  color: #ef4444 !important;
+  border-color: rgba(220,38,38,0.38) !important;
+}
+
+:root[data-theme="bright"] .cs-modal-delete,
+:root[data-theme="bright"] .cs-danger,
+:root[data-theme="bright"] button[data-action="delete"],
+:root[data-theme="bright"] button[data-action="forget"],
+:root[data-theme="bright"] button[data-action="remove"],
+:root[data-theme="bright"] button[data-action="disable"] {
+  background: rgba(220,38,38,0.10) !important;
+  color: #b91c1c !important;
+  border-color: rgba(220,38,38,0.35) !important;
+}
+
+:root[data-theme="win_classic"] .cs-modal-delete,
+:root[data-theme="win_classic"] .cs-danger,
+:root[data-theme="win_classic"] button[data-action="delete"],
+:root[data-theme="win_classic"] button[data-action="forget"],
+:root[data-theme="win_classic"] button[data-action="remove"],
+:root[data-theme="win_classic"] button[data-action="disable"] {
+  background: #f8d7da !important;
+  color: #800000 !important;
+  border: 1px solid #800000 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+/* Circle Stack federated feed polish v6
+   Make federated labels/notes readable in bright and win_classic. */
+
+/* Known origin / Unknown origin pill */
+.cs-fed-origin-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-origin-pill-theme {
+  background: rgba(13,148,136,0.12) !important;
+  color: #065f46 !important;
+  border: 1px solid rgba(13,148,136,0.36) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-origin-pill-theme {
+  background: #eaffff !important;
+  color: #004040 !important;
+  border: 1px solid #008080 !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="dark"] .cs-fed-origin-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-origin-pill-theme {
+  background: rgba(45,212,191,0.12) !important;
+  color: #99f6e4 !important;
+  border: 1px solid rgba(45,212,191,0.32) !important;
+}
+
+/* FEDERATED pill on the right side of remote cards */
+.cs-fed-status-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  padding: 5px 12px !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-status-pill-theme {
+  background: rgba(37,99,235,0.08) !important;
+  color: #1d4ed8 !important;
+  border: 1px solid rgba(37,99,235,0.26) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-status-pill-theme {
+  background: #e8e8ff !important;
+  color: #000080 !important;
+  border: 1px solid #000080 !important;
+  border-radius: 999px !important;
+}
+
+:root[data-theme="dark"] .cs-fed-status-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-status-pill-theme {
+  background: rgba(96,165,250,0.12) !important;
+  color: #bfdbfe !important;
+  border: 1px solid rgba(96,165,250,0.32) !important;
+}
+
+/* Remote post / reaction subtitle */
+:root[data-theme="bright"] .cs-fed-subtitle-theme {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-subtitle-theme {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Why? explanation bubble */
+.cs-fed-why-note-theme {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+  margin: 10px 0 !important;
+  overflow-wrap: anywhere !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-why-note-theme {
+  background: rgba(15,23,42,0.055) !important;
+  color: rgba(15,23,42,0.76) !important;
+  border: 1px solid rgba(15,23,42,0.13) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-why-note-theme {
+  background: #e8e8e8 !important;
+  color: #202020 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+:root[data-theme="dark"] .cs-fed-why-note-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-why-note-theme {
+  background: rgba(255,255,255,0.08) !important;
+  color: rgba(248,250,252,0.78) !important;
+  border: 1px solid rgba(255,255,255,0.13) !important;
+}
+
+/* Media validation note under remote image */
+.cs-fed-media-note-theme {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 12px !important;
+  padding: 9px 12px !important;
+  margin: 8px 0 10px !important;
+  overflow-wrap: anywhere !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-fed-media-note-theme {
+  background: rgba(13,148,136,0.08) !important;
+  color: #0f766e !important;
+  border: 1px dashed rgba(13,148,136,0.42) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-note-theme {
+  background: #eaffff !important;
+  color: #004040 !important;
+  border: 1px dashed #008080 !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="dark"] .cs-fed-media-note-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-media-note-theme {
+  background: rgba(45,212,191,0.08) !important;
+  color: rgba(153,246,228,0.86) !important;
+  border: 1px dashed rgba(45,212,191,0.34) !important;
+}
+
+/* Federated cards often contain generated metadata. Keep it readable in light themes. */
+:root[data-theme="bright"] .cs-post .cs-fed-origin-pill-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-status-pill-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-why-note-theme,
+:root[data-theme="bright"] .cs-post .cs-fed-media-note-theme {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-post .cs-fed-origin-pill-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-status-pill-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-why-note-theme,
+:root[data-theme="win_classic"] .cs-post .cs-fed-media-note-theme {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Circle Stack federated feed polish v7
+   Fix Why? hide/show behavior, remote media frame, and reaction text readability. */
+
+/* Never let our theme class override app hide/show logic. */
+.cs-fed-why-note-theme[hidden],
+.cs-fed-why-note-theme[aria-hidden="true"],
+.cs-fed-why-note-theme[style*="display: none"],
+.cs-fed-why-note-theme[style*="display:none"] {
+  display: none !important;
+}
+
+/* Target/reaction metadata that was too pale in bright/win_classic. */
+:root[data-theme="bright"] .cs-fed-target-theme,
+:root[data-theme="bright"] .cs-fed-reaction-line-theme,
+:root[data-theme="bright"] .cs-fed-reaction-line-theme * {
+  color: rgba(15,23,42,0.72) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-target-theme,
+:root[data-theme="win_classic"] .cs-fed-reaction-line-theme,
+:root[data-theme="win_classic"] .cs-fed-reaction-line-theme * {
+  color: #303030 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="dark"] .cs-fed-reaction-line-theme,
+:root[data-theme="dark"] .cs-fed-reaction-line-theme *,
+:root[data-theme="cpunk_orange"] .cs-fed-reaction-line-theme,
+:root[data-theme="cpunk_orange"] .cs-fed-reaction-line-theme * {
+  color: rgba(248,250,252,0.78) !important;
+}
+
+/* Remote media frame: avoid heavy dark sidebars in light themes. */
+:root[data-theme="bright"] .cs-fed-media-frame-theme {
+  background:
+    linear-gradient(135deg, rgba(224,242,254,0.76), rgba(240,253,250,0.86)) !important;
+  border: 1px solid rgba(13,148,136,0.22) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme {
+  background: #e6e6e6 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
+
+:root[data-theme="bright"] .cs-fed-media-image-theme,
+:root[data-theme="win_classic"] .cs-fed-media-image-theme {
+  background: transparent !important;
+}
+
+/* If the dark sidebars come from the media element itself/container, soften only
+   federated media frames in light themes. */
+:root[data-theme="bright"] .cs-fed-media-frame-theme img,
+:root[data-theme="bright"] .cs-fed-media-frame-theme video {
+  background:
+    linear-gradient(135deg, rgba(224,242,254,0.70), rgba(240,253,250,0.82)) !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme img,
+:root[data-theme="win_classic"] .cs-fed-media-frame-theme video {
+  background: #e6e6e6 !important;
+}
+
+/* Media validation note: make it readable but less neon/pale. */
+:root[data-theme="bright"] .cs-fed-media-note-theme,
+:root[data-theme="bright"] .cs-fed-media-note-theme * {
+  color: #0f766e !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-media-note-theme,
+:root[data-theme="win_classic"] .cs-fed-media-note-theme * {
+  color: #004040 !important;
+  text-shadow: none !important;
+}
+
+/* Why note children inherit readable color too. */
+:root[data-theme="bright"] .cs-fed-why-note-theme,
+:root[data-theme="bright"] .cs-fed-why-note-theme * {
+  color: rgba(15,23,42,0.76) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-fed-why-note-theme,
+:root[data-theme="win_classic"] .cs-fed-why-note-theme * {
+  color: #202020 !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack locked achievement pill polish v8
+   Make the small LOCKED badge under grayscale trophy icons readable. */
+
+.cs-ach-locked-pill-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 18px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+  box-sizing: border-box !important;
+}
+
+/* bright */
+:root[data-theme="bright"] .cs-ach-locked-pill-theme {
+  background: #e5e7eb !important;
+  color: #374151 !important;
+  border: 1px solid #9ca3af !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.65) !important;
+}
+
+/* win_classic */
+:root[data-theme="win_classic"] .cs-ach-locked-pill-theme {
+  background: #dcdcdc !important;
+  color: #202020 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 999px !important;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+/* dark / orange still readable too */
+:root[data-theme="dark"] .cs-ach-locked-pill-theme,
+:root[data-theme="cpunk_orange"] .cs-ach-locked-pill-theme {
+  background: rgba(255,255,255,0.10) !important;
+  color: rgba(248,250,252,0.84) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+
+/* If inner nested element carries its own color, inherit the pill color. */
+.cs-ach-locked-pill-theme * {
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack locked achievement recovery v11
+   Safe locked-row styling: only direct .cs-profile-achievement rows are touched. */
+
+/* Hide real LOCKED text if JS tagged it. */
+.cs-ach-locked-pill-theme {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Also hide pseudo LOCKED stamps, but only inside safely tagged rows. */
+.cs-ach-locked-row-theme::before,
+.cs-ach-locked-row-theme::after,
+.cs-ach-locked-row-theme > *::before,
+.cs-ach-locked-row-theme > *::after {
+  content: none !important;
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Direct locked rows get breathing room. */
+.cs-my-profile-detached-shell .cs-ach-locked-row-theme,
+.cs-profile-modal .cs-ach-locked-row-theme {
+  margin: 8px 16px !important;
+  width: auto !important;
+  max-width: calc(100% - 32px) !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Do not let child elements become row/layout blocks. */
+.cs-ach-locked-row-theme > * {
+  min-width: 0 !important;
+}
+
+/* Bright locked rows. */
+:root[data-theme="bright"] .cs-ach-locked-row-theme {
+  background:
+    linear-gradient(90deg, rgba(241,245,249,0.98), rgba(255,255,255,0.96)) !important;
+  border: 1px solid rgba(100,116,139,0.42) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(100,116,139,0.40),
+    0 1px 0 rgba(15,23,42,0.04) !important;
+}
+
+:root[data-theme="bright"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
+  color: #111827 !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="bright"] .cs-ach-locked-row-theme .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.68) !important;
+}
+
+/* Win classic locked rows. */
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme {
+  background: #f7f7f7 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 3px 0 0 #808080,
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #c0c0c0 !important;
+}
+
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
+  color: #000 !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="win_classic"] .cs-ach-locked-row-theme .cs-profile-achievement-desc {
+  color: #303030 !important;
+}
+
+/* Circle Stack locked achievement exact pill fix v12
+   Real DOM class from DevTools:
+   <span class="cs-locked-achievement-lock">Locked</span>
+*/
+
+.cs-locked-achievement-lock {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 15px !important;
+  padding: 2px 6px !important;
+  border-radius: 999px !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.03em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+  box-sizing: border-box !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+:root[data-theme="bright"] .cs-locked-achievement-lock {
+  background: #e5e7eb !important;
+  color: #374151 !important;
+  border: 1px solid #9ca3af !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72) !important;
+}
+
+:root[data-theme="win_classic"] .cs-locked-achievement-lock {
+  background: #dcdcdc !important;
+  color: #202020 !important;
+  border: 1px solid #707070 !important;
+  border-radius: 999px !important;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #b0b0b0 !important;
+}
+
+:root[data-theme="dark"] .cs-locked-achievement-lock,
+:root[data-theme="cpunk_orange"] .cs-locked-achievement-lock {
+  background: rgba(255,255,255,0.12) !important;
+  color: rgba(248,250,252,0.84) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+
+/* Keep the locked pill from visually colliding with the icon/title area. */
+.cs-profile-achievement .cs-locked-achievement-lock {
+  margin-top: 2px !important;
+}

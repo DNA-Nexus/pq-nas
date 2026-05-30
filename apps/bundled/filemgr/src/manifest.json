@@ -1,7 +1,7 @@
 {
   "id": "filemgr",
   "name": "File Manager",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "entry": "www/index.html",
   "api_base": "/api/v4/files",
   "permissions": [],
@@ -11,6 +11,6 @@
     "dark": "www/files_dark.png",
     "bright": "www/files_bright.png",
     "default": "www/files_dark.png"
-  }
+  },
+  "min_server_version": "1.1.3"
 }
-

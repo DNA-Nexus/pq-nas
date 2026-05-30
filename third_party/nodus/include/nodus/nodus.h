@@ -1,0 +1,1132 @@
+/**
+ * Nodus — Client SDK
+ *
+ * Public API for applications connecting to Nodus servers.
+ * Supports DHT operations, channel messaging, multi-server failover,
+ * and auto-reconnect with exponential backoff.
+ *
+ * Usage:
+ *   nodus_client_t client;
+ *   nodus_client_config_t cfg = { .servers = {{"1.2.3.4", 4001}}, .server_count = 1 };
+ *   nodus_client_init(&client, &cfg, &identity);
+ *   nodus_client_connect(&client);
+ *   nodus_client_put(&client, &key, data, len, type, ttl, vid, seq, &sig);
+ *   nodus_client_close(&client);
+ *
+ * @file nodus.h
+ */
+
+#ifndef NODUS_H
+#define NODUS_H
+
+#include "nodus/nodus_types.h"
+#include "core/nodus_media_storage.h"
+#include "channel/nodus_channel_store.h"
+#include "crypto/nodus_channel_crypto.h"
+#include "protocol/nodus_tier3.h"    /* Stage E.2 — cc_vote_{req,rsp} types */
+#include <pthread.h>
+#include <stdatomic.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define NODUS_CLIENT_MAX_SERVERS   8
+#define NODUS_CLIENT_MAX_LISTENS  128
+#define NODUS_CLIENT_MAX_CH_SUBS   32
+
+/* ── Connection state ───────────────────────────────────────────── */
+
+typedef enum {
+    NODUS_CLIENT_DISCONNECTED = 0,
+    NODUS_CLIENT_CONNECTING,
+    NODUS_CLIENT_AUTHENTICATING,
+    NODUS_CLIENT_READY,
+    NODUS_CLIENT_RECONNECTING
+} nodus_client_state_t;
+
+/* ── Server endpoint ────────────────────────────────────────────── */
+
+typedef struct {
+    char        ip[64];
+    uint16_t    port;
+} nodus_server_endpoint_t;
+
+/* ── Callbacks ──────────────────────────────────────────────────── */
+
+/** Called when a LISTEN key's value changes. */
+typedef void (*nodus_on_value_changed_fn)(const nodus_key_t *key,
+                                           const nodus_value_t *val,
+                                           void *user_data);
+
+/** Called when a channel post notification arrives. */
+typedef void (*nodus_on_ch_post_fn)(const uint8_t channel_uuid[NODUS_UUID_BYTES],
+                                     const nodus_channel_post_t *post,
+                                     void *user_data);
+
+/** Called when server sends ch_ring_changed (client should disconnect + reconnect) */
+typedef void (*nodus_on_ch_ring_changed_fn)(const uint8_t channel_uuid[NODUS_UUID_BYTES],
+                                              uint32_t new_version, void *user_data);
+
+/** Called when connection state changes. */
+typedef void (*nodus_on_state_change_fn)(nodus_client_state_t old_state,
+                                          nodus_client_state_t new_state,
+                                          void *user_data);
+
+/** Progress callback for media upload/download operations. */
+typedef void (*nodus_media_progress_cb)(size_t bytes_sent, size_t total_bytes,
+                                         void *user_data);
+
+/* ── Configuration ──────────────────────────────────────────────── */
+
+typedef struct {
+    nodus_server_endpoint_t  servers[NODUS_CLIENT_MAX_SERVERS];
+    int                      server_count;
+
+    /* Timeouts (ms). 0 = use defaults. */
+    int     connect_timeout_ms;     /* Default: 5000 */
+    int     request_timeout_ms;     /* Default: 10000 */
+
+    /* Auto-reconnect (enabled by default) */
+    bool    auto_reconnect;         /* Default: true */
+    int     reconnect_min_ms;       /* Default: 1000 */
+    int     reconnect_max_ms;       /* Default: 30000 */
+
+    /* Callbacks */
+    nodus_on_value_changed_fn   on_value_changed;
+    nodus_on_ch_post_fn         on_ch_post;
+    nodus_on_state_change_fn    on_state_change;
+    void                       *callback_data;
+} nodus_client_config_t;
+
+/* ── Concurrent request slot ────────────────────────────────────── */
+
+#define NODUS_MAX_PENDING  64
+
+typedef struct {
+    uint32_t    txn;
+    void       *response;       /* nodus_tier2_msg_t* */
+    uint8_t    *raw_response;
+    size_t      raw_response_len;
+    _Atomic bool ready;
+    bool        in_use;
+} nodus_pending_t;
+
+/* ── Circuit (VPN mesh Faz 1) ───────────────────────────────────── */
+
+struct nodus_client;
+
+typedef struct nodus_circuit_handle nodus_circuit_handle_t;
+
+typedef void (*nodus_circuit_data_cb)(nodus_circuit_handle_t *h,
+                                       const uint8_t *data, size_t len,
+                                       void *user);
+
+typedef void (*nodus_circuit_close_cb)(nodus_circuit_handle_t *h,
+                                        int reason, void *user);
+
+typedef void (*nodus_circuit_inbound_cb)(struct nodus_client *client,
+                                          const nodus_key_t *peer_fp,
+                                          nodus_circuit_handle_t *h,
+                                          void *user);
+
+struct nodus_circuit_handle {
+    struct nodus_client       *client;
+    uint64_t                   cid;             /* Locally-known cid */
+    bool                       in_use;
+    bool                       closed;
+    nodus_circuit_data_cb      on_data;
+    nodus_circuit_close_cb     on_close;
+    void                      *user;
+    /* E2E encryption (onion layer — relay-blind) */
+    nodus_channel_crypto_t     e2e_crypto;
+    bool                       e2e_active;
+};
+
+#define NODUS_CLIENT_MAX_CIRCUITS  16
+
+/* ── Client ─────────────────────────────────────────────────────── */
+
+/* Forward declarations for internal types */
+struct nodus_tcp;
+struct nodus_tcp_conn;
+
+typedef struct nodus_client {
+    nodus_client_config_t  config;
+    nodus_identity_t       identity;
+    nodus_client_state_t   state;
+
+    /* TCP transport (opaque — managed internally) */
+    void                  *tcp;        /* nodus_tcp_t* */
+    void                  *conn;       /* nodus_tcp_conn_t* */
+
+    /* Session */
+    uint8_t                token[NODUS_SESSION_TOKEN_LEN];
+    _Atomic uint32_t       next_txn;
+
+    /* Current server index for failover */
+    int                    server_idx;
+
+    /* Reconnect backoff state */
+    int                    backoff_ms;
+    uint64_t               reconnect_at; /* Unix ms when to reconnect */
+
+    /* Keepalive ping (prevents server idle sweep) */
+    uint64_t               last_ping_ms; /* Unix ms of last ping sent */
+
+    /* Active subscriptions (for re-subscribe on reconnect) */
+    nodus_key_t            listen_keys[NODUS_CLIENT_MAX_LISTENS];
+    int                    listen_count;
+    uint8_t                ch_subs[NODUS_CLIENT_MAX_CH_SUBS][NODUS_UUID_BYTES];
+    int                    ch_sub_count;
+
+    /* Concurrent request handling */
+    nodus_pending_t        pending[NODUS_MAX_PENDING];
+    pthread_mutex_t        pending_mutex;  /* protects pending[] slots */
+    pthread_mutex_t        send_mutex;     /* serializes TCP send */
+    pthread_mutex_t        poll_mutex;     /* serializes TCP poll */
+
+    /* Internal read thread — continuously reads TCP for push notifications */
+    pthread_t              read_thread;
+    _Atomic bool           read_thread_running;
+    _Atomic bool           read_thread_stop;
+
+    /* App lifecycle — suspend prevents auto-reconnect while in background */
+    _Atomic bool           suspended;
+
+    /* Circuit handles (VPN mesh Faz 1) */
+    nodus_circuit_handle_t    circuits[NODUS_CLIENT_MAX_CIRCUITS];
+    nodus_circuit_inbound_cb  on_circuit_inbound;
+    void                     *circuit_inbound_user;
+    _Atomic uint32_t          next_client_cid;
+    pthread_mutex_t           circuits_mutex;
+
+    /* Channel encryption (Kyber handshake result).
+     * B3 fix — channel_crypto storage moved to nodus_tcp_conn_t.
+     * Read via client->conn->channel_crypto. Eliminates the pointer
+     * aliasing race that caused "Replay detected" loops on
+     * disconnect+reconnect. */
+
+    /* Cached server Kyber pubkey (survives reconnect, prep for anonymous hello) */
+    uint8_t                   cached_server_kyber_pk[1568];
+    bool                      has_cached_server_kyber;
+
+    /* Cached server Dilithium5 pubkey (TOFU — set on first auth_ok with sig) */
+    nodus_pubkey_t             server_dil_pk;
+    bool                       has_server_dil_pk;
+
+} nodus_client_t;
+
+/* ── Lifecycle ──────────────────────────────────────────────────── */
+
+/**
+ * Initialize client with config and identity.
+ * Does NOT connect — call nodus_client_connect() after.
+ */
+int nodus_client_init(nodus_client_t *client,
+                       const nodus_client_config_t *config,
+                       const nodus_identity_t *identity);
+
+/**
+ * Connect to the first available server and authenticate.
+ * Tries servers in order until one succeeds.
+ *
+ * @return 0 on success, -1 on failure (all servers unreachable)
+ */
+int nodus_client_connect(nodus_client_t *client);
+
+/**
+ * Poll for incoming data and process callbacks.
+ * Call this regularly from your event loop.
+ * Handles auto-reconnect if enabled.
+ *
+ * @param timeout_ms  Poll timeout (-1 = block until event)
+ * @return Number of events processed, or -1 on error
+ */
+int nodus_client_poll(nodus_client_t *client, int timeout_ms);
+
+/**
+ * Check if client is connected and authenticated.
+ */
+bool nodus_client_is_ready(const nodus_client_t *client);
+
+/**
+ * Suspend client — close TCP and prevent auto-reconnect.
+ * Call when app goes to background to avoid dead sockets.
+ * Read thread stays alive but idle.
+ */
+void nodus_client_suspend(nodus_client_t *client);
+
+/**
+ * Resume client — allow auto-reconnect and trigger immediate reconnect.
+ * Call when app comes to foreground.
+ */
+void nodus_client_resume(nodus_client_t *client);
+
+/**
+ * Get current connection state.
+ */
+nodus_client_state_t nodus_client_state(const nodus_client_t *client);
+
+/**
+ * Disconnect and clean up. Does NOT free client struct.
+ */
+void nodus_client_close(nodus_client_t *client);
+
+/**
+ * Force-disconnect the TCP socket to interrupt blocking operations.
+ * Closes the socket fd but does NOT free any memory.
+ * Use before joining threads that may be blocked on nodus ops.
+ */
+void nodus_client_force_disconnect(nodus_client_t *client);
+
+/* ── DHT Operations ─────────────────────────────────────────────── */
+
+/**
+ * Store a signed value on the DHT.
+ * The value must already be signed (sig parameter).
+ *
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_put(nodus_client_t *client,
+                      const nodus_key_t *key,
+                      const uint8_t *data, size_t data_len,
+                      nodus_value_type_t type, uint32_t ttl,
+                      uint64_t vid, uint64_t seq,
+                      const nodus_sig_t *sig);
+
+/**
+ * Same as nodus_client_put(), but waits up to timeout_ms milliseconds for
+ * the server response instead of config.request_timeout_ms. Use for large
+ * payloads or mobile links where the default 10s is too tight.
+ *
+ * Passing timeout_ms <= 0 falls back to config.request_timeout_ms.
+ *
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_put_ex(nodus_client_t *client,
+                         const nodus_key_t *key,
+                         const uint8_t *data, size_t data_len,
+                         nodus_value_type_t type, uint32_t ttl,
+                         uint64_t vid, uint64_t seq,
+                         const nodus_sig_t *sig,
+                         int timeout_ms);
+
+/**
+ * Retrieve a single value by key (latest version).
+ * Caller must free *val_out with nodus_value_free().
+ *
+ * @return 0 on success, NODUS_ERR_NOT_FOUND if missing
+ */
+int nodus_client_get(nodus_client_t *client,
+                      const nodus_key_t *key,
+                      nodus_value_t **val_out);
+
+/**
+ * Retrieve all values for a key (all writers).
+ * Caller must free each value with nodus_value_free().
+ *
+ * @return 0 on success (count may be 0)
+ */
+int nodus_client_get_all(nodus_client_t *client,
+                          const nodus_key_t *key,
+                          nodus_value_t ***vals_out,
+                          size_t *count_out);
+
+/* ── Batch DHT Operations ───────────────────────────────────────── */
+
+/** Result for one key in a get_batch response */
+typedef struct {
+    nodus_key_t     key;
+    nodus_value_t **vals;
+    size_t          count;
+} nodus_batch_result_t;
+
+/** Result for one key in a count_batch response */
+typedef struct {
+    nodus_key_t     key;
+    size_t          count;
+    bool            has_mine;
+} nodus_count_result_t;
+
+/**
+ * Batch get_all: retrieve all values for multiple keys in one request.
+ * Caller must free results with nodus_client_free_batch_result().
+ *
+ * @param keys           Array of keys to query
+ * @param key_count      Number of keys (1..32)
+ * @param results_out    Output: heap-allocated array of per-key results
+ * @param result_count_out  Number of results (== key_count on success)
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_get_batch(nodus_client_t *client,
+                            const nodus_key_t *keys, int key_count,
+                            nodus_batch_result_t **results_out,
+                            int *result_count_out);
+
+/**
+ * Batch count: get value counts + has_mine for multiple keys in one request.
+ * Caller must free results with nodus_client_free_count_result().
+ *
+ * @param keys           Array of keys to query
+ * @param key_count      Number of keys (1..32)
+ * @param my_fp          Caller fingerprint for has_mine check (NULL to skip)
+ * @param results_out    Output: heap-allocated array of per-key results
+ * @param result_count_out  Number of results
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_count_batch(nodus_client_t *client,
+                              const nodus_key_t *keys, int key_count,
+                              const nodus_key_t *my_fp,
+                              nodus_count_result_t **results_out,
+                              int *result_count_out);
+
+/** Free results from nodus_client_get_batch(). */
+void nodus_client_free_batch_result(nodus_batch_result_t *results, int count);
+
+/** Free results from nodus_client_count_batch(). */
+void nodus_client_free_count_result(nodus_count_result_t *results, int count);
+
+/**
+ * Subscribe to changes on a DHT key.
+ * Notifications delivered via on_value_changed callback.
+ *
+ * @return 0 on success
+ */
+int nodus_client_listen(nodus_client_t *client,
+                         const nodus_key_t *key);
+
+/**
+ * Unsubscribe from a DHT key.
+ */
+int nodus_client_unlisten(nodus_client_t *client,
+                           const nodus_key_t *key);
+
+/**
+ * Request list of cluster servers from the connected server.
+ * Returns endpoints of all alive cluster peers + self.
+ *
+ * @param endpoints_out  Output array (caller provides, up to max_count)
+ * @param max_count      Max entries in endpoints_out
+ * @param count_out      Actual count written
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_get_servers(nodus_client_t *client,
+                              nodus_server_endpoint_t *endpoints_out,
+                              int max_count, int *count_out);
+
+/* ── Channel Operations ─────────────────────────────────────────── */
+
+/**
+ * Create a new channel.
+ * The UUID should be generated by the caller (UUID v4).
+ *
+ * @return 0 on success
+ */
+int nodus_client_ch_create(nodus_client_t *client,
+                            const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/**
+ * List public channels from server (paginated).
+ *
+ * @param offset     Skip first N results (0 = start)
+ * @param limit      Maximum results to return (default 50, max 200)
+ * @param metas_out  Output: heap-allocated array. Caller frees with free().
+ * @param count_out  Number of results
+ * @return 0 on success
+ */
+/**
+ * Get a single channel's metadata from server by UUID.
+ *
+ * @param uuid       16-byte channel UUID
+ * @param meta_out   Output: channel metadata (caller-owned, stack or heap)
+ * @return 0 on success, NODUS_ERR_NOT_FOUND if channel doesn't exist
+ */
+int nodus_client_ch_get(nodus_client_t *client,
+                         const uint8_t uuid[NODUS_UUID_BYTES],
+                         nodus_channel_meta_t *meta_out);
+
+int nodus_client_ch_list(nodus_client_t *client,
+                          int offset, int limit,
+                          nodus_channel_meta_t **metas_out,
+                          size_t *count_out);
+
+/**
+ * Search public channels by name/description (paginated).
+ *
+ * @param query      Search string (server does LIKE %query%)
+ * @param offset     Skip first N results
+ * @param limit      Maximum results to return
+ * @param metas_out  Output: heap-allocated array. Caller frees with free().
+ * @param count_out  Number of results
+ * @return 0 on success
+ */
+int nodus_client_ch_search(nodus_client_t *client,
+                            const char *query,
+                            int offset, int limit,
+                            nodus_channel_meta_t **metas_out,
+                            size_t *count_out);
+
+/**
+ * Post a message to a channel.
+ * The post must be signed by the caller.
+ *
+ * @param received_at_out  If non-NULL, receives the assigned received_at (ms)
+ * @return 0 on success
+ */
+int nodus_client_ch_post(nodus_client_t *client,
+                          const uint8_t ch_uuid[NODUS_UUID_BYTES],
+                          const uint8_t post_uuid[NODUS_UUID_BYTES],
+                          const uint8_t *body, size_t body_len,
+                          uint64_t timestamp, const nodus_sig_t *sig,
+                          uint64_t *received_at_out);
+
+/**
+ * Get posts from a channel.
+ * Caller must free each post's body and the array.
+ *
+ * @param since_received_at  Get posts after this received_at (0 = from start)
+ * @param max_count  Maximum posts to return (0 = server default)
+ * @return 0 on success
+ */
+int nodus_client_ch_get_posts(nodus_client_t *client,
+                               const uint8_t uuid[NODUS_UUID_BYTES],
+                               uint64_t since_received_at, int max_count,
+                               nodus_channel_post_t **posts_out,
+                               size_t *count_out);
+
+/**
+ * Subscribe to channel post notifications.
+ * Notifications delivered via on_ch_post callback.
+ *
+ * @return 0 on success
+ */
+int nodus_client_ch_subscribe(nodus_client_t *client,
+                               const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/**
+ * Unsubscribe from a channel.
+ */
+int nodus_client_ch_unsubscribe(nodus_client_t *client,
+                                 const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/* ── Channel Connection (TCP 4003) ─────────────────────────────── */
+
+#define NODUS_CH_CONN_MAX_SUBS  32
+#define NODUS_CH_MAX_PENDING    32
+
+/** Channel connection state */
+typedef enum {
+    NODUS_CH_DISCONNECTED = 0,
+    NODUS_CH_CONNECTING,
+    NODUS_CH_AUTHENTICATING,
+    NODUS_CH_READY,
+    NODUS_CH_RECONNECTING
+} nodus_ch_state_t;
+
+/** Pending request slot for channel connection */
+typedef struct {
+    uint32_t    txn;
+    void       *response;       /* nodus_tier2_msg_t* */
+    _Atomic bool ready;
+    bool        in_use;
+} nodus_ch_pending_t;
+
+/** Dedicated channel connection to a node's TCP 4003 port */
+typedef struct {
+    char                    host[64];
+    uint16_t                port;
+    nodus_ch_state_t        state;
+    nodus_identity_t        identity;
+
+    /* TCP transport */
+    void                   *tcp;        /* nodus_tcp_t* */
+    void                   *conn;       /* nodus_tcp_conn_t* */
+
+    /* Session */
+    uint8_t                 token[NODUS_SESSION_TOKEN_LEN];
+    _Atomic uint32_t        next_txn;
+
+    /* Subscriptions tracked for push notifications */
+    uint8_t                 ch_subs[NODUS_CH_CONN_MAX_SUBS][NODUS_UUID_BYTES];
+    int                     ch_sub_count;
+
+    /* Callback for push post notifications */
+    nodus_on_ch_post_fn     on_ch_post;
+    void                   *cb_data;
+
+    /* Callback for ring change notifications */
+    nodus_on_ch_ring_changed_fn on_ring_changed;
+    void                       *ring_changed_data;
+
+    /* Concurrent request handling */
+    nodus_ch_pending_t      pending[NODUS_CH_MAX_PENDING];
+    pthread_mutex_t         pending_mutex;
+    pthread_mutex_t         send_mutex;
+
+    /* Reconnect state */
+    uint64_t                reconnect_at;     /* Timestamp (ms) for next reconnect attempt */
+    uint32_t                backoff_ms;       /* Current backoff interval */
+
+    /* Internal read thread */
+    pthread_t               read_thread;
+    _Atomic bool            read_thread_running;
+    _Atomic bool            read_thread_stop;
+} nodus_ch_conn_t;
+
+/**
+ * Initialize a channel connection.
+ * Does NOT connect — call nodus_channel_connect() after.
+ */
+int nodus_channel_init(nodus_ch_conn_t *ch,
+                       const char *host, uint16_t port,
+                       const nodus_identity_t *identity,
+                       nodus_on_ch_post_fn on_post, void *cb_data);
+
+/**
+ * Connect to the node's TCP 4003 port and authenticate.
+ * @return 0 on success, -1 on failure
+ */
+int nodus_channel_connect(nodus_ch_conn_t *ch);
+
+/**
+ * Check if channel connection is ready.
+ */
+bool nodus_channel_is_ready(const nodus_ch_conn_t *ch);
+
+/**
+ * Disconnect and clean up. Does NOT free the struct.
+ */
+void nodus_channel_close(nodus_ch_conn_t *ch);
+
+/**
+ * Create a channel via TCP 4003.
+ */
+int nodus_ch_conn_create(nodus_ch_conn_t *ch,
+                         const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/**
+ * Post to a channel via TCP 4003.
+ */
+int nodus_ch_conn_post(nodus_ch_conn_t *ch,
+                       const uint8_t ch_uuid[NODUS_UUID_BYTES],
+                       const uint8_t post_uuid[NODUS_UUID_BYTES],
+                       const uint8_t *body, size_t body_len,
+                       uint64_t timestamp, const nodus_sig_t *sig,
+                       uint64_t *received_at_out);
+
+/**
+ * Get posts from a channel via TCP 4003.
+ */
+int nodus_ch_conn_get_posts(nodus_ch_conn_t *ch,
+                            const uint8_t uuid[NODUS_UUID_BYTES],
+                            uint64_t since_received_at, int max_count,
+                            nodus_channel_post_t **posts_out,
+                            size_t *count_out);
+
+/**
+ * Subscribe to channel post notifications via TCP 4003.
+ */
+int nodus_ch_conn_subscribe(nodus_ch_conn_t *ch,
+                            const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/**
+ * Unsubscribe from channel notifications via TCP 4003.
+ */
+int nodus_ch_conn_unsubscribe(nodus_ch_conn_t *ch,
+                              const uint8_t uuid[NODUS_UUID_BYTES]);
+
+/* ── Presence Operations ─────────────────────────────────────────── */
+
+#define NODUS_PRESENCE_MAX_QUERY  128
+
+typedef struct {
+    nodus_key_t fp;
+    bool        online;
+    uint8_t     peer_index;
+    uint64_t    last_seen;
+} nodus_presence_entry_result_t;
+
+typedef struct {
+    int total_queried;
+    int online_count;
+    nodus_presence_entry_result_t *entries;       /* heap, online entries */
+    int offline_seen_count;
+    nodus_presence_entry_result_t *offline_seen;  /* heap, recently disconnected */
+} nodus_presence_result_t;
+
+/**
+ * Batch presence query: check online status for up to 128 fingerprints.
+ * Result contains only online entries (sparse).
+ * Caller must free result with nodus_client_free_presence_result().
+ *
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_presence_query(nodus_client_t *client,
+                                  const nodus_key_t *fps, int count,
+                                  nodus_presence_result_t *result);
+
+/**
+ * Free a presence result.
+ */
+void nodus_client_free_presence_result(nodus_presence_result_t *result);
+
+/* ── DNAC Operations ─────────────────────────────────────────────── */
+
+/**
+ * Submit spend transaction for BFT consensus.
+ * This is asynchronous on the server — blocks until COMMIT or error (up to 30s).
+ *
+ * @param tx_hash     SHA3-512 hash of tx_data (64 bytes)
+ * @param tx_data     Serialized DNAC transaction
+ * @param tx_len      Length of tx_data
+ * @param sender_pk   Sender's Dilithium5 public key
+ * @param sender_sig  Sender's signature over tx_hash
+ * @param fee         Fee amount
+ * @param result_out  Witness attestation result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_spend(nodus_client_t *client,
+                              const uint8_t *tx_hash,
+                              const uint8_t *tx_data, uint32_t tx_len,
+                              const nodus_pubkey_t *sender_pk,
+                              const nodus_sig_t *sender_sig,
+                              uint64_t fee,
+                              nodus_dnac_spend_result_t *result_out);
+
+/**
+ * Check if a nullifier has been spent.
+ *
+ * @param nullifier  64-byte nullifier to check
+ * @param result_out  Nullifier check result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_nullifier(nodus_client_t *client,
+                                  const uint8_t *nullifier,
+                                  nodus_dnac_nullifier_result_t *result_out);
+
+/**
+ * Query ledger entry by transaction hash.
+ *
+ * @param tx_hash     64-byte transaction hash
+ * @param result_out  Ledger entry result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_ledger(nodus_client_t *client,
+                               const uint8_t *tx_hash,
+                               nodus_dnac_ledger_result_t *result_out);
+
+/**
+ * Query supply state.
+ *
+ * @param result_out  Supply state result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_supply(nodus_client_t *client,
+                               nodus_dnac_supply_result_t *result_out);
+
+/**
+ * @brief Query current dynamic fee info from witness
+ * @param client Connected nodus client
+ * @param result_out Output fee info
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_fee_info(nodus_client_t *client,
+                                nodus_dnac_fee_info_t *result_out);
+
+/**
+ * Query UTXOs by owner fingerprint.
+ * Caller must free result_out->entries when done.
+ *
+ * @param owner        Owner fingerprint string
+ * @param max_results  Maximum entries to return (capped at 100)
+ * @param result_out   UTXO query result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_utxo(nodus_client_t *client,
+                             const char *owner,
+                             int max_results,
+                             nodus_dnac_utxo_result_t *result_out);
+
+/**
+ * Query ledger entries in a sequence range.
+ * Caller must free result_out->entries when done.
+ *
+ * @param from_seq    Start sequence (inclusive)
+ * @param to_seq      End sequence (inclusive)
+ * @param result_out  Ledger range result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_ledger_range(nodus_client_t *client,
+                                     uint64_t from_seq, uint64_t to_seq,
+                                     nodus_dnac_range_result_t *result_out);
+
+/**
+ * Query transaction history for an owner fingerprint.
+ * Returns transactions where the owner is sender OR receiver.
+ * Caller must free result_out with nodus_client_free_history_result().
+ *
+ * @param owner       Owner fingerprint string (128 hex chars)
+ * @param limit       Maximum entries to return (capped at 100)
+ * @param result_out  History query result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_history(nodus_client_t *client,
+                                const char *owner,
+                                int limit,
+                                nodus_dnac_history_result_t *result_out);
+
+/**
+ * Query witness roster.
+ *
+ * @param result_out  Roster result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_roster(nodus_client_t *client,
+                               nodus_dnac_roster_result_t *result_out);
+
+/**
+ * Query full transaction data by hash.
+ * Caller must free result_out->tx_data when done.
+ *
+ * @param tx_hash     64-byte transaction hash
+ * @param result_out  Transaction data result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_tx(nodus_client_t *client,
+                           const uint8_t *tx_hash,
+                           nodus_dnac_tx_result_t *result_out);
+
+/**
+ * Request a fresh spndrslt receipt for a previously-committed TX.
+ *
+ * Used by DNAC clients to recover from a dnac_spend timeout: if the
+ * first spend was actually committed but the response was lost, the
+ * client calls spend_replay to re-obtain a valid witness signature +
+ * ledger coordinates. The server re-signs the same canonical preimage
+ * over the committed (block_height, tx_index) with a fresh timestamp;
+ * the on-chain position is identical to the original commit.
+ *
+ * Returns:
+ *   0                        — committed; result_out populated
+ *   NODUS_ERR_NOT_FOUND      — tx_hash is not in the committed ledger
+ *   NODUS_ERR_TIMEOUT / ...  — transport errors as usual
+ *
+ * @param tx_hash     64-byte committed transaction hash to replay
+ * @param result_out  Same shape as nodus_client_dnac_spend() receipt
+ */
+int nodus_client_dnac_spend_replay(nodus_client_t *client,
+                                     const uint8_t *tx_hash,
+                                     nodus_dnac_spend_result_t *result_out);
+
+/**
+ * Query block by height.
+ *
+ * @param height      Block height
+ * @param result_out  Block result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_block(nodus_client_t *client,
+                              uint64_t height,
+                              nodus_dnac_block_result_t *result_out);
+
+/**
+ * Query the genesis block (Phase 2 / Task 36).
+ *
+ * Fetches the height-0 block including the serialized chain_def blob
+ * so the client can reassemble a dnac_block_t, recompute the block
+ * hash, and compare against its hardcoded chain_id. Caller must free
+ * result_out with nodus_client_free_genesis_result().
+ *
+ * @param result_out  Genesis result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_genesis(nodus_client_t *client,
+                                nodus_dnac_genesis_result_t *result_out);
+
+/** Free heap-allocated chain_def_blob from dnac_genesis result. */
+void nodus_client_free_genesis_result(nodus_dnac_genesis_result_t *result);
+
+/** Free heap-allocated commit_cert from dnac_block result. */
+void nodus_client_free_block_result(nodus_dnac_block_result_t *result);
+
+/**
+ * Query blocks in a height range.
+ * Caller must free result_out->blocks when done.
+ *
+ * @param from_height Start height (inclusive)
+ * @param to_height   End height (inclusive)
+ * @param result_out  Block range result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_block_range(nodus_client_t *client,
+                                    uint64_t from_height, uint64_t to_height,
+                                    nodus_dnac_block_range_result_t *result_out);
+
+/**
+ * List all registered tokens.
+ * Caller must free result_out with nodus_client_free_token_list_result().
+ *
+ * @param result_out  Token list result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_token_list(nodus_client_t *client,
+                                   nodus_dnac_token_list_result_t *result_out);
+
+/**
+ * Query single token by token_id.
+ *
+ * @param token_id    64-byte token identifier
+ * @param result_out  Token info result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_token_info(nodus_client_t *client,
+                                   const uint8_t *token_id,
+                                   nodus_dnac_token_info_t *result_out);
+
+/**
+ * Free token list from nodus_client_dnac_token_list().
+ */
+void nodus_client_free_token_list_result(nodus_dnac_token_list_result_t *result);
+
+/**
+ * Free UTXO entries from nodus_client_dnac_utxo().
+ */
+void nodus_client_free_utxo_result(nodus_dnac_utxo_result_t *result);
+
+/**
+ * Free history entries from nodus_client_dnac_history().
+ */
+void nodus_client_free_history_result(nodus_dnac_history_result_t *result);
+
+/**
+ * Free range entries from nodus_client_dnac_ledger_range().
+ */
+void nodus_client_free_range_result(nodus_dnac_range_result_t *result);
+
+/**
+ * Free TX data from nodus_client_dnac_tx().
+ */
+void nodus_client_free_tx_result(nodus_dnac_tx_result_t *result);
+
+/**
+ * Free block range from nodus_client_dnac_block_range().
+ */
+void nodus_client_free_block_range_result(nodus_dnac_block_range_result_t *result);
+
+/* ── Phase 14 / stake-delegation v1 RPCs ───────────────────────────── */
+
+/* v0.16: nodus_client_dnac_pending_rewards +
+ * nodus_client_free_pending_rewards_result removed. Rewards are pushed
+ * out as UTXOs at each epoch boundary, so there is no pending balance
+ * to query. */
+
+/**
+ * Query the witness for the current epoch's committee (chain-authoritative).
+ *
+ * @param result_out   Committee result (fixed-size internal array)
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_committee(nodus_client_t *client,
+                                  nodus_dnac_committee_result_t *result_out);
+
+/**
+ * Hard-Fork v1 Stage E.2 — proposer-side helper to ask ONE committee peer
+ * to sign a chain_config proposal preimage.
+ *
+ * Opens a short-lived TCP connection to `peer_address` (format "ip:port";
+ * port defaults to NODUS_DEFAULT_WITNESS_PORT when omitted), sends a
+ * single w_cc_vote_req signed with `caller_sk`, waits up to `timeout_ms`
+ * for the corresponding w_cc_vote_rsp, verifies the response wsig against
+ * `expected_peer_pk`, and writes the decoded response to `*rsp_out`.
+ *
+ * The CLI proposer must be a committee member — the receiving peer drops
+ * any tier-3 request from an unknown sender_id (see
+ * nodus/src/witness/nodus_witness.c dispatch guard). Out-of-committee
+ * callers surface as a timeout (-2) rather than a visible error.
+ *
+ * @param peer_address       "ip:port" of the target committee member
+ * @param caller_pk          Proposer Dilithium5 public key (T2 hello)
+ * @param caller_sk          Proposer Dilithium5 secret key (wsig source)
+ * @param caller_witness_id  first 32B of SHA3-512(caller_pk) — t3 sender_id
+ * @param expected_peer_pk   Target member's Dilithium5 pubkey (rsp verify)
+ * @param chain_id           Current chain_id (32 bytes) — t3 header cid
+ * @param req                Proposal fields to sign
+ * @param timeout_ms         Total deadline (handshake + send + recv combined)
+ * @param rsp_out            Decoded response on success
+ *
+ * @return  0   on verified response (callers check rsp_out->accepted
+ *              to distinguish accept vs reject)
+ *         -1   invalid args / encode / transport failure
+ *         -2   timeout at any phase
+ *         -3   response decoded but wsig verification failed
+ *         -4   peer rejected T2 auth (see stderr for code+msg)
+ */
+int nodus_client_cc_vote_send(const char *peer_address,
+                                const nodus_pubkey_t *caller_pk,
+                                const nodus_seckey_t *caller_sk,
+                                const uint8_t caller_witness_id[32],
+                                const nodus_pubkey_t *expected_peer_pk,
+                                const uint8_t chain_id[32],
+                                const nodus_t3_cc_vote_req_t *req,
+                                uint32_t timeout_ms,
+                                nodus_t3_cc_vote_rsp_t *rsp_out);
+
+/**
+ * Page through the full validator table on the witness (all statuses).
+ *
+ * Caller MUST free result_out with nodus_client_free_validator_list_result().
+ *
+ * @param filter_status  -1 = all statuses, 0..3 = filter by status
+ * @param offset         Page offset (0-based)
+ * @param limit          Max entries to return (server-side cap applies)
+ * @param result_out     Query result (entries heap-allocated)
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_validator_list(nodus_client_t *client,
+                                       int filter_status,
+                                       int offset,
+                                       int limit,
+                                       nodus_dnac_validator_list_result_t *result_out);
+
+/** Free heap allocation inside a validator-list result. */
+void nodus_client_free_validator_list_result(nodus_dnac_validator_list_result_t *result);
+
+/**
+ * Query the caller's own active delegations.
+ *
+ * Sends the raw 2592-byte Dilithium5 pubkey on the wire. The witness
+ * C11-authenticates by computing SHA3-512(pubkey) and comparing against
+ * the authenticated session fingerprint — mismatch yields
+ * NODUS_ERR_NOT_AUTHENTICATED. Response entries carry validator_fp
+ * rendered server-side so the client never sees raw validator pubkeys.
+ *
+ * Caller must free result_out with nodus_client_free_delegations_result().
+ *
+ * @param client         Active nodus client (authenticated session)
+ * @param delegator_pubkey  Raw pubkey — must match the session identity
+ * @param pubkey_len     Must equal NODUS_PK_BYTES (2592); otherwise
+ *                        returns -1
+ * @param max_results    Upper bound (capped at NODUS_DNAC_MAX_DELEGATIONS_RESULTS)
+ * @param result_out     Query result
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_dnac_delegations(nodus_client_t *client,
+                                    const uint8_t *delegator_pubkey,
+                                    size_t pubkey_len,
+                                    int max_results,
+                                    nodus_dnac_delegations_result_t *result_out);
+
+/**
+ * Free heap allocation inside a delegations result.
+ */
+void nodus_client_free_delegations_result(nodus_dnac_delegations_result_t *result);
+
+/* ── Media Operations ──────────────────────────────────────────────── */
+
+/**
+ * Upload a media chunk to the DHT.
+ * For chunk_index=0, provides metadata (chunk_count, total_size, media_type, ttl, encrypted).
+ * Server responds with put_ok; complete_out is set true when all chunks received.
+ *
+ * @return 0 on success, error code on failure
+ */
+int nodus_client_media_put(nodus_client_t *client,
+                           const uint8_t content_hash[64],
+                           uint32_t chunk_index, uint32_t chunk_count,
+                           uint64_t total_size, uint8_t media_type,
+                           bool encrypted, uint32_t ttl,
+                           const uint8_t *data, size_t data_len,
+                           const nodus_sig_t *sig,
+                           bool *complete_out,
+                           nodus_media_progress_cb progress_cb,
+                           void *progress_user_data);
+
+/**
+ * Get media metadata (chunk count, size, type, completion status).
+ * Caller provides pre-allocated meta_out.
+ *
+ * @return 0 on success, NODUS_ERR_NOT_FOUND if missing
+ */
+int nodus_client_media_get_meta(nodus_client_t *client,
+                                const uint8_t content_hash[64],
+                                nodus_media_meta_t *meta_out);
+
+/**
+ * Download a single media chunk by index.
+ * Caller must free(*data_out).
+ *
+ * @return 0 on success, NODUS_ERR_NOT_FOUND if missing
+ */
+int nodus_client_media_get_chunk(nodus_client_t *client,
+                                 const uint8_t content_hash[64],
+                                 uint32_t chunk_index,
+                                 uint8_t **data_out, size_t *data_len_out);
+
+/**
+ * Check if media exists and is complete on the DHT.
+ *
+ * @return 0 on success (exists_out set), error code on failure
+ */
+int nodus_client_media_exists(nodus_client_t *client,
+                              const uint8_t content_hash[64],
+                              bool *exists_out);
+
+/* ── Utility ────────────────────────────────────────────────────── */
+
+/**
+ * Get the client's fingerprint string.
+ */
+const char *nodus_client_fingerprint(const nodus_client_t *client);
+
+/**
+ * Free a posts array returned by nodus_client_ch_get_posts().
+ */
+void nodus_client_free_posts(nodus_channel_post_t *posts, size_t count);
+
+/* ── Circuit operations (Faz 1) ─────────────────────────────────── */
+
+/**
+ * Open outbound circuit to a peer by fingerprint. Blocks until ack or error.
+ * Returns 0 on success (out handle populated), or a NODUS_ERR_* code.
+ */
+int nodus_circuit_open(nodus_client_t *client, const nodus_key_t *peer_fp,
+                        nodus_circuit_data_cb on_data,
+                        nodus_circuit_close_cb on_close,
+                        void *user,
+                        nodus_circuit_handle_t **out);
+
+/**
+ * Open outbound circuit with E2E encryption (onion layer).
+ * peer_kyber_pk: target's Kyber1024 pubkey (1568 bytes, from DHT keyserver).
+ * Circuit payload is encrypted with per-circuit AES key — relay nodes blind.
+ */
+int nodus_circuit_open_e2e(nodus_client_t *client, const nodus_key_t *peer_fp,
+                            const uint8_t *peer_kyber_pk,
+                            nodus_circuit_data_cb on_data,
+                            nodus_circuit_close_cb on_close,
+                            void *user,
+                            nodus_circuit_handle_t **out);
+
+/** Register global callback for inbound circuits from peers. */
+void nodus_circuit_set_inbound_cb(nodus_client_t *client,
+                                    nodus_circuit_inbound_cb cb, void *user);
+
+/** Attach data/close callbacks to an inbound circuit handle. */
+int nodus_circuit_attach(nodus_circuit_handle_t *h,
+                          nodus_circuit_data_cb on_data,
+                          nodus_circuit_close_cb on_close,
+                          void *user);
+
+/** Send data through circuit. Returns 0 on success. */
+int nodus_circuit_send(nodus_circuit_handle_t *h,
+                        const uint8_t *data, size_t len);
+
+/** Close circuit. Notifies peer and releases handle. */
+int nodus_circuit_close(nodus_circuit_handle_t *h);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NODUS_H */

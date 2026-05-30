@@ -54,11 +54,12 @@ rm -rf "$OUTDIR"
 mkdir -p "$STAGE"
 
 # ---- 1) Build binaries ----
-echo "[*] Building pqnas_server + pqnas_keygen..."
-cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen
+echo "[*] Building pqnas_server + pqnas_keygen + nodus-cli..."
+cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen nodus-cli
 
 test -x "$REPO_ROOT/build/bin/pqnas_server"
 test -x "$REPO_ROOT/build/bin/pqnas_keygen"
+test -x "$REPO_ROOT/build/bin/nodus-cli"
 
 # ---- 2) NOTE: repo config may be "dirty" during development ----
 # We do NOT ship $REPO_ROOT/config anymore. We always ship tools/release/config.
@@ -116,6 +117,7 @@ fi
 # Binaries at package root
 install -m 0755 "$REPO_ROOT/build/bin/pqnas_server" "$STAGE/pqnas_server"
 install -m 0755 "$REPO_ROOT/build/bin/pqnas_keygen" "$STAGE/pqnas_keygen"
+install -m 0755 "$REPO_ROOT/build/bin/nodus-cli" "$STAGE/nodus-cli"
 
 # DNA engine shared library (needed by /api/v4/verify)
 DNA_SRC="$REPO_ROOT/server/third_party/dna/lib/linux/x64/libdna_lib.so"
@@ -298,6 +300,9 @@ echo "  rm -rf /tmp/pqnas-test && mkdir -p /tmp/pqnas-test"
 echo "  tar -xzf '$TARBALL' -C /tmp/pqnas-test"
 echo "  ls -la /tmp/pqnas-test/pqnas"
 echo
-echo "Expected DNA runtime inside tarball:"
+echo "Expected binaries/runtime inside tarball:"
+echo "  /tmp/pqnas-test/pqnas/pqnas_server"
+echo "  /tmp/pqnas-test/pqnas/pqnas_keygen"
+echo "  /tmp/pqnas-test/pqnas/nodus-cli"
 echo "  /tmp/pqnas-test/pqnas/runtime/dna/dna-connect-cli"
 echo "  /tmp/pqnas-test/pqnas/runtime/dna/libdna.so"

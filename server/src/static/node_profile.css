@@ -1,0 +1,741 @@
+.nodeProfileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90000;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.38);
+  backdrop-filter: blur(3px);
+}
+
+.nodeProfileWindow {
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--fg-rgb),0.22);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(168,85,247,0.16), transparent 38%),
+    rgba(17,18,28,0.96);
+  color: var(--fg);
+  box-shadow:
+    0 28px 90px rgba(0,0,0,0.52),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.nodeProfileTitlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(var(--fg-rgb),0.10);
+  user-select: none;
+  cursor: grab;
+}
+
+.nodeProfileTitlebar:active {
+  cursor: grabbing;
+}
+
+.nodeProfileKicker {
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(var(--fg-rgb),0.74);
+}
+
+.nodeProfileSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(var(--fg-rgb),0.52);
+}
+
+.nodeProfileClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--fg-rgb),0.18);
+  background: rgba(var(--fg-rgb),0.10);
+  color: var(--fg);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nodeProfileBody {
+  padding: 18px;
+  overflow: auto;
+  max-height: calc(min(760px, 100vh - 36px) - 66px);
+}
+
+.nodeProfileHero {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.nodeProfileOrb {
+  width: 78px;
+  height: 78px;
+  border-radius: 24px;
+  border: 1px solid rgba(45,212,191,0.44);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(45,212,191,0.55), transparent 42%),
+    radial-gradient(circle at 75% 78%, rgba(168,85,247,0.48), transparent 42%),
+    rgba(15,23,42,0.92);
+  box-shadow:
+    0 0 28px rgba(45,212,191,0.12),
+    inset 0 0 18px rgba(255,255,255,0.08);
+}
+
+.nodeProfileHero h2 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.nodeProfileNodeId {
+  margin-top: 5px;
+  color: rgba(var(--fg-rgb),0.66);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.nodeProfileStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.nodeProfileStat {
+  border-radius: 14px;
+  border: 1px solid rgba(var(--fg-rgb),0.12);
+  background: rgba(var(--fg-rgb),0.045);
+  padding: 12px;
+}
+
+.nodeProfileStat strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.nodeProfileStat span {
+  display: block;
+  margin-top: 6px;
+  color: rgba(var(--fg-rgb),0.54);
+  font-size: 12px;
+}
+
+.nodeProfileSectionTitle {
+  margin: 18px 0 10px;
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(var(--fg-rgb),0.86);
+}
+
+.nodeProfileBadges {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+.nodeProfileBadge {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  border-radius: 15px;
+  border: 1px solid rgba(var(--fg-rgb),0.12);
+  background: rgba(var(--fg-rgb),0.045);
+  padding: 10px 12px;
+}
+
+.nodeProfileBadge.unlocked {
+  border-color: rgba(45,212,191,0.36);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.11), transparent 44%),
+    rgba(var(--fg-rgb),0.05);
+}
+
+.nodeProfileBadge.locked {
+  opacity: 0.62;
+  filter: grayscale(1) saturate(0);
+  border-style: dashed;
+}
+
+.nodeProfileBadgeIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  object-fit: contain;
+}
+
+.nodeProfileBadgeTitle {
+  font-weight: 950;
+  font-size: 14px;
+}
+
+.nodeProfileBadgeDesc {
+  margin-top: 3px;
+  color: rgba(var(--fg-rgb),0.58);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.nodeProfileBadgeTier {
+  border-radius: 999px;
+  border: 1px solid rgba(var(--fg-rgb),0.13);
+  background: rgba(var(--fg-rgb),0.07);
+  padding: 5px 8px;
+  color: rgba(var(--fg-rgb),0.62);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.nodeProfileError {
+  border-radius: 14px;
+  border: 1px solid rgba(248,113,113,0.28);
+  background: rgba(248,113,113,0.09);
+  padding: 12px;
+  color: rgba(var(--fg-rgb),0.82);
+}
+
+@media (max-width: 720px) {
+  .nodeProfileStats {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+
+  .nodeProfileHero {
+    grid-template-columns: 1fr;
+  }
+
+  .nodeProfileBadge {
+    grid-template-columns: 40px 1fr;
+  }
+
+  .nodeProfileBadgeTier {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* Theme-aware Node Profile polish.
+   The base window is dark/glass for dark/cpunk themes, but bright and
+   win_classic need explicit light surfaces so text does not become black-on-dark. */
+.nodeProfileWindow {
+  color: rgba(248,250,252,0.94);
+}
+
+.nodeProfileHero h2,
+.nodeProfileKicker,
+.nodeProfileStat strong,
+.nodeProfileBadgeTitle {
+  color: rgba(248,250,252,0.94);
+}
+
+.nodeProfileSub,
+.nodeProfileNodeId,
+.nodeProfileStat span,
+.nodeProfileBadgeDesc {
+  color: rgba(226,232,240,0.66);
+}
+
+.nodeProfileSectionTitle {
+  color: rgba(248,250,252,0.88);
+}
+
+.nodeProfileBadgeTier {
+  color: rgba(226,232,240,0.72);
+}
+
+.nodeProfileClose {
+  color: rgba(248,250,252,0.92);
+}
+
+/* Bright theme */
+:root[data-theme="bright"] .nodeProfileOverlay {
+  background: rgba(15,23,42,0.18);
+  backdrop-filter: blur(2px);
+}
+
+:root[data-theme="bright"] .nodeProfileWindow {
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.96);
+  box-shadow:
+    0 28px 90px rgba(15,23,42,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.80);
+}
+
+:root[data-theme="bright"] .nodeProfileTitlebar {
+  border-bottom-color: rgba(15,23,42,0.10);
+}
+
+:root[data-theme="bright"] .nodeProfileHero h2,
+:root[data-theme="bright"] .nodeProfileKicker,
+:root[data-theme="bright"] .nodeProfileStat strong,
+:root[data-theme="bright"] .nodeProfileBadgeTitle,
+:root[data-theme="bright"] .nodeProfileSectionTitle {
+  color: #111827;
+}
+
+:root[data-theme="bright"] .nodeProfileSub,
+:root[data-theme="bright"] .nodeProfileNodeId,
+:root[data-theme="bright"] .nodeProfileStat span,
+:root[data-theme="bright"] .nodeProfileBadgeDesc {
+  color: rgba(15,23,42,0.66);
+}
+
+:root[data-theme="bright"] .nodeProfileStat,
+:root[data-theme="bright"] .nodeProfileBadge {
+  border-color: rgba(15,23,42,0.12);
+  background: rgba(15,23,42,0.035);
+}
+
+:root[data-theme="bright"] .nodeProfileBadge.unlocked {
+  border-color: rgba(13,148,136,0.46);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(15,23,42,0.035);
+}
+
+:root[data-theme="bright"] .nodeProfileBadgeTier {
+  color: rgba(15,23,42,0.62);
+  border-color: rgba(15,23,42,0.13);
+  background: rgba(15,23,42,0.055);
+}
+
+:root[data-theme="bright"] .nodeProfileClose {
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
+  background: rgba(15,23,42,0.07);
+}
+
+/* Windows classic theme */
+:root[data-theme="win_classic"] .nodeProfileOverlay {
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: none;
+}
+
+:root[data-theme="win_classic"] .nodeProfileWindow {
+  color: #000;
+  border-radius: 0;
+  border: 2px solid #808080;
+  background: #ececec;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28);
+}
+
+:root[data-theme="win_classic"] .nodeProfileTitlebar {
+  border-bottom: 2px solid #b8b8b8;
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8);
+}
+
+:root[data-theme="win_classic"] .nodeProfileHero h2,
+:root[data-theme="win_classic"] .nodeProfileKicker,
+:root[data-theme="win_classic"] .nodeProfileStat strong,
+:root[data-theme="win_classic"] .nodeProfileBadgeTitle,
+:root[data-theme="win_classic"] .nodeProfileSectionTitle {
+  color: #000;
+}
+
+:root[data-theme="win_classic"] .nodeProfileSub,
+:root[data-theme="win_classic"] .nodeProfileNodeId,
+:root[data-theme="win_classic"] .nodeProfileStat span,
+:root[data-theme="win_classic"] .nodeProfileBadgeDesc {
+  color: #444;
+}
+
+:root[data-theme="win_classic"] .nodeProfileStat,
+:root[data-theme="win_classic"] .nodeProfileBadge {
+  border-radius: 0;
+  border: 1px solid #9a9a9a;
+  background: #f7f7f7;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadge.unlocked {
+  border-color: #008080;
+  background: #f5ffff;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadge.locked {
+  opacity: 0.72;
+}
+
+:root[data-theme="win_classic"] .nodeProfileBadgeTier {
+  color: #222;
+  border-color: #999;
+  background: #e4e4e4;
+}
+
+:root[data-theme="win_classic"] .nodeProfileClose {
+  color: #000;
+  border-radius: 0;
+  border: 1px solid #808080;
+  background: #dcdcdc;
+}
+
+/* Robust theme matching via overlay data-node-theme.
+   This avoids depending on where the global data-theme attribute is read from. */
+.nodeProfileOverlay[data-node-theme="bright"] {
+  background: rgba(15,23,42,0.18) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileWindow {
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.97) !important;
+  box-shadow:
+    0 28px 90px rgba(15,23,42,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.80) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileTitlebar {
+  border-bottom-color: rgba(15,23,42,0.10) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileHero h2,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileKicker,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat strong,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTitle,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSectionTitle {
+  color: #111827 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSub,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileNodeId,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat span,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeDesc {
+  color: rgba(15,23,42,0.68) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat,
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge {
+  border-color: rgba(15,23,42,0.12) !important;
+  background: rgba(15,23,42,0.035) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge.unlocked {
+  border-color: rgba(13,148,136,0.46) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(15,23,42,0.035) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTier {
+  color: rgba(15,23,42,0.66) !important;
+  border-color: rgba(15,23,42,0.13) !important;
+  background: rgba(15,23,42,0.055) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="bright"] .nodeProfileClose {
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  background: rgba(15,23,42,0.07) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] {
+  background: rgba(0,0,0,0.18) !important;
+  backdrop-filter: none !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileWindow {
+  color: #000 !important;
+  border-radius: 0 !important;
+  border: 2px solid #808080 !important;
+  background: #ececec !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileTitlebar {
+  border-bottom: 2px solid #b8b8b8 !important;
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8) !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileHero h2,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileKicker,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat strong,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTitle,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSectionTitle {
+  color: #000 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSub,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileNodeId,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat span,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeDesc {
+  color: #444 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat,
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge {
+  border-radius: 0 !important;
+  border: 1px solid #9a9a9a !important;
+  background: #f7f7f7 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.unlocked {
+  border-color: #008080 !important;
+  background: #f5ffff !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.locked {
+  opacity: 0.72 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTier {
+  color: #222 !important;
+  border-color: #999 !important;
+  background: #e4e4e4 !important;
+}
+
+.nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileClose {
+  color: #000 !important;
+  border-radius: 0 !important;
+  border: 1px solid #808080 !important;
+  background: #dcdcdc !important;
+}
+
+/* Node avatar and clickable node badges */
+.nodeProfileAvatarButton {
+  padding: 0;
+  border: 1px solid rgba(45,212,191,0.44);
+  cursor: default;
+  overflow: hidden;
+}
+
+button.nodeProfileAvatarButton {
+  cursor: pointer;
+}
+
+button.nodeProfileAvatarButton:hover,
+button.nodeProfileAvatarButton:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 28px rgba(45,212,191,0.18),
+    inset 0 0 18px rgba(255,255,255,0.10);
+  outline: none;
+}
+
+.nodeProfileAvatarImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.nodeProfileBadge.clickable {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.nodeProfileBadge.clickable:hover,
+.nodeProfileBadge.clickable:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 26px rgba(0,0,0,0.22),
+    0 0 22px rgba(45,212,191,0.10);
+  outline: none;
+}
+
+.nodeProfileMiniOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90100;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.42);
+  backdrop-filter: blur(4px);
+}
+
+.nodeProfileBadgeReplay,
+.nodeProfileAvatarPicker {
+  width: min(520px, calc(100vw - 34px));
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(168,85,247,0.18), transparent 38%),
+    rgba(17,18,28,0.97);
+  color: rgba(248,250,252,0.94);
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.48);
+}
+
+.nodeProfileReplayKicker {
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(248,250,252,0.72);
+  margin-bottom: 12px;
+}
+
+.nodeProfileReplayIcon {
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  object-fit: contain;
+  margin: 0 auto 14px;
+  display: block;
+}
+
+.nodeProfileReplayTitle {
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.nodeProfileReplayDesc {
+  margin: 8px auto 0;
+  max-width: 390px;
+  color: rgba(226,232,240,0.72);
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+.nodeProfileReplayTier {
+  display: inline-flex;
+  margin-top: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: rgba(226,232,240,0.74);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.nodeProfileReplayClose {
+  margin-top: 18px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.10);
+  color: rgba(248,250,252,0.94);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.nodeProfileAvatarGrid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+}
+
+.nodeProfileAvatarChoice {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.055);
+  color: rgba(248,250,252,0.90);
+  padding: 10px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.nodeProfileAvatarChoice:hover,
+.nodeProfileAvatarChoice.selected {
+  border-color: rgba(45,212,191,0.52);
+  background: rgba(45,212,191,0.10);
+}
+
+.nodeProfileAvatarChoice img {
+  width: 86px;
+  height: 86px;
+  border-radius: 22px;
+  display: block;
+  object-fit: cover;
+  margin: 0 auto 8px;
+}
+
+.nodeProfileAvatarChoice span {
+  display: block;
+  font-size: 12px;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] {
+  background: rgba(15,23,42,0.20);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileBadgeReplay,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileAvatarPicker {
+  color: #111827;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
+    radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
+    rgba(255,255,255,0.97);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayKicker,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayDesc {
+  color: rgba(15,23,42,0.66);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayTier,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayClose,
+.nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileAvatarChoice {
+  color: #111827;
+  border-color: rgba(15,23,42,0.14);
+  background: rgba(15,23,42,0.055);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] {
+  background: rgba(0,0,0,0.20);
+  backdrop-filter: none;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileBadgeReplay,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarPicker {
+  color: #000;
+  border-radius: 0;
+  border: 2px solid #808080;
+  background: #ececec;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28);
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayKicker,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayDesc {
+  color: #444;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayTier,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileReplayClose,
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarChoice {
+  color: #000;
+  border-radius: 0;
+  border-color: #999;
+  background: #f7f7f7;
+}
+
+.nodeProfileMiniOverlay[data-node-theme="win_classic"] .nodeProfileAvatarChoice.selected {
+  border-color: #008080;
+  background: #f5ffff;
+}
+
+@media (max-width: 680px) {
+  .nodeProfileAvatarGrid {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+}

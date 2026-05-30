@@ -1655,3 +1655,3185 @@ body {
     padding: 12px;
   }
 }
+
+
+#csLocalFeedBtn,
+#csFederatedBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+#csLocalFeedBtn:hover,
+#csFederatedBtn:hover {
+  background: rgba(255,255,255,0.14);
+}
+
+#csLocalFeedBtn.is-active,
+#csFederatedBtn.is-active {
+  background: rgba(34,197,94,0.18);
+  color: #dcfce7;
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,0.45);
+}
+
+.cs-federated-post {
+  border-color: rgba(34,197,94,0.22);
+  background:
+    linear-gradient(135deg, rgba(34,197,94,0.08), rgba(24,24,32,0) 48%),
+    #181820;
+}
+
+.cs-federated-title-wrap {
+  display: grid;
+  gap: 3px;
+}
+
+.cs-federated-sub {
+  color: rgba(255,255,255,0.56);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cs-federated-badge {
+  align-self: start;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(34,197,94,0.15);
+  color: #bbf7d0;
+  border: 1px solid rgba(34,197,94,0.35);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.cs-federated-body {
+  margin-top: 10px;
+  color: rgba(255,255,255,0.78);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+
+.cs-federated-text-preview {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  color: #f4f4f5;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.cs-federated-media-placeholder {
+  margin-top: 10px;
+  border: 1px dashed rgba(34,197,94,0.32);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: rgba(220,252,231,0.80);
+  background: rgba(34,197,94,0.07);
+  font-size: 13px;
+}
+
+
+.cs-federated-preview-wrap {
+  margin-top: 12px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(34,197,94,0.22);
+  background: rgba(0,0,0,0.18);
+}
+
+.cs-federated-preview-img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+}
+
+.cs-federated-preview-wrap.is-error {
+  padding: 12px;
+  color: rgba(254,202,202,0.9);
+  border-color: rgba(248,113,113,0.35);
+  background: rgba(127,29,29,0.16);
+  font-size: 13px;
+}
+
+
+
+/* FEDERATED_VISIBLE_REACTION_BUTTONS_CSS_V1 */
+/* Federated visible reaction buttons */
+.cs-federated-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 8px;
+  align-items: center;
+}
+
+.cs-federated-reaction-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.cs-federated-reaction-label {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.cs-federated-reaction-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.cs-federated-reaction-button:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+
+/* CIRCLESTACK_CUSTOM_MESSAGE_MODAL_CSS_V1 */
+.cs-message-backdrop {
+  z-index: 10050;
+  padding: 18px;
+  backdrop-filter: blur(8px);
+}
+
+.cs-message-modal {
+  width: min(460px, calc(100vw - 34px));
+  border-radius: 18px;
+  box-shadow: 0 26px 80px rgba(0,0,0,0.48);
+}
+
+.cs-message-modal .cs-modal-text {
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.cs-modal-detail {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.22);
+  color: rgba(255,255,255,0.78);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cs-message-success .cs-modal-title {
+  color: #86efac;
+}
+
+.cs-message-error .cs-modal-title {
+  color: #fca5a5;
+}
+
+.cs-modal-ok {
+  min-width: 86px;
+  font-weight: 800;
+}
+
+.cs-message-success .cs-modal-ok {
+  background: rgba(34,197,94,0.22);
+  color: #dcfce7;
+}
+
+.cs-message-error .cs-modal-ok {
+  background: rgba(239,68,68,0.22);
+  color: #fee2e2;
+}
+
+html[data-theme="bright"] .cs-modal-detail {
+  background: #f8fafc;
+  color: #1f2937;
+  border-color: rgba(0,0,0,0.14);
+}
+
+html[data-theme="bright"] .cs-message-success .cs-modal-title {
+  color: #15803d;
+}
+
+html[data-theme="bright"] .cs-message-error .cs-modal-title {
+  color: #b91c1c;
+}
+
+html[data-theme="win_classic"] .cs-message-modal {
+  border-radius: 12px;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.26);
+}
+
+
+/* KNOWN_REMOTE_ORIGINS_UI_CSS_V1 */
+.cs-known-origins-backdrop {
+  z-index: 10040;
+  padding: 18px;
+  backdrop-filter: blur(8px);
+}
+
+.cs-known-origins-modal {
+  width: min(760px, calc(100vw - 34px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border-radius: 18px;
+  box-shadow: 0 26px 80px rgba(0,0,0,0.48);
+}
+
+.cs-known-origins-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.cs-known-origins-status {
+  margin: 0 0 12px;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+}
+
+.cs-known-origins-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cs-known-origin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.045);
+}
+
+.cs-known-origin-row.is-disabled {
+  opacity: 0.62;
+}
+
+.cs-known-origin-main {
+  min-width: 0;
+}
+
+.cs-known-origin-title {
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.cs-known-origin-url,
+.cs-known-origin-meta {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: rgba(255,255,255,0.70);
+}
+
+.cs-known-origin-url {
+  margin-bottom: 4px;
+}
+
+.cs-known-origin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cs-known-origin-actions button {
+  white-space: nowrap;
+}
+
+html[data-theme="bright"] .cs-known-origins-status,
+html[data-theme="bright"] .cs-known-origin-url,
+html[data-theme="bright"] .cs-known-origin-meta {
+  color: rgba(17,24,39,0.72);
+}
+
+html[data-theme="bright"] .cs-known-origin-row {
+  background: #f8fafc;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="win_classic"] .cs-known-origins-modal,
+html[data-theme="win_classic"] .cs-known-origin-row {
+  border-radius: 12px;
+}
+
+@media (max-width: 640px) {
+  .cs-known-origin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cs-known-origin-actions {
+    justify-content: flex-start;
+  }
+}
+
+
+/* KNOWN_ORIGINS_TOOLBAR_BUTTON_POLISH_V1 */
+#csKnownOriginsBtn {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.08);
+  color: #f4f4f5;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+#csKnownOriginsBtn:hover {
+  background: rgba(255,255,255,0.13);
+  border-color: rgba(255,255,255,0.18);
+}
+
+#csKnownOriginsBtn:focus-visible {
+  outline: 2px solid rgba(96,165,250,0.80);
+  outline-offset: 2px;
+}
+
+html[data-theme="bright"] #csKnownOriginsBtn {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="bright"] #csKnownOriginsBtn:hover {
+  background: #e5e7eb;
+  border-color: rgba(0,0,0,0.18);
+}
+
+html[data-theme="win_classic"] #csKnownOriginsBtn {
+  border-radius: 999px;
+  background: #e8e8e8;
+  color: #000;
+  border: 1px solid #888;
+  box-shadow: none;
+}
+
+html[data-theme="win_classic"] #csKnownOriginsBtn:hover {
+  background: #dcdcdc;
+}
+
+
+/* USER_ORIGIN_PREFS_UI_CSS_V1 */
+.cs-known-origin-row.is-muted-for-me {
+  opacity: 0.72;
+}
+
+.cs-known-origin-row.is-muted-for-me .cs-known-origin-title::after {
+  content: " muted";
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(251,191,36,0.15);
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+html[data-theme="bright"] .cs-known-origin-row.is-muted-for-me .cs-known-origin-title::after {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+
+/* CIRCLESTACK_TOOLBAR_BUTTONS_POLISH_V1 */
+.cs-intro-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cs-intro-toolbar button,
+#csIntroduceBtn,
+#csLocalFeedBtn,
+#csFederatedBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.08);
+  color: #f4f4f5;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.cs-intro-toolbar button:hover,
+#csIntroduceBtn:hover,
+#csLocalFeedBtn:hover,
+#csFederatedBtn:hover,
+#csMyCircleBtn:hover,
+#csFindPeopleBtn:hover,
+#csKnownOriginsBtn:hover {
+  background: rgba(255,255,255,0.13);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.cs-intro-toolbar button.is-active,
+#csLocalFeedBtn.is-active,
+#csFederatedBtn.is-active,
+#csMyCircleBtn.is-active {
+  background: rgba(96,165,250,0.20);
+  border-color: rgba(96,165,250,0.60);
+  color: #fff;
+}
+
+.cs-intro-toolbar button:focus-visible {
+  outline: 2px solid rgba(96,165,250,0.80);
+  outline-offset: 2px;
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button,
+html[data-theme="bright"] #csIntroduceBtn,
+html[data-theme="bright"] #csLocalFeedBtn,
+html[data-theme="bright"] #csFederatedBtn,
+html[data-theme="bright"] #csMyCircleBtn,
+html[data-theme="bright"] #csFindPeopleBtn,
+html[data-theme="bright"] #csKnownOriginsBtn {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button:hover {
+  background: #e5e7eb;
+  border-color: rgba(0,0,0,0.18);
+}
+
+html[data-theme="bright"] .cs-intro-toolbar button.is-active,
+html[data-theme="bright"] #csLocalFeedBtn.is-active,
+html[data-theme="bright"] #csFederatedBtn.is-active,
+html[data-theme="bright"] #csMyCircleBtn.is-active {
+  background: rgba(37,99,235,0.12);
+  border-color: rgba(37,99,235,0.45);
+  color: #1d4ed8;
+}
+
+html[data-theme="win_classic"] .cs-intro-toolbar button {
+  border-radius: 999px;
+  background: #e8e8e8;
+  color: #000;
+  border: 1px solid #888;
+  box-shadow: none;
+}
+
+html[data-theme="win_classic"] .cs-intro-toolbar button:hover {
+  background: #dcdcdc;
+}
+
+
+/* CIRCLESTACK_FEED_MODE_CYCLE_BUTTON_CSS_V1 */
+#csFeedModeBtn {
+  min-width: 132px;
+}
+
+#csFeedModeBtn.is-active {
+  background: rgba(96,165,250,0.20);
+  border-color: rgba(96,165,250,0.60);
+  color: #fff;
+}
+
+html[data-theme="bright"] #csFeedModeBtn.is-active {
+  background: rgba(37,99,235,0.12);
+  border-color: rgba(37,99,235,0.45);
+  color: #1d4ed8;
+}
+
+
+/* CIRCLESTACK_FEDERATED_REASON_LABELS_CSS_V1 */
+.cs-federated-reason {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 10px;
+  font-size: 12px;
+}
+
+.cs-federated-reason-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.76);
+  font-weight: 800;
+}
+
+.cs-federated-reason-known .cs-federated-reason-pill {
+  background: rgba(34,197,94,0.14);
+  border-color: rgba(34,197,94,0.36);
+  color: #bbf7d0;
+}
+
+.cs-federated-reason-warning .cs-federated-reason-pill {
+  background: rgba(251,191,36,0.13);
+  border-color: rgba(251,191,36,0.35);
+  color: #fde68a;
+}
+
+.cs-federated-reason-muted .cs-federated-reason-pill {
+  background: rgba(148,163,184,0.14);
+  border-color: rgba(148,163,184,0.32);
+  color: #cbd5e1;
+}
+
+.cs-federated-reason-why {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.78);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cs-federated-reason-why:hover {
+  background: rgba(255,255,255,0.13);
+  color: #fff;
+}
+
+.cs-federated-reason-detail {
+  flex-basis: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.72);
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+html[data-theme="bright"] .cs-federated-reason-pill,
+html[data-theme="bright"] .cs-federated-reason-why {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: rgba(0,0,0,0.12);
+}
+
+html[data-theme="bright"] .cs-federated-reason-detail {
+  background: #f8fafc;
+  border-color: rgba(0,0,0,0.10);
+  color: #374151;
+}
+
+html[data-theme="bright"] .cs-federated-reason-known .cs-federated-reason-pill {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+html[data-theme="bright"] .cs-federated-reason-warning .cs-federated-reason-pill {
+  background: #fef3c7;
+  border-color: #facc15;
+  color: #92400e;
+}
+
+
+/* FEDERATED_ACTOR_PRIMARY_HEADER_CSS_V1 */
+.cs-federated-title-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cs-federated-actor-name {
+  font-size: 17px;
+  line-height: 1.15;
+  font-weight: 900;
+  color: #f8fafc;
+}
+
+.cs-federated-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.cs-federated-person-actions.cs-federated-actor-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 25;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(18,18,26,0.96);
+  box-shadow: 0 16px 44px rgba(0,0,0,0.42);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+  white-space: nowrap;
+}
+
+.cs-federated-title-wrap:hover .cs-federated-actor-menu,
+.cs-federated-title-wrap:focus-within .cs-federated-actor-menu {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.cs-federated-actor-menu button {
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
+.cs-federated-actions {
+  margin-top: 8px;
+}
+
+.cs-federated-post-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+html[data-theme="bright"] .cs-federated-actor-name {
+  color: #111827;
+}
+
+html[data-theme="bright"] .cs-federated-sub {
+  color: rgba(17,24,39,0.62);
+}
+
+html[data-theme="bright"] .cs-federated-person-actions.cs-federated-actor-menu {
+  background: rgba(255,255,255,0.98);
+  border-color: rgba(0,0,0,0.12);
+  box-shadow: 0 16px 44px rgba(15,23,42,0.18);
+}
+
+html[data-theme="win_classic"] .cs-federated-person-actions.cs-federated-actor-menu {
+  border-radius: 10px;
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.24);
+}
+
+
+/* FEDERATED_LOCAL_REACTION_OVERLAY_CSS_V1 */
+.cs-federated-local-reaction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 10px;
+  color: rgba(255,255,255,0.78);
+  font-size: 13px;
+}
+
+.cs-federated-local-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(96,165,250,0.38);
+  background: rgba(96,165,250,0.15);
+  color: #dbeafe;
+  font-weight: 900;
+}
+
+.cs-federated-local-reaction-label {
+  color: rgba(255,255,255,0.76);
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction {
+  color: rgba(17,24,39,0.78);
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction-chip {
+  background: rgba(37,99,235,0.10);
+  border-color: rgba(37,99,235,0.30);
+  color: #1d4ed8;
+}
+
+html[data-theme="bright"] .cs-federated-local-reaction-label {
+  color: rgba(17,24,39,0.76);
+}
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_V1 */
+.cs-zoomable-media,
+.cs-post-media,
+.cs-reply-media,
+.cs-federated-preview-img,
+.cs-compose-preview-img,
+.cs-memory-node-image,
+.cs-memory-node-item-img {
+  cursor: zoom-in;
+}
+
+.cs-lightbox-zoom {
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  justify-items: stretch;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.cs-lightbox-toolbar {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  right: 78px;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.cs-lightbox-hint {
+  max-width: min(720px, calc(100vw - 150px));
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(15,23,42,0.72);
+  color: rgba(255,255,255,0.88);
+  font-size: 13px;
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.cs-lightbox-reset {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cs-lightbox-reset:hover {
+  background: rgba(255,255,255,0.22);
+}
+
+.cs-lightbox-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 75vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+
+.cs-lightbox-stage.is-dragging {
+  cursor: grabbing;
+}
+
+.cs-lightbox-zoom img.cs-lightbox-img {
+  max-width: min(1200px, 96vw);
+  max-height: 88vh;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+  will-change: transform;
+  transition: transform 80ms ease-out;
+}
+
+@media (max-width: 720px) {
+  .cs-lightbox-zoom {
+    padding: 10px;
+  }
+
+  .cs-lightbox-toolbar {
+    top: 12px;
+    left: 12px;
+    right: 66px;
+  }
+
+  .cs-lightbox-hint {
+    max-width: calc(100vw - 120px);
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+
+  .cs-lightbox-reset {
+    padding: 7px 10px;
+  }
+
+  .cs-lightbox-zoom img.cs-lightbox-img {
+    max-width: 98vw;
+    max-height: 86vh;
+  }
+}
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_FIX_V2 */
+.cs-lightbox-zoom {
+  cursor: default;
+}
+
+.cs-lightbox-zoom .cs-lightbox-toolbar {
+  z-index: 10004;
+  pointer-events: none;
+}
+
+.cs-lightbox-zoom .cs-lightbox-close,
+.cs-lightbox-zoom .cs-lightbox-reset {
+  position: relative;
+  z-index: 10005;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage {
+  position: relative;
+  z-index: 10001;
+}
+
+.cs-lightbox-zoom .cs-lightbox-img {
+  cursor: grab;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging .cs-lightbox-img {
+  cursor: grabbing;
+}
+
+
+/* CIRCLESTACK_ZOOMABLE_MEDIA_FIX_V3 */
+.cs-lightbox.cs-lightbox-zoom {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  cursor: default !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  z-index: 10001 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  cursor: grab !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging {
+  cursor: grabbing !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-toolbar {
+  position: fixed !important;
+  top: 18px !important;
+  left: 18px !important;
+  right: auto !important;
+  z-index: 10006 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  pointer-events: none !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-reset {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-close {
+  position: fixed !important;
+  top: 18px !important;
+  right: 22px !important;
+  left: auto !important;
+  z-index: 10007 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+.cs-lightbox-zoom img.cs-lightbox-img {
+  position: relative !important;
+  z-index: 10002 !important;
+  max-width: min(1200px, 96vw) !important;
+  max-height: 88vh !important;
+  object-fit: contain !important;
+  cursor: grab !important;
+}
+
+.cs-lightbox-zoom .cs-lightbox-stage.is-dragging img.cs-lightbox-img {
+  cursor: grabbing !important;
+}
+
+
+/* Circle Stack achievements / GitHub-style profile badges */
+.cs-post-author-wrap {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cs-achievement-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.cs-achievement-chip,
+.cs-achievement-more {
+  display: inline-flex;
+  align-items: center;
+  max-width: 190px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.055);
+  color: rgba(255,255,255,0.82);
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cs-achievement-chip.tier-gold,
+.cs-profile-achievement.tier-gold {
+  border-color: rgba(251,191,36,0.42);
+  background: rgba(251,191,36,0.12);
+}
+
+.cs-achievement-chip.tier-legendary,
+.cs-profile-achievement.tier-legendary {
+  border-color: rgba(192,132,252,0.50);
+  background: rgba(168,85,247,0.14);
+}
+
+.cs-achievement-chip.tier-special,
+.cs-profile-achievement.tier-special {
+  border-color: rgba(45,212,191,0.42);
+  background: rgba(20,184,166,0.13);
+}
+
+.cs-achievement-strip-profile {
+  margin-top: 8px;
+}
+
+.cs-profile-achievements {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.cs-profile-achievement-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.cs-profile-achievement {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.045);
+}
+
+.cs-profile-achievement-icon {
+  width: 24px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.cs-profile-achievement-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cs-profile-achievement-title {
+  font-weight: 850;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* Achievement unlocked modal */
+.cs-achievement-unlock-modal {
+  width: min(440px, calc(100vw - 32px));
+  text-align: center;
+  overflow: hidden;
+}
+
+.cs-achievement-unlock-modal::before {
+  content: "";
+  display: block;
+  height: 4px;
+  margin: -18px -18px 18px;
+  background: linear-gradient(90deg, rgba(45,212,191,0.95), rgba(251,191,36,0.95), rgba(168,85,247,0.95));
+}
+
+.cs-achievement-unlock-kicker {
+  color: rgba(255,255,255,0.64);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.cs-achievement-unlock-icon {
+  width: 104px;
+  height: 104px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 28px;
+  border: 1px solid rgba(45,212,191,0.42);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(45,212,191,0.35), transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(168,85,247,0.24), transparent 42%),
+    rgba(255,255,255,0.055);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.35);
+  font-size: 54px;
+  line-height: 1;
+}
+
+.cs-achievement-unlock-title {
+  color: #f8fafc;
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 950;
+  margin-bottom: 8px;
+}
+
+.cs-achievement-unlock-desc {
+  color: rgba(255,255,255,0.72);
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0 auto 12px;
+  max-width: 320px;
+}
+
+.cs-achievement-unlock-tier {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.66);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 750;
+  margin-bottom: 12px;
+}
+
+/* SVG-backed achievement icons */
+.cs-achievement-chip {
+  gap: 5px;
+}
+
+.cs-achievement-chip-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.cs-achievement-chip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+img.cs-profile-achievement-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.cs-achievement-unlock-icon-img {
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+}
+
+/* My Profile page */
+.cs-profile-page {
+  width: min(980px, calc(100vw - 24px));
+  margin: 18px auto 32px;
+}
+
+.cs-my-profile-card {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.12), transparent 30%),
+    radial-gradient(circle at 95% 8%, rgba(168,85,247,0.12), transparent 28%),
+    rgba(17, 18, 28, 0.94);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.34);
+  padding: 20px;
+}
+
+.cs-my-profile-loading {
+  color: rgba(255,255,255,0.68);
+  font-weight: 750;
+}
+
+.cs-my-profile-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.cs-my-profile-avatar {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.cs-my-profile-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cs-my-profile-title {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-name {
+  color: #f8fafc;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.cs-my-profile-sub {
+  color: #93c5fd;
+  font-size: 13px;
+}
+
+.cs-my-profile-fp-block {
+  margin: 16px 0 18px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.035);
+}
+
+.cs-my-profile-section-title {
+  margin: 18px 0 10px;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.cs-my-profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cs-my-profile-stat {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.045);
+  padding: 12px;
+}
+
+.cs-my-profile-stat-value {
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.cs-my-profile-stat-label {
+  margin-top: 4px;
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cs-my-profile-achievements {
+  margin-top: 18px;
+}
+
+.cs-my-profile-actions {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .cs-profile-page {
+    width: calc(100vw - 16px);
+    margin: 12px auto 24px;
+  }
+
+  .cs-my-profile-card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .cs-my-profile-header {
+    align-items: flex-start;
+  }
+
+  .cs-my-profile-avatar {
+    width: 68px;
+    height: 68px;
+  }
+
+  .cs-my-profile-name {
+    font-size: 24px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cs-my-profile-actions {
+    justify-content: stretch;
+  }
+
+  .cs-my-profile-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* Detached My Profile modal */
+.cs-my-profile-detached-modal {
+  width: min(920px, calc(100vw - 24px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  padding: 0;
+}
+
+.cs-my-profile-detached-shell {
+  position: relative;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.12), transparent 30%),
+    radial-gradient(circle at 95% 8%, rgba(168,85,247,0.12), transparent 28%);
+}
+
+.cs-my-profile-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cs-my-profile-close:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.cs-my-profile-loading {
+  color: rgba(255,255,255,0.68);
+  font-weight: 750;
+}
+
+.cs-my-profile-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0 42px 18px 0;
+}
+
+.cs-my-profile-modal-avatar {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.cs-my-profile-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cs-my-profile-title {
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-name {
+  color: #f8fafc;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.cs-my-profile-sub {
+  color: #93c5fd;
+  font-size: 13px;
+}
+
+.cs-my-profile-fp-block {
+  margin: 16px 0 18px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.035);
+}
+
+.cs-my-profile-section-title {
+  margin: 18px 0 10px;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.cs-my-profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cs-my-profile-stat {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.045);
+  padding: 12px;
+}
+
+.cs-my-profile-stat-value {
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.cs-my-profile-stat-label {
+  margin-top: 4px;
+  color: rgba(255,255,255,0.58);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cs-my-profile-achievements {
+  margin-top: 0;
+}
+
+.cs-my-profile-actions {
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    width: calc(100vw - 12px);
+    max-height: calc(100vh - 12px);
+  }
+
+  .cs-my-profile-detached-shell {
+    padding: 16px;
+  }
+
+  .cs-my-profile-header {
+    align-items: flex-start;
+    margin-right: 40px;
+  }
+
+  .cs-my-profile-modal-avatar {
+    width: 66px;
+    height: 66px;
+  }
+
+  .cs-my-profile-name {
+    font-size: 23px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cs-my-profile-actions {
+    justify-content: stretch;
+  }
+
+  .cs-my-profile-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* Detached My Profile modal polish v2 */
+.cs-my-profile-modal-backdrop {
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.cs-my-profile-detached-modal {
+  width: min(760px, calc(100vw - 28px));
+  max-height: min(820px, calc(100vh - 32px));
+  margin: auto;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background:
+    linear-gradient(135deg, rgba(17,24,39,0.98), rgba(24,24,38,0.98));
+  box-shadow:
+    0 34px 110px rgba(0,0,0,0.62),
+    0 0 0 1px rgba(45,212,191,0.05),
+    0 0 64px rgba(45,212,191,0.12);
+  overflow: hidden;
+}
+
+.cs-my-profile-detached-modal::before {
+  content: "";
+  display: block;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(45,212,191,0.95),
+    rgba(251,191,36,0.85),
+    rgba(168,85,247,0.95)
+  );
+}
+
+.cs-my-profile-detached-shell {
+  max-height: calc(min(820px, calc(100vh - 32px)) - 4px);
+  overflow: auto;
+  padding: 22px;
+}
+
+.cs-my-profile-close {
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  background: rgba(255,255,255,0.10);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.26);
+}
+
+.cs-my-profile-header {
+  padding-right: 46px;
+}
+
+.cs-my-profile-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cs-my-profile-fp-block,
+.cs-my-profile-stat,
+.cs-my-profile-detached-shell .cs-profile-achievement {
+  background: rgba(255,255,255,0.045);
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-modal-backdrop {
+    padding: 8px;
+    align-items: flex-start;
+  }
+
+  .cs-my-profile-detached-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 18px;
+    margin-top: 8px;
+  }
+
+  .cs-my-profile-detached-shell {
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+  }
+
+  .cs-my-profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Truly detached My Profile floating window */
+.cs-my-profile-modal-backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding: 0 !important;
+}
+
+.cs-my-profile-detached-modal {
+  position: fixed !important;
+  top: 86px;
+  right: 24px;
+  left: auto;
+  width: min(560px, calc(100vw - 24px)) !important;
+  max-height: calc(100vh - 110px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  background:
+    linear-gradient(135deg, rgba(18,24,34,0.98), rgba(28,24,42,0.98)) !important;
+  box-shadow:
+    0 28px 80px rgba(0,0,0,0.58),
+    0 0 0 1px rgba(45,212,191,0.08),
+    0 0 46px rgba(45,212,191,0.14) !important;
+}
+
+.cs-my-profile-detached-modal::before {
+  display: none !important;
+}
+
+.cs-my-profile-detached-shell {
+  padding: 0 !important;
+  max-height: calc(100vh - 110px) !important;
+  overflow: auto !important;
+}
+
+.cs-my-profile-windowbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 10px 8px 14px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  background:
+    linear-gradient(90deg, rgba(45,212,191,0.16), rgba(168,85,247,0.14)),
+    rgba(15,23,42,0.96);
+}
+
+.cs-my-profile-windowbar:active {
+  cursor: grabbing;
+}
+
+.cs-my-profile-windowbar-label {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.cs-my-profile-windowbar-title {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cs-my-profile-windowbar-hint {
+  color: rgba(255,255,255,0.50);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cs-my-profile-close {
+  position: static !important;
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 auto;
+  background: rgba(255,255,255,0.10) !important;
+  box-shadow: none !important;
+}
+
+.cs-my-profile-header,
+.cs-my-profile-fp-block,
+.cs-my-profile-section-title,
+.cs-my-profile-stats-grid,
+.cs-my-profile-achievements,
+.cs-my-profile-actions,
+.cs-my-profile-loading {
+  margin-left: 16px !important;
+  margin-right: 16px !important;
+}
+
+.cs-my-profile-header {
+  margin-top: 16px !important;
+  padding-right: 0 !important;
+}
+
+.cs-my-profile-actions {
+  padding-bottom: 16px;
+}
+
+.cs-my-profile-modal-avatar {
+  width: 64px !important;
+  height: 64px !important;
+}
+
+.cs-my-profile-name {
+  font-size: 23px !important;
+}
+
+.cs-my-profile-stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.cs-my-profile-stat {
+  padding: 10px !important;
+}
+
+.cs-my-profile-stat-value {
+  font-size: 19px !important;
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    top: 70px !important;
+    right: 8px !important;
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 82px) !important;
+  }
+
+  .cs-my-profile-detached-shell {
+    max-height: calc(100vh - 82px) !important;
+  }
+}
+
+/* My Profile detached window polish v3 */
+.cs-my-profile-detached-shell {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(45,212,191,0.55) rgba(15,23,42,0.55);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-track {
+  background: rgba(15,23,42,0.55);
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(45,212,191,0.72),
+      rgba(168,85,247,0.68)
+    );
+  border-radius: 999px;
+  border: 2px solid rgba(15,23,42,0.72);
+}
+
+.cs-my-profile-detached-shell::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(45,212,191,0.90),
+      rgba(168,85,247,0.86)
+    );
+}
+
+/* Avoid duplicate "Achievements" label inside My Profile. */
+.cs-my-profile-achievements > .cs-profile-label {
+  display: none;
+}
+
+.cs-my-profile-achievements {
+  padding-top: 0 !important;
+  border-top: 0 !important;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-grid {
+  gap: 7px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-title {
+  font-size: 12.5px;
+}
+
+.cs-my-profile-achievements .cs-profile-achievement-desc {
+  font-size: 11.5px;
+}
+
+.cs-my-profile-detached-shell .cs-my-profile-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-my-profile-detached-shell .cs-my-profile-section-title::after {
+  content: "";
+  height: 1px;
+  flex: 1 1 auto;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.12),
+    transparent
+  );
+}
+
+.cs-my-profile-stat {
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.cs-my-profile-stat:hover {
+  transform: translateY(-1px);
+  border-color: rgba(45,212,191,0.22);
+  background: rgba(255,255,255,0.065);
+}
+
+/* My Profile detached window centered open position */
+.cs-my-profile-detached-modal {
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 720px) {
+  .cs-my-profile-detached-modal {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+  }
+}
+
+/* Locked achievement placeholders */
+.cs-my-profile-locked-achievements {
+  margin-top: 0;
+}
+
+.cs-my-profile-locked-achievements > .cs-profile-label {
+  display: none;
+}
+
+.cs-locked-achievement-hint {
+  margin: -2px 0 10px;
+  color: rgba(255,255,255,0.52);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cs-profile-achievement-locked {
+  position: relative;
+  opacity: 0.78;
+  border-style: dashed;
+  filter: saturate(0.78);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-title {
+  color: rgba(255,255,255,0.82);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.50);
+}
+
+.cs-locked-achievement-icon-wrap {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.cs-locked-achievement-icon-wrap .cs-profile-achievement-icon {
+  width: 28px;
+  height: 28px;
+  opacity: 0.70;
+  filter: grayscale(0.25);
+}
+
+.cs-locked-achievement-lock {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(15,23,42,0.92);
+  color: rgba(255,255,255,0.66);
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 2px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cs-profile-achievement-locked.disclosure-hint::after {
+  content: "Hint";
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  color: rgba(255,255,255,0.42);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cs-profile-achievement-locked.disclosure-exact::after {
+  content: "Goal";
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  color: rgba(45,212,191,0.58);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Locked trophies: monochrome/silhouette mode */
+.cs-profile-achievement-locked,
+.cs-profile-achievement-locked.tier-bronze,
+.cs-profile-achievement-locked.tier-silver,
+.cs-profile-achievement-locked.tier-gold,
+.cs-profile-achievement-locked.tier-legendary,
+.cs-profile-achievement-locked.tier-special {
+  border-color: rgba(255,255,255,0.13) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.040), rgba(255,255,255,0.020)) !important;
+  opacity: 0.82;
+  filter: none;
+}
+
+.cs-profile-achievement-locked:hover {
+  border-color: rgba(255,255,255,0.20) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.060), rgba(255,255,255,0.030)) !important;
+}
+
+.cs-locked-achievement-icon-wrap {
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,0.12), transparent 48%),
+    rgba(255,255,255,0.035);
+}
+
+.cs-locked-achievement-icon-wrap .cs-profile-achievement-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.46;
+  filter:
+    grayscale(1)
+    saturate(0)
+    brightness(0.92)
+    contrast(1.18);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-title {
+  color: rgba(255,255,255,0.72);
+}
+
+.cs-profile-achievement-locked .cs-profile-achievement-desc {
+  color: rgba(255,255,255,0.43);
+}
+
+.cs-profile-achievement-locked.disclosure-hint::after,
+.cs-profile-achievement-locked.disclosure-exact::after {
+  color: rgba(255,255,255,0.34);
+}
+
+.cs-locked-achievement-lock {
+  border-color: rgba(255,255,255,0.13);
+  background: rgba(15,23,42,0.96);
+  color: rgba(255,255,255,0.56);
+}
+
+/* Clickable earned achievements */
+.cs-profile-achievement-earned {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.cs-profile-achievement-earned:hover,
+.cs-profile-achievement-earned:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(45,212,191,0.44);
+  background: rgba(255,255,255,0.065);
+  box-shadow:
+    0 12px 28px rgba(0,0,0,0.22),
+    0 0 22px rgba(45,212,191,0.08);
+  outline: none;
+}
+
+.cs-profile-achievement-earned:active {
+  transform: translateY(0);
+}
+
+/* Extra explanation when replaying an earned achievement */
+.cs-achievement-replay-text {
+  margin: 14px auto 12px;
+  max-width: 360px;
+  padding: 12px 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(45,212,191,0.18);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(45,212,191,0.10), transparent 36%),
+    rgba(255,255,255,0.045);
+  color: rgba(255,255,255,0.70);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+/* Circle Stack theme support v1
+   This intentionally sits at the end of app.css and overrides the older hard-coded dark colors. */
+:root {
+  color-scheme: dark;
+
+  --cs-bg: #101014;
+  --cs-surface: #181820;
+  --cs-surface-2: #20202a;
+  --cs-surface-3: #272733;
+  --cs-border: rgba(255,255,255,0.14);
+  --cs-border-strong: rgba(96,165,250,0.55);
+  --cs-text: #f4f4f5;
+  --cs-text-soft: #d1d5db;
+  --cs-muted: #92929e;
+  --cs-faint: rgba(255,255,255,0.55);
+  --cs-accent: #60a5fa;
+  --cs-accent-2: #2dd4bf;
+  --cs-accent-bg: rgba(96,165,250,0.16);
+  --cs-danger: #f87171;
+  --cs-button: rgba(255,255,255,0.08);
+  --cs-button-hover: rgba(255,255,255,0.12);
+  --cs-input-bg: #181820;
+  --cs-modal-bg: #181820;
+  --cs-shadow: rgba(0,0,0,0.42);
+}
+
+:root[data-theme="cpunk_orange"] {
+  color-scheme: dark;
+
+  --cs-bg: #100b08;
+  --cs-surface: #1c120d;
+  --cs-surface-2: #25170f;
+  --cs-surface-3: #332015;
+  --cs-border: rgba(251,146,60,0.22);
+  --cs-border-strong: rgba(251,146,60,0.65);
+  --cs-text: #fff7ed;
+  --cs-text-soft: #fed7aa;
+  --cs-muted: rgba(254,215,170,0.64);
+  --cs-faint: rgba(254,215,170,0.52);
+  --cs-accent: #fb923c;
+  --cs-accent-2: #f59e0b;
+  --cs-accent-bg: rgba(251,146,60,0.18);
+  --cs-danger: #fb7185;
+  --cs-button: rgba(251,146,60,0.12);
+  --cs-button-hover: rgba(251,146,60,0.18);
+  --cs-input-bg: #1c120d;
+  --cs-modal-bg: #1c120d;
+  --cs-shadow: rgba(0,0,0,0.48);
+}
+
+:root[data-theme="bright"] {
+  color-scheme: light;
+
+  --cs-bg: #f5f7fb;
+  --cs-surface: #ffffff;
+  --cs-surface-2: #f1f5f9;
+  --cs-surface-3: #e2e8f0;
+  --cs-border: rgba(15,23,42,0.14);
+  --cs-border-strong: rgba(37,99,235,0.46);
+  --cs-text: #111827;
+  --cs-text-soft: #334155;
+  --cs-muted: rgba(15,23,42,0.58);
+  --cs-faint: rgba(15,23,42,0.50);
+  --cs-accent: #2563eb;
+  --cs-accent-2: #0d9488;
+  --cs-accent-bg: rgba(37,99,235,0.10);
+  --cs-danger: #dc2626;
+  --cs-button: rgba(15,23,42,0.055);
+  --cs-button-hover: rgba(15,23,42,0.09);
+  --cs-input-bg: #ffffff;
+  --cs-modal-bg: #ffffff;
+  --cs-shadow: rgba(15,23,42,0.18);
+}
+
+:root[data-theme="win_classic"] {
+  color-scheme: light;
+
+  --cs-bg: #dcdcdc;
+  --cs-surface: #f0f0f0;
+  --cs-surface-2: #e6e6e6;
+  --cs-surface-3: #d0d0d0;
+  --cs-border: #808080;
+  --cs-border-strong: #000080;
+  --cs-text: #000000;
+  --cs-text-soft: #202020;
+  --cs-muted: #404040;
+  --cs-faint: #505050;
+  --cs-accent: #000080;
+  --cs-accent-2: #008080;
+  --cs-accent-bg: #c7d8ff;
+  --cs-danger: #800000;
+  --cs-button: #dfdfdf;
+  --cs-button-hover: #f7f7f7;
+  --cs-input-bg: #ffffff;
+  --cs-modal-bg: #f0f0f0;
+  --cs-shadow: rgba(0,0,0,0.24);
+}
+
+/* Base surfaces */
+html,
+body {
+  background: var(--cs-bg) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-shell {
+  color: var(--cs-text) !important;
+}
+
+.cs-header p,
+.cs-post-meta,
+.cs-media-path,
+.cs-search-hint,
+.cs-empty,
+.cs-intro-verb,
+.cs-intro-msg {
+  color: var(--cs-muted) !important;
+}
+
+/* Inputs and text areas */
+.cs-compose textarea,
+.cs-compose input,
+.cs-intro-modal select,
+.cs-intro-modal textarea,
+#csUserSearch,
+#csFindInput {
+  background: var(--cs-input-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-compose textarea::placeholder,
+.cs-compose input::placeholder,
+#csUserSearch::placeholder,
+#csFindInput::placeholder {
+  color: var(--cs-muted) !important;
+}
+
+/* Cards, posts, empty states */
+.cs-post,
+.cs-empty,
+.cs-circle-row,
+.cs-search-selected,
+.cs-profile-page,
+.cs-profile-card,
+.cs-profile-panel,
+.cs-profile-stat,
+.cs-profile-achievement,
+.cs-profile-achievement-row,
+.cs-profile-achievement-locked,
+.cs-known-origin-row,
+.cs-origin-row,
+.cs-remote-origin-row,
+.cs-people-row,
+.cs-person-row {
+  background: var(--cs-surface) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-post {
+  box-shadow: 0 12px 34px var(--cs-shadow);
+}
+
+.cs-post-author,
+.cs-intro-from,
+.cs-intro-to {
+  color: var(--cs-text) !important;
+}
+
+/* Buttons */
+#csPostButton,
+#csIntroduceBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn,
+#csMyProfileBtn,
+#csFeedModeBtn,
+#csPickMedia,
+.cs-media-choose,
+.cs-media-clear,
+.cs-modal-cancel,
+.cs-modal-delete,
+.cs-intro-actions button,
+.cs-circle-remove,
+.cs-post button,
+.cs-post-reply,
+.cs-reply-btn,
+.cs-person-button,
+.cs-origin-button,
+.cs-profile-button,
+button {
+  border-color: var(--cs-border) !important;
+}
+
+#csIntroduceBtn,
+#csMyCircleBtn,
+#csFindPeopleBtn,
+#csKnownOriginsBtn,
+#csMyProfileBtn,
+#csFeedModeBtn,
+#csPickMedia,
+.cs-media-clear,
+.cs-modal-cancel,
+.cs-intro-actions button:last-child,
+.cs-profile-button,
+.cs-person-button,
+.cs-origin-button {
+  background: var(--cs-button) !important;
+  color: var(--cs-text) !important;
+}
+
+#csPostButton,
+.cs-media-choose,
+#csIntroduceBtn.is-active,
+#csFeedModeBtn.is-active {
+  background: var(--cs-accent) !important;
+  color: #fff !important;
+}
+
+:root[data-theme="cpunk_orange"] #csPostButton,
+:root[data-theme="cpunk_orange"] .cs-media-choose,
+:root[data-theme="cpunk_orange"] #csIntroduceBtn.is-active,
+:root[data-theme="cpunk_orange"] #csFeedModeBtn.is-active {
+  color: #111 !important;
+}
+
+:root[data-theme="bright"] #csPostButton,
+:root[data-theme="bright"] .cs-media-choose,
+:root[data-theme="bright"] #csIntroduceBtn.is-active,
+:root[data-theme="bright"] #csFeedModeBtn.is-active {
+  color: #fff !important;
+}
+
+:root[data-theme="win_classic"] #csPostButton,
+:root[data-theme="win_classic"] .cs-media-choose,
+:root[data-theme="win_classic"] #csIntroduceBtn.is-active,
+:root[data-theme="win_classic"] #csFeedModeBtn.is-active {
+  color: #fff !important;
+}
+
+button:hover,
+#csPickMedia:hover,
+#csMyCircleBtn:hover,
+#csFindPeopleBtn:hover,
+#csKnownOriginsBtn:hover,
+#csMyProfileBtn:hover,
+#csFeedModeBtn:hover,
+.cs-profile-button:hover,
+.cs-person-button:hover,
+.cs-origin-button:hover {
+  background: var(--cs-button-hover) !important;
+}
+
+/* Visibility segmented buttons */
+#csVisibility,
+.cs-visibility .cs-vis-option,
+.cs-vis-option {
+  background: var(--cs-surface) !important;
+  color: var(--cs-text-soft) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-visibility .cs-vis-option:hover,
+.cs-vis-option:hover {
+  background: var(--cs-surface-2) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-visibility .cs-vis-option.is-active,
+.cs-visibility .cs-vis-option.is-active:hover,
+.cs-vis-option.is-active,
+.cs-vis-option.is-active:hover {
+  background: var(--cs-accent-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border-strong) !important;
+}
+
+/* Modals */
+.cs-modal-backdrop,
+.cs-lightbox,
+.cs-achievement-unlock-backdrop,
+.cs-profile-detached-backdrop {
+  background: rgba(0,0,0,0.52) !important;
+}
+
+.cs-modal,
+.cs-media-modal,
+.cs-achievement-unlock-modal,
+.cs-profile-modal,
+.cs-profile-detached-window,
+.cs-profile-window,
+.cs-known-origins-modal,
+.cs-find-people-modal,
+.cs-intro-modal {
+  background: var(--cs-modal-bg) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+  box-shadow: 0 24px 80px var(--cs-shadow);
+}
+
+.cs-modal-text,
+.cs-profile-muted,
+.cs-profile-subtitle,
+.cs-achievement-unlock-desc,
+.cs-achievement-replay-text,
+.cs-profile-stat-label,
+.cs-profile-achievement-desc {
+  color: var(--cs-muted) !important;
+}
+
+/* Media picker/list rows */
+.cs-media-item,
+.cs-find-row,
+.cs-search-row {
+  background: var(--cs-surface-2) !important;
+  color: var(--cs-text) !important;
+  border-color: var(--cs-border) !important;
+}
+
+.cs-media-item:hover,
+.cs-find-row:hover,
+.cs-search-row:hover {
+  background: var(--cs-surface-3) !important;
+}
+
+.cs-media-thumb,
+.cs-compose-preview-img,
+.cs-post-media {
+  border-color: var(--cs-border) !important;
+  background: var(--cs-surface-2) !important;
+}
+
+/* Badges and achievements */
+.cs-achievement-pill,
+.cs-profile-badge,
+.cs-post-badge,
+.cs-badge,
+.cs-profile-achievement-earned,
+.cs-profile-achievement-locked {
+  border-color: var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-profile-achievement-earned,
+.cs-achievement-pill.is-unlocked,
+.cs-profile-badge.is-unlocked {
+  border-color: rgba(45,212,191,0.44) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    var(--cs-surface) !important;
+}
+
+.cs-profile-achievement-locked,
+.cs-achievement-pill.is-locked,
+.cs-profile-badge.is-locked {
+  opacity: 0.62;
+  filter: grayscale(1) saturate(0);
+}
+
+/* Win classic special flattening */
+:root[data-theme="win_classic"] .cs-post,
+:root[data-theme="win_classic"] .cs-empty,
+:root[data-theme="win_classic"] .cs-modal,
+:root[data-theme="win_classic"] .cs-media-modal,
+:root[data-theme="win_classic"] .cs-profile-detached-window,
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal,
+:root[data-theme="win_classic"] .cs-compose textarea,
+:root[data-theme="win_classic"] .cs-compose input,
+:root[data-theme="win_classic"] button,
+:root[data-theme="win_classic"] .cs-media-item,
+:root[data-theme="win_classic"] .cs-profile-stat,
+:root[data-theme="win_classic"] .cs-profile-achievement-earned,
+:root[data-theme="win_classic"] .cs-profile-achievement-locked {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-post {
+  border: 1px solid #808080 !important;
+}
+
+:root[data-theme="win_classic"] button {
+  border: 1px solid #808080 !important;
+}
+
+/* Circle Stack bright/win_classic polish v2
+   Refines the first broad theme pass so light themes feel intentional. */
+
+/* Shared light-theme layout tuning */
+:root[data-theme="bright"] .cs-shell,
+:root[data-theme="win_classic"] .cs-shell {
+  max-width: 860px;
+}
+
+:root[data-theme="bright"] .cs-header,
+:root[data-theme="win_classic"] .cs-header {
+  margin-bottom: 18px;
+}
+
+:root[data-theme="bright"] .cs-header h1,
+:root[data-theme="win_classic"] .cs-header h1 {
+  color: var(--cs-text) !important;
+}
+
+:root[data-theme="bright"] .cs-compose,
+:root[data-theme="win_classic"] .cs-compose {
+  margin-bottom: 18px;
+}
+
+/* Bright theme: modern light cards */
+:root[data-theme="bright"] body {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(45,212,191,0.10), transparent 28%),
+    radial-gradient(circle at 100% 10%, rgba(37,99,235,0.08), transparent 34%),
+    #eef3f8 !important;
+}
+
+:root[data-theme="bright"] .cs-post,
+:root[data-theme="bright"] .cs-empty,
+:root[data-theme="bright"] .cs-compose textarea,
+:root[data-theme="bright"] .cs-compose input {
+  border-color: rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="bright"] .cs-post,
+:root[data-theme="bright"] .cs-empty {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96)) !important;
+  box-shadow:
+    0 18px 45px rgba(15,23,42,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.90) !important;
+}
+
+:root[data-theme="bright"] .cs-compose textarea,
+:root[data-theme="bright"] .cs-compose input {
+  background: rgba(255,255,255,0.98) !important;
+  box-shadow: inset 0 1px 0 rgba(15,23,42,0.03);
+}
+
+:root[data-theme="bright"] .cs-compose textarea:focus,
+:root[data-theme="bright"] .cs-compose input:focus,
+:root[data-theme="bright"] #csFindInput:focus,
+:root[data-theme="bright"] #csUserSearch:focus {
+  outline: 2px solid rgba(37,99,235,0.28);
+  border-color: rgba(37,99,235,0.48) !important;
+}
+
+/* Win classic: classic but readable */
+:root[data-theme="win_classic"] body {
+  background: #d7d7d7 !important;
+}
+
+:root[data-theme="win_classic"] .cs-shell {
+  background: transparent !important;
+}
+
+:root[data-theme="win_classic"] .cs-post,
+:root[data-theme="win_classic"] .cs-empty {
+  background: #f4f4f4 !important;
+  border: 1px solid #8a8a8a !important;
+  padding: 16px !important;
+}
+
+:root[data-theme="win_classic"] .cs-compose textarea,
+:root[data-theme="win_classic"] .cs-compose input,
+:root[data-theme="win_classic"] #csFindInput,
+:root[data-theme="win_classic"] #csUserSearch {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  box-shadow: inset 1px 1px 0 #bcbcbc;
+}
+
+/* Fix boxed/awkward author header look in light themes */
+:root[data-theme="bright"] .cs-post-header,
+:root[data-theme="win_classic"] .cs-post-header {
+  align-items: flex-start;
+}
+
+:root[data-theme="bright"] .cs-post-author,
+:root[data-theme="bright"] .cs-post-author button,
+:root[data-theme="bright"] .cs-author,
+:root[data-theme="bright"] .cs-author-name,
+:root[data-theme="win_classic"] .cs-post-author,
+:root[data-theme="win_classic"] .cs-post-author button,
+:root[data-theme="win_classic"] .cs-author,
+:root[data-theme="win_classic"] .cs-author-name {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--cs-text) !important;
+  padding: 0 !important;
+}
+
+:root[data-theme="bright"] .cs-post-author,
+:root[data-theme="win_classic"] .cs-post-author {
+  font-weight: 850;
+}
+
+/* Better toolbar buttons for light themes */
+:root[data-theme="bright"] .cs-intro-toolbar button,
+:root[data-theme="bright"] #csIntroduceBtn,
+:root[data-theme="bright"] #csMyCircleBtn,
+:root[data-theme="bright"] #csFindPeopleBtn,
+:root[data-theme="bright"] #csKnownOriginsBtn,
+:root[data-theme="bright"] #csMyProfileBtn,
+:root[data-theme="bright"] #csFeedModeBtn {
+  border: 1px solid rgba(15,23,42,0.14) !important;
+  background: rgba(255,255,255,0.78) !important;
+  color: #111827 !important;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.06);
+}
+
+:root[data-theme="bright"] .cs-intro-toolbar button:hover,
+:root[data-theme="bright"] #csIntroduceBtn:hover,
+:root[data-theme="bright"] #csMyCircleBtn:hover,
+:root[data-theme="bright"] #csFindPeopleBtn:hover,
+:root[data-theme="bright"] #csKnownOriginsBtn:hover,
+:root[data-theme="bright"] #csMyProfileBtn:hover,
+:root[data-theme="bright"] #csFeedModeBtn:hover {
+  background: #fff !important;
+  border-color: rgba(37,99,235,0.28) !important;
+}
+
+:root[data-theme="bright"] .cs-intro-toolbar button.is-active,
+:root[data-theme="bright"] #csFeedModeBtn.is-active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #fff !important;
+}
+
+:root[data-theme="win_classic"] .cs-intro-toolbar button,
+:root[data-theme="win_classic"] #csIntroduceBtn,
+:root[data-theme="win_classic"] #csMyCircleBtn,
+:root[data-theme="win_classic"] #csFindPeopleBtn,
+:root[data-theme="win_classic"] #csKnownOriginsBtn,
+:root[data-theme="win_classic"] #csMyProfileBtn,
+:root[data-theme="win_classic"] #csFeedModeBtn {
+  border: 1px solid #808080 !important;
+  background: #e8e8e8 !important;
+  color: #000 !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+  padding: 8px 14px !important;
+}
+
+:root[data-theme="win_classic"] .cs-intro-toolbar button.is-active,
+:root[data-theme="win_classic"] #csFeedModeBtn.is-active {
+  background: #000080 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* Badge readability: posts + profiles */
+:root[data-theme="bright"] .cs-achievement-pill,
+:root[data-theme="bright"] .cs-post-badge,
+:root[data-theme="bright"] .cs-profile-badge,
+:root[data-theme="bright"] .cs-badge {
+  color: #0f172a !important;
+  background: rgba(255,255,255,0.82) !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-pill.is-unlocked,
+:root[data-theme="bright"] .cs-post-badge.is-unlocked,
+:root[data-theme="bright"] .cs-profile-badge.is-unlocked,
+:root[data-theme="bright"] .cs-badge.is-unlocked {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.16), transparent 42%),
+    rgba(255,255,255,0.92) !important;
+  border-color: rgba(13,148,136,0.38) !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-pill,
+:root[data-theme="win_classic"] .cs-post-badge,
+:root[data-theme="win_classic"] .cs-profile-badge,
+:root[data-theme="win_classic"] .cs-badge {
+  color: #000 !important;
+  background: #f0f0f0 !important;
+  border: 1px solid #888 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-pill.is-unlocked,
+:root[data-theme="win_classic"] .cs-post-badge.is-unlocked,
+:root[data-theme="win_classic"] .cs-profile-badge.is-unlocked,
+:root[data-theme="win_classic"] .cs-badge.is-unlocked {
+  background: #eaffff !important;
+  border-color: #008080 !important;
+}
+
+/* Some badge elements are plain spans without is-unlocked */
+:root[data-theme="bright"] [class*="badge"],
+:root[data-theme="bright"] [class*="achievement-pill"] {
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] [class*="badge"],
+:root[data-theme="win_classic"] [class*="achievement-pill"] {
+  text-shadow: none !important;
+}
+
+/* Reaction / reply buttons */
+:root[data-theme="bright"] .cs-post-reply,
+:root[data-theme="bright"] .cs-reply-btn,
+:root[data-theme="bright"] .cs-reaction-button,
+:root[data-theme="bright"] .cs-post button {
+  color: #111827 !important;
+  background: rgba(15,23,42,0.055) !important;
+  border: 1px solid rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="bright"] .cs-post-reply:hover,
+:root[data-theme="bright"] .cs-reply-btn:hover,
+:root[data-theme="bright"] .cs-reaction-button:hover,
+:root[data-theme="bright"] .cs-post button:hover {
+  background: rgba(37,99,235,0.10) !important;
+  border-color: rgba(37,99,235,0.25) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post-reply,
+:root[data-theme="win_classic"] .cs-reply-btn,
+:root[data-theme="win_classic"] .cs-reaction-button,
+:root[data-theme="win_classic"] .cs-post button {
+  color: #000 !important;
+  background: #e8e8e8 !important;
+  border: 1px solid #808080 !important;
+}
+
+/* Make metadata and reaction names readable */
+:root[data-theme="bright"] .cs-post-meta,
+:root[data-theme="bright"] .cs-reaction-line,
+:root[data-theme="bright"] .cs-reaction-names,
+:root[data-theme="bright"] .cs-post-reactions {
+  color: rgba(15,23,42,0.62) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post-meta,
+:root[data-theme="win_classic"] .cs-reaction-line,
+:root[data-theme="win_classic"] .cs-reaction-names,
+:root[data-theme="win_classic"] .cs-post-reactions {
+  color: #404040 !important;
+}
+
+/* Memory Node banner */
+:root[data-theme="bright"] .memory-node-banner,
+:root[data-theme="bright"] .cs-memory-node,
+:root[data-theme="bright"] [class*="memory-node"] {
+  color: #0f172a !important;
+  border-color: rgba(13,148,136,0.30) !important;
+}
+
+:root[data-theme="win_classic"] .memory-node-banner,
+:root[data-theme="win_classic"] .cs-memory-node,
+:root[data-theme="win_classic"] [class*="memory-node"] {
+  color: #000 !important;
+  border-color: #808080 !important;
+}
+
+/* Detached profile and achievement modal light cleanup */
+:root[data-theme="bright"] .cs-profile-detached-window,
+:root[data-theme="bright"] .cs-achievement-unlock-modal,
+:root[data-theme="bright"] .cs-profile-modal,
+:root[data-theme="bright"] .cs-media-modal,
+:root[data-theme="bright"] .cs-modal {
+  background: rgba(255,255,255,0.98) !important;
+  color: #111827 !important;
+  border-color: rgba(15,23,42,0.14) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-detached-window,
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal,
+:root[data-theme="win_classic"] .cs-profile-modal,
+:root[data-theme="win_classic"] .cs-media-modal,
+:root[data-theme="win_classic"] .cs-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+}
+
+/* Keep images pleasant in light modes */
+:root[data-theme="bright"] .cs-post-media,
+:root[data-theme="bright"] .cs-compose-preview-img {
+  box-shadow: 0 12px 28px rgba(15,23,42,0.12);
+}
+
+:root[data-theme="win_classic"] .cs-post-media,
+:root[data-theme="win_classic"] .cs-compose-preview-img {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Circle Stack bright/win_classic recovery v7
+   Exact selectors only. Keep dark/cpunk behavior intact. */
+
+/* ------------------------------------------------------------
+   Reply composer: light themes only
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-post textarea,
+:root[data-theme="bright"] .cs-post input,
+:root[data-theme="bright"] textarea[placeholder*="reply" i],
+:root[data-theme="bright"] input[placeholder*="image path" i] {
+  background: #fff !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  box-shadow: inset 0 1px 0 rgba(15,23,42,0.035) !important;
+}
+
+:root[data-theme="bright"] .cs-post textarea::placeholder,
+:root[data-theme="bright"] .cs-post input::placeholder,
+:root[data-theme="bright"] textarea[placeholder*="reply" i]::placeholder,
+:root[data-theme="bright"] input[placeholder*="image path" i]::placeholder {
+  color: rgba(15,23,42,0.48) !important;
+}
+
+:root[data-theme="win_classic"] .cs-post textarea,
+:root[data-theme="win_classic"] .cs-post input,
+:root[data-theme="win_classic"] textarea[placeholder*="reply" i],
+:root[data-theme="win_classic"] input[placeholder*="image path" i] {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  box-shadow: inset 1px 1px 0 #bcbcbc !important;
+}
+
+:root[data-theme="win_classic"] .cs-post textarea::placeholder,
+:root[data-theme="win_classic"] .cs-post input::placeholder,
+:root[data-theme="win_classic"] textarea[placeholder*="reply" i]::placeholder,
+:root[data-theme="win_classic"] input[placeholder*="image path" i]::placeholder {
+  color: #555 !important;
+}
+
+/* ------------------------------------------------------------
+   Achievement chips under author/profile names
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-achievement-strip,
+:root[data-theme="win_classic"] .cs-achievement-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip,
+:root[data-theme="bright"] .cs-achievement-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 22px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(15,23,42,0.22) !important;
+  background: linear-gradient(180deg, #ffffff, #eef2f7) !important;
+  color: #0f172a !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip * {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px !important;
+  border-radius: 4px !important;
+  filter: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-chip.tier-gold {
+  border-color: rgba(202,138,4,0.48) !important;
+  background: linear-gradient(180deg, #fffaf0, #fef3c7) !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip,
+:root[data-theme="win_classic"] .cs-achievement-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 21px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid #808080 !important;
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip * {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-chip-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px !important;
+  border-radius: 3px !important;
+  filter: none !important;
+}
+
+/* ------------------------------------------------------------
+   Detached My Profile: exact classes only
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-my-profile-modal-backdrop,
+:root[data-theme="win_classic"] .cs-my-profile-modal-backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-modal,
+:root[data-theme="win_classic"] .cs-my-profile-detached-modal {
+  position: fixed !important;
+  top: 86px !important;
+  right: 24px !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: min(560px, calc(100vw - 24px)) !important;
+  max-height: calc(100vh - 110px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+  overflow: hidden !important;
+  display: block !important;
+  z-index: 100000 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-modal {
+  border-radius: 18px !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.10), transparent 34%),
+    radial-gradient(circle at 100% 0%, rgba(37,99,235,0.08), transparent 36%),
+    rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  box-shadow: 0 28px 90px rgba(15,23,42,0.26) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-detached-modal {
+  border-radius: 0 !important;
+  border: 2px solid #808080 !important;
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell {
+  max-height: calc(100vh - 110px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  padding: 0 !important;
+  color: inherit !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  min-height: 46px !important;
+  padding: 8px 10px 8px 14px !important;
+  cursor: grab !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar {
+  background:
+    linear-gradient(90deg, rgba(45,212,191,0.12), rgba(37,99,235,0.08)),
+    rgba(255,255,255,0.96) !important;
+  border-bottom: 1px solid rgba(15,23,42,0.12) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar {
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8) !important;
+  border-bottom: 2px solid #b8b8b8 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-title,
+:root[data-theme="bright"] .cs-my-profile-windowbar-label,
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="bright"] .cs-my-profile-detached-shell,
+:root[data-theme="bright"] .cs-my-profile-name,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stat-value,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="bright"] .cs-my-profile-sub,
+:root[data-theme="bright"] .cs-my-profile-stat-label,
+:root[data-theme="bright"] .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-fingerprint,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-title,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-label,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell,
+:root[data-theme="win_classic"] .cs-my-profile-name,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stat-value,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-sub,
+:root[data-theme="win_classic"] .cs-my-profile-stat-label,
+:root[data-theme="win_classic"] .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-fingerprint,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-header,
+:root[data-theme="bright"] .cs-my-profile-fp-block,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stats-grid,
+:root[data-theme="bright"] .cs-my-profile-achievements,
+:root[data-theme="bright"] .cs-my-profile-actions,
+:root[data-theme="bright"] .cs-my-profile-loading,
+:root[data-theme="win_classic"] .cs-my-profile-header,
+:root[data-theme="win_classic"] .cs-my-profile-fp-block,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stats-grid,
+:root[data-theme="win_classic"] .cs-my-profile-achievements,
+:root[data-theme="win_classic"] .cs-my-profile-actions,
+:root[data-theme="win_classic"] .cs-my-profile-loading {
+  margin-left: 16px !important;
+  margin-right: 16px !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-header,
+:root[data-theme="win_classic"] .cs-my-profile-header {
+  margin-top: 16px !important;
+  padding-right: 0 !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-actions,
+:root[data-theme="win_classic"] .cs-my-profile-actions {
+  padding-bottom: 16px !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-fp-block,
+:root[data-theme="bright"] .cs-my-profile-stat,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(255,255,255,0.94) !important;
+  border: 1px solid rgba(13,148,136,0.40) !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-fp-block,
+:root[data-theme="win_classic"] .cs-my-profile-stat,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background: #f7f7f7 !important;
+  border: 1px solid #909090 !important;
+  color: #000 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ------------------------------------------------------------
+   Normal person profile modal readability in light themes
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-name,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-fingerprint {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-sub,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.62) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-profile-modal .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
+    rgba(255,255,255,0.94) !important;
+  border: 1px solid rgba(13,148,136,0.40) !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-name,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-fingerprint {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-sub,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* ------------------------------------------------------------
+   Achievement replay modal: dark overlay behind trophy, not white page
+   ------------------------------------------------------------ */
+
+:root[data-theme="bright"] .cs-modal-backdrop:has(.cs-achievement-unlock-modal),
+:root[data-theme="win_classic"] .cs-modal-backdrop:has(.cs-achievement-unlock-modal) {
+  background: rgba(0,0,0,0.52) !important;
+  backdrop-filter: blur(2px) !important;
+  display: grid !important;
+  place-items: center !important;
+  pointer-events: auto !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-modal {
+  background: rgba(255,255,255,0.985) !important;
+  color: #111827 !important;
+  border: 1px solid rgba(15,23,42,0.18) !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-title,
+:root[data-theme="bright"] .cs-achievement-unlock-kicker,
+:root[data-theme="bright"] .cs-achievement-unlock-tier,
+:root[data-theme="bright"] .cs-achievement-replay-text {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-desc {
+  color: rgba(15,23,42,0.70) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-modal {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  border: 2px solid #808080 !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-title,
+:root[data-theme="win_classic"] .cs-achievement-unlock-kicker,
+:root[data-theme="win_classic"] .cs-achievement-unlock-tier,
+:root[data-theme="win_classic"] .cs-achievement-replay-text {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Circle Stack My Profile light-theme text polish v8
+   Keep the detached window + gradient achievement rows, but fix over-bright text. */
+
+:root[data-theme="bright"] .cs-my-profile-windowbar-hint,
+:root[data-theme="win_classic"] .cs-my-profile-windowbar-hint {
+  display: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-title,
+:root[data-theme="bright"] .cs-my-profile-name,
+:root[data-theme="bright"] .cs-my-profile-section-title,
+:root[data-theme="bright"] .cs-my-profile-stat-value,
+:root[data-theme="bright"] .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-title,
+:root[data-theme="bright"] .cs-my-profile-detached-shell strong,
+:root[data-theme="bright"] .cs-my-profile-detached-shell b {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-title {
+  color: rgba(15,23,42,0.62) !important;
+  letter-spacing: 0.14em;
+}
+
+:root[data-theme="bright"] .cs-my-profile-sub,
+:root[data-theme="bright"] .cs-profile-label,
+:root[data-theme="bright"] .cs-profile-fingerprint,
+:root[data-theme="bright"] .cs-my-profile-stat-label,
+:root[data-theme="bright"] .cs-profile-achievement-desc,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: rgba(15,23,42,0.66) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(45,212,191,0.13), transparent 46%),
+    rgba(255,255,255,0.94) !important;
+  border-color: rgba(13,148,136,0.38) !important;
+}
+
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement.locked,
+:root[data-theme="bright"] .cs-my-profile-detached-shell .cs-profile-achievement.is-locked {
+  background: rgba(248,250,252,0.82) !important;
+  border-color: rgba(15,23,42,0.13) !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-title,
+:root[data-theme="win_classic"] .cs-my-profile-name,
+:root[data-theme="win_classic"] .cs-my-profile-section-title,
+:root[data-theme="win_classic"] .cs-my-profile-stat-value,
+:root[data-theme="win_classic"] .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell strong,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell b {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-title {
+  color: #404040 !important;
+  letter-spacing: 0.14em;
+}
+
+:root[data-theme="win_classic"] .cs-my-profile-sub,
+:root[data-theme="win_classic"] .cs-profile-label,
+:root[data-theme="win_classic"] .cs-profile-fingerprint,
+:root[data-theme="win_classic"] .cs-my-profile-stat-label,
+:root[data-theme="win_classic"] .cs-profile-achievement-desc,
+:root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-desc {
+  color: #404040 !important;
+  text-shadow: none !important;
+}
+
+/* Trophy replay modal text polish in light modes */
+:root[data-theme="bright"] .cs-achievement-unlock-title,
+:root[data-theme="bright"] .cs-achievement-unlock-kicker,
+:root[data-theme="bright"] .cs-achievement-unlock-tier {
+  color: #111827 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="bright"] .cs-achievement-unlock-desc,
+:root[data-theme="bright"] .cs-achievement-replay-text {
+  color: rgba(15,23,42,0.72) !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-title,
+:root[data-theme="win_classic"] .cs-achievement-unlock-kicker,
+:root[data-theme="win_classic"] .cs-achievement-unlock-tier {
+  color: #000 !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="win_classic"] .cs-achievement-unlock-desc,
+:root[data-theme="win_classic"] .cs-achievement-replay-text {
+  color: #404040 !important;
+  text-shadow: none !important;
+}

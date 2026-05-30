@@ -238,8 +238,26 @@ add_executable(pqnas_server
         server/src/dropzone_routes.cpp
         server/src/dropzone_index.cpp
         server/src/echo_stack_routes.cpp
+        server/src/achievements.cpp
+        server/src/achievements.h
         server/src/circle_stack_routes.cpp
         server/src/circle_stack_memory_nodes.cpp
+        server/src/federation/pqnas_nodus_client.cpp
+        server/src/federation/pqnas_nodus_client.h
+        server/src/federation/circle_federation_event.cpp
+        server/src/federation/circle_federation_event.h
+        server/src/federation/circle_federation_signing.cpp
+        server/src/federation/circle_federation_signing.h
+        server/src/federation/circle_federation_outbox.cpp
+        server/src/federation/circle_federation_outbox.h
+        server/src/federation/circle_federation_outbox_worker.cpp
+        server/src/federation/circle_federation_outbox_worker.h
+        server/src/federation/circle_federation_inbox.cpp
+        server/src/federation/circle_federation_inbox.h
+        server/src/federation/circle_federation_remote_feed.cpp
+        server/src/federation/circle_federation_remote_feed.h
+        server/src/routes_circle_nodus_research.cpp
+        server/src/routes_circle_nodus_research.h
         server/src/echo_stack_index.cpp
         server/src/echo_stack_text_extract.cpp
         server/src/echo_stack_content_index.cpp
@@ -453,6 +471,46 @@ set_target_properties(pqnas_keygen PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
+
+
+# -----------------------------------------------------------------------------
+# Bundled Nodus client CLI used by Circle Stack federation
+#
+# Build Nodus as an isolated sub-build instead of add_subdirectory().
+# Reason: PQ-NAS uses strict server-wide warning/error flags, while the vendored
+# Nodus tree is a separate C project with its own compile assumptions.
+# -----------------------------------------------------------------------------
+set(PQNAS_BUNDLED_NODUS_DIR "${CMAKE_SOURCE_DIR}/third_party/nodus")
+set(PQNAS_BUNDLED_NODUS_BUILD_DIR "${CMAKE_BINARY_DIR}/third_party/nodus-standalone")
+set(PQNAS_BUNDLED_NODUS_CLI "${CMAKE_BINARY_DIR}/bin/nodus-cli")
+
+if (EXISTS "${PQNAS_BUNDLED_NODUS_DIR}/CMakeLists.txt")
+    add_custom_target(nodus-cli ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+        COMMAND ${CMAKE_COMMAND}
+            -S "${PQNAS_BUNDLED_NODUS_DIR}"
+            -B "${PQNAS_BUNDLED_NODUS_BUILD_DIR}"
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_BINARY_DIR}/bin
+            -DCMAKE_C_FLAGS=-D_GNU_SOURCE
+        COMMAND ${CMAKE_COMMAND}
+            --build "${PQNAS_BUNDLED_NODUS_BUILD_DIR}"
+            --target nodus-cli
+            --parallel
+        BYPRODUCTS "${PQNAS_BUNDLED_NODUS_CLI}"
+        COMMENT "Building bundled Nodus CLI"
+        VERBATIM
+    )
+
+    add_custom_target(pqnas_nodus_cli
+        DEPENDS nodus-cli
+    )
+else()
+    message(WARNING "Bundled Nodus tree not found at ${PQNAS_BUNDLED_NODUS_DIR}; nodus-cli will not be built")
+endif()
+
+
+
+
 # -----------------------------------------------------------------------------
 # Run targets
 # -----------------------------------------------------------------------------
@@ -467,3 +525,11 @@ add_custom_target(run_verify_v5_vectors
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS verify_v5_vectors
 )
+
+
+# --- Circle Stack Nodus federation research sources ---
+target_sources(pqnas_server PRIVATE
+    server/src/federation/pqnas_nodus_client.cpp
+    server/src/federation/circle_federation_event.cpp
+)
+
