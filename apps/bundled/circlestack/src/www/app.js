@@ -1624,15 +1624,26 @@ async function csLoadFeed() {
 
 
 function csFederatedTypeLabel(type, targetType = "") {
-  if (type === "circle.post.created") return "Remote post";
-  if (type === "circle.reply.created") return "Remote reply";
+  if (type === "circle.post.created") return csT("federation.remotePost", "Remote post");
+  if (type === "circle.reply.created") return csT("federation.remoteReply", "Remote reply");
   if (type === "circle.reaction.created") {
-    return targetType === "reply" ? "Remote reply reaction" : csT("federation.remotePostReaction", "Remote post reaction");
+    return targetType === "reply"
+      ? csT("federation.remoteReplyReaction", "Remote reply reaction")
+      : csT("federation.remotePostReaction", "Remote post reaction");
   }
   if (type === "circle.reaction.removed") {
-    return targetType === "reply" ? "Remote reply reaction removed" : "Remote post reaction removed";
+    return targetType === "reply"
+      ? csT("federation.remoteReplyReactionRemoved", "Remote reply reaction removed")
+      : csT("federation.remotePostReactionRemoved", "Remote post reaction removed");
   }
-  return type || "Remote event";
+  return type || csT("federation.remoteEvent", "Remote event");
+}
+
+function csFederatedTargetLabel(target) {
+  const raw = String(target || "post").trim();
+  if (raw === "reply") return csT("federation.target.reply", "reply");
+  if (raw === "post") return csT("federation.target.post", "post");
+  return raw || csT("federation.target.post", "post");
 }
 
 function csFederatedActorLabel(ev) {
@@ -2079,7 +2090,7 @@ function csFederatedMediaLabel(payload) {
 
   const count = Number(p.media_count || refs.length || (p.has_media ? 1 : 0));
 
-  if (!count) return "Media: no";
+  if (!count) return csT("federation.media.none", "Media: no");
 
   const kinds = Array.from(new Set(
     refs
@@ -2088,14 +2099,14 @@ function csFederatedMediaLabel(payload) {
   ));
 
   if (kinds.length === 1) {
-    return `Media: ${count} ${kinds[0]}${count === 1 ? "" : "s"}`;
+    return csT("federation.media.oneKind", { count, kind: kinds[0], plural: count === 1 ? "" : "s" }, `Media: ${count} ${kinds[0]}${count === 1 ? "" : "s"}`);
   }
 
   if (kinds.length > 1) {
-    return `Media: ${count} items`;
+    return csT("federation.media.items", { count }, `Media: ${count} items`);
   }
 
-  return `Media: ${count}`;
+  return csT("federation.media.count", { count }, `Media: ${count}`);
 }
 
 
@@ -2128,7 +2139,7 @@ function csRenderFederatedEvent(ev) {
 
   const badge = document.createElement("span");
   badge.className = "cs-federated-badge";
-  badge.textContent = "FEDERATED";
+  badge.textContent = csT("federation.badge", "FEDERATED");
 
   header.appendChild(titleWrap);
   header.appendChild(badge);
@@ -2172,18 +2183,20 @@ function csRenderFederatedEvent(ev) {
     // Normal remote posts should read like social posts, not debug records.
     // Media is already shown by the preview block below when present.
   } else if (ev.event_type === "circle.reply.created") {
-    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
-    lines.push(`Reply id: ${ev.reply_id || payload.reply_id || "unknown"}`);
+    lines.push(csT("federation.body.postId", { id: ev.post_id || payload.post_id || "unknown" }, `Post id: ${ev.post_id || payload.post_id || "unknown"}`));
+    lines.push(csT("federation.body.replyId", { id: ev.reply_id || payload.reply_id || "unknown" }, `Reply id: ${ev.reply_id || payload.reply_id || "unknown"}`));
     lines.push(csFederatedMediaLabel(payload));
   } else if (ev.event_type === "circle.reaction.created") {
-    lines.push(`Target: ${ev.target_type || payload.target_type || "post"}`);
-    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
-    if (ev.reply_id || payload.reply_id) lines.push(`Reply id: ${ev.reply_id || payload.reply_id}`);
-    lines.push(`Reaction: ${ev.reaction || payload.reaction || ""}`);
+    const target = csFederatedTargetLabel(ev.target_type || payload.target_type || "post");
+    lines.push(csT("federation.body.target", { target }, `Target: ${target}`));
+    lines.push(csT("federation.body.postId", { id: ev.post_id || payload.post_id || "unknown" }, `Post id: ${ev.post_id || payload.post_id || "unknown"}`));
+    if (ev.reply_id || payload.reply_id) lines.push(csT("federation.body.replyId", { id: ev.reply_id || payload.reply_id }, `Reply id: ${ev.reply_id || payload.reply_id}`));
+    lines.push(csT("federation.body.reaction", { reaction: ev.reaction || payload.reaction || "" }, `Reaction: ${ev.reaction || payload.reaction || ""}`));
   } else if (ev.event_type === "circle.reaction.removed") {
-    lines.push(`Target: ${ev.target_type || payload.target_type || "post"}`);
-    lines.push(`Post id: ${ev.post_id || payload.post_id || "unknown"}`);
-    if (ev.reply_id || payload.reply_id) lines.push(`Reply id: ${ev.reply_id || payload.reply_id}`);
+    const target = csFederatedTargetLabel(ev.target_type || payload.target_type || "post");
+    lines.push(csT("federation.body.target", { target }, `Target: ${target}`));
+    lines.push(csT("federation.body.postId", { id: ev.post_id || payload.post_id || "unknown" }, `Post id: ${ev.post_id || payload.post_id || "unknown"}`));
+    if (ev.reply_id || payload.reply_id) lines.push(csT("federation.body.replyId", { id: ev.reply_id || payload.reply_id }, `Reply id: ${ev.reply_id || payload.reply_id}`));
   }
 
   const bodyText = lines.filter(Boolean).join(" · ");

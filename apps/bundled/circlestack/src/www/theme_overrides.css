@@ -439,6 +439,29 @@
 
 /* Dark/cpunk My Circle already looks good; do not touch it here. */
 
+/* FEDERATED badge readability in light/classic themes.
+   The base badge color is tuned for dark theme; on light gray backgrounds
+   the translated FEDEROITU text becomes too pale. Keep dark/cpunk untouched. */
+:root[data-theme="bright"] .cs-federated-badge {
+  background: #dcfce7 !important;
+  color: #14532d !important;
+  border-color: #16a34a !important;
+  text-shadow: none !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55) !important;
+  font-weight: 900 !important;
+}
+
+:root[data-theme="win_classic"] .cs-federated-badge {
+  background: #e6ffe6 !important;
+  color: #003b12 !important;
+  border: 1px solid #008000 !important;
+  text-shadow: none !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+  font-weight: 900 !important;
+}
+
 /* Circle Stack reaction/menu polish v3
    Prevent wrongly-tagged large containers from looking like reaction popups. */
 
@@ -465,6 +488,42 @@
   justify-content: center !important;
   font-size: 20px !important;
   line-height: 1 !important;
+}
+
+/* Composer mention/tag-friend button readability in light/classic themes.
+   The base #csAddMentionBtn colors are tuned for dark theme and become
+   low-contrast on bright / win_classic compose backgrounds. */
+:root[data-theme="bright"] #csAddMentionBtn {
+  background: #eff6ff !important;
+  color: #1e3a8a !important;
+  border: 1px solid #2563eb !important;
+  text-shadow: none !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85) !important;
+}
+
+:root[data-theme="bright"] #csAddMentionBtn:hover,
+:root[data-theme="bright"] #csAddMentionBtn:focus-visible {
+  background: #dbeafe !important;
+  color: #172554 !important;
+  border-color: #1d4ed8 !important;
+}
+
+:root[data-theme="win_classic"] #csAddMentionBtn {
+  background: #e8e8e8 !important;
+  color: #000080 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  text-shadow: none !important;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #9a9a9a !important;
+}
+
+:root[data-theme="win_classic"] #csAddMentionBtn:hover,
+:root[data-theme="win_classic"] #csAddMentionBtn:focus-visible {
+  background: #d8e8ff !important;
+  color: #000 !important;
+  border-color: #000080 !important;
 }
 
 /* My Circle: keep the Forget button visually dangerous in light themes too. */

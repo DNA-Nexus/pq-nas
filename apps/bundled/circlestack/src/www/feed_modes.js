@@ -290,90 +290,128 @@
     const originNas = String(ev && ev.origin_nas ? ev.origin_nas : "").trim();
     const m = normalizeMode(mode);
     const info = originNas ? originInfoByNas.get(originNas) : null;
+    const originShort = shortOrigin(originNas);
+    const knownOriginSource = t("feedReason.source.knownOrigin", "known origin");
+
+    function urlText() {
+      return info && info.public_base_url
+        ? t("feedReason.urlSuffix", { url: info.public_base_url }, ` URL: ${info.public_base_url}.`)
+        : "";
+    }
 
     if (!originNas) {
       if (m === "discover") {
         return {
-          label: "Wider public",
-          detail:
-            "This Discover item did not include a remote NAS origin id. " +
-            "Discover currently uses the public federated feed until Extended Circle ranking is enabled.",
+          label: t("feedReason.label.widerPublic", "Wider public"),
+          detail: t(
+            "feedReason.detail.discoverMissingOrigin",
+            "This Discover item did not include a remote NAS origin id. Discover currently uses the public federated feed until Extended Circle ranking is enabled."
+          ),
           tone: "neutral"
         };
       }
 
       return {
-        label: "Public federated",
-        detail: "This event did not include a remote NAS origin id, so it is shown as a generic federated event.",
+        label: t("feedReason.label.publicFederated", "Public federated"),
+        detail: t(
+          "feedReason.detail.missingOrigin",
+          "This event did not include a remote NAS origin id, so it is shown as a generic federated event."
+        ),
         tone: "neutral"
       };
     }
 
     if (mutedOrigins.has(originNas)) {
       return {
-        label: "Muted for me",
-        detail: "This origin is muted for your user. Normally it should be hidden from your federated feed.",
+        label: t("feedReason.label.mutedForMe", "Muted for me"),
+        detail: t(
+          "feedReason.detail.mutedForMe",
+          "This origin is muted for your user. Normally it should be hidden from your federated feed."
+        ),
         tone: "muted"
       };
     }
 
     if (info && info.enabled === false) {
       return {
-        label: "Globally disabled",
-        detail: "This origin is disabled globally for the server. Existing cached events may still be visible.",
+        label: t("feedReason.label.globallyDisabled", "Globally disabled"),
+        detail: t(
+          "feedReason.detail.globallyDisabled",
+          "This origin is disabled globally for the server. Existing cached events may still be visible."
+        ),
         tone: "warning"
       };
     }
 
     if (m === "my_circle") {
+      const displayName = info && info.display_name
+        ? info.display_name
+        : t("feedReason.thisNas", "this NAS");
+      const source = info && info.source ? info.source : knownOriginSource;
+
       return {
-        label: "My Circle",
-        detail:
-          `Shown because ${info && info.display_name ? info.display_name : "this NAS"} is in Known origins. ` +
-          `Origin: ${shortOrigin(originNas)}. Source: ${info && info.source ? info.source : "known origin"}.`,
+        label: t("feedReason.label.myCircle", "My Circle"),
+        detail: t(
+          "feedReason.detail.myCircle",
+          { displayName, origin: originShort, source },
+          `Shown because ${displayName} is in Known origins. Origin: ${originShort}. Source: ${source}.`
+        ),
         tone: "known"
       };
     }
 
     if (m === "discover" && info) {
+      const displayName = info && info.display_name
+        ? info.display_name
+        : t("feedReason.thisNas", "this NAS");
+      const source = info.source || knownOriginSource;
+
       return {
-        label: "Discover",
+        label: t("feedReason.label.discover", "Discover"),
         detail:
-          `Shown in Discover because ${info && info.display_name ? info.display_name : "this NAS"} is already a known origin. ` +
-          "Discover currently uses the public federated feed until Extended Circle ranking is enabled. " +
-          `Origin: ${shortOrigin(originNas)}. Source: ${info.source || "known origin"}.` +
-          (info.public_base_url ? ` URL: ${info.public_base_url}.` : ""),
+          t(
+            "feedReason.detail.discoverKnown",
+            { displayName, origin: originShort, source },
+            `Shown in Discover because ${displayName} is already a known origin. Discover currently uses the public federated feed until Extended Circle ranking is enabled. Origin: ${originShort}. Source: ${source}.`
+          ) + urlText(),
         tone: "known"
       };
     }
 
     if (info) {
+      const source = info.source || knownOriginSource;
+
       return {
-        label: "Known origin",
+        label: t("feedReason.label.knownOrigin", "Known origin"),
         detail:
-          `This came from a NAS origin your server knows. ` +
-          `Origin: ${shortOrigin(originNas)}. Source: ${info.source || "known origin"}.` +
-          (info.public_base_url ? ` URL: ${info.public_base_url}.` : ""),
+          t(
+            "feedReason.detail.knownOrigin",
+            { origin: originShort, source },
+            `This came from a NAS origin your server knows. Origin: ${originShort}. Source: ${source}.`
+          ) + urlText(),
         tone: "known"
       };
     }
 
     if (m === "discover") {
       return {
-        label: "Wider public",
-        detail:
-          "Shown in Discover as wider public federated content. " +
-          "Discover currently uses the public federated feed until Extended Circle ranking is enabled. " +
-          `Origin: ${shortOrigin(originNas)}.`,
+        label: t("feedReason.label.widerPublic", "Wider public"),
+        detail: t(
+          "feedReason.detail.discoverWiderPublic",
+          { origin: originShort },
+          `Shown in Discover as wider public federated content. Discover currently uses the public federated feed until Extended Circle ranking is enabled. Origin: ${originShort}.`
+        ),
         tone: "neutral"
       };
     }
 
     return {
-      label: "Public federated",
-      detail:
-        `This came from a federated NAS origin that is not currently in your Known origins list. ` +
-        `Origin: ${shortOrigin(originNas)}.`,
+      label: t("feedReason.label.publicFederated", "Public federated"),
+      detail: t(
+        "feedReason.detail.publicFederated",
+        { origin: originShort },
+        `This came from a federated NAS origin that is not currently in your Known origins list. Origin: ${originShort}.`
+      ),
       tone: "neutral"
     };
   }
@@ -408,7 +446,7 @@
     // FEDERATED_REASON_EVENT_ID_DETAIL_V1
     const eventId = String(ev && ev.event_id ? ev.event_id : "").trim();
     detail.textContent = eventId
-      ? `${reason.detail} Event: ${eventId}.`
+      ? `${reason.detail}${t("feedReason.eventSuffix", { event_id: eventId }, ` Event: ${eventId}.`)}`
       : reason.detail;
 
     detail.hidden = true;
