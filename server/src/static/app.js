@@ -620,6 +620,29 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return raw.slice(0, 2).toUpperCase();
     }
 
+    function compareAppVersions(a, b) {
+        return String(a || "").localeCompare(String(b || ""), undefined, {
+            numeric: true,
+            sensitivity: "base"
+        });
+    }
+
+    function newestInstalledAppsById(apps) {
+        const byId = new Map();
+
+        for (const app of apps || []) {
+            const id = String(app && app.id ? app.id : "");
+            if (!id) continue;
+
+            const prev = byId.get(id);
+            if (!prev || compareAppVersions(app.ver, prev.ver) >= 0) {
+                byId.set(id, app);
+            }
+        }
+
+        return Array.from(byId.values());
+    }
+
     function addAppNavButton(appId, label, href, iconUrl) {
         if (!appsList) return;
 
@@ -714,6 +737,24 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const persist = opts.persist !== false;
         const rerender = opts.rerender !== false;
 
+        // Save/migrate the current desktop layout before the theme changes.
+        // Without this, old theme-specific layouts can appear to "win" during
+        // theme switching.
+        try {
+            loadDesktopLayout();
+            saveDesktopLayout();
+        } catch {}
+
+        // Important:
+        // If an old build stored desktop layout per theme, migrate/save the
+        // current theme's layout BEFORE changing data-theme/localStorage.
+        // Otherwise theme switching can migrate the target theme's old/default
+        // layout and make icons appear to reset.
+        try {
+            loadDesktopLayout();
+            saveDesktopLayout();
+        } catch {}
+
         const theme = String(themeName || "dark").trim() || "dark";
 
         try {
@@ -759,8 +800,46 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
     function desktopStorageKey() {
         const fp = meFpHex ? meFpHex : "anon";
-        const theme = currentThemeName();
-        return `pqnas_desktop_layout_v1::${fp}::${theme}`;
+
+        // Desktop icon layout is user/browser specific, not theme specific.
+        // Do NOT include currentThemeName() here, otherwise every theme gets
+        // its own icon positions.
+        return `pqnas_desktop_layout_v3::${fp}`;
+    }
+
+    function legacyDesktopStorageKeys() {
+        const fp = meFpHex ? meFpHex : "anon";
+        const current = currentThemeName();
+
+        const keys = [];
+
+        // Prefer the currently visible old theme-specific layout for one-time migration.
+        if (current) keys.push(`pqnas_desktop_layout_v1::${fp}::${current}`);
+
+        // Then try the previous attempted shared key.
+        keys.push(`pqnas_desktop_layout_v2::${fp}`);
+
+        // Then try known old theme-specific keys.
+        for (const t of ["dark", "bright", "cpunk_orange", "win_classic"]) {
+            keys.push(`pqnas_desktop_layout_v1::${fp}::${t}`);
+        }
+
+        // Finally include any other matching old layout keys.
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (!k) continue;
+
+                if (
+                    k.startsWith(`pqnas_desktop_layout_v1::${fp}::`) ||
+                    k === `pqnas_desktop_layout_v2::${fp}`
+                ) {
+                    keys.push(k);
+                }
+            }
+        } catch {}
+
+        return Array.from(new Set(keys));
     }
 
     function bindDesktopSurfaceOnce()
@@ -875,12 +954,37 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
     function loadDesktopLayout() {
         const k = desktopStorageKey();
+
         try {
             const raw = localStorage.getItem(k);
-            desktopLayout = raw ? JSON.parse(raw) : { items: {} };
+            desktopLayout = raw ? JSON.parse(raw) : null;
+
+            // One-time migration from older layouts.
+            // New key is v3 and is deliberately not theme-specific.
+            if (!desktopLayout) {
+                for (const oldKey of legacyDesktopStorageKeys()) {
+                    const oldRaw = localStorage.getItem(oldKey);
+                    if (!oldRaw) continue;
+
+                    const oldLayout = JSON.parse(oldRaw);
+                    if (
+                        oldLayout &&
+                        typeof oldLayout === "object" &&
+                        oldLayout.items &&
+                        typeof oldLayout.items === "object"
+                    ) {
+                        desktopLayout = oldLayout;
+                        localStorage.setItem(k, JSON.stringify(desktopLayout));
+                        break;
+                    }
+                }
+            }
+
+            if (!desktopLayout) desktopLayout = { items: {} };
         } catch {
             desktopLayout = { items: {} };
         }
+
         if (!desktopLayout || typeof desktopLayout !== "object") desktopLayout = { items: {} };
         if (!desktopLayout.items || typeof desktopLayout.items !== "object") desktopLayout.items = {};
         return desktopLayout;
@@ -1395,7 +1499,38 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
     function layoutKeyFor(app) {
+        // Desktop position belongs to the app identity, not to one installed version.
+        // This keeps the icon in the same place when an app is upgraded.
+        return String(app && app.id ? app.id : "");
+    }
+
+    function legacyLayoutKeyFor(app) {
         return `${app.id}@${app.ver}`;
+    }
+
+    function migrateLegacyDesktopLayoutKey(app) {
+        if (!desktopLayout || !desktopLayout.items || !app || !app.id) return false;
+
+        const key = layoutKeyFor(app);
+        if (!key || desktopLayout.items[key]) return false;
+
+        const exactLegacy = legacyLayoutKeyFor(app);
+        if (desktopLayout.items[exactLegacy]) {
+            desktopLayout.items[key] = desktopLayout.items[exactLegacy];
+            return true;
+        }
+
+        const prefix = `${app.id}@`;
+        const legacyKeys = Object.keys(desktopLayout.items)
+            .filter((k) => k.startsWith(prefix))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+        if (legacyKeys.length) {
+            desktopLayout.items[key] = desktopLayout.items[legacyKeys[legacyKeys.length - 1]];
+            return true;
+        }
+
+        return false;
     }
     function snapToGrid(x, y) {
 
@@ -1411,24 +1546,72 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const rect = surface.getBoundingClientRect();
         const pad = 14;
-        const colW = DESKTOP_GRID_X * 4;
-        const rowH = DESKTOP_GRID_Y * 4;
+        const colW = Math.max(92, DESKTOP_GRID_X * 5);
+        const rowH = Math.max(112, DESKTOP_GRID_Y * 5);
+        const cols = Math.max(1, Math.floor(Math.max(colW, rect.width - pad) / colW));
 
+        let changed = false;
+        const occupied = new Set();
 
-        let i = 0;
+        const cellForPos = (pos) => {
+            const x = Number(pos && pos.x);
+            const y = Number(pos && pos.y);
+            const col = Math.max(0, Math.round(((Number.isFinite(x) ? x : pad) - pad) / colW));
+            const row = Math.max(0, Math.round(((Number.isFinite(y) ? y : pad) - pad) / rowH));
+            return row * cols + col;
+        };
+
+        const posForCell = (cell) => {
+            const col = cell % cols;
+            const row = Math.floor(cell / cols);
+            return {
+                x: pad + col * colW,
+                y: pad + row * rowH
+            };
+        };
+
+        const firstFreeCell = () => {
+            let cell = 0;
+            while (occupied.has(cell)) cell++;
+            return cell;
+        };
+
+        // Migrate old id@version desktop positions to the new stable id key.
+        for (const app of apps) {
+            if (migrateLegacyDesktopLayoutKey(app)) changed = true;
+        }
+
+        // Keep existing visible icons, but repair duplicates/collisions.
         for (const app of apps) {
             const k = layoutKeyFor(app);
-            if (desktopLayout.items[k]) continue;
+            if (!k) continue;
 
-            const col = (i % 5);
-            const row = Math.floor(i / 5);
-            const x = pad + col * colW;
-            const y = pad + row * rowH;
+            const pos = desktopLayout.items[k];
+            if (!pos) continue;
 
-            desktopLayout.items[k] = { x, y };
-            i++;
+            const cell = cellForPos(pos);
+            if (occupied.has(cell)) {
+                const free = firstFreeCell();
+                desktopLayout.items[k] = posForCell(free);
+                occupied.add(free);
+                changed = true;
+            } else {
+                occupied.add(cell);
+            }
         }
-        saveDesktopLayout();
+
+        // Place missing icons into the first free desktop grid cell.
+        for (const app of apps) {
+            const k = layoutKeyFor(app);
+            if (!k || desktopLayout.items[k]) continue;
+
+            const free = firstFreeCell();
+            desktopLayout.items[k] = posForCell(free);
+            occupied.add(free);
+            changed = true;
+        }
+
+        if (changed) saveDesktopLayout();
     }
 
     function setSelectedIcon(key, additive=false)
@@ -2748,12 +2931,16 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             // Admin-only apps (UI visibility)
             if (!isAdmin) usable = usable.filter(x => x.id !== "snapshotmgr");
 
+            // Only show one desktop/sidebar entry per app id.
+            // When multiple versions are installed, use the newest version.
+            usable = newestInstalledAppsById(usable);
+
             // stable order: id then ver
             usable.sort((a, b) => {
                 const ai = String(a.id || "");
                 const bi = String(b.id || "");
                 if (ai !== bi) return ai.localeCompare(bi);
-                return String(a.ver || "").localeCompare(String(b.ver || ""));
+                return compareAppVersions(a.ver, b.ver);
             });
 
             const key = JSON.stringify(usable.map(x => [x.id, x.ver, x.name || x.title || ""]));
