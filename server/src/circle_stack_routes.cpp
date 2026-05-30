@@ -348,6 +348,11 @@ std::string cs_mime_for_path(const std::filesystem::path& p) {
     if (ext == ".png") return "image/png";
     if (ext == ".webp") return "image/webp";
     if (ext == ".gif") return "image/gif";
+    if (ext == ".mp4" || ext == ".m4v") return "video/mp4";
+    if (ext == ".webm") return "video/webm";
+    if (ext == ".mov") return "video/quicktime";
+    if (ext == ".avi") return "video/x-msvideo";
+    if (ext == ".mkv") return "video/x-matroska";
 
     return "application/octet-stream";
 }
@@ -1149,6 +1154,7 @@ json cs_load_post_replies(
         };
 
         if (!media_path.empty()) {
+            r["media_path"] = media_path;
             r["media_url"] = "/api/v4/circlestack/reply/media?id=" + std::to_string(id);
         }
 
@@ -4381,6 +4387,7 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 p["replies"] = cs_load_post_replies(g_db, id, actor_fp, deps);
 
                 if (media && media[0]) {
+                    p["media_path"] = media;
                     p["media_url"] = "/api/v4/circlestack/media?id=" + std::to_string(id);
                 }
 

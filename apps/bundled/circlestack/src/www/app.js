@@ -3660,13 +3660,23 @@ function csFillReplyContent(content, reply) {
   }
 
   if (reply.media_url) {
-    const img = document.createElement("img");
-    img.className = "cs-reply-media";
-    img.src = reply.media_url;
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.alt = "";
-    content.appendChild(img);
+    const mediaPath = String(reply.media_path || reply.media_url || "");
+    if (csIsVideoPath(mediaPath)) {
+      const video = document.createElement("video");
+      video.className = "cs-reply-media cs-reply-video";
+      video.src = reply.media_url;
+      video.controls = true;
+      video.preload = "metadata";
+      content.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.className = "cs-reply-media";
+      img.src = reply.media_url;
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.alt = "";
+      content.appendChild(img);
+    }
   }
 }
 
@@ -4778,13 +4788,23 @@ function csRenderPost(post) {
   }
 
   if (post.media_url) {
-    const img = document.createElement("img");
-    img.className = "cs-post-media";
-    img.src = post.media_url;
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.alt = "";
-    el.appendChild(img);
+    const mediaPath = String(post.media_path || post.media_url || "");
+    if (csIsVideoPath(mediaPath)) {
+      const video = document.createElement("video");
+      video.className = "cs-post-media cs-post-video";
+      video.src = post.media_url;
+      video.controls = true;
+      video.preload = "metadata";
+      el.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.className = "cs-post-media";
+      img.src = post.media_url;
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.alt = "";
+      el.appendChild(img);
+    }
   }
 
   if (window.CircleStackMemoryNodes &&
@@ -5693,7 +5713,7 @@ async function csOpenMediaPicker() {
         } else {
           const icon = document.createElement("span");
           icon.className = "cs-media-icon";
-          icon.textContent = isDir ? "📁" : "📄";
+          icon.textContent = isDir ? "📁" : (csIsVideoPath(full) ? "🎬" : "📄");
           row.appendChild(icon);
         }
 
@@ -5756,6 +5776,10 @@ function csIsImagePath(path) {
   return /\.(jpg|jpeg|png|webp|gif)$/i.test(path || "");
 }
 
+function csIsVideoPath(path) {
+  return /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(path || "");
+}
+
 function csFileUrl(path) {
   return `/api/v4/files/get?path=${encodeURIComponent(path || "")}`;
 }
@@ -5765,26 +5789,41 @@ function csSetMediaPreview(path) {
   if (!box) return;
 
   box.textContent = "";
-  if (!path || !csIsImagePath(path)) {
+  if (!path) {
     box.hidden = true;
     return;
   }
 
-  const img = document.createElement("img");
-  img.className = "cs-compose-preview-img is-loading";
-  img.src = csFileUrl(path);
-  img.alt = "";
+  if (csIsImagePath(path)) {
+    const img = document.createElement("img");
+    img.className = "cs-compose-preview-img is-loading";
+    img.src = csFileUrl(path);
+    img.alt = "";
 
-  img.addEventListener("load", () => {
-    img.classList.remove("is-loading");
-  });
+    img.addEventListener("load", () => {
+      img.classList.remove("is-loading");
+    });
+
+    box.appendChild(img);
+  } else if (csIsVideoPath(path)) {
+    const video = document.createElement("video");
+    video.className = "cs-compose-preview-video";
+    video.src = csFileUrl(path);
+    video.controls = true;
+    video.preload = "metadata";
+    box.appendChild(video);
+  } else {
+    const file = document.createElement("div");
+    file.className = "cs-media-file-preview";
+    file.textContent = path;
+    box.appendChild(file);
+  }
 
   const clear = document.createElement("button");
   clear.className = "cs-media-clear";
   clear.type = "button";
-  clear.textContent = csT("media.removeImage", "Remove image");
+  clear.textContent = csT("media.removeMedia", "Remove media");
 
-  box.appendChild(img);
   box.appendChild(clear);
   box.hidden = false;
 }
