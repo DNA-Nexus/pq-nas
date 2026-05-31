@@ -1263,3 +1263,94 @@ button[data-action="disable"] {
 .cs-profile-achievement .cs-locked-achievement-lock {
   margin-top: 2px !important;
 }
+
+/* federated media meta readability in bright/win_classic */
+html[data-theme="bright"] .cs-feed .cs-post .cs-media-meta,
+html[data-theme="bright"] .cs-feed .cs-post .cs-media-summary,
+html[data-theme="bright"] .cs-feed .cs-post .cs-remote-media-meta,
+html[data-theme="bright"] .cs-feed .cs-post .cs-remote-media-summary,
+html[data-theme="bright"] .cs-feed .cs-post [class*="media-meta"],
+html[data-theme="bright"] .cs-feed .cs-post [class*="media-summary"],
+html[data-theme="bright"] .cs-feed .cs-post [class*="remote-media"],
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-media-meta,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-media-summary,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-remote-media-meta,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-remote-media-summary,
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="media-meta"],
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="media-summary"],
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="remote-media"],
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-media-meta,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-media-summary,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-remote-media-meta,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-remote-media-summary,
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="media-meta"],
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="media-summary"],
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="remote-media"],
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-media-meta,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-media-summary,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-remote-media-meta,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-remote-media-summary,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="media-meta"],
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="media-summary"],
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media"] {
+  color: #10343a !important;
+  background: #e7f6f4 !important;
+  border-color: #7bc9c3 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="bright"] .cs-feed .cs-post .cs-media-meta a,
+html[data-theme="bright"] .cs-feed .cs-post .cs-media-summary a,
+html[data-theme="bright"] .cs-feed .cs-post .cs-remote-media-meta a,
+html[data-theme="bright"] .cs-feed .cs-post .cs-remote-media-summary a,
+html[data-theme="bright"] .cs-feed .cs-post [class*="media-meta"] a,
+html[data-theme="bright"] .cs-feed .cs-post [class*="media-summary"] a,
+html[data-theme="bright"] .cs-feed .cs-post [class*="remote-media"] a,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-media-meta a,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-media-summary a,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-remote-media-meta a,
+html[data-theme="bright"] .cs-federated-feed .cs-post .cs-remote-media-summary a,
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="media-meta"] a,
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="media-summary"] a,
+html[data-theme="bright"] .cs-federated-feed .cs-post [class*="remote-media"] a,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-media-meta a,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-media-summary a,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-remote-media-meta a,
+html[data-theme="win_classic"] .cs-feed .cs-post .cs-remote-media-summary a,
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="media-meta"] a,
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="media-summary"] a,
+html[data-theme="win_classic"] .cs-feed .cs-post [class*="remote-media"] a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-media-meta a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-media-summary a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-remote-media-meta a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post .cs-remote-media-summary a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="media-meta"] a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="media-summary"] a,
+html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media"] a {
+  color: #0f4c5a !important;
+}
+
+/* Exact federated media placeholder readability fix */
+:root[data-theme="bright"] .cs-federated-media-placeholder,
+:root[data-theme="win_classic"] .cs-federated-media-placeholder {
+  color: #00343d !important;
+  background: #e7f6f4 !important;
+  border: 1px solid #62bdb6 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+:root[data-theme="bright"] .cs-federated-media-placeholder *,
+:root[data-theme="win_classic"] .cs-federated-media-placeholder * {
+  color: #00343d !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="win_classic"] .cs-federated-media-placeholder {
+  border-radius: 0 !important;
+  background: #e0f4f2 !important;
+  border-color: #008080 !important;
+}
