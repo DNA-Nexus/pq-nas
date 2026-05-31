@@ -3957,6 +3957,38 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         previewCard.style.top = `${top}px`;
     }
 
+    let previewResizeRaf = 0;
+
+    function syncPreviewAfterCardResize() {
+        if (!previewModal || !previewModal.classList.contains("show")) return;
+
+        if (previewResizeRaf) {
+            window.cancelAnimationFrame(previewResizeRaf);
+        }
+
+        previewResizeRaf = window.requestAnimationFrame(() => {
+            previewResizeRaf = 0;
+            clampPreviewIntoViewport();
+
+            if (state.previewMode === "fit") {
+                applyPreviewFitMode();
+            } else {
+                updatePreviewInfoText();
+                updatePreviewPanCursor();
+            }
+        });
+    }
+
+    function installPreviewResizeObserver() {
+        if (!previewCard || typeof ResizeObserver !== "function") return;
+
+        const ro = new ResizeObserver(() => {
+            syncPreviewAfterCardResize();
+        });
+
+        ro.observe(previewCard);
+    }
+
     function renderFolderGlyph() {
         const wrap = document.createElement("div");
         wrap.className = "folderGlyph";
@@ -5296,7 +5328,12 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     });
 
     window.addEventListener("scroll", closeContextMenu, true);
-    window.addEventListener("resize", closeContextMenu);
+    window.addEventListener("resize", () => {
+        closeContextMenu();
+        syncPreviewAfterCardResize();
+    });
+
+    installPreviewResizeObserver();
 
     window.PQNAS_PHOTOGALLERY.getFilteredImageItems = () => filteredImageItems().slice();
     window.PQNAS_PHOTOGALLERY.currentRelPathFor = currentRelPathFor;

@@ -541,11 +541,42 @@
 
         .previewCard{
             width:min(1200px,96vw);
-            max-height:92vh;
+            height:min(760px, calc(100vh - 110px));
+            min-width:min(420px, calc(100vw - 24px));
+            min-height:min(360px, calc(100vh - 24px));
+            max-width:calc(100vw - 16px);
+            max-height:calc(100vh - 16px);
             position:absolute;
             left:50%;
             top:80px;
             transform:translateX(-50%);
+            resize:both;
+            overflow:hidden;
+        }
+
+        .previewCard::after{
+            content:"";
+            position:absolute;
+            right:8px;
+            bottom:8px;
+            width:18px;
+            height:18px;
+            border-right:2px solid rgba(var(--fg-rgb),0.45);
+            border-bottom:2px solid rgba(var(--fg-rgb),0.45);
+            border-radius:2px;
+            pointer-events:none;
+            opacity:.78;
+            z-index:8;
+        }
+
+        #previewModal.previewFullscreen:fullscreen .previewCard,
+        #previewModal.slideshowFullscreen:fullscreen .previewCard{
+            resize:none;
+        }
+
+        #previewModal.previewFullscreen:fullscreen .previewCard::after,
+        #previewModal.slideshowFullscreen:fullscreen .previewCard::after{
+            display:none;
         }
 
         .previewHead{
