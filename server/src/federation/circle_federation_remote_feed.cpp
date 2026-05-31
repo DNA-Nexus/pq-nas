@@ -259,12 +259,14 @@ bool prune_circle_federation_remote_feed(
 
 std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
     int limit,
+    std::int64_t before_id,
     std::string* err) {
     std::vector<CircleFederationRemoteFeedEvent> out;
 
     if (!ensure_circle_federation_remote_feed(err)) return out;
 
     limit = std::clamp(limit, 1, 500);
+    if (before_id < 0) before_id = 0;
 
     sqlite3* db = nullptr;
     if (!open_remote_feed_db(&db, err)) return out;
@@ -274,8 +276,9 @@ std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
         "SELECT id, received_epoch, created_epoch, circle_id, event_id, event_type, "
         "origin_nas, target_type, post_id, reply_id, actor_fp, reaction, event_json "
         "FROM circle_federation_remote_feed "
-        "ORDER BY created_epoch DESC, id DESC "
-        "LIMIT ?";
+        "WHERE (?1 <= 0 OR id < ?1) "
+        "ORDER BY id DESC "
+        "LIMIT ?2";
 
     if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
         if (err) *err = sqlite3_errmsg(db);
@@ -283,7 +286,8 @@ std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
         return out;
     }
 
-    sqlite3_bind_int(st, 1, limit);
+    sqlite3_bind_int64(st, 1, before_id);
+    sqlite3_bind_int(st, 2, limit);
 
     while (sqlite3_step(st) == SQLITE_ROW) {
         out.push_back(row_to_event(st));
@@ -293,6 +297,13 @@ std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
     sqlite3_close(db);
     return out;
 }
+
+std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
+    int limit,
+    std::string* err) {
+    return list_circle_federation_remote_feed(limit, 0, err);
+}
+
 
 CircleFederationRemoteFeedStats circle_federation_remote_feed_stats(std::string* err) {
     CircleFederationRemoteFeedStats stats;

@@ -4308,11 +4308,51 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             out["ok"] = true;
             out["posts"] = json::array();
 
+            int limit = 25;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                    limit = 25;
+                }
+            }
+
+            if (limit < 1) limit = 25;
+            if (limit > 100) limit = 100;
+
+            long long before_id = 0;
+            if (req.has_param("before_id")) {
+                try {
+                    before_id = std::stoll(req.get_param_value("before_id"));
+                } catch (...) {
+                    before_id = 0;
+                }
+            }
+
+            if (before_id < 0) before_id = 0;
+
+            const int scan_limit = std::min(limit * 10, 1000);
+
             sqlite3_stmt* stmt = nullptr;
-            sqlite3_prepare_v2(g_db,
+            const char* feed_sql =
                 "SELECT id, text, media_path, created_epoch, owner_fp, visibility, circle_allow "
-                "FROM posts ORDER BY id DESC",
-                -1, &stmt, nullptr);
+                "FROM posts "
+                "WHERE (?1 <= 0 OR id < ?1) "
+                "ORDER BY id DESC "
+                "LIMIT ?2";
+
+            if (sqlite3_prepare_v2(g_db, feed_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+                res.status = 500;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "db_prepare_failed"}
+                });
+            }
+
+            sqlite3_bind_int64(stmt, 1, before_id);
+            sqlite3_bind_int(stmt, 2, scan_limit);
+
+            int visible_count = 0;
 
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 json p;
@@ -4350,6 +4390,8 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 }
 
                 if (!can_see) continue;
+                if (visible_count >= limit) continue;
+                ++visible_count;
 
                 std::string owner_display = owner_fp.size() >= 8 ? owner_fp.substr(0, 8) : owner_fp;
                 std::string owner_avatar_url;
@@ -4395,6 +4437,17 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
             }
 
             sqlite3_finalize(stmt);
+
+            out["limit"] = limit;
+            out["next_before_id"] = 0;
+            out["has_more_hint"] = false;
+
+            if (!out["posts"].empty()) {
+                out["next_before_id"] = out["posts"].back().value("id", 0);
+                out["has_more_hint"] =
+                    out["posts"].size() >= static_cast<std::size_t>(limit);
+            }
+
             circle_stack_memory_nodes_annotate_feed_posts(out["posts"], actor_fp, deps);
             set_json(res, out);
         });
@@ -4711,9 +4764,20 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
             limit = std::clamp(limit, 1, 200);
 
+            long long before_id = 0;
+            if (req.has_param("before_id")) {
+                try {
+                    before_id = std::stoll(req.get_param_value("before_id"));
+                } catch (...) {
+                    before_id = 0;
+                }
+            }
+
+            if (before_id < 0) before_id = 0;
+
             std::string err;
             const auto rows =
-                pqnas::federation::list_circle_federation_remote_feed(limit, &err);
+                pqnas::federation::list_circle_federation_remote_feed(limit, before_id, &err);
 
             if (!err.empty()) {
                 res.status = 500;
@@ -4729,9 +4793,17 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
                 events.push_back(cs_remote_feed_event_json(row));
             }
 
+            long long next_before_id = 0;
+            if (!events.empty()) {
+                next_before_id = events.back().value("id", 0);
+            }
+
             set_json(res, {
                 {"ok", true},
                 {"count", events.size()},
+                {"limit", limit},
+                {"next_before_id", next_before_id},
+                {"has_more_hint", rows.size() >= static_cast<std::size_t>(limit)},
                 {"events", events}
             });
         });

@@ -51,6 +51,12 @@ bool store_circle_federation_remote_feed_event(
 
 std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
     int limit,
+    std::int64_t before_id,
+    std::string* err);
+
+// Backward-compatible helper for older call sites that just want the latest rows.
+std::vector<CircleFederationRemoteFeedEvent> list_circle_federation_remote_feed(
+    int limit,
     std::string* err);
 
 CircleFederationRemoteFeedStats circle_federation_remote_feed_stats(std::string* err);

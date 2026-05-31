@@ -1556,7 +1556,18 @@ async function csCheckAchievementUnlocks() {
 }
 
 let csFeedMode = "local";
+let csLocalFeedLoadSeq = 0;
+let csLocalFeedBeforeId = 0;
+let csLocalFeedLoading = false;
+let csLocalFeedReachedEnd = false;
+let csLocalFeedObserver = null;
+const CS_LOCAL_FEED_PAGE_SIZE = 25;
 let csFederatedFeedLoadSeq = 0;
+let csFederatedFeedBeforeId = 0;
+let csFederatedFeedLoading = false;
+let csFederatedFeedReachedEnd = false;
+let csFederatedFeedObserver = null;
+const CS_FEDERATED_FEED_PAGE_SIZE = 25;
 let csMutedFederatedOrigins = new Set();
 
 function csI18nKey(key) {
@@ -1597,29 +1608,136 @@ window.csT = csT;
 window.csApplyI18n = csApplyI18n;
 
 
-async function csLoadFeed() {
-  csCheckAchievementUnlocks();
+function csDisconnectLocalFeedObserver() {
+  if (csLocalFeedObserver) {
+    csLocalFeedObserver.disconnect();
+    csLocalFeedObserver = null;
+  }
+}
+
+function csEnsureLocalFeedSentinel(feed) {
+  if (!feed) return null;
+
+  let sentinel = document.getElementById("csLocalFeedLoadMore");
+  if (!sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.id = "csLocalFeedLoadMore";
+    sentinel.className = "cs-feed-load-more";
+    sentinel.textContent = csT("feed.loadingMore", "Loading more moments…");
+  }
+
+  if (sentinel.parentElement !== feed) {
+    feed.appendChild(sentinel);
+  }
+
+  return sentinel;
+}
+
+function csObserveLocalFeedSentinel(feed) {
+  const sentinel = csEnsureLocalFeedSentinel(feed);
+  if (!sentinel || csLocalFeedReachedEnd) return;
+
+  csDisconnectLocalFeedObserver();
+
+  if (!("IntersectionObserver" in window)) {
+    sentinel.addEventListener("click", () => csLoadFeed({ reset: false }), { once: true });
+    return;
+  }
+
+  csLocalFeedObserver = new IntersectionObserver((entries) => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+
+    if (csFeedMode !== "local") return;
+    if (csLocalFeedLoading || csLocalFeedReachedEnd) return;
+
+    csLoadFeed({ reset: false });
+  }, {
+    root: null,
+    rootMargin: "900px 0px",
+    threshold: 0.01
+  });
+
+  csLocalFeedObserver.observe(sentinel);
+}
+
+async function csLoadFeed(options = {}) {
+  const reset = options.reset !== false;
+
+  if (csLocalFeedLoading) return;
+
+  if (reset) {
+    csCheckAchievementUnlocks();
+  }
 
   const feed = document.getElementById("csFeed");
   if (!feed) return;
 
-  feed.textContent = "";
+  const loadSeq = ++csLocalFeedLoadSeq;
 
-  const res = await fetch(`${CS_API}/feed`, { credentials: "same-origin" });
-  const data = await res.json();
+  if (reset) {
+    csDisconnectLocalFeedObserver();
+    csLocalFeedBeforeId = 0;
+    csLocalFeedReachedEnd = false;
+    feed.textContent = "";
+  }
+
+  if (csLocalFeedReachedEnd) return;
+
+  csLocalFeedLoading = true;
+
+  let data = null;
+  try {
+    const params = new URLSearchParams();
+    params.set("limit", String(CS_LOCAL_FEED_PAGE_SIZE));
+
+    if (!reset && csLocalFeedBeforeId > 0) {
+      params.set("before_id", String(csLocalFeedBeforeId));
+    }
+
+    const res = await fetch(`${CS_API}/feed?${params.toString()}`, {
+      credentials: "same-origin"
+    });
+
+    data = await res.json();
+  } catch (_) {
+    data = { ok: false, posts: [] };
+  } finally {
+    csLocalFeedLoading = false;
+  }
+
+  if (loadSeq !== csLocalFeedLoadSeq) return;
+
   const posts = Array.isArray(data.posts) ? data.posts : [];
 
-  if (!posts.length) {
+  const oldSentinel = document.getElementById("csLocalFeedLoadMore");
+  if (oldSentinel) oldSentinel.remove();
+
+  if (reset && !posts.length) {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
     empty.textContent = csT("feed.empty", "No moments yet.");
     feed.appendChild(empty);
+    csLocalFeedReachedEnd = true;
     return;
   }
 
   for (const post of posts) {
     feed.appendChild(csRenderPost(post));
   }
+
+  const nextBefore = Number(data.next_before_id || 0);
+  if (nextBefore > 0) {
+    csLocalFeedBeforeId = nextBefore;
+  } else if (posts.length) {
+    csLocalFeedBeforeId = Number(posts[posts.length - 1].id || 0);
+  }
+
+  if (posts.length < CS_LOCAL_FEED_PAGE_SIZE) {
+    csLocalFeedReachedEnd = true;
+    return;
+  }
+
+  csObserveLocalFeedSentinel(feed);
 }
 
 
@@ -2269,26 +2387,135 @@ function csRenderFederatedEvent(ev) {
   return card;
 }
 
-async function csLoadFederatedFeed() {
+function csDisconnectFederatedFeedObserver() {
+  if (csFederatedFeedObserver) {
+    csFederatedFeedObserver.disconnect();
+    csFederatedFeedObserver = null;
+  }
+}
+
+function csEnsureFederatedFeedSentinel(feed) {
+  if (!feed) return null;
+
+  let sentinel = document.getElementById("csFederatedFeedLoadMore");
+  if (!sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.id = "csFederatedFeedLoadMore";
+    sentinel.className = "cs-feed-load-more";
+    sentinel.textContent = csT("feed.loadingMore", "Loading more moments…");
+  }
+
+  if (sentinel.parentElement !== feed) {
+    feed.appendChild(sentinel);
+  }
+
+  return sentinel;
+}
+
+function csObserveFederatedFeedSentinel(feed) {
+  const sentinel = csEnsureFederatedFeedSentinel(feed);
+  if (!sentinel || csFederatedFeedReachedEnd) return;
+
+  csDisconnectFederatedFeedObserver();
+
+  if (!("IntersectionObserver" in window)) {
+    sentinel.addEventListener("click", () => csLoadFederatedFeed({ reset: false }), { once: true });
+    return;
+  }
+
+  csFederatedFeedObserver = new IntersectionObserver((entries) => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+
+    const feedModeApi = window.CircleStackFeedModes || null;
+    const showingFederatedSurface = feedModeApi && typeof feedModeApi.isFederatedSurface === "function"
+      ? feedModeApi.isFederatedSurface(csFeedMode)
+      : csFeedMode === "federated";
+
+    if (!showingFederatedSurface) return;
+    if (csFederatedFeedLoading || csFederatedFeedReachedEnd) return;
+
+    csLoadFederatedFeed({ reset: false });
+  }, {
+    root: null,
+    rootMargin: "900px 0px",
+    threshold: 0.01
+  });
+
+  csFederatedFeedObserver.observe(sentinel);
+}
+
+async function csLoadFederatedFeed(options = {}) {
+  const reset = options.reset !== false;
+
   const feed = document.getElementById("csFederatedFeed");
   if (!feed) return;
 
+  if (csFederatedFeedLoading) return;
+
   const loadSeq = ++csFederatedFeedLoadSeq;
 
-  let data = null;
-  try {
-    const res = await fetch(`${CS_API}/federated/feed?limit=50`, {
-      credentials: "same-origin"
-    });
-    data = await res.json();
-  } catch (_) {
-    data = { ok: false };
+  if (reset) {
+    csDisconnectFederatedFeedObserver();
+    csFederatedFeedBeforeId = 0;
+    csFederatedFeedReachedEnd = false;
+    feed.textContent = "";
   }
 
-  // If another federated-feed load started after this one, ignore this older result.
+  if (csFederatedFeedReachedEnd) return;
+
+  csFederatedFeedLoading = true;
+
+  let data = null;
+  let loadError = "";
+
+  try {
+    const params = new URLSearchParams();
+    params.set("limit", String(CS_FEDERATED_FEED_PAGE_SIZE));
+
+    if (!reset && csFederatedFeedBeforeId > 0) {
+      params.set("before_id", String(csFederatedFeedBeforeId));
+    }
+
+    const res = await fetch(`${CS_API}/federated/feed?${params.toString()}`, {
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+
+    const text = await res.text();
+
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!res.ok || !data || data.ok !== true) {
+      loadError = (data && (data.error || data.message || data.detail))
+        ? String(data.error || data.message || data.detail)
+        : `HTTP ${res.status}`;
+    }
+  } catch (err) {
+    loadError = err && err.message ? err.message : String(err || "network_error");
+    data = null;
+  } finally {
+    csFederatedFeedLoading = false;
+  }
+
   if (loadSeq !== csFederatedFeedLoadSeq) return;
 
-  feed.textContent = "";
+  const oldSentinel = document.getElementById("csFederatedFeedLoadMore");
+  if (oldSentinel) oldSentinel.remove();
+
+  if (loadError) {
+    if (reset) {
+      feed.textContent = "";
+      const errBox = document.createElement("div");
+      errBox.className = "cs-empty";
+      errBox.textContent = `Could not load federated feed: ${loadError}`;
+      feed.appendChild(errBox);
+    }
+    return;
+  }
 
   // CIRCLESTACK_FEED_MODES_HOOKS_V1
   const rawEvents = data && Array.isArray(data.events) ? data.events : [];
@@ -2312,21 +2539,36 @@ async function csLoadFederatedFeed() {
     });
   }
 
-  if (!events.length) {
+  if (reset && !events.length && rawEvents.length < CS_FEDERATED_FEED_PAGE_SIZE) {
     const empty = document.createElement("div");
     empty.className = "cs-empty";
     empty.textContent = emptyText;
     feed.appendChild(empty);
+    csFederatedFeedReachedEnd = true;
     return;
   }
 
-  if (typeof csLoadFederatedLocalReactionsForEvents === "function") {
+  if (typeof csLoadFederatedLocalReactionsForEvents === "function" && events.length) {
     await csLoadFederatedLocalReactionsForEvents(events);
   }
 
   for (const ev of events) {
     feed.appendChild(csRenderFederatedEvent(ev));
   }
+
+  const nextBefore = Number(data.next_before_id || 0);
+  if (nextBefore > 0) {
+    csFederatedFeedBeforeId = nextBefore;
+  } else if (rawEvents.length) {
+    csFederatedFeedBeforeId = Number(rawEvents[rawEvents.length - 1].id || 0);
+  }
+
+  if (rawEvents.length < CS_FEDERATED_FEED_PAGE_SIZE) {
+    csFederatedFeedReachedEnd = true;
+    return;
+  }
+
+  csObserveFederatedFeedSentinel(feed);
 }
 
 async function csSetFeedMode(mode) {
@@ -2370,9 +2612,9 @@ async function csSetFeedMode(mode) {
   }
 
   if (showingFederatedSurface) {
-    await csLoadFederatedFeed();
+    await csLoadFederatedFeed({ reset: true });
   } else {
-    await csLoadFeed();
+    await csLoadFeed({ reset: true });
   }
 }
 
@@ -4074,6 +4316,50 @@ function csIsSameOriginUrl(urlObj) {
   return !!(urlObj && urlObj.origin === window.location.origin);
 }
 
+function csIsPublicShareUrl(urlObj) {
+  return !!(
+    urlObj &&
+    urlObj.origin === window.location.origin &&
+    String(urlObj.pathname || "").startsWith("/s/")
+  );
+}
+
+function csShouldFetchSameOriginLinkPreview(urlObj) {
+  // Do not auto-fetch public share URLs while rendering the feed.
+  // /s/<token> is audited as a share download/open, so preview probing would
+  // fill the audit log with expired share_download rows even without clicks.
+  if (csIsPublicShareUrl(urlObj)) return false;
+  return csIsSameOriginUrl(urlObj);
+}
+
+function csRunWhenNearViewport(el, fn) {
+  if (!el || typeof fn !== "function") return;
+
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+
+  if (!("IntersectionObserver" in window)) {
+    setTimeout(run, 0);
+    return;
+  }
+
+  const obs = new IntersectionObserver((entries) => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+    obs.disconnect();
+    run();
+  }, {
+    root: null,
+    rootMargin: "700px 0px",
+    threshold: 0.01
+  });
+
+  obs.observe(el);
+}
+
 function csMetaContent(doc, selector) {
   const el = doc.querySelector(selector);
   return el ? String(el.getAttribute("content") || "").trim() : "";
@@ -4486,48 +4772,50 @@ function csRenderLinkPreviewFromText(rawText) {
   card.appendChild(thumb);
   card.appendChild(body);
 
-  if (csIsSameOriginUrl(urlObj)) {
-    fetch(urlObj.href, {
-      credentials: "same-origin",
-      cache: "no-store"
-    })
-      .then(async (res) => {
-        const ct = String(res.headers.get("content-type") || "");
-        if (!res.ok || !ct.includes("text/html")) return null;
-        return await res.text();
+  if (csShouldFetchSameOriginLinkPreview(urlObj)) {
+    csRunWhenNearViewport(card, () => {
+      fetch(urlObj.href, {
+        credentials: "same-origin",
+        cache: "no-store"
       })
-      .then((html) => {
-        if (!html) return;
+        .then(async (res) => {
+          const ct = String(res.headers.get("content-type") || "");
+          if (!res.ok || !ct.includes("text/html")) return null;
+          return await res.text();
+        })
+        .then((html) => {
+          if (!html) return;
 
-        const doc = new DOMParser().parseFromString(html, "text/html");
+          const doc = new DOMParser().parseFromString(html, "text/html");
 
-        const pageBadge = csPreviewBadgeFromDoc(doc, urlObj);
-        if (pageBadge) badge.textContent = pageBadge;
+          const pageBadge = csPreviewBadgeFromDoc(doc, urlObj);
+          if (pageBadge) badge.textContent = pageBadge;
 
-        const pageTitle =
-          csMetaContent(doc, 'meta[property="og:title"]') ||
-          csMetaContent(doc, 'meta[name="twitter:title"]') ||
-          String(doc.querySelector("title")?.textContent || "").trim();
+          const pageTitle =
+            csMetaContent(doc, 'meta[property="og:title"]') ||
+            csMetaContent(doc, 'meta[name="twitter:title"]') ||
+            String(doc.querySelector("title")?.textContent || "").trim();
 
-        const pageDesc =
-          csMetaContent(doc, 'meta[property="og:description"]') ||
-          csMetaContent(doc, 'meta[name="description"]') ||
-          csMetaContent(doc, 'meta[name="twitter:description"]');
+          const pageDesc =
+            csMetaContent(doc, 'meta[property="og:description"]') ||
+            csMetaContent(doc, 'meta[name="description"]') ||
+            csMetaContent(doc, 'meta[name="twitter:description"]');
 
-        const imgUrl = csResolvePreviewImage(doc, urlObj.href);
+          const imgUrl = csResolvePreviewImage(doc, urlObj.href);
 
-        if (pageTitle) title.textContent = pageTitle;
-        if (pageDesc) desc.textContent = pageDesc;
+          if (pageTitle) title.textContent = pageTitle;
+          if (pageDesc) desc.textContent = pageDesc;
 
-        if (imgUrl) {
-          thumb.textContent = "";
-          thumb.classList.add("has-image");
-          thumb.style.backgroundImage = `url("${imgUrl.replaceAll('"', "%22")}")`;
-        }
-      })
-      .catch(() => {
-        // Preview is best-effort. The link itself still works.
-      });
+          if (imgUrl) {
+            thumb.textContent = "";
+            thumb.classList.add("has-image");
+            thumb.style.backgroundImage = `url("${imgUrl.replaceAll('"', "%22")}")`;
+          }
+        })
+        .catch(() => {
+          // Preview is best-effort. The link itself still works.
+        });
+    });
   }
 
   return card;
