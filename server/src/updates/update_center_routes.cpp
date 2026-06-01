@@ -1,6 +1,10 @@
 #include "updates/update_center_routes.h"
+#include "version.h"
 
 #include <nlohmann/json.hpp>
+#include <vector>
+#include <iterator>
+#include <cctype>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
@@ -148,6 +152,221 @@ std::filesystem::path updates_root_dir(const UpdateCenterRoutesDeps& deps) {
 
 std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
     return updates_root_dir(deps) / "incoming";
+}
+
+
+// update_plan_helpers_r6a
+[[maybe_unused]] std::string update_plan_normalize_entry(std::string entry) {
+    while (!entry.empty() && (entry.back() == '\r' || entry.back() == '\n')) {
+        entry.pop_back();
+    }
+
+    for (char& c : entry) {
+        if (c == '\\') c = '/';
+    }
+
+    while (update_starts_with(entry, "./")) {
+        entry = entry.substr(2);
+    }
+
+    while (update_starts_with(entry, "pqnas/")) {
+        entry = entry.substr(6);
+    }
+
+    return entry;
+}
+
+[[maybe_unused]] std::string update_plan_path_segment_after(const std::string& s, const std::string& prefix) {
+    if (!update_starts_with(s, prefix)) return "";
+    std::string rest = s.substr(prefix.size());
+    const std::size_t slash = rest.find('/');
+    if (slash == std::string::npos) return rest;
+    return rest.substr(0, slash);
+}
+
+[[maybe_unused]] std::string update_trim(std::string s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.erase(s.begin());
+    }
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+        s.pop_back();
+    }
+    return s;
+}
+
+[[maybe_unused]] std::string update_read_first_line(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    if (!f.good()) return "";
+    std::string line;
+    std::getline(f, line);
+    return update_trim(line);
+}
+
+[[maybe_unused]] std::vector<long long> update_version_numbers(const std::string& v) {
+    std::vector<long long> nums;
+    std::string cur;
+
+    for (char c : v) {
+        if (c >= '0' && c <= '9') {
+            cur.push_back(c);
+        } else if (!cur.empty()) {
+            try {
+                nums.push_back(std::stoll(cur));
+            } catch (...) {
+                nums.push_back(0);
+            }
+            cur.clear();
+        }
+    }
+
+    if (!cur.empty()) {
+        try {
+            nums.push_back(std::stoll(cur));
+        } catch (...) {
+            nums.push_back(0);
+        }
+    }
+
+    return nums;
+}
+
+[[maybe_unused]] int update_compare_versions(const std::string& a, const std::string& b) {
+    const std::vector<long long> av = update_version_numbers(a);
+    const std::vector<long long> bv = update_version_numbers(b);
+
+    if (av.empty() || bv.empty()) return 0;
+
+    const std::size_t n = std::max(av.size(), bv.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        const long long ai = i < av.size() ? av[i] : 0;
+        const long long bi = i < bv.size() ? bv[i] : 0;
+
+        if (ai < bi) return -1;
+        if (ai > bi) return 1;
+    }
+
+    return 0;
+}
+
+[[maybe_unused]] std::string update_strip_archive_suffix(std::string name) {
+    const std::string low = update_lower(name);
+
+    if (update_ends_with(low, ".tar.gz")) return name.substr(0, name.size() - 7);
+    if (update_ends_with(low, ".tgz")) return name.substr(0, name.size() - 4);
+    if (update_ends_with(low, ".zip")) return name.substr(0, name.size() - 4);
+    if (update_ends_with(low, ".dnxupd")) return name.substr(0, name.size() - 7);
+
+    return name;
+}
+
+[[maybe_unused]] std::string update_basename(const std::string& path) {
+    std::string s = path;
+    for (char& c : s) {
+        if (c == '\\') c = '/';
+    }
+
+    const std::size_t slash = s.find_last_of('/');
+    if (slash != std::string::npos) return s.substr(slash + 1);
+    return s;
+}
+
+[[maybe_unused]] std::string update_extract_server_version_from_stored_name(std::string stored) {
+    stored = update_basename(stored);
+
+    const std::size_t underscore = stored.find('_');
+    if (underscore != std::string::npos) {
+        stored = stored.substr(underscore + 1);
+    }
+
+    stored = update_strip_archive_suffix(stored);
+
+    const std::string low = update_lower(stored);
+    const std::string prefix = "pqnas-";
+    const std::string arch_marker = "-linux-";
+
+    if (!update_starts_with(low, prefix)) return "";
+
+    const std::size_t arch = low.find(arch_marker, prefix.size());
+    if (arch == std::string::npos) return "";
+
+    return stored.substr(prefix.size(), arch - prefix.size());
+}
+
+[[maybe_unused]] std::string update_current_server_version(const UpdateCenterRoutesDeps& deps) {
+#ifdef PQNAS_VERSION
+    const std::string compiled_version = PQNAS_VERSION;
+    if (!compiled_version.empty()) return compiled_version;
+#endif
+
+    if (deps.getenv_str) {
+        const std::string env = deps.getenv_str("PQNAS_CURRENT_VERSION");
+        if (!env.empty()) return env;
+    }
+
+    const std::string opt_marker =
+        update_read_first_line(std::filesystem::path("/opt/pqnas/VERSION"));
+    if (!opt_marker.empty()) return opt_marker;
+
+    return "";
+}
+
+[[maybe_unused]] std::string update_extract_app_package_version(const std::string& entry,
+                                                               const std::string& app_id) {
+    if (app_id.empty()) return "";
+
+    std::string base = update_strip_archive_suffix(update_basename(entry));
+    const std::string low_base = update_lower(base);
+    const std::string low_app = update_lower(app_id);
+
+    const std::string prefix_dash = low_app + "-";
+    const std::string prefix_underscore = low_app + "_";
+
+    if (update_starts_with(low_base, prefix_dash)) {
+        return base.substr(app_id.size() + 1);
+    }
+
+    if (update_starts_with(low_base, prefix_underscore)) {
+        return base.substr(app_id.size() + 1);
+    }
+
+    return "";
+}
+
+[[maybe_unused]] bool update_installed_app_exists(const UpdateCenterRoutesDeps& deps,
+                                                  const std::string& app_id) {
+    if (app_id.empty()) return false;
+    std::error_code app_ec;
+    const std::filesystem::path p = std::filesystem::path(deps.apps_installed_dir) / app_id;
+    return std::filesystem::exists(p, app_ec) && !app_ec;
+}
+
+[[maybe_unused]] std::string update_latest_installed_app_version(const UpdateCenterRoutesDeps& deps,
+                                                                 const std::string& app_id) {
+    if (app_id.empty()) return "";
+
+    std::error_code ec;
+    const std::filesystem::path root = std::filesystem::path(deps.apps_installed_dir) / app_id;
+
+    if (!std::filesystem::exists(root, ec) || ec) return "";
+
+    std::string best;
+    std::error_code it_ec;
+
+    for (const auto& ent : std::filesystem::directory_iterator(root, it_ec)) {
+        if (it_ec) break;
+
+        std::error_code st_ec;
+        if (!ent.is_directory(st_ec) || st_ec) continue;
+
+        const std::string ver = ent.path().filename().string();
+        if (ver.empty()) continue;
+
+        if (best.empty() || update_compare_versions(ver, best) > 0) {
+            best = ver;
+        }
+    }
+
+    return best;
 }
 
 } // namespace

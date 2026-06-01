@@ -11210,7 +11210,10 @@ v5.app_pair_build_qr_uri =
     {
         pqnas::updates::UpdateCenterRoutesDeps update_center_deps;
         update_center_deps.static_admin_updates_html = STATIC_ADMIN_UPDATES_HTML;
+        update_center_deps.apps_installed_dir = APPS_INSTALLED_DIR;
         update_center_deps.read_file_to_string = read_file_to_string;
+        update_center_deps.static_root_dir = static_root_dir;
+        update_center_deps.config_root_dir = config_root_dir;
         update_center_deps.getenv_str = getenv_str;
         update_center_deps.sha256_hex = sha256_hex_lower_evp;
         update_center_deps.reply_json = reply_json;
