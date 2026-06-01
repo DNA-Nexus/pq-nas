@@ -11211,6 +11211,8 @@ v5.app_pair_build_qr_uri =
         pqnas::updates::UpdateCenterRoutesDeps update_center_deps;
         update_center_deps.static_admin_updates_html = STATIC_ADMIN_UPDATES_HTML;
         update_center_deps.read_file_to_string = read_file_to_string;
+        update_center_deps.getenv_str = getenv_str;
+        update_center_deps.reply_json = reply_json;
         update_center_deps.require_admin =
             [&](const httplib::Request& req, httplib::Response& res) -> bool {
                 return require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist);
@@ -21103,52 +21105,7 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
         return pqnas_updates_root_dir() / "incoming";
     };
 
-    srv.Get("/api/v4/admin/updates/status", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
 
-        std::error_code ec;
-        const std::filesystem::path incoming = pqnas_update_incoming_dir();
-        std::filesystem::create_directories(incoming, ec);
-        if (ec) {
-            reply_json(res, 500, json{
-                {"ok", false},
-                {"error", "create_incoming_failed"},
-                {"message", ec.message()}
-            }.dump(2));
-            return;
-        }
-
-        json files = json::array();
-
-        std::error_code it_ec;
-        for (const auto& ent : std::filesystem::directory_iterator(incoming, it_ec)) {
-            if (it_ec) break;
-
-            std::error_code st_ec;
-            if (!ent.is_regular_file(st_ec) || st_ec) continue;
-
-            const std::string name = ent.path().filename().string();
-            const std::string low = pqnas_update_lower(name);
-
-            if (pqnas_update_ends_with(low, ".part") || pqnas_update_ends_with(low, ".json")) {
-                continue;
-            }
-
-            std::uintmax_t sz = ent.file_size(st_ec);
-            if (st_ec) sz = 0;
-
-            files.push_back(json{
-                {"name", name},
-                {"size", sz}
-            });
-        }
-
-        reply_json(res, 200, json{
-            {"ok", true},
-            {"incoming_count", files.size()},
-            {"incoming", files}
-        }.dump(2));
-    });
 
     srv.Post("/api/v4/admin/updates/upload", [&](const httplib::Request& req, httplib::Response& res) {
         if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
