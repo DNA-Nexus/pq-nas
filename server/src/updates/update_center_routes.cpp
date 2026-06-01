@@ -1162,6 +1162,172 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         }.dump(2));
     });
 
+    srv.Post("/api/v4/admin/updates/plan-module-test", [deps](const httplib::Request& req, httplib::Response& res) {
+        if (!deps.require_admin(req, res)) return;
+        if (!deps.require_same_origin(req, res)) return;
+
+        std::string stored_name;
+
+        try {
+            const json body = json::parse(req.body.empty() ? "{}" : req.body);
+            stored_name = body.value("stored_name", "");
+        } catch (...) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_json"}
+            }.dump(2));
+            return;
+        }
+
+        if (stored_name.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "missing_stored_name"}
+            }.dump(2));
+            return;
+        }
+
+        if (stored_name.find('/') != std::string::npos ||
+            stored_name.find('\\') != std::string::npos ||
+            stored_name.find("..") != std::string::npos) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_stored_name"}
+            }.dump(2));
+            return;
+        }
+
+        const std::filesystem::path package_path = update_incoming_dir(deps) / stored_name;
+
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(package_path, ec) || ec) {
+            deps.reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "package_not_found"}
+            }.dump(2));
+            return;
+        }
+
+        std::string package_bytes;
+        {
+            std::ifstream pf(package_path, std::ios::binary);
+            if (!pf.good()) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "open_package_failed"}
+                }.dump(2));
+                return;
+            }
+
+            package_bytes.assign(
+                std::istreambuf_iterator<char>(pf),
+                std::istreambuf_iterator<char>()
+            );
+        }
+
+        const std::string low = update_lower(stored_name);
+        const bool is_tar =
+            update_ends_with(low, ".tar.gz") ||
+            update_ends_with(low, ".tgz");
+
+        if (!is_tar) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "plan_format_not_supported_yet"},
+                {"message", "R6c test route plans .tar.gz/.tgz packages only."}
+            }.dump(2));
+            return;
+        }
+
+        int tar_status = -1;
+        const std::string cmd =
+            "tar -tzf " + update_shell_quote(package_path.string()) + " 2>&1";
+        const std::string listing =
+            update_run_command_limited(cmd, 2u * 1024u * 1024u, &tar_status);
+
+        if (tar_status != 0) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "tar_list_failed"},
+                {"status", tar_status},
+                {"output", listing.substr(0, 12000)}
+            }.dump(2));
+            return;
+        }
+
+        json plan = build_update_plan_json(deps, stored_name, listing, package_bytes);
+        plan["route"] = "plan-module-test";
+
+        const std::string plan_hash = deps.sha256_hex(plan.dump());
+        const std::string plan_id = plan_hash.substr(0, 16) + "_" + stored_name;
+
+        plan["plan_hash"] = plan_hash;
+        plan["plan_id"] = plan_id;
+        plan["install_contract"] =
+            "Install must use plan_id and revalidate package_sha256 and plan_hash before applying.";
+
+        std::error_code plan_ec;
+        const std::filesystem::path plans_dir = updates_root_dir(deps) / "plans";
+        std::filesystem::create_directories(plans_dir, plan_ec);
+        if (plan_ec) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "create_plans_failed"},
+                {"message", plan_ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        const std::filesystem::path tmp_plan_path = plans_dir / (plan_id + ".json.part");
+        const std::filesystem::path final_plan_path = plans_dir / (plan_id + ".json");
+
+        {
+            std::ofstream out(tmp_plan_path, std::ios::binary | std::ios::trunc);
+            if (!out.good()) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "open_plan_tmp_failed"}
+                }.dump(2));
+                return;
+            }
+
+            out << plan.dump(2) << "\n";
+            if (!out.good()) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "write_plan_failed"}
+                }.dump(2));
+                return;
+            }
+        }
+
+        std::filesystem::rename(tmp_plan_path, final_plan_path, plan_ec);
+        if (plan_ec && std::filesystem::exists(final_plan_path)) {
+            std::error_code rm_ec;
+            std::filesystem::remove(final_plan_path, rm_ec);
+            plan_ec.clear();
+            std::filesystem::rename(tmp_plan_path, final_plan_path, plan_ec);
+        }
+
+        if (plan_ec) {
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp_plan_path, rm_ec);
+
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "rename_plan_failed"},
+                {"message", plan_ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        plan["plan_saved"] = true;
+        plan["plan_path"] = final_plan_path.string();
+
+        deps.reply_json(res, 200, plan.dump(2));
+    });
+
+
 
 }
 
