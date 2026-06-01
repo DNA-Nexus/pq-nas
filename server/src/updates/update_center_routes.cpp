@@ -1162,7 +1162,7 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         }.dump(2));
     });
 
-    srv.Post("/api/v4/admin/updates/plan-module-test", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post("/api/v4/admin/updates/plan", [deps](const httplib::Request& req, httplib::Response& res) {
         if (!deps.require_admin(req, res)) return;
         if (!deps.require_same_origin(req, res)) return;
 
@@ -1256,8 +1256,6 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         }
 
         json plan = build_update_plan_json(deps, stored_name, listing, package_bytes);
-        plan["route"] = "plan-module-test";
-
         const std::string plan_hash = deps.sha256_hex(plan.dump());
         const std::string plan_id = plan_hash.substr(0, 16) + "_" + stored_name;
 
