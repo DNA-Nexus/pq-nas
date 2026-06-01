@@ -12,8 +12,10 @@ struct UpdateCenterRoutesDeps {
 
     std::function<bool(const std::string&, std::string&)> read_file_to_string;
     std::function<std::string(const char*)> getenv_str;
+    std::function<std::string(const std::string&)> sha256_hex;
 
     std::function<bool(const httplib::Request&, httplib::Response&)> require_admin;
+    std::function<bool(const httplib::Request&, httplib::Response&)> require_same_origin;
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
 };
 
