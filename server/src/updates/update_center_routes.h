@@ -9,8 +9,11 @@ namespace pqnas::updates {
 
 struct UpdateCenterRoutesDeps {
     std::string static_admin_updates_html;
+    std::string apps_installed_dir;
 
     std::function<bool(const std::string&, std::string&)> read_file_to_string;
+    std::function<std::string()> static_root_dir;
+    std::function<std::string()> config_root_dir;
     std::function<std::string(const char*)> getenv_str;
     std::function<std::string(const std::string&)> sha256_hex;
 
