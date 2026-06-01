@@ -515,10 +515,18 @@ SystemBackupRunResult SystemBackupWorker::run_now(const std::string& tier_in,
 
         std::error_code src_ec;
         if (!std::filesystem::is_regular_file(src.source_path, src_ec)) {
-            r.files_skipped += 1;
             const std::string msg = "source missing";
+
+            // Optional sources are intentionally silent. This keeps installs
+            // without Circle Stack or optional config files from producing
+            // noisy skipped entries on every scheduled backup.
+            if (src.optional) {
+                continue;
+            }
+
+            r.files_skipped += 1;
             manifest["files"].push_back(source_json(src, {}, "skipped", 0, msg));
-            if (!src.optional) r.errors.push_back(src.source_path.string() + ": " + msg);
+            r.errors.push_back(src.source_path.string() + ": " + msg);
             continue;
         }
 
@@ -606,6 +614,16 @@ SystemBackupRunResult SystemBackupWorker::prune_now() {
 nlohmann::json SystemBackupWorker::status_json() const {
     nlohmann::json sets = nlohmann::json::object();
     for (const auto& src : config_.sources) {
+        std::error_code ec;
+        const bool present = std::filesystem::is_regular_file(src.source_path, ec);
+
+        // Optional missing sources should not clutter status. For example,
+        // many installs may not use Circle Stack yet, so its DBs should only
+        // appear once they actually exist.
+        if (!present && src.optional) {
+            continue;
+        }
+
         auto& set = sets[src.set_id];
         if (!set.is_object()) {
             set = {
@@ -615,9 +633,6 @@ nlohmann::json SystemBackupWorker::status_json() const {
                 {"missing", 0}
             };
         }
-
-        std::error_code ec;
-        const bool present = std::filesystem::is_regular_file(src.source_path, ec);
 
         set["sources"].push_back({
             {"label", src.label},
