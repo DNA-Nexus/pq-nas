@@ -281,6 +281,23 @@
             width:100%;
         }
 
+        .systemBackupListWrap{
+            max-height: 360px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable;
+        }
+
+        .systemBackupListWrap table{
+            margin: 0;
+        }
+
+        .systemBackupListWrap thead th{
+            position: sticky;
+            top: 0;
+            z-index: 6;
+        }
+
         table{
             width:100%;
             border-collapse:collapse;
@@ -940,10 +957,7 @@
                     </div>
 
                     <div class="note">
-                        <span data-i18n="admin.backups.note">
-                            Backs up critical DNA-Nexus configuration, users/auth data, and Circle Stack databases.
-                            User files, media libraries, archives, Drop Zones, Echo Stack data, and file metadata are protected separately by storage snapshots/RAID and are not included.
-                        </span>
+                        <span data-i18n="admin.backups.note">Backs up critical DNA-Nexus configuration, users/auth data, and Circle Stack databases. User files, media libraries, archives, Drop Zones, Echo Stack data, and file metadata are not included. Protect them separately with storage snapshots, RAID, and/or external backups.</span>
                     </div>
 
                     <div class="tableWrap" style="margin-top:12px;">
@@ -961,7 +975,7 @@
                         </table>
                     </div>
 
-                    <div class="tableWrap" style="margin-top:12px;">
+                    <div class="tableWrap systemBackupListWrap" style="margin-top:12px;">
                         <table>
                             <thead>
                             <tr>

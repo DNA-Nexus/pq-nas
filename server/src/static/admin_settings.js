@@ -1545,7 +1545,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     }
 
     async function apiSystemBackupList() {
-        return await fetchJsonOrThrow("/api/v4/admin/system-backups/list?limit=10", {
+        return await fetchJsonOrThrow("/api/v4/admin/system-backups/list?limit=100", {
             cache: "no-store"
         });
     }
