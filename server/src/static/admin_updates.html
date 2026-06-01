@@ -78,6 +78,22 @@
             </section>
 
             <section class="card">
+                <h3>Manual update package</h3>
+                <div class="muted" style="margin-bottom:10px">
+                    Upload a core/server update package to this server for later verification.
+                    This does not install anything yet.
+                </div>
+                <div class="row">
+                    <input id="manualPackageFile"
+                           type="file"
+                           accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
+                    <button class="btn" id="manualUploadBtn" type="button">Upload to server</button>
+                    <button class="btn" id="refreshUploadsBtn" type="button">Refresh uploaded packages</button>
+                </div>
+                <div class="releaseBody mono" id="manualUploadStatus">No package uploaded yet.</div>
+            </section>
+
+            <section class="card">
                 <h3>Safety model</h3>
                 <div class="muted">
                     This first version does not install anything automatically. It only checks GitHub releases and opens a core/server update asset for download when one exists.
@@ -90,7 +106,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_updates.js?v=20260601-update-center-pqnas-release-v6"></script>
+<script src="/static/admin_updates.js?v=20260601-update-center-upload-phase2a-v1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

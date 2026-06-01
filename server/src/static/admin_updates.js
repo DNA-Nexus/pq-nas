@@ -128,3 +128,102 @@
     statusLine.textContent = "Auto-checking latest release…";
     checkRelease();
 })();
+
+
+// DNA-Nexus Update Center manual upload v1
+(() => {
+    const fileInput = document.getElementById("manualPackageFile");
+    const uploadBtn = document.getElementById("manualUploadBtn");
+    const refreshBtn = document.getElementById("refreshUploadsBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!fileInput || !uploadBtn || !refreshBtn || !statusEl) {
+        return;
+    }
+
+    function fmtBytes(n) {
+        const v = Number(n || 0);
+        if (!Number.isFinite(v) || v <= 0) return "0 B";
+        const units = ["B", "KB", "MB", "GB"];
+        let x = v;
+        let i = 0;
+        while (x >= 1024 && i < units.length - 1) {
+            x /= 1024;
+            i++;
+        }
+        return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function renderJson(prefix, obj) {
+        statusEl.textContent = `${prefix}\n` + JSON.stringify(obj, null, 2);
+    }
+
+    async function refreshUploadedPackages() {
+        try {
+            statusEl.textContent = "Loading uploaded packages…";
+
+            const r = await fetch("/api/v4/admin/updates/status", {
+                credentials: "include",
+                cache: "no-store",
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok) {
+                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
+            }
+
+            const items = Array.isArray(j.incoming) ? j.incoming : [];
+            if (!items.length) {
+                statusEl.textContent = "No uploaded update packages staged on this server.";
+                return;
+            }
+
+            statusEl.textContent = items
+                .map(it => `${it.name || "(unnamed)"} — ${fmtBytes(it.size)}`)
+                .join("\n");
+        } catch (e) {
+            statusEl.textContent = "Failed to load uploaded packages: " + String(e && e.message ? e.message : e);
+        }
+    }
+
+    async function uploadPackage() {
+        const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+        if (!f) {
+            statusEl.textContent = "Choose a pqnas-*.tar.gz / .tgz / .zip / .dnxupd package first.";
+            return;
+        }
+
+        try {
+            uploadBtn.disabled = true;
+            statusEl.textContent = `Uploading ${f.name} (${fmtBytes(f.size)})…`;
+
+            const r = await fetch("/api/v4/admin/updates/upload", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/octet-stream",
+                    "X-PQNAS-Filename": f.name,
+                },
+                body: f,
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok) {
+                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
+            }
+
+            renderJson("Upload staged successfully. Nothing has been installed yet.", j);
+            await refreshUploadedPackages();
+        } catch (e) {
+            statusEl.textContent = "Upload failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            uploadBtn.disabled = false;
+        }
+    }
+
+    uploadBtn.addEventListener("click", uploadPackage);
+    refreshBtn.addEventListener("click", refreshUploadedPackages);
+
+    refreshUploadedPackages();
+})();
+

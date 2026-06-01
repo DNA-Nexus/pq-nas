@@ -21001,6 +21001,276 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     res.set_header("Cache-Control", "no-store");
     res.set_content(body, "text/html; charset=utf-8");
     });
+    
+    // ---- Admin Update Center: package staging only (no install here) ----
+    auto pqnas_updates_root_dir = [&]() -> std::filesystem::path {
+        const std::string env = getenv_str("PQNAS_UPDATES_ROOT");
+        if (!env.empty()) return std::filesystem::path(env);
+        return std::filesystem::path("/var/lib/pqnas/updates");
+    };
+
+    auto pqnas_update_lower = [](std::string s) -> std::string {
+        for (char& c : s) {
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        }
+        return s;
+    };
+
+    auto pqnas_update_starts_with = [](const std::string& s, const std::string& prefix) -> bool {
+        return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+    };
+
+    auto pqnas_update_ends_with = [](const std::string& s, const std::string& suffix) -> bool {
+        return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+
+    auto pqnas_update_safe_filename = [&](std::string name, std::string* err) -> std::string {
+        for (char& c : name) {
+            if (c == '\\') c = '/';
+        }
+
+        const std::size_t slash = name.find_last_of('/');
+        if (slash != std::string::npos) {
+            name = name.substr(slash + 1);
+        }
+
+        if (name.empty()) {
+            if (err) *err = "empty filename";
+            return "";
+        }
+
+        if (name.size() > 180) {
+            if (err) *err = "filename too long";
+            return "";
+        }
+
+        if (name.find("..") != std::string::npos) {
+            if (err) *err = "filename must not contain ..";
+            return "";
+        }
+
+        for (char c : name) {
+            const bool ok =
+                (c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '.' || c == '_' || c == '-';
+
+            if (!ok) {
+                if (err) *err = "filename contains unsupported characters";
+                return "";
+            }
+        }
+
+        const std::string low = pqnas_update_lower(name);
+        const bool ext_ok =
+            pqnas_update_ends_with(low, ".dnxupd") ||
+            pqnas_update_ends_with(low, ".tar.gz") ||
+            pqnas_update_ends_with(low, ".tgz") ||
+            pqnas_update_ends_with(low, ".zip");
+
+        if (!ext_ok) {
+            if (err) *err = "unsupported update package extension";
+            return "";
+        }
+
+        const bool pqnas_release =
+            pqnas_update_starts_with(low, "pqnas-") &&
+            low.find("-linux-") != std::string::npos &&
+            (
+                pqnas_update_ends_with(low, ".tar.gz") ||
+                pqnas_update_ends_with(low, ".tgz") ||
+                pqnas_update_ends_with(low, ".zip")
+            );
+
+        const bool named_core =
+            low.find("dna-nexus-server") != std::string::npos ||
+            low.find("pqnas-server") != std::string::npos ||
+            low.find("pq-nas-server") != std::string::npos ||
+            low.find("pqnas_server") != std::string::npos ||
+            low.find("server-update") != std::string::npos ||
+            pqnas_update_ends_with(low, ".dnxupd");
+
+        if (!pqnas_release && !named_core) {
+            if (err) *err = "not a recognized core/server update package";
+            return "";
+        }
+
+        return name;
+    };
+
+    auto pqnas_update_incoming_dir = [&]() -> std::filesystem::path {
+        return pqnas_updates_root_dir() / "incoming";
+    };
+
+    srv.Get("/api/v4/admin/updates/status", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+
+        std::error_code ec;
+        const std::filesystem::path incoming = pqnas_update_incoming_dir();
+        std::filesystem::create_directories(incoming, ec);
+        if (ec) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "create_incoming_failed"},
+                {"message", ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        json files = json::array();
+
+        std::error_code it_ec;
+        for (const auto& ent : std::filesystem::directory_iterator(incoming, it_ec)) {
+            if (it_ec) break;
+
+            std::error_code st_ec;
+            if (!ent.is_regular_file(st_ec) || st_ec) continue;
+
+            const std::string name = ent.path().filename().string();
+            const std::string low = pqnas_update_lower(name);
+
+            if (pqnas_update_ends_with(low, ".part") || pqnas_update_ends_with(low, ".json")) {
+                continue;
+            }
+
+            std::uintmax_t sz = ent.file_size(st_ec);
+            if (st_ec) sz = 0;
+
+            files.push_back(json{
+                {"name", name},
+                {"size", sz}
+            });
+        }
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"incoming_count", files.size()},
+            {"incoming", files}
+        }.dump(2));
+    });
+
+    srv.Post("/api/v4/admin/updates/upload", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_same_origin_for_cookie_mutation(req, res)) return;
+
+        constexpr std::size_t kMaxUpdatePackageBytes = 512ull * 1024ull * 1024ull;
+
+        if (req.body.empty()) {
+            reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "empty_upload"},
+                {"message", "Upload body is empty."}
+            }.dump(2));
+            return;
+        }
+
+        if (req.body.size() > kMaxUpdatePackageBytes) {
+            reply_json(res, 413, json{
+                {"ok", false},
+                {"error", "upload_too_large"},
+                {"max_bytes", kMaxUpdatePackageBytes}
+            }.dump(2));
+            return;
+        }
+
+        std::string original_name = req.get_header_value("X-PQNAS-Filename");
+        if (original_name.empty()) {
+            original_name = "update-package";
+        }
+
+        std::string filename_error;
+        const std::string safe_name = pqnas_update_safe_filename(original_name, &filename_error);
+        if (safe_name.empty()) {
+            reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_filename"},
+                {"message", filename_error}
+            }.dump(2));
+            return;
+        }
+
+        std::error_code ec;
+        const std::filesystem::path incoming = pqnas_update_incoming_dir();
+        std::filesystem::create_directories(incoming, ec);
+        if (ec) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "create_incoming_failed"},
+                {"message", ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        const std::string sha = sha256_hex_lower_evp(req.body);
+        const std::string prefix = sha.size() >= 12 ? sha.substr(0, 12) : sha;
+        const std::string stored_name = prefix + "_" + safe_name;
+
+        const std::filesystem::path tmp_path = incoming / (stored_name + ".part");
+        const std::filesystem::path final_path = incoming / stored_name;
+
+        {
+            std::ofstream out(tmp_path, std::ios::binary | std::ios::trunc);
+            if (!out.good()) {
+                reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "open_tmp_failed"}
+                }.dump(2));
+                return;
+            }
+
+            out.write(req.body.data(), static_cast<std::streamsize>(req.body.size()));
+            if (!out.good()) {
+                std::error_code rm_ec;
+                std::filesystem::remove(tmp_path, rm_ec);
+
+                reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "write_failed"}
+                }.dump(2));
+                return;
+            }
+        }
+
+        std::filesystem::rename(tmp_path, final_path, ec);
+        if (ec && std::filesystem::exists(final_path)) {
+            std::error_code rm_ec;
+            std::filesystem::remove(final_path, rm_ec);
+            ec.clear();
+            std::filesystem::rename(tmp_path, final_path, ec);
+        }
+
+        if (ec) {
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp_path, rm_ec);
+
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "rename_failed"},
+                {"message", ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        const json meta = {
+            {"ok", true},
+            {"status", "uploaded"},
+            {"original_name", safe_name},
+            {"stored_name", stored_name},
+            {"size", req.body.size()},
+            {"sha256", sha}
+        };
+
+        {
+            std::ofstream mf(final_path.string() + ".json", std::ios::binary | std::ios::trunc);
+            if (mf.good()) {
+                mf << meta.dump(2) << "\n";
+            }
+        }
+
+        reply_json(res, 200, meta.dump(2));
+    });
+
 
     srv.Get("/static/admin_apps.js", [&](const httplib::Request&, httplib::Response& res) {
         std::string body;
