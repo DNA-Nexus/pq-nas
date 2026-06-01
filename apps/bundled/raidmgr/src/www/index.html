@@ -440,7 +440,71 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 14px rgba(0,0,0,0.35);
         }
-    </style>
+    
+        /* Native select dropdown contrast override
+           Browser/OS select popups vary; keep dark/cpunk option lists dark. */
+        html[data-theme="dark"] select,
+        html[data-theme="dark"] select option,
+        body.embedded select,
+        body.embedded select option{
+            background-color: #07111f !important;
+            color: rgba(230,255,255,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="dark"] select option:checked,
+        body.embedded select option:checked{
+            background-color: #12324e !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #12324e inset !important;
+        }
+
+        html[data-theme="cpunk_orange"] select,
+        html[data-theme="cpunk_orange"] select option{
+            background-color: #150b05 !important;
+            color: rgba(255,238,220,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="cpunk_orange"] select option:checked{
+            background-color: #4a2208 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #4a2208 inset !important;
+        }
+
+
+        /* Native select dropdown contrast override
+           Browser/OS select popups vary; keep dark/cpunk option lists dark. */
+        html[data-theme="dark"] select,
+        html[data-theme="dark"] select option,
+        body.embedded select,
+        body.embedded select option{
+            background-color: #07111f !important;
+            color: rgba(230,255,255,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="dark"] select option:checked,
+        body.embedded select option:checked{
+            background-color: #12324e !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #12324e inset !important;
+        }
+
+        html[data-theme="cpunk_orange"] select,
+        html[data-theme="cpunk_orange"] select option{
+            background-color: #150b05 !important;
+            color: rgba(255,238,220,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="cpunk_orange"] select option:checked{
+            background-color: #4a2208 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #4a2208 inset !important;
+        }
+
+</style>
 </head>
 
 <body>
