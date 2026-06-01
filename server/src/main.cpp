@@ -22697,6 +22697,13 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
             );
         }
 
+        if (validation_errors.empty() && applicable_actions.empty()) {
+            add_validation_error(
+                "no_applicable_actions",
+                "Plan has no installable update actions. Package may be older than the current installation or all actions were skipped."
+            );
+        }
+
         const bool installable =
             validation_errors.empty() && !applicable_actions.empty();
 
