@@ -4093,5 +4093,6 @@
   "admin.backups.keep_30_days": "keep 30 days",
   "admin.backups.keep_12_weeks": "keep 12 weeks",
   "admin.backups.manual_kept": "kept until admin deletes",
-  "admin.backups.file_count_summary": "{count} file(s) • {bytes}"
+  "admin.backups.file_count_summary": "{count} file(s) • {bytes}",
+  "admin.settings.nav.updates": "Update Center"
 }

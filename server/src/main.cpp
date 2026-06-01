@@ -594,6 +594,7 @@ const std::string STATIC_AUDIT_JS            = static_path("admin_audit.js");
 const std::string STATIC_ADMIN_HTML          = static_path("admin.html");
 const std::string STATIC_ADMIN_JS            = static_path("admin.js");
 const std::string STATIC_ADMIN_APPS_HTML     = static_path("admin_apps.html");
+const std::string STATIC_ADMIN_UPDATES_HTML  = static_path("admin_updates.html");
 const std::string STATIC_ADMIN_APPS_JS       = static_path("admin_apps.js");
 const std::string STATIC_APP_HTML            = static_path("app.html");
 const std::string STATIC_APP_JS              = static_path("app.js");
@@ -20980,6 +20981,20 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     if (!read_file_to_string(STATIC_ADMIN_APPS_HTML, body)) {
         res.status = 404;
         res.body = "Missing static file: " + STATIC_ADMIN_APPS_HTML;
+        return;
+    }
+
+    res.set_header("Cache-Control", "no-store");
+    res.set_content(body, "text/html; charset=utf-8");
+    });
+
+    srv.Get("/admin/updates", [&](const httplib::Request& req, httplib::Response& res) {
+    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+
+    std::string body;
+    if (!read_file_to_string(STATIC_ADMIN_UPDATES_HTML, body)) {
+        res.status = 404;
+        res.body = "Missing static file: " + STATIC_ADMIN_UPDATES_HTML;
         return;
     }
 

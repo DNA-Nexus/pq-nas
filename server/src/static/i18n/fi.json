@@ -4093,5 +4093,6 @@
   "admin.backups.keep_30_days": "säilytä 30 päivää",
   "admin.backups.keep_12_weeks": "säilytä 12 viikkoa",
   "admin.backups.manual_kept": "säilytetään kunnes admin poistaa",
-  "admin.backups.file_count_summary": "{count} tiedosto(a) • {bytes}"
+  "admin.backups.file_count_summary": "{count} tiedosto(a) • {bytes}",
+  "admin.settings.nav.updates": "Päivityskeskus"
 }
