@@ -17,7 +17,54 @@
         .mono{font-family:var(--mono);font-size:12.5px;}
         .muted{color:var(--fg-dim);}
         .releaseBody{margin-top:10px;max-height:260px;overflow:auto;white-space:pre-wrap;border:1px solid rgba(var(--fg-rgb),0.14);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,0.18);}
-    </style>
+        .planPreview{white-space:normal;}
+        .planSummary{white-space:pre-wrap;margin-bottom:10px;color:rgba(var(--fg-rgb),0.88);}
+        .planActions{display:flex;flex-direction:column;gap:6px;}
+        .planLine{
+            white-space:pre-wrap;
+            overflow-wrap:anywhere;
+            border-radius:10px;
+            padding:8px 12px;
+            border:2px solid rgba(255,255,255,0.18);
+            background:#2b2b2b;
+            color:#f5f5f5;
+            font-weight:800;
+            line-height:1.35;
+        }
+        .planLine.update{
+            border:2px solid #37d67a;
+            background:#10351f;
+            color:#f3fff6;
+            box-shadow:inset 6px 0 0 #37d67a;
+        }
+        .planLine.skip{
+            border:2px solid #ff5c5c;
+            background:#4a1717;
+            color:#fff3f3;
+            box-shadow:inset 6px 0 0 #ff5c5c;
+        }
+        .planLine.other{
+            border:2px solid #f2c94c;
+            background:#4a3c12;
+            color:#fff8de;
+            box-shadow:inset 6px 0 0 #f2c94c;
+        }
+    
+        /* Update Center: resizable manual package/status panel */
+        #manualUploadStatus{
+            height:430px;
+            min-height:220px;
+            max-height:72vh;
+            resize:vertical;
+            overflow:auto;
+            scrollbar-gutter:stable;
+        }
+
+        #manualUploadStatus .planPreview{
+            min-height:100%;
+        }
+
+</style>
 </head>
 <body>
 <div class="desktop">
@@ -89,6 +136,7 @@
                            accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
                     <button class="btn" id="manualUploadBtn" type="button">Upload to server</button>
                     <button class="btn" id="verifyPackageBtn" type="button">Verify staged package</button>
+                    <button class="btn" id="planPackageBtn" type="button">Build install plan</button>
                     <button class="btn" id="refreshUploadsBtn" type="button">Refresh uploaded packages</button>
                 </div>
                 <div class="releaseBody mono" id="manualUploadStatus">No package uploaded yet.</div>
@@ -107,7 +155,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_updates.js?v=20260601-update-center-verify-phase2b-v1"></script>
+<script src="/static/admin_updates.js?v=20260601-update-center-plan-colors-v1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

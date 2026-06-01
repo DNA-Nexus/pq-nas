@@ -281,3 +281,132 @@
     verifyBtn.addEventListener("click", verifyPackage);
 })();
 
+
+// DNA-Nexus Update Center install plan v1
+(() => {
+    const planBtn = document.getElementById("planPackageBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!planBtn || !statusEl) {
+        return;
+    }
+
+    function pickStoredNameFromStatus() {
+        const text = String(statusEl.textContent || "");
+        const m = text.match(/([0-9a-f]{12}_[A-Za-z0-9._-]+\.(?:tar\.gz|tgz|zip|dnxupd))/);
+        return m ? m[1] : "";
+    }
+
+    function escHtml(s) {
+        return String(s ?? "").replace(/[&<>"]/g, c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+        }[c]));
+    }
+
+    function planLineClass(action) {
+        const a = String(action || "").toLowerCase();
+
+        if (
+            a === "update" ||
+            a === "update_existing_app" ||
+            a === "update_existing_app_package" ||
+            a.includes("update")
+        ) {
+            return "update";
+        }
+
+        if (
+            a === "skip" ||
+            a === "skip_not_installed" ||
+            a === "reject" ||
+            a.startsWith("skip")
+        ) {
+            return "skip";
+        }
+
+        return "other";
+    }
+
+    function summarizePlan(j) {
+        const actions = Array.isArray(j.actions) ? j.actions : [];
+        const first = actions.slice(0, 180);
+
+        const summary = [
+            "Install plan built. Nothing has been installed yet.",
+            "",
+            `Package: ${j.stored_name || ""}`,
+            `Plan ID: ${j.plan_id || ""}`,
+            `Plan hash: ${j.plan_hash || ""}`,
+            `Package SHA256: ${j.package_sha256 || ""}`,
+            `Package version: ${j.package_server_version || ""}`,
+            `Current server version: ${j.current_server_version || ""}`,
+            `Entries: ${j.entry_count || 0}`,
+            `Planned updates: ${j.planned_updates || 0}`,
+            `Skipped: ${j.skipped || 0}`,
+            `Core binary action: ${j.has_core_binary_action ? "yes" : "no"}`,
+        ].join("\n");
+
+        const lines = first.map(a => {
+            const app = a.app_id ? ` app=${a.app_id}` : "";
+            const target = a.target ? ` -> ${a.target}` : "";
+            const reason = a.reason ? ` (${a.reason})` : "";
+            const text = `- [${a.action}] ${a.type}${app}: ${a.source}${target}${reason}`;
+            return `<div class="planLine ${planLineClass(a.action)}">${escHtml(text)}</div>`;
+        });
+
+        if (actions.length > first.length) {
+            lines.push(`<div class="planLine other">${escHtml(`... ${actions.length - first.length} more actions not shown in UI preview`)}</div>`);
+        }
+
+        return `
+            <div class="planPreview">
+                <div class="planSummary">${escHtml(summary)}</div>
+                <div class="planActions">${lines.join("")}</div>
+            </div>
+        `;
+    }
+
+    async function buildPlan() {
+        const storedName = pickStoredNameFromStatus();
+        if (!storedName) {
+            statusEl.textContent = "No staged package selected. Upload or refresh packages first.";
+            return;
+        }
+
+        try {
+            planBtn.disabled = true;
+            statusEl.textContent = `Building install plan for ${storedName}…`;
+
+            const r = await fetch("/api/v4/admin/updates/plan", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ stored_name: storedName }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!j) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            if (!r.ok || !j.ok) {
+                statusEl.textContent = "Plan failed.\n" + JSON.stringify(j, null, 2);
+                return;
+            }
+
+            statusEl.innerHTML = summarizePlan(j);
+        } catch (e) {
+            statusEl.textContent = "Plan failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            planBtn.disabled = false;
+        }
+    }
+
+    planBtn.addEventListener("click", buildPlan);
+})();
+
