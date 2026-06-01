@@ -11207,7 +11207,17 @@ v5.app_pair_build_qr_uri =
     system_backup_deps.reply_json = activity_deps.reply_json;
 
     pqnas::backups::register_system_backup_routes(srv, system_backup_deps);
-    pqnas::updates::register_update_center_routes(srv);
+    {
+        pqnas::updates::UpdateCenterRoutesDeps update_center_deps;
+        update_center_deps.static_admin_updates_html = STATIC_ADMIN_UPDATES_HTML;
+        update_center_deps.read_file_to_string = read_file_to_string;
+        update_center_deps.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res) -> bool {
+                return require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist);
+            };
+
+        pqnas::updates::register_update_center_routes(srv, update_center_deps);
+    }
 
     pqnas::PeopleRoutesDeps people_deps;
     people_deps.users = activity_deps.users;
@@ -20990,19 +21000,7 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     res.set_content(body, "text/html; charset=utf-8");
     });
 
-    srv.Get("/admin/updates", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
 
-    std::string body;
-    if (!read_file_to_string(STATIC_ADMIN_UPDATES_HTML, body)) {
-        res.status = 404;
-        res.body = "Missing static file: " + STATIC_ADMIN_UPDATES_HTML;
-        return;
-    }
-
-    res.set_header("Cache-Control", "no-store");
-    res.set_content(body, "text/html; charset=utf-8");
-    });
     
     // ---- Admin Update Center: package staging only (no install here) ----
     auto pqnas_updates_root_dir = [&]() -> std::filesystem::path {
