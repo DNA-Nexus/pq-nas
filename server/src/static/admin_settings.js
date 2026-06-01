@@ -1662,7 +1662,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         if (!backups.length) {
             const trEl = document.createElement("tr");
-            trEl.innerHTML = `<td colspan="5">No backups yet</td>`;
+            trEl.innerHTML = `<td colspan="5">${escapeHtml(tr("admin.backups.no_backups", null, "No backups yet"))}</td>`;
             systemBackupListTbody.appendChild(trEl);
         }
     }
@@ -1683,8 +1683,10 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         const running = !!scheduler.running;
         const statusText = missing > 0
-            ? `Ready • ${missing} missing optional source(s)`
-            : (running ? "Ready • scheduler running" : "Ready");
+            ? tr("admin.backups.missing_optional", { count: missing }, `Ready • ${missing} missing optional source(s)`)
+            : (running
+                ? tr("admin.backups.ready_scheduler", null, "Ready • scheduler running")
+                : tr("admin.backups.ready", null, "Ready"));
 
         setSystemBackupPill(missing > 0 ? "warn" : "ok", statusText);
         setSimplePill(systemBackupStoragePill, "info", "Storage used", fmtBytes(j.storage_used_bytes || 0));
@@ -1716,7 +1718,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             setSimplePill(systemBackupStoragePill, "warn", "Storage used", "—");
             setSimplePill(systemBackupNextPill, "warn", "Next run", "—");
             setSimplePill(systemBackupLastPill, "warn", "Last run", "—");
-            showToast("fail", "System backup status failed", String(e.message || e));
+            showToast("fail", tr("admin.backups.status_failed", null, "System backup status failed"), String(e.message || e));
         }
     }
 
@@ -1984,15 +1986,15 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         ev.preventDefault();
 
         const ok = await openAdminConfirmModal({
-            title: "Run system backup now?",
-            subtitle: "Creates a manual backup of core config, users/auth data, and Circle Stack databases.",
+            title: tr("admin.backups.run_confirm_title", null, "Run system backup now?"),
+            subtitle: tr("admin.backups.run_confirm_subtitle", null, "Creates a manual backup of core config, users/auth data, and Circle Stack databases."),
             rows: [
-                { label: "Tier", value: "manual" },
-                { label: "Included", value: "Core System, Users & Auth, Circle Stack" },
-                { label: "Excluded", value: "User files, media, Drop Zones, Echo Stack, gallery data, caches" }
+                { label: tr("admin.backups.tier", null, "Tier"), value: tr("admin.backups.manual", null, "manual") },
+                { label: tr("admin.backups.included", null, "Included"), value: tr("admin.backups.included_value", null, "Core System, Users & Auth, Circle Stack") },
+                { label: tr("admin.backups.excluded", null, "Excluded"), value: tr("admin.backups.excluded_value", null, "User files, media, Drop Zones, Echo Stack, gallery data, caches") }
             ],
-            note: "This does not backup user files. User data is protected separately by snapshots/RAID.",
-            confirmText: "Backup now",
+            note: tr("admin.backups.run_note", null, "This does not backup user files. User data must be protected separately with snapshots, RAID, and/or external backups."),
+            confirmText: tr("admin.backups.backup_now", null, "Backup now"),
             cancelText: tr("admin.common.cancel", null, "Cancel"),
             warn: false
         });
@@ -2006,13 +2008,16 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             const result = await apiSystemBackupRunNow();
             showToast(
                 "ok",
-                "System backup complete",
-                `${result.files_written || 0} file(s) • ${fmtBytes(result.bytes_written || 0)}`
+                tr("admin.backups.complete", null, "System backup complete"),
+                tr("admin.backups.file_count_summary", {
+                    count: result.files_written || 0,
+                    bytes: fmtBytes(result.bytes_written || 0)
+                }, `${result.files_written || 0} file(s) • ${fmtBytes(result.bytes_written || 0)}`)
             );
             await refreshSystemBackups();
         } catch (e) {
             console.error(e);
-            showToast("fail", "System backup failed", String(e.message || e));
+            showToast("fail", tr("admin.backups.failed", null, "System backup failed"), String(e.message || e));
             await refreshSystemBackups();
         } finally {
             btnSystemBackupNow.disabled = false;
@@ -2023,17 +2028,17 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         ev.preventDefault();
 
         const ok = await openAdminConfirmModal({
-            title: "Prune old scheduled backups?",
-            subtitle: "Removes backups older than the retention policy.",
+            title: tr("admin.backups.prune_confirm_title", null, "Prune old scheduled backups?"),
+            subtitle: tr("admin.backups.prune_confirm_subtitle", null, "Removes backups older than the retention policy."),
             rows: [
-                { label: "Quarter-hourly", value: "keep 24 h" },
-                { label: "Hourly", value: "keep 7 days" },
-                { label: "Daily", value: "keep 30 days" },
-                { label: "Weekly", value: "keep 12 weeks" },
-                { label: "Manual", value: "kept until admin deletes" }
+                { label: tr("admin.backups.tier_quarter_hourly", null, "Quarter-hourly"), value: tr("admin.backups.keep_24h", null, "keep 24 h") },
+                { label: tr("admin.backups.tier_hourly", null, "Hourly"), value: tr("admin.backups.keep_7_days", null, "keep 7 days") },
+                { label: tr("admin.backups.tier_daily", null, "Daily"), value: tr("admin.backups.keep_30_days", null, "keep 30 days") },
+                { label: tr("admin.backups.tier_weekly", null, "Weekly"), value: tr("admin.backups.keep_12_weeks", null, "keep 12 weeks") },
+                { label: tr("admin.backups.manual", null, "Manual"), value: tr("admin.backups.manual_kept", null, "kept until admin deletes") }
             ],
-            note: "Manual backups are not removed by automatic retention.",
-            confirmText: "Prune",
+            note: tr("admin.backups.prune_note", null, "Manual backups are not removed by automatic retention."),
+            confirmText: tr("admin.backups.prune", null, "Prune old backups"),
             cancelText: tr("admin.common.cancel", null, "Cancel"),
             warn: true
         });
@@ -2044,11 +2049,15 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         try {
             const result = await apiSystemBackupPrune();
-            showToast("ok", "Backup prune complete", `${result.dirs_removed || 0} folder(s) removed`);
+            showToast(
+                "ok",
+                tr("admin.backups.prune_complete", null, "Backup prune complete"),
+                tr("admin.backups.removed_folders", { count: result.dirs_removed || 0 }, `${result.dirs_removed || 0} folder(s) removed`)
+            );
             await refreshSystemBackups();
         } catch (e) {
             console.error(e);
-            showToast("fail", "Backup prune failed", String(e.message || e));
+            showToast("fail", tr("admin.backups.prune_failed", null, "Backup prune failed"), String(e.message || e));
             await refreshSystemBackups();
         } finally {
             btnSystemBackupPrune.disabled = false;
