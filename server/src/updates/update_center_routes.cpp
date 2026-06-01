@@ -1325,7 +1325,7 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         deps.reply_json(res, 200, plan.dump(2));
     });
 
-    srv.Post("/api/v4/admin/updates/install-module-test", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post("/api/v4/admin/updates/install", [deps](const httplib::Request& req, httplib::Response& res) {
         if (!deps.require_admin(req, res)) return;
         if (!deps.require_same_origin(req, res)) return;
 
