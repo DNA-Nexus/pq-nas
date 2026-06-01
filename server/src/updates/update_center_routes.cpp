@@ -1377,6 +1377,71 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             }
         }
 
+        const std::string helper_enabled =
+            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_ENABLED") : "";
+
+        if (helper_enabled == "1" ||
+            helper_enabled == "true" ||
+            helper_enabled == "TRUE" ||
+            helper_enabled == "yes" ||
+            helper_enabled == "YES") {
+            std::string helper_path =
+                deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_PATH") : "";
+
+            if (helper_path.empty()) {
+                helper_path = "/usr/local/libexec/pqnas/pqnas_update_apply.py";
+            }
+
+            if (helper_path.find('\'') != std::string::npos) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "bad_helper_path"},
+                    {"message", "Helper path must not contain single quotes."}
+                }.dump(2));
+                return;
+            }
+
+            const std::string cmd =
+                "timeout 30 " +
+                update_shell_quote(helper_path) +
+                " --plan-id " +
+                update_shell_quote(plan_id) +
+                " --validation-only 2>&1";
+
+            int helper_status = -1;
+            const std::string helper_output =
+                update_run_command_limited(cmd, 2u * 1024u * 1024u, &helper_status);
+
+            json helper_json;
+            bool parsed_json = false;
+
+            try {
+                helper_json = json::parse(helper_output);
+                parsed_json = true;
+            } catch (...) {
+                parsed_json = false;
+            }
+
+            if (!parsed_json) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "helper_bad_output"},
+                    {"helper_status", helper_status},
+                    {"output", helper_output.substr(0, 12000)}
+                }.dump(2));
+                return;
+            }
+
+            helper_json["helper_enabled"] = true;
+            helper_json["helper_status"] = helper_status;
+            helper_json["install_helper_not_enabled_yet"] = true;
+            helper_json["install_performed"] = false;
+
+            const bool ok = helper_json.value("ok", false);
+            deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
+            return;
+        }
+
         const std::filesystem::path plans_dir = updates_root_dir(deps) / "plans";
         const std::filesystem::path plan_path = plans_dir / (plan_id + ".json");
 

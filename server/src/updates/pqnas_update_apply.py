@@ -175,8 +175,14 @@ def main() -> int:
             "no_applicable_actions",
             "Plan has no installable update actions.",
             plan_id=plan_id,
+            plan_hash=stored_plan_hash,
             stored_name=stored_name,
             package_sha256=actual_sha,
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
+            applicable_action_count=0,
+            validation_only=True,
+            install_performed=False,
         )
 
     # Phase 4A intentionally stops here.

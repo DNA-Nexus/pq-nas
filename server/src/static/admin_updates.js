@@ -449,7 +449,7 @@
             `Package version: ${j.package_server_version || ""}`,
             `Current server version: ${j.current_server_version || ""}`,
             `Applicable actions: ${j.applicable_action_count || 0}`,
-            `Install helper enabled: no`,
+            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
         ].join("\n");
 
         const errorHtml = errors.length
