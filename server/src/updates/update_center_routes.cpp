@@ -2,6 +2,7 @@
 #include "version.h"
 
 #include <nlohmann/json.hpp>
+#include <sys/wait.h>
 #include <vector>
 #include <iterator>
 #include <cctype>
@@ -1432,8 +1433,18 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
                 return;
             }
 
+            int helper_exit_code = helper_status;
+            if (helper_status >= 0) {
+                if (WIFEXITED(helper_status)) {
+                    helper_exit_code = WEXITSTATUS(helper_status);
+                } else if (helper_status % 256 == 0) {
+                    helper_exit_code = helper_status / 256;
+                }
+            }
+
             helper_json["helper_enabled"] = true;
             helper_json["helper_status"] = helper_status;
+            helper_json["helper_exit_code"] = helper_exit_code;
             helper_json["install_helper_not_enabled_yet"] = true;
             helper_json["install_performed"] = false;
 

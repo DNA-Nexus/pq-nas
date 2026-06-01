@@ -347,7 +347,7 @@
             `Planned updates: ${j.planned_updates || 0}`,
             `Skipped: ${j.skipped || 0}`,
             `Core binary action: ${j.has_core_binary_action ? "yes" : "no"}`,
-        ].join("\n");
+        ].filter(x => x !== null && x !== undefined).join("\n");
 
         const lines = first.map(a => {
             const app = a.app_id ? ` app=${a.app_id}` : "";
@@ -450,6 +450,7 @@
             `Current server version: ${j.current_server_version || ""}`,
             `Applicable actions: ${j.applicable_action_count || 0}`,
             `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
+            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
         ].join("\n");
 
         const errorHtml = errors.length
