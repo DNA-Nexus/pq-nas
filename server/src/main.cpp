@@ -497,6 +497,8 @@ static bool reelstack_meta_remove_under_prefix_path_local(const std::string& sco
 
 // activity
 #include "routes_activity.h"
+#include "backups/system_backup_worker.h"
+#include "backups/system_backup_routes.h"
 #include "routes_people.h"
 #include "routes_file_annotations.h"
 #include "routes_file_locks.h"
@@ -10414,6 +10416,11 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     httplib::Server srv;
 
+    pqnas::backups::SystemBackupWorker system_backup_worker(
+        pqnas::backups::SystemBackupWorker::default_config()
+    );
+    system_backup_worker.start_scheduler();
+
     const bool hsts_enabled = (ORIGIN.rfind("https://", 0) == 0);
     if (hsts_enabled) {
         std::cerr << "[cfg] hsts=enabled origin=" << ORIGIN << std::endl;
@@ -11188,6 +11195,16 @@ v5.app_pair_build_qr_uri =
     };
 
     pqnas::register_activity_routes(srv, activity_deps);
+
+    pqnas::backups::SystemBackupRoutesDeps system_backup_deps;
+    system_backup_deps.users = activity_deps.users;
+    system_backup_deps.cookie_key = activity_deps.cookie_key;
+    system_backup_deps.worker = &system_backup_worker;
+    system_backup_deps.require_user_auth_users_actor =
+        activity_deps.require_user_auth_users_actor;
+    system_backup_deps.reply_json = activity_deps.reply_json;
+
+    pqnas::backups::register_system_backup_routes(srv, system_backup_deps);
 
     pqnas::PeopleRoutesDeps people_deps;
     people_deps.users = activity_deps.users;

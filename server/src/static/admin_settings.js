@@ -138,6 +138,17 @@
     const nodusWorkerLight = $("nodusWorkerLight");
     const nodusWorkerValue = $("nodusWorkerValue");
 
+    // --- System Backups ---
+    const systemBackupPill = $("systemBackupPill");
+    const systemBackupStoragePill = $("systemBackupStoragePill");
+    const systemBackupNextPill = $("systemBackupNextPill");
+    const systemBackupLastPill = $("systemBackupLastPill");
+    const btnSystemBackupNow = $("btnSystemBackupNow");
+    const btnSystemBackupReload = $("btnSystemBackupReload");
+    const btnSystemBackupPrune = $("btnSystemBackupPrune");
+    const systemBackupSetsTbody = $("systemBackupSetsTbody");
+    const systemBackupListTbody = $("systemBackupListTbody");
+
     let gDnaConnectIdentity = null;
 
     const ALLOWED_THEMES = new Set(["dark", "bright", "cpunk_orange", "win_classic"]);
@@ -1523,6 +1534,192 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         }
     }
 
+
+    // ---------------------------
+    // System Backups
+    // ---------------------------
+    async function apiSystemBackupStatus() {
+        return await fetchJsonOrThrow("/api/v4/admin/system-backups/status", {
+            cache: "no-store"
+        });
+    }
+
+    async function apiSystemBackupList() {
+        return await fetchJsonOrThrow("/api/v4/admin/system-backups/list?limit=10", {
+            cache: "no-store"
+        });
+    }
+
+    async function apiSystemBackupRunNow() {
+        return await fetchJsonOrThrow("/api/v4/admin/system-backups/run", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tier: "manual", reason: "admin-ui" })
+        });
+    }
+
+    async function apiSystemBackupPrune() {
+        return await fetchJsonOrThrow("/api/v4/admin/system-backups/prune", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+    }
+
+    function fmtEpochLocal(epoch) {
+        const n = Number(epoch || 0);
+        if (!Number.isFinite(n) || n <= 0) return "—";
+
+        try {
+            return new Date(n * 1000).toLocaleString();
+        } catch (_) {
+            return String(n);
+        }
+    }
+
+    function backupSetLabel(id) {
+        const s = String(id || "");
+        if (s === "core") return tr("admin.backups.core", null, "Core System");
+        if (s === "users_auth") return tr("admin.backups.users_auth", null, "Users & Auth");
+        if (s === "circle_stack") return tr("admin.backups.circle_stack", null, "Circle Stack");
+        return s || "—";
+    }
+
+    function setSystemBackupPill(kind, text) {
+        if (!systemBackupPill) return;
+        systemBackupPill.className = "pill " + (kind || "");
+        systemBackupPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(text || "—")}</span>`;
+    }
+
+    function renderSystemBackupSets(j) {
+        if (!systemBackupSetsTbody) return;
+
+        systemBackupSetsTbody.innerHTML = "";
+
+        const sets = j && j.sets && typeof j.sets === "object" ? j.sets : {};
+        const keys = Object.keys(sets).sort();
+
+        for (const key of keys) {
+            const set = sets[key] || {};
+            const sources = Array.isArray(set.sources) ? set.sources : [];
+            const present = Number(set.present || 0);
+            const missing = Number(set.missing || 0);
+            const size = sources.reduce((acc, src) => acc + Number(src?.size_bytes || 0), 0);
+
+            const sourceText = sources
+                .map(src => {
+                    const label = String(src?.label || src?.path || "—");
+                    const state = src?.present ? "ok" : "missing";
+                    return `${label} (${state})`;
+                })
+                .join(" • ");
+
+            const trEl = document.createElement("tr");
+            trEl.innerHTML = `
+                <td>${escapeHtml(backupSetLabel(set.id || key))}</td>
+                <td class="mono">${escapeHtml(String(present))}</td>
+                <td class="mono">${escapeHtml(String(missing))}</td>
+                <td class="mono">${escapeHtml(fmtBytes(size))}</td>
+                <td class="mono" title="${escapeHtml(sourceText)}">${escapeHtml(sourceText || "—")}</td>
+            `;
+            systemBackupSetsTbody.appendChild(trEl);
+        }
+
+        if (!keys.length) {
+            const trEl = document.createElement("tr");
+            trEl.innerHTML = `<td colspan="5">—</td>`;
+            systemBackupSetsTbody.appendChild(trEl);
+        }
+    }
+
+    function renderSystemBackupList(j) {
+        if (!systemBackupListTbody) return;
+
+        systemBackupListTbody.innerHTML = "";
+
+        const backups = Array.isArray(j?.backups) ? j.backups : [];
+
+        for (const b of backups) {
+            const trEl = document.createElement("tr");
+            const backupId = String(b?.backup_id || "—");
+            const tier = String(b?.tier || "—");
+            const bytes = Number(b?.bytes_written || 0);
+            const files = Number(b?.files_written || 0);
+            const skipped = Number(b?.files_skipped || 0);
+            const created = fmtEpochLocal(b?.created_epoch);
+
+            trEl.innerHTML = `
+                <td class="mono" title="${escapeHtml(backupId)}">${escapeHtml(backupId)}</td>
+                <td>${escapeHtml(tier)}</td>
+                <td class="mono">${escapeHtml(fmtBytes(bytes))}</td>
+                <td class="mono">${escapeHtml(`${files}${skipped ? " +" + skipped + " skipped" : ""}`)}</td>
+                <td class="mono">${escapeHtml(created)}</td>
+            `;
+            systemBackupListTbody.appendChild(trEl);
+        }
+
+        if (!backups.length) {
+            const trEl = document.createElement("tr");
+            trEl.innerHTML = `<td colspan="5">No backups yet</td>`;
+            systemBackupListTbody.appendChild(trEl);
+        }
+    }
+
+    function renderSystemBackupStatus(j) {
+        if (!j || j.ok !== true) {
+            setSystemBackupPill("fail", "error");
+            return;
+        }
+
+        const scheduler = j.scheduler && typeof j.scheduler === "object" ? j.scheduler : {};
+        const sets = j.sets && typeof j.sets === "object" ? j.sets : {};
+
+        let missing = 0;
+        for (const key of Object.keys(sets)) {
+            missing += Number(sets[key]?.missing || 0);
+        }
+
+        const running = !!scheduler.running;
+        const statusText = missing > 0
+            ? `Ready • ${missing} missing optional source(s)`
+            : (running ? "Ready • scheduler running" : "Ready");
+
+        setSystemBackupPill(missing > 0 ? "warn" : "ok", statusText);
+        setSimplePill(systemBackupStoragePill, "info", "Storage used", fmtBytes(j.storage_used_bytes || 0));
+        setSimplePill(systemBackupNextPill, running ? "info" : "warn", "Next run", fmtEpochLocal(scheduler.next_run_epoch));
+        setSimplePill(
+            systemBackupLastPill,
+            scheduler.last_error ? "fail" : "info",
+            "Last run",
+            scheduler.last_error
+                ? String(scheduler.last_error)
+                : `${fmtEpochLocal(scheduler.last_run_epoch)}${scheduler.last_tier ? " • " + scheduler.last_tier : ""}`
+        );
+
+        renderSystemBackupSets(j);
+    }
+
+    async function refreshSystemBackups() {
+        setSystemBackupPill("warn", "loading…");
+
+        try {
+            const status = await apiSystemBackupStatus();
+            renderSystemBackupStatus(status);
+
+            const list = await apiSystemBackupList();
+            renderSystemBackupList(list);
+        } catch (e) {
+            console.error(e);
+            setSystemBackupPill("fail", "error");
+            setSimplePill(systemBackupStoragePill, "warn", "Storage used", "—");
+            setSimplePill(systemBackupNextPill, "warn", "Next run", "—");
+            setSimplePill(systemBackupLastPill, "warn", "Last run", "—");
+            showToast("fail", "System backup status failed", String(e.message || e));
+        }
+    }
+
     // ---------------------------
     // Nodus federation status
     // ---------------------------
@@ -1679,6 +1876,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             // Nodus federation
             await refreshNodusStatus();
 
+            // System Backups
+            await refreshSystemBackups();
+
             clearPreview();
             setStatusPill("ok", "ready");
         } catch (e) {
@@ -1768,6 +1968,90 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (ev.key === "Escape") {
             closeHelpModal();
             closeDnaIdentityModal();
+        }
+    });
+
+
+    // ---------------------------
+    // Wire System Backups
+    // ---------------------------
+    btnSystemBackupReload?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshSystemBackups();
+    });
+
+    btnSystemBackupNow?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const ok = await openAdminConfirmModal({
+            title: "Run system backup now?",
+            subtitle: "Creates a manual backup of core config, users/auth data, and Circle Stack databases.",
+            rows: [
+                { label: "Tier", value: "manual" },
+                { label: "Included", value: "Core System, Users & Auth, Circle Stack" },
+                { label: "Excluded", value: "User files, media, Drop Zones, Echo Stack, gallery data, caches" }
+            ],
+            note: "This does not backup user files. User data is protected separately by snapshots/RAID.",
+            confirmText: "Backup now",
+            cancelText: tr("admin.common.cancel", null, "Cancel"),
+            warn: false
+        });
+
+        if (!ok) return;
+
+        btnSystemBackupNow.disabled = true;
+        setSystemBackupPill("warn", "running…");
+
+        try {
+            const result = await apiSystemBackupRunNow();
+            showToast(
+                "ok",
+                "System backup complete",
+                `${result.files_written || 0} file(s) • ${fmtBytes(result.bytes_written || 0)}`
+            );
+            await refreshSystemBackups();
+        } catch (e) {
+            console.error(e);
+            showToast("fail", "System backup failed", String(e.message || e));
+            await refreshSystemBackups();
+        } finally {
+            btnSystemBackupNow.disabled = false;
+        }
+    });
+
+    btnSystemBackupPrune?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const ok = await openAdminConfirmModal({
+            title: "Prune old scheduled backups?",
+            subtitle: "Removes backups older than the retention policy.",
+            rows: [
+                { label: "Quarter-hourly", value: "keep 24 h" },
+                { label: "Hourly", value: "keep 7 days" },
+                { label: "Daily", value: "keep 30 days" },
+                { label: "Weekly", value: "keep 12 weeks" },
+                { label: "Manual", value: "kept until admin deletes" }
+            ],
+            note: "Manual backups are not removed by automatic retention.",
+            confirmText: "Prune",
+            cancelText: tr("admin.common.cancel", null, "Cancel"),
+            warn: true
+        });
+
+        if (!ok) return;
+
+        btnSystemBackupPrune.disabled = true;
+
+        try {
+            const result = await apiSystemBackupPrune();
+            showToast("ok", "Backup prune complete", `${result.dirs_removed || 0} folder(s) removed`);
+            await refreshSystemBackups();
+        } catch (e) {
+            console.error(e);
+            showToast("fail", "Backup prune failed", String(e.message || e));
+            await refreshSystemBackups();
+        } finally {
+            btnSystemBackupPrune.disabled = false;
         }
     });
 

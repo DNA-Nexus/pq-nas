@@ -182,6 +182,35 @@
 
         select{ cursor:pointer; }
 
+        /* Native select dropdown contrast override
+           Browser/OS select popups vary; keep dark/cpunk option lists dark. */
+        html[data-theme="dark"] select,
+        html[data-theme="dark"] select option{
+            background-color: #07111f !important;
+            color: rgba(230,255,255,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="dark"] select option:checked{
+            background-color: #12324e !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #12324e inset !important;
+        }
+
+        html[data-theme="cpunk_orange"] select,
+        html[data-theme="cpunk_orange"] select option{
+            background-color: #150b05 !important;
+            color: rgba(255,238,220,0.96) !important;
+            color-scheme: dark;
+        }
+
+        html[data-theme="cpunk_orange"] select option:checked{
+            background-color: #4a2208 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 9999px #4a2208 inset !important;
+        }
+
+
         .input:focus, select:focus{
             border-color:rgba(var(--fg-rgb),0.38);
             box-shadow:0 0 0 3px rgba(var(--fg-rgb),0.08);
@@ -354,6 +383,46 @@
         .card.accordion.open .bd{ display: block; }
         .card.accordion:not(.open) .hd{ border-bottom: none; }
 
+        .card.accordion.open{
+            border-color: rgba(var(--info-rgb),0.28);
+        }
+
+        .card.accordion.open .hd{
+            border-bottom-color: rgba(var(--info-rgb),0.28);
+            background:
+                linear-gradient(90deg, rgba(var(--info-rgb),0.20), rgba(var(--info-rgb),0.06) 44%, transparent),
+                linear-gradient(180deg, rgba(var(--fg-rgb),0.08), transparent);
+            box-shadow: inset 4px 0 0 rgba(var(--info-rgb),0.58);
+        }
+
+        .card.accordion.open .hd .h{
+            color: rgba(var(--fg-rgb),0.90);
+        }
+
+        html[data-theme="bright"] .card.accordion.open .hd{
+            background:
+                linear-gradient(90deg, rgba(var(--info-rgb),0.16), rgba(var(--info-rgb),0.05) 44%, transparent),
+                linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.22));
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open{
+            border-color: rgba(31,111,191,0.55);
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open .hd{
+            border-bottom-color: rgba(31,111,191,0.55);
+            background:
+                linear-gradient(90deg, rgba(31,111,191,0.30), rgba(31,111,191,0.16) 48%, rgba(31,111,191,0.08)),
+                linear-gradient(180deg, #eef6ff, #dbeafe);
+            box-shadow:
+                inset 5px 0 0 rgba(31,111,191,0.95),
+                inset 0 -1px 0 rgba(31,111,191,0.22);
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open .hd .h{
+            color: rgba(0,32,72,0.96);
+        }
+
         .card.accordion .chev{
             margin-left: 10px;
             opacity: 0.75;
@@ -389,6 +458,41 @@
         #tieringEligibilityPill,
         #tieringWarnPill {
             margin-right: 6px;
+        }
+
+        /* Active accordion header override v2 */
+        .card.accordion.open > .hd{
+            border-bottom-color: rgba(var(--info-rgb),0.36) !important;
+            background-color: rgba(var(--info-rgb),0.12) !important;
+            background-image:
+                linear-gradient(90deg, rgba(var(--info-rgb),0.24), rgba(var(--info-rgb),0.10) 55%, rgba(var(--info-rgb),0.04)),
+                linear-gradient(180deg, rgba(var(--fg-rgb),0.08), rgba(var(--fg-rgb),0.02)) !important;
+            box-shadow:
+                inset 5px 0 0 rgba(var(--info-rgb),0.85),
+                inset 0 -1px 0 rgba(var(--info-rgb),0.28) !important;
+        }
+
+        .card.accordion.open > .hd .h{
+            color: rgba(var(--fg-rgb),0.95) !important;
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open > .hd{
+            border-bottom-color: #1f6fbf !important;
+            background-color: #cfe5ff !important;
+            background-image:
+                linear-gradient(90deg, #b8d9ff 0%, #d8ebff 58%, #eef7ff 100%) !important;
+            box-shadow:
+                inset 6px 0 0 #005a9e,
+                inset 0 -1px 0 rgba(0,90,158,0.50) !important;
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open > .hd .h{
+            color: #002b55 !important;
+        }
+
+        html[data-theme="win_classic"] .card.accordion.open > .hd .pill{
+            background: rgba(255,255,255,0.78) !important;
+            border-color: rgba(0,90,158,0.40) !important;
         }
 
         .hidden { display:none !important; }
@@ -800,6 +904,80 @@
                 </div>
             </div>
 
+
+            <div class="card accordion" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
+                    <div class="h"><span data-i18n="admin.backups.title">System Backups</span></div>
+                    <div class="pill info" id="systemBackupPill">
+                        <span class="k" data-i18n="admin.common.status">Status:</span> <span class="v">—</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <button id="btnSystemBackupNow" class="btn primary" type="button">
+                            <span data-i18n="admin.backups.backup_now">Backup now</span>
+                        </button>
+                        <button id="btnSystemBackupReload" class="btn" type="button">
+                            <span data-i18n="admin.common.reload">Reload</span>
+                        </button>
+                        <button id="btnSystemBackupPrune" class="btn" type="button">
+                            <span data-i18n="admin.backups.prune">Prune old backups</span>
+                        </button>
+                    </div>
+
+                    <div class="row">
+                        <span class="pill info" id="systemBackupStoragePill">
+                            <span class="k" data-i18n="admin.backups.storage_used">Storage used:</span> <span class="v">—</span>
+                        </span>
+                        <span class="pill info" id="systemBackupNextPill">
+                            <span class="k" data-i18n="admin.backups.next_run">Next run:</span> <span class="v">—</span>
+                        </span>
+                        <span class="pill info" id="systemBackupLastPill">
+                            <span class="k" data-i18n="admin.backups.last_run">Last run:</span> <span class="v">—</span>
+                        </span>
+                    </div>
+
+                    <div class="note">
+                        <span data-i18n="admin.backups.note">
+                            Backs up critical DNA-Nexus configuration, users/auth data, and Circle Stack databases.
+                            User files, media libraries, archives, Drop Zones, Echo Stack data, and file metadata are protected separately by storage snapshots/RAID and are not included.
+                        </span>
+                    </div>
+
+                    <div class="tableWrap" style="margin-top:12px;">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th style="width:22%;" data-i18n="admin.backups.set">Set</th>
+                                <th style="width:14%;" data-i18n="admin.backups.present">Present</th>
+                                <th style="width:14%;" data-i18n="admin.backups.missing">Missing</th>
+                                <th style="width:18%;" data-i18n="admin.backups.size">Size</th>
+                                <th style="width:32%;" data-i18n="admin.backups.sources">Sources</th>
+                            </tr>
+                            </thead>
+                            <tbody id="systemBackupSetsTbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="tableWrap" style="margin-top:12px;">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th style="width:28%;" data-i18n="admin.backups.backup_id">Backup ID</th>
+                                <th style="width:14%;" data-i18n="admin.backups.tier">Tier</th>
+                                <th style="width:18%;" data-i18n="admin.backups.size">Size</th>
+                                <th style="width:14%;" data-i18n="admin.backups.files">Files</th>
+                                <th style="width:26%;" data-i18n="admin.backups.created">Created</th>
+                            </tr>
+                            </thead>
+                            <tbody id="systemBackupListTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.uploads.title">Uploads</span></div>
@@ -889,8 +1067,8 @@
             </div>
 
 
-            <div class="card accordion open" data-acc="settings">
-                <div class="hd" role="button" tabindex="0" aria-expanded="true">
+            <div class="card accordion" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.nodus.title">Nodus Federation</span></div>
                     <div class="pill warn" id="nodusStatusPill">
                         <span class="k"><span data-i18n="admin.common.status">Status</span>:</span> <span class="v" data-i18n="admin.common.loading">loading…</span>

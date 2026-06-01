@@ -227,6 +227,10 @@ add_executable(pqnas_server
         server/src/routes_workspace_external_sessions.cpp
         server/src/workspace_access_shared.cpp
         server/src/runtime_paths.cpp
+        server/src/backups/system_backup_worker.cpp
+        server/src/backups/system_backup_worker.h
+        server/src/backups/system_backup_routes.cpp
+        server/src/backups/system_backup_routes.h
         server/src/file_versions.cpp
         server/src/file_versions_restore.cpp
         server/src/file_versions_read.cpp
@@ -276,6 +280,7 @@ target_include_directories(pqnas_server PRIVATE
         ${CMAKE_SOURCE_DIR}/core
         ${CMAKE_SOURCE_DIR}/core/dna_pqcore
         ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/third_party
         ${CMAKE_SOURCE_DIR}/server/third_party/mlkem-native
         ${SODIUM_INCLUDE_DIRS}
@@ -479,13 +484,30 @@ set_target_properties(pqnas_keygen PROPERTIES
 # Build Nodus as an isolated sub-build instead of add_subdirectory().
 # Reason: PQ-NAS uses strict server-wide warning/error flags, while the vendored
 # Nodus tree is a separate C project with its own compile assumptions.
+#
+# Developer note:
+# - Keep this out of the default ALL build by default. The bundled Nodus CLI
+#   changes rarely and is slow to rebuild during normal pqnas_server work.
+# - Build it explicitly with:
+#       cmake --build build --target pqnas_nodus_cli -j
+# - Or include it in every default build with:
+#       cmake -S . -B build -DPQNAS_BUILD_BUNDLED_NODUS_CLI=ON
 # -----------------------------------------------------------------------------
+option(PQNAS_BUILD_BUNDLED_NODUS_CLI
+       "Build bundled Nodus CLI as part of the default ALL target"
+       OFF)
+
 set(PQNAS_BUNDLED_NODUS_DIR "${CMAKE_SOURCE_DIR}/third_party/nodus")
 set(PQNAS_BUNDLED_NODUS_BUILD_DIR "${CMAKE_BINARY_DIR}/third_party/nodus-standalone")
 set(PQNAS_BUNDLED_NODUS_CLI "${CMAKE_BINARY_DIR}/bin/nodus-cli")
 
 if (EXISTS "${PQNAS_BUNDLED_NODUS_DIR}/CMakeLists.txt")
-    add_custom_target(nodus-cli ALL
+    set(PQNAS_NODUS_CLI_ALL_ARG)
+    if (PQNAS_BUILD_BUNDLED_NODUS_CLI)
+        set(PQNAS_NODUS_CLI_ALL_ARG ALL)
+    endif()
+
+    add_custom_target(nodus-cli ${PQNAS_NODUS_CLI_ALL_ARG}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
         COMMAND ${CMAKE_COMMAND}
             -S "${PQNAS_BUNDLED_NODUS_DIR}"
