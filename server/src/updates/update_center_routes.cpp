@@ -372,6 +372,440 @@ std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
 } // namespace
 
 
+
+// build_update_plan_json_r6b
+[[maybe_unused]] json build_update_plan_json(const UpdateCenterRoutesDeps& deps,
+                                             const std::string& stored_name,
+                                             const std::string& listing,
+                                             const std::string& package_bytes) {
+    const std::string package_sha256 = deps.sha256_hex(package_bytes);
+    const std::uintmax_t package_size_bytes =
+        static_cast<std::uintmax_t>(package_bytes.size());
+
+    json actions = json::array();
+    json skipped_summary = json::object();
+
+    auto bump_skip = [&](const std::string& key) {
+        const int old = skipped_summary.value(key, 0);
+        skipped_summary[key] = old + 1;
+    };
+
+    auto add_action = [&](const std::string& type,
+                          const std::string& action,
+                          const std::string& source,
+                          const std::string& target,
+                          const std::string& reason,
+                          const std::string& app_id = "") {
+        json a = {
+            {"type", type},
+            {"action", action},
+            {"source", source}
+        };
+
+        if (!target.empty()) a["target"] = target;
+        if (!reason.empty()) a["reason"] = reason;
+        if (!app_id.empty()) a["app_id"] = app_id;
+
+        actions.push_back(a);
+    };
+
+    std::size_t entry_count = 0;
+    std::size_t planned_updates = 0;
+    std::size_t skipped = 0;
+
+    bool has_core_binary_action = false;
+
+    const std::string package_server_version =
+        update_extract_server_version_from_stored_name(stored_name);
+    const std::string current_server_version =
+        update_current_server_version(deps);
+
+    const bool server_package_version_known =
+        !package_server_version.empty() && !current_server_version.empty();
+    const bool server_package_is_newer =
+        server_package_version_known &&
+        update_compare_versions(package_server_version, current_server_version) > 0;
+
+    if (!server_package_version_known) {
+        bump_skip("server_version_unknown");
+    } else if (!server_package_is_newer) {
+        bump_skip("server_package_not_newer");
+    }
+
+    std::istringstream in(listing);
+    std::string raw;
+
+    while (std::getline(in, raw)) {
+        std::string entry = update_plan_normalize_entry(raw);
+        if (entry.empty()) continue;
+
+        ++entry_count;
+
+        const bool is_dir = update_ends_with(entry, "/");
+        if (is_dir) continue;
+
+        const std::string entry_low = update_lower(entry);
+
+        if (!entry.empty() && entry[0] == '/') {
+            add_action("unsafe_entry", "reject", raw, "", "absolute paths are not allowed");
+            ++skipped;
+            bump_skip("unsafe_entry");
+            continue;
+        }
+
+        if (entry == ".." ||
+            update_starts_with(entry, "../") ||
+            entry.find("/../") != std::string::npos ||
+            update_ends_with(entry, "/..")) {
+            add_action("unsafe_entry", "reject", raw, "", "path traversal is not allowed");
+            ++skipped;
+            bump_skip("unsafe_entry");
+            continue;
+        }
+
+        if (entry == "pqnas_server" ||
+            entry == "bin/pqnas_server" ||
+            update_ends_with(entry_low, "/pqnas_server")) {
+            if (package_server_version.empty()) {
+                add_action(
+                    "core_binary",
+                    "skip_version_unknown",
+                    raw,
+                    "/usr/local/bin/pqnas_server",
+                    "package server version could not be determined; refusing core binary update"
+                );
+                ++skipped;
+                bump_skip("core_version_unknown");
+                continue;
+            }
+
+            if (current_server_version.empty()) {
+                add_action(
+                    "core_binary",
+                    "skip_current_version_unknown",
+                    raw,
+                    "/usr/local/bin/pqnas_server",
+                    "current server version is unknown; refusing core binary update to prevent downgrade"
+                );
+                ++skipped;
+                bump_skip("core_current_version_unknown");
+                continue;
+            }
+
+            if (!server_package_is_newer) {
+                add_action(
+                    "core_binary",
+                    "skip_version_not_newer",
+                    raw,
+                    "/usr/local/bin/pqnas_server",
+                    "package version " + package_server_version +
+                        " is not newer than current server version " + current_server_version
+                );
+                ++skipped;
+                bump_skip("core_version_not_newer");
+                continue;
+            }
+
+            add_action(
+                "core_binary",
+                "update",
+                raw,
+                "/usr/local/bin/pqnas_server",
+                "core server binary update from " + current_server_version +
+                    " to " + package_server_version
+            );
+            ++planned_updates;
+            has_core_binary_action = true;
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "static/")) {
+            const std::string rel = entry.substr(std::string("static/").size());
+            if (rel.empty()) {
+                ++skipped;
+                bump_skip("static_empty");
+                continue;
+            }
+
+            const std::string target =
+                (std::filesystem::path(deps.static_root_dir()) / rel).string();
+
+            if (package_server_version.empty()) {
+                add_action(
+                    "static_file",
+                    "skip_version_unknown",
+                    raw,
+                    target,
+                    "package server version could not be determined; refusing static file update"
+                );
+                ++skipped;
+                bump_skip("static_version_unknown");
+                continue;
+            }
+
+            if (current_server_version.empty()) {
+                add_action(
+                    "static_file",
+                    "skip_current_version_unknown",
+                    raw,
+                    target,
+                    "current server version is unknown; refusing static file update to prevent downgrade"
+                );
+                ++skipped;
+                bump_skip("static_current_version_unknown");
+                continue;
+            }
+
+            if (!server_package_is_newer) {
+                add_action(
+                    "static_file",
+                    "skip_version_not_newer",
+                    raw,
+                    target,
+                    "package version " + package_server_version +
+                        " is not newer than current server version " + current_server_version
+                );
+                ++skipped;
+                bump_skip("static_version_not_newer");
+                continue;
+            }
+
+            add_action(
+                "static_file",
+                "update",
+                raw,
+                target,
+                "static UI file update from server package " + current_server_version +
+                    " to " + package_server_version
+            );
+            ++planned_updates;
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "config/")) {
+            const std::string rel = entry.substr(std::string("config/").size());
+
+            add_action(
+                "config",
+                "skip",
+                raw,
+                (std::filesystem::path(deps.config_root_dir()) / rel).string(),
+                "live config is never overwritten by updater"
+            );
+            ++skipped;
+            bump_skip("config");
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "systemd/")) {
+            add_action(
+                "systemd",
+                "skip",
+                raw,
+                "/etc/systemd/system/" + std::filesystem::path(entry).filename().string(),
+                "systemd changes require explicit admin choice"
+            );
+            ++skipped;
+            bump_skip("systemd");
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "apps/bundled/")) {
+            const std::string app_id = update_plan_path_segment_after(entry, "apps/bundled/");
+            if (update_installed_app_exists(deps, app_id)) {
+                add_action(
+                    "bundled_app",
+                    "update_existing_app",
+                    raw,
+                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                    "app already exists on this server; eligible for app update",
+                    app_id
+                );
+                ++planned_updates;
+            } else {
+                add_action(
+                    "bundled_app",
+                    "skip_not_installed",
+                    raw,
+                    "",
+                    "app is present in release package but is not installed on this server",
+                    app_id
+                );
+                ++skipped;
+                bump_skip("bundled_app_not_installed");
+            }
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "apps/installed/")) {
+            const std::string app_id = update_plan_path_segment_after(entry, "apps/installed/");
+            if (update_installed_app_exists(deps, app_id)) {
+                add_action(
+                    "installed_app",
+                    "update_existing_app",
+                    raw,
+                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                    "app already exists on this server; eligible for app update",
+                    app_id
+                );
+                ++planned_updates;
+            } else {
+                add_action(
+                    "installed_app",
+                    "skip_not_installed",
+                    raw,
+                    "",
+                    "app is present in release package but is not installed on this server",
+                    app_id
+                );
+                ++skipped;
+                bump_skip("installed_app_not_installed");
+            }
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "bundled/")) {
+            const std::string app_id = update_plan_path_segment_after(entry, "bundled/");
+            const std::string package_version =
+                update_extract_app_package_version(entry, app_id);
+
+            if (!update_installed_app_exists(deps, app_id)) {
+                add_action(
+                    "bundled_app_package",
+                    "skip_not_installed",
+                    raw,
+                    "",
+                    "bundled app package is present in release but this app is not installed on this server",
+                    app_id
+                );
+                ++skipped;
+                bump_skip("bundled_app_package_not_installed");
+                continue;
+            }
+
+            const std::string installed_version =
+                update_latest_installed_app_version(deps, app_id);
+
+            if (package_version.empty()) {
+                add_action(
+                    "bundled_app_package",
+                    "skip_version_unknown",
+                    raw,
+                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                    "package app version could not be determined; refusing app update",
+                    app_id
+                );
+                ++skipped;
+                bump_skip("bundled_app_package_version_unknown");
+                continue;
+            }
+
+            if (installed_version.empty()) {
+                add_action(
+                    "bundled_app_package",
+                    "skip_installed_version_unknown",
+                    raw,
+                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                    "installed app version could not be determined; refusing app update to prevent downgrade",
+                    app_id
+                );
+                ++skipped;
+                bump_skip("bundled_app_package_installed_version_unknown");
+                continue;
+            }
+
+            const int app_cmp =
+                update_compare_versions(package_version, installed_version);
+
+            if (app_cmp <= 0) {
+                add_action(
+                    "bundled_app_package",
+                    "skip_version_not_newer",
+                    raw,
+                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                    "package app version " + package_version +
+                        " is not newer than installed version " + installed_version,
+                    app_id
+                );
+                ++skipped;
+                bump_skip("bundled_app_package_version_not_newer");
+                continue;
+            }
+
+            add_action(
+                "bundled_app_package",
+                "update_existing_app_package",
+                raw,
+                (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
+                "bundled app update from " + installed_version + " to " + package_version,
+                app_id
+            );
+            ++planned_updates;
+            continue;
+        }
+
+        if (update_starts_with(entry_low, "runtime/") ||
+            update_starts_with(entry_low, "lib/")) {
+            add_action(
+                "runtime_component",
+                "skip",
+                raw,
+                "",
+                "runtime/library components require explicit updater support before installation"
+            );
+            ++skipped;
+            bump_skip("runtime_component");
+            continue;
+        }
+
+        if (entry == "install.sh" ||
+            entry == "uninstall.sh" ||
+            update_starts_with(entry_low, "installer/") ||
+            update_starts_with(entry_low, "docs/") ||
+            entry == "README.md" ||
+            entry == "LICENSE" ||
+            entry == "pqnas_keygen") {
+            add_action(
+                "package_support_file",
+                "skip",
+                raw,
+                "",
+                "fresh-install/support files are not applied by in-place updater"
+            );
+            ++skipped;
+            bump_skip("support_file");
+            continue;
+        }
+
+        add_action(
+            "unknown",
+            "skip",
+            raw,
+            "",
+            "not part of the safe in-place update plan"
+        );
+        ++skipped;
+        bump_skip("unknown");
+    }
+
+    return json{
+        {"ok", true},
+        {"status", "plan_built"},
+        {"stored_name", stored_name},
+        {"package_sha256", package_sha256},
+        {"package_size", package_size_bytes},
+        {"package_server_version", package_server_version},
+        {"current_server_version", current_server_version},
+        {"server_package_is_newer", server_package_is_newer},
+        {"entry_count", entry_count},
+        {"planned_updates", planned_updates},
+        {"skipped", skipped},
+        {"has_core_binary_action", has_core_binary_action},
+        {"skipped_summary", skipped_summary},
+        {"actions", actions}
+    };
+}
+
 void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoutesDeps& deps) {
     srv.Get("/admin/updates", [deps](const httplib::Request& req, httplib::Response& res) {
         if (!deps.require_admin(req, res)) return;
