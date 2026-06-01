@@ -227,3 +227,57 @@
     refreshUploadedPackages();
 })();
 
+
+// DNA-Nexus Update Center verify package v1
+(() => {
+    const verifyBtn = document.getElementById("verifyPackageBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!verifyBtn || !statusEl) {
+        return;
+    }
+
+    function pickStoredNameFromStatus() {
+        const text = String(statusEl.textContent || "");
+        const m = text.match(/([0-9a-f]{12}_[A-Za-z0-9._-]+\.(?:tar\.gz|tgz|zip|dnxupd))/);
+        return m ? m[1] : "";
+    }
+
+    async function verifyPackage() {
+        const storedName = pickStoredNameFromStatus();
+        if (!storedName) {
+            statusEl.textContent = "No staged package selected. Upload or refresh packages first.";
+            return;
+        }
+
+        try {
+            verifyBtn.disabled = true;
+            statusEl.textContent = `Verifying ${storedName}…`;
+
+            const r = await fetch("/api/v4/admin/updates/verify", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ stored_name: storedName }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!j) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            statusEl.textContent =
+                (j.ok ? "Verification OK. Nothing has been installed yet.\n" : "Verification failed.\n") +
+                JSON.stringify(j, null, 2);
+        } catch (e) {
+            statusEl.textContent = "Verification failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            verifyBtn.disabled = false;
+        }
+    }
+
+    verifyBtn.addEventListener("click", verifyPackage);
+})();
+
