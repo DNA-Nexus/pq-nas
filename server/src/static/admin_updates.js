@@ -410,3 +410,107 @@
     planBtn.addEventListener("click", buildPlan);
 })();
 
+
+// DNA-Nexus Update Center install validation v1
+(() => {
+    const installBtn = document.getElementById("installPlanBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!installBtn || !statusEl) {
+        return;
+    }
+
+    function escHtml(s) {
+        return String(s ?? "").replace(/[&<>"]/g, c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+        }[c]));
+    }
+
+    function pickPlanIdFromStatus() {
+        const text = String(statusEl.textContent || "");
+        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
+        return m ? m[1] : "";
+    }
+
+    function renderInstallValidation(j) {
+        const ok = !!j.ok;
+        const errors = Array.isArray(j.validation_errors) ? j.validation_errors : [];
+        const actions = Array.isArray(j.applicable_actions) ? j.applicable_actions : [];
+
+        const head = [
+            ok ? "Install validation OK. Nothing has been installed yet." : "Install validation failed. Nothing has been installed.",
+            "",
+            `Plan ID: ${j.plan_id || ""}`,
+            `Plan hash: ${j.plan_hash || ""}`,
+            `Package SHA256: ${j.package_sha256 || ""}`,
+            `Package version: ${j.package_server_version || ""}`,
+            `Current server version: ${j.current_server_version || ""}`,
+            `Applicable actions: ${j.applicable_action_count || 0}`,
+            `Install helper enabled: no`,
+        ].join("\n");
+
+        const errorHtml = errors.length
+            ? `<div class="planActions">${errors.map(e => {
+                const msg = `[${e.code || "error"}] ${e.message || ""}`;
+                return `<div class="planLine skip">${escHtml(msg)}</div>`;
+            }).join("")}</div>`
+            : "";
+
+        const actionHtml = actions.length
+            ? `<div class="planActions">${actions.slice(0, 100).map(a => {
+                const app = a.app_id ? ` app=${a.app_id}` : "";
+                const target = a.target ? ` -> ${a.target}` : "";
+                const reason = a.reason ? ` (${a.reason})` : "";
+                const msg = `- [${a.action}] ${a.type}${app}: ${a.source}${target}${reason}`;
+                return `<div class="planLine update">${escHtml(msg)}</div>`;
+            }).join("")}</div>`
+            : "";
+
+        return `
+            <div class="planPreview">
+                <div class="planSummary">${escHtml(head)}</div>
+                ${errorHtml}
+                ${actionHtml}
+            </div>
+        `;
+    }
+
+    async function validateInstallPlan() {
+        const planId = pickPlanIdFromStatus();
+        if (!planId) {
+            statusEl.textContent = "No saved install plan selected. Build install plan first.";
+            return;
+        }
+
+        try {
+            installBtn.disabled = true;
+            statusEl.textContent = `Validating install plan ${planId}…`;
+
+            const r = await fetch("/api/v4/admin/updates/install", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ plan_id: planId }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!j) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            statusEl.innerHTML = renderInstallValidation(j);
+        } catch (e) {
+            statusEl.textContent = "Install validation failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            installBtn.disabled = false;
+        }
+    }
+
+    installBtn.addEventListener("click", validateInstallPlan);
+})();
+
