@@ -24,14 +24,14 @@ endif()
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
-find_package(SQLite3 REQUIRED)
+find_package(SQLite3 3.39 REQUIRED)
 
-pkg_check_modules(SODIUM REQUIRED libsodium)
-pkg_check_modules(QRENCODE REQUIRED libqrencode)
-pkg_check_modules(JSONCPP REQUIRED jsoncpp)
+pkg_check_modules(SODIUM REQUIRED libsodium>=1.0.18)
+pkg_check_modules(QRENCODE REQUIRED libqrencode>=4.1.1)
+pkg_check_modules(JSONCPP REQUIRED jsoncpp>=1.9.5)
 
 # -----------------------------------------------------------------------------
 # Core library (default: used by tools/vectors; permissive / frozen-vector friendly)
