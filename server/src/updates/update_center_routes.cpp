@@ -92,7 +92,7 @@ std::map<std::string, std::string> update_audit_fields_from_json(const json& obj
         "planned_action_count",
         "applied_action_count",
         "helper_enabled",
-        "apply_enabled",
+        "apply_allowed",
         "helper_exit_code",
         "install_performed",
         "restart_required"
@@ -2234,8 +2234,6 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
 
         const std::string helper_enabled =
             deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_ENABLED") : "";
-        const std::string apply_enabled =
-            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_APPLY_ENABLED") : "";
 
         if (!(helper_enabled == "1" ||
               helper_enabled == "true" ||
@@ -2247,23 +2245,6 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
                 {"error", "update_helper_not_enabled"},
                 {"message", "Apply requires PQNAS_UPDATE_HELPER_ENABLED=1."},
                 {"helper_enabled", false},
-                {"apply_enabled", false},
-                {"install_performed", false}
-            }.dump(2));
-            return;
-        }
-
-        if (!(apply_enabled == "1" ||
-              apply_enabled == "true" ||
-              apply_enabled == "TRUE" ||
-              apply_enabled == "yes" ||
-              apply_enabled == "YES")) {
-            deps.reply_json(res, 400, json{
-                {"ok", false},
-                {"error", "update_apply_not_enabled"},
-                {"message", "Apply is disabled. Set PQNAS_UPDATE_APPLY_ENABLED=1 to allow update apply."},
-                {"helper_enabled", true},
-                {"apply_enabled", false},
                 {"install_performed", false}
             }.dump(2));
             return;
@@ -2318,7 +2299,7 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         }
 
         helper_json["helper_enabled"] = true;
-        helper_json["apply_enabled"] = true;
+        helper_json["apply_allowed"] = true;
         helper_json["helper_status"] = helper_status;
         helper_json["helper_exit_code"] = helper_exit_code;
 

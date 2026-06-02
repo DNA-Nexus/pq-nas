@@ -24,6 +24,36 @@ function updateCenterReady(fn) {
     ready.then(fn).catch(fn);
 }
 
+function updateCenterBackendMessage(msg) {
+    const text = String(msg || "");
+
+    if (text === "Update helper applied supported update actions. Restart may be required.") {
+        return updateCenterT(
+            "message.apply_success_restart_may_be_required",
+            {},
+            text
+        );
+    }
+
+    if (text === "Update helper validated plan and package. Nothing was installed in validation-only mode.") {
+        return updateCenterT(
+            "message.validation_success_nothing_installed",
+            {},
+            text
+        );
+    }
+
+    if (text === "Dry-run succeeded. No files were modified.") {
+        return updateCenterT(
+            "message.dry_run_success_no_files_modified",
+            {},
+            text
+        );
+    }
+
+    return text;
+}
+
 function updateCenterYesNo(v) {
     return updateCenterT(v ? "value.yes" : "value.no", null, v ? "yes" : "no");
 }
@@ -147,7 +177,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             setBadge(stateBadge, "ok", updateCenterT("status.ready", null, "ready"));
             setBadge(
                 releaseBadge,
-                preferredAsset ? "warn" : "info",
+                preferredAsset ? "ok" : "info",
                 preferredAsset
                     ? updateCenterT("status.core_found", null, "core package found")
                     : updateCenterT("status.no_core_asset", null, "no core package asset")
@@ -633,7 +663,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
             updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
             j.error ? updateCenterLabel("error", j.error, "Error") : null,
-            j.message ? updateCenterLabel("message", j.message, "Message") : null,
+            j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
         const plannedHtml = planned.length
@@ -729,14 +759,14 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             updateCenterLabel("applicable_actions", j.applicable_action_count || 0, "Applicable actions"),
             j.applied_action_count === undefined ? null : updateCenterLabel("applied_actions", j.applied_action_count, "Applied actions"),
             updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
-            updateCenterLabel("apply_enabled", updateCenterYesNo(j.apply_enabled), "Apply enabled"),
+            updateCenterLabel("apply_allowed", updateCenterYesNo(j.apply_allowed), "Apply allowed"),
             j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
             updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
             j.restart_required === undefined ? null : updateCenterLabel("restart_required", updateCenterYesNo(j.restart_required), "Restart required"),
             j.backup_root ? updateCenterLabel("backup_root", j.backup_root, "Backup root") : null,
             j.manifest_path ? updateCenterLabel("manifest", j.manifest_path, "Manifest") : null,
             j.error ? updateCenterLabel("error", j.error, "Error") : null,
-            j.message ? updateCenterLabel("message", j.message, "Message") : null,
+            j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
         return `

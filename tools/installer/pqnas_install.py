@@ -195,8 +195,9 @@ def install_pqnas_update_apply_sudoers(log: Optional[Log] = None) -> None:
     """
     Allow pqnas_server to run only the guarded Update Center apply wrapper as root.
 
-    Normal install leaves PQNAS_UPDATE_APPLY_ENABLED disabled, so this sudoers rule
-    is inert until an admin explicitly enables apply with a systemd drop-in.
+    Apply is available from the authenticated admin UI through this guarded
+    wrapper. The wrapper still validates plan_id and runs the immutable plan
+    helper; no broad shell access is granted.
     """
     content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-update-apply --plan-id *"
     install_sudoers_rule("pqnas-update-apply", content, log=log)
@@ -1064,10 +1065,7 @@ def write_env_file(
         "PQNAS_UPDATES_ROOT=/var/lib/pqnas/updates",
         "PQNAS_UPDATE_HELPER_ENABLED=1",
         "PQNAS_UPDATE_HELPER_PATH=/usr/local/libexec/pqnas/pqnas_update_apply.py",
-        "# PQNAS_UPDATE_APPLY_ENABLED is intentionally disabled by default.",
-        "# Enable temporarily with a systemd drop-in when applying an update:",
-        "#   Environment=PQNAS_UPDATE_APPLY_ENABLED=1",
-        "#   Environment=PQNAS_UPDATE_APPLY_HELPER_PATH=/usr/local/sbin/pqnas-update-apply",
+        "PQNAS_UPDATE_APPLY_HELPER_PATH=/usr/local/sbin/pqnas-update-apply",
         "",
         "PQNAS_NODUS_CLI=/usr/local/bin/nodus-cli",
         "PQNAS_NODUS_IDENTITY_DIR=/srv/pqnas/config/nodus/identity",
@@ -3172,7 +3170,7 @@ class ExecuteScreen(Screen):
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
-            self.logw.write("[*] Update apply remains disabled until PQNAS_UPDATE_APPLY_ENABLED=1 is set.")
+            self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
 
             self.logw.write("Generating /etc/pqnas/keys.env …")
             write_keys_env(asset_root, "/etc/pqnas/keys.env")

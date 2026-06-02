@@ -3005,9 +3005,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     const ok = !!j.ok;
                     authed = ok && r.ok;
 
-                    // show version once (don’t stomp useful status text every refresh)
+                    // Show backend version from version.h via /api/v4/me.
                     if (!versionShown && statusLine) {
-                        statusLine.textContent = "DNA-Nexus v1.1.5";
+                        const serverVersion = String(j.server_version || j.current_server_version || j.version || "").trim();
+                        statusLine.textContent = serverVersion ? `DNA-Nexus v${serverVersion}` : "DNA-Nexus";
                         versionShown = true;
                     }
 

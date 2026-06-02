@@ -64,6 +64,21 @@
             min-height:100%;
         }
 
+        #releaseBadge.badge.ok,
+        #releaseBadge.badge.success{
+            background:rgba(22,163,74,0.18);
+            border-color:rgba(22,163,74,0.55);
+            color:#166534;
+        }
+
+        html[data-theme="dark"] #releaseBadge.badge.ok,
+        html[data-theme="dark"] #releaseBadge.badge.success{
+            background:rgba(34,197,94,0.18);
+            border-color:rgba(34,197,94,0.55);
+            color:#86efac;
+        }
+
+
 </style>
 </head>
 <body>
@@ -151,7 +166,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_updates.js?v=20260602-update-center-i18n-v2"></script>
+<script src="/static/admin_updates.js?v=20260602-update-apply-no-env-gate-v1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

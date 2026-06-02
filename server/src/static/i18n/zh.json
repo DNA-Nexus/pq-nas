@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "更新模拟运行失败",
   "activity.event.update.apply": "更新已应用",
   "activity.event.update.apply_failed": "更新应用失败",
-  "activity.kind.update_center": "更新中心"
+  "activity.kind.update_center": "更新中心",
+  "admin.updates.label.apply_allowed": "允许安装",
+  "admin.updates.message.apply_success_restart_may_be_required": "更新助手已应用支持的更新操作。可能需要重启。",
+  "admin.updates.message.validation_success_nothing_installed": "更新助手已验证计划和软件包。未安装任何内容。",
+  "admin.updates.message.dry_run_success_no_files_modified": "试运行成功。未修改任何文件。"
 }

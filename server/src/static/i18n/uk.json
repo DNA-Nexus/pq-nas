@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Тестовий запуск оновлення не вдався",
   "activity.event.update.apply": "Оновлення застосовано",
   "activity.event.update.apply_failed": "Застосування оновлення не вдалося",
-  "activity.kind.update_center": "Центр оновлень"
+  "activity.kind.update_center": "Центр оновлень",
+  "admin.updates.label.apply_allowed": "Встановлення дозволено",
+  "admin.updates.message.apply_success_restart_may_be_required": "Помічник оновлення виконав підтримувані дії. Може знадобитися перезапуск.",
+  "admin.updates.message.validation_success_nothing_installed": "Помічник оновлення перевірив план і пакет. Нічого не встановлено.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Пробний запуск успішний. Файли не змінено."
 }

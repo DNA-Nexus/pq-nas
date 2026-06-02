@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Testkörning av uppdatering misslyckades",
   "activity.event.update.apply": "Uppdatering tillämpad",
   "activity.event.update.apply_failed": "Uppdatering kunde inte tillämpas",
-  "activity.kind.update_center": "Uppdateringscenter"
+  "activity.kind.update_center": "Uppdateringscenter",
+  "admin.updates.label.apply_allowed": "Installation tillåten",
+  "admin.updates.message.apply_success_restart_may_be_required": "Uppdateringshjälpen utförde de stödda uppdateringsåtgärderna. Omstart kan krävas.",
+  "admin.updates.message.validation_success_nothing_installed": "Uppdateringshjälpen validerade planen och paketet. Inget installerades.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Torrkörningen lyckades. Inga filer ändrades."
 }

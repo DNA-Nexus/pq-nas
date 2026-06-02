@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Update-Probelauf fehlgeschlagen",
   "activity.event.update.apply": "Update angewendet",
   "activity.event.update.apply_failed": "Update konnte nicht angewendet werden",
-  "activity.kind.update_center": "Update-Center"
+  "activity.kind.update_center": "Update-Center",
+  "admin.updates.label.apply_allowed": "Installation erlaubt",
+  "admin.updates.message.apply_success_restart_may_be_required": "Der Update-Helfer hat die unterstützten Update-Aktionen ausgeführt. Ein Neustart kann erforderlich sein.",
+  "admin.updates.message.validation_success_nothing_installed": "Der Update-Helfer hat Plan und Paket validiert. Es wurde nichts installiert.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Der Testlauf war erfolgreich. Es wurden keine Dateien geändert."
 }

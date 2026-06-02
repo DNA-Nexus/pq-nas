@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "La simulación de actualización falló",
   "activity.event.update.apply": "Actualización aplicada",
   "activity.event.update.apply_failed": "La aplicación de la actualización falló",
-  "activity.kind.update_center": "Centro de actualizaciones"
+  "activity.kind.update_center": "Centro de actualizaciones",
+  "admin.updates.label.apply_allowed": "Instalación permitida",
+  "admin.updates.message.apply_success_restart_may_be_required": "El asistente de actualización aplicó las acciones admitidas. Puede ser necesario reiniciar.",
+  "admin.updates.message.validation_success_nothing_installed": "El asistente de actualización validó el plan y el paquete. No se instaló nada.",
+  "admin.updates.message.dry_run_success_no_files_modified": "La simulación se completó correctamente. No se modificaron archivos."
 }

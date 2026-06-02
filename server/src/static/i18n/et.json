@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Värskenduse kuivkäivitus nurjus",
   "activity.event.update.apply": "Värskendus rakendatud",
   "activity.event.update.apply_failed": "Värskenduse rakendamine nurjus",
-  "activity.kind.update_center": "Värskenduskeskus"
+  "activity.kind.update_center": "Värskenduskeskus",
+  "admin.updates.label.apply_allowed": "Paigaldamine lubatud",
+  "admin.updates.message.apply_success_restart_may_be_required": "Uuenduse abiline rakendas toetatud uuendustoimingud. Taaskäivitamine võib olla vajalik.",
+  "admin.updates.message.validation_success_nothing_installed": "Uuenduse abiline valideeris plaani ja paketi. Midagi ei paigaldatud.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Kuivkäivitus õnnestus. Faile ei muudetud."
 }

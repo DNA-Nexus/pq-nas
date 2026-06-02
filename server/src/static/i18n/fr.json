@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "La simulation de mise à jour a échoué",
   "activity.event.update.apply": "Mise à jour appliquée",
   "activity.event.update.apply_failed": "L’application de la mise à jour a échoué",
-  "activity.kind.update_center": "Centre de mise à jour"
+  "activity.kind.update_center": "Centre de mise à jour",
+  "admin.updates.label.apply_allowed": "Installation autorisée",
+  "admin.updates.message.apply_success_restart_may_be_required": "L’assistant de mise à jour a appliqué les actions prises en charge. Un redémarrage peut être nécessaire.",
+  "admin.updates.message.validation_success_nothing_installed": "L’assistant de mise à jour a validé le plan et le paquet. Rien n’a été installé.",
+  "admin.updates.message.dry_run_success_no_files_modified": "L’essai à blanc a réussi. Aucun fichier n’a été modifié."
 }

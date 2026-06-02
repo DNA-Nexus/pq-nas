@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Próbne uruchomienie aktualizacji nie powiodło się",
   "activity.event.update.apply": "Aktualizacja zastosowana",
   "activity.event.update.apply_failed": "Zastosowanie aktualizacji nie powiodło się",
-  "activity.kind.update_center": "Centrum aktualizacji"
+  "activity.kind.update_center": "Centrum aktualizacji",
+  "admin.updates.label.apply_allowed": "Instalacja dozwolona",
+  "admin.updates.message.apply_success_restart_may_be_required": "Pomocnik aktualizacji wykonał obsługiwane działania. Może być wymagane ponowne uruchomienie.",
+  "admin.updates.message.validation_success_nothing_installed": "Pomocnik aktualizacji zweryfikował plan i pakiet. Nic nie zostało zainstalowane.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Próba na sucho zakończyła się powodzeniem. Nie zmodyfikowano żadnych plików."
 }

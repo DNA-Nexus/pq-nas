@@ -10033,9 +10033,39 @@ bool write_text_file_atomic_utf8(const std::filesystem::path& target_abs,
 
     return true;
 }
+    static bool header_key_equal_ci(const std::string& a, const char* b) {
+    if (!b) return false;
+
+    std::size_t n = 0;
+    while (b[n] != '\0') ++n;
+
+    if (a.size() != n) return false;
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const unsigned char ca = static_cast<unsigned char>(a[i]);
+        const unsigned char cb = static_cast<unsigned char>(b[i]);
+
+        if (std::tolower(ca) != std::tolower(cb)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
     static std::string header_value(const httplib::Request& req, const char* key) {
     auto it = req.headers.find(key);
-    return (it == req.headers.end()) ? std::string() : it->second;
+    if (it != req.headers.end()) {
+        return it->second;
+    }
+
+    for (const auto& kv : req.headers) {
+        if (header_key_equal_ci(kv.first, key)) {
+            return kv.second;
+        }
+    }
+
+    return std::string();
 }
 
     // CSRF defense for browser cookie-auth mutation routes.
@@ -20539,6 +20569,7 @@ srv.Post("/api/v4/admin/settings/send-dna-alert-contact-request", [&](const http
 
         	{"storage_state", storage_state},
     	    {"quota_bytes", quota_bytes},
+    	    {"server_version", PQNAS_VERSION},
 	        {"root_rel", root_rel},
         	{"group", group}
     	}).dump());

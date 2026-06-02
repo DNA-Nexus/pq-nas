@@ -4210,5 +4210,9 @@
   "activity.event.update.dry_run_failed": "Päivityksen kuiva-ajo epäonnistui",
   "activity.event.update.apply": "Päivitys asennettu",
   "activity.event.update.apply_failed": "Päivityksen asennus epäonnistui",
-  "activity.kind.update_center": "Päivityskeskus"
+  "activity.kind.update_center": "Päivityskeskus",
+  "admin.updates.label.apply_allowed": "Asennus sallittu",
+  "admin.updates.message.apply_success_restart_may_be_required": "Päivitysavustaja suoritti tuetut päivitystoiminnot. Uudelleenkäynnistys voi olla tarpeen.",
+  "admin.updates.message.validation_success_nothing_installed": "Päivitysavustaja vahvisti suunnitelman ja paketin. Mitään ei asennettu.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Kuivaharjoitus onnistui. Tiedostoja ei muokattu."
 }

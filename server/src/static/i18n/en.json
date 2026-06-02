@@ -4210,5 +4210,9 @@
   "activity.event.update.dry_run_failed": "Update dry-run failed",
   "activity.event.update.apply": "Update applied",
   "activity.event.update.apply_failed": "Update apply failed",
-  "activity.kind.update_center": "Update Center"
+  "activity.kind.update_center": "Update Center",
+  "admin.updates.label.apply_allowed": "Apply allowed",
+  "admin.updates.message.apply_success_restart_may_be_required": "Update helper applied supported update actions. Restart may be required.",
+  "admin.updates.message.validation_success_nothing_installed": "Update helper validated the plan and package. Nothing was installed.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Dry-run succeeded. No files were modified."
 }

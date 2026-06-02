@@ -4209,5 +4209,9 @@
   "activity.event.update.dry_run_failed": "Güncelleme deneme çalıştırması başarısız",
   "activity.event.update.apply": "Güncelleme uygulandı",
   "activity.event.update.apply_failed": "Güncelleme uygulaması başarısız",
-  "activity.kind.update_center": "Güncelleme Merkezi"
+  "activity.kind.update_center": "Güncelleme Merkezi",
+  "admin.updates.label.apply_allowed": "Kuruluma izin verildi",
+  "admin.updates.message.apply_success_restart_may_be_required": "Güncelleme yardımcısı desteklenen güncelleme işlemlerini uyguladı. Yeniden başlatma gerekebilir.",
+  "admin.updates.message.validation_success_nothing_installed": "Güncelleme yardımcısı planı ve paketi doğruladı. Hiçbir şey kurulmadı.",
+  "admin.updates.message.dry_run_success_no_files_modified": "Kuru çalıştırma başarılı oldu. Hiçbir dosya değiştirilmedi."
 }
