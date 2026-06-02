@@ -179,6 +179,30 @@ else
 fi
 
 # Static web assets (package-mode)
+# Update Center apply helper assets
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas_update_apply.py
+#   <asset_root>/libexec/pqnas/pqnas_update_apply_root.sh
+install -d "$STAGE/libexec/pqnas"
+
+install -m 0755 \
+  "$REPO_ROOT/server/src/updates/pqnas_update_apply.py" \
+  "$STAGE/libexec/pqnas/pqnas_update_apply.py"
+
+install -m 0755 \
+  "$REPO_ROOT/server/src/updates/pqnas_update_apply_root.sh" \
+  "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh"
+
+test -f "$STAGE/libexec/pqnas/pqnas_update_apply.py" || {
+  echo "ERROR: Update Center apply helper did not stage"
+  exit 1
+}
+
+test -f "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh" || {
+  echo "ERROR: Update Center root apply wrapper did not stage"
+  exit 1
+}
+
 # Copies: server/src/static/*  ->  <tarball>/pqnas/static/*
 rsync -a --delete \
   --exclude '__pycache__/' \

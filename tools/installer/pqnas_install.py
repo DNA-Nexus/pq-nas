@@ -57,6 +57,20 @@ def log_line(logw: Log, msg: str) -> None:
     logw.write(msg.rstrip("\n") + "\n")
 
 
+class InstallerLog(Log):
+    """
+    Textual Log.write() appends text to the current line unless a newline is
+    provided. Most of this installer writes short status messages with
+    log.write("..."), so normalize every message into a line here instead of
+    requiring every call site to remember the newline.
+    """
+    def write(self, data="", *args, **kwargs):
+        text = str(data)
+        if not text.endswith("\n"):
+            text += "\n"
+        return super().write(text, *args, **kwargs)
+
+
 def looks_like_ip(host: str) -> bool:
     host = (host or "").strip()
     if not host:
@@ -175,6 +189,120 @@ def install_sudoers_rule(name: str, content: str, log: Optional[Log] = None) -> 
 def install_pqnas_smartctl_sudoers(log: Optional[Log] = None) -> None:
     content = "pqnas ALL=(root) NOPASSWD: /usr/sbin/smartctl"
     install_sudoers_rule("pqnas-smartctl", content, log=log)
+
+
+def install_pqnas_update_apply_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded Update Center apply wrapper as root.
+
+    Normal install leaves PQNAS_UPDATE_APPLY_ENABLED disabled, so this sudoers rule
+    is inert until an admin explicitly enables apply with a systemd drop-in.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-update-apply --plan-id *"
+    install_sudoers_rule("pqnas-update-apply", content, log=log)
+
+
+def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
+    """
+    Prepare server-writable Update Center staging directories.
+
+    /var/lib/pqnas/updates/incoming  package uploads
+    /var/lib/pqnas/updates/plans     immutable install plans
+    /var/lib/pqnas/updates/work      temporary extraction/dry-run/apply work
+    /var/lib/pqnas/updates/backups   apply rollback manifests and file backups
+    """
+    ensure_service_user("pqnas", log=log)
+
+    dirs = [
+        "/var/lib/pqnas",
+        "/var/lib/pqnas/updates",
+        "/var/lib/pqnas/updates/incoming",
+        "/var/lib/pqnas/updates/plans",
+        "/var/lib/pqnas/updates/work",
+        "/var/lib/pqnas/updates/backups",
+    ]
+
+    for d in dirs:
+        os.makedirs(d, exist_ok=True)
+        subprocess.run(["chown", "pqnas:pqnas", d], check=True)
+        os.chmod(d, 0o750)
+
+    if log:
+        log.write("[*] Update Center runtime dirs prepared: /var/lib/pqnas/updates")
+
+
+def _first_existing_path(candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = None) -> Tuple[str, str]:
+    """
+    Install Update Center apply helper assets.
+
+    Package layout supported:
+      <asset_root>/libexec/pqnas/pqnas_update_apply.py
+      <asset_root>/libexec/pqnas/pqnas_update_apply_root.sh
+
+    Repo layout supported:
+      <asset_root>/server/src/updates/pqnas_update_apply.py
+      <asset_root>/server/src/updates/pqnas_update_apply_root.sh
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas_update_apply.py"),
+        os.path.join(asset_root, "lib", "pqnas", "pqnas_update_apply.py"),
+        os.path.join(asset_root, "updates", "pqnas_update_apply.py"),
+        os.path.join(asset_root, "server", "src", "updates", "pqnas_update_apply.py"),
+    ])
+
+    wrapper_src = _first_existing_path([
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas_update_apply_root.sh"),
+        os.path.join(asset_root, "sbin", "pqnas-update-apply"),
+        os.path.join(asset_root, "updates", "pqnas_update_apply_root.sh"),
+        os.path.join(asset_root, "server", "src", "updates", "pqnas_update_apply_root.sh"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "Update Center apply helper not found in package/repo assets. "
+            "Expected pqnas_update_apply.py under libexec/pqnas or server/src/updates."
+        )
+
+    if not wrapper_src:
+        raise RuntimeError(
+            "Update Center root apply wrapper not found in package/repo assets. "
+            "Expected pqnas_update_apply_root.sh under libexec/pqnas or server/src/updates."
+        )
+
+    helper_dst = "/usr/local/libexec/pqnas/pqnas_update_apply.py"
+    wrapper_dst = "/usr/local/sbin/pqnas-update-apply"
+
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+    os.makedirs(os.path.dirname(wrapper_dst), exist_ok=True)
+
+    tmp_helper = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp_helper)
+    os.chmod(tmp_helper, 0o755)
+    os.replace(tmp_helper, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    tmp_wrapper = wrapper_dst + ".new"
+    shutil.copy2(wrapper_src, tmp_wrapper)
+    os.chmod(tmp_wrapper, 0o755)
+    os.replace(tmp_wrapper, wrapper_dst)
+    subprocess.run(["chown", "root:root", wrapper_dst], check=False)
+    subprocess.run(["chmod", "755", wrapper_dst], check=False)
+
+    install_pqnas_update_apply_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed Update Center helper: {helper_dst}")
+        log.write(f"[*] Installed Update Center root wrapper: {wrapper_dst}")
+
+    return helper_dst, wrapper_dst
 
 def run_cmd_capture(argv: List[str]) -> str:
     p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -933,6 +1061,14 @@ def write_env_file(
         "PQNAS_STATIC_ROOT=/opt/pqnas/static",
         f"PQNAS_APPS_ROOT={root}/apps",
         "",
+        "PQNAS_UPDATES_ROOT=/var/lib/pqnas/updates",
+        "PQNAS_UPDATE_HELPER_ENABLED=1",
+        "PQNAS_UPDATE_HELPER_PATH=/usr/local/libexec/pqnas/pqnas_update_apply.py",
+        "# PQNAS_UPDATE_APPLY_ENABLED is intentionally disabled by default.",
+        "# Enable temporarily with a systemd drop-in when applying an update:",
+        "#   Environment=PQNAS_UPDATE_APPLY_ENABLED=1",
+        "#   Environment=PQNAS_UPDATE_APPLY_HELPER_PATH=/usr/local/sbin/pqnas-update-apply",
+        "",
         "PQNAS_NODUS_CLI=/usr/local/bin/nodus-cli",
         "PQNAS_NODUS_IDENTITY_DIR=/srv/pqnas/config/nodus/identity",
     ]
@@ -1338,6 +1474,7 @@ def ensure_pqnas_ownership(root: str, log: Optional[Log] = None) -> None:
         root,
         "/etc/pqnas",
         "/opt/pqnas",
+        "/var/lib/pqnas",
     ]
 
     for p in paths:
@@ -2389,7 +2526,7 @@ class ConfirmScreen(Screen):
         yield self.err
 
         # Small log area for immediate feedback (prevents "stuck" feeling)
-        self.logw = Log()
+        self.logw = InstallerLog()
         yield self.logw
         yield Footer()
 
@@ -2503,7 +2640,7 @@ class RollbackScreen(Screen):
                 self.btn_rollback = Button("Rollback binaries + restart service", id="rollback", variant="error")
                 yield self.btn_rollback
 
-            self.out = Log()
+            self.out = InstallerLog()
             yield self.out
 
         yield Footer()
@@ -2610,7 +2747,7 @@ class HealthScreen(Screen):
                 yield Button("nginx -t", id="nginx_test", variant="default")
                 yield Button("ip addr", id="ip_addr", variant="default")
 
-            self.out = Log()
+            self.out = InstallerLog()
             yield self.out
 
         yield Footer()
@@ -2708,7 +2845,7 @@ class ExecuteScreen(Screen):
         yield Header()
         with Vertical():
             yield Static("[b]Step 6/6[/b] Executing… (live log)\n", classes="muted")
-            self.logw = Log()
+            self.logw = InstallerLog()
             yield self.logw
             self.done = Static("", classes="muted")
             yield self.done
@@ -3008,6 +3145,13 @@ class ExecuteScreen(Screen):
                     "smartctl sudo validation failed for pqnas:\n" + (p.stdout or "").strip()
                 )
             self.logw.write("[*] smartctl sudo access validated for pqnas.")
+
+            self.logw.write("Installing Update Center apply helper and runtime dirs ?")
+            ensure_update_center_runtime_dirs(log=self.logw)
+            update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
+            self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
+            self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
+            self.logw.write("[*] Update apply remains disabled until PQNAS_UPDATE_APPLY_ENABLED=1 is set.")
 
             self.logw.write("Generating /etc/pqnas/keys.env …")
             write_keys_env(asset_root, "/etc/pqnas/keys.env")
