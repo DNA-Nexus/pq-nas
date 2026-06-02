@@ -4,6 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
 #include <sys/wait.h>
@@ -138,17 +140,101 @@ std::string build_base_command(const NodusClientConfig& config, const NodusSeed&
 
 } // namespace
 
+std::string nodus_trim_copy(const std::string& in) {
+    std::size_t a = 0;
+    while (a < in.size() && std::isspace(static_cast<unsigned char>(in[a]))) ++a;
+
+    std::size_t b = in.size();
+    while (b > a && std::isspace(static_cast<unsigned char>(in[b - 1]))) --b;
+
+    return in.substr(a, b - a);
+}
+
+bool parse_nodus_seed_token(
+    const std::string& token_raw,
+    int ordinal,
+    NodusSeed* out
+) {
+    if (!out) return false;
+
+    const std::string token = nodus_trim_copy(token_raw);
+    if (token.empty()) return false;
+
+    std::string name;
+    std::string endpoint = token;
+
+    const std::size_t eq = token.find('=');
+    if (eq != std::string::npos) {
+        name = nodus_trim_copy(token.substr(0, eq));
+        endpoint = nodus_trim_copy(token.substr(eq + 1));
+    }
+
+    const std::size_t colon = endpoint.rfind(':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 >= endpoint.size()) {
+        return false;
+    }
+
+    const std::string host = nodus_trim_copy(endpoint.substr(0, colon));
+    const std::string port_s = nodus_trim_copy(endpoint.substr(colon + 1));
+
+    if (host.empty() || port_s.empty()) return false;
+
+    int port = 0;
+    try {
+        std::size_t consumed = 0;
+        port = std::stoi(port_s, &consumed, 10);
+        if (consumed != port_s.size()) return false;
+    } catch (...) {
+        return false;
+    }
+
+    if (port <= 0 || port > 65535) return false;
+
+    if (name.empty()) {
+        name = "seed-" + std::to_string(ordinal);
+    }
+
+    *out = NodusSeed{name, host, port};
+    return true;
+}
+
+std::vector<NodusSeed> nodus_seeds_from_env() {
+    std::vector<NodusSeed> out;
+
+    const char* raw = std::getenv("PQNAS_NODUS_SEEDS");
+    if (!raw) return out;
+
+    std::stringstream ss(raw);
+    std::string token;
+    int ordinal = 1;
+
+    while (std::getline(ss, token, ',')) {
+        NodusSeed seed;
+        if (parse_nodus_seed_token(token, ordinal, &seed)) {
+            out.push_back(seed);
+            ++ordinal;
+        }
+    }
+
+    return out;
+}
+
 std::vector<NodusSeed> default_nodus_seeds() {
+    const auto env_seeds = nodus_seeds_from_env();
+    if (!env_seeds.empty()) {
+        return env_seeds;
+    }
+
     return {
         {"US-1", "154.38.182.161", 4001},
-        {"EU-1", "161.97.85.25", 4001},
-        {"EU-2", "156.67.24.125", 4001},
-        {"EU-3", "156.67.25.251", 4001},
+
+        // Current public research bootstrap/client endpoints.
+        // Override with PQNAS_NODUS_SEEDS=name=host:port,name2=host2:port.
         {"EU-4", "164.68.105.227", 4001},
         {"EU-5", "164.68.116.180", 4001},
-        {"EU-6", "75.119.141.51", 4001},
     };
 }
+
 
 std::string shell_quote_for_nodus_research(const std::string& value) {
     std::string out;
