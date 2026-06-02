@@ -38,7 +38,11 @@
 #include <openssl/sha.h>
 
 #include <algorithm>
+#include <chrono>
+#include <deque>
+#include <mutex>
 #include <stdexcept>
+#include <unordered_map>
 
 using nlohmann::json;
 
@@ -74,6 +78,63 @@ static std::string audit_safe_header_value(const std::string& raw, std::size_t m
     }
 
     return out;
+}
+
+static bool routes_v5_simple_ip_rate_limit_allow(
+    const std::string& bucket,
+    const std::string& ip,
+    int max_hits,
+    std::chrono::seconds window
+) {
+    using Clock = std::chrono::steady_clock;
+
+    static std::mutex mu;
+    static std::unordered_map<std::string, std::deque<Clock::time_point>> hits;
+
+    const auto now = Clock::now();
+    const auto cutoff = now - window;
+    const std::string key = bucket + "\n" + (ip.empty() ? "?" : ip);
+
+    std::lock_guard<std::mutex> lock(mu);
+
+    auto& q = hits[key];
+    while (!q.empty() && q.front() < cutoff) {
+        q.pop_front();
+    }
+
+    if ((int)q.size() >= max_hits) {
+        return false;
+    }
+
+    q.push_back(now);
+
+    if (hits.size() > 8192) {
+        for (auto it = hits.begin(); it != hits.end(); ) {
+            auto& v = it->second;
+            while (!v.empty() && v.front() < cutoff) {
+                v.pop_front();
+            }
+            if (v.empty()) {
+                it = hits.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return true;
+}
+
+static std::string routes_v5_request_ip(
+    const RoutesV5Context& ctx,
+    const httplib::Request& req
+) {
+    if (ctx.client_ip) {
+        const std::string ip = ctx.client_ip(req);
+        if (!ip.empty()) return ip;
+    }
+
+    return req.remote_addr.empty() ? "?" : req.remote_addr;
 }
 
 // Normalizes base64 values that arrive via URL/query decoding.
@@ -502,6 +563,28 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 	// Issues a signed request token (st) and correlation key (k). Inserts PendingEntry.
 
     auto session_handler = [&](const httplib::Request& req, httplib::Response& res) {
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                "v5.session",
+                ip_for_rate_limit,
+                20,
+                std::chrono::seconds(60))) {
+            if (ctx.audit_emit) {
+                ctx.audit_emit("rate_limited", "deny", [&](std::map<std::string,std::string>& f) {
+                    f["path"] = "/api/v5/session";
+                    f["ip"] = ip_for_rate_limit;
+                    f["limit"] = "20_per_60s";
+                });
+            }
+
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{
+                {"ok", false},
+                {"error", "too_many_session_requests"}
+            }.dump());
+            return;
+        }
+
         const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
 
         // prune old entries first

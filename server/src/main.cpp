@@ -2912,6 +2912,61 @@ static std::string client_ip(const httplib::Request& req) {
 
     return remote;
 }
+
+static bool simple_ip_rate_limit_allow(
+    const std::string& bucket,
+    const std::string& ip,
+    int max_hits,
+    std::chrono::seconds window
+) {
+    using Clock = std::chrono::steady_clock;
+
+    static std::mutex mu;
+    static std::unordered_map<std::string, std::deque<Clock::time_point>> hits;
+
+    const auto now = Clock::now();
+    const auto cutoff = now - window;
+    const std::string key = bucket + "\n" + (ip.empty() ? "?" : ip);
+
+    std::lock_guard<std::mutex> lock(mu);
+
+    auto& q = hits[key];
+    while (!q.empty() && q.front() < cutoff) {
+        q.pop_front();
+    }
+
+    if ((int)q.size() >= max_hits) {
+        return false;
+    }
+
+    q.push_back(now);
+
+    // Opportunistic cleanup to avoid unbounded map growth.
+    if (hits.size() > 8192) {
+        for (auto it = hits.begin(); it != hits.end(); ) {
+            auto& v = it->second;
+            while (!v.empty() && v.front() < cutoff) {
+                v.pop_front();
+            }
+            if (v.empty()) {
+                it = hits.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return true;
+}
+
+static void set_rate_limited_json(httplib::Response& res, const std::string& error) {
+    res.status = 429;
+    res.set_header("Retry-After", "60");
+    res.set_content(json{
+        {"ok", false},
+        {"error", error}
+    }.dump(), "application/json; charset=utf-8");
+}
 static std::string extract_named_cookie_value(const std::string& cookie_header,
                                               const std::string& name) {
     if (cookie_header.empty() || name.empty()) return {};
@@ -21008,6 +21063,20 @@ c.external_session_accept_by_st_hash =
 
 
 srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& res) {
+    const std::string ip_for_rate_limit = client_ip(req);
+    if (!simple_ip_rate_limit_allow(
+            "v5.verify",
+            ip_for_rate_limit,
+            30,
+            std::chrono::seconds(60))) {
+        if (c.audit_emit) c.audit_emit("rate_limited", "deny", [&](std::map<std::string,std::string>& f){
+            f["path"] = "/api/v5/verify";
+            f["ip"] = ip_for_rate_limit;
+            f["limit"] = "30_per_60s";
+        });
+        return set_rate_limited_json(res, "too_many_verify_requests");
+    }
+
     if (c.audit_emit) c.audit_emit("route.hit", "ok", [&](std::map<std::string,std::string>& f){
         f["path"] = "/api/v5/verify";
         f["ip"]   = req.remote_addr.empty() ? "?" : req.remote_addr;

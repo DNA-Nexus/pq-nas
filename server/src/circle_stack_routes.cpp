@@ -16,6 +16,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
+#include <deque>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -23,6 +24,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 using json = nlohmann::json;
 #include <system_error>
@@ -85,6 +87,51 @@ private:
 };
 
 static constexpr int kMaxCircleStackPreviewFfmpegProcesses = 2;
+
+bool cs_simple_ip_rate_limit_allow(
+    const std::string& bucket,
+    const std::string& ip,
+    int max_hits,
+    std::chrono::seconds window
+) {
+    using Clock = std::chrono::steady_clock;
+
+    static std::mutex mu;
+    static std::unordered_map<std::string, std::deque<Clock::time_point>> hits;
+
+    const auto now = Clock::now();
+    const auto cutoff = now - window;
+    const std::string key = bucket + "\n" + (ip.empty() ? "?" : ip);
+
+    std::lock_guard<std::mutex> lock(mu);
+
+    auto& q = hits[key];
+    while (!q.empty() && q.front() < cutoff) {
+        q.pop_front();
+    }
+
+    if ((int)q.size() >= max_hits) {
+        return false;
+    }
+
+    q.push_back(now);
+
+    if (hits.size() > 8192) {
+        for (auto it = hits.begin(); it != hits.end(); ) {
+            auto& v = it->second;
+            while (!v.empty() && v.front() < cutoff) {
+                v.pop_front();
+            }
+            if (v.empty()) {
+                it = hits.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return true;
+}
 
 
 void set_json(httplib::Response& res, const json& body) {
@@ -4670,6 +4717,22 @@ void register_circle_stack_routes(httplib::Server& server, const CircleStackRout
 
     server.Get("/api/v4/circlestack/federation/media-preview",
         [&](const httplib::Request& req, httplib::Response& res) {
+            const std::string ip_for_rate_limit =
+                req.remote_addr.empty() ? "?" : req.remote_addr;
+
+            if (!cs_simple_ip_rate_limit_allow(
+                    "circlestack.media_preview",
+                    ip_for_rate_limit,
+                    60,
+                    std::chrono::seconds(60))) {
+                res.status = 429;
+                res.set_header("Retry-After", "60");
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "too_many_media_preview_requests"}
+                });
+            }
+
             const std::string event_id =
                 req.has_param("event_id") ? req.get_param_value("event_id") : "";
             const std::string ref_id =
