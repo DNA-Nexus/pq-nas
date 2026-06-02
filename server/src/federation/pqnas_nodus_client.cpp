@@ -2,13 +2,17 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 #include <sys/wait.h>
+#include <unistd.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -35,8 +39,8 @@ std::mutex& nodus_cli_mutex_for_scope(const std::string& scope) {
     return ref;
 }
 
-NodusCommandResult run_command_capture(
-    const std::string& command,
+NodusCommandResult run_argv_capture(
+    const std::vector<std::string>& argv,
     const std::string& serialization_scope
 ) {
     // Research adapter safety:
@@ -46,48 +50,107 @@ NodusCommandResult run_command_capture(
 
     NodusCommandResult result;
 
-    const std::string command_with_stderr = command + " 2>&1";
-
-    FILE* pipe = popen(command_with_stderr.c_str(), "r");
-    if (!pipe) {
+    if (argv.empty() || argv.front().empty()) {
         result.exit_code = -1;
-        result.output = "popen failed";
+        result.output = "empty argv";
         return result;
     }
 
-    constexpr std::size_t kMaxCommandOutputBytes = 64 * 1024;
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        result.exit_code = -1;
+        result.output = std::string("pipe failed: ") + std::strerror(errno);
+        return result;
+    }
 
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        const int e = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        result.exit_code = -1;
+        result.output = std::string("fork failed: ") + std::strerror(e);
+        return result;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+
+        if (::dup2(pipefd[1], STDOUT_FILENO) < 0 ||
+            ::dup2(pipefd[1], STDERR_FILENO) < 0) {
+            ::_exit(126);
+        }
+
+        ::close(pipefd[1]);
+
+        std::vector<char*> c_argv;
+        c_argv.reserve(argv.size() + 1);
+        for (const auto& arg : argv) {
+            c_argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        c_argv.push_back(nullptr);
+
+        ::execvp(c_argv[0], c_argv.data());
+        ::_exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    constexpr std::size_t kMaxCommandOutputBytes = 64 * 1024;
     bool output_truncated = false;
     std::array<char, 4096> buffer{};
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-        const std::string chunk(buffer.data());
+    for (;;) {
+        const ssize_t n = ::read(pipefd[0], buffer.data(), buffer.size());
+        if (n > 0) {
+            const std::size_t chunk_size = static_cast<std::size_t>(n);
 
-        if (result.output.size() < kMaxCommandOutputBytes) {
-            const std::size_t remaining =
-                kMaxCommandOutputBytes - result.output.size();
-            result.output.append(chunk.data(), std::min(remaining, chunk.size()));
+            if (result.output.size() < kMaxCommandOutputBytes) {
+                const std::size_t remaining =
+                    kMaxCommandOutputBytes - result.output.size();
+                const std::size_t take = std::min(remaining, chunk_size);
+                result.output.append(buffer.data(), take);
 
-            if (chunk.size() > remaining) {
+                if (chunk_size > take) {
+                    output_truncated = true;
+                }
+            } else {
                 output_truncated = true;
             }
-        } else {
-            output_truncated = true;
+
+            continue;
         }
+
+        if (n == 0) {
+            break;
+        }
+
+        if (errno == EINTR) {
+            continue;
+        }
+
+        result.output += std::string("\nread failed: ") + std::strerror(errno);
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+
+        result.exit_code = -1;
+        if (result.output.empty()) {
+            result.output = std::string("waitpid failed: ") + std::strerror(errno);
+        }
+        return result;
     }
 
     if (output_truncated) {
         result.output += "\n...[truncated at 65536 bytes]";
     }
 
-    const int status = pclose(pipe);
-
-    if (status == -1) {
-        result.exit_code = -1;
-        if (result.output.empty()) {
-            result.output = "pclose failed";
-        }
-    } else if (WIFEXITED(status)) {
+    if (WIFEXITED(status)) {
         result.exit_code = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
         result.exit_code = 128 + WTERMSIG(status);
@@ -111,7 +174,7 @@ std::string nodus_cli_serialization_scope(
     return scope.str();
 }
 
-std::string build_base_command(const NodusClientConfig& config, const NodusSeed& seed) {
+std::vector<std::string> build_base_argv(const NodusClientConfig& config, const NodusSeed& seed) {
     if (config.nodus_cli_path.empty()) {
         throw std::invalid_argument("nodus_cli_path is empty");
     }
@@ -122,20 +185,25 @@ std::string build_base_command(const NodusClientConfig& config, const NodusSeed&
         throw std::invalid_argument("Nodus seed client port is invalid");
     }
 
-    std::ostringstream cmd;
+    std::vector<std::string> argv;
+
     if (config.timeout_seconds > 0) {
-        cmd << "timeout " << config.timeout_seconds << " ";
+        argv.push_back("timeout");
+        argv.push_back(std::to_string(config.timeout_seconds));
     }
 
-    cmd << shell_quote_for_nodus_research(config.nodus_cli_path)
-        << " -s " << shell_quote_for_nodus_research(seed.host)
-        << " -p " << seed.client_port;
+    argv.push_back(config.nodus_cli_path);
+    argv.push_back("-s");
+    argv.push_back(seed.host);
+    argv.push_back("-p");
+    argv.push_back(std::to_string(seed.client_port));
 
     if (!config.identity_dir.empty()) {
-        cmd << " -i " << shell_quote_for_nodus_research(config.identity_dir);
+        argv.push_back("-i");
+        argv.push_back(config.identity_dir);
     }
 
-    return cmd.str();
+    return argv;
 }
 
 } // namespace
@@ -263,14 +331,12 @@ NodusCommandResult nodus_cli_put(
         throw std::invalid_argument("Nodus key is empty");
     }
 
-    std::ostringstream cmd;
-    cmd << build_base_command(config, seed)
-        << " put "
-        << shell_quote_for_nodus_research(key)
-        << " "
-        << shell_quote_for_nodus_research(value);
+    auto argv = build_base_argv(config, seed);
+    argv.push_back("put");
+    argv.push_back(key);
+    argv.push_back(value);
 
-    return run_command_capture(cmd.str(), nodus_cli_serialization_scope(config, seed));
+    return run_argv_capture(argv, nodus_cli_serialization_scope(config, seed));
 }
 
 NodusCommandResult nodus_cli_get(
@@ -282,12 +348,11 @@ NodusCommandResult nodus_cli_get(
         throw std::invalid_argument("Nodus key is empty");
     }
 
-    std::ostringstream cmd;
-    cmd << build_base_command(config, seed)
-        << " get "
-        << shell_quote_for_nodus_research(key);
+    auto argv = build_base_argv(config, seed);
+    argv.push_back("get");
+    argv.push_back(key);
 
-    return run_command_capture(cmd.str(), nodus_cli_serialization_scope(config, seed));
+    return run_argv_capture(argv, nodus_cli_serialization_scope(config, seed));
 }
 
 } // namespace pqnas::federation
