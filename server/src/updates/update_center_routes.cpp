@@ -1923,6 +1923,153 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
     });
 
+    srv.Post("/api/v4/admin/updates/apply", [deps](const httplib::Request& req, httplib::Response& res) {
+        if (!deps.require_admin(req, res)) return;
+        if (!deps.require_same_origin(req, res)) return;
+
+        std::string plan_id;
+
+        try {
+            const json body = json::parse(req.body.empty() ? "{}" : req.body);
+            plan_id = body.value("plan_id", "");
+        } catch (...) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_json"}
+            }.dump(2));
+            return;
+        }
+
+        if (plan_id.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "missing_plan_id"}
+            }.dump(2));
+            return;
+        }
+
+        if (plan_id.size() > 240 ||
+            plan_id.find('/') != std::string::npos ||
+            plan_id.find('\\') != std::string::npos ||
+            plan_id.find("..") != std::string::npos) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_plan_id"}
+            }.dump(2));
+            return;
+        }
+
+        for (char c : plan_id) {
+            const bool ok =
+                (c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '.' || c == '_' || c == '-';
+
+            if (!ok) {
+                deps.reply_json(res, 400, json{
+                    {"ok", false},
+                    {"error", "bad_plan_id_chars"}
+                }.dump(2));
+                return;
+            }
+        }
+
+        const std::string helper_enabled =
+            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_ENABLED") : "";
+        const std::string apply_enabled =
+            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_APPLY_ENABLED") : "";
+
+        if (!(helper_enabled == "1" ||
+              helper_enabled == "true" ||
+              helper_enabled == "TRUE" ||
+              helper_enabled == "yes" ||
+              helper_enabled == "YES")) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "update_helper_not_enabled"},
+                {"message", "Apply requires PQNAS_UPDATE_HELPER_ENABLED=1."},
+                {"helper_enabled", false},
+                {"apply_enabled", false},
+                {"install_performed", false}
+            }.dump(2));
+            return;
+        }
+
+        if (!(apply_enabled == "1" ||
+              apply_enabled == "true" ||
+              apply_enabled == "TRUE" ||
+              apply_enabled == "yes" ||
+              apply_enabled == "YES")) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "update_apply_not_enabled"},
+                {"message", "Apply is disabled. Set PQNAS_UPDATE_APPLY_ENABLED=1 to allow update apply."},
+                {"helper_enabled", true},
+                {"apply_enabled", false},
+                {"install_performed", false}
+            }.dump(2));
+            return;
+        }
+
+        std::string apply_helper_path =
+            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_APPLY_HELPER_PATH") : "";
+
+        if (apply_helper_path.empty()) {
+            apply_helper_path = "/usr/local/sbin/pqnas-update-apply";
+        }
+
+        const std::string cmd =
+            "timeout 120 sudo -n " +
+            update_shell_quote(apply_helper_path) +
+            " --plan-id " +
+            update_shell_quote(plan_id) +
+            " 2>&1";
+
+        int helper_status = -1;
+        const std::string helper_output =
+            update_run_command_limited(cmd, 8u * 1024u * 1024u, &helper_status);
+
+        json helper_json;
+        bool parsed_json = false;
+
+        try {
+            helper_json = json::parse(helper_output);
+            parsed_json = true;
+        } catch (...) {
+            parsed_json = false;
+        }
+
+        if (!parsed_json) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "helper_bad_output"},
+                {"helper_status", helper_status},
+                {"output", helper_output.substr(0, 12000)},
+                {"install_performed", false}
+            }.dump(2));
+            return;
+        }
+
+        int helper_exit_code = helper_status;
+        if (helper_status >= 0) {
+            if (WIFEXITED(helper_status)) {
+                helper_exit_code = WEXITSTATUS(helper_status);
+            } else if (helper_status % 256 == 0) {
+                helper_exit_code = helper_status / 256;
+            }
+        }
+
+        helper_json["helper_enabled"] = true;
+        helper_json["apply_enabled"] = true;
+        helper_json["helper_status"] = helper_status;
+        helper_json["helper_exit_code"] = helper_exit_code;
+
+        const bool ok = helper_json.value("ok", false);
+        deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
+    });
+
+
 
 
 

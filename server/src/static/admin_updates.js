@@ -612,3 +612,102 @@
 
     dryRunBtn.addEventListener("click", dryRunInstallPlan);
 })();
+
+// DNA-Nexus Update Center apply update v1
+(() => {
+    const applyBtn = document.getElementById("applyPlanBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!applyBtn || !statusEl) {
+        return;
+    }
+
+    function escHtml(s) {
+        return String(s ?? "").replace(/[&<>"]/g, c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+        }[c]));
+    }
+
+    function pickPlanIdFromStatus() {
+        const text = String(statusEl.textContent || "");
+        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
+        return m ? m[1] : "";
+    }
+
+    function renderApply(j) {
+        const ok = !!j.ok;
+
+        const head = [
+            ok ? "Apply OK." : "Apply failed.",
+            "",
+            `Plan ID: ${j.plan_id || ""}`,
+            `Plan hash: ${j.plan_hash || ""}`,
+            `Package SHA256: ${j.package_sha256 || ""}`,
+            `Package version: ${j.package_server_version || ""}`,
+            `Current server version: ${j.current_server_version || ""}`,
+            `Applicable actions: ${j.applicable_action_count || 0}`,
+            j.applied_action_count === undefined ? null : `Applied actions: ${j.applied_action_count}`,
+            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
+            `Apply enabled: ${j.apply_enabled ? "yes" : "no"}`,
+            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
+            `Install performed: ${j.install_performed ? "yes" : "no"}`,
+            j.restart_required === undefined ? null : `Restart required: ${j.restart_required ? "yes" : "no"}`,
+            j.backup_root ? `Backup root: ${j.backup_root}` : null,
+            j.manifest_path ? `Manifest: ${j.manifest_path}` : null,
+            j.error ? `Error: ${j.error}` : null,
+            j.message ? `Message: ${j.message}` : null,
+        ].filter(x => x !== null && x !== undefined).join("\n");
+
+        return `
+            <div class="planPreview">
+                <div class="planSummary">${escHtml(head)}</div>
+            </div>
+        `;
+    }
+
+    async function applyUpdatePlan() {
+        const planId = pickPlanIdFromStatus();
+        if (!planId) {
+            statusEl.textContent = "No saved install plan selected. Build install plan and dry-run it first.";
+            return;
+        }
+
+        const ok = window.confirm(
+            "Apply this update now?\n\n" +
+            "Plan ID:\n" + planId + "\n\n" +
+            "This may replace static files and the server binary. Continue?"
+        );
+
+        if (!ok) return;
+
+        try {
+            applyBtn.disabled = true;
+            statusEl.textContent = `Applying update for ${planId}…`;
+
+            const r = await fetch("/api/v4/admin/updates/apply", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ plan_id: planId }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!j) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            statusEl.innerHTML = renderApply(j);
+        } catch (e) {
+            statusEl.textContent = "Apply failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            applyBtn.disabled = false;
+        }
+    }
+
+    applyBtn.addEventListener("click", applyUpdatePlan);
+})();
