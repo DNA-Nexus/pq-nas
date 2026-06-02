@@ -47299,8 +47299,29 @@ srv.Post("/api/v4/admin/storage/tiering/migrate_one", [&](const httplib::Request
     };
 
     {
-        char tmpl[] = "/tmp/dna_gallery_export_XXXXXX";
-        char* made = ::mkdtemp(tmpl);
+        std::string tmp_root = getenv_str("PQNAS_TMP_DIR");
+        if (tmp_root.empty()) {
+            const std::string pqnas_root = getenv_str("PQNAS_ROOT");
+            tmp_root = pqnas_root.empty() ? "/srv/pqnas/tmp" : (pqnas_root + "/tmp");
+        }
+
+        std::error_code tmp_ec;
+        std::filesystem::create_directories(tmp_root, tmp_ec);
+        if (tmp_ec) {
+            audit_fail("tmp_dir_create_failed", 500, tmp_ec.message(), max_bytes, (std::uint64_t)paths_rel.size());
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "export staging failed"}
+            }.dump());
+            return;
+        }
+
+        std::string tmpl = (std::filesystem::path(tmp_root) / "dna_gallery_export_XXXXXX").string();
+        std::vector<char> tmpl_buf(tmpl.begin(), tmpl.end());
+        tmpl_buf.push_back('\0');
+
+        char* made = ::mkdtemp(tmpl_buf.data());
         if (!made) {
             audit_fail("mkdtemp_failed", 500, "mkdtemp()", max_bytes, (std::uint64_t)paths_rel.size());
             reply_json(res, 500, json{
