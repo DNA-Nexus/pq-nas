@@ -1,4 +1,60 @@
 // DNA-Nexus Update Center v1
+
+function updateCenterT(key, vars, fallback) {
+    const raw = String(key || "");
+    const fullKey = raw.startsWith("admin.") || raw.startsWith("common.")
+        ? raw
+        : `admin.updates.${raw}`;
+
+    try {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(fullKey, vars || null, fallback);
+        }
+    } catch (_) {}
+
+    return String(fallback ?? fullKey);
+}
+
+function updateCenterReady(fn) {
+    const ready = window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function"
+        ? window.PQNAS_I18N.ready()
+        : Promise.resolve();
+
+    ready.then(fn).catch(fn);
+}
+
+function updateCenterYesNo(v) {
+    return updateCenterT(v ? "value.yes" : "value.no", null, v ? "yes" : "no");
+}
+
+function updateCenterLabel(key, value, fallback) {
+    return `${updateCenterT(`label.${key}`, null, fallback)}: ${value}`;
+}
+
+function updateCenterPlanIdFromStatus(statusEl) {
+    const text = String((statusEl && statusEl.textContent) || "");
+    const fromDataset = String((statusEl && statusEl.dataset && statusEl.dataset.planId) || "").trim();
+
+    if (fromDataset && text.includes(fromDataset)) {
+        return fromDataset;
+    }
+
+    const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
+    return m ? m[1] : "";
+}
+
+function updateCenterRefreshTitle() {
+    document.title = updateCenterT(
+        "page.title",
+        null,
+        "DNA-Nexus NAS • Admin • Update Center"
+    );
+}
+
+updateCenterReady(updateCenterRefreshTitle);
+window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
+
 (() => {
     const latestUrl = "https://api.github.com/repos/DNA-Nexus/pq-nas/releases/latest";
 
@@ -59,18 +115,18 @@
         return String(body || "")
             .replace(/<img\b[^>]*>/gi, "")
             .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-            .trim() || "No release notes provided.";
+            .trim() || updateCenterT("status.no_release_notes", null, "No release notes provided.");
     }
 
     function fmtDate(s) {
         const d = new Date(s || "");
-        return Number.isFinite(d.getTime()) ? d.toLocaleString() : "unknown date";
+        return Number.isFinite(d.getTime()) ? d.toLocaleString() : updateCenterT("value.unknown_date", null, "unknown date");
     }
 
     async function checkRelease() {
         try {
-            setBadge(stateBadge, "warn", "checking…");
-            statusLine.textContent = "Checking GitHub releases…";
+            setBadge(stateBadge, "warn", updateCenterT("status.checking", null, "checking…"));
+            statusLine.textContent = updateCenterT("status.checking_releases", null, "Checking GitHub releases…");
             checkBtn.disabled = true;
             downloadBtn.disabled = true;
             openReleaseBtn.disabled = true;
@@ -88,23 +144,36 @@
             latestRelease = j;
             preferredAsset = chooseAsset(j.assets);
 
-            setBadge(stateBadge, "ok", "ready");
-            setBadge(releaseBadge, preferredAsset ? "warn" : "info", preferredAsset ? "core package found" : "no core package asset");
-            releaseLine.textContent = `${j.tag_name || j.name || "release"} • published ${fmtDate(j.published_at || j.created_at)}`;
+            setBadge(stateBadge, "ok", updateCenterT("status.ready", null, "ready"));
+            setBadge(
+                releaseBadge,
+                preferredAsset ? "warn" : "info",
+                preferredAsset
+                    ? updateCenterT("status.core_found", null, "core package found")
+                    : updateCenterT("status.no_core_asset", null, "no core package asset")
+            );
+
+            const releaseName = j.tag_name || j.name || "release";
+            const releaseDate = fmtDate(j.published_at || j.created_at);
+            releaseLine.textContent = updateCenterT(
+                "status.release_line",
+                { release: releaseName, date: releaseDate },
+                `${releaseName} • published ${releaseDate}`
+            );
             releaseBody.textContent = cleanReleaseBody(j.body);
 
             downloadBtn.disabled = !preferredAsset || !preferredAsset.browser_download_url;
             openReleaseBtn.disabled = !j.html_url;
 
             statusLine.textContent = preferredAsset
-                ? `Preferred package: ${preferredAsset.name}`
-                : "Release loaded, but no core/server update package asset was found.";
+                ? updateCenterT("status.preferred_package", { name: preferredAsset.name }, `Preferred package: ${preferredAsset.name}`)
+                : updateCenterT("status.no_core_found", null, "Release loaded, but no core/server update package asset was found.");
         } catch (e) {
-            setBadge(stateBadge, "err", "error");
-            setBadge(releaseBadge, "err", "check failed");
+            setBadge(stateBadge, "err", updateCenterT("status.error", null, "error"));
+            setBadge(releaseBadge, "err", updateCenterT("status.check_failed", null, "check failed"));
             statusLine.textContent = String(e && e.message ? e.message : e);
-            releaseLine.textContent = "Could not load GitHub release data.";
-            releaseBody.textContent = "Check network access from this browser/server environment.";
+            releaseLine.textContent = updateCenterT("status.release_load_failed", null, "Could not load GitHub release data.");
+            releaseBody.textContent = updateCenterT("status.network_hint", null, "Check network access from this browser/server environment.");
         } finally {
             checkBtn.disabled = false;
         }
@@ -124,9 +193,11 @@
         }
     });
 
-    setBadge(stateBadge, "warn", "loading…");
-    statusLine.textContent = "Auto-checking latest release…";
-    checkRelease();
+    updateCenterReady(() => {
+        setBadge(stateBadge, "warn", updateCenterT("common.loading", null, "loading…"));
+        statusLine.textContent = updateCenterT("status.auto_checking", null, "Auto-checking latest release…");
+        checkRelease();
+    });
 })();
 
 
@@ -160,7 +231,7 @@
 
     async function refreshUploadedPackages() {
         try {
-            statusEl.textContent = "Loading uploaded packages…";
+            statusEl.textContent = updateCenterT("upload.loading", null, "Loading uploaded packages…");
 
             const r = await fetch("/api/v4/admin/updates/status", {
                 credentials: "include",
@@ -174,28 +245,28 @@
 
             const items = Array.isArray(j.incoming) ? j.incoming : [];
             if (!items.length) {
-                statusEl.textContent = "No uploaded update packages staged on this server.";
+                statusEl.textContent = updateCenterT("upload.none_staged", null, "No uploaded update packages staged on this server.");
                 return;
             }
 
             statusEl.textContent = items
-                .map(it => `${it.name || "(unnamed)"} — ${fmtBytes(it.size)}`)
+                .map(it => `${it.name || updateCenterT("value.unnamed", null, "(unnamed)")} — ${fmtBytes(it.size)}`)
                 .join("\n");
         } catch (e) {
-            statusEl.textContent = "Failed to load uploaded packages: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("upload.load_failed", { error: String(e && e.message ? e.message : e) }, "Failed to load uploaded packages: {error}");
         }
     }
 
     async function uploadPackage() {
         const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
         if (!f) {
-            statusEl.textContent = "Choose a pqnas-*.tar.gz / .tgz / .zip / .dnxupd package first.";
+            statusEl.textContent = updateCenterT("upload.choose_first", null, "Choose a pqnas-*.tar.gz / .tgz / .zip / .dnxupd package first.");
             return;
         }
 
         try {
             uploadBtn.disabled = true;
-            statusEl.textContent = `Uploading ${f.name} (${fmtBytes(f.size)})…`;
+            statusEl.textContent = updateCenterT("upload.uploading", { name: f.name, size: fmtBytes(f.size) }, `Uploading ${f.name} (${fmtBytes(f.size)})…`);
 
             const r = await fetch("/api/v4/admin/updates/upload", {
                 method: "POST",
@@ -212,10 +283,10 @@
                 throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
             }
 
-            renderJson("Upload staged successfully. Nothing has been installed yet.", j);
+            renderJson(updateCenterT("upload.staged_ok", null, "Upload staged successfully. Nothing has been installed yet."), j);
             await refreshUploadedPackages();
         } catch (e) {
-            statusEl.textContent = "Upload failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("upload.failed", { error: String(e && e.message ? e.message : e) }, "Upload failed: {error}");
         } finally {
             uploadBtn.disabled = false;
         }
@@ -224,7 +295,7 @@
     uploadBtn.addEventListener("click", uploadPackage);
     refreshBtn.addEventListener("click", refreshUploadedPackages);
 
-    refreshUploadedPackages();
+    updateCenterReady(refreshUploadedPackages);
 })();
 
 
@@ -246,13 +317,13 @@
     async function verifyPackage() {
         const storedName = pickStoredNameFromStatus();
         if (!storedName) {
-            statusEl.textContent = "No staged package selected. Upload or refresh packages first.";
+            statusEl.textContent = updateCenterT("verify.no_staged", null, "No staged package selected. Upload or refresh packages first.");
             return;
         }
 
         try {
             verifyBtn.disabled = true;
-            statusEl.textContent = `Verifying ${storedName}…`;
+            statusEl.textContent = updateCenterT("verify.verifying", { name: storedName }, `Verifying ${storedName}…`);
 
             const r = await fetch("/api/v4/admin/updates/verify", {
                 method: "POST",
@@ -269,10 +340,12 @@
             }
 
             statusEl.textContent =
-                (j.ok ? "Verification OK. Nothing has been installed yet.\n" : "Verification failed.\n") +
+                (j.ok
+                    ? updateCenterT("verify.ok", null, "Verification OK. Nothing has been installed yet.") + "\n"
+                    : updateCenterT("verify.failed", null, "Verification failed.") + "\n") +
                 JSON.stringify(j, null, 2);
         } catch (e) {
-            statusEl.textContent = "Verification failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("verify.failed_with_error", { error: String(e && e.message ? e.message : e) }, "Verification failed: {error}");
         } finally {
             verifyBtn.disabled = false;
         }
@@ -335,18 +408,18 @@
         const first = actions.slice(0, 180);
 
         const summary = [
-            "Install plan built. Nothing has been installed yet.",
+            updateCenterT("plan.built", null, "Install plan built. Nothing has been installed yet."),
             "",
-            `Package: ${j.stored_name || ""}`,
-            `Plan ID: ${j.plan_id || ""}`,
-            `Plan hash: ${j.plan_hash || ""}`,
-            `Package SHA256: ${j.package_sha256 || ""}`,
-            `Package version: ${j.package_server_version || ""}`,
-            `Current server version: ${j.current_server_version || ""}`,
-            `Entries: ${j.entry_count || 0}`,
-            `Planned updates: ${j.planned_updates || 0}`,
-            `Skipped: ${j.skipped || 0}`,
-            `Core binary action: ${j.has_core_binary_action ? "yes" : "no"}`,
+            updateCenterLabel("package", j.stored_name || "", "Package"),
+            updateCenterLabel("plan_id", j.plan_id || "", "Plan ID"),
+            updateCenterLabel("plan_hash", j.plan_hash || "", "Plan hash"),
+            updateCenterLabel("package_sha256", j.package_sha256 || "", "Package SHA256"),
+            updateCenterLabel("package_version", j.package_server_version || "", "Package version"),
+            updateCenterLabel("current_server_version", j.current_server_version || "", "Current server version"),
+            updateCenterLabel("entries", j.entry_count || 0, "Entries"),
+            updateCenterLabel("planned_updates", j.planned_updates || 0, "Planned updates"),
+            updateCenterLabel("skipped", j.skipped || 0, "Skipped"),
+            updateCenterLabel("core_binary_action", updateCenterYesNo(j.has_core_binary_action), "Core binary action"),
         ].filter(x => x !== null && x !== undefined).join("\n");
 
         const lines = first.map(a => {
@@ -358,7 +431,7 @@
         });
 
         if (actions.length > first.length) {
-            lines.push(`<div class="planLine other">${escHtml(`... ${actions.length - first.length} more actions not shown in UI preview`)}</div>`);
+            lines.push(`<div class="planLine other">${escHtml(updateCenterT("plan.more_actions", { count: actions.length - first.length }, "... {count} more actions not shown in UI preview"))}</div>`);
         }
 
         return `
@@ -372,13 +445,13 @@
     async function buildPlan() {
         const storedName = pickStoredNameFromStatus();
         if (!storedName) {
-            statusEl.textContent = "No staged package selected. Upload or refresh packages first.";
+            statusEl.textContent = updateCenterT("verify.no_staged", null, "No staged package selected. Upload or refresh packages first.");
             return;
         }
 
         try {
             planBtn.disabled = true;
-            statusEl.textContent = `Building install plan for ${storedName}…`;
+            statusEl.textContent = updateCenterT("plan.building", { name: storedName }, `Building install plan for ${storedName}…`);
 
             const r = await fetch("/api/v4/admin/updates/plan", {
                 method: "POST",
@@ -395,13 +468,14 @@
             }
 
             if (!r.ok || !j.ok) {
-                statusEl.textContent = "Plan failed.\n" + JSON.stringify(j, null, 2);
+                statusEl.textContent = updateCenterT("plan.failed", null, "Plan failed.") + "\n" + JSON.stringify(j, null, 2);
                 return;
             }
 
+            statusEl.dataset.planId = j.plan_id || "";
             statusEl.innerHTML = summarizePlan(j);
         } catch (e) {
-            statusEl.textContent = "Plan failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("plan.failed_with_error", { error: String(e && e.message ? e.message : e) }, "Plan failed: {error}");
         } finally {
             planBtn.disabled = false;
         }
@@ -430,9 +504,7 @@
     }
 
     function pickPlanIdFromStatus() {
-        const text = String(statusEl.textContent || "");
-        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
-        return m ? m[1] : "";
+        return updateCenterPlanIdFromStatus(statusEl);
     }
 
     function renderInstallValidation(j) {
@@ -441,17 +513,19 @@
         const actions = Array.isArray(j.applicable_actions) ? j.applicable_actions : [];
 
         const head = [
-            ok ? "Install validation OK. Nothing has been installed yet." : "Install validation failed. Nothing has been installed.",
+            ok
+                ? updateCenterT("install.ok", null, "Install validation OK. Nothing has been installed yet.")
+                : updateCenterT("install.failed", null, "Install validation failed. Nothing has been installed."),
             "",
-            `Plan ID: ${j.plan_id || ""}`,
-            `Plan hash: ${j.plan_hash || ""}`,
-            `Package SHA256: ${j.package_sha256 || ""}`,
-            `Package version: ${j.package_server_version || ""}`,
-            `Current server version: ${j.current_server_version || ""}`,
-            `Applicable actions: ${j.applicable_action_count || 0}`,
-            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
-            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
-        ].join("\n");
+            updateCenterLabel("plan_id", j.plan_id || "", "Plan ID"),
+            updateCenterLabel("plan_hash", j.plan_hash || "", "Plan hash"),
+            updateCenterLabel("package_sha256", j.package_sha256 || "", "Package SHA256"),
+            updateCenterLabel("package_version", j.package_server_version || "", "Package version"),
+            updateCenterLabel("current_server_version", j.current_server_version || "", "Current server version"),
+            updateCenterLabel("applicable_actions", j.applicable_action_count || 0, "Applicable actions"),
+            updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
+            j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
+        ].filter(x => x !== null && x !== undefined).join("\n");
 
         const errorHtml = errors.length
             ? `<div class="planActions">${errors.map(e => {
@@ -482,13 +556,13 @@
     async function validateInstallPlan() {
         const planId = pickPlanIdFromStatus();
         if (!planId) {
-            statusEl.textContent = "No saved install plan selected. Build install plan first.";
+            statusEl.textContent = updateCenterT("install.no_plan", null, "No saved install plan selected. Build install plan first.");
             return;
         }
 
         try {
             installBtn.disabled = true;
-            statusEl.textContent = `Validating install plan ${planId}…`;
+            statusEl.textContent = updateCenterT("install.validating", { planId }, `Validating install plan ${planId}…`);
 
             const r = await fetch("/api/v4/admin/updates/install", {
                 method: "POST",
@@ -504,9 +578,10 @@
                 throw new Error(`HTTP ${r.status}`);
             }
 
+            statusEl.dataset.planId = j.plan_id || planId;
             statusEl.innerHTML = renderInstallValidation(j);
         } catch (e) {
-            statusEl.textContent = "Install validation failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("install.failed_with_error", { error: String(e && e.message ? e.message : e) }, "Install validation failed: {error}");
         } finally {
             installBtn.disabled = false;
         }
@@ -535,9 +610,7 @@
     }
 
     function pickPlanIdFromStatus() {
-        const text = String(statusEl.textContent || "");
-        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
-        return m ? m[1] : "";
+        return updateCenterPlanIdFromStatus(statusEl);
     }
 
     function renderDryRun(j) {
@@ -545,25 +618,29 @@
         const ok = !!j.ok;
 
         const head = [
-            ok ? "Dry-run OK. No files were modified." : "Dry-run failed. No files were modified.",
+            ok
+                ? updateCenterT("dry.ok", null, "Dry-run OK. No files were modified.")
+                : updateCenterT("dry.failed", null, "Dry-run failed. No files were modified."),
             "",
-            `Plan ID: ${j.plan_id || ""}`,
-            `Plan hash: ${j.plan_hash || ""}`,
-            `Package SHA256: ${j.package_sha256 || ""}`,
-            `Package version: ${j.package_server_version || ""}`,
-            `Current server version: ${j.current_server_version || ""}`,
-            `Applicable actions: ${j.applicable_action_count || 0}`,
-            `Planned actions: ${j.planned_action_count || planned.length || 0}`,
-            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
-            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
-            `Install performed: ${j.install_performed ? "yes" : "no"}`,
-            j.error ? `Error: ${j.error}` : null,
-            j.message ? `Message: ${j.message}` : null,
+            updateCenterLabel("plan_id", j.plan_id || "", "Plan ID"),
+            updateCenterLabel("plan_hash", j.plan_hash || "", "Plan hash"),
+            updateCenterLabel("package_sha256", j.package_sha256 || "", "Package SHA256"),
+            updateCenterLabel("package_version", j.package_server_version || "", "Package version"),
+            updateCenterLabel("current_server_version", j.current_server_version || "", "Current server version"),
+            updateCenterLabel("applicable_actions", j.applicable_action_count || 0, "Applicable actions"),
+            updateCenterLabel("planned_actions", j.planned_action_count || planned.length || 0, "Planned actions"),
+            updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
+            j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
+            updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
+            j.error ? updateCenterLabel("error", j.error, "Error") : null,
+            j.message ? updateCenterLabel("message", j.message, "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
         const plannedHtml = planned.length
             ? `<div class="planActions">${planned.slice(0, 200).map(a => {
-                const replace = a.would_replace === false ? "same" : "replace";
+                const replace = a.would_replace === false
+                    ? updateCenterT("value.same", null, "same")
+                    : updateCenterT("value.replace", null, "replace");
                 const msg = `- [${a.type || ""}] ${a.source || ""} -> ${a.target || ""} (${replace})`;
                 return `<div class="planLine update">${escHtml(msg)}</div>`;
             }).join("")}</div>`
@@ -580,13 +657,13 @@
     async function dryRunInstallPlan() {
         const planId = pickPlanIdFromStatus();
         if (!planId) {
-            statusEl.textContent = "No saved install plan selected. Build install plan first.";
+            statusEl.textContent = updateCenterT("install.no_plan", null, "No saved install plan selected. Build install plan first.");
             return;
         }
 
         try {
             dryRunBtn.disabled = true;
-            statusEl.textContent = `Running update dry-run for ${planId}…`;
+            statusEl.textContent = updateCenterT("dry.running", { planId }, `Running update dry-run for ${planId}…`);
 
             const r = await fetch("/api/v4/admin/updates/dry-run", {
                 method: "POST",
@@ -602,9 +679,10 @@
                 throw new Error(`HTTP ${r.status}`);
             }
 
+            statusEl.dataset.planId = j.plan_id || planId;
             statusEl.innerHTML = renderDryRun(j);
         } catch (e) {
-            statusEl.textContent = "Dry-run failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("dry.failed_with_error", { error: String(e && e.message ? e.message : e) }, "Dry-run failed: {error}");
         } finally {
             dryRunBtn.disabled = false;
         }
@@ -632,33 +710,33 @@
     }
 
     function pickPlanIdFromStatus() {
-        const text = String(statusEl.textContent || "");
-        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
-        return m ? m[1] : "";
+        return updateCenterPlanIdFromStatus(statusEl);
     }
 
     function renderApply(j) {
         const ok = !!j.ok;
 
         const head = [
-            ok ? "Apply OK." : "Apply failed.",
+            ok
+                ? updateCenterT("apply.ok", null, "Apply OK.")
+                : updateCenterT("apply.failed", null, "Apply failed."),
             "",
-            `Plan ID: ${j.plan_id || ""}`,
-            `Plan hash: ${j.plan_hash || ""}`,
-            `Package SHA256: ${j.package_sha256 || ""}`,
-            `Package version: ${j.package_server_version || ""}`,
-            `Current server version: ${j.current_server_version || ""}`,
-            `Applicable actions: ${j.applicable_action_count || 0}`,
-            j.applied_action_count === undefined ? null : `Applied actions: ${j.applied_action_count}`,
-            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
-            `Apply enabled: ${j.apply_enabled ? "yes" : "no"}`,
-            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
-            `Install performed: ${j.install_performed ? "yes" : "no"}`,
-            j.restart_required === undefined ? null : `Restart required: ${j.restart_required ? "yes" : "no"}`,
-            j.backup_root ? `Backup root: ${j.backup_root}` : null,
-            j.manifest_path ? `Manifest: ${j.manifest_path}` : null,
-            j.error ? `Error: ${j.error}` : null,
-            j.message ? `Message: ${j.message}` : null,
+            updateCenterLabel("plan_id", j.plan_id || "", "Plan ID"),
+            updateCenterLabel("plan_hash", j.plan_hash || "", "Plan hash"),
+            updateCenterLabel("package_sha256", j.package_sha256 || "", "Package SHA256"),
+            updateCenterLabel("package_version", j.package_server_version || "", "Package version"),
+            updateCenterLabel("current_server_version", j.current_server_version || "", "Current server version"),
+            updateCenterLabel("applicable_actions", j.applicable_action_count || 0, "Applicable actions"),
+            j.applied_action_count === undefined ? null : updateCenterLabel("applied_actions", j.applied_action_count, "Applied actions"),
+            updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
+            updateCenterLabel("apply_enabled", updateCenterYesNo(j.apply_enabled), "Apply enabled"),
+            j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
+            updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
+            j.restart_required === undefined ? null : updateCenterLabel("restart_required", updateCenterYesNo(j.restart_required), "Restart required"),
+            j.backup_root ? updateCenterLabel("backup_root", j.backup_root, "Backup root") : null,
+            j.manifest_path ? updateCenterLabel("manifest", j.manifest_path, "Manifest") : null,
+            j.error ? updateCenterLabel("error", j.error, "Error") : null,
+            j.message ? updateCenterLabel("message", j.message, "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
         return `
@@ -720,9 +798,9 @@
                         font-size: 22px;
                     ">⚠️</div>
                     <div>
-                        <div style="font-size: 19px; font-weight: 800;">Apply update?</div>
+                        <div style="font-size: 19px; font-weight: 800;">${escHtml(updateCenterT("modal.title", null, "Apply update?"))}</div>
                         <div style="font-size: 13px; opacity: 0.72; margin-top: 2px;">
-                            This action may replace static files and the server binary.
+                            ${escHtml(updateCenterT("modal.subtitle", null, "This action may replace static files and the server binary."))}
                         </div>
                     </div>
                 </div>
@@ -735,7 +813,7 @@
                         font-weight: 700;
                         text-transform: uppercase;
                         letter-spacing: 0.04em;
-                    ">Plan ID</div>
+                    ">${escHtml(updateCenterT("modal.plan_id", null, "Plan ID"))}</div>
                     <div style="
                         padding: 12px 14px;
                         border-radius: 12px;
@@ -762,8 +840,7 @@
                         font-size: 14px;
                         line-height: 1.45;
                     ">
-                        Continue only if dry-run succeeded and the plan looks correct.
-                        The update helper will still validate the immutable plan before applying anything.
+                        ${escHtml(updateCenterT("modal.warning", null, "Continue only if dry-run succeeded and the plan looks correct. The update helper will still validate the immutable plan before applying anything."))}
                     </div>
                 </div>
 
@@ -781,7 +858,7 @@
                         padding: 10px 18px;
                         cursor: pointer;
                         font-weight: 700;
-                    ">Cancel</button>
+                    ">${escHtml(updateCenterT("modal.cancel", null, "Cancel"))}</button>
                     <button type="button" class="updateApplyConfirm" style="
                         border: 1px solid rgba(255, 80, 80, 0.7);
                         background: linear-gradient(180deg, #ff5d5d, #d82929);
@@ -791,7 +868,7 @@
                         cursor: pointer;
                         font-weight: 800;
                         box-shadow: 0 10px 24px rgba(216, 41, 41, 0.28);
-                    ">Apply update</button>
+                    ">${escHtml(updateCenterT("modal.confirm", null, "Apply update"))}</button>
                 </div>
             `;
 
@@ -830,7 +907,7 @@
     async function applyUpdatePlan() {
         const planId = pickPlanIdFromStatus();
         if (!planId) {
-            statusEl.textContent = "No saved install plan selected. Build install plan and dry-run it first.";
+            statusEl.textContent = updateCenterT("apply.no_plan", null, "No saved install plan selected. Build install plan and dry-run it first.");
             return;
         }
 
@@ -839,7 +916,7 @@
 
         try {
             applyBtn.disabled = true;
-            statusEl.textContent = `Applying update for ${planId}…`;
+            statusEl.textContent = updateCenterT("apply.applying", { planId }, `Applying update for ${planId}…`);
 
             const r = await fetch("/api/v4/admin/updates/apply", {
                 method: "POST",
@@ -855,9 +932,10 @@
                 throw new Error(`HTTP ${r.status}`);
             }
 
+            statusEl.dataset.planId = j.plan_id || planId;
             statusEl.innerHTML = renderApply(j);
         } catch (e) {
-            statusEl.textContent = "Apply failed: " + String(e && e.message ? e.message : e);
+            statusEl.textContent = updateCenterT("apply.failed_with_error", { error: String(e && e.message ? e.message : e) }, "Apply failed: {error}");
         } finally {
             applyBtn.disabled = false;
         }

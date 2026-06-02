@@ -3007,7 +3007,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     // show version once (don’t stomp useful status text every refresh)
                     if (!versionShown && statusLine) {
-                        statusLine.textContent = "DNA-Nexus v1.1.4";
+                        statusLine.textContent = "DNA-Nexus v1.1.5";
                         versionShown = true;
                     }
 
