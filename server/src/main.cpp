@@ -44526,7 +44526,7 @@ srv.Post("/api/v4/shares/pq/enroll", [&](const httplib::Request& req, httplib::R
     }
 
     res.set_header("Set-Cookie",
-        ("pqnas_share_recipient=" + sess.session_id + "; Path=/; HttpOnly; Secure; SameSite=Lax").c_str());
+        ("pqnas_share_recipient=" + sess.session_id + "; Path=/; HttpOnly; Secure; SameSite=Strict").c_str());
 
     reply(200, json{
         {"ok", true},
