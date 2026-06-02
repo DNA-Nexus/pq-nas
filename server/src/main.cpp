@@ -44296,24 +44296,17 @@ srv.Post("/api/v4/apps/uninstall", [&](const httplib::Request& req, httplib::Res
         }
         if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
 
+        res.set_header("Cache-Control", "no-store");
+
         json out;
         out["ok"] = true;
         out["count"] = 0;
-        out["items"] = json::array();
-
-        long now = pqnas::now_epoch();
+        out["items_redacted"] = true;
+        out["message"] = "Auth debug approval TTL details are redacted.";
 
         {
             std::lock_guard<std::mutex> lk(g_approvals_mu);
             out["count"] = (int)g_approvals.size();
-            for (const auto& kv : g_approvals) {
-                const auto& e = kv.second;
-                out["items"].push_back({
-                    {"expires_at", e.expires_at},
-                    {"now", now},
-                    {"ttl_left", (e.expires_at > now) ? (e.expires_at - now) : 0}
-                });
-            }
         }
 
         reply_json(res, 200, out.dump());
