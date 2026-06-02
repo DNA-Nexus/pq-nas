@@ -280,6 +280,8 @@ bool parse_remote_feed_fields_from_event(
 static constexpr const char* kCircleStackDbPathForWorkerReducer =
     "/srv/pqnas/circlestack.db";
 
+static constexpr int kMaxFederatedPostReactionsPerLocalPost = 1000;
+
 bool worker_supported_reaction_for_local_reduce(const std::string& reaction) {
     return reaction == "👍" ||
            reaction == "❤️" ||
@@ -342,6 +344,47 @@ bool worker_ensure_federated_post_reactions_table(sqlite3* db, std::string* err)
     }
 
     if (msg) sqlite3_free(msg);
+    return true;
+}
+
+bool worker_prune_federated_post_reactions_for_local_post(
+    sqlite3* db,
+    long long local_post_id,
+    std::string* err
+) {
+    sqlite3_stmt* st = nullptr;
+
+    const char* sql =
+        "DELETE FROM federated_post_reactions "
+        "WHERE local_post_id = ? "
+        "AND id NOT IN ("
+        "  SELECT id FROM federated_post_reactions "
+        "  WHERE local_post_id = ? "
+        "  ORDER BY created_epoch DESC, id DESC "
+        "  LIMIT ?"
+        ");";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    sqlite3_bind_int64(st, 1, (sqlite3_int64)local_post_id);
+    sqlite3_bind_int64(st, 2, (sqlite3_int64)local_post_id);
+    sqlite3_bind_int(st, 3, kMaxFederatedPostReactionsPerLocalPost);
+
+    if (sqlite3_step(st) != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(st);
+        return false;
+    }
+
+    sqlite3_finalize(st);
+
+    if (!worker_prune_federated_post_reactions_for_local_post(db, local_post_id, err)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -489,6 +532,11 @@ bool worker_apply_federated_post_reaction_created(
     }
 
     sqlite3_finalize(st);
+
+    if (!worker_prune_federated_post_reactions_for_local_post(db, local_post_id, err)) {
+        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        return false;
+    }
 
     if (sqlite3_exec(db, "COMMIT", nullptr, nullptr, &msg) != SQLITE_OK) {
         if (err) *err = msg ? msg : sqlite3_errmsg(db);
