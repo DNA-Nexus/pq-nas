@@ -36,7 +36,6 @@ SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PRIVATE )?PRIVATE KEY-----"),
     re.compile(r"\bPQNAS_SERVER_SK_B64URL\s*="),
     re.compile(r"\bPQNAS_COOKIE_KEY_B64URL\s*="),
-    re.compile(r"\bPQNAS_UPDATE_APPLY_ENABLED\s*=\s*1\b"),
     re.compile(r"\bAWS_SECRET_ACCESS_KEY\s*="),
     re.compile(r"\bGITHUB_TOKEN\s*="),
     re.compile(r"\bOPENAI_API_KEY\s*="),
