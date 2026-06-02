@@ -200,6 +200,32 @@ def validate_target_for_dry_run(action: dict) -> Path:
     raise RuntimeError(f"unsupported dry-run action type: {typ}")
 
 
+
+
+def strip_known_archive_suffix(name: str) -> str:
+    low = name.lower()
+    if low.endswith(".tar.gz"):
+        return name[:-7]
+    if low.endswith(".tgz"):
+        return name[:-4]
+    if low.endswith(".zip"):
+        return name[:-4]
+    if low.endswith(".dnxupd"):
+        return name[:-7]
+    return name
+
+
+def bundled_app_package_version_from_source(source: str, app_id: str) -> str:
+    base = strip_known_archive_suffix(Path(str(source)).name)
+    low_base = base.lower()
+    low_app = str(app_id).lower()
+
+    for prefix in (low_app + "-", low_app + "_"):
+        if low_base.startswith(prefix):
+            return base[len(app_id) + 1:]
+
+    return ""
+
 def list_installed_app_versions(app_root: Path) -> list[str]:
     if not app_root.exists() or not app_root.is_dir():
         return []
@@ -467,8 +493,23 @@ def run_dry_run(plan: dict,
             }
 
             if typ == "bundled_app_package":
-                item["target_kind"] = "installed_app_root"
+                app_id = str(a.get("app_id", "")).strip()
+                package_version = bundled_app_package_version_from_source(str(a.get("source", "")), app_id)
+                if not package_version:
+                    raise RuntimeError(f"could not determine bundled app package version for {a.get('source', '')}")
+
+                target_version_dir = (target / package_version).resolve()
+                if not str(target_version_dir).startswith(str(target) + os.sep):
+                    raise RuntimeError(f"bundled app version target escaped app root: {target_version_dir}")
+
+                item["target_kind"] = "installed_app_version_dir"
+                item["package_version"] = package_version
+                item["target_app_root"] = str(target)
+                item["target_version_dir"] = str(target_version_dir)
                 item["installed_versions"] = list_installed_app_versions(target)
+                item["target_exists"] = target_version_dir.exists()
+                item["would_create_version"] = not target_version_dir.exists()
+                item["would_replace_existing_version"] = target_version_dir.exists()
                 item["would_replace"] = True
             elif target.exists() and target.is_file():
                 item["target_kind"] = "file"
