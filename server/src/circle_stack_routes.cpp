@@ -32,6 +32,9 @@ namespace {
 static sqlite3* g_db = nullptr;
 static constexpr const char* kCircleStackDbPath = "/srv/pqnas/circlestack.db";
 
+static constexpr std::size_t kMaxCircleStackPostTextBytes = 12000;
+static constexpr std::size_t kMaxCircleStackReplyTextBytes = 6000;
+
 
 class CsPreviewGenerationSlot {
 public:
@@ -5537,6 +5540,16 @@ if (text.empty() && media_path.empty()) {
                 return;
             }
 
+            if (text.size() > kMaxCircleStackPostTextBytes) {
+                res.status = 413;
+                set_json(res, {
+                    {"ok", false},
+                    {"error", "post_text_too_large"},
+                    {"max_bytes", kMaxCircleStackPostTextBytes}
+                });
+                return;
+            }
+
             const auto created_epoch = static_cast<long long>(std::time(nullptr));
 
             cs_db_init();
@@ -5673,6 +5686,15 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             if (text.empty() && media_path.empty()) {
                 res.status = 400;
                 return set_json(res, {{"ok", false}, {"error", "empty_reply"}});
+            }
+
+            if (text.size() > kMaxCircleStackReplyTextBytes) {
+                res.status = 413;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "reply_text_too_large"},
+                    {"max_bytes", kMaxCircleStackReplyTextBytes}
+                });
             }
 
             if (!media_path.empty()) {
@@ -6098,6 +6120,15 @@ sqlite3_bind_text(stmt, 5, visibility.c_str(), -1, SQLITE_TRANSIENT);
             if (text.empty() && media_path.empty()) {
                 res.status = 400;
                 return set_json(res, {{"ok", false}, {"error", "empty_reply"}});
+            }
+
+            if (text.size() > kMaxCircleStackReplyTextBytes) {
+                res.status = 413;
+                return set_json(res, {
+                    {"ok", false},
+                    {"error", "reply_text_too_large"},
+                    {"max_bytes", kMaxCircleStackReplyTextBytes}
+                });
             }
 
             if (!media_path.empty()) {
