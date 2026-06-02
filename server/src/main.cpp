@@ -11221,6 +11221,22 @@ v5.app_pair_build_qr_uri =
             [&](const httplib::Request& req, httplib::Response& res) -> bool {
                 return require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist);
             };
+        update_center_deps.require_admin_actor =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        update_center_deps.audit_emit =
+            [&](const std::string& event,
+                const std::string& outcome,
+                const std::map<std::string, std::string>& fields) {
+                if (!v5.audit_emit) return;
+
+                v5.audit_emit(event, outcome, [&](std::map<std::string, std::string>& f) {
+                    for (const auto& kv : fields) {
+                        f[kv.first] = kv.second;
+                    }
+                });
+            };
         update_center_deps.require_same_origin = require_same_origin_for_cookie_mutation;
 
         pqnas::updates::register_update_center_routes(srv, update_center_deps);

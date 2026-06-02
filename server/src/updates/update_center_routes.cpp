@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <ios>
 #include <fstream>
+#include <map>
 
 #include <string>
 #include <system_error>
@@ -29,6 +30,124 @@ std::string update_lower(std::string s) {
     }
     return s;
 }
+
+
+std::string update_audit_trunc(std::string s, std::size_t max_len = 300) {
+    for (char& c : s) {
+        if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    }
+
+    if (s.size() > max_len) {
+        s.resize(max_len);
+        s += "...";
+    }
+
+    return s;
+}
+
+std::string update_audit_json_scalar_to_string(const json& v) {
+    if (v.is_string()) return update_audit_trunc(v.get<std::string>());
+    if (v.is_boolean()) return v.get<bool>() ? "true" : "false";
+    if (v.is_number_integer()) return std::to_string(v.get<long long>());
+    if (v.is_number_unsigned()) return std::to_string(v.get<unsigned long long>());
+    if (v.is_number_float()) return std::to_string(v.get<double>());
+    return "";
+}
+
+void update_audit_add_json_field(std::map<std::string, std::string>& fields,
+                                 const json& obj,
+                                 const std::string& key) {
+    if (!obj.is_object() || !obj.contains(key)) return;
+
+    const std::string value = update_audit_json_scalar_to_string(obj.at(key));
+    if (!value.empty()) fields[key] = value;
+}
+
+std::map<std::string, std::string> update_audit_fields_from_json(const json& obj) {
+    std::map<std::string, std::string> fields;
+
+    // Allow-list only. Do not copy helper output, tar listings, command lines,
+    // environment values, action arrays, cookies, tokens, device ids, or secrets.
+    static const std::vector<std::string> allowed = {
+        "status",
+        "error",
+        "message",
+        "original_name",
+        "stored_name",
+        "size",
+        "sha256",
+        "package_sha256",
+        "package_size",
+        "package_server_version",
+        "current_server_version",
+        "server_package_is_newer",
+        "entry_count",
+        "planned_updates",
+        "skipped",
+        "has_core_binary_action",
+        "plan_id",
+        "plan_hash",
+        "plan_saved",
+        "applicable_action_count",
+        "planned_action_count",
+        "applied_action_count",
+        "helper_enabled",
+        "apply_enabled",
+        "helper_exit_code",
+        "install_performed",
+        "restart_required"
+    };
+
+    for (const std::string& key : allowed) {
+        update_audit_add_json_field(fields, obj, key);
+    }
+
+    return fields;
+}
+
+void update_audit_emit_local(const UpdateCenterRoutesDeps& deps,
+                             const std::string& event,
+                             const std::string& outcome,
+                             const std::string& actor_fp,
+                             const json& payload = json::object(),
+                             std::map<std::string, std::string> extra = {}) {
+    if (!deps.audit_emit) return;
+
+    std::map<std::string, std::string> fields = update_audit_fields_from_json(payload);
+
+    for (auto& kv : extra) {
+        if (!kv.first.empty() && !kv.second.empty()) {
+            fields[kv.first] = update_audit_trunc(kv.second);
+        }
+    }
+
+    fields["component"] = "update_center";
+    if (!actor_fp.empty()) {
+        fields["fingerprint"] = actor_fp;
+    }
+
+    deps.audit_emit(event, outcome, fields);
+}
+
+bool update_require_admin_actor_local(const UpdateCenterRoutesDeps& deps,
+                                      const httplib::Request& req,
+                                      httplib::Response& res,
+                                      std::string* actor_fp) {
+    if (actor_fp) actor_fp->clear();
+
+    if (deps.require_admin_actor) {
+        return deps.require_admin_actor(req, res, actor_fp);
+    }
+
+    if (deps.require_admin) {
+        return deps.require_admin(req, res);
+    }
+
+    res.status = 500;
+    res.body = "Update Center admin guard is not configured.";
+    return false;
+}
+
 
 bool update_starts_with(const std::string& s, const std::string& prefix) {
     return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
@@ -743,7 +862,8 @@ std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
 
 void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoutesDeps& deps) {
     srv.Get("/admin/updates", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
 
         std::string body;
         if (!deps.read_file_to_string(deps.static_admin_updates_html, body)) {
@@ -757,7 +877,8 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
     });
 
     srv.Get("/api/v4/admin/updates/status", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
 
         std::error_code ec;
         const std::filesystem::path incoming = update_incoming_dir(deps);
@@ -804,7 +925,8 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
     });
 
     srv.Post("/api/v4/admin/updates/upload", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         constexpr std::size_t kMaxUpdatePackageBytes = 512ull * 1024ull * 1024ull;
@@ -921,11 +1043,13 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             }
         }
 
+        update_audit_emit_local(deps, "update_center.upload_ok", "ok", actor_fp, meta);
         deps.reply_json(res, 200, meta.dump(2));
     });
 
     srv.Post("/api/v4/admin/updates/verify", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         std::string stored_name;
@@ -1083,7 +1207,7 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
 
         const bool safe = unsafe.empty();
 
-        deps.reply_json(res, safe ? 200 : 400, json{
+        json out = json{
             {"ok", safe},
             {"status", safe ? "verified" : "unsafe"},
             {"stored_name", stored_name},
@@ -1094,11 +1218,22 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             {"unsafe_entries", unsafe},
             {"warnings", warnings},
             {"sample_entries", sample}
-        }.dump(2));
+        };
+
+        update_audit_emit_local(
+            deps,
+            safe ? "update_center.verify_ok" : "update_center.verify_fail",
+            safe ? "ok" : "fail",
+            actor_fp,
+            out
+        );
+
+        deps.reply_json(res, safe ? 200 : 400, out.dump(2));
     });
 
     srv.Post("/api/v4/admin/updates/plan", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         std::string stored_name;
@@ -1257,11 +1392,13 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         plan["plan_saved"] = true;
         plan["plan_path"] = final_plan_path.string();
 
+        update_audit_emit_local(deps, "update_center.plan_ok", "ok", actor_fp, plan);
         deps.reply_json(res, 200, plan.dump(2));
     });
 
     srv.Post("/api/v4/admin/updates/install", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         std::string plan_id;
@@ -1383,6 +1520,13 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             helper_json["install_performed"] = false;
 
             const bool ok = helper_json.value("ok", false);
+            update_audit_emit_local(
+                deps,
+                ok ? "update_center.install_validate_ok" : "update_center.install_validate_fail",
+                ok ? "ok" : "fail",
+                actor_fp,
+                helper_json
+            );
             deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
             return;
         }
@@ -1796,7 +1940,8 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
     });
 
     srv.Post("/api/v4/admin/updates/dry-run", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         std::string plan_id;
@@ -1920,11 +2065,19 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         helper_json["install_performed"] = false;
 
         const bool ok = helper_json.value("ok", false);
+        update_audit_emit_local(
+            deps,
+            ok ? "update_center.dry_run_ok" : "update_center.dry_run_fail",
+            ok ? "ok" : "fail",
+            actor_fp,
+            helper_json
+        );
         deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
     });
 
     srv.Post("/api/v4/admin/updates/apply", [deps](const httplib::Request& req, httplib::Response& res) {
-        if (!deps.require_admin(req, res)) return;
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
         if (!deps.require_same_origin(req, res)) return;
 
         std::string plan_id;
@@ -2066,6 +2219,13 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         helper_json["helper_exit_code"] = helper_exit_code;
 
         const bool ok = helper_json.value("ok", false);
+        update_audit_emit_local(
+            deps,
+            ok ? "update_center.apply_ok" : "update_center.apply_fail",
+            ok ? "ok" : "fail",
+            actor_fp,
+            helper_json
+        );
         deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
     });
 
