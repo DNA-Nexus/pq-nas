@@ -254,6 +254,19 @@ def backup_target(target: Path, backup_root: Path, manifest_entry: dict) -> None
         manifest_entry["existed"] = False
 
 
+
+def set_installed_file_metadata(target: Path, typ: str) -> None:
+    if typ == "static_file":
+        shutil.chown(target, user="pqnas", group="pqnas")
+        target.chmod(0o644)
+        return
+
+    if typ == "core_binary":
+        shutil.chown(target, user="root", group="root")
+        target.chmod(0o755)
+        return
+
+
 def atomic_copy_file(src: Path, target: Path, executable: bool = False) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -625,6 +638,7 @@ def run_apply(plan: dict,
         "backup_root": str(backup_root),
         "targets": [],
         "applied": [],
+        "skipped_same": [],
     }
 
     try:
@@ -640,13 +654,22 @@ def run_apply(plan: dict,
             target = validate_target_for_apply(a)
             source = resolve_extracted_source(extract_dir, str(a.get("source", "")))
 
+            source_sha = sha256_file(source)
             entry = {
                 "type": a.get("type", ""),
                 "action": a.get("action", ""),
                 "source": str(a.get("source", "")),
                 "target": str(target),
-                "source_sha256": sha256_file(source),
+                "source_sha256": source_sha,
             }
+
+            if target.exists() and target.is_file():
+                target_sha = sha256_file(target)
+                entry["target_sha256"] = target_sha
+                if target_sha == source_sha:
+                    entry["skipped_same"] = True
+                    manifest["skipped_same"].append(entry)
+                    continue
 
             backup_target(target, backup_root, entry)
 
