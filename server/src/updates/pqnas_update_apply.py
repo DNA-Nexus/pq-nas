@@ -670,6 +670,7 @@ def run_apply(plan: dict,
             executable = typ == "core_binary"
 
             atomic_copy_file(src, target, executable=executable)
+            set_installed_file_metadata(target, typ)
 
             applied_entry = {
                 "type": typ,
@@ -698,6 +699,7 @@ def run_apply(plan: dict,
             current_server_version=plan.get("current_server_version", ""),
             applicable_action_count=len(applicable_actions),
             applied_action_count=len(manifest["applied"]),
+            skipped_same_count=len(manifest.get("skipped_same", [])),
             backup_root=str(backup_root),
             manifest_path=str(manifest_path),
         )
