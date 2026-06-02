@@ -343,6 +343,132 @@ def run_validation_only(plan: dict,
     )
 
 
+
+def run_dry_run(plan: dict,
+                plan_id: str,
+                package_path: Path,
+                actual_sha: str,
+                updates_root: Path,
+                applicable_actions: list[dict],
+                reject_actions: list[dict]) -> int:
+    if reject_actions:
+        return fail(
+            "reject_action_present",
+            "Plan contains reject actions; refusing dry-run.",
+            reject_action_count=len(reject_actions),
+            dry_run=True,
+            install_performed=False,
+        )
+
+    if not applicable_actions:
+        return fail(
+            "no_applicable_actions",
+            "Plan has no installable update actions.",
+            plan_id=plan_id,
+            plan_hash=plan.get("plan_hash", ""),
+            stored_name=plan.get("stored_name", ""),
+            package_sha256=actual_sha,
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
+            applicable_action_count=0,
+            dry_run=True,
+            install_performed=False,
+        )
+
+    unsupported = []
+    for a in applicable_actions:
+        typ = str(a.get("type", ""))
+        act = str(a.get("action", ""))
+
+        if typ not in ("static_file", "core_binary"):
+            unsupported.append({
+                "type": typ,
+                "action": act,
+                "source": a.get("source", ""),
+                "target": a.get("target", ""),
+                "reason": "Phase 5B dry-run supports only static_file and core_binary actions.",
+            })
+
+    if unsupported:
+        return fail(
+            "unsupported_dry_run_actions",
+            "Plan contains update actions not supported by Phase 5B dry-run.",
+            unsupported_actions=unsupported,
+            applicable_action_count=len(applicable_actions),
+            dry_run=True,
+            install_performed=False,
+        )
+
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    safe_plan_prefix = re.sub(r"[^A-Za-z0-9._-]", "_", plan_id[:32])
+    work_root = updates_root / "work" / f"dryrun_{ts}_{safe_plan_prefix}_{os.getpid()}"
+    extract_dir = work_root / "extract"
+
+    planned = []
+
+    try:
+        extract_dir.mkdir(parents=True, exist_ok=False)
+        safe_extract_tar(package_path, extract_dir)
+
+        for a in applicable_actions:
+            target = validate_target_for_apply(a)
+            source = resolve_extracted_source(extract_dir, str(a.get("source", "")))
+
+            item = {
+                "type": a.get("type", ""),
+                "action": a.get("action", ""),
+                "source": str(a.get("source", "")),
+                "target": str(target),
+                "source_path": str(source),
+                "source_sha256": sha256_file(source),
+                "target_exists": target.exists(),
+            }
+
+            if target.exists() and target.is_file():
+                item["target_sha256"] = sha256_file(target)
+                item["would_replace"] = item["source_sha256"] != item["target_sha256"]
+            else:
+                item["target_sha256"] = ""
+                item["would_replace"] = True
+
+            planned.append(item)
+
+        restart_required = any(str(a.get("type", "")) == "core_binary" for a in applicable_actions)
+
+        return ok(
+            validated=True,
+            dry_run=True,
+            validation_only=False,
+            install_performed=False,
+            restart_required=restart_required,
+            message="Dry-run succeeded. No files were modified.",
+            plan_id=plan_id,
+            plan_hash=plan.get("plan_hash", ""),
+            package_sha256=actual_sha,
+            stored_name=plan.get("stored_name", ""),
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
+            applicable_action_count=len(applicable_actions),
+            planned_action_count=len(planned),
+            planned_actions=planned,
+        )
+
+    except Exception as e:
+        return fail(
+            "dry_run_failed",
+            "Dry-run failed before modifying files. No files were installed.",
+            error_detail=str(e),
+            dry_run=True,
+            install_performed=False,
+        )
+
+    finally:
+        try:
+            if work_root.exists():
+                shutil.rmtree(work_root)
+        except Exception:
+            pass
+
 def run_apply(plan: dict,
               plan_id: str,
               package_path: Path,
@@ -534,6 +660,11 @@ def main() -> int:
         help="Validate the plan and package but do not install anything.",
     )
     mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Extract and validate supported update actions without modifying files.",
+    )
+    mode.add_argument(
         "--apply",
         action="store_true",
         help="Apply supported update actions. Phase 5A supports static_file and core_binary only.",
@@ -564,6 +695,17 @@ def main() -> int:
             reject_actions=reject_actions,
         )
 
+    if args.dry_run:
+        return run_dry_run(
+            plan=plan,
+            plan_id=plan_id,
+            package_path=package_path,
+            actual_sha=actual_sha,
+            updates_root=updates_root,
+            applicable_actions=applicable_actions,
+            reject_actions=reject_actions,
+        )
+
     if args.apply:
         return run_apply(
             plan=plan,
@@ -575,7 +717,7 @@ def main() -> int:
             reject_actions=reject_actions,
         )
 
-    return fail("bad_mode", "Expected --validation-only or --apply.")
+    return fail("bad_mode", "Expected --validation-only, --dry-run, or --apply.")
 
 
 if __name__ == "__main__":
