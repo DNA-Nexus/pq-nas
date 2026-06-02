@@ -668,6 +668,165 @@
         `;
     }
 
+    function showUpdateApplyConfirmModal(planId) {
+        return new Promise((resolve) => {
+            const existing = document.querySelector(".updateApplyModalOverlay");
+            if (existing) existing.remove();
+
+            const overlay = document.createElement("div");
+            overlay.className = "updateApplyModalOverlay";
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 99999;
+                background: rgba(0, 0, 0, 0.62);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                box-sizing: border-box;
+            `;
+
+            const modal = document.createElement("div");
+            modal.className = "updateApplyModal";
+            modal.style.cssText = `
+                width: min(620px, 96vw);
+                border-radius: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.20);
+                background: linear-gradient(180deg, rgba(32, 34, 38, 0.98), rgba(18, 20, 24, 0.98));
+                color: #f5f7fb;
+                box-shadow: 0 28px 80px rgba(0,0,0,0.55);
+                overflow: hidden;
+                font-family: inherit;
+            `;
+
+            modal.innerHTML = `
+                <div style="
+                    padding: 18px 22px;
+                    border-bottom: 1px solid rgba(255,255,255,0.12);
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                ">
+                    <div style="
+                        width: 42px;
+                        height: 42px;
+                        border-radius: 999px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(255, 176, 0, 0.16);
+                        border: 1px solid rgba(255, 176, 0, 0.45);
+                        font-size: 22px;
+                    ">⚠️</div>
+                    <div>
+                        <div style="font-size: 19px; font-weight: 800;">Apply update?</div>
+                        <div style="font-size: 13px; opacity: 0.72; margin-top: 2px;">
+                            This action may replace static files and the server binary.
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 20px 22px 8px 22px;">
+                    <div style="
+                        font-size: 13px;
+                        opacity: 0.72;
+                        margin-bottom: 7px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.04em;
+                    ">Plan ID</div>
+                    <div style="
+                        padding: 12px 14px;
+                        border-radius: 12px;
+                        background: rgba(255,255,255,0.07);
+                        border: 1px solid rgba(255,255,255,0.12);
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                        font-size: 13px;
+                        line-height: 1.45;
+                        word-break: break-all;
+                    ">${String(planId).replace(/[&<>"]/g, c => ({
+                        "&": "&amp;",
+                        "<": "&lt;",
+                        ">": "&gt;",
+                        "\"": "&quot;",
+                    }[c]))}</div>
+
+                    <div style="
+                        margin-top: 16px;
+                        padding: 13px 14px;
+                        border-radius: 12px;
+                        background: rgba(255, 70, 70, 0.12);
+                        border: 1px solid rgba(255, 90, 90, 0.34);
+                        color: #ffd7d7;
+                        font-size: 14px;
+                        line-height: 1.45;
+                    ">
+                        Continue only if dry-run succeeded and the plan looks correct.
+                        The update helper will still validate the immutable plan before applying anything.
+                    </div>
+                </div>
+
+                <div style="
+                    padding: 18px 22px 22px 22px;
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                ">
+                    <button type="button" class="updateApplyCancel" style="
+                        border: 1px solid rgba(255,255,255,0.22);
+                        background: rgba(255,255,255,0.08);
+                        color: #f5f7fb;
+                        border-radius: 999px;
+                        padding: 10px 18px;
+                        cursor: pointer;
+                        font-weight: 700;
+                    ">Cancel</button>
+                    <button type="button" class="updateApplyConfirm" style="
+                        border: 1px solid rgba(255, 80, 80, 0.7);
+                        background: linear-gradient(180deg, #ff5d5d, #d82929);
+                        color: white;
+                        border-radius: 999px;
+                        padding: 10px 18px;
+                        cursor: pointer;
+                        font-weight: 800;
+                        box-shadow: 0 10px 24px rgba(216, 41, 41, 0.28);
+                    ">Apply update</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            const cleanup = (value) => {
+                document.removeEventListener("keydown", onKey, true);
+                overlay.remove();
+                resolve(value);
+            };
+
+            const onKey = (ev) => {
+                if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    cleanup(false);
+                }
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    cleanup(true);
+                }
+            };
+
+            overlay.addEventListener("click", (ev) => {
+                if (ev.target === overlay) cleanup(false);
+            });
+
+            modal.querySelector(".updateApplyCancel")?.addEventListener("click", () => cleanup(false));
+            modal.querySelector(".updateApplyConfirm")?.addEventListener("click", () => cleanup(true));
+
+            document.addEventListener("keydown", onKey, true);
+            setTimeout(() => modal.querySelector(".updateApplyConfirm")?.focus(), 0);
+        });
+    }
+
     async function applyUpdatePlan() {
         const planId = pickPlanIdFromStatus();
         if (!planId) {
@@ -675,12 +834,7 @@
             return;
         }
 
-        const ok = window.confirm(
-            "Apply this update now?\n\n" +
-            "Plan ID:\n" + planId + "\n\n" +
-            "This may replace static files and the server binary. Continue?"
-        );
-
+        const ok = await showUpdateApplyConfirmModal(planId);
         if (!ok) return;
 
         try {
