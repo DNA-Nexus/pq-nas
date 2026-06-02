@@ -380,11 +380,6 @@ bool worker_prune_federated_post_reactions_for_local_post(
     }
 
     sqlite3_finalize(st);
-
-    if (!worker_prune_federated_post_reactions_for_local_post(db, local_post_id, err)) {
-        return false;
-    }
-
     return true;
 }
 
@@ -586,7 +581,7 @@ bool worker_apply_federated_post_reaction_removed(
     sqlite3_finalize(st);
 
     if (changed > 0) {
-        return true;
+        return worker_prune_federated_post_reactions_for_local_post(db, local_post_id, err);
     }
 
     if (sqlite3_prepare_v2(db,
@@ -614,6 +609,11 @@ bool worker_apply_federated_post_reaction_removed(
     }
 
     sqlite3_finalize(st);
+
+    if (!worker_prune_federated_post_reactions_for_local_post(db, local_post_id, err)) {
+        return false;
+    }
+
     return true;
 }
 
