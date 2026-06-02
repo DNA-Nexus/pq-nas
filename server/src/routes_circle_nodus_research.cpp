@@ -31,6 +31,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <vector>
 
 namespace pqnas {
@@ -263,23 +264,79 @@ std::string public_base_url_from_env() {
     return "";
 }
 
-std::string run_shell_capture_limited(const std::string& cmd, std::size_t max_len = 4096) {
-    std::array<char, 256> buf{};
-    std::string out;
+std::string run_argv_capture_limited(const std::vector<std::string>& argv, std::size_t max_len = 4096) {
+    if (argv.empty() || argv.front().empty()) return "";
 
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) return "";
 
-    while (fgets(buf.data(), static_cast<int>(buf.size()), pipe)) {
-        out += buf.data();
-        if (out.size() >= max_len) {
-            out.resize(max_len);
-            out += "\n...[truncated]";
-            break;
-        }
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        return "";
     }
 
-    pclose(pipe);
+    if (pid == 0) {
+        ::close(pipefd[0]);
+
+        if (::dup2(pipefd[1], STDOUT_FILENO) < 0 ||
+            ::dup2(pipefd[1], STDERR_FILENO) < 0) {
+            ::_exit(126);
+        }
+
+        ::close(pipefd[1]);
+
+        std::vector<char*> c_argv;
+        c_argv.reserve(argv.size() + 1);
+        for (const auto& arg : argv) {
+            c_argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        c_argv.push_back(nullptr);
+
+        ::execvp(c_argv[0], c_argv.data());
+        ::_exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::array<char, 256> buf{};
+    std::string out;
+    bool truncated = false;
+
+    for (;;) {
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            const std::size_t chunk_size = static_cast<std::size_t>(n);
+            if (out.size() < max_len) {
+                const std::size_t remaining = max_len - out.size();
+                const std::size_t take = std::min(remaining, chunk_size);
+                out.append(buf.data(), take);
+                if (chunk_size > take) truncated = true;
+            } else {
+                truncated = true;
+            }
+            continue;
+        }
+
+        if (n == 0) break;
+        if (errno == EINTR) continue;
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        break;
+    }
+
+    if (truncated) {
+        out.resize(max_len);
+        out += "\n...[truncated]";
+    }
+
     return trim_copy(out);
 }
 
@@ -298,12 +355,13 @@ std::string first_nonempty_line(const std::string& raw) {
 std::string nodus_cli_version_line(const federation::NodusClientConfig& config) {
     if (config.nodus_cli_path.empty()) return "";
 
-    const std::string cmd =
-        "timeout 3 " +
-        federation::shell_quote_for_nodus_research(config.nodus_cli_path) +
-        " 2>&1";
+    const std::vector<std::string> argv = {
+        "timeout",
+        "3",
+        config.nodus_cli_path
+    };
 
-    return first_nonempty_line(run_shell_capture_limited(cmd, 2048));
+    return first_nonempty_line(run_argv_capture_limited(argv, 2048));
 }
 
 
@@ -1324,14 +1382,16 @@ void register_circle_nodus_research_routes(
                 return;
             }
 
-            const std::string cmd =
-                "timeout " + std::to_string(config.timeout_seconds) + " " +
-                federation::shell_quote_for_nodus_research(config.nodus_cli_path) +
-                " -i " +
-                federation::shell_quote_for_nodus_research(config.identity_dir) +
-                " identity-init 2>&1";
+            const std::vector<std::string> argv = {
+                "timeout",
+                std::to_string(config.timeout_seconds),
+                config.nodus_cli_path,
+                "-i",
+                config.identity_dir,
+                "identity-init"
+            };
 
-            const std::string output = run_shell_capture_limited(cmd, 4096);
+            const std::string output = run_argv_capture_limited(argv, 4096);
             const std::string fp =
                 nodus_identity_fingerprint_from_dir(config.identity_dir);
 
