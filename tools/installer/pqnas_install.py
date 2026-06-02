@@ -1095,6 +1095,9 @@ def write_env_file(
     with open(env_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
+    os.chown(env_path, 0, 0)
+    os.chmod(env_path, 0o600)
+
 def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
     """
     Generate Ed25519 + cookie keys and write systemd-friendly EnvironmentFile.
