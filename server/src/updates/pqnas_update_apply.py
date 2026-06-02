@@ -18,6 +18,7 @@ PLAN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 STATIC_ROOT = Path("/opt/pqnas/static").resolve()
 CORE_BINARY = Path("/usr/local/bin/pqnas_server").resolve()
+APPS_INSTALLED_ROOT = Path(os.environ.get("PQNAS_APPS_INSTALLED_DIR", "/srv/pqnas/apps/installed")).resolve()
 
 
 def fail(code: str, message: str, http_like_status: int = 400, **extra) -> int:
@@ -170,6 +171,45 @@ def validate_target_for_apply(action: dict) -> Path:
         return target
 
     raise RuntimeError(f"unsupported apply action type: {typ}")
+
+
+
+
+def validate_target_for_dry_run(action: dict) -> Path:
+    typ = str(action.get("type", ""))
+
+    if typ in ("static_file", "core_binary"):
+        return validate_target_for_apply(action)
+
+    if typ == "bundled_app_package":
+        app_id = str(action.get("app_id", "")).strip()
+        target = Path(str(action.get("target", ""))).resolve()
+
+        if not app_id:
+            raise RuntimeError("bundled_app_package action is missing app_id")
+
+        if not str(target).startswith(str(APPS_INSTALLED_ROOT) + os.sep):
+            raise RuntimeError(f"bundled_app_package target outside installed apps root: {target}")
+
+        expected = (APPS_INSTALLED_ROOT / app_id).resolve()
+        if target != expected:
+            raise RuntimeError(f"bundled_app_package target mismatch: expected {expected}, got {target}")
+
+        return target
+
+    raise RuntimeError(f"unsupported dry-run action type: {typ}")
+
+
+def list_installed_app_versions(app_root: Path) -> list[str]:
+    if not app_root.exists() or not app_root.is_dir():
+        return []
+
+    versions = []
+    for child in app_root.iterdir():
+        if child.is_dir():
+            versions.append(child.name)
+
+    return sorted(versions)
 
 
 def backup_target(target: Path, backup_root: Path, manifest_entry: dict) -> None:
@@ -380,13 +420,13 @@ def run_dry_run(plan: dict,
         typ = str(a.get("type", ""))
         act = str(a.get("action", ""))
 
-        if typ not in ("static_file", "core_binary"):
+        if typ not in ("static_file", "core_binary", "bundled_app_package"):
             unsupported.append({
                 "type": typ,
                 "action": act,
                 "source": a.get("source", ""),
                 "target": a.get("target", ""),
-                "reason": "Phase 5B dry-run supports only static_file and core_binary actions.",
+                "reason": "Phase 5D dry-run supports static_file, core_binary, and bundled_app_package actions.",
             })
 
     if unsupported:
@@ -411,12 +451,14 @@ def run_dry_run(plan: dict,
         safe_extract_tar(package_path, extract_dir)
 
         for a in applicable_actions:
-            target = validate_target_for_apply(a)
+            target = validate_target_for_dry_run(a)
             source = resolve_extracted_source(extract_dir, str(a.get("source", "")))
+            typ = str(a.get("type", ""))
 
             item = {
                 "type": a.get("type", ""),
                 "action": a.get("action", ""),
+                "app_id": a.get("app_id", ""),
                 "source": str(a.get("source", "")),
                 "target": str(target),
                 "source_path": str(source),
@@ -424,10 +466,16 @@ def run_dry_run(plan: dict,
                 "target_exists": target.exists(),
             }
 
-            if target.exists() and target.is_file():
+            if typ == "bundled_app_package":
+                item["target_kind"] = "installed_app_root"
+                item["installed_versions"] = list_installed_app_versions(target)
+                item["would_replace"] = True
+            elif target.exists() and target.is_file():
+                item["target_kind"] = "file"
                 item["target_sha256"] = sha256_file(target)
                 item["would_replace"] = item["source_sha256"] != item["target_sha256"]
             else:
+                item["target_kind"] = "missing"
                 item["target_sha256"] = ""
                 item["would_replace"] = True
 
