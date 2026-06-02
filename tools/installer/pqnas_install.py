@@ -1353,8 +1353,17 @@ def write_systemd_unit(
         exec_path: str,
         env_file: str = "/etc/pqnas/pqnas.env",
         keys_file: str = "/etc/pqnas/keys.env",
+        storage_root: str = "/srv/pqnas",
 ) -> str:
     unit_path = "/etc/systemd/system/pqnas.service"
+
+    writable_paths = " ".join(dict.fromkeys([
+        "/etc/pqnas",
+        storage_root or "/srv/pqnas",
+        "/var/lib/pqnas",
+        "/usr/local/bin",
+        "/opt/pqnas",
+    ]))
 
     unit = f"""[Unit]
 Description=PQ-NAS Server
@@ -1370,6 +1379,14 @@ EnvironmentFile={keys_file}
 ExecStart={exec_path}
 Restart=on-failure
 RestartSec=2
+
+# Defense-in-depth hardening.
+# NoNewPrivileges is intentionally not enabled yet because pqnas_server
+# currently uses tightly scoped sudo helpers for smartctl and Update Center apply.
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths={writable_paths}
 
 [Install]
 WantedBy=multi-user.target
@@ -3160,7 +3177,7 @@ class ExecuteScreen(Screen):
             self.logw.write("Setting ownership for pqnas runtime paths …")
             ensure_pqnas_ownership(mp, log=self.logw)
 
-            unit_path = write_systemd_unit(server_exec, "/etc/pqnas/pqnas.env")
+            unit_path = write_systemd_unit(server_exec, "/etc/pqnas/pqnas.env", storage_root=mp)
             self.logw.write(f"Wrote unit: {unit_path}")
 
             self.logw.write("Reloading systemd…")
