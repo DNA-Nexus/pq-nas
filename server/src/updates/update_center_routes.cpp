@@ -667,85 +667,19 @@ std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
 
         if (update_starts_with(entry_low, "bundled/")) {
             const std::string app_id = update_plan_path_segment_after(entry, "bundled/");
-            const std::string package_version =
-                update_extract_app_package_version(entry, app_id);
-
-            if (!update_installed_app_exists(deps, app_id)) {
-                add_action(
-                    "bundled_app_package",
-                    "skip_not_installed",
-                    raw,
-                    "",
-                    "bundled app package is present in release but this app is not installed on this server",
-                    app_id
-                );
-                ++skipped;
-                bump_skip("bundled_app_package_not_installed");
-                continue;
-            }
-
-            const std::string installed_version =
-                update_latest_installed_app_version(deps, app_id);
-
-            if (package_version.empty()) {
-                add_action(
-                    "bundled_app_package",
-                    "skip_version_unknown",
-                    raw,
-                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
-                    "package app version could not be determined; refusing app update",
-                    app_id
-                );
-                ++skipped;
-                bump_skip("bundled_app_package_version_unknown");
-                continue;
-            }
-
-            if (installed_version.empty()) {
-                add_action(
-                    "bundled_app_package",
-                    "skip_installed_version_unknown",
-                    raw,
-                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
-                    "installed app version could not be determined; refusing app update to prevent downgrade",
-                    app_id
-                );
-                ++skipped;
-                bump_skip("bundled_app_package_installed_version_unknown");
-                continue;
-            }
-
-            const int app_cmp =
-                update_compare_versions(package_version, installed_version);
-
-            if (app_cmp <= 0) {
-                add_action(
-                    "bundled_app_package",
-                    "skip_version_not_newer",
-                    raw,
-                    (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
-                    "package app version " + package_version +
-                        " is not newer than installed version " + installed_version,
-                    app_id
-                );
-                ++skipped;
-                bump_skip("bundled_app_package_version_not_newer");
-                continue;
-            }
 
             add_action(
                 "bundled_app_package",
-                "update_existing_app_package",
+                "skip_managed_by_admin_apps",
                 raw,
-                (std::filesystem::path(deps.apps_installed_dir) / app_id).string(),
-                "bundled app update from " + installed_version + " to " + package_version,
+                "",
+                "bundled app packages are managed by Admin Apps; use /admin/apps to install or update apps",
                 app_id
             );
-            ++planned_updates;
+            ++skipped;
+            bump_skip("bundled_app_package_managed_by_admin_apps");
             continue;
-        }
-
-        if (update_starts_with(entry_low, "runtime/") ||
+        }if (update_starts_with(entry_low, "runtime/") ||
             update_starts_with(entry_low, "lib/")) {
             add_action(
                 "runtime_component",
