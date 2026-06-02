@@ -515,3 +515,100 @@
     installBtn.addEventListener("click", validateInstallPlan);
 })();
 
+
+// DNA-Nexus Update Center dry-run install v1
+(() => {
+    const dryRunBtn = document.getElementById("dryRunPlanBtn");
+    const statusEl = document.getElementById("manualUploadStatus");
+
+    if (!dryRunBtn || !statusEl) {
+        return;
+    }
+
+    function escHtml(s) {
+        return String(s ?? "").replace(/[&<>"]/g, c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+        }[c]));
+    }
+
+    function pickPlanIdFromStatus() {
+        const text = String(statusEl.textContent || "");
+        const m = text.match(/Plan ID:\s*([A-Za-z0-9._-]+)/);
+        return m ? m[1] : "";
+    }
+
+    function renderDryRun(j) {
+        const planned = Array.isArray(j.planned_actions) ? j.planned_actions : [];
+        const ok = !!j.ok;
+
+        const head = [
+            ok ? "Dry-run OK. No files were modified." : "Dry-run failed. No files were modified.",
+            "",
+            `Plan ID: ${j.plan_id || ""}`,
+            `Plan hash: ${j.plan_hash || ""}`,
+            `Package SHA256: ${j.package_sha256 || ""}`,
+            `Package version: ${j.package_server_version || ""}`,
+            `Current server version: ${j.current_server_version || ""}`,
+            `Applicable actions: ${j.applicable_action_count || 0}`,
+            `Planned actions: ${j.planned_action_count || planned.length || 0}`,
+            `Install helper enabled: ${j.helper_enabled ? "yes" : "no"}`,
+            j.helper_exit_code === undefined ? null : `Helper exit code: ${j.helper_exit_code}`,
+            `Install performed: ${j.install_performed ? "yes" : "no"}`,
+            j.error ? `Error: ${j.error}` : null,
+            j.message ? `Message: ${j.message}` : null,
+        ].filter(x => x !== null && x !== undefined).join("\n");
+
+        const plannedHtml = planned.length
+            ? `<div class="planActions">${planned.slice(0, 200).map(a => {
+                const replace = a.would_replace === false ? "same" : "replace";
+                const msg = `- [${a.type || ""}] ${a.source || ""} -> ${a.target || ""} (${replace})`;
+                return `<div class="planLine update">${escHtml(msg)}</div>`;
+            }).join("")}</div>`
+            : "";
+
+        return `
+            <div class="planPreview">
+                <div class="planSummary">${escHtml(head)}</div>
+                ${plannedHtml}
+            </div>
+        `;
+    }
+
+    async function dryRunInstallPlan() {
+        const planId = pickPlanIdFromStatus();
+        if (!planId) {
+            statusEl.textContent = "No saved install plan selected. Build install plan first.";
+            return;
+        }
+
+        try {
+            dryRunBtn.disabled = true;
+            statusEl.textContent = `Running update dry-run for ${planId}…`;
+
+            const r = await fetch("/api/v4/admin/updates/dry-run", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ plan_id: planId }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!j) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+
+            statusEl.innerHTML = renderDryRun(j);
+        } catch (e) {
+            statusEl.textContent = "Dry-run failed: " + String(e && e.message ? e.message : e);
+        } finally {
+            dryRunBtn.disabled = false;
+        }
+    }
+
+    dryRunBtn.addEventListener("click", dryRunInstallPlan);
+})();
