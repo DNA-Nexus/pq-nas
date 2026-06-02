@@ -7,19 +7,40 @@
 #include <sstream>
 #include <stdexcept>
 #include <sys/wait.h>
+#include <map>
+#include <memory>
 #include <mutex>
 
 namespace pqnas::federation {
 namespace {
 
-NodusCommandResult run_command_capture(const std::string& command) {
-    static std::mutex nodus_cli_mutex;
+std::mutex& nodus_cli_mutex_for_scope(const std::string& scope) {
+    static std::mutex map_mutex;
+    static std::map<std::string, std::shared_ptr<std::mutex>> mutexes;
 
-    // Temporary research adapter safety:
-    // nodus-cli with one persistent PQ-NAS identity is not safe to run as a
-    // parallel process storm. Serialize calls until this becomes an async
-    // outbox worker or persistent Nodus client integration.
-    std::lock_guard<std::mutex> lock(nodus_cli_mutex);
+    const std::string key = scope.empty() ? "default" : scope;
+
+    std::lock_guard<std::mutex> lock(map_mutex);
+
+    auto it = mutexes.find(key);
+    if (it != mutexes.end() && it->second) {
+        return *it->second;
+    }
+
+    auto created = std::make_shared<std::mutex>();
+    auto& ref = *created;
+    mutexes[key] = created;
+    return ref;
+}
+
+NodusCommandResult run_command_capture(
+    const std::string& command,
+    const std::string& serialization_scope
+) {
+    // Research adapter safety:
+    // keep nodus-cli calls serialized per identity+seed, but avoid one global
+    // lock that blocks independent seed operations across the whole server.
+    std::lock_guard<std::mutex> lock(nodus_cli_mutex_for_scope(serialization_scope));
 
     NodusCommandResult result;
 
@@ -73,6 +94,19 @@ NodusCommandResult run_command_capture(const std::string& command) {
     }
 
     return result;
+}
+
+std::string nodus_cli_serialization_scope(
+    const NodusClientConfig& config,
+    const NodusSeed& seed
+) {
+    std::ostringstream scope;
+    scope << (config.identity_dir.empty() ? "<no-identity>" : config.identity_dir)
+          << "\n"
+          << seed.host
+          << ":"
+          << seed.client_port;
+    return scope.str();
 }
 
 std::string build_base_command(const NodusClientConfig& config, const NodusSeed& seed) {
@@ -150,7 +184,7 @@ NodusCommandResult nodus_cli_put(
         << " "
         << shell_quote_for_nodus_research(value);
 
-    return run_command_capture(cmd.str());
+    return run_command_capture(cmd.str(), nodus_cli_serialization_scope(config, seed));
 }
 
 NodusCommandResult nodus_cli_get(
@@ -167,7 +201,7 @@ NodusCommandResult nodus_cli_get(
         << " get "
         << shell_quote_for_nodus_research(key);
 
-    return run_command_capture(cmd.str());
+    return run_command_capture(cmd.str(), nodus_cli_serialization_scope(config, seed));
 }
 
 } // namespace pqnas::federation
