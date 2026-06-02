@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifeste",
   "admin.updates.label.error": "Erreur",
   "admin.updates.label.message": "Message",
-  "admin.updates.action.check_now.tooltip": "Vérifier la dernière version depuis GitHub"
+  "admin.updates.action.check_now.tooltip": "Vérifier la dernière version depuis GitHub",
+  "activity.event.update.upload": "Paquet de mise à jour téléversé",
+  "activity.event.update.verify": "Paquet de mise à jour vérifié",
+  "activity.event.update.verify_failed": "La vérification du paquet de mise à jour a échoué",
+  "activity.event.update.plan": "Plan d’installation de mise à jour construit",
+  "activity.event.update.install_validate": "Plan d’installation de mise à jour validé",
+  "activity.event.update.install_validate_failed": "La validation du plan d’installation de mise à jour a échoué",
+  "activity.event.update.dry_run": "Simulation de mise à jour terminée",
+  "activity.event.update.dry_run_failed": "La simulation de mise à jour a échoué",
+  "activity.event.update.apply": "Mise à jour appliquée",
+  "activity.event.update.apply_failed": "L’application de la mise à jour a échoué",
+  "activity.kind.update_center": "Centre de mise à jour"
 }

@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Hata",
   "admin.updates.label.message": "Mesaj",
-  "admin.updates.action.check_now.tooltip": "GitHub’dan en son sürümü kontrol et"
+  "admin.updates.action.check_now.tooltip": "GitHub’dan en son sürümü kontrol et",
+  "activity.event.update.upload": "Güncelleme paketi yüklendi",
+  "activity.event.update.verify": "Güncelleme paketi doğrulandı",
+  "activity.event.update.verify_failed": "Güncelleme paketi doğrulaması başarısız",
+  "activity.event.update.plan": "Güncelleme kurulum planı oluşturuldu",
+  "activity.event.update.install_validate": "Güncelleme kurulum planı doğrulandı",
+  "activity.event.update.install_validate_failed": "Güncelleme kurulum planı doğrulaması başarısız",
+  "activity.event.update.dry_run": "Güncelleme deneme çalıştırması tamamlandı",
+  "activity.event.update.dry_run_failed": "Güncelleme deneme çalıştırması başarısız",
+  "activity.event.update.apply": "Güncelleme uygulandı",
+  "activity.event.update.apply_failed": "Güncelleme uygulaması başarısız",
+  "activity.kind.update_center": "Güncelleme Merkezi"
 }

@@ -4199,5 +4199,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Error",
   "admin.updates.label.message": "Message",
-  "admin.updates.action.check_now.tooltip": "Check latest version from GitHub"
+  "admin.updates.action.check_now.tooltip": "Check latest version from GitHub",
+  "activity.event.update.upload": "Update package uploaded",
+  "activity.event.update.verify": "Update package verified",
+  "activity.event.update.verify_failed": "Update package verification failed",
+  "activity.event.update.plan": "Update install plan built",
+  "activity.event.update.install_validate": "Update install plan validated",
+  "activity.event.update.install_validate_failed": "Update install plan validation failed",
+  "activity.event.update.dry_run": "Update dry-run completed",
+  "activity.event.update.dry_run_failed": "Update dry-run failed",
+  "activity.event.update.apply": "Update applied",
+  "activity.event.update.apply_failed": "Update apply failed",
+  "activity.kind.update_center": "Update Center"
 }

@@ -129,6 +129,70 @@ void update_audit_emit_local(const UpdateCenterRoutesDeps& deps,
     deps.audit_emit(event, outcome, fields);
 }
 
+
+std::map<std::string, std::string> update_activity_details_from_json(const json& obj) {
+    std::map<std::string, std::string> details;
+
+    // My Activity is user-visible. Keep it high-level:
+    // no helper stdout/stderr, no command lines, no tar listings, no cookies,
+    // no tokens, no device ids, no raw environment values, no action arrays.
+    static const std::vector<std::string> allowed = {
+        "status",
+        "error",
+        "message",
+        "original_name",
+        "stored_name",
+        "size",
+        "sha256",
+        "package_sha256",
+        "package_server_version",
+        "current_server_version",
+        "plan_id",
+        "applicable_action_count",
+        "planned_action_count",
+        "applied_action_count",
+        "helper_exit_code",
+        "install_performed",
+        "restart_required"
+    };
+
+    for (const std::string& key : allowed) {
+        if (!obj.is_object() || !obj.contains(key)) continue;
+        std::string value = update_audit_json_scalar_to_string(obj.at(key));
+        if (value.empty()) continue;
+
+        if (key == "sha256" || key == "package_sha256") {
+            if (value.size() > 16) value = value.substr(0, 16);
+        }
+
+        if (key == "plan_id" && value.size() > 80) {
+            value = value.substr(0, 80);
+        }
+
+        details[key] = value;
+    }
+
+    return details;
+}
+
+void update_activity_record_local(const UpdateCenterRoutesDeps& deps,
+                                  const httplib::Request& req,
+                                  const std::string& actor_fp,
+                                  const std::string& event_type,
+                                  const std::string& message,
+                                  const json& payload = json::object()) {
+    if (!deps.record_activity || actor_fp.empty() || event_type.empty()) return;
+
+    deps.record_activity(
+        req,
+        actor_fp,
+        event_type,
+        message,
+        update_activity_details_from_json(payload)
+    );
+}
+
+
 bool update_require_admin_actor_local(const UpdateCenterRoutesDeps& deps,
                                       const httplib::Request& req,
                                       httplib::Response& res,
@@ -1044,6 +1108,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         }
 
         update_audit_emit_local(deps, "update_center.upload_ok", "ok", actor_fp, meta);
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            "update.upload",
+            "Update package uploaded",
+            meta
+        );
         deps.reply_json(res, 200, meta.dump(2));
     });
 
@@ -1227,6 +1299,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             actor_fp,
             out
         );
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            safe ? "update.verify" : "update.verify_failed",
+            safe ? "Update package verified" : "Update package verification failed",
+            out
+        );
 
         deps.reply_json(res, safe ? 200 : 400, out.dump(2));
     });
@@ -1393,6 +1473,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
         plan["plan_path"] = final_plan_path.string();
 
         update_audit_emit_local(deps, "update_center.plan_ok", "ok", actor_fp, plan);
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            "update.plan",
+            "Update install plan built",
+            plan
+        );
         deps.reply_json(res, 200, plan.dump(2));
     });
 
@@ -1525,6 +1613,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
                 ok ? "update_center.install_validate_ok" : "update_center.install_validate_fail",
                 ok ? "ok" : "fail",
                 actor_fp,
+                helper_json
+            );
+            update_activity_record_local(
+                deps,
+                req,
+                actor_fp,
+                ok ? "update.install_validate" : "update.install_validate_failed",
+                ok ? "Update install plan validated" : "Update install plan validation failed",
                 helper_json
             );
             deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
@@ -2072,6 +2168,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             actor_fp,
             helper_json
         );
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            ok ? "update.dry_run" : "update.dry_run_failed",
+            ok ? "Update dry-run completed" : "Update dry-run failed",
+            helper_json
+        );
         deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));
     });
 
@@ -2224,6 +2328,14 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             ok ? "update_center.apply_ok" : "update_center.apply_fail",
             ok ? "ok" : "fail",
             actor_fp,
+            helper_json
+        );
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            ok ? "update.apply" : "update.apply_failed",
+            ok ? "Update applied" : "Update apply failed",
             helper_json
         );
         deps.reply_json(res, ok ? 200 : 400, helper_json.dump(2));

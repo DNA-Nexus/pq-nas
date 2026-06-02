@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Errore",
   "admin.updates.label.message": "Messaggio",
-  "admin.updates.action.check_now.tooltip": "Controlla l’ultima versione da GitHub"
+  "admin.updates.action.check_now.tooltip": "Controlla l’ultima versione da GitHub",
+  "activity.event.update.upload": "Pacchetto di aggiornamento caricato",
+  "activity.event.update.verify": "Pacchetto di aggiornamento verificato",
+  "activity.event.update.verify_failed": "Verifica del pacchetto di aggiornamento fallita",
+  "activity.event.update.plan": "Piano di installazione aggiornamento creato",
+  "activity.event.update.install_validate": "Piano di installazione aggiornamento validato",
+  "activity.event.update.install_validate_failed": "Validazione del piano di installazione aggiornamento fallita",
+  "activity.event.update.dry_run": "Simulazione aggiornamento completata",
+  "activity.event.update.dry_run_failed": "Simulazione aggiornamento fallita",
+  "activity.event.update.apply": "Aggiornamento applicato",
+  "activity.event.update.apply_failed": "Applicazione aggiornamento fallita",
+  "activity.kind.update_center": "Centro aggiornamenti"
 }

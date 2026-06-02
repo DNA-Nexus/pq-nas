@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Маніфест",
   "admin.updates.label.error": "Помилка",
   "admin.updates.label.message": "Повідомлення",
-  "admin.updates.action.check_now.tooltip": "Перевірити останню версію з GitHub"
+  "admin.updates.action.check_now.tooltip": "Перевірити останню версію з GitHub",
+  "activity.event.update.upload": "Пакет оновлення завантажено",
+  "activity.event.update.verify": "Пакет оновлення перевірено",
+  "activity.event.update.verify_failed": "Перевірка пакета оновлення не вдалася",
+  "activity.event.update.plan": "План встановлення оновлення створено",
+  "activity.event.update.install_validate": "План встановлення оновлення перевірено",
+  "activity.event.update.install_validate_failed": "Перевірка плану встановлення оновлення не вдалася",
+  "activity.event.update.dry_run": "Тестовий запуск оновлення завершено",
+  "activity.event.update.dry_run_failed": "Тестовий запуск оновлення не вдався",
+  "activity.event.update.apply": "Оновлення застосовано",
+  "activity.event.update.apply_failed": "Застосування оновлення не вдалося",
+  "activity.kind.update_center": "Центр оновлень"
 }

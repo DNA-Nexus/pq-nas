@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Błąd",
   "admin.updates.label.message": "Wiadomość",
-  "admin.updates.action.check_now.tooltip": "Sprawdź najnowszą wersję z GitHub"
+  "admin.updates.action.check_now.tooltip": "Sprawdź najnowszą wersję z GitHub",
+  "activity.event.update.upload": "Pakiet aktualizacji przesłany",
+  "activity.event.update.verify": "Pakiet aktualizacji zweryfikowany",
+  "activity.event.update.verify_failed": "Weryfikacja pakietu aktualizacji nie powiodła się",
+  "activity.event.update.plan": "Plan instalacji aktualizacji zbudowany",
+  "activity.event.update.install_validate": "Plan instalacji aktualizacji zwalidowany",
+  "activity.event.update.install_validate_failed": "Walidacja planu instalacji aktualizacji nie powiodła się",
+  "activity.event.update.dry_run": "Próbne uruchomienie aktualizacji zakończone",
+  "activity.event.update.dry_run_failed": "Próbne uruchomienie aktualizacji nie powiodło się",
+  "activity.event.update.apply": "Aktualizacja zastosowana",
+  "activity.event.update.apply_failed": "Zastosowanie aktualizacji nie powiodło się",
+  "activity.kind.update_center": "Centrum aktualizacji"
 }

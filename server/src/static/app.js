@@ -3239,6 +3239,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (k === "share") return tr("activity.kind.share", null, "share");
         if (k === "session") return tr("activity.kind.session", null, "session");
         if (k === "device") return tr("activity.kind.device", null, "device");
+        if (k === "update_center") return tr("activity.kind.update_center", null, "Update Center");
         return String(kind || "");
     }
 
@@ -3343,6 +3344,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             return target && target !== "session"
                 ? tr("activity.msg.session_revoked_for", { actor, target }, "{actor} revoked session for {target}")
                 : tr("activity.msg.session_revoked", { actor }, "{actor} revoked a session");
+        }
+
+        if (type.startsWith("update.")) {
+            const fallback = String(ev && ev.message || "").trim() || type;
+            return tr(`activity.event.${type}`, null, fallback);
         }
 
         const serverMessage = String(ev && ev.message || "").trim();

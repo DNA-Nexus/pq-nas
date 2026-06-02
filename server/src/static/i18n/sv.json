@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Fel",
   "admin.updates.label.message": "Meddelande",
-  "admin.updates.action.check_now.tooltip": "Kontrollera senaste versionen från GitHub"
+  "admin.updates.action.check_now.tooltip": "Kontrollera senaste versionen från GitHub",
+  "activity.event.update.upload": "Uppdateringspaket uppladdat",
+  "activity.event.update.verify": "Uppdateringspaket verifierat",
+  "activity.event.update.verify_failed": "Verifiering av uppdateringspaket misslyckades",
+  "activity.event.update.plan": "Installationsplan för uppdatering skapad",
+  "activity.event.update.install_validate": "Installationsplan för uppdatering validerad",
+  "activity.event.update.install_validate_failed": "Validering av installationsplan för uppdatering misslyckades",
+  "activity.event.update.dry_run": "Testkörning av uppdatering slutförd",
+  "activity.event.update.dry_run_failed": "Testkörning av uppdatering misslyckades",
+  "activity.event.update.apply": "Uppdatering tillämpad",
+  "activity.event.update.apply_failed": "Uppdatering kunde inte tillämpas",
+  "activity.kind.update_center": "Uppdateringscenter"
 }

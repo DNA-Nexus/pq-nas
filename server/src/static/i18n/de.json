@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Fehler",
   "admin.updates.label.message": "Meldung",
-  "admin.updates.action.check_now.tooltip": "Neueste Version von GitHub prüfen"
+  "admin.updates.action.check_now.tooltip": "Neueste Version von GitHub prüfen",
+  "activity.event.update.upload": "Update-Paket hochgeladen",
+  "activity.event.update.verify": "Update-Paket verifiziert",
+  "activity.event.update.verify_failed": "Verifizierung des Update-Pakets fehlgeschlagen",
+  "activity.event.update.plan": "Installationsplan für Update erstellt",
+  "activity.event.update.install_validate": "Installationsplan für Update validiert",
+  "activity.event.update.install_validate_failed": "Validierung des Update-Installationsplans fehlgeschlagen",
+  "activity.event.update.dry_run": "Update-Probelauf abgeschlossen",
+  "activity.event.update.dry_run_failed": "Update-Probelauf fehlgeschlagen",
+  "activity.event.update.apply": "Update angewendet",
+  "activity.event.update.apply_failed": "Update konnte nicht angewendet werden",
+  "activity.kind.update_center": "Update-Center"
 }

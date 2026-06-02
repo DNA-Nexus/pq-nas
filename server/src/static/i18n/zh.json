@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "清单",
   "admin.updates.label.error": "错误",
   "admin.updates.label.message": "消息",
-  "admin.updates.action.check_now.tooltip": "从 GitHub 检查最新版本"
+  "admin.updates.action.check_now.tooltip": "从 GitHub 检查最新版本",
+  "activity.event.update.upload": "更新包已上传",
+  "activity.event.update.verify": "更新包已验证",
+  "activity.event.update.verify_failed": "更新包验证失败",
+  "activity.event.update.plan": "更新安装计划已生成",
+  "activity.event.update.install_validate": "更新安装计划已验证",
+  "activity.event.update.install_validate_failed": "更新安装计划验证失败",
+  "activity.event.update.dry_run": "更新模拟运行已完成",
+  "activity.event.update.dry_run_failed": "更新模拟运行失败",
+  "activity.event.update.apply": "更新已应用",
+  "activity.event.update.apply_failed": "更新应用失败",
+  "activity.kind.update_center": "更新中心"
 }

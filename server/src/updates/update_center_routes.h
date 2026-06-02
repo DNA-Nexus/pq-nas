@@ -13,6 +13,13 @@ using UpdateCenterAuditEmitFn =
                        const std::string& outcome,
                        const std::map<std::string, std::string>& fields)>;
 
+using UpdateCenterActivityFn =
+    std::function<void(const httplib::Request& req,
+                       const std::string& actor_fp,
+                       const std::string& event_type,
+                       const std::string& message,
+                       const std::map<std::string, std::string>& details)>;
+
 struct UpdateCenterRoutesDeps {
     std::string static_admin_updates_html;
     std::string apps_installed_dir;
@@ -29,6 +36,7 @@ struct UpdateCenterRoutesDeps {
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
 
     UpdateCenterAuditEmitFn audit_emit;
+    UpdateCenterActivityFn record_activity;
 };
 
 void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoutesDeps& deps);

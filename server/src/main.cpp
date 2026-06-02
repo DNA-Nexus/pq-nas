@@ -11237,6 +11237,44 @@ v5.app_pair_build_qr_uri =
                     }
                 });
             };
+
+        update_center_deps.record_activity =
+            [&](const httplib::Request& req,
+                const std::string& actor_fp,
+                const std::string& event_type,
+                const std::string& message,
+                const std::map<std::string, std::string>& details) {
+                if (actor_fp.empty() || event_type.empty()) return;
+
+                std::filesystem::path user_root;
+                try {
+                    user_root = user_dir_for_fp(users, actor_fp);
+                } catch (...) {
+                    return;
+                }
+
+                if (user_root.empty()) return;
+
+                pqnas::activity::ActivityEvent ev;
+                ev.owner_user_id = actor_fp;
+                ev.actor = activity_actor_for_request_local(&req, users, actor_fp);
+                ev.event_type = event_type;
+                ev.scope_type = "security";
+                ev.scope_id = actor_fp;
+                ev.target_kind = "update_center";
+                ev.target_name = "Update Center";
+                ev.message = message;
+
+                ev.details = nlohmann::json::object();
+                for (const auto& kv : details) {
+                    if (!kv.first.empty() && !kv.second.empty()) {
+                        ev.details[kv.first] = kv.second;
+                    }
+                }
+
+                std::string activity_err;
+                (void)pqnas::activity::record_user_activity(user_root, ev, &activity_err);
+            };
         update_center_deps.require_same_origin = require_same_origin_for_cookie_mutation;
 
         pqnas::updates::register_update_center_routes(srv, update_center_deps);

@@ -4198,5 +4198,16 @@
   "admin.updates.label.manifest": "Manifest",
   "admin.updates.label.error": "Viga",
   "admin.updates.label.message": "Teade",
-  "admin.updates.action.check_now.tooltip": "Kontrolli uusimat versiooni GitHubist"
+  "admin.updates.action.check_now.tooltip": "Kontrolli uusimat versiooni GitHubist",
+  "activity.event.update.upload": "Värskenduspakett üles laaditud",
+  "activity.event.update.verify": "Värskenduspakett kontrollitud",
+  "activity.event.update.verify_failed": "Värskenduspaketi kontroll nurjus",
+  "activity.event.update.plan": "Värskenduse installiplaan koostatud",
+  "activity.event.update.install_validate": "Värskenduse installiplaan valideeritud",
+  "activity.event.update.install_validate_failed": "Värskenduse installiplaani valideerimine nurjus",
+  "activity.event.update.dry_run": "Värskenduse kuivkäivitus lõpetatud",
+  "activity.event.update.dry_run_failed": "Värskenduse kuivkäivitus nurjus",
+  "activity.event.update.apply": "Värskendus rakendatud",
+  "activity.event.update.apply_failed": "Värskenduse rakendamine nurjus",
+  "activity.kind.update_center": "Värskenduskeskus"
 }

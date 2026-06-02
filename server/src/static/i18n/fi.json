@@ -4199,5 +4199,16 @@
   "admin.updates.label.manifest": "Manifesti",
   "admin.updates.label.error": "Virhe",
   "admin.updates.label.message": "Viesti",
-  "admin.updates.action.check_now.tooltip": "Tarkista uusin versio GitHubista"
+  "admin.updates.action.check_now.tooltip": "Tarkista uusin versio GitHubista",
+  "activity.event.update.upload": "Päivityspaketti ladattu",
+  "activity.event.update.verify": "Päivityspaketti tarkistettu",
+  "activity.event.update.verify_failed": "Päivityspaketin tarkistus epäonnistui",
+  "activity.event.update.plan": "Päivityksen asennussuunnitelma rakennettu",
+  "activity.event.update.install_validate": "Päivityksen asennussuunnitelma validoitu",
+  "activity.event.update.install_validate_failed": "Päivityksen asennussuunnitelman validointi epäonnistui",
+  "activity.event.update.dry_run": "Päivityksen kuiva-ajo suoritettu",
+  "activity.event.update.dry_run_failed": "Päivityksen kuiva-ajo epäonnistui",
+  "activity.event.update.apply": "Päivitys asennettu",
+  "activity.event.update.apply_failed": "Päivityksen asennus epäonnistui",
+  "activity.kind.update_center": "Päivityskeskus"
 }
