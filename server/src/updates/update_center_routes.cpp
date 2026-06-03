@@ -13,6 +13,15 @@
 #include <ios>
 #include <fstream>
 #include <map>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <ctime>
+#include <mutex>
+#include <thread>
+
+#include <openssl/evp.h>
 
 #include <string>
 #include <system_error>
@@ -336,6 +345,40 @@ std::filesystem::path updates_root_dir(const UpdateCenterRoutesDeps& deps) {
 
 std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
     return updates_root_dir(deps) / "incoming";
+}
+
+
+bool update_is_safe_staged_package_name(const std::string& name) {
+    if (name.empty() || name.size() > 240) return false;
+
+    if (name.find('/') != std::string::npos ||
+        name.find('\\') != std::string::npos ||
+        name.find("..") != std::string::npos) {
+        return false;
+    }
+
+    for (char c : name) {
+        const bool ok =
+            (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '.' || c == '_' || c == '-';
+
+        if (!ok) return false;
+    }
+
+    const std::string low = update_lower(name);
+
+    if (update_ends_with(low, ".part") ||
+        update_ends_with(low, ".json")) {
+        return false;
+    }
+
+    return
+        update_ends_with(low, ".dnxupd") ||
+        update_ends_with(low, ".tar.gz") ||
+        update_ends_with(low, ".tgz") ||
+        update_ends_with(low, ".zip");
 }
 
 
@@ -924,6 +967,450 @@ std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
     };
 }
 
+
+// github_update_download_jobs_v1
+struct UpdateGithubDownloadJob {
+    std::string id;
+    std::string status;
+    std::string original_name;
+    std::string stored_name;
+    std::string error;
+    std::string message;
+
+    std::uintmax_t downloaded_bytes = 0;
+    std::uintmax_t total_bytes = 0;
+
+    bool done = false;
+    int http_status = 0;
+    long long started_epoch = 0;
+    long long updated_epoch = 0;
+};
+
+constexpr std::uintmax_t kMaxGithubDownloadPackageBytes =
+    512ull * 1024ull * 1024ull;
+
+std::mutex update_github_download_jobs_mu;
+std::map<std::string, UpdateGithubDownloadJob> update_github_download_jobs;
+std::atomic<unsigned long long> update_github_download_seq{0};
+
+long long update_now_epoch_local() {
+    return static_cast<long long>(std::time(nullptr));
+}
+
+void update_github_download_cleanup_locked() {
+    const long long now = update_now_epoch_local();
+
+    for (auto it = update_github_download_jobs.begin();
+         it != update_github_download_jobs.end();) {
+        const long long age = now - it->second.updated_epoch;
+        if (age > 3600) {
+            it = update_github_download_jobs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+json update_github_download_job_json(const UpdateGithubDownloadJob& j) {
+    return json{
+        {"id", j.id},
+        {"status", j.status},
+        {"original_name", j.original_name},
+        {"stored_name", j.stored_name},
+        {"downloaded_bytes", static_cast<unsigned long long>(j.downloaded_bytes)},
+        {"total_bytes", static_cast<unsigned long long>(j.total_bytes)},
+        {"done", j.done},
+        {"http_status", j.http_status},
+        {"error", j.error},
+        {"message", j.message},
+        {"started_epoch", j.started_epoch},
+        {"updated_epoch", j.updated_epoch}
+    };
+}
+
+template <typename Fn>
+void update_github_download_mutate(const std::string& job_id, Fn fn) {
+    std::lock_guard<std::mutex> lock(update_github_download_jobs_mu);
+    auto it = update_github_download_jobs.find(job_id);
+    if (it == update_github_download_jobs.end()) return;
+
+    fn(it->second);
+    it->second.updated_epoch = update_now_epoch_local();
+}
+
+json update_github_download_snapshot(const std::string& job_id, bool* found) {
+    std::lock_guard<std::mutex> lock(update_github_download_jobs_mu);
+    update_github_download_cleanup_locked();
+
+    const auto it = update_github_download_jobs.find(job_id);
+    if (it == update_github_download_jobs.end()) {
+        if (found) *found = false;
+        return json::object();
+    }
+
+    if (found) *found = true;
+    return update_github_download_job_json(it->second);
+}
+
+std::string update_make_github_download_job_id() {
+    const unsigned long long seq =
+        update_github_download_seq.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    return "ghdl_" + std::to_string(update_now_epoch_local()) + "_" + std::to_string(seq);
+}
+
+bool update_parse_http_url(const std::string& url,
+                           std::string* origin,
+                           std::string* path,
+                           std::string* host_only) {
+    if (url.size() > 2048) return false;
+    if (url.find_first_of(" \r\n\t") != std::string::npos) return false;
+
+    const std::size_t scheme_pos = url.find("://");
+    if (scheme_pos == std::string::npos) return false;
+
+    const std::string scheme = update_lower(url.substr(0, scheme_pos));
+    if (scheme != "https" && scheme != "http") return false;
+
+    const std::size_t host_start = scheme_pos + 3;
+    const std::size_t path_start = url.find('/', host_start);
+    const std::string host_port = path_start == std::string::npos
+        ? url.substr(host_start)
+        : url.substr(host_start, path_start - host_start);
+
+    if (host_port.empty()) return false;
+    if (host_port.find('@') != std::string::npos) return false;
+
+    std::string host = host_port;
+    const std::size_t colon = host.find(':');
+    if (colon != std::string::npos) {
+        host = host.substr(0, colon);
+    }
+
+    if (host.empty()) return false;
+
+    if (origin) {
+        *origin = scheme + "://" + host_port;
+    }
+
+    if (path) {
+        *path = path_start == std::string::npos ? "/" : url.substr(path_start);
+    }
+
+    if (host_only) {
+        *host_only = update_lower(host);
+    }
+
+    return true;
+}
+
+bool update_is_allowed_github_release_asset_url(const std::string& url) {
+    std::string origin;
+    std::string path;
+    std::string host;
+
+    if (!update_parse_http_url(url, &origin, &path, &host)) return false;
+    if (host != "github.com") return false;
+
+    const std::string low_path = update_lower(path);
+    return update_starts_with(low_path, "/dna-nexus/pq-nas/releases/download/");
+}
+
+std::string update_filename_from_url_path(const std::string& url) {
+    std::string origin;
+    std::string path;
+    std::string host;
+
+    if (!update_parse_http_url(url, &origin, &path, &host)) return "";
+
+    const std::size_t q = path.find('?');
+    if (q != std::string::npos) {
+        path = path.substr(0, q);
+    }
+
+    const std::size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) return path;
+    return path.substr(slash + 1);
+}
+
+std::string update_sha256_file_hex(const std::filesystem::path& path,
+                                   std::string* err) {
+    if (err) err->clear();
+
+    std::ifstream in(path, std::ios::binary);
+    if (!in.good()) {
+        if (err) *err = "open_file_failed";
+        return "";
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        if (err) *err = "sha256_ctx_failed";
+        return "";
+    }
+
+    auto free_ctx = [&]() {
+        EVP_MD_CTX_free(ctx);
+        ctx = nullptr;
+    };
+
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1) {
+        free_ctx();
+        if (err) *err = "sha256_init_failed";
+        return "";
+    }
+
+    std::array<char, 64 * 1024> buf{};
+    while (in.good()) {
+        in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        const std::streamsize got = in.gcount();
+        if (got > 0) {
+            if (EVP_DigestUpdate(ctx, buf.data(), static_cast<std::size_t>(got)) != 1) {
+                free_ctx();
+                if (err) *err = "sha256_update_failed";
+                return "";
+            }
+        }
+    }
+
+    if (in.bad()) {
+        free_ctx();
+        if (err) *err = "read_file_failed";
+        return "";
+    }
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+
+    if (EVP_DigestFinal_ex(ctx, digest, &digest_len) != 1) {
+        free_ctx();
+        if (err) *err = "sha256_final_failed";
+        return "";
+    }
+
+    free_ctx();
+
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    out.reserve(static_cast<std::size_t>(digest_len) * 2);
+
+    for (unsigned int i = 0; i < digest_len; ++i) {
+        const unsigned char b = digest[i];
+        out.push_back(hex[(b >> 4) & 0x0f]);
+        out.push_back(hex[b & 0x0f]);
+    }
+
+    return out;
+}
+
+void update_github_download_worker(UpdateCenterRoutesDeps deps,
+                                   std::string job_id,
+                                   std::string actor_fp,
+                                   std::string url,
+                                   std::string safe_name,
+                                   std::uintmax_t expected_size) {
+    auto fail_job = [&](const std::string& code, const std::string& msg) {
+        update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+            j.status = "failed";
+            j.error = code;
+            j.message = msg;
+            j.done = true;
+        });
+
+        update_audit_emit_local(deps, "update_center.github_download_fail", "fail", actor_fp, json{
+            {"ok", false},
+            {"status", "failed"},
+            {"original_name", safe_name},
+            {"error", code},
+            {"message", msg}
+        });
+    };
+
+    std::string origin;
+    std::string path;
+    std::string host;
+
+    if (!update_parse_http_url(url, &origin, &path, &host)) {
+        fail_job("bad_url", "Could not parse GitHub release asset URL.");
+        return;
+    }
+
+    std::error_code ec;
+    const std::filesystem::path incoming = update_incoming_dir(deps);
+    std::filesystem::create_directories(incoming, ec);
+    if (ec) {
+        fail_job("create_incoming_failed", ec.message());
+        return;
+    }
+
+    const std::filesystem::path tmp_path = incoming / (job_id + "_" + safe_name + ".part");
+
+    std::ofstream out(tmp_path, std::ios::binary | std::ios::trunc);
+    if (!out.good()) {
+        fail_job("open_tmp_failed", "Could not open temporary download file.");
+        return;
+    }
+
+    std::uintmax_t written = 0;
+    std::string receiver_error;
+
+    update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+        j.status = "running";
+        j.total_bytes = expected_size;
+    });
+
+    httplib::Client cli(origin);
+    cli.set_follow_location(true);
+    cli.set_connection_timeout(30, 0);
+    cli.set_read_timeout(300, 0);
+    cli.set_write_timeout(30, 0);
+
+    httplib::Headers headers = {
+        {"User-Agent", "DNA-Nexus-Update-Center"},
+        {"Accept", "application/octet-stream"}
+    };
+
+    auto receiver = [&](const char* data, std::size_t data_len) -> bool {
+        const std::uintmax_t add = static_cast<std::uintmax_t>(data_len);
+        if (add > kMaxGithubDownloadPackageBytes ||
+            written > kMaxGithubDownloadPackageBytes - add) {
+            receiver_error = "download exceeded maximum update package size";
+            return false;
+        }
+
+        out.write(data, static_cast<std::streamsize>(data_len));
+        if (!out.good()) {
+            receiver_error = "write failed";
+            return false;
+        }
+
+        written += add;
+
+        update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+            j.downloaded_bytes = written;
+            if (j.total_bytes == 0 && expected_size > 0) {
+                j.total_bytes = expected_size;
+            }
+        });
+
+        return true;
+    };
+
+    auto progress = [&](std::size_t current, std::size_t total) -> bool {
+        const std::uintmax_t cur = static_cast<std::uintmax_t>(current);
+        const std::uintmax_t tot = static_cast<std::uintmax_t>(total);
+
+        if (cur > kMaxGithubDownloadPackageBytes ||
+            tot > kMaxGithubDownloadPackageBytes) {
+            receiver_error = "download exceeded maximum update package size";
+            return false;
+        }
+
+        update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+            if (cur > j.downloaded_bytes) {
+                j.downloaded_bytes = cur;
+            }
+            if (tot > 0) {
+                j.total_bytes = tot;
+            } else if (j.total_bytes == 0 && expected_size > 0) {
+                j.total_bytes = expected_size;
+            }
+        });
+
+        return true;
+    };
+
+    auto result = cli.Get(path, headers, receiver, progress);
+    out.close();
+
+    if (!result) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_path, rm_ec);
+
+        const std::string msg = !receiver_error.empty()
+            ? receiver_error
+            : httplib::to_string(result.error());
+
+        fail_job("download_failed", msg);
+        return;
+    }
+
+    update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+        j.http_status = result->status;
+    });
+
+    if (result->status < 200 || result->status >= 300) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_path, rm_ec);
+        fail_job("http_error", "GitHub download returned HTTP " + std::to_string(result->status));
+        return;
+    }
+
+    if (written == 0) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_path, rm_ec);
+        fail_job("empty_download", "Downloaded file is empty.");
+        return;
+    }
+
+    std::string sha_error;
+    const std::string sha = update_sha256_file_hex(tmp_path, &sha_error);
+    if (sha.empty()) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_path, rm_ec);
+        fail_job("sha256_failed", sha_error.empty() ? "Could not hash downloaded package." : sha_error);
+        return;
+    }
+
+    const std::string prefix = sha.size() >= 12 ? sha.substr(0, 12) : sha;
+    const std::string stored_name = prefix + "_" + safe_name;
+    const std::filesystem::path final_path = incoming / stored_name;
+
+    std::filesystem::remove(final_path, ec);
+    ec.clear();
+    std::filesystem::remove(final_path.string() + ".json", ec);
+    ec.clear();
+
+    std::filesystem::rename(tmp_path, final_path, ec);
+    if (ec) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp_path, rm_ec);
+        fail_job("rename_failed", ec.message());
+        return;
+    }
+
+    const json meta = {
+        {"ok", true},
+        {"status", "downloaded"},
+        {"source", "github"},
+        {"original_name", safe_name},
+        {"stored_name", stored_name},
+        {"size", static_cast<unsigned long long>(written)},
+        {"sha256", sha}
+    };
+
+    {
+        std::ofstream mf(final_path.string() + ".json", std::ios::binary | std::ios::trunc);
+        if (mf.good()) {
+            mf << meta.dump(2) << "\n";
+        }
+    }
+
+    update_github_download_mutate(job_id, [&](UpdateGithubDownloadJob& j) {
+        j.status = "done";
+        j.original_name = safe_name;
+        j.stored_name = stored_name;
+        j.downloaded_bytes = written;
+        if (j.total_bytes == 0) {
+            j.total_bytes = written;
+        }
+        j.done = true;
+        j.message = "GitHub release asset downloaded to server.";
+    });
+
+    update_audit_emit_local(deps, "update_center.github_download_ok", "ok", actor_fp, meta);
+}
+
 void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoutesDeps& deps) {
     srv.Get("/admin/updates", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
@@ -985,6 +1472,165 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             {"ok", true},
             {"incoming_count", files.size()},
             {"incoming", files}
+        }.dump(2));
+    });
+
+
+    srv.Post("/api/v4/admin/updates/github-download", [deps](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
+        if (!deps.require_same_origin(req, res)) return;
+
+        std::string url;
+        std::string name;
+        std::uintmax_t expected_size = 0;
+
+        try {
+            const json body = json::parse(req.body.empty() ? "{}" : req.body);
+            url = body.value("url", "");
+            name = body.value("name", "");
+
+            if (body.contains("size")) {
+                if (body["size"].is_number_unsigned()) {
+                    expected_size = body["size"].get<std::uintmax_t>();
+                } else if (body["size"].is_number_integer()) {
+                    const long long signed_size = body["size"].get<long long>();
+                    if (signed_size > 0) {
+                        expected_size = static_cast<std::uintmax_t>(signed_size);
+                    }
+                }
+            }
+        } catch (...) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_json"}
+            }.dump(2));
+            return;
+        }
+
+        if (url.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "missing_url"}
+            }.dump(2));
+            return;
+        }
+
+        if (!update_is_allowed_github_release_asset_url(url)) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "unsupported_url"},
+                {"message", "Only DNA-Nexus/pq-nas GitHub release asset URLs are accepted."}
+            }.dump(2));
+            return;
+        }
+
+        if (name.empty()) {
+            name = update_filename_from_url_path(url);
+        }
+
+        std::string filename_error;
+        const std::string safe_name = update_safe_filename(name, &filename_error);
+        if (safe_name.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_filename"},
+                {"message", filename_error}
+            }.dump(2));
+            return;
+        }
+
+        if (expected_size > kMaxGithubDownloadPackageBytes) {
+            deps.reply_json(res, 413, json{
+                {"ok", false},
+                {"error", "download_too_large"},
+                {"max_bytes", static_cast<unsigned long long>(kMaxGithubDownloadPackageBytes)}
+            }.dump(2));
+            return;
+        }
+
+        const std::string job_id = update_make_github_download_job_id();
+        const long long now = update_now_epoch_local();
+
+        UpdateGithubDownloadJob job;
+        job.id = job_id;
+        job.status = "queued";
+        job.original_name = safe_name;
+        job.total_bytes = expected_size;
+        job.started_epoch = now;
+        job.updated_epoch = now;
+
+        {
+            std::lock_guard<std::mutex> lock(update_github_download_jobs_mu);
+            update_github_download_cleanup_locked();
+            update_github_download_jobs[job_id] = job;
+        }
+
+        update_audit_emit_local(deps, "update_center.github_download_start", "ok", actor_fp, json{
+            {"ok", true},
+            {"status", "queued"},
+            {"original_name", safe_name},
+            {"size", static_cast<unsigned long long>(expected_size)}
+        });
+
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            "update.github_download",
+            "GitHub update package download started",
+            json{
+                {"status", "queued"},
+                {"original_name", safe_name},
+                {"size", static_cast<unsigned long long>(expected_size)}
+            }
+        );
+
+        std::thread(
+            update_github_download_worker,
+            deps,
+            job_id,
+            actor_fp,
+            url,
+            safe_name,
+            expected_size
+        ).detach();
+
+        bool found = false;
+        const json snap = update_github_download_snapshot(job_id, &found);
+
+        deps.reply_json(res, 200, json{
+            {"ok", true},
+            {"job", snap}
+        }.dump(2));
+    });
+
+    srv.Get("/api/v4/admin/updates/github-download/status", [deps](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
+
+        const std::string job_id = req.has_param("job_id") ? req.get_param_value("job_id") : "";
+        if (job_id.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "missing_job_id"}
+            }.dump(2));
+            return;
+        }
+
+        bool found = false;
+        const json snap = update_github_download_snapshot(job_id, &found);
+        if (!found) {
+            deps.reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "job_not_found"}
+            }.dump(2));
+            return;
+        }
+
+        deps.reply_json(res, 200, json{
+            {"ok", true},
+            {"job", snap}
         }.dump(2));
     });
 
@@ -1117,6 +1763,94 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             meta
         );
         deps.reply_json(res, 200, meta.dump(2));
+    });
+
+
+    srv.Post("/api/v4/admin/updates/delete", [deps](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        if (!update_require_admin_actor_local(deps, req, res, &actor_fp)) return;
+        if (!deps.require_same_origin(req, res)) return;
+
+        std::string stored_name;
+
+        try {
+            const json body = json::parse(req.body.empty() ? "{}" : req.body);
+            stored_name = body.value("stored_name", "");
+        } catch (...) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_json"}
+            }.dump(2));
+            return;
+        }
+
+        if (stored_name.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "missing_stored_name"}
+            }.dump(2));
+            return;
+        }
+
+        if (!update_is_safe_staged_package_name(stored_name)) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_stored_name"},
+                {"message", "Invalid staged update package name."}
+            }.dump(2));
+            return;
+        }
+
+        const std::filesystem::path incoming = update_incoming_dir(deps);
+        const std::filesystem::path package_path = incoming / stored_name;
+        const std::filesystem::path meta_path = incoming / (stored_name + ".json");
+
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(package_path, ec) || ec) {
+            deps.reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "package_not_found"}
+            }.dump(2));
+            return;
+        }
+
+        std::uintmax_t size = 0;
+        ec.clear();
+        size = std::filesystem::file_size(package_path, ec);
+        if (ec) size = 0;
+
+        ec.clear();
+        std::filesystem::remove(package_path, ec);
+        if (ec) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "delete_failed"},
+                {"message", ec.message()}
+            }.dump(2));
+            return;
+        }
+
+        std::error_code meta_ec;
+        std::filesystem::remove(meta_path, meta_ec);
+
+        const json out = {
+            {"ok", true},
+            {"status", "deleted"},
+            {"stored_name", stored_name},
+            {"size", size}
+        };
+
+        update_audit_emit_local(deps, "update_center.delete_staged_ok", "ok", actor_fp, out);
+        update_activity_record_local(
+            deps,
+            req,
+            actor_fp,
+            "update.delete_staged",
+            "Staged update package deleted",
+            out
+        );
+
+        deps.reply_json(res, 200, out.dump(2));
     });
 
     srv.Post("/api/v4/admin/updates/verify", [deps](const httplib::Request& req, httplib::Response& res) {

@@ -78,6 +78,149 @@
             color:#86efac;
         }
 
+        .updateProgressWrap{
+            margin-top:10px;
+            border:1px solid rgba(var(--fg-rgb),0.18);
+            border-radius:14px;
+            padding:10px 12px;
+            background:rgba(0,0,0,0.14);
+        }
+        .updateProgressTop{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            margin-bottom:8px;
+            font-family:var(--mono);
+            font-size:12.5px;
+        }
+        .updateProgressText{
+            min-width:0;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            color:var(--fg);
+        }
+        .updateProgressText.ok{
+            color:#166534;
+            font-weight:900;
+        }
+        .updateProgressText.err{
+            color:#991b1b;
+            font-weight:900;
+        }
+        html[data-theme="dark"] .updateProgressText.ok{
+            color:#86efac;
+        }
+        html[data-theme="dark"] .updateProgressText.err{
+            color:#fca5a5;
+        }
+        .updateProgressPct{
+            flex:0 0 auto;
+            font-weight:900;
+            color:var(--fg);
+        }
+        .updateProgressBar{
+            width:100%;
+            height:12px;
+            border-radius:999px;
+            overflow:hidden;
+            background:rgba(var(--fg-rgb),0.13);
+            border:1px solid rgba(var(--fg-rgb),0.16);
+        }
+        .updateProgressFill{
+            width:0%;
+            height:100%;
+            border-radius:999px;
+            background:linear-gradient(90deg, rgba(34,197,94,0.78), rgba(59,130,246,0.82));
+            transition:width .12s linear;
+        }
+
+        .updatePackageList{
+            margin-top:10px;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+        }
+        .updatePackageList.empty{
+            border:1px dashed rgba(var(--fg-rgb),0.22);
+            border-radius:14px;
+            padding:12px;
+            color:var(--fg-dim);
+            background:rgba(0,0,0,0.10);
+            font-family:var(--mono);
+            font-size:12.5px;
+        }
+        .updatePackageChoice{
+            display:flex;
+            gap:10px;
+            align-items:flex-start;
+            border:1px solid rgba(var(--fg-rgb),0.18);
+            border-radius:14px;
+            padding:10px 12px;
+            background:rgba(0,0,0,0.13);
+            cursor:pointer;
+        }
+        .updatePackageChoice:hover{
+            border-color:rgba(var(--fg-rgb),0.36);
+            background:rgba(0,0,0,0.18);
+        }
+        .updatePackageChoice.selected{
+            border-color:rgba(34,197,94,0.65);
+            background:rgba(34,197,94,0.12);
+            box-shadow:inset 5px 0 0 rgba(34,197,94,0.75);
+        }
+        .updatePackageChoice input{
+            margin-top:3px;
+            flex:0 0 auto;
+        }
+        .updatePackageText{
+            min-width:0;
+            display:flex;
+            flex-direction:column;
+            gap:3px;
+        }
+        .updatePackageName{
+            font-weight:900;
+            overflow-wrap:anywhere;
+        }
+        .updatePackageMeta{
+            color:var(--fg-dim);
+            font-family:var(--mono);
+            font-size:12px;
+            overflow-wrap:anywhere;
+        }
+
+        .optionalUpdateUpload{
+            margin-top:12px;
+            border:1px solid rgba(var(--fg-rgb),0.16);
+            border-radius:14px;
+            background:rgba(0,0,0,0.10);
+            overflow:hidden;
+        }
+        .optionalUpdateUpload summary{
+            cursor:pointer;
+            padding:11px 13px;
+            font-weight:900;
+            color:var(--fg);
+            user-select:none;
+        }
+        .optionalUpdateUpload summary:hover{
+            background:rgba(var(--fg-rgb),0.06);
+        }
+        .optionalUpdateUploadBody{
+            border-top:1px solid rgba(var(--fg-rgb),0.12);
+            padding:12px 13px 13px;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+        .optionalUpdateUploadHint{
+            color:var(--fg-dim);
+            font-size:13px;
+            line-height:1.45;
+        }
+
 
 </style>
 </head>
@@ -133,30 +276,69 @@
                     <span class="mono muted" id="releaseLine" data-i18n="admin.updates.release.no_data">No release data loaded yet.</span>
                 </div>
                 <div class="row" style="margin-top:10px">
-                    <button class="btn" id="downloadBtn" type="button" disabled data-i18n="admin.updates.release.download_core">Download core package</button>
+                    <button class="btn" id="downloadBtn" type="button" disabled data-i18n="admin.updates.release.download_core">Download to server</button>
                     <button class="btn" id="openReleaseBtn" type="button" disabled data-i18n="admin.updates.release.open">Open release</button>
+                </div>
+                <div class="updateProgressWrap" id="githubProgressWrap" hidden>
+                    <div class="updateProgressTop">
+                        <span class="updateProgressText" id="githubProgressText">Waiting…</span>
+                        <span class="updateProgressPct" id="githubProgressPct">0%</span>
+                    </div>
+                    <div class="updateProgressBar"
+                         id="githubProgressBar"
+                         role="progressbar"
+                         aria-valuemin="0"
+                         aria-valuemax="100"
+                         aria-valuenow="0">
+                        <div class="updateProgressFill" id="githubProgressFill"></div>
+                    </div>
                 </div>
                 <div class="releaseBody mono" id="releaseBody" data-i18n="admin.updates.release.notes_placeholder">Release notes will appear here.</div>
             </section>
 
             <section class="card">
-                <h3 data-i18n="admin.updates.manual.title">Manual update package</h3>
+                <h3 data-i18n="admin.updates.manual.title">Server-staged update packages</h3>
                 <div class="muted" style="margin-bottom:10px" data-i18n="admin.updates.manual.desc">
-                    Upload a core/server update package to this server for later verification.
-                    This does not install anything yet.
+                    Choose a package already staged on this server, or add one from this computer.
+                    Nothing is installed until you build, dry-run, and apply a plan.
                 </div>
-                <div class="row">
-                    <input id="manualPackageFile"
-                           type="file"
-                           accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
-                    <button class="btn" id="manualUploadBtn" type="button" data-i18n="admin.updates.manual.upload">Upload to server</button>
-                    <button class="btn" id="verifyPackageBtn" type="button" data-i18n="admin.updates.manual.verify">Verify staged package</button>
+                <div class="row">                    <button class="btn" id="verifyPackageBtn" type="button" data-i18n="admin.updates.manual.verify">Verify staged package</button>
                     <button class="btn" id="planPackageBtn" type="button" data-i18n="admin.updates.manual.plan">Build install plan</button>
                     <button class="btn" id="installPlanBtn" type="button" data-i18n="admin.updates.manual.validate">Validate install plan</button>
                     <button class="btn" id="dryRunPlanBtn" type="button" data-i18n="admin.updates.manual.dry_run">Dry run install</button>
                     <button class="btn danger" id="applyPlanBtn" type="button" data-i18n="admin.updates.manual.apply">Apply update</button>
                     <button class="btn" id="refreshUploadsBtn" type="button" data-i18n="admin.updates.manual.refresh">Refresh uploaded packages</button>
+                    <button class="btn danger" id="deletePackageBtn" type="button" data-i18n="admin.updates.manual.delete_selected">Delete selected package</button>
                 </div>
+                <details class="optionalUpdateUpload" id="optionalLocalUpload">
+                    <summary data-i18n="admin.updates.manual.optional_upload.summary">Add package from this computer</summary>
+                    <div class="optionalUpdateUploadBody">
+                        <div class="optionalUpdateUploadHint" data-i18n="admin.updates.manual.optional_upload.hint">
+                            Optional fallback: use this if the server cannot download from GitHub, or if you are testing a locally built update package.
+                        </div>
+                        <div class="row">
+                            <input id="manualPackageFile"
+                                   type="file"
+                                   accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
+                            <button class="btn" id="manualUploadBtn" type="button" data-i18n="admin.updates.manual.upload">Upload to server</button>
+                        </div>
+                <div class="updateProgressWrap" id="manualProgressWrap" hidden>
+                    <div class="updateProgressTop">
+                        <span class="updateProgressText" id="manualProgressText">Waiting…</span>
+                        <span class="updateProgressPct" id="manualProgressPct">0%</span>
+                    </div>
+                    <div class="updateProgressBar"
+                         id="manualProgressBar"
+                         role="progressbar"
+                         aria-valuemin="0"
+                         aria-valuemax="100"
+                         aria-valuenow="0">
+                        <div class="updateProgressFill" id="manualProgressFill"></div>
+                    </div>
+                </div>
+                    </div>
+                </details>
+                <div class="updatePackageList empty" id="uploadedPackagesList">Loading staged packages…</div>
                 <div class="releaseBody mono" id="manualUploadStatus" data-i18n="admin.updates.manual.no_package">No package uploaded yet.</div>
             </section>
         </div>
@@ -166,7 +348,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_updates.js?v=20260602-update-apply-no-env-gate-v1"></script>
+<script src="/static/admin_updates.js?v=20260603-optional-local-upload-v1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

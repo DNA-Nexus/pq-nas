@@ -96,6 +96,11 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
     const checkBtn = document.getElementById("checkBtn");
     const downloadBtn = document.getElementById("downloadBtn");
     const openReleaseBtn = document.getElementById("openReleaseBtn");
+    const githubProgressWrap = document.getElementById("githubProgressWrap");
+    const githubProgressText = document.getElementById("githubProgressText");
+    const githubProgressPct = document.getElementById("githubProgressPct");
+    const githubProgressBar = document.getElementById("githubProgressBar");
+    const githubProgressFill = document.getElementById("githubProgressFill");
 
     let latestRelease = null;
     let preferredAsset = null;
@@ -151,6 +156,185 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
     function fmtDate(s) {
         const d = new Date(s || "");
         return Number.isFinite(d.getTime()) ? d.toLocaleString() : updateCenterT("value.unknown_date", null, "unknown date");
+    }
+
+    function githubFmtBytes(n) {
+        const v = Number(n || 0);
+        if (!Number.isFinite(v) || v <= 0) return "0 B";
+        const units = ["B", "KB", "MB", "GB"];
+        let x = v;
+        let i = 0;
+        while (x >= 1024 && i < units.length - 1) {
+            x /= 1024;
+            i++;
+        }
+        return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function githubFmtSpeed(bytesPerSec) {
+        const v = Number(bytesPerSec || 0);
+        if (!Number.isFinite(v) || v <= 0) return "—";
+        return `${githubFmtBytes(v)}/s`;
+    }
+
+    let githubDownloadPollTimer = null;
+    let githubDownloadStartedAt = 0;
+    let githubDownloadTotalHint = 0;
+
+    function stopGithubDownloadPoll() {
+        if (githubDownloadPollTimer) {
+            clearTimeout(githubDownloadPollTimer);
+            githubDownloadPollTimer = null;
+        }
+    }
+
+    function showGithubProgress(show) {
+        if (!githubProgressWrap) return;
+        githubProgressWrap.hidden = !show;
+        if (!show) {
+            setGithubProgress(0, "", "");
+        }
+    }
+
+    function setGithubProgress(pct, text, kind) {
+        const p = Math.max(0, Math.min(100, Number(pct || 0)));
+
+        if (githubProgressFill) {
+            githubProgressFill.style.width = `${p.toFixed(1)}%`;
+        }
+
+        if (githubProgressPct) {
+            githubProgressPct.textContent = `${Math.round(p)}%`;
+        }
+
+        if (githubProgressText) {
+            githubProgressText.textContent = String(text || "");
+            githubProgressText.classList.toggle("ok", kind === "ok");
+            githubProgressText.classList.toggle("err", kind === "err");
+        }
+
+        if (githubProgressBar) {
+            githubProgressBar.setAttribute("aria-valuenow", String(Math.round(p)));
+        }
+    }
+
+    async function pollGithubServerDownload(jobId) {
+        try {
+            const qs = new URLSearchParams();
+            qs.set("job_id", jobId);
+
+            const r = await fetch(`/api/v4/admin/updates/github-download/status?${qs.toString()}`, {
+                credentials: "include",
+                cache: "no-store",
+                headers: {
+                    "Accept": "application/json",
+                },
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok || !j.job) {
+                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
+            }
+
+            const job = j.job;
+            const downloaded = Number(job.downloaded_bytes || 0);
+            const total = Number(job.total_bytes || githubDownloadTotalHint || 0);
+            const pct = total > 0 ? (downloaded / total) * 100 : 0;
+            const elapsedSec = Math.max(0.001, (performance.now() - githubDownloadStartedAt) / 1000);
+            const speedBps = downloaded / elapsedSec;
+            const detail = total > 0
+                ? `${githubFmtBytes(downloaded)} / ${githubFmtBytes(total)} • ${githubFmtSpeed(speedBps)}`
+                : `${githubFmtBytes(downloaded)} downloaded • ${githubFmtSpeed(speedBps)}`;
+
+            if (job.status === "done") {
+                stopGithubDownloadPoll();
+                setGithubProgress(
+                    100,
+                    updateCenterT("download.github.done", { name: job.stored_name || "" }, `Downloaded to server: ${job.stored_name || ""}`),
+                    "ok"
+                );
+                statusLine.textContent = updateCenterT("download.github.done_detail", { detail }, `GitHub download complete. ${detail}`);
+                downloadBtn.disabled = !preferredAsset || !preferredAsset.browser_download_url;
+                window.dispatchEvent(new CustomEvent("pqnas-update-packages-changed", {
+                    detail: { storedName: job.stored_name || "" }
+                }));
+                return;
+            }
+
+            if (job.status === "failed") {
+                stopGithubDownloadPoll();
+                const err = job.message || job.error || "GitHub download failed.";
+                setGithubProgress(100, err, "err");
+                statusLine.textContent = err;
+                downloadBtn.disabled = !preferredAsset || !preferredAsset.browser_download_url;
+                return;
+            }
+
+            setGithubProgress(
+                pct,
+                updateCenterT("download.github.progress", { detail }, detail),
+                ""
+            );
+            statusLine.textContent = updateCenterT("download.github.downloading", { detail }, `Downloading GitHub package to server… ${detail}`);
+
+            githubDownloadPollTimer = setTimeout(() => pollGithubServerDownload(jobId), 700);
+        } catch (e) {
+            stopGithubDownloadPoll();
+            const err = String(e && e.message ? e.message : e);
+            setGithubProgress(100, err, "err");
+            statusLine.textContent = err;
+            downloadBtn.disabled = !preferredAsset || !preferredAsset.browser_download_url;
+        }
+    }
+
+    async function startGithubServerDownload() {
+        if (!preferredAsset || !preferredAsset.browser_download_url) {
+            statusLine.textContent = updateCenterT("status.no_core_found", null, "Release loaded, but no core/server update package asset was found.");
+            return;
+        }
+
+        try {
+            stopGithubDownloadPoll();
+
+            downloadBtn.disabled = true;
+            githubDownloadStartedAt = performance.now();
+            githubDownloadTotalHint = Number(preferredAsset.size || 0);
+
+            showGithubProgress(true);
+            setGithubProgress(
+                0,
+                updateCenterT("download.github.starting", { name: preferredAsset.name || "" }, `Starting server download: ${preferredAsset.name || ""}`),
+                ""
+            );
+            statusLine.textContent = updateCenterT("download.github.starting_status", null, "Starting GitHub download on server…");
+
+            const r = await fetch("/api/v4/admin/updates/github-download", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                body: JSON.stringify({
+                    url: preferredAsset.browser_download_url,
+                    name: preferredAsset.name || "",
+                    size: preferredAsset.size || 0,
+                }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok || !j.job || !j.job.id) {
+                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
+            }
+
+            await pollGithubServerDownload(j.job.id);
+        } catch (e) {
+            stopGithubDownloadPoll();
+            const err = String(e && e.message ? e.message : e);
+            setGithubProgress(100, err, "err");
+            statusLine.textContent = err;
+            downloadBtn.disabled = !preferredAsset || !preferredAsset.browser_download_url;
+        }
     }
 
     async function checkRelease() {
@@ -211,11 +395,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
     checkBtn?.addEventListener("click", checkRelease);
 
-    downloadBtn?.addEventListener("click", () => {
-        if (preferredAsset && preferredAsset.browser_download_url) {
-            window.open(preferredAsset.browser_download_url, "_blank", "noopener");
-        }
-    });
+    downloadBtn?.addEventListener("click", startGithubServerDownload);
 
     openReleaseBtn?.addEventListener("click", () => {
         if (latestRelease && latestRelease.html_url) {
@@ -236,7 +416,14 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
     const fileInput = document.getElementById("manualPackageFile");
     const uploadBtn = document.getElementById("manualUploadBtn");
     const refreshBtn = document.getElementById("refreshUploadsBtn");
+    const deleteBtn = document.getElementById("deletePackageBtn");
     const statusEl = document.getElementById("manualUploadStatus");
+    const packageListEl = document.getElementById("uploadedPackagesList");
+    const progressWrap = document.getElementById("manualProgressWrap");
+    const progressText = document.getElementById("manualProgressText");
+    const progressPct = document.getElementById("manualProgressPct");
+    const progressBar = document.getElementById("manualProgressBar");
+    const progressFill = document.getElementById("manualProgressFill");
 
     if (!fileInput || !uploadBtn || !refreshBtn || !statusEl) {
         return;
@@ -255,8 +442,211 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
         return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
     }
 
+    function fmtSpeed(bytesPerSec) {
+        const v = Number(bytesPerSec || 0);
+        if (!Number.isFinite(v) || v <= 0) return "—";
+        return `${fmtBytes(v)}/s`;
+    }
+
+    function showUploadProgress(show) {
+        if (!progressWrap) return;
+        progressWrap.hidden = !show;
+
+        if (!show) {
+            setUploadProgress(0, "", "");
+        }
+    }
+
+    function setUploadProgress(pct, text, kind) {
+        const p = Math.max(0, Math.min(100, Number(pct || 0)));
+
+        if (progressFill) {
+            progressFill.style.width = `${p.toFixed(1)}%`;
+        }
+
+        if (progressPct) {
+            progressPct.textContent = `${Math.round(p)}%`;
+        }
+
+        if (progressText) {
+            progressText.textContent = String(text || "");
+            progressText.classList.toggle("ok", kind === "ok");
+            progressText.classList.toggle("err", kind === "err");
+        }
+
+        if (progressBar) {
+            progressBar.setAttribute("aria-valuenow", String(Math.round(p)));
+        }
+    }
+
+    function xhrUploadPackage(file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+
+            xhr.open("POST", "/api/v4/admin/updates/upload", true);
+            xhr.withCredentials = true;
+            xhr.timeout = 60 * 60 * 1000;
+            xhr.setRequestHeader("Content-Type", "application/octet-stream");
+            xhr.setRequestHeader("X-PQNAS-Filename", file.name);
+
+            let lastProgressTs = 0;
+
+            xhr.upload.onprogress = (ev) => {
+                if (!onProgress) return;
+
+                const now = performance.now();
+                const total = ev.lengthComputable ? ev.total : (file.size || 0);
+
+                if (now - lastProgressTs < 80 && ev.loaded < total) {
+                    return;
+                }
+
+                lastProgressTs = now;
+                onProgress(ev.loaded || 0, total || 0);
+            };
+
+            xhr.onerror = () => reject(new Error("upload failed (network)"));
+            xhr.ontimeout = () => reject(new Error("upload failed (timeout)"));
+            xhr.onabort = () => reject(new Error("upload aborted"));
+
+            xhr.onload = () => {
+                const status = xhr.status || 0;
+                const raw = String(xhr.responseText || "").trim();
+                let j = null;
+
+                if (raw && (raw.startsWith("{") || raw.startsWith("["))) {
+                    try { j = JSON.parse(raw); } catch (_) {}
+                }
+
+                if (status >= 200 && status < 300 && j && j.ok) {
+                    resolve(j);
+                    return;
+                }
+
+                if (j && (j.message || j.error)) {
+                    reject(new Error(`${j.error || ""} ${j.message || ""}`.trim() || `HTTP ${status}`));
+                    return;
+                }
+
+                reject(new Error(raw || `HTTP ${status}`));
+            };
+
+            xhr.send(file);
+        });
+    }
+
     function renderJson(prefix, obj) {
         statusEl.textContent = `${prefix}\n` + JSON.stringify(obj, null, 2);
+    }
+
+    window.PQNAS_UPDATE_SELECTED_PACKAGE = window.PQNAS_UPDATE_SELECTED_PACKAGE || "";
+
+    function escHtmlLocal(s) {
+        return String(s ?? "").replace(/[&<>"']/g, c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+            "'": "&#39;",
+        }[c]));
+    }
+
+    function displayNameFromStoredName(name) {
+        return String(name || "").replace(/^[0-9a-f]{12}_/i, "");
+    }
+
+    function versionPartsFromPackageName(name) {
+        const n = displayNameFromStoredName(name).toLowerCase();
+        const m = n.match(/^pqnas-([0-9][a-z0-9._-]*)-linux-/);
+        if (!m) return [];
+        return String(m[1]).split(/[^0-9]+/).filter(Boolean).map(x => {
+            const v = Number(x);
+            return Number.isFinite(v) ? v : 0;
+        });
+    }
+
+    function comparePackageItems(a, b) {
+        const av = versionPartsFromPackageName(a && a.name);
+        const bv = versionPartsFromPackageName(b && b.name);
+        const n = Math.max(av.length, bv.length);
+
+        for (let i = 0; i < n; i++) {
+            const ai = i < av.length ? av[i] : 0;
+            const bi = i < bv.length ? bv[i] : 0;
+            if (ai !== bi) return bi - ai;
+        }
+
+        return String(b && b.name || "").localeCompare(String(a && a.name || ""));
+    }
+
+    function getSelectedPackage() {
+        return String(window.PQNAS_UPDATE_SELECTED_PACKAGE || "").trim();
+    }
+
+    function updatePackageSelectionUi() {
+        if (!packageListEl) return;
+
+        const selected = getSelectedPackage();
+        packageListEl.querySelectorAll(".updatePackageChoice").forEach(row => {
+            const input = row.querySelector("input[type='radio']");
+            const isSelected = !!input && input.value === selected;
+            row.classList.toggle("selected", isSelected);
+            if (input) input.checked = isSelected;
+        });
+    }
+
+    function setSelectedPackage(name) {
+        window.PQNAS_UPDATE_SELECTED_PACKAGE = String(name || "").trim();
+        updatePackageSelectionUi();
+    }
+
+    function renderUploadedPackages(items) {
+        if (!packageListEl) return;
+
+        const arr = Array.isArray(items) ? items.slice() : [];
+        arr.sort(comparePackageItems);
+
+        if (!arr.length) {
+            packageListEl.className = "updatePackageList empty";
+            packageListEl.textContent = updateCenterT(
+                "upload.none_staged",
+                null,
+                "No uploaded update packages staged on this server."
+            );
+            setSelectedPackage("");
+            return;
+        }
+
+        const existingNames = new Set(arr.map(it => String((it && it.name) || "")));
+        let selected = getSelectedPackage();
+
+        if (!selected || !existingNames.has(selected)) {
+            selected = String((arr[0] && arr[0].name) || "");
+            window.PQNAS_UPDATE_SELECTED_PACKAGE = selected;
+        }
+
+        packageListEl.className = "updatePackageList";
+        packageListEl.innerHTML = arr.map((it) => {
+            const storedName = String((it && it.name) || "");
+            const displayName = displayNameFromStoredName(storedName);
+            const checked = storedName === selected ? "checked" : "";
+            const selectedClass = storedName === selected ? " selected" : "";
+
+            return `
+                <label class="updatePackageChoice${selectedClass}">
+                    <input type="radio"
+                           name="updatePackageChoice"
+                           value="${escHtmlLocal(storedName)}"
+                           ${checked}>
+                    <span class="updatePackageText">
+                        <span class="updatePackageName">${escHtmlLocal(displayName || storedName)}</span>
+                        <span class="updatePackageMeta">${escHtmlLocal(storedName)} — ${escHtmlLocal(fmtBytes(it && it.size))}</span>
+                    </span>
+                </label>
+            `;
+        }).join("");
+
+        updatePackageSelectionUi();
     }
 
     async function refreshUploadedPackages() {
@@ -274,16 +664,257 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             }
 
             const items = Array.isArray(j.incoming) ? j.incoming : [];
+            renderUploadedPackages(items);
+
             if (!items.length) {
                 statusEl.textContent = updateCenterT("upload.none_staged", null, "No uploaded update packages staged on this server.");
                 return;
             }
 
-            statusEl.textContent = items
-                .map(it => `${it.name || updateCenterT("value.unnamed", null, "(unnamed)")} — ${fmtBytes(it.size)}`)
-                .join("\n");
+            const selected = getSelectedPackage();
+            statusEl.textContent = updateCenterT(
+                "upload.selected_package",
+                { name: selected },
+                `Selected package: ${selected}`
+            );
         } catch (e) {
+            if (packageListEl) {
+                packageListEl.className = "updatePackageList empty";
+                packageListEl.textContent = updateCenterT(
+                    "upload.load_failed",
+                    { error: String(e && e.message ? e.message : e) },
+                    "Failed to load uploaded packages: {error}"
+                );
+            }
             statusEl.textContent = updateCenterT("upload.load_failed", { error: String(e && e.message ? e.message : e) }, "Failed to load uploaded packages: {error}");
+        }
+    }
+
+
+
+    function showDeletePackageConfirmModal(storedName) {
+        return new Promise((resolve) => {
+            const existing = document.querySelector(".updateDeleteModalOverlay");
+            if (existing) existing.remove();
+
+            const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                "\"": "&quot;",
+            }[c]));
+
+            const overlay = document.createElement("div");
+            overlay.className = "updateDeleteModalOverlay";
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 99999;
+                background: rgba(0, 0, 0, 0.62);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                box-sizing: border-box;
+            `;
+
+            const modal = document.createElement("div");
+            modal.className = "updateDeleteModal";
+            modal.style.cssText = `
+                width: min(620px, 96vw);
+                border-radius: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.20);
+                background: linear-gradient(180deg, rgba(32, 34, 38, 0.98), rgba(18, 20, 24, 0.98));
+                color: #f5f7fb;
+                box-shadow: 0 28px 80px rgba(0,0,0,0.55);
+                overflow: hidden;
+                font-family: inherit;
+            `;
+
+            modal.innerHTML = `
+                <div style="
+                    padding: 18px 22px;
+                    border-bottom: 1px solid rgba(255,255,255,0.12);
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                ">
+                    <div style="
+                        width: 42px;
+                        height: 42px;
+                        border-radius: 999px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(255, 90, 90, 0.16);
+                        border: 1px solid rgba(255, 90, 90, 0.48);
+                        font-size: 22px;
+                    ">🗑️</div>
+                    <div>
+                        <div style="font-size: 19px; font-weight: 800;">
+                            ${esc(updateCenterT("delete.modal.title", null, "Delete staged package?"))}
+                        </div>
+                        <div style="font-size: 13px; opacity: 0.72; margin-top: 2px;">
+                            ${esc(updateCenterT("delete.modal.subtitle", null, "This removes the package from the server staging area."))}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 20px 22px 8px 22px;">
+                    <div style="
+                        font-size: 13px;
+                        opacity: 0.72;
+                        margin-bottom: 7px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.04em;
+                    ">${esc(updateCenterT("delete.modal.package", null, "Package"))}</div>
+
+                    <div style="
+                        padding: 12px 14px;
+                        border-radius: 12px;
+                        background: rgba(255,255,255,0.07);
+                        border: 1px solid rgba(255,255,255,0.12);
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                        font-size: 13px;
+                        line-height: 1.45;
+                        word-break: break-all;
+                    ">${esc(storedName)}</div>
+
+                    <div style="
+                        margin-top: 16px;
+                        padding: 13px 14px;
+                        border-radius: 12px;
+                        background: rgba(255, 70, 70, 0.12);
+                        border: 1px solid rgba(255, 90, 90, 0.34);
+                        color: #ffd7d7;
+                        font-size: 14px;
+                        line-height: 1.45;
+                    ">
+                        ${esc(updateCenterT("delete.modal.warning", null, "This does not uninstall anything, but the staged package file and its metadata will be deleted."))}
+                    </div>
+                </div>
+
+                <div style="
+                    padding: 18px 22px 22px 22px;
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                ">
+                    <button type="button" class="updateDeleteCancel" style="
+                        border: 1px solid rgba(255,255,255,0.22);
+                        background: rgba(255,255,255,0.08);
+                        color: #f5f7fb;
+                        border-radius: 999px;
+                        padding: 10px 18px;
+                        cursor: pointer;
+                        font-weight: 700;
+                    ">${esc(updateCenterT("delete.modal.cancel", null, "Cancel"))}</button>
+
+                    <button type="button" class="updateDeleteConfirm" style="
+                        border: 1px solid rgba(255, 80, 80, 0.7);
+                        background: linear-gradient(180deg, #ff5d5d, #d82929);
+                        color: white;
+                        border-radius: 999px;
+                        padding: 10px 18px;
+                        cursor: pointer;
+                        font-weight: 800;
+                        box-shadow: 0 10px 24px rgba(216, 41, 41, 0.28);
+                    ">${esc(updateCenterT("delete.modal.confirm", null, "Delete package"))}</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            const cleanup = (value) => {
+                document.removeEventListener("keydown", onKey, true);
+                overlay.remove();
+                resolve(value);
+            };
+
+            const onKey = (ev) => {
+                if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    cleanup(false);
+                }
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    cleanup(true);
+                }
+            };
+
+            overlay.addEventListener("click", (ev) => {
+                if (ev.target === overlay) cleanup(false);
+            });
+
+            modal.querySelector(".updateDeleteCancel")?.addEventListener("click", () => cleanup(false));
+            modal.querySelector(".updateDeleteConfirm")?.addEventListener("click", () => cleanup(true));
+
+            document.addEventListener("keydown", onKey, true);
+            setTimeout(() => modal.querySelector(".updateDeleteCancel")?.focus(), 0);
+        });
+    }
+
+    async function deleteSelectedPackage() {
+        const storedName = getSelectedPackage();
+
+        if (!storedName) {
+            statusEl.textContent = updateCenterT(
+                "delete.no_package",
+                null,
+                "No staged package selected."
+            );
+            return;
+        }
+
+        const ok = await showDeletePackageConfirmModal(storedName);
+
+        if (!ok) return;
+
+        try {
+            if (deleteBtn) deleteBtn.disabled = true;
+            if (refreshBtn) refreshBtn.disabled = true;
+
+            statusEl.textContent = updateCenterT(
+                "delete.deleting",
+                { name: storedName },
+                `Deleting ${storedName}…`
+            );
+
+            const r = await fetch("/api/v4/admin/updates/delete", {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                body: JSON.stringify({ stored_name: storedName }),
+            });
+
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok) {
+                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
+            }
+
+            setSelectedPackage("");
+            statusEl.textContent = updateCenterT(
+                "delete.deleted",
+                { name: storedName },
+                `Deleted staged package: ${storedName}`
+            );
+
+            await refreshUploadedPackages();
+        } catch (e) {
+            statusEl.textContent = updateCenterT(
+                "delete.failed",
+                { error: String(e && e.message ? e.message : e) },
+                "Delete failed: {error}"
+            );
+        } finally {
+            if (deleteBtn) deleteBtn.disabled = false;
+            if (refreshBtn) refreshBtn.disabled = false;
         }
     }
 
@@ -296,34 +927,86 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
         try {
             uploadBtn.disabled = true;
+            refreshBtn.disabled = true;
+
+            const totalBytes = Number(f.size || 0);
+            const startedAt = performance.now();
+
+            showUploadProgress(true);
+            setUploadProgress(
+                0,
+                updateCenterT("upload.progress_start", { name: f.name, size: fmtBytes(totalBytes) }, `Starting upload: ${f.name} (${fmtBytes(totalBytes)})…`),
+                ""
+            );
+
             statusEl.textContent = updateCenterT("upload.uploading", { name: f.name, size: fmtBytes(f.size) }, `Uploading ${f.name} (${fmtBytes(f.size)})…`);
 
-            const r = await fetch("/api/v4/admin/updates/upload", {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/octet-stream",
-                    "X-PQNAS-Filename": f.name,
-                },
-                body: f,
+            const j = await xhrUploadPackage(f, (loaded, total) => {
+                const safeTotal = Number(total || totalBytes || 0);
+                const safeLoaded = Math.max(0, Number(loaded || 0));
+                const pct = safeTotal > 0 ? (safeLoaded / safeTotal) * 100 : 0;
+                const elapsedSec = Math.max(0.001, (performance.now() - startedAt) / 1000);
+                const speedBps = safeLoaded / elapsedSec;
+                const detail = `${fmtBytes(safeLoaded)} / ${fmtBytes(safeTotal)} • ${fmtSpeed(speedBps)}`;
+
+                setUploadProgress(
+                    pct,
+                    updateCenterT("upload.progress_detail", { detail }, detail),
+                    ""
+                );
+
+                statusEl.textContent =
+                    updateCenterT("upload.uploading", { name: f.name, size: fmtBytes(f.size) }, `Uploading ${f.name} (${fmtBytes(f.size)})…`) +
+                    "\n" +
+                    detail;
             });
 
-            const j = await r.json().catch(() => null);
-            if (!r.ok || !j || !j.ok) {
-                throw new Error(j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`);
-            }
+            setUploadProgress(
+                100,
+                updateCenterT("upload.progress_done", null, "Upload complete."),
+                "ok"
+            );
 
+            setSelectedPackage(j.stored_name || "");
             renderJson(updateCenterT("upload.staged_ok", null, "Upload staged successfully. Nothing has been installed yet."), j);
             await refreshUploadedPackages();
         } catch (e) {
-            statusEl.textContent = updateCenterT("upload.failed", { error: String(e && e.message ? e.message : e) }, "Upload failed: {error}");
+            const err = String(e && e.message ? e.message : e);
+            setUploadProgress(
+                100,
+                updateCenterT("upload.failed", { error: err }, "Upload failed: {error}"),
+                "err"
+            );
+            statusEl.textContent = updateCenterT("upload.failed", { error: err }, "Upload failed: {error}");
         } finally {
             uploadBtn.disabled = false;
+            refreshBtn.disabled = false;
         }
     }
 
     uploadBtn.addEventListener("click", uploadPackage);
     refreshBtn.addEventListener("click", refreshUploadedPackages);
+    deleteBtn?.addEventListener("click", deleteSelectedPackage);
+
+
+    if (packageListEl) {
+        packageListEl.addEventListener("change", (ev) => {
+            const input = ev.target;
+            if (!input || input.name !== "updatePackageChoice") return;
+            setSelectedPackage(input.value || "");
+            statusEl.textContent = updateCenterT(
+                "upload.selected_package",
+                { name: getSelectedPackage() },
+                `Selected package: ${getSelectedPackage()}`
+            );
+        });
+    }
+
+    window.addEventListener("pqnas-update-packages-changed", (ev) => {
+        const storedName = ev && ev.detail && ev.detail.storedName ? String(ev.detail.storedName) : "";
+        if (storedName) setSelectedPackage(storedName);
+        refreshUploadedPackages();
+    });
 
     updateCenterReady(refreshUploadedPackages);
 })();
@@ -339,6 +1022,9 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
     }
 
     function pickStoredNameFromStatus() {
+        const selected = String(window.PQNAS_UPDATE_SELECTED_PACKAGE || "").trim();
+        if (selected) return selected;
+
         const text = String(statusEl.textContent || "");
         const m = text.match(/([0-9a-f]{12}_[A-Za-z0-9._-]+\.(?:tar\.gz|tgz|zip|dnxupd))/);
         return m ? m[1] : "";
@@ -395,6 +1081,9 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
     }
 
     function pickStoredNameFromStatus() {
+        const selected = String(window.PQNAS_UPDATE_SELECTED_PACKAGE || "").trim();
+        if (selected) return selected;
+
         const text = String(statusEl.textContent || "");
         const m = text.match(/([0-9a-f]{12}_[A-Za-z0-9._-]+\.(?:tar\.gz|tgz|zip|dnxupd))/);
         return m ? m[1] : "";
