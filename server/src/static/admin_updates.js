@@ -414,6 +414,8 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 // DNA-Nexus Update Center manual upload v1
 (() => {
     const fileInput = document.getElementById("manualPackageFile");
+    const chooseFileBtn = document.getElementById("manualChooseFileBtn");
+    const chosenFileName = document.getElementById("manualChosenFileName");
     const uploadBtn = document.getElementById("manualUploadBtn");
     const refreshBtn = document.getElementById("refreshUploadsBtn");
     const deleteBtn = document.getElementById("deletePackageBtn");
@@ -440,6 +442,15 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             i++;
         }
         return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function updateChosenFileName() {
+        if (!chosenFileName || !fileInput) return;
+
+        const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+        chosenFileName.textContent = f
+            ? `${f.name} — ${fmtBytes(f.size)}`
+            : updateCenterT("manual.no_file_chosen", null, "No file selected");
     }
 
     function fmtSpeed(bytesPerSec) {
@@ -983,6 +994,10 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             refreshBtn.disabled = false;
         }
     }
+
+    chooseFileBtn?.addEventListener("click", () => fileInput.click());
+    fileInput?.addEventListener("change", updateChosenFileName);
+    updateChosenFileName();
 
     uploadBtn.addEventListener("click", uploadPackage);
     refreshBtn.addEventListener("click", refreshUploadedPackages);

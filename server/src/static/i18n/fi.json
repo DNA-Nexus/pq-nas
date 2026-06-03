@@ -4229,5 +4229,16 @@
   "admin.updates.delete.modal.cancel": "Peruuta",
   "admin.updates.delete.modal.confirm": "Poista paketti",
   "admin.updates.manual.optional_upload.summary": "Lisää paketti omalta koneelta",
-  "admin.updates.manual.optional_upload.hint": "Valinnainen varareitti: käytä tätä, jos palvelin ei saa ladattua GitHubista, tai jos testaat itse rakennettua päivityspakettia."
+  "admin.updates.manual.optional_upload.hint": "Valinnainen varareitti: käytä tätä, jos palvelin ei saa ladattua GitHubista, tai jos testaat itse rakennettua päivityspakettia.",
+  "admin.updates.manual.choose_file": "Valitse pakettitiedosto",
+  "admin.updates.manual.no_file_chosen": "Ei tiedostoa valittuna",
+  "admin.updates.upload.progress_start": "Aloitetaan lataus: {name} ({size})…",
+  "admin.updates.upload.progress_detail": "{detail}",
+  "admin.updates.upload.progress_done": "Lataus valmis.",
+  "admin.updates.download.github.starting": "Aloitetaan lataus palvelimelle: {name}",
+  "admin.updates.download.github.starting_status": "Aloitetaan GitHub-lataus palvelimella…",
+  "admin.updates.download.github.progress": "{detail}",
+  "admin.updates.download.github.downloading": "Ladataan GitHub-pakettia palvelimelle… {detail}",
+  "admin.updates.download.github.done": "Ladattu palvelimelle: {name}",
+  "admin.updates.download.github.done_detail": "GitHub-lataus valmis. {detail}"
 }

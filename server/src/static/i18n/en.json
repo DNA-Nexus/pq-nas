@@ -4229,5 +4229,16 @@
   "admin.updates.delete.modal.cancel": "Cancel",
   "admin.updates.delete.modal.confirm": "Delete package",
   "admin.updates.manual.optional_upload.summary": "Add package from this computer",
-  "admin.updates.manual.optional_upload.hint": "Optional fallback: use this if the server cannot download from GitHub, or if you are testing a locally built update package."
+  "admin.updates.manual.optional_upload.hint": "Optional fallback: use this if the server cannot download from GitHub, or if you are testing a locally built update package.",
+  "admin.updates.manual.choose_file": "Choose package file",
+  "admin.updates.manual.no_file_chosen": "No file selected",
+  "admin.updates.upload.progress_start": "Starting upload: {name} ({size})…",
+  "admin.updates.upload.progress_detail": "{detail}",
+  "admin.updates.upload.progress_done": "Upload complete.",
+  "admin.updates.download.github.starting": "Starting server download: {name}",
+  "admin.updates.download.github.starting_status": "Starting GitHub download on server…",
+  "admin.updates.download.github.progress": "{detail}",
+  "admin.updates.download.github.downloading": "Downloading GitHub package to server… {detail}",
+  "admin.updates.download.github.done": "Downloaded to server: {name}",
+  "admin.updates.download.github.done_detail": "GitHub download complete. {detail}"
 }

@@ -221,6 +221,23 @@
             line-height:1.45;
         }
 
+        .hiddenNativeFileInput{
+            position:absolute;
+            width:1px;
+            height:1px;
+            opacity:0;
+            overflow:hidden;
+            pointer-events:none;
+        }
+        .manualChosenFileName{
+            color:var(--fg-dim);
+            min-width:180px;
+            max-width:520px;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+        }
+
 
 </style>
 </head>
@@ -317,9 +334,11 @@
                             Optional fallback: use this if the server cannot download from GitHub, or if you are testing a locally built update package.
                         </div>
                         <div class="row">
-                            <input id="manualPackageFile"
+                            <input class="hiddenNativeFileInput" id="manualPackageFile"
                                    type="file"
                                    accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
+                            <button class="btn" id="manualChooseFileBtn" type="button" data-i18n="admin.updates.manual.choose_file">Choose package file</button>
+                            <span class="mono manualChosenFileName" id="manualChosenFileName" data-i18n="admin.updates.manual.no_file_chosen">No file selected</span>
                             <button class="btn" id="manualUploadBtn" type="button" data-i18n="admin.updates.manual.upload">Upload to server</button>
                         </div>
                 <div class="updateProgressWrap" id="manualProgressWrap" hidden>
@@ -348,7 +367,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_updates.js?v=20260603-optional-local-upload-v1"></script>
+<script src="/static/admin_updates.js?v=20260603-custom-file-picker-i18n-v2"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>
