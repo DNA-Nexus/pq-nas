@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "包",
   "admin.updates.delete.modal.warning": "这不会卸载任何内容，但会删除暂存包文件及其元数据。",
   "admin.updates.delete.modal.cancel": "取消",
-  "admin.updates.delete.modal.confirm": "删除包"
+  "admin.updates.delete.modal.confirm": "删除包",
+  "admin.updates.error.current_version_too_old": "当前服务器版本 {current} 对此更新来说太旧。请先安装版本 {min}。",
+  "admin.updates.error.reject_action_present": "更新计划已被拒绝：{message}",
+  "admin.updates.error.unknown_validation_error": "未知验证错误。"
 }

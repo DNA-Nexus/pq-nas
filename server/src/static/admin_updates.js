@@ -54,6 +54,41 @@ function updateCenterBackendMessage(msg) {
     return text;
 }
 
+
+function updateCenterValidationErrorMessage(e) {
+    const obj = e && typeof e === "object" ? e : {};
+    const code = String(obj.code || "");
+    const action = obj.action && typeof obj.action === "object" ? obj.action : {};
+    const rawMessage = String(obj.message || action.reason || "").trim();
+    const rawReason = String(action.reason || rawMessage).trim();
+
+    const tooOld = rawReason.match(
+        /current server version\s+([0-9A-Za-z._+-]+)\s+is too old for this update;\s*minimum required version is\s+([0-9A-Za-z._+-]+)/i
+    );
+
+    if (code === "reject_action_present" && tooOld) {
+        return updateCenterT(
+            "error.current_version_too_old",
+            { current: tooOld[1], min: tooOld[2] },
+            `Current server version ${tooOld[1]} is too old for this update. Install version ${tooOld[2]} first.`
+        );
+    }
+
+    if (code === "reject_action_present") {
+        return updateCenterT(
+            "error.reject_action_present",
+            { message: rawMessage || rawReason || "" },
+            rawMessage || rawReason || "The update plan was rejected."
+        );
+    }
+
+    return rawMessage || updateCenterT(
+        "error.unknown_validation_error",
+        null,
+        "Unknown validation error."
+    );
+}
+
 function updateCenterYesNo(v) {
     return updateCenterT(v ? "value.yes" : "value.no", null, v ? "yes" : "no");
 }
@@ -1263,7 +1298,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
         const errorHtml = errors.length
             ? `<div class="planActions">${errors.map(e => {
-                const msg = `[${e.code || "error"}] ${e.message || ""}`;
+                const msg = `[${e.code || "error"}] ${updateCenterValidationErrorMessage(e)}`;
                 return `<div class="planLine skip">${escHtml(msg)}</div>`;
             }).join("")}</div>`
             : "";
@@ -1349,6 +1384,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
     function renderDryRun(j) {
         const planned = Array.isArray(j.planned_actions) ? j.planned_actions : [];
+        const errors = Array.isArray(j.validation_errors) ? j.validation_errors : [];
         const ok = !!j.ok;
 
         const head = [
@@ -1370,6 +1406,13 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
+        const errorHtml = errors.length
+            ? `<div class="planActions">${errors.map(e => {
+                const msg = `[${e.code || "error"}] ${updateCenterValidationErrorMessage(e)}`;
+                return `<div class="planLine skip">${escHtml(msg)}</div>`;
+            }).join("")}</div>`
+            : "";
+
         const plannedHtml = planned.length
             ? `<div class="planActions">${planned.slice(0, 200).map(a => {
                 const replace = a.would_replace === false
@@ -1383,6 +1426,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
         return `
             <div class="planPreview">
                 <div class="planSummary">${escHtml(head)}</div>
+                ${errorHtml}
                 ${plannedHtml}
             </div>
         `;
@@ -1449,6 +1493,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
     function renderApply(j) {
         const ok = !!j.ok;
+        const errors = Array.isArray(j.validation_errors) ? j.validation_errors : [];
 
         const head = [
             ok
@@ -1473,9 +1518,23 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
+        const fallbackErrors = errors.length
+            ? errors
+            : ((!ok && (j.error || j.message))
+                ? [{ code: j.error || "error", message: updateCenterBackendMessage(j.message || "") }]
+                : []);
+
+        const errorHtml = fallbackErrors.length
+            ? `<div class="planActions">${fallbackErrors.map(e => {
+                const msg = `[${e.code || "error"}] ${updateCenterValidationErrorMessage(e)}`;
+                return `<div class="planLine skip">${escHtml(msg)}</div>`;
+            }).join("")}</div>`
+            : "";
+
         return `
             <div class="planPreview">
                 <div class="planSummary">${escHtml(head)}</div>
+                ${errorHtml}
             </div>
         `;
     }

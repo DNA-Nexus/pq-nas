@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "Paket",
   "admin.updates.delete.modal.warning": "Dadurch wird nichts deinstalliert, aber die bereitgestellte Paketdatei und ihre Metadaten werden gelöscht.",
   "admin.updates.delete.modal.cancel": "Abbrechen",
-  "admin.updates.delete.modal.confirm": "Paket löschen"
+  "admin.updates.delete.modal.confirm": "Paket löschen",
+  "admin.updates.error.current_version_too_old": "Die aktuelle Serverversion {current} ist für dieses Update zu alt. Installiere zuerst Version {min}.",
+  "admin.updates.error.reject_action_present": "Der Update-Plan wurde abgelehnt: {message}",
+  "admin.updates.error.unknown_validation_error": "Unbekannter Validierungsfehler."
 }

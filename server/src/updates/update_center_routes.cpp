@@ -596,6 +596,118 @@ bool update_is_safe_staged_package_name(const std::string& name) {
     return best;
 }
 
+
+[[maybe_unused]] bool update_manifest_capability_supported(const std::string& cap) {
+    // Keep this intentionally small. New capabilities must be explicitly
+    // added when the updater can really enforce/apply them safely.
+    return cap == "update-manifest-v1";
+}
+
+[[maybe_unused]] std::string update_join_json_string_array(const json& arr) {
+    if (!arr.is_array()) return "";
+
+    std::string out;
+    for (const auto& v : arr) {
+        if (!v.is_string()) continue;
+        const std::string s = v.get<std::string>();
+        if (s.empty()) continue;
+
+        if (!out.empty()) out += ", ";
+        out += s;
+    }
+
+    return out;
+}
+
+[[maybe_unused]] std::string update_requires_prior_hint(const json& requires_prior) {
+    if (!requires_prior.is_array()) return "";
+
+    for (const auto& item : requires_prior) {
+        if (!item.is_object()) continue;
+
+        const std::string version =
+            item.contains("version") && item["version"].is_string()
+                ? item["version"].get<std::string>()
+                : "";
+
+        const std::string message =
+            item.contains("message") && item["message"].is_string()
+                ? item["message"].get<std::string>()
+                : "";
+
+        if (!message.empty()) return message;
+        if (!version.empty()) return "Install " + version + " first.";
+    }
+
+    return "";
+}
+
+[[maybe_unused]] json update_extract_update_manifest_info(const std::filesystem::path& package_path) {
+    json out = {
+        {"present", false},
+        {"ok", true},
+        {"path", ""},
+        {"error", ""}
+    };
+
+    const std::vector<std::string> candidates = {
+        "pqnas/update_manifest.json",
+        "./pqnas/update_manifest.json",
+        "update_manifest.json",
+        "./update_manifest.json"
+    };
+
+    for (const std::string& candidate : candidates) {
+        int status = -1;
+
+        const std::string cmd =
+            "tar -xOzf " + update_shell_quote(package_path.string()) + " " +
+            update_shell_quote(candidate) + " 2>/dev/null";
+
+        std::string raw = update_run_command_limited(cmd, 256u * 1024u, &status);
+        raw = update_trim(raw);
+
+        if (status != 0) {
+            continue;
+        }
+
+        out["present"] = true;
+        out["path"] = candidate;
+
+        if (raw.empty()) {
+            out["ok"] = false;
+            out["error"] = "update manifest is empty";
+            return out;
+        }
+
+        try {
+            json manifest = json::parse(raw);
+            if (!manifest.is_object()) {
+                out["ok"] = false;
+                out["error"] = "update manifest must be a JSON object";
+                return out;
+            }
+
+            out["ok"] = true;
+            out["manifest"] = manifest;
+            return out;
+        } catch (const std::exception& e) {
+            out["ok"] = false;
+            out["error"] = std::string("update manifest JSON parse failed: ") + e.what();
+            return out;
+        } catch (...) {
+            out["ok"] = false;
+            out["error"] = "update manifest JSON parse failed";
+            return out;
+        }
+    }
+
+    // No manifest is still allowed for older packages. Manifest-aware
+    // packages are validated when the manifest is present.
+    return out;
+}
+
+
 } // namespace
 
 
@@ -604,7 +716,8 @@ bool update_is_safe_staged_package_name(const std::string& name) {
 [[maybe_unused]] json build_update_plan_json(const UpdateCenterRoutesDeps& deps,
                                              const std::string& stored_name,
                                              const std::string& listing,
-                                             const std::string& package_bytes) {
+                                             const std::string& package_bytes,
+                                             const json& manifest_info) {
     const std::string package_sha256 = deps.sha256_hex(package_bytes);
     const std::uintmax_t package_size_bytes =
         static_cast<std::uintmax_t>(package_bytes.size());
@@ -642,8 +755,34 @@ bool update_is_safe_staged_package_name(const std::string& name) {
 
     bool has_core_binary_action = false;
 
-    const std::string package_server_version =
+    const json manifest_info_obj = manifest_info.is_object() ? manifest_info : json::object();
+    const bool manifest_present = manifest_info_obj.value("present", false);
+    const bool manifest_ok = manifest_info_obj.value("ok", false);
+    const std::string manifest_path = manifest_info_obj.value("path", "");
+    const std::string manifest_error = manifest_info_obj.value("error", "");
+
+    json update_manifest = json::object();
+    if (manifest_present &&
+        manifest_ok &&
+        manifest_info_obj.contains("manifest") &&
+        manifest_info_obj["manifest"].is_object()) {
+        update_manifest = manifest_info_obj["manifest"];
+    }
+
+    const std::string filename_package_server_version =
         update_extract_server_version_from_stored_name(stored_name);
+
+    std::string manifest_package_version;
+    if (update_manifest.contains("package_version") &&
+        update_manifest["package_version"].is_string()) {
+        manifest_package_version = update_trim(update_manifest["package_version"].get<std::string>());
+    }
+
+    const std::string package_server_version =
+        !manifest_package_version.empty()
+            ? manifest_package_version
+            : filename_package_server_version;
+
     const std::string current_server_version =
         update_current_server_version(deps);
 
@@ -652,6 +791,199 @@ bool update_is_safe_staged_package_name(const std::string& name) {
     const bool server_package_is_newer =
         server_package_version_known &&
         update_compare_versions(package_server_version, current_server_version) > 0;
+
+    bool manifest_compatibility_ok = true;
+    json manifest_missing_capabilities = json::array();
+
+    auto add_manifest_reject = [&](const std::string& skip_key,
+                                   const std::string& reason) {
+        manifest_compatibility_ok = false;
+        add_action(
+            "manifest",
+            "reject",
+            manifest_path.empty() ? "update_manifest.json" : manifest_path,
+            "",
+            reason
+        );
+        ++skipped;
+        bump_skip(skip_key);
+    };
+
+    if (manifest_present) {
+        if (!manifest_ok) {
+            add_manifest_reject(
+                "manifest_invalid",
+                manifest_error.empty()
+                    ? "update manifest is invalid"
+                    : manifest_error
+            );
+        } else {
+            int schema = -1;
+            if (update_manifest.contains("schema") &&
+                update_manifest["schema"].is_number_integer()) {
+                schema = update_manifest["schema"].get<int>();
+            }
+
+            if (schema != 1) {
+                add_manifest_reject(
+                    "manifest_schema_unsupported",
+                    "unsupported update manifest schema; expected schema 1"
+                );
+            }
+
+            const std::string kind =
+                update_manifest.contains("kind") && update_manifest["kind"].is_string()
+                    ? update_manifest["kind"].get<std::string>()
+                    : "";
+
+            if (kind != "pqnas_update_manifest") {
+                add_manifest_reject(
+                    "manifest_kind_invalid",
+                    "update manifest kind must be pqnas_update_manifest"
+                );
+            }
+
+            const std::string package =
+                update_manifest.contains("package") && update_manifest["package"].is_string()
+                    ? update_manifest["package"].get<std::string>()
+                    : "";
+
+            if (package != "pqnas") {
+                add_manifest_reject(
+                    "manifest_package_invalid",
+                    "update manifest package must be pqnas"
+                );
+            }
+
+            if (manifest_package_version.empty()) {
+                add_manifest_reject(
+                    "manifest_package_version_missing",
+                    "update manifest is missing package_version"
+                );
+            }
+
+            if (!manifest_package_version.empty() &&
+                !filename_package_server_version.empty() &&
+                update_compare_versions(manifest_package_version, filename_package_server_version) != 0) {
+                add_manifest_reject(
+                    "manifest_package_version_mismatch",
+                    "update manifest package_version " + manifest_package_version +
+                        " does not match tarball filename version " + filename_package_server_version
+                );
+            }
+
+            json compatibility = json::object();
+            if (update_manifest.contains("compatibility")) {
+                compatibility = update_manifest["compatibility"];
+            }
+
+            if (!compatibility.is_object()) {
+                add_manifest_reject(
+                    "manifest_compatibility_invalid",
+                    "update manifest compatibility must be a JSON object"
+                );
+            } else {
+                const std::string min_current_version =
+                    compatibility.contains("min_current_version") &&
+                    compatibility["min_current_version"].is_string()
+                        ? update_trim(compatibility["min_current_version"].get<std::string>())
+                        : "";
+
+                const std::string max_current_version_exclusive =
+                    compatibility.contains("max_current_version_exclusive") &&
+                    compatibility["max_current_version_exclusive"].is_string()
+                        ? update_trim(compatibility["max_current_version_exclusive"].get<std::string>())
+                        : "";
+
+                const json requires_prior =
+                    compatibility.contains("requires_prior")
+                        ? compatibility["requires_prior"]
+                        : json::array();
+
+                const std::string prior_hint = update_requires_prior_hint(requires_prior);
+
+                if (!min_current_version.empty()) {
+                    if (current_server_version.empty()) {
+                        add_manifest_reject(
+                            "manifest_current_version_unknown",
+                            "current server version is unknown; cannot enforce manifest min_current_version " +
+                                min_current_version
+                        );
+                    } else if (update_compare_versions(current_server_version, min_current_version) < 0) {
+                        std::string reason =
+                            "current server version " + current_server_version +
+                            " is too old for this update; minimum required version is " +
+                            min_current_version;
+
+                        if (!prior_hint.empty()) {
+                            reason += ". " + prior_hint;
+                        }
+
+                        add_manifest_reject("manifest_min_current_version", reason);
+                    }
+                }
+
+                if (!max_current_version_exclusive.empty()) {
+                    if (current_server_version.empty()) {
+                        add_manifest_reject(
+                            "manifest_current_version_unknown",
+                            "current server version is unknown; cannot enforce manifest max_current_version_exclusive " +
+                                max_current_version_exclusive
+                        );
+                    } else if (update_compare_versions(current_server_version, max_current_version_exclusive) >= 0) {
+                        add_manifest_reject(
+                            "manifest_max_current_version_exclusive",
+                            "current server version " + current_server_version +
+                                " is not lower than manifest max_current_version_exclusive " +
+                                max_current_version_exclusive +
+                                "; refusing reinstall, downgrade, or invalid update path"
+                        );
+                    }
+                }
+            }
+
+            json capabilities = json::object();
+            if (update_manifest.contains("capabilities")) {
+                capabilities = update_manifest["capabilities"];
+            }
+
+            if (capabilities.is_object() && capabilities.contains("requires")) {
+                const json required_caps = capabilities["requires"];
+
+                if (!required_caps.is_array()) {
+                    add_manifest_reject(
+                        "manifest_capabilities_requires_invalid",
+                        "update manifest capabilities.requires must be an array"
+                    );
+                } else {
+                    for (const auto& cap_v : required_caps) {
+                        if (!cap_v.is_string()) {
+                            manifest_missing_capabilities.push_back("<non-string capability>");
+                            continue;
+                        }
+
+                        const std::string cap = cap_v.get<std::string>();
+                        if (!update_manifest_capability_supported(cap)) {
+                            manifest_missing_capabilities.push_back(cap);
+                        }
+                    }
+
+                    if (!manifest_missing_capabilities.empty()) {
+                        add_manifest_reject(
+                            "manifest_missing_capabilities",
+                            "this update requires unsupported Update Center capabilities: " +
+                                update_join_json_string_array(manifest_missing_capabilities)
+                        );
+                    }
+                }
+            } else if (!capabilities.is_null() && !capabilities.is_object()) {
+                add_manifest_reject(
+                    "manifest_capabilities_invalid",
+                    "update manifest capabilities must be a JSON object"
+                );
+            }
+        }
+    }
 
     if (!server_package_version_known) {
         bump_skip("server_version_unknown");
@@ -949,15 +1281,22 @@ bool update_is_safe_staged_package_name(const std::string& name) {
         bump_skip("unknown");
     }
 
-    return json{
+    json out = json{
         {"ok", true},
         {"status", "plan_built"},
         {"stored_name", stored_name},
         {"package_sha256", package_sha256},
         {"package_size", package_size_bytes},
+        {"filename_package_server_version", filename_package_server_version},
         {"package_server_version", package_server_version},
         {"current_server_version", current_server_version},
         {"server_package_is_newer", server_package_is_newer},
+        {"manifest_present", manifest_present},
+        {"manifest_ok", manifest_ok},
+        {"manifest_path", manifest_path},
+        {"manifest_error", manifest_error},
+        {"manifest_compatibility_ok", manifest_compatibility_ok},
+        {"manifest_missing_capabilities", manifest_missing_capabilities},
         {"entry_count", entry_count},
         {"planned_updates", planned_updates},
         {"skipped", skipped},
@@ -965,6 +1304,12 @@ bool update_is_safe_staged_package_name(const std::string& name) {
         {"skipped_summary", skipped_summary},
         {"actions", actions}
     };
+
+    if (manifest_present && manifest_ok) {
+        out["manifest"] = update_manifest;
+    }
+
+    return out;
 }
 
 
@@ -2139,7 +2484,8 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             return;
         }
 
-        json plan = build_update_plan_json(deps, stored_name, listing, package_bytes);
+        const json manifest_info = update_extract_update_manifest_info(package_path);
+        json plan = build_update_plan_json(deps, stored_name, listing, package_bytes, manifest_info);
         const std::string plan_hash = deps.sha256_hex(plan.dump());
         const std::string plan_id = plan_hash.substr(0, 16) + "_" + stored_name;
 

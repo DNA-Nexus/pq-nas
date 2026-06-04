@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "Pakiet",
   "admin.updates.delete.modal.warning": "To niczego nie odinstaluje, ale plik przygotowanego pakietu i jego metadane zostaną usunięte.",
   "admin.updates.delete.modal.cancel": "Anuluj",
-  "admin.updates.delete.modal.confirm": "Usuń pakiet"
+  "admin.updates.delete.modal.confirm": "Usuń pakiet",
+  "admin.updates.error.current_version_too_old": "Obecna wersja serwera {current} jest zbyt stara dla tej aktualizacji. Najpierw zainstaluj wersję {min}.",
+  "admin.updates.error.reject_action_present": "Plan aktualizacji został odrzucony: {message}",
+  "admin.updates.error.unknown_validation_error": "Nieznany błąd walidacji."
 }

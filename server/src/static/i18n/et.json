@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "Pakett",
   "admin.updates.delete.modal.warning": "See ei desinstalli midagi, kuid ettevalmistatud paketifail ja selle metaandmed kustutatakse.",
   "admin.updates.delete.modal.cancel": "Tühista",
-  "admin.updates.delete.modal.confirm": "Kustuta pakett"
+  "admin.updates.delete.modal.confirm": "Kustuta pakett",
+  "admin.updates.error.current_version_too_old": "Praegune serveri versioon {current} on selle uuenduse jaoks liiga vana. Paigalda kõigepealt versioon {min}.",
+  "admin.updates.error.reject_action_present": "Uuendusplaan lükati tagasi: {message}",
+  "admin.updates.error.unknown_validation_error": "Tundmatu valideerimisviga."
 }

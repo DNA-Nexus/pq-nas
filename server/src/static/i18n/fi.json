@@ -4240,5 +4240,8 @@
   "admin.updates.download.github.progress": "{detail}",
   "admin.updates.download.github.downloading": "Ladataan GitHub-pakettia palvelimelle… {detail}",
   "admin.updates.download.github.done": "Ladattu palvelimelle: {name}",
-  "admin.updates.download.github.done_detail": "GitHub-lataus valmis. {detail}"
+  "admin.updates.download.github.done_detail": "GitHub-lataus valmis. {detail}",
+  "admin.updates.error.current_version_too_old": "Nykyinen palvelinversio {current} on liian vanha tälle päivitykselle. Asenna ensin versio {min}.",
+  "admin.updates.error.reject_action_present": "Päivityssuunnitelma hylättiin: {message}",
+  "admin.updates.error.unknown_validation_error": "Tuntematon validointivirhe."
 }

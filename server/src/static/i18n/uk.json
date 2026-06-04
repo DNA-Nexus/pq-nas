@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "Пакет",
   "admin.updates.delete.modal.warning": "Це нічого не деінсталює, але файл підготовленого пакета та його метадані буде видалено.",
   "admin.updates.delete.modal.cancel": "Скасувати",
-  "admin.updates.delete.modal.confirm": "Видалити пакет"
+  "admin.updates.delete.modal.confirm": "Видалити пакет",
+  "admin.updates.error.current_version_too_old": "Поточна версія сервера {current} занадто стара для цього оновлення. Спочатку встановіть версію {min}.",
+  "admin.updates.error.reject_action_present": "План оновлення відхилено: {message}",
+  "admin.updates.error.unknown_validation_error": "Невідома помилка перевірки."
 }

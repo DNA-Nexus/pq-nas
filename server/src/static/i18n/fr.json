@@ -4239,5 +4239,8 @@
   "admin.updates.delete.modal.package": "Paquet",
   "admin.updates.delete.modal.warning": "Cela ne désinstalle rien, mais le fichier du paquet préparé et ses métadonnées seront supprimés.",
   "admin.updates.delete.modal.cancel": "Annuler",
-  "admin.updates.delete.modal.confirm": "Supprimer le paquet"
+  "admin.updates.delete.modal.confirm": "Supprimer le paquet",
+  "admin.updates.error.current_version_too_old": "La version actuelle du serveur {current} est trop ancienne pour cette mise à jour. Installez d’abord la version {min}.",
+  "admin.updates.error.reject_action_present": "Le plan de mise à jour a été rejeté : {message}",
+  "admin.updates.error.unknown_validation_error": "Erreur de validation inconnue."
 }

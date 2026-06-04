@@ -4240,5 +4240,8 @@
   "admin.updates.download.github.progress": "{detail}",
   "admin.updates.download.github.downloading": "Downloading GitHub package to server… {detail}",
   "admin.updates.download.github.done": "Downloaded to server: {name}",
-  "admin.updates.download.github.done_detail": "GitHub download complete. {detail}"
+  "admin.updates.download.github.done_detail": "GitHub download complete. {detail}",
+  "admin.updates.error.current_version_too_old": "Current server version {current} is too old for this update. Install version {min} first.",
+  "admin.updates.error.reject_action_present": "The update plan was rejected: {message}",
+  "admin.updates.error.unknown_validation_error": "Unknown validation error."
 }

@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "kind": "pqnas_update_manifest",
+  "package": "pqnas",
+  "package_version": "__PQNAS_VERSION__",
+  "update_id": "pqnas-__PQNAS_VERSION__",
+  "artifact": {
+    "name": "pqnas-__PQNAS_TARBALL_VERSION__-linux-__PQNAS_ARCH__.tar.gz",
+    "arch": "__PQNAS_ARCH__",
+    "format": "tar.gz"
+  },
+  "compatibility": {
+    "min_current_version": "0.0.0",
+    "max_current_version_exclusive": "__PQNAS_VERSION__",
+    "requires_prior": []
+  },
+  "capabilities": {
+    "requires": [],
+    "provides": [
+      "update-manifest-v1"
+    ]
+  },
+  "actions_policy": {
+    "safe_in_place_actions": [
+      "static_file",
+      "core_binary"
+    ],
+    "future_manifest_actions": [
+      "ensure_directory",
+      "env_default",
+      "migration",
+      "systemd_unit"
+    ]
+  },
+  "notes": [
+    "This manifest is package metadata for Update Center.",
+    "Live config is not overwritten by default.",
+    "Future structural updates can tighten compatibility.min_current_version to force installing an intermediate release first."
+  ]
+}

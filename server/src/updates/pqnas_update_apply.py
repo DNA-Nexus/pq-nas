@@ -380,6 +380,42 @@ def applicable_actions_from_plan(plan: dict) -> tuple[list[dict], list[dict]]:
     return applicable_actions, reject_actions
 
 
+
+def validation_errors_from_reject_actions(reject_actions: list[dict]) -> list[dict]:
+    errors = []
+
+    for a in reject_actions:
+        if not isinstance(a, dict):
+            continue
+
+        reason = str(a.get("reason", "")).strip()
+        typ = str(a.get("type", "")).strip()
+        source = str(a.get("source", "")).strip()
+
+        msg = reason or "Plan contains a reject action."
+
+        if typ or source:
+            detail = []
+            if typ:
+                detail.append(f"type={typ}")
+            if source:
+                detail.append(f"source={source}")
+            msg = f"{msg} ({', '.join(detail)})"
+
+        errors.append({
+            "code": "reject_action_present",
+            "message": msg,
+            "action": a,
+        })
+
+    if not errors:
+        errors.append({
+            "code": "reject_action_present",
+            "message": "Plan contains reject actions; refusing install.",
+        })
+
+    return errors
+
 def run_validation_only(plan: dict,
                         plan_id: str,
                         actual_sha: str,
@@ -389,7 +425,17 @@ def run_validation_only(plan: dict,
         return fail(
             "reject_action_present",
             "Plan contains reject actions; refusing install.",
+            plan_id=plan_id,
+            plan_hash=plan.get("plan_hash", ""),
+            stored_name=plan.get("stored_name", ""),
+            package_sha256=actual_sha,
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
             reject_action_count=len(reject_actions),
+            reject_actions=reject_actions,
+            validation_errors=validation_errors_from_reject_actions(reject_actions),
+            validation_only=True,
+            install_performed=False,
         )
 
     if not applicable_actions:
@@ -434,7 +480,15 @@ def run_dry_run(plan: dict,
         return fail(
             "reject_action_present",
             "Plan contains reject actions; refusing dry-run.",
+            plan_id=plan_id,
+            plan_hash=plan.get("plan_hash", ""),
+            stored_name=plan.get("stored_name", ""),
+            package_sha256=actual_sha,
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
             reject_action_count=len(reject_actions),
+            reject_actions=reject_actions,
+            validation_errors=validation_errors_from_reject_actions(reject_actions),
             dry_run=True,
             install_performed=False,
         )
@@ -582,7 +636,16 @@ def run_apply(plan: dict,
         return fail(
             "reject_action_present",
             "Plan contains reject actions; refusing apply.",
+            plan_id=plan_id,
+            plan_hash=plan.get("plan_hash", ""),
+            stored_name=plan.get("stored_name", ""),
+            package_sha256=actual_sha,
+            package_server_version=plan.get("package_server_version", ""),
+            current_server_version=plan.get("current_server_version", ""),
             reject_action_count=len(reject_actions),
+            reject_actions=reject_actions,
+            validation_errors=validation_errors_from_reject_actions(reject_actions),
+            install_performed=False,
         )
 
     if not applicable_actions:

@@ -8,12 +8,52 @@ set -euo pipefail
 #   /tmp/pqnas-release/pqnas-<ver>-linux-x86_64.tar.gz
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <version>   (example: $0 0.9.0)"
+  echo "Usage: $0 <version> [--skip-server-build] [--skip-build]"
+  echo "Example:"
+  echo "  $0 1.1.8"
+  echo "  $0 1.1.8 --skip-server-build"
+  echo
+  echo "Environment alternatives:"
+  echo "  PQNAS_RELEASE_SKIP_SERVER_BUILD=1 $0 1.1.8"
+  echo "  PQNAS_RELEASE_SKIP_BUILD=1        $0 1.1.8"
   exit 1
 fi
 
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 VER="$1"
+shift
+
 ARCH="x86_64"
+SKIP_SERVER_BUILD="${PQNAS_RELEASE_SKIP_SERVER_BUILD:-0}"
+SKIP_ALL_BUILD="${PQNAS_RELEASE_SKIP_BUILD:-0}"
+ALLOW_STALE_SERVER="${PQNAS_RELEASE_ALLOW_STALE_SERVER:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-server-build)
+      SKIP_SERVER_BUILD=1
+      ;;
+    --skip-build|--no-build)
+      SKIP_ALL_BUILD=1
+      ;;
+    --build)
+      SKIP_SERVER_BUILD=0
+      SKIP_ALL_BUILD=0
+      ;;
+    *)
+      echo "ERROR: Unknown option: $1"
+      echo "Usage: $0 <version> [--skip-server-build] [--skip-build]"
+      exit 1
+      ;;
+  esac
+  shift
+done
 OUTDIR="/tmp/pqnas-release"
 STAGE="$OUTDIR/pqnas"
 TARBALL="$OUTDIR/pqnas-${VER}-linux-${ARCH}.tar.gz"
@@ -33,9 +73,20 @@ if [[ -z "$APP_VER" ]]; then
   exit 1
 fi
 
+# Release argument must match PQNAS_VERSION because the update manifest,
+# tarball filename, and compiled server version must describe the same build.
+if [[ "$VER" != "$APP_VER" ]]; then
+  echo "ERROR: Release version mismatch."
+  echo "  make_tarball argument: $VER"
+  echo "  PQNAS_VERSION:          $APP_VER"
+  echo "Update server/src/version.h or pass the matching version."
+  exit 17
+fi
+
 REL_ROOT="$REPO_ROOT/tools/release"
 CLEAN_CONFIG_DIR="$REL_ROOT/config"
 SYSTEMD_DIR="$REL_ROOT/systemd"
+UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
 
 # DNA Connect runtime for alerts
@@ -54,12 +105,40 @@ rm -rf "$OUTDIR"
 mkdir -p "$STAGE"
 
 # ---- 1) Build binaries ----
-echo "[*] Building pqnas_server + pqnas_keygen + nodus-cli..."
-cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen nodus-cli
+if is_truthy "$SKIP_ALL_BUILD"; then
+  echo "[*] Skipping CMake build completely (--skip-build)."
+  echo "[*] Using existing binaries from: $REPO_ROOT/build/bin"
+elif is_truthy "$SKIP_SERVER_BUILD"; then
+  echo "[*] Skipping pqnas_server build (--skip-server-build)."
+  echo "[*] Building helper tools only: pqnas_keygen + nodus-cli..."
+  cmake --build "$REPO_ROOT/build" --target pqnas_keygen nodus-cli
+else
+  echo "[*] Building pqnas_server + pqnas_keygen + nodus-cli..."
+  cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen nodus-cli
+fi
 
 test -x "$REPO_ROOT/build/bin/pqnas_server"
 test -x "$REPO_ROOT/build/bin/pqnas_keygen"
 test -x "$REPO_ROOT/build/bin/nodus-cli"
+
+# If the server build was skipped, protect against accidentally packaging an
+# old server binary after server/src/version.h was bumped.
+if { is_truthy "$SKIP_ALL_BUILD" || is_truthy "$SKIP_SERVER_BUILD"; } && ! is_truthy "$ALLOW_STALE_SERVER"; then
+  if command -v strings >/dev/null 2>&1; then
+    if ! strings "$REPO_ROOT/build/bin/pqnas_server" | grep -F -- "$APP_VER" >/dev/null 2>&1; then
+      echo "ERROR: Existing build/bin/pqnas_server does not appear to contain PQNAS_VERSION=$APP_VER"
+      echo "This usually means version.h was changed but pqnas_server was not rebuilt."
+      echo
+      echo "Fix:"
+      echo "  cmake --build build -j"
+      echo "  tools/release/make_tarball.sh $VER --skip-server-build"
+      echo
+      echo "Override only if you know the binary is correct:"
+      echo "  PQNAS_RELEASE_ALLOW_STALE_SERVER=1 tools/release/make_tarball.sh $VER --skip-server-build"
+      exit 20
+    fi
+  fi
+fi
 
 # ---- 2) NOTE: repo config may be "dirty" during development ----
 # We do NOT ship $REPO_ROOT/config anymore. We always ship tools/release/config.
@@ -203,6 +282,30 @@ test -f "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh" || {
   exit 1
 }
 
+# Staging update manifest at tarball root:
+#   <tarball>/pqnas/update_manifest.json
+if [[ ! -f "$UPDATE_MANIFEST_TEMPLATE" ]]; then
+  echo "ERROR: Missing update manifest template: $UPDATE_MANIFEST_TEMPLATE"
+  exit 18
+fi
+
+echo "[*] Staging update manifest..."
+tmp_manifest="$(mktemp)"
+sed \
+  -e "s/__PQNAS_VERSION__/${APP_VER}/g" \
+  -e "s/__PQNAS_TARBALL_VERSION__/${VER}/g" \
+  -e "s/__PQNAS_ARCH__/${ARCH}/g" \
+  "$UPDATE_MANIFEST_TEMPLATE" > "$tmp_manifest"
+
+python3 -m json.tool "$tmp_manifest" >/dev/null
+install -m 0644 "$tmp_manifest" "$STAGE/update_manifest.json"
+rm -f "$tmp_manifest"
+
+test -f "$STAGE/update_manifest.json" || {
+  echo "ERROR: update_manifest.json did not stage"
+  exit 19
+}
+
 # Copies: server/src/static/*  ->  <tarball>/pqnas/static/*
 rsync -a --delete \
   --exclude '__pycache__/' \
@@ -324,7 +427,8 @@ echo "  rm -rf /tmp/pqnas-test && mkdir -p /tmp/pqnas-test"
 echo "  tar -xzf '$TARBALL' -C /tmp/pqnas-test"
 echo "  ls -la /tmp/pqnas-test/pqnas"
 echo
-echo "Expected binaries/runtime inside tarball:"
+echo "Expected manifest/binaries/runtime inside tarball:"
+echo "  /tmp/pqnas-test/pqnas/update_manifest.json"
 echo "  /tmp/pqnas-test/pqnas/pqnas_server"
 echo "  /tmp/pqnas-test/pqnas/pqnas_keygen"
 echo "  /tmp/pqnas-test/pqnas/nodus-cli"
