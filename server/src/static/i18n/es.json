@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "El plan contiene acciones de rechazo; no se aplicará la instalación.",
   "admin.updates.message.reject_actions_refusing_install": "El plan contiene acciones de rechazo; no se realizará la instalación.",
   "admin.updates.error_code.no_applicable_actions": "No hay acciones de actualización aplicables",
-  "admin.updates.error_code.reject_action_present": "Plan de actualización rechazado"
+  "admin.updates.error_code.reject_action_present": "Plan de actualización rechazado",
+  "system.drive.locate": "Localizar / LED",
+  "system.drive.stop_locate": "Detener localización",
+  "system.drive.starting_locate": "Iniciando localización…",
+  "system.drive.stopping_locate": "Deteniendo…",
+  "system.drive.locate_failed_title": "Error al localizar la unidad",
+  "system.drive.locate_failed": "No se pudo ejecutar la localización de la unidad: {{error}}",
+  "system.drive.locate_hint": "Intenta hacer parpadear el LED de identificación de la bahía de la unidad si el hardware lo admite.",
+  "system.drive.stop_locate_hint": "Detiene el LED de identificación de la bahía de la unidad si está activo."
 }

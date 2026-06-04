@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "计划包含拒绝操作；不会执行安装。",
   "admin.updates.message.reject_actions_refusing_install": "计划包含拒绝操作；不会执行安装。",
   "admin.updates.error_code.no_applicable_actions": "没有适用的更新操作",
-  "admin.updates.error_code.reject_action_present": "更新计划已被拒绝"
+  "admin.updates.error_code.reject_action_present": "更新计划已被拒绝",
+  "system.drive.locate": "定位 / LED",
+  "system.drive.stop_locate": "停止定位",
+  "system.drive.starting_locate": "正在启动定位…",
+  "system.drive.stopping_locate": "正在停止…",
+  "system.drive.locate_failed_title": "驱动器定位失败",
+  "system.drive.locate_failed": "无法执行驱动器定位：{{error}}",
+  "system.drive.locate_hint": "如果硬件支持，尝试闪烁驱动器托架的识别 LED。",
+  "system.drive.stop_locate_hint": "如果驱动器托架识别 LED 正在闪烁，则停止它。"
 }

@@ -4249,5 +4249,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Suunnitelma sisältää hylkäystoimintoja; asennusta ei suoriteta.",
   "admin.updates.message.reject_actions_refusing_install": "Suunnitelma sisältää hylkäystoimintoja; asennusta ei suoriteta.",
   "admin.updates.error_code.no_applicable_actions": "Ei sovellettavia päivitystoimintoja",
-  "admin.updates.error_code.reject_action_present": "Päivityssuunnitelma hylätty"
+  "admin.updates.error_code.reject_action_present": "Päivityssuunnitelma hylätty",
+  "system.drive.locate": "Paikanna / LED",
+  "system.drive.stop_locate": "Lopeta paikannus",
+  "system.drive.starting_locate": "Käynnistetään paikannusta…",
+  "system.drive.stopping_locate": "Pysäytetään…",
+  "system.drive.locate_failed_title": "Levyn paikannus epäonnistui",
+  "system.drive.locate_failed": "Levyn paikannuksen suoritus epäonnistui: {{error}}",
+  "system.drive.locate_hint": "Yrittää vilkuttaa levypaikan tunnistus-LEDiä, jos laitteisto tukee sitä.",
+  "system.drive.stop_locate_hint": "Lopettaa levypaikan tunnistus-LEDin vilkutuksen, jos se on päällä."
 }

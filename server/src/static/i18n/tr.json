@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Plan reddetme işlemleri içeriyor; kurulum uygulanmayacak.",
   "admin.updates.message.reject_actions_refusing_install": "Plan reddetme işlemleri içeriyor; kurulum yapılmayacak.",
   "admin.updates.error_code.no_applicable_actions": "Uygulanabilir güncelleme işlemi yok",
-  "admin.updates.error_code.reject_action_present": "Güncelleme planı reddedildi"
+  "admin.updates.error_code.reject_action_present": "Güncelleme planı reddedildi",
+  "system.drive.locate": "Bul / LED",
+  "system.drive.stop_locate": "Bulmayı durdur",
+  "system.drive.starting_locate": "Bulma başlatılıyor…",
+  "system.drive.stopping_locate": "Durduruluyor…",
+  "system.drive.locate_failed_title": "Sürücü bulma başarısız",
+  "system.drive.locate_failed": "Sürücü bulma çalıştırılamadı: {{error}}",
+  "system.drive.locate_hint": "Donanım destekliyorsa sürücü yuvası tanımlama LED’ini yanıp söndürmeyi dener.",
+  "system.drive.stop_locate_hint": "Etkinse sürücü yuvası tanımlama LED’ini durdurur."
 }

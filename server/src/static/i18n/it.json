@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Il piano contiene azioni di rifiuto; l’installazione non verrà eseguita.",
   "admin.updates.message.reject_actions_refusing_install": "Il piano contiene azioni di rifiuto; l’installazione non verrà eseguita.",
   "admin.updates.error_code.no_applicable_actions": "Nessuna azione di aggiornamento applicabile",
-  "admin.updates.error_code.reject_action_present": "Piano di aggiornamento rifiutato"
+  "admin.updates.error_code.reject_action_present": "Piano di aggiornamento rifiutato",
+  "system.drive.locate": "Localizza / LED",
+  "system.drive.stop_locate": "Interrompi localizzazione",
+  "system.drive.starting_locate": "Avvio localizzazione…",
+  "system.drive.stopping_locate": "Arresto…",
+  "system.drive.locate_failed_title": "Localizzazione unità non riuscita",
+  "system.drive.locate_failed": "Impossibile eseguire la localizzazione dell’unità: {{error}}",
+  "system.drive.locate_hint": "Prova a far lampeggiare il LED di identificazione del vano unità, se l’hardware lo supporta.",
+  "system.drive.stop_locate_hint": "Ferma il LED di identificazione del vano unità se è attivo."
 }

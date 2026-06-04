@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Plan zawiera działania odrzucające; instalacja nie zostanie wykonana.",
   "admin.updates.message.reject_actions_refusing_install": "Plan zawiera działania odrzucające; instalacja nie zostanie wykonana.",
   "admin.updates.error_code.no_applicable_actions": "Brak odpowiednich działań aktualizacji",
-  "admin.updates.error_code.reject_action_present": "Plan aktualizacji odrzucony"
+  "admin.updates.error_code.reject_action_present": "Plan aktualizacji odrzucony",
+  "system.drive.locate": "Zlokalizuj / LED",
+  "system.drive.stop_locate": "Zatrzymaj lokalizację",
+  "system.drive.starting_locate": "Uruchamianie lokalizacji…",
+  "system.drive.stopping_locate": "Zatrzymywanie…",
+  "system.drive.locate_failed_title": "Lokalizacja dysku nie powiodła się",
+  "system.drive.locate_failed": "Nie udało się uruchomić lokalizacji dysku: {{error}}",
+  "system.drive.locate_hint": "Próbuje migać diodą identyfikacyjną kieszeni dysku, jeśli sprzęt to obsługuje.",
+  "system.drive.stop_locate_hint": "Zatrzymuje diodę identyfikacyjną kieszeni dysku, jeśli jest aktywna."
 }

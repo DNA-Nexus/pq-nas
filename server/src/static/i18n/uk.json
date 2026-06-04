@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "План містить дії відхилення; встановлення не буде виконано.",
   "admin.updates.message.reject_actions_refusing_install": "План містить дії відхилення; встановлення не буде виконано.",
   "admin.updates.error_code.no_applicable_actions": "Немає застосовних дій оновлення",
-  "admin.updates.error_code.reject_action_present": "План оновлення відхилено"
+  "admin.updates.error_code.reject_action_present": "План оновлення відхилено",
+  "system.drive.locate": "Пошук / LED",
+  "system.drive.stop_locate": "Зупинити пошук",
+  "system.drive.starting_locate": "Запуск пошуку…",
+  "system.drive.stopping_locate": "Зупинка…",
+  "system.drive.locate_failed_title": "Не вдалося знайти диск",
+  "system.drive.locate_failed": "Не вдалося виконати пошук диска: {{error}}",
+  "system.drive.locate_hint": "Намагається блимати індикатором ідентифікації відсіку диска, якщо обладнання це підтримує.",
+  "system.drive.stop_locate_hint": "Зупиняє індикатор ідентифікації відсіку диска, якщо він активний."
 }

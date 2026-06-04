@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Planen innehåller avvisningsåtgärder; installationen vägras.",
   "admin.updates.message.reject_actions_refusing_install": "Planen innehåller avvisningsåtgärder; installationen vägras.",
   "admin.updates.error_code.no_applicable_actions": "Inga tillämpliga uppdateringsåtgärder",
-  "admin.updates.error_code.reject_action_present": "Uppdateringsplan avvisad"
+  "admin.updates.error_code.reject_action_present": "Uppdateringsplan avvisad",
+  "system.drive.locate": "Lokalisera / LED",
+  "system.drive.stop_locate": "Stoppa lokalisering",
+  "system.drive.starting_locate": "Startar lokalisering…",
+  "system.drive.stopping_locate": "Stoppar…",
+  "system.drive.locate_failed_title": "Enhetslokalisering misslyckades",
+  "system.drive.locate_failed": "Det gick inte att köra enhetslokalisering: {{error}}",
+  "system.drive.locate_hint": "Försöker blinka identifierings-LED:en för enhetsfacket om hårdvaran stöder det.",
+  "system.drive.stop_locate_hint": "Stoppar identifierings-LED:en för enhetsfacket om den är aktiv."
 }

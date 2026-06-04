@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Plaan sisaldab tagasilükkamistoiminguid; paigaldamist ei tehta.",
   "admin.updates.message.reject_actions_refusing_install": "Plaan sisaldab tagasilükkamistoiminguid; paigaldamist ei tehta.",
   "admin.updates.error_code.no_applicable_actions": "Sobivaid uuendustoiminguid pole",
-  "admin.updates.error_code.reject_action_present": "Uuendusplaan lükati tagasi"
+  "admin.updates.error_code.reject_action_present": "Uuendusplaan lükati tagasi",
+  "system.drive.locate": "Leia / LED",
+  "system.drive.stop_locate": "Peata leidmine",
+  "system.drive.starting_locate": "Leidmise käivitamine…",
+  "system.drive.stopping_locate": "Peatamine…",
+  "system.drive.locate_failed_title": "Seadme leidmine nurjus",
+  "system.drive.locate_failed": "Seadme leidmise käivitamine nurjus: {{error}}",
+  "system.drive.locate_hint": "Proovib vilgutada kettapesa tuvastus-LEDi, kui riistvara seda toetab.",
+  "system.drive.stop_locate_hint": "Peatab kettapesa tuvastus-LEDi, kui see on aktiivne."
 }

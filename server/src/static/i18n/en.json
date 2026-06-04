@@ -4249,5 +4249,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "The plan contains reject actions; refusing apply.",
   "admin.updates.message.reject_actions_refusing_install": "The plan contains reject actions; refusing install.",
   "admin.updates.error_code.no_applicable_actions": "No applicable update actions",
-  "admin.updates.error_code.reject_action_present": "Rejected update plan"
+  "admin.updates.error_code.reject_action_present": "Rejected update plan",
+  "system.drive.locate": "Locate / LED",
+  "system.drive.stop_locate": "Stop locate",
+  "system.drive.starting_locate": "Starting locate…",
+  "system.drive.stopping_locate": "Stopping…",
+  "system.drive.locate_failed_title": "Drive locate failed",
+  "system.drive.locate_failed": "Failed to run drive locate: {{error}}",
+  "system.drive.locate_hint": "Tries to blink the drive bay identify LED if the hardware supports it.",
+  "system.drive.stop_locate_hint": "Stops the drive bay identify LED if it is active."
 }

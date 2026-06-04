@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Der Plan enthält Ablehnungsaktionen; die Installation wird verweigert.",
   "admin.updates.message.reject_actions_refusing_install": "Der Plan enthält Ablehnungsaktionen; die Installation wird verweigert.",
   "admin.updates.error_code.no_applicable_actions": "Keine anwendbaren Update-Aktionen",
-  "admin.updates.error_code.reject_action_present": "Update-Plan abgelehnt"
+  "admin.updates.error_code.reject_action_present": "Update-Plan abgelehnt",
+  "system.drive.locate": "Suchen / LED",
+  "system.drive.stop_locate": "Lokalisierung stoppen",
+  "system.drive.starting_locate": "Lokalisierung wird gestartet…",
+  "system.drive.stopping_locate": "Wird gestoppt…",
+  "system.drive.locate_failed_title": "Laufwerkslokalisierung fehlgeschlagen",
+  "system.drive.locate_failed": "Laufwerkslokalisierung konnte nicht ausgeführt werden: {{error}}",
+  "system.drive.locate_hint": "Versucht, die Identifikations-LED des Laufwerksschachts blinken zu lassen, sofern die Hardware dies unterstützt.",
+  "system.drive.stop_locate_hint": "Stoppt die Identifikations-LED des Laufwerksschachts, falls sie aktiv ist."
 }

@@ -331,6 +331,28 @@ html[data-theme="bright"] .systemModalCard{
         return j;
     }
 
+    async function driveLocateDevice(action, device) {
+        const endpoint = action === "stop"
+            ? "/api/v4/system/drives/locate/stop"
+            : "/api/v4/system/drives/locate/start";
+
+        const r = await fetch(endpoint, {
+            method: "POST",
+            cache: "no-store",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device })
+        });
+
+        const txt = await r.text();
+        let j = null;
+        try { j = JSON.parse(txt); } catch {}
+        if (!r.ok || !j || !j.ok) {
+            throw new Error((j && (j.message || j.error || j.output)) || txt || `HTTP ${r.status}`);
+        }
+        return j;
+    }
+
 
     // drive-health-refresh-now: frontend: backend-triggered SMART/NVMe refresh.
     async function refreshDriveSmartNow() {
@@ -915,6 +937,8 @@ html[data-theme="bright"] .systemModalCard{
                 ? d.locate_methods_available.map(x => String(x || "").trim()).filter(Boolean)
                 : [];
             const physicalHintRaw = String(d.physical_hint || "").trim();
+            const locateDeviceRaw = byIdRaw || devRaw;
+            const canLocateDrive = locateReady && locateDeviceRaw && locateDeviceRaw !== "—";
             const bus = escapeHtml((d.transport || d.kind || "unknown").toUpperCase());
             const size = fmtBytes(Number(d.size_bytes));
             const healthText = escapeHtml(d.health_text || tr("system.unknown", null, "Unknown"));
@@ -981,9 +1005,10 @@ html[data-theme="bright"] .systemModalCard{
                     : `Locate: not supported yet${physicalHintRaw ? ` — ${physicalHintRaw}` : ""}`;
 
             return `
+            <section class="driveHealthDeviceCard ${rowCls}" style="margin:0 0 16px 0; padding:14px; border:1px solid rgba(255,255,255,0.14); border-radius:18px; background:rgba(255,255,255,0.045); box-shadow:0 10px 28px rgba(0,0,0,0.16);">
             <div class="kv driveRow ${rowCls}">
                 <div class="k">
-                    ${model}<br>
+                    <span class="driveHealthDeviceName" style="color:#166534; font-weight:800; letter-spacing:.01em;">${model}</span><br>
                     <span class="mono">${dev} • ${bus} • ${size}</span>
                 </div>
                 <div class="v">${healthText} • 🌡 ${temp}</div>
@@ -1009,7 +1034,7 @@ html[data-theme="bright"] .systemModalCard{
             }
                 ${warning ? `<br>${warning}` : ``}
             </div>
-            <div class="driveActions" style="display:flex; gap:8px; margin:0 0 14px 0; flex-wrap:wrap;">
+            <div class="driveActions" style="display:flex; gap:8px; margin:10px 0 0 0; flex-wrap:wrap;">
                 ${
                 d.selftest_supported
                     ? `
@@ -1032,7 +1057,28 @@ html[data-theme="bright"] .systemModalCard{
                     <span class="note">${escapeHtml(tr("system.selftest_unavailable", null, "Self-test start not available for this drive."))}</span>
                     `
             }
+                ${
+                    canLocateDrive
+                        ? `
+                        <button class="btn js-drive-locate"
+                                type="button"
+                                data-action="start"
+                                data-device="${escapeHtml(locateDeviceRaw)}"
+                                title="${escapeHtml(tr("system.drive.locate_hint", null, "Tries to blink the drive bay identify LED if the hardware supports it."))}">
+                            ${escapeHtml(tr("system.drive.locate", null, "Locate / LED"))}
+                        </button>
+                        <button class="btn js-drive-locate"
+                                type="button"
+                                data-action="stop"
+                                data-device="${escapeHtml(locateDeviceRaw)}"
+                                title="${escapeHtml(tr("system.drive.stop_locate_hint", null, "Stops the drive bay identify LED if it is active."))}">
+                            ${escapeHtml(tr("system.drive.stop_locate", null, "Stop locate"))}
+                        </button>
+                        `
+                        : ``
+                }
             </div>
+            </section>
         `;
         }).join("");
     }
@@ -1220,6 +1266,35 @@ html[data-theme="bright"] .systemModalCard{
             await openSystemInfoModal({
                 title: tr("system.selftest_start_failed_title", null, "Self-test start failed"),
                 message: tr("system.selftest_start_failed", { error: String(e && e.message ? e.message : e) }, "Failed to start self-test: " + String(e && e.message ? e.message : e)),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest(".js-drive-locate");
+        if (!btn) return;
+
+        const action = btn.getAttribute("data-action") === "stop" ? "stop" : "start";
+        const device = btn.getAttribute("data-device") || "";
+        if (!device) return;
+
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = action === "stop"
+            ? tr("system.drive.stopping_locate", null, "Stopping…")
+            : tr("system.drive.starting_locate", null, "Starting locate…");
+
+        try {
+            await driveLocateDevice(action, device);
+        } catch (e) {
+            const msg = String(e && e.message ? e.message : e);
+            await openSystemInfoModal({
+                title: tr("system.drive.locate_failed_title", null, "Drive locate failed"),
+                message: tr("system.drive.locate_failed", { error: msg }, "Failed to run drive locate: " + msg),
                 okText: tr("system.modal.ok", null, "OK")
             });
         } finally {

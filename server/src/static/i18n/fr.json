@@ -4248,5 +4248,13 @@
   "admin.updates.message.reject_actions_refusing_apply": "Le plan contient des actions de rejet ; l’installation est refusée.",
   "admin.updates.message.reject_actions_refusing_install": "Le plan contient des actions de rejet ; l’installation est refusée.",
   "admin.updates.error_code.no_applicable_actions": "Aucune action de mise à jour applicable",
-  "admin.updates.error_code.reject_action_present": "Plan de mise à jour rejeté"
+  "admin.updates.error_code.reject_action_present": "Plan de mise à jour rejeté",
+  "system.drive.locate": "Localiser / LED",
+  "system.drive.stop_locate": "Arrêter la localisation",
+  "system.drive.starting_locate": "Démarrage de la localisation…",
+  "system.drive.stopping_locate": "Arrêt…",
+  "system.drive.locate_failed_title": "Échec de la localisation du disque",
+  "system.drive.locate_failed": "Impossible d’exécuter la localisation du disque : {{error}}",
+  "system.drive.locate_hint": "Tente de faire clignoter la LED d’identification de la baie du disque si le matériel le prend en charge.",
+  "system.drive.stop_locate_hint": "Arrête la LED d’identification de la baie du disque si elle est active."
 }
