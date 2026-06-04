@@ -126,7 +126,22 @@ void normalize_slots_array(json* slots) {
             }
         }
 
-        out.push_back(make_slot(idx++, dev));
+        json one = make_slot(idx++, dev);
+
+        if (s.is_object()) {
+            auto copy_slot_identity_field = [&](const char* key) {
+                if (s.contains(key) && s[key].is_string() && !s[key].get<std::string>().empty()) {
+                    one[key] = s[key];
+                }
+            };
+
+            copy_slot_identity_field("disk_id");
+            copy_slot_identity_field("by_id");
+            copy_slot_identity_field("by_path");
+            copy_slot_identity_field("runtime_dev");
+        }
+
+        out.push_back(std::move(one));
     }
 
     *slots = std::move(out);
@@ -542,6 +557,11 @@ json merge_pool_runtime_and_config(const json& cfg_pool,
                 {"present", present},
                 {"member", present}
             };
+
+            if (s.contains("disk_id") && s["disk_id"].is_string()) one["disk_id"] = s["disk_id"];
+            if (s.contains("by_id") && s["by_id"].is_string()) one["by_id"] = s["by_id"];
+            if (s.contains("by_path") && s["by_path"].is_string()) one["by_path"] = s["by_path"];
+            if (s.contains("runtime_dev") && s["runtime_dev"].is_string()) one["runtime_dev"] = s["runtime_dev"];
 
             if (assigned) desired_set.insert(dev);
             slots.push_back(one);

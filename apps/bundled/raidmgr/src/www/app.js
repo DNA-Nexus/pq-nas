@@ -561,8 +561,66 @@ html[data-theme="bright"] .raidPromptInput{
         return j;
     }
 
+    function buildDriveIdentityMapFromSystemDrives(j) {
+        const out = new Map();
+        const arr = Array.isArray(j?.drives) ? j.drives : [];
+
+        for (const d of arr) {
+            const dev = String(d?.dev || d?.path || "").trim();
+            if (!dev) continue;
+
+            const id = {
+                disk_id: String(d?.disk_id || "").trim(),
+                by_id: String(d?.by_id || "").trim(),
+                by_path: String(d?.by_path || "").trim(),
+            };
+
+            if (!id.disk_id && !id.by_id && !id.by_path) continue;
+            out.set(dev, id);
+        }
+
+        return out;
+    }
+
+    function enrichDiskTreeWithIdentity(node, byDev) {
+        if (!node || !byDev || !byDev.size) return node;
+
+        if (Array.isArray(node)) {
+            for (const v of node) enrichDiskTreeWithIdentity(v, byDev);
+            return node;
+        }
+
+        if (typeof node !== "object") return node;
+
+        const dev = String(node.path || node.dev || "").trim();
+        if (dev && byDev.has(dev)) {
+            const id = byDev.get(dev);
+            if (id.disk_id && !node.disk_id) node.disk_id = id.disk_id;
+            if (id.by_id && !node.by_id) node.by_id = id.by_id;
+            if (id.by_path && !node.by_path) node.by_path = id.by_path;
+        }
+
+        for (const k of Object.keys(node)) {
+            enrichDiskTreeWithIdentity(node[k], byDev);
+        }
+
+        return node;
+    }
+
+    async function loadDriveIdentityMap() {
+        try {
+            const j = await apiGetJson("/api/v4/system/drives");
+            return buildDriveIdentityMapFromSystemDrives(j);
+        } catch (_) {
+            return new Map();
+        }
+    }
+
     async function loadAllDisks() {
-        return await apiGetJson("/api/v4/storage/disks");
+        const j = await apiGetJson("/api/v4/storage/disks");
+        const byDev = await loadDriveIdentityMap();
+        enrichDiskTreeWithIdentity(j, byDev);
+        return j;
     }
 
     async function loadDiscovery(mount) {
@@ -1711,18 +1769,34 @@ html[data-theme="bright"] .raidPromptInput{
         return name.startsWith("loop") || path.startsWith("/dev/loop");
     }
 
+    function shortDiskIdentity(d) {
+        const diskId = String(d?.disk_id || "").trim();
+        const byId = String(d?.by_id || "").trim();
+        const byPath = String(d?.by_path || "").trim();
+
+        let s = diskId;
+        if (!s && byId) s = byId.split("/").filter(Boolean).pop() || byId;
+        if (!s && byPath) s = byPath.split("/").filter(Boolean).pop() || byPath;
+
+        if (!s) return "";
+        return s.length > 72 ? s.slice(0, 69) + "…" : s;
+    }
+
     function diskLabel(d) {
-        const name = String(d?.name || "");
-        const path = String(d?.path || "");
+        const path = String(d?.path || d?.dev || "");
         const model = String(d?.model || "").trim();
-        const size = fmtBytes(Number(d?.size_bytes) || 0);
-        const serial = String(d?.serial || "").trim();
-        const bits = [];
-        bits.push(name ? name : path);
-        if (model) bits.push(model);
-        bits.push(size);
-        if (serial) bits.push(serial);
-        return bits.join(" • ");
+        const size = Number.isFinite(Number(d?.size_bytes)) && Number(d?.size_bytes) > 0
+            ? fmtBytes(Number(d.size_bytes))
+            : "";
+        const id = shortDiskIdentity(d);
+
+        const parts = [];
+        if (path) parts.push(path);
+        if (model) parts.push(model);
+        if (size) parts.push(size);
+        if (id) parts.push(`ID ${id}`);
+
+        return parts.filter(Boolean).join(" • ") || tr("raidmgr.disk_fallback", null, "(disk)");
     }
 
     function currentMemberParentDisks(parsed) {
@@ -2819,15 +2893,50 @@ html[data-theme="bright"] .raidPromptInput{
                 }
             }
 
+            function diskIdentityForSlotDevice(dev) {
+                const want = String(dev || "").trim();
+                if (!want) return {};
+
+                const found = (Array.isArray(disks) ? disks : []).find((d) =>
+                    String(d?.path || d?.dev || "").trim() === want
+                );
+
+                const savedSlot = (Array.isArray(pool?.slots) ? pool.slots : []).find((s) =>
+                    String(s?.device || "").trim() === want
+                );
+
+                const src = found || savedSlot || {};
+                const out = { runtime_dev: want };
+
+                const diskId = String(src?.disk_id || "").trim();
+                const byId = String(src?.by_id || "").trim();
+                const byPath = String(src?.by_path || "").trim();
+
+                if (diskId) out.disk_id = diskId;
+                if (byId) out.by_id = byId;
+                if (byPath) out.by_path = byPath;
+
+                return out;
+            }
+
             async function saveLayout() {
                 syncSlotValuesFromDom();
 
                 const mode = String(modeSel.value || "single");
                 const display_name = String(displayNameInp.value || "").trim();
-                const slots = Array.from({ length: slotCount }, (_, i) => ({
-                    index: i,
-                    device: slotValues[i] ? String(slotValues[i]) : null
-                }));
+                const slots = Array.from({ length: slotCount }, (_, i) => {
+                    const dev = slotValues[i] ? String(slotValues[i]) : "";
+                    const slot = {
+                        index: i,
+                        device: dev || null
+                    };
+
+                    if (dev) {
+                        Object.assign(slot, diskIdentityForSlotDevice(dev));
+                    }
+
+                    return slot;
+                });
                 const devices = slots.map(s => s.device).filter(Boolean);
 
                 if (mode === "raid1" && devices.length < 2) {
@@ -2893,6 +3002,19 @@ html[data-theme="bright"] .raidPromptInput{
             ov.classList.add("show");
             await refreshDisks();
         }
+        function slotStableId(slot) {
+            const diskId = String(slot?.disk_id || "").trim();
+            const byId = String(slot?.by_id || "").trim();
+            const byPath = String(slot?.by_path || "").trim();
+
+            let s = diskId;
+            if (!s && byId) s = byId.split("/").filter(Boolean).pop() || byId;
+            if (!s && byPath) s = byPath.split("/").filter(Boolean).pop() || byPath;
+
+            if (!s) return "";
+            return s.length > 88 ? s.slice(0, 85) + "…" : s;
+        }
+
         function slotBadge(slot) {
             const assigned = !!slot?.assigned;
             const present = !!slot?.present;
@@ -2957,7 +3079,7 @@ html[data-theme="bright"] .raidPromptInput{
                 return `<span class="badge warn">${esc(tr("raidmgr.pending.add", null, "pending add"))}</span>`;
             }
             if (toRemove.length) {
-                return `<span class="badge warn">${esc(tr("raidmgr.pending.remove", null, "pending remove"))}</span>`;
+                return `<span class="badge warn">${esc(tr("raidmgr.pending.remove", null, "extra runtime member"))}</span>`;
             }
             return "";
         }
@@ -2965,12 +3087,14 @@ html[data-theme="bright"] .raidPromptInput{
             const idx = Number(slot?.index || 0) + 1;
             const dev = slot?.device ? String(slot.device) : "";
             const stateHtml = slotBadge(slot);
+            const stableId = slotStableId(slot);
 
             return `
 <div class="pqSlotRow ${editable ? "pqSlotRowEditable" : ""}">
   <div class="pqSlotLeft">
     <div class="pqSlotTitle">${esc(tr("raidmgr.slot.n", { n: idx }, `Slot ${idx}`))}</div>
     <div class="pqSlotDev">${dev ? esc(dev) : esc(tr("raidmgr.slot.empty_paren", null, "(empty)"))}</div>
+    ${stableId ? `<div class="pqSlotDev pqSlotStableId" style="opacity:.72;">ID ${esc(stableId)}</div>` : ``}
   </div>
   <div class="pqSlotRight">
     ${stateHtml}
@@ -3564,7 +3688,7 @@ Tip: these are the Btrfs member devices that form this pool.
   <button class="btn" type="button" data-pool-action="apply-layout" data-mount="${esc(mount)}">${esc(tr("raidmgr.action.apply_layout", null, "Apply layout"))}</button>
 </div>
       <div class="pqPoolNote">
-  ${pendingHtml ? esc(tr("raidmgr.note.layout_differs", null, "Saved slot layout differs from current pool membership. Use Apply layout to make Btrfs match the saved layout.")) : esc(tr("raidmgr.note.layout_matches", null, "Saved slot layout matches the current pool membership."))}
+  ${pendingHtml ? esc(tr("raidmgr.note.layout_differs", null, "Saved slot layout differs from current Btrfs membership. This can be normal for test pools or after manual device changes. Use Apply layout only when you want PQ-NAS to make Btrfs match the saved slot layout.")) : esc(tr("raidmgr.note.layout_matches", null, "Saved slot layout matches the current pool membership."))}
 </div>
     ` : `
       <div class="pqPoolNote">${esc(tr("raidmgr.note.system_volume", null, "This is a detected Btrfs system volume. It is shown for visibility, not managed as a normal pool."))}</div>

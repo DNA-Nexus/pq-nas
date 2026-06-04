@@ -6,8 +6,10 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 // Drive health v1
@@ -185,9 +187,96 @@ struct LsblkDisk {
     std::string model;
     std::string serial;
     std::string tran;
+
+    // Stable identity hints. Runtime /dev/sdX paths are not enough for
+    // hot-swap/JBOD/service workflows because they may change.
+    std::string disk_id;
+    std::string by_id;
+    std::string by_path;
+
     std::uint64_t size_bytes = 0;
     bool rota = false;
 };
+
+// PQ-NAS stable drive identity helpers.
+// These are intentionally best-effort: small home servers may not expose all
+// symlinks, while professional SAS/JBOD setups usually expose better by-id/by-path
+// information. The UI should still show a useful fallback.
+static std::string basename_copy(const std::string& p) {
+    if (p.empty()) return "";
+    std::filesystem::path fp(p);
+    return fp.filename().string();
+}
+
+static std::string canonical_path_or_empty(const std::filesystem::path& p) {
+    std::error_code ec;
+    auto c = std::filesystem::canonical(p, ec);
+    if (ec) return "";
+    return c.string();
+}
+
+static std::vector<std::string> symlinks_pointing_to_device(const std::string& dir,
+                                                            const std::string& dev_path) {
+    std::vector<std::string> out;
+
+    const std::string want = canonical_path_or_empty(dev_path);
+    if (want.empty()) return out;
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec) || ec) return out;
+
+    for (const auto& ent : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) break;
+
+        std::error_code sec;
+        if (!std::filesystem::is_symlink(ent.symlink_status(sec)) || sec) continue;
+
+        const std::string got = canonical_path_or_empty(ent.path());
+        if (got == want) out.push_back(ent.path().string());
+    }
+
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+static std::string pick_best_by_id(const std::vector<std::string>& ids) {
+    if (ids.empty()) return "";
+
+    // Prefer globally stable identifiers when present.
+    for (const auto& p : ids) {
+        const std::string b = basename_copy(p);
+        if (starts_with(b, "wwn-")) return p;
+    }
+    for (const auto& p : ids) {
+        const std::string b = basename_copy(p);
+        if (starts_with(b, "nvme-eui.") || starts_with(b, "nvme-uuid.")) return p;
+    }
+    for (const auto& p : ids) {
+        const std::string b = basename_copy(p);
+        if (starts_with(b, "ata-") || starts_with(b, "nvme-")) return p;
+    }
+
+    return ids.front();
+}
+
+static std::string make_best_effort_disk_id(const LsblkDisk& d) {
+    if (!d.by_id.empty()) return basename_copy(d.by_id);
+    if (!d.serial.empty()) return "serial:" + d.serial;
+    if (!d.by_path.empty()) return basename_copy(d.by_path);
+    if (!d.path.empty()) return "dev:" + d.path;
+    return "";
+}
+
+static void enrich_stable_identity(LsblkDisk* d) {
+    if (!d || d->path.empty()) return;
+
+    const auto by_ids = symlinks_pointing_to_device("/dev/disk/by-id", d->path);
+    const auto by_paths = symlinks_pointing_to_device("/dev/disk/by-path", d->path);
+
+    d->by_id = pick_best_by_id(by_ids);
+    d->by_path = by_paths.empty() ? "" : by_paths.front();
+    d->disk_id = make_best_effort_disk_id(*d);
+}
 
 // Build the candidate disk inventory from lsblk.
 //
@@ -249,7 +338,10 @@ static bool collect_lsblk_disks(std::vector<LsblkDisk>* out, std::string* err) {
         if (d.contains("rota") && d["rota"].is_boolean()) x.rota = d["rota"].get<bool>();
         else if (d.contains("rota") && d["rota"].is_number_integer()) x.rota = (d["rota"].get<int>() != 0);
 
-        if (!x.path.empty()) out->push_back(std::move(x));
+        if (!x.path.empty()) {
+            enrich_stable_identity(&x);
+            out->push_back(std::move(x));
+        }
     }
 
     return true;
@@ -274,6 +366,13 @@ static void collect_smart_messages(const json& j, DriveHealthInfo* d) {
     }
 }
 
+static void apply_inventory_identity(const LsblkDisk& inv, DriveHealthInfo* d) {
+    if (!d) return;
+    d->disk_id = inv.disk_id;
+    d->by_id = inv.by_id;
+    d->by_path = inv.by_path;
+}
+
 // Parse smartctl JSON for NVMe devices.
 //
 // This normalizes the NVMe-specific health model (critical warnings, spare,
@@ -291,6 +390,7 @@ static void parse_nvme_smart_json(const json& j, const LsblkDisk& inv, DriveHeal
     d->model     = !inv.model.empty() ? inv.model : j_str(j, {"model_name"});
     d->serial    = !inv.serial.empty() ? inv.serial : j_str(j, {"serial_number"});
     d->firmware  = j_str(j, {"firmware_version"});
+    apply_inventory_identity(inv, d);
 
     long long cap = j_i64(j, {"user_capacity", "bytes"}, -1);
     if (cap < 0) cap = j_i64(j, {"nvme_total_capacity"}, -1);
@@ -472,6 +572,7 @@ static void parse_ata_smart_json(const json& j, const LsblkDisk& inv, DriveHealt
     d->model     = !inv.model.empty() ? inv.model : j_str(j, {"model_name"});
     d->serial    = !inv.serial.empty() ? inv.serial : j_str(j, {"serial_number"});
     d->firmware  = j_str(j, {"firmware_version"});
+    apply_inventory_identity(inv, d);
 
     long long cap = j_i64(j, {"user_capacity", "bytes"}, -1);
     if (cap >= 0) d->size_bytes = static_cast<std::uint64_t>(cap);
@@ -792,6 +893,7 @@ static bool probe_one_drive(const LsblkDisk& inv, DriveHealthInfo* out, std::str
     out->kind = inv.rota ? "hdd" : "ssd";
     out->model = inv.model;
     out->serial = inv.serial;
+    apply_inventory_identity(inv, out);
     out->size_bytes = inv.size_bytes;
     out->smart_available = j_bool(j, {"smart_support", "available"}, false);
     out->smart_enabled = j_bool(j, {"smart_support", "enabled"}, out->smart_available);

@@ -94,6 +94,11 @@ def ensure_external_tools(log: Optional[Log] = None) -> None:
     """
     pkgs: List[str] = []
 
+    def external_tool_exists(name: str, candidates: List[str]) -> bool:
+        if shutil.which(name):
+            return True
+        return any(os.path.isfile(p) and os.access(p, os.X_OK) for p in candidates)
+
     # SMART / drive health
     if not os.path.isfile("/usr/sbin/smartctl") and not shutil.which("smartctl"):
         pkgs.append("smartmontools")
@@ -116,6 +121,25 @@ def ensure_external_tools(log: Optional[Log] = None) -> None:
     # Used by /s/<token>?poster=1.
     if not shutil.which("ffmpeg"):
         pkgs.append("ffmpeg")
+
+    # Drive-bay locate readiness.
+    # ledmon provides ledctl; sg3-utils provides sg_ses.
+    # These are storage-device/enclosure tools, not HDD-only tools.
+    if not external_tool_exists("ledctl", [
+        "/usr/sbin/ledctl",
+        "/usr/bin/ledctl",
+        "/sbin/ledctl",
+        "/bin/ledctl",
+    ]):
+        pkgs.append("ledmon")
+
+    if not external_tool_exists("sg_ses", [
+        "/usr/bin/sg_ses",
+        "/usr/sbin/sg_ses",
+        "/bin/sg_ses",
+        "/sbin/sg_ses",
+    ]):
+        pkgs.append("sg3-utils")
 
     if not pkgs:
         if log:
@@ -141,6 +165,20 @@ def ensure_external_tools(log: Optional[Log] = None) -> None:
         missing_after.append("convert/magick")
     if not shutil.which("ffmpeg"):
         missing_after.append("ffmpeg")
+    if not external_tool_exists("ledctl", [
+        "/usr/sbin/ledctl",
+        "/usr/bin/ledctl",
+        "/sbin/ledctl",
+        "/bin/ledctl",
+    ]):
+        missing_after.append("ledctl")
+    if not external_tool_exists("sg_ses", [
+        "/usr/bin/sg_ses",
+        "/usr/sbin/sg_ses",
+        "/bin/sg_ses",
+        "/sbin/sg_ses",
+    ]):
+        missing_after.append("sg_ses")
 
     if missing_after:
         raise RuntimeError(

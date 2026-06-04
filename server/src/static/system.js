@@ -903,7 +903,18 @@ html[data-theme="bright"] .systemModalCard{
 
         host.innerHTML = arr.map(d => {
             const model = escapeHtml(d.model || d.dev || tr("system.drive", null, "Drive"));
-            const dev = escapeHtml(d.dev || "—");
+            const devRaw = String(d.dev || "—");
+            const dev = escapeHtml(devRaw);
+            const diskIdRaw = String(d.disk_id || "");
+            const byIdRaw = String(d.by_id || "");
+            const byPathRaw = String(d.by_path || "");
+            const locateSupported = d.locate_supported === true;
+            const locateReady = d.locate_ready === true;
+            const locateMethodRaw = String(d.locate_method || "").trim();
+            const locateMethods = Array.isArray(d.locate_methods_available)
+                ? d.locate_methods_available.map(x => String(x || "").trim()).filter(Boolean)
+                : [];
+            const physicalHintRaw = String(d.physical_hint || "").trim();
             const bus = escapeHtml((d.transport || d.kind || "unknown").toUpperCase());
             const size = fmtBytes(Number(d.size_bytes));
             const healthText = escapeHtml(d.health_text || tr("system.unknown", null, "Unknown"));
@@ -958,6 +969,17 @@ html[data-theme="bright"] .systemModalCard{
             if (Number.isFinite(repunc) && repunc >= 0) extras.push(tr("system.drive.reported_unc", { value: repunc }, `Reported unc: ${repunc}`));
             if (Number.isFinite(crc) && crc >= 0) extras.push(tr("system.drive.crc", { value: crc }, `CRC: ${crc}`));
 
+            const identity = [];
+            if (diskIdRaw) identity.push(`ID: ${diskIdRaw}`);
+            if (byIdRaw) identity.push(`by-id: ${byIdRaw}`);
+            if (byPathRaw) identity.push(`by-path: ${byPathRaw}`);
+
+            const locateLine = locateSupported
+                ? `Locate: supported${locateMethodRaw ? ` (${locateMethodRaw})` : ""}`
+                : locateReady
+                    ? `Locate readiness: ${locateMethods.length ? locateMethods.join(", ") : "tool"} available — ${physicalHintRaw || "blink action is not enabled yet"}`
+                    : `Locate: not supported yet${physicalHintRaw ? ` — ${physicalHintRaw}` : ""}`;
+
             return `
             <div class="kv driveRow ${rowCls}">
                 <div class="k">
@@ -968,6 +990,8 @@ html[data-theme="bright"] .systemModalCard{
             </div>
             <div class="note mono driveNote ${noteCls}" style="margin-top:6px; margin-bottom:8px;">
                 ${escapeHtml(extras.join(" • ") || tr("system.drive.no_extra_counters", null, "No extra health counters"))}
+                ${identity.length ? `<br>${escapeHtml(identity.join(" • "))}` : ``}
+                <br>${escapeHtml(locateLine)}
                 <br>
                 ${escapeHtml(tr("system.self_test", null, "Self-test"))}: ${
                 selftestState === "running"

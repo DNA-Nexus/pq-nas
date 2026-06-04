@@ -23943,6 +23943,36 @@ srv.Get("/api/v4/system/drives", [&](const httplib::Request& req, httplib::Respo
         j["model"] = d.model;
         j["serial"] = d.serial;
         j["firmware"] = d.firmware;
+        j["disk_id"] = d.disk_id;
+        j["by_id"] = d.by_id;
+        j["by_path"] = d.by_path;
+                auto pqnas_locate_tool_exists = [](const char* p) -> bool {
+                    return p && ::access(p, X_OK) == 0;
+                };
+
+                const bool pqnas_ledctl_available =
+                    pqnas_locate_tool_exists("/usr/sbin/ledctl") ||
+                    pqnas_locate_tool_exists("/usr/bin/ledctl") ||
+                    pqnas_locate_tool_exists("/sbin/ledctl") ||
+                    pqnas_locate_tool_exists("/bin/ledctl");
+
+                const bool pqnas_sg_ses_available =
+                    pqnas_locate_tool_exists("/usr/bin/sg_ses") ||
+                    pqnas_locate_tool_exists("/usr/sbin/sg_ses") ||
+                    pqnas_locate_tool_exists("/bin/sg_ses") ||
+                    pqnas_locate_tool_exists("/sbin/sg_ses");
+
+                json pqnas_locate_methods = json::array();
+                if (pqnas_ledctl_available) pqnas_locate_methods.push_back("ledctl");
+                if (pqnas_sg_ses_available) pqnas_locate_methods.push_back("sg_ses");
+
+                j["locate_supported"] = false; // no start/stop endpoint is enabled yet
+                j["locate_ready"] = !pqnas_locate_methods.empty();
+                j["locate_method"] = "";
+                j["locate_methods_available"] = pqnas_locate_methods;
+                j["physical_hint"] = pqnas_locate_methods.empty()
+                    ? "Use serial/by-id label"
+                    : "Locate tools detected, but blink action is not enabled yet";
         j["size_bytes"] = d.size_bytes;
 
         j["smart_available"] = d.smart_available;

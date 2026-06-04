@@ -15,6 +15,14 @@ namespace pqnas {
 
         std::string model;
         std::string serial;
+
+        // Stable identity hints for physical drive tracking.
+        // dev (/dev/sdX) is runtime-only and may change after reboot/hot-swap.
+        // disk_id should be preferred by UI/workflows when available.
+        std::string disk_id;   // e.g. basename of /dev/disk/by-id/...
+        std::string by_id;     // e.g. /dev/disk/by-id/ata-...
+        std::string by_path;   // e.g. /dev/disk/by-path/pci-...
+
         std::string firmware;
         std::uint64_t size_bytes = 0;
 
