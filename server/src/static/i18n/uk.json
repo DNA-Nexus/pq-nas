@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Видалити пакет",
   "admin.updates.error.current_version_too_old": "Поточна версія сервера {current} занадто стара для цього оновлення. Спочатку встановіть версію {min}.",
   "admin.updates.error.reject_action_present": "План оновлення відхилено: {message}",
-  "admin.updates.error.unknown_validation_error": "Невідома помилка перевірки."
+  "admin.updates.error.unknown_validation_error": "Невідома помилка перевірки.",
+  "admin.updates.message.no_installable_update_actions": "У плані немає дій оновлення, які можна встановити.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "План містить дії відхилення; dry-run не буде виконано.",
+  "admin.updates.message.reject_actions_refusing_apply": "План містить дії відхилення; встановлення не буде виконано.",
+  "admin.updates.message.reject_actions_refusing_install": "План містить дії відхилення; встановлення не буде виконано.",
+  "admin.updates.error_code.no_applicable_actions": "Немає застосовних дій оновлення",
+  "admin.updates.error_code.reject_action_present": "План оновлення відхилено"
 }

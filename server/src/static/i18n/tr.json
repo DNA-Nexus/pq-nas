@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Paketi sil",
   "admin.updates.error.current_version_too_old": "Geçerli sunucu sürümü {current} bu güncelleme için çok eski. Önce {min} sürümünü yükleyin.",
   "admin.updates.error.reject_action_present": "Güncelleme planı reddedildi: {message}",
-  "admin.updates.error.unknown_validation_error": "Bilinmeyen doğrulama hatası."
+  "admin.updates.error.unknown_validation_error": "Bilinmeyen doğrulama hatası.",
+  "admin.updates.message.no_installable_update_actions": "Planda yüklenebilir güncelleme işlemi yok.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Plan reddetme işlemleri içeriyor; kuru çalıştırma yapılmayacak.",
+  "admin.updates.message.reject_actions_refusing_apply": "Plan reddetme işlemleri içeriyor; kurulum uygulanmayacak.",
+  "admin.updates.message.reject_actions_refusing_install": "Plan reddetme işlemleri içeriyor; kurulum yapılmayacak.",
+  "admin.updates.error_code.no_applicable_actions": "Uygulanabilir güncelleme işlemi yok",
+  "admin.updates.error_code.reject_action_present": "Güncelleme planı reddedildi"
 }

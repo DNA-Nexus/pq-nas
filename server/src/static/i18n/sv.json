@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Ta bort paket",
   "admin.updates.error.current_version_too_old": "Den nuvarande serverversionen {current} är för gammal för den här uppdateringen. Installera version {min} först.",
   "admin.updates.error.reject_action_present": "Uppdateringsplanen avvisades: {message}",
-  "admin.updates.error.unknown_validation_error": "Okänt valideringsfel."
+  "admin.updates.error.unknown_validation_error": "Okänt valideringsfel.",
+  "admin.updates.message.no_installable_update_actions": "Planen har inga installerbara uppdateringsåtgärder.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Planen innehåller avvisningsåtgärder; torrkörningen vägras.",
+  "admin.updates.message.reject_actions_refusing_apply": "Planen innehåller avvisningsåtgärder; installationen vägras.",
+  "admin.updates.message.reject_actions_refusing_install": "Planen innehåller avvisningsåtgärder; installationen vägras.",
+  "admin.updates.error_code.no_applicable_actions": "Inga tillämpliga uppdateringsåtgärder",
+  "admin.updates.error_code.reject_action_present": "Uppdateringsplan avvisad"
 }

@@ -4243,5 +4243,11 @@
   "admin.updates.download.github.done_detail": "GitHub-lataus valmis. {detail}",
   "admin.updates.error.current_version_too_old": "Nykyinen palvelinversio {current} on liian vanha tälle päivitykselle. Asenna ensin versio {min}.",
   "admin.updates.error.reject_action_present": "Päivityssuunnitelma hylättiin: {message}",
-  "admin.updates.error.unknown_validation_error": "Tuntematon validointivirhe."
+  "admin.updates.error.unknown_validation_error": "Tuntematon validointivirhe.",
+  "admin.updates.message.no_installable_update_actions": "Suunnitelmassa ei ole asennettavia päivitystoimintoja.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Suunnitelma sisältää hylkäystoimintoja; kuiva-ajoa ei suoriteta.",
+  "admin.updates.message.reject_actions_refusing_apply": "Suunnitelma sisältää hylkäystoimintoja; asennusta ei suoriteta.",
+  "admin.updates.message.reject_actions_refusing_install": "Suunnitelma sisältää hylkäystoimintoja; asennusta ei suoriteta.",
+  "admin.updates.error_code.no_applicable_actions": "Ei sovellettavia päivitystoimintoja",
+  "admin.updates.error_code.reject_action_present": "Päivityssuunnitelma hylätty"
 }

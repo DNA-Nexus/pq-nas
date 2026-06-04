@@ -51,9 +51,64 @@ function updateCenterBackendMessage(msg) {
         );
     }
 
+    if (text === "Plan has no installable update actions.") {
+        return updateCenterT(
+            "message.no_installable_update_actions",
+            {},
+            text
+        );
+    }
+
+    if (text === "Plan contains reject actions; refusing dry-run.") {
+        return updateCenterT(
+            "message.reject_actions_refusing_dry_run",
+            {},
+            text
+        );
+    }
+
+    if (text === "Plan contains reject actions; refusing apply.") {
+        return updateCenterT(
+            "message.reject_actions_refusing_apply",
+            {},
+            text
+        );
+    }
+
+    if (text === "Plan contains reject actions; refusing install.") {
+        return updateCenterT(
+            "message.reject_actions_refusing_install",
+            {},
+            text
+        );
+    }
+
     return text;
 }
 
+
+
+function updateCenterBackendError(code) {
+    const text = String(code || "");
+
+    if (text === "no_applicable_actions") {
+        return updateCenterT(
+            "error_code.no_applicable_actions",
+            {},
+            text
+        );
+    }
+
+    if (text === "reject_action_present") {
+        return updateCenterT(
+            "error_code.reject_action_present",
+            {},
+            text
+        );
+    }
+
+    return text;
+}
 
 function updateCenterValidationErrorMessage(e) {
     const obj = e && typeof e === "object" ? e : {};
@@ -1402,7 +1457,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
             j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
             updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
-            j.error ? updateCenterLabel("error", j.error, "Error") : null,
+            j.error ? updateCenterLabel("error", updateCenterBackendError(j.error), "Error") : null,
             j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 
@@ -1514,7 +1569,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             j.restart_required === undefined ? null : updateCenterLabel("restart_required", updateCenterYesNo(j.restart_required), "Restart required"),
             j.backup_root ? updateCenterLabel("backup_root", j.backup_root, "Backup root") : null,
             j.manifest_path ? updateCenterLabel("manifest", j.manifest_path, "Manifest") : null,
-            j.error ? updateCenterLabel("error", j.error, "Error") : null,
+            j.error ? updateCenterLabel("error", updateCenterBackendError(j.error), "Error") : null,
             j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
         ].filter(x => x !== null && x !== undefined).join("\n");
 

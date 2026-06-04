@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Paket löschen",
   "admin.updates.error.current_version_too_old": "Die aktuelle Serverversion {current} ist für dieses Update zu alt. Installiere zuerst Version {min}.",
   "admin.updates.error.reject_action_present": "Der Update-Plan wurde abgelehnt: {message}",
-  "admin.updates.error.unknown_validation_error": "Unbekannter Validierungsfehler."
+  "admin.updates.error.unknown_validation_error": "Unbekannter Validierungsfehler.",
+  "admin.updates.message.no_installable_update_actions": "Der Plan enthält keine installierbaren Update-Aktionen.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Der Plan enthält Ablehnungsaktionen; der Trockenlauf wird verweigert.",
+  "admin.updates.message.reject_actions_refusing_apply": "Der Plan enthält Ablehnungsaktionen; die Installation wird verweigert.",
+  "admin.updates.message.reject_actions_refusing_install": "Der Plan enthält Ablehnungsaktionen; die Installation wird verweigert.",
+  "admin.updates.error_code.no_applicable_actions": "Keine anwendbaren Update-Aktionen",
+  "admin.updates.error_code.reject_action_present": "Update-Plan abgelehnt"
 }

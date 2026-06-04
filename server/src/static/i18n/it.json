@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Elimina pacchetto",
   "admin.updates.error.current_version_too_old": "La versione attuale del server {current} è troppo vecchia per questo aggiornamento. Installa prima la versione {min}.",
   "admin.updates.error.reject_action_present": "Il piano di aggiornamento è stato rifiutato: {message}",
-  "admin.updates.error.unknown_validation_error": "Errore di validazione sconosciuto."
+  "admin.updates.error.unknown_validation_error": "Errore di validazione sconosciuto.",
+  "admin.updates.message.no_installable_update_actions": "Il piano non contiene azioni di aggiornamento installabili.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Il piano contiene azioni di rifiuto; la prova a secco non verrà eseguita.",
+  "admin.updates.message.reject_actions_refusing_apply": "Il piano contiene azioni di rifiuto; l’installazione non verrà eseguita.",
+  "admin.updates.message.reject_actions_refusing_install": "Il piano contiene azioni di rifiuto; l’installazione non verrà eseguita.",
+  "admin.updates.error_code.no_applicable_actions": "Nessuna azione di aggiornamento applicabile",
+  "admin.updates.error_code.reject_action_present": "Piano di aggiornamento rifiutato"
 }

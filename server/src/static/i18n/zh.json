@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "删除包",
   "admin.updates.error.current_version_too_old": "当前服务器版本 {current} 对此更新来说太旧。请先安装版本 {min}。",
   "admin.updates.error.reject_action_present": "更新计划已被拒绝：{message}",
-  "admin.updates.error.unknown_validation_error": "未知验证错误。"
+  "admin.updates.error.unknown_validation_error": "未知验证错误。",
+  "admin.updates.message.no_installable_update_actions": "计划中没有可安装的更新操作。",
+  "admin.updates.message.reject_actions_refusing_dry_run": "计划包含拒绝操作；不会执行试运行。",
+  "admin.updates.message.reject_actions_refusing_apply": "计划包含拒绝操作；不会执行安装。",
+  "admin.updates.message.reject_actions_refusing_install": "计划包含拒绝操作；不会执行安装。",
+  "admin.updates.error_code.no_applicable_actions": "没有适用的更新操作",
+  "admin.updates.error_code.reject_action_present": "更新计划已被拒绝"
 }

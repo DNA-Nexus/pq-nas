@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Usuń pakiet",
   "admin.updates.error.current_version_too_old": "Obecna wersja serwera {current} jest zbyt stara dla tej aktualizacji. Najpierw zainstaluj wersję {min}.",
   "admin.updates.error.reject_action_present": "Plan aktualizacji został odrzucony: {message}",
-  "admin.updates.error.unknown_validation_error": "Nieznany błąd walidacji."
+  "admin.updates.error.unknown_validation_error": "Nieznany błąd walidacji.",
+  "admin.updates.message.no_installable_update_actions": "Plan nie zawiera żadnych instalowalnych działań aktualizacji.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Plan zawiera działania odrzucające; próba na sucho nie zostanie wykonana.",
+  "admin.updates.message.reject_actions_refusing_apply": "Plan zawiera działania odrzucające; instalacja nie zostanie wykonana.",
+  "admin.updates.message.reject_actions_refusing_install": "Plan zawiera działania odrzucające; instalacja nie zostanie wykonana.",
+  "admin.updates.error_code.no_applicable_actions": "Brak odpowiednich działań aktualizacji",
+  "admin.updates.error_code.reject_action_present": "Plan aktualizacji odrzucony"
 }

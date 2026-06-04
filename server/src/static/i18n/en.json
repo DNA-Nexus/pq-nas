@@ -4243,5 +4243,11 @@
   "admin.updates.download.github.done_detail": "GitHub download complete. {detail}",
   "admin.updates.error.current_version_too_old": "Current server version {current} is too old for this update. Install version {min} first.",
   "admin.updates.error.reject_action_present": "The update plan was rejected: {message}",
-  "admin.updates.error.unknown_validation_error": "Unknown validation error."
+  "admin.updates.error.unknown_validation_error": "Unknown validation error.",
+  "admin.updates.message.no_installable_update_actions": "The plan has no installable update actions.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "The plan contains reject actions; refusing dry-run.",
+  "admin.updates.message.reject_actions_refusing_apply": "The plan contains reject actions; refusing apply.",
+  "admin.updates.message.reject_actions_refusing_install": "The plan contains reject actions; refusing install.",
+  "admin.updates.error_code.no_applicable_actions": "No applicable update actions",
+  "admin.updates.error_code.reject_action_present": "Rejected update plan"
 }

@@ -4242,5 +4242,11 @@
   "admin.updates.delete.modal.confirm": "Supprimer le paquet",
   "admin.updates.error.current_version_too_old": "La version actuelle du serveur {current} est trop ancienne pour cette mise à jour. Installez d’abord la version {min}.",
   "admin.updates.error.reject_action_present": "Le plan de mise à jour a été rejeté : {message}",
-  "admin.updates.error.unknown_validation_error": "Erreur de validation inconnue."
+  "admin.updates.error.unknown_validation_error": "Erreur de validation inconnue.",
+  "admin.updates.message.no_installable_update_actions": "Le plan ne contient aucune action de mise à jour installable.",
+  "admin.updates.message.reject_actions_refusing_dry_run": "Le plan contient des actions de rejet ; l’essai à blanc est refusé.",
+  "admin.updates.message.reject_actions_refusing_apply": "Le plan contient des actions de rejet ; l’installation est refusée.",
+  "admin.updates.message.reject_actions_refusing_install": "Le plan contient des actions de rejet ; l’installation est refusée.",
+  "admin.updates.error_code.no_applicable_actions": "Aucune action de mise à jour applicable",
+  "admin.updates.error_code.reject_action_present": "Plan de mise à jour rejeté"
 }
