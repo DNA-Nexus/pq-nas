@@ -241,6 +241,17 @@ def install_pqnas_update_apply_sudoers(log: Optional[Log] = None) -> None:
     install_sudoers_rule("pqnas-update-apply", content, log=log)
 
 
+def install_pqnas_drive_locate_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded drive-bay locate wrapper as root.
+
+    Do not grant broad sudo access to ledctl or sg_ses directly. The wrapper
+    validates action/device and is storage-device based, not HDD-specific.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-drive-locate *"
+    install_sudoers_rule("pqnas-drive-locate", content, log=log)
+
+
 def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
     """
     Prepare server-writable Update Center staging directories.
@@ -275,6 +286,48 @@ def _first_existing_path(candidates: List[str]) -> Optional[str]:
         if c and os.path.isfile(c):
             return c
     return None
+
+
+def install_drive_locate_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install guarded drive-bay locate wrapper.
+
+    Package layout supported:
+      <asset_root>/sbin/pqnas-drive-locate
+      <asset_root>/libexec/pqnas/pqnas-drive-locate
+
+    Repo layout supported:
+      <asset_root>/server/src/storage/pqnas_drive_locate_root.sh
+    """
+    wrapper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-drive-locate"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-drive-locate"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_drive_locate_root.sh"),
+    ])
+
+    if not wrapper_src:
+        raise RuntimeError(
+            "Drive locate wrapper not found in package/repo assets. "
+            "Expected pqnas-drive-locate under sbin/libexec or "
+            "server/src/storage/pqnas_drive_locate_root.sh."
+        )
+
+    wrapper_dst = "/usr/local/sbin/pqnas-drive-locate"
+    os.makedirs(os.path.dirname(wrapper_dst), exist_ok=True)
+
+    tmp_wrapper = wrapper_dst + ".new"
+    shutil.copy2(wrapper_src, tmp_wrapper)
+    os.chmod(tmp_wrapper, 0o755)
+    os.replace(tmp_wrapper, wrapper_dst)
+    subprocess.run(["chown", "root:root", wrapper_dst], check=False)
+    subprocess.run(["chmod", "755", wrapper_dst], check=False)
+
+    install_pqnas_drive_locate_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed drive locate wrapper: {wrapper_dst}")
+
+    return wrapper_dst
 
 
 def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = None) -> Tuple[str, str]:
@@ -3206,6 +3259,7 @@ class ExecuteScreen(Screen):
             self.logw.write("Installing Update Center apply helper and runtime dirs ?")
             ensure_update_center_runtime_dirs(log=self.logw)
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
+            install_drive_locate_assets(REPO_ROOT, log=log)
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
