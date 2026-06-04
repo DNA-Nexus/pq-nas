@@ -197,6 +197,8 @@ add_executable(pqnas_server
         server/src/storage_info.cc
         server/src/drive_health.cc
         server/src/drive_health_monitor.cc
+        server/src/routes_drive_locate.cpp
+        server/src/routes_drive_locate.h
         server/src/share_links.cc
         server/src/activity_log.cpp
         server/src/routes_activity.cpp

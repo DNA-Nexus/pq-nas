@@ -114,6 +114,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 //storage health
 #include "drive_health.h"
 #include "drive_health_monitor.h"
+#include "routes_drive_locate.h"
 
 //sharing
 #include "share_links.h"
@@ -11363,6 +11364,16 @@ v5.app_pair_build_qr_uri =
         update_center_deps.require_same_origin = require_same_origin_for_cookie_mutation;
 
         pqnas::updates::register_update_center_routes(srv, update_center_deps);
+
+        {
+            pqnas::DriveLocateRoutesDeps drive_locate_deps;
+            drive_locate_deps.require_admin_actor = update_center_deps.require_admin_actor;
+drive_locate_deps.reply_json = reply_json;
+            drive_locate_deps.audit_emit = update_center_deps.audit_emit;
+            drive_locate_deps.wrapper_path = "/usr/local/sbin/pqnas-drive-locate";
+            pqnas::register_drive_locate_routes(srv, drive_locate_deps);
+        }
+
     }
 
     pqnas::PeopleRoutesDeps people_deps;
