@@ -389,7 +389,13 @@ html[data-theme="bright"] .systemModalCard{
         if (pill) {
             const v = pill.querySelector(".v");
             pill.className = "pill " + kind;
-            if (v) v.textContent = kind === "ok" ? "OK" : (kind === "fail" ? "error" : "check needed");
+            if (v) {
+                v.textContent = kind === "ok"
+                    ? tr("system.idrac.backend_ok", null, "OK")
+                    : (kind === "fail"
+                        ? tr("system.idrac.backend_error", null, "error")
+                        : tr("system.idrac.backend_check_needed", null, "check needed"));
+            }
         }
     }
 
@@ -417,7 +423,7 @@ html[data-theme="bright"] .systemModalCard{
             ta.focus();
             ta.select();
         }
-        setIdracLocateOutput("Public key loaded. Copy it to iDRAC SSH Key Configurations, or download it as a .pub file.", "ok");
+        setIdracLocateOutput(tr("system.idrac.public_key_loaded", null, "Public key loaded. Copy it to iDRAC SSH Key Configurations, or download it as a .pub file."), "ok");
         return String(j.output || "").trim();
     }
 
@@ -466,30 +472,28 @@ html[data-theme="bright"] .systemModalCard{
         box.innerHTML = `
             <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(var(--fg-rgb),0.14);">
                 <div style="font-size:13px; letter-spacing:0.10em; text-transform:uppercase; font-weight:900;">
-                    Dell iDRAC / RACADM Drive Locate Help
+                    ${escapeHtml(tr("system.idrac.help_title", null, "Dell iDRAC / RACADM Drive Locate Help"))}
                 </div>
                 <button class="btn" id="btnCloseIdracLocateHelp" type="button" style="width:36px; height:36px; min-width:36px; padding:0; border-radius:999px;">×</button>
             </div>
 
             <div style="padding:16px;">
                 <p class="note" style="margin-top:0;">
-                    This optional backend is intended for Dell PowerEdge servers with iDRAC and PERC/RAID controllers.
-                    DNA-Nexus uses a dedicated iDRAC user over SSH and runs only RACADM inventory plus drive blink/unblink commands.
+                    ${escapeHtml(tr("system.idrac.help_intro", null, "This optional backend is intended for Dell PowerEdge servers with iDRAC and PERC/RAID controllers. DNA-Nexus uses a dedicated iDRAC user over SSH and runs only RACADM inventory plus drive blink/unblink commands."))}
                 </p>
 
                 <div class="note" style="margin-top:12px;">
-                    <b>Recommended iDRAC user:</b> <span class="mono">pqnas-locate</span><br>
-                    <b>Known working permission set:</b><br>
-                    Role: <b>Operator</b><br>
-                    Enable: <b>Login</b>, <b>Configure</b>, <b>System Control</b>, <b>System Operations</b><br>
-                    Disable: <b>Configure Users</b>, <b>Logs</b>, <b>Access Virtual Console</b>, <b>Access Virtual Media</b>, <b>Debug</b><br>
-                    IPMI LAN/Serial privileges: <b>None</b><br>
-                    SNMP v3: <b>Disabled</b>
+                    <b>${escapeHtml(tr("system.idrac.help_recommended_user", null, "Recommended iDRAC user:"))}</b> <span class="mono">pqnas-locate</span><br>
+                     <b>${escapeHtml(tr("system.idrac.help_permission_set", null, "Known working permission set:"))}</b><br>
+                     ${escapeHtml(tr("system.idrac.help_role", null, "Role:"))} <b>Operator</b><br>
+                     ${escapeHtml(tr("system.idrac.help_enable", null, "Enable:"))} <b>Login</b>, <b>Configure</b>, <b>System Control</b>, <b>System Operations</b><br>
+                     ${escapeHtml(tr("system.idrac.help_disable", null, "Disable:"))} <b>Configure Users</b>, <b>Logs</b>, <b>Access Virtual Console</b>, <b>Access Virtual Media</b>, <b>Debug</b><br>
+                     ${escapeHtml(tr("system.idrac.help_ipmi", null, "IPMI LAN/Serial privileges:"))} <b>None</b><br>
+                     ${escapeHtml(tr("system.idrac.help_snmp", null, "SNMP v3:"))} <b>Disabled</b>
                 </div>
 
                 <div class="note" style="margin-top:12px;">
-                    Do not use the iDRAC root/Admin account. Upload or paste the DNA-Nexus public key into
-                    iDRAC → User Authentication → <span class="mono">pqnas-locate</span> → SSH Key Configurations.
+                    ${escapeHtml(tr("system.idrac.help_security_note", null, "Do not use the iDRAC root/Admin account. Upload or paste the DNA-Nexus public key into iDRAC → User Authentication → pqnas-locate → SSH Key Configurations."))}
                 </div>
 
                 <img src="/static/help/dell-idrac-drive-locate-permissions.png"
@@ -540,6 +544,35 @@ html[data-theme="bright"] .systemModalCard{
         if (s === "fail") return "fail";
         if (s === "warn") return "warn";
         return "ok";
+    }
+
+    function driveHealthText(d) {
+        const status = String(d && d.health_status || "").toLowerCase();
+        if (status === "ok" || status === "healthy") {
+            return tr("system.drive.health.healthy_label", null, "Healthy");
+        }
+        if (status === "warn" || status === "warning") {
+            return tr("system.drive.health.warning_label", null, "Warning");
+        }
+        if (status === "fail" || status === "failed" || status === "attention") {
+            return tr("system.drive.health.attention_label", null, "Attention");
+        }
+        return String(d && d.health_text || tr("system.unknown", null, "Unknown"));
+    }
+
+    function driveSelftestText(raw) {
+        const s = String(raw || "").trim();
+        if (!s || s === "—") return "—";
+        if (s === "Self-test log unavailable") {
+            return tr("system.selftest_log_unavailable", null, "Self-test log unavailable");
+        }
+        if (s === "Last Short test: Completed without error") {
+            return tr("system.selftest_last_short_completed_without_error", null, "Last Short test: Completed without error");
+        }
+        if (s === "Last Extended test: Completed without error") {
+            return tr("system.selftest_last_extended_completed_without_error", null, "Last Extended test: Completed without error");
+        }
+        return s;
     }
 
     function fmtTempC(n) {
@@ -1105,13 +1138,13 @@ html[data-theme="bright"] .systemModalCard{
             const canLocateDrive = locateReady && locateDeviceRaw && locateDeviceRaw !== "—";
             const bus = escapeHtml((d.transport || d.kind || "unknown").toUpperCase());
             const size = fmtBytes(Number(d.size_bytes));
-            const healthText = escapeHtml(d.health_text || tr("system.unknown", null, "Unknown"));
+            const healthText = escapeHtml(driveHealthText(d));
             const temp = fmtTempC(Number(d.temperature_c));
             const pUsed = Number(d.percentage_used);
             const spare = Number(d.available_spare);
             const media = Number(d.media_errors);
             const poh = Number(d.power_on_hours);
-            const selfText = d.selftest_text || "—";
+            const selfText = driveSelftestText(d.selftest_text || "—");
             const warning = escapeHtml(d.warning || "");
             const realloc = Number(d.reallocated_sectors);
             const pending = Number(d.current_pending_sectors);
@@ -1163,10 +1196,17 @@ html[data-theme="bright"] .systemModalCard{
             if (byPathRaw) identity.push(`by-path: ${byPathRaw}`);
 
             const locateLine = locateSupported
-                ? `Locate: supported${locateMethodRaw ? ` (${locateMethodRaw})` : ""}`
+                ? (locateMethodRaw
+                    ? tr("system.drive.locate_supported_method", { method: locateMethodRaw }, `Locate: supported (${locateMethodRaw})`)
+                    : tr("system.drive.locate_supported", null, "Locate: supported"))
                 : locateReady
-                    ? `Locate readiness: ${locateMethods.length ? locateMethods.join(", ") : "tool"} available — ${physicalHintRaw || "blink action is not enabled yet"}`
-                    : `Locate: not supported yet${physicalHintRaw ? ` — ${physicalHintRaw}` : ""}`;
+                    ? tr("system.drive.locate_readiness", {
+                        methods: locateMethods.length ? locateMethods.join(", ") : tr("system.drive.locate_tool", null, "tool"),
+                        hint: physicalHintRaw || tr("system.drive.locate_hint_default", null, "blink action is not enabled yet")
+                    }, `Locate readiness: ${locateMethods.length ? locateMethods.join(", ") : "tool"} available — ${physicalHintRaw || "blink action is not enabled yet"}`)
+                    : tr("system.drive.locate_not_supported", {
+                        hint: physicalHintRaw ? ` — ${physicalHintRaw}` : ""
+                    }, `Locate: not supported yet${physicalHintRaw ? ` — ${physicalHintRaw}` : ""}`);
 
             return `
             <section class="driveHealthDeviceCard ${rowCls}" style="margin:0 0 16px 0; padding:14px; border:1px solid rgba(255,255,255,0.14); border-radius:18px; background:rgba(255,255,255,0.045); box-shadow:0 10px 28px rgba(0,0,0,0.16);">

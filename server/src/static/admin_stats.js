@@ -91,7 +91,7 @@
         const started = Number(latestServerStartedAtEpoch || 0);
         if (!Number.isFinite(started) || started <= 0) {
             valueEl.textContent = "—";
-            miniEl.textContent = "Server start time not available yet";
+            miniEl.textContent = tr("admin.stats.server_start_unavailable", null, "Server start time not available yet");
             return;
         }
 
@@ -100,8 +100,8 @@
 
         const startedDate = new Date(started * 1000);
         miniEl.textContent = Number.isNaN(startedDate.getTime())
-            ? "Started: —"
-            : `Started ${startedDate.toLocaleString()}`;
+            ? tr("admin.stats.started_unknown", null, "Started: —")
+            : tr("admin.stats.started_at", { time: startedDate.toLocaleString() }, `Started ${startedDate.toLocaleString()}`);
     }
 
     function startUptimeTicker() {
@@ -210,11 +210,14 @@
         if (!data.ok) {
             valueEl.textContent = "—";
             if (data.reason === "not_enough_samples") {
-                miniEl.textContent = `Need more samples · ${fmtNum(data.sample_count || 0)} sample${Number(data.sample_count || 0) === 1 ? "" : "s"}`;
+                miniEl.textContent = tr("admin.stats.need_more_samples", {
+                    count: fmtNum(data.sample_count || 0),
+                    plural: Number(data.sample_count || 0) === 1 ? "" : "s"
+                }, `Need more samples · ${fmtNum(data.sample_count || 0)} sample${Number(data.sample_count || 0) === 1 ? "" : "s"}`);
             } else if (data.error) {
-                miniEl.textContent = `Unavailable · ${data.error}`;
+                miniEl.textContent = tr("admin.stats.unavailable_error", { error: data.error }, `Unavailable · ${data.error}`);
             } else {
-                miniEl.textContent = "Last 30 days · local estimate";
+                miniEl.textContent = tr("admin.stats.availability_local_30d", null, "Last 30 days · local estimate");
             }
             return;
         }
@@ -225,7 +228,11 @@
         const samples = fmtNum(data.sample_count || 0);
         const observedDays = Math.max(0, Number(data.observed_seconds || 0) / 86400);
 
-        miniEl.textContent = `Last ${observedDays.toFixed(observedDays < 2 ? 1 : 0)}d observed · ${down} downtime · ${samples} samples`;
+        miniEl.textContent = tr("admin.stats.observed_availability", {
+            days: observedDays.toFixed(observedDays < 2 ? 1 : 0),
+            downtime: down,
+            samples
+        }, `Last ${observedDays.toFixed(observedDays < 2 ? 1 : 0)}d observed · ${down} downtime · ${samples} samples`);
     }
 
     async function loadAvailability() {
@@ -461,7 +468,7 @@
     }
 
     function setExportStatus(text) {
-        setPillValue("exportStatus", text || "Ready");
+        setPillValue("exportStatus", text || tr("admin.stats.export.ready", null, "Ready"));
     }
 
     function exportTimestampForFile() {
@@ -549,14 +556,14 @@
 
     function exportStatsJson() {
         if (!latestSummary && !latestTrendPayload && !latestCircleStackStats) {
-            setExportStatus("No data loaded");
+            setExportStatus(tr("admin.stats.no_data_loaded", null, "No data loaded"));
             return;
         }
 
         const payload = buildStatsExportPayload();
         const filename = `dna-nexus-admin-stats-${exportTimestampForFile()}.json`;
         downloadTextFile(filename, "application/json;charset=utf-8", JSON.stringify(payload, null, 2));
-        setExportStatus("JSON downloaded");
+        setExportStatus(tr("admin.stats.json_downloaded", null, "JSON downloaded"));
     }
 
     function exportTrendsCsv() {
@@ -565,14 +572,14 @@
             : [];
 
         if (!points.length) {
-            setExportStatus("No trend data");
+            setExportStatus(tr("admin.stats.no_trend_data_export", null, "No trend data"));
             return;
         }
 
         const period = safeExportFilePart(currentTrendPeriod);
         const filename = `dna-nexus-admin-trends-${period}-${exportTimestampForFile()}.csv`;
         downloadTextFile(filename, "text/csv;charset=utf-8", trendPointsToCsv(points));
-        setExportStatus("CSV downloaded");
+        setExportStatus(tr("admin.stats.csv_downloaded", null, "CSV downloaded"));
     }
 
     function renderCircleStackStats(j) {

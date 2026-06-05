@@ -531,16 +531,16 @@
             <div class="actions">
                 <button id="refreshBtn" class="btn primary" type="button" data-i18n="admin.stats.refresh">Refresh statistics</button>
 
-                <div class="exportActions" role="group" aria-label="Export statistics data">
-                    <button id="exportStatsJsonBtn" class="btn" type="button">Export JSON</button>
-                    <button id="exportTrendsCsvBtn" class="btn" type="button">Export trends CSV</button>
+                <div class="exportActions" role="group" aria-label="Export statistics data" data-i18n-aria-label="admin.stats.export_data_aria">
+                    <button id="exportStatsJsonBtn" class="btn" type="button" data-i18n="admin.stats.export_json">Export JSON</button>
+                    <button id="exportTrendsCsvBtn" class="btn" type="button" data-i18n="admin.stats.export_trends_csv">Export trends CSV</button>
                 </div>
 
                 <span id="status" class="pill info">
                     <span class="k" data-i18n="admin.stats.updated">Updated</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.loading">Loading…</span>
                 </span>
                 <span id="exportStatus" class="pill">
-                    <span class="k">Export</span><span class="k">:</span> <span class="v">Ready</span>
+                    <span class="k" data-i18n="admin.stats.export">Export</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.export.ready">Ready</span>
                 </span>
                 <span id="roleBadge" class="badge admin">role: ?</span>
             </div>
@@ -570,14 +570,14 @@
                 <div id="cardWorkspacesMini" class="mini">—</div>
             </div>
             <div class="card">
-                <div class="label">Server uptime</div>
+                <div class="label" data-i18n="admin.stats.server_uptime">Server uptime</div>
                 <div id="cardUptime" class="value">—</div>
-                <div id="cardUptimeMini" class="mini">Waiting for server data</div>
+                <div id="cardUptimeMini" class="mini" data-i18n="admin.stats.waiting_server_data">Waiting for server data</div>
             </div>
             <div class="card">
-                <div class="label">Availability</div>
+                <div class="label" data-i18n="admin.stats.availability">Availability</div>
                 <div id="cardAvailability" class="value">—</div>
-                <div id="cardAvailabilityMini" class="mini">Last 30 days · local estimate</div>
+                <div id="cardAvailabilityMini" class="mini" data-i18n="admin.stats.availability_local_30d">Last 30 days · local estimate</div>
             </div>
         </section>
 
@@ -832,7 +832,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_stats.js?v=20260605-stats-availability-1"></script>
+<script src="/static/admin_stats.js?v=20260605-i18n-stats-system-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
