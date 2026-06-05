@@ -353,6 +353,86 @@ html[data-theme="bright"] .systemModalCard{
         return j;
     }
 
+    async function idracLocateApi(path, opts = {}) {
+        const r = await fetch(path, {
+            method: opts.method || "GET",
+            cache: "no-store",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: opts.body ? JSON.stringify(opts.body) : undefined
+        });
+        const txt = await r.text();
+        let j = null;
+        try { j = JSON.parse(txt); } catch {}
+        if (!r.ok || !j || !j.ok) {
+            throw new Error((j && (j.message || j.error || j.output)) || txt || `HTTP ${r.status}`);
+        }
+        return j;
+    }
+
+    function parseKvOutput(output) {
+        const obj = {};
+        String(output || "").split(/\r?\n/).forEach(line => {
+            const i = line.indexOf("=");
+            if (i <= 0) return;
+            const k = line.slice(0, i).trim();
+            const v = line.slice(i + 1).trim();
+            if (k) obj[k] = v;
+        });
+        return obj;
+    }
+
+    function setIdracLocateOutput(text, kind = "ok") {
+        const out = el("idracLocateOutput");
+        if (out) out.textContent = text || "";
+        const pill = el("idracLocatePill");
+        if (pill) {
+            const v = pill.querySelector(".v");
+            pill.className = "pill " + kind;
+            if (v) v.textContent = kind === "ok" ? "OK" : (kind === "fail" ? "error" : "check needed");
+        }
+    }
+
+    async function refreshIdracLocateBackendCard() {
+        if (!el("idracDriveLocateCard")) return;
+        try {
+            const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/config");
+            const kv = parseKvOutput(j.output || "");
+            if (el("idracLocateEnabled")) el("idracLocateEnabled").checked = ["1","true","yes","on","enabled"].includes(String(kv.enabled || "").toLowerCase());
+            if (el("idracLocateHost")) el("idracLocateHost").value = kv.host || "";
+            if (el("idracLocatePort")) el("idracLocatePort").value = kv.port || "22";
+            if (el("idracLocateUser")) el("idracLocateUser").value = kv.user || "";
+            setIdracLocateOutput(j.output || "OK", "ok");
+        } catch (e) {
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        }
+    }
+
+    async function showIdracPublicKey() {
+        const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/public-key");
+        const ta = el("idracLocatePublicKey");
+        if (ta) {
+            ta.style.display = "block";
+            ta.value = String(j.output || "").trim();
+            ta.focus();
+            ta.select();
+        }
+        setIdracLocateOutput("Public key loaded. Copy it to iDRAC SSH Key Configurations, or download it as a .pub file.", "ok");
+        return String(j.output || "").trim();
+    }
+
+    function downloadTextFile(filename, content) {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
 
     // drive-health-refresh-now: frontend: backend-triggered SMART/NVMe refresh.
     async function refreshDriveSmartNow() {
@@ -1317,6 +1397,168 @@ html[data-theme="bright"] .systemModalCard{
             if (warn) warn.textContent = tr("system.storage_probe_failed", { error: String(e && e.message ? e.message : e) }, "Failed to probe storage: " + (e && e.message ? e.message : e));
         }
     }
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateRefresh");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Refreshing…";
+        try {
+            await refreshIdracLocateBackendCard();
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateSave");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Saving…";
+        try {
+            const body = {
+                enabled: !!(el("idracLocateEnabled") && el("idracLocateEnabled").checked),
+                host: el("idracLocateHost") ? el("idracLocateHost").value.trim() : "",
+                port: el("idracLocatePort") ? el("idracLocatePort").value.trim() : "22",
+                user: el("idracLocateUser") ? el("idracLocateUser").value.trim() : ""
+            };
+            const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/save", { method: "POST", body });
+            setIdracLocateOutput(j.output || "Saved.", "ok");
+            await refreshIdracLocateBackendCard();
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "Failed to save iDRAC backend config",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateGenerateKey");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Generating…";
+        try {
+            const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/generate-key", { method: "POST", body: {} });
+            const out = String(j.output || "");
+            const publicKey = out.split(/\r?\n/).find(line => line.startsWith("public_key="));
+            const ta = el("idracLocatePublicKey");
+            if (ta && publicKey) {
+                ta.style.display = "block";
+                ta.value = publicKey.replace(/^public_key=/, "").trim();
+                ta.focus();
+                ta.select();
+            }
+            setIdracLocateOutput(out || "Generated.", "ok");
+            await refreshIdracLocateBackendCard();
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "Failed to generate iDRAC SSH key",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateShowPublicKey");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Loading…";
+        try {
+            await showIdracPublicKey();
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "Failed to load public key",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateDownloadPublicKey");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Preparing…";
+        try {
+            const key = await showIdracPublicKey();
+            downloadTextFile("pqnas-idrac-locate_rsa.pub", key + "\n");
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "Failed to download public key",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateTestConnection");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Testing…";
+        try {
+            const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/test-connection", { method: "POST", body: {} });
+            setIdracLocateOutput(j.output || "Connection OK.", "ok");
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "iDRAC connection test failed",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
+    document.addEventListener("click", async (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateTestInventory");
+        if (!btn) return;
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Testing…";
+        try {
+            const j = await idracLocateApi("/api/v4/system/drives/locate/idrac/test-inventory", { method: "POST", body: {} });
+            setIdracLocateOutput(j.output || "Inventory OK.", "ok");
+        } catch (e) {
+            await openSystemInfoModal({
+                title: "iDRAC inventory test failed",
+                message: String(e && e.message ? e.message : e),
+                okText: tr("system.modal.ok", null, "OK")
+            });
+            setIdracLocateOutput(String(e && e.message ? e.message : e), "fail");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    });
+
     window.addEventListener("pqnas-language-changed", () => {
         if (window.PQNAS_I18N && typeof window.PQNAS_I18N.apply === "function") {
             window.PQNAS_I18N.apply(document);
@@ -1341,5 +1583,7 @@ html[data-theme="bright"] .systemModalCard{
 // Drive health probe
     refreshDrivesOnce();
     _driveTimer = setInterval(refreshDrivesOnce, 30000);
+
+    refreshIdracLocateBackendCard();
 
 })();

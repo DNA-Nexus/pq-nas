@@ -404,6 +404,73 @@
                     </div>
                 </section>
 
+                <section class="card span-12" id="idracDriveLocateCard">
+                    <div class="hd">
+                        <div class="h">Advanced • Dell iDRAC / RACADM Drive Locate</div>
+                        <span class="pill warn" id="idracLocatePill"><span class="k">Backend:</span> <span class="v">not checked</span></span>
+                    </div>
+                    <div class="bd">
+                        <div class="note">
+                            This optional backend is for Dell PowerEdge servers with iDRAC and PERC/RAID controllers.
+                            It maps Linux disks to Dell physical disk bays by serial number and uses RACADM over SSH to blink/unblink the drive bay LED.
+                            Do not use the iDRAC root/Admin account.
+                        </div>
+
+                        <div class="kv">
+                            <div class="k">Enable Dell iDRAC backend</div>
+                            <div class="v"><input id="idracLocateEnabled" type="checkbox"></div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
+                            <label class="note" style="margin:0;">
+                                iDRAC host/IP
+                                <input id="idracLocateHost" class="mono" placeholder="192.168.1.103"
+                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                            </label>
+                            <label class="note" style="margin:0;">
+                                SSH port
+                                <input id="idracLocatePort" class="mono" placeholder="22"
+                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                            </label>
+                            <label class="note" style="margin:0;">
+                                Username
+                                <input id="idracLocateUser" class="mono" placeholder="pqnas-locate"
+                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                            </label>
+                        </div>
+
+                        <div class="driveActions" style="display:flex; gap:8px; margin:12px 0 0 0; flex-wrap:wrap;">
+                            <button class="btn" id="btnIdracLocateSave" type="button">Save backend config</button>
+                            <button class="btn" id="btnIdracLocateRefresh" type="button">Refresh status</button>
+                            <button class="btn" id="btnIdracLocateGenerateKey" type="button">Generate SSH key</button>
+                            <button class="btn" id="btnIdracLocateShowPublicKey" type="button">Show public key</button>
+                            <button class="btn" id="btnIdracLocateDownloadPublicKey" type="button">Download public key</button>
+                            <button class="btn" id="btnIdracLocateTestConnection" type="button">Test connection</button>
+                            <button class="btn" id="btnIdracLocateTestInventory" type="button">Test inventory</button>
+                        </div>
+
+                        <textarea id="idracLocatePublicKey" class="mono" readonly
+                                  placeholder="Public key will appear here. Upload/copy this to iDRAC → User Authentication → pqnas-locate → SSH Key Configurations."
+                                  style="display:none; width:100%; min-height:90px; box-sizing:border-box; margin-top:12px; padding:10px; border-radius:12px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);"></textarea>
+
+                        <pre id="idracLocateOutput" class="note mono"
+                             style="white-space:pre-wrap; overflow:auto; max-height:260px; margin-top:12px; padding:10px; border-radius:12px; border:1px solid rgba(var(--fg-rgb),0.12); background:rgba(0,0,0,0.18);">Not checked yet.</pre>
+
+                        <details class="note" style="margin-top:12px;">
+                            <summary style="cursor:pointer; font-weight:800;">Dell iDRAC user permission example</summary>
+                            <div style="margin-top:8px;">
+                                Create a dedicated iDRAC user such as <span class="mono">pqnas-locate</span>.
+                                Known working permissions from testing:
+                                <br>Role: <b>Operator</b>
+                                <br>Enable: <b>Login</b>, <b>Configure</b>, <b>System Control</b>, <b>System Operations</b>
+                                <br>Disable: <b>Configure Users</b>, <b>Logs</b>, <b>Access Virtual Console</b>, <b>Access Virtual Media</b>, <b>Debug</b>
+                                <br>IPMI LAN/Serial privileges: <b>None</b>
+                                <br>SNMP v3: <b>Disabled</b>
+                            </div>
+                        </details>
+                    </div>
+                </section>
+
                 <section class="card span-12">
                     <div class="hd">
                         <div class="h" data-i18n="system.network">Network</div>
