@@ -252,6 +252,19 @@
             flex-wrap:wrap;
         }
 
+        .exportActions{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+        }
+
+        .exportActions .btn{
+            padding:8px 10px;
+            border-radius:12px;
+            font-size:12px;
+        }
+
         .trendBtn{
             padding:7px 10px;
             border-radius:999px;
@@ -517,8 +530,17 @@
 
             <div class="actions">
                 <button id="refreshBtn" class="btn primary" type="button" data-i18n="admin.stats.refresh">Refresh statistics</button>
+
+                <div class="exportActions" role="group" aria-label="Export statistics data">
+                    <button id="exportStatsJsonBtn" class="btn" type="button">Export JSON</button>
+                    <button id="exportTrendsCsvBtn" class="btn" type="button">Export trends CSV</button>
+                </div>
+
                 <span id="status" class="pill info">
                     <span class="k" data-i18n="admin.stats.updated">Updated</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.loading">Loading…</span>
+                </span>
+                <span id="exportStatus" class="pill">
+                    <span class="k">Export</span><span class="k">:</span> <span class="v">Ready</span>
                 </span>
                 <span id="roleBadge" class="badge admin">role: ?</span>
             </div>
@@ -800,7 +822,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_stats.js?v=20260523-memory-nodes-1"></script>
+<script src="/static/admin_stats.js?v=20260605-stats-export-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

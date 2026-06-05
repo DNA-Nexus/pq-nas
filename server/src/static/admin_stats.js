@@ -23,6 +23,7 @@
     let currentTrendPeriod = "7d";
     let latestSummary = null;
     let latestTrendPayload = null;
+    let latestCircleStackStats = null;
 
     function esc(s) {
         return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -254,6 +255,120 @@
         return v.toFixed(2);
     }
 
+    function setExportStatus(text) {
+        setPillValue("exportStatus", text || "Ready");
+    }
+
+    function exportTimestampForFile() {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        return [
+            d.getFullYear(),
+            pad(d.getMonth() + 1),
+            pad(d.getDate())
+        ].join("") + "-" + [
+            pad(d.getHours()),
+            pad(d.getMinutes()),
+            pad(d.getSeconds())
+        ].join("");
+    }
+
+    function safeExportFilePart(s) {
+        return String(s || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 64) || "export";
+    }
+
+    function downloadTextFile(filename, mime, text) {
+        const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+
+        try {
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.rel = "noopener";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } finally {
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    }
+
+    function csvEscape(value) {
+        const s = String(value ?? "");
+        if (/[",\r\n]/.test(s)) {
+            return `"${s.replaceAll('"', '""')}"`;
+        }
+        return s;
+    }
+
+    function trendPointsToCsv(points) {
+        const rows = Array.isArray(points) ? points : [];
+        const columns = [
+            "iso",
+            "t",
+            "files_total_bytes",
+            "files_total_count",
+            "users_total",
+            "users_enabled",
+            "workspaces_total",
+            "workspaces_enabled"
+        ];
+
+        const out = [];
+        out.push(columns.map(csvEscape).join(","));
+
+        for (const p of rows) {
+            out.push(columns.map((key) => csvEscape(p && Object.prototype.hasOwnProperty.call(p, key) ? p[key] : "")).join(","));
+        }
+
+        return out.join("\n") + "\n";
+    }
+
+    function buildStatsExportPayload() {
+        return {
+            exported_at_iso: new Date().toISOString(),
+            source: "DNA-Nexus Admin Statistics",
+            trend_period: currentTrendPeriod,
+            summary: latestSummary,
+            trends: latestTrendPayload,
+            circle_stack: latestCircleStackStats
+        };
+    }
+
+    function exportStatsJson() {
+        if (!latestSummary && !latestTrendPayload && !latestCircleStackStats) {
+            setExportStatus("No data loaded");
+            return;
+        }
+
+        const payload = buildStatsExportPayload();
+        const filename = `dna-nexus-admin-stats-${exportTimestampForFile()}.json`;
+        downloadTextFile(filename, "application/json;charset=utf-8", JSON.stringify(payload, null, 2));
+        setExportStatus("JSON downloaded");
+    }
+
+    function exportTrendsCsv() {
+        const points = latestTrendPayload && Array.isArray(latestTrendPayload.points)
+            ? latestTrendPayload.points
+            : [];
+
+        if (!points.length) {
+            setExportStatus("No trend data");
+            return;
+        }
+
+        const period = safeExportFilePart(currentTrendPeriod);
+        const filename = `dna-nexus-admin-trends-${period}-${exportTimestampForFile()}.csv`;
+        downloadTextFile(filename, "text/csv;charset=utf-8", trendPointsToCsv(points));
+        setExportStatus("CSV downloaded");
+    }
+
     function renderCircleStackStats(j) {
         const posts = j.posts || {};
         const replies = j.replies || {};
@@ -329,6 +444,7 @@
                 throw new Error(j.message || j.error || `HTTP ${r.status}`);
             }
 
+            latestCircleStackStats = j;
             renderCircleStackStats(j);
         } catch (e) {
             setPillValue("circleStatsStatus", `Failed: ${e.message || e}`);
@@ -681,6 +797,16 @@
                 await loadCircleStackStats();
                 await loadTrends(currentTrendPeriod);
             });
+        }
+
+        const exportStatsJsonBtn = $("exportStatsJsonBtn");
+        if (exportStatsJsonBtn) {
+            exportStatsJsonBtn.addEventListener("click", exportStatsJson);
+        }
+
+        const exportTrendsCsvBtn = $("exportTrendsCsvBtn");
+        if (exportTrendsCsvBtn) {
+            exportTrendsCsvBtn.addEventListener("click", exportTrendsCsv);
         }
 
         document.querySelectorAll(".trendBtn").forEach(btn => {
