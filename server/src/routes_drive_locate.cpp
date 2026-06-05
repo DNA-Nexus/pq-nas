@@ -9,6 +9,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -76,9 +77,8 @@ std::string audit_trunc(std::string s, std::size_t max_len = 240) {
     return s;
 }
 
-CommandResult run_drive_locate_wrapper(const std::string& wrapper_path,
-                                       const std::string& action,
-                                       const std::string& device) {
+CommandResult run_wrapper_with_args(const std::string& wrapper_path,
+                                    const std::vector<std::string>& args) {
     CommandResult result;
 
     int pipefd[2] = {-1, -1};
@@ -104,16 +104,16 @@ CommandResult run_drive_locate_wrapper(const std::string& wrapper_path,
         close(pipefd[0]);
         close(pipefd[1]);
 
-        execl("/usr/bin/sudo",
-              "sudo",
-              "-n",
-              wrapper_path.c_str(),
-              "--action",
-              action.c_str(),
-              "--device",
-              device.c_str(),
-              static_cast<char*>(nullptr));
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>("/usr/bin/sudo"));
+        argv.push_back(const_cast<char*>("-n"));
+        argv.push_back(const_cast<char*>(wrapper_path.c_str()));
+        for (const auto& arg : args) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
 
+        execv("/usr/bin/sudo", argv.data());
         _exit(127);
     }
 
@@ -167,6 +167,134 @@ void emit_audit(const DriveLocateRoutesDeps& deps,
     if (deps.audit_emit) {
         deps.audit_emit("drive.locate", outcome, fields);
     }
+}
+
+
+bool valid_idrac_host_arg(const std::string& v) {
+    if (v.empty() || v.size() > 255) return false;
+    for (unsigned char c : v) {
+        if (!(std::isalnum(c) || c == '.' || c == '-' || c == '_' || c == ':')) return false;
+    }
+    return true;
+}
+
+bool valid_idrac_user_arg(const std::string& v) {
+    if (v.empty() || v.size() > 128) return false;
+    for (unsigned char c : v) {
+        if (!(std::isalnum(c) || c == '.' || c == '-' || c == '_')) return false;
+    }
+    return true;
+}
+
+bool valid_idrac_port_arg(const std::string& v) {
+    if (v.empty() || v.size() > 5) return false;
+    for (unsigned char c : v) {
+        if (!std::isdigit(c)) return false;
+    }
+    try {
+        const int n = std::stoi(v);
+        return n >= 1 && n <= 65535;
+    } catch (...) {
+        return false;
+    }
+}
+
+void handle_idrac_backend_action(const DriveLocateRoutesDeps& deps,
+                                 const httplib::Request& req,
+                                 httplib::Response& res,
+                                 const std::string& action) {
+    if (!deps.require_admin_actor || !deps.reply_json) {
+        reply_json_local(deps, res, 500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "drive locate route dependencies missing"}
+        });
+        return;
+    }
+
+    std::string actor_fp;
+    if (!deps.require_admin_actor(req, res, &actor_fp)) {
+        return;
+    }
+
+    const std::string wrapper = deps.wrapper_path.empty()
+        ? "/usr/local/sbin/pqnas-drive-locate"
+        : deps.wrapper_path;
+
+    std::vector<std::string> args{"--action", action};
+
+    if (action == "idrac-save-config") {
+        json body;
+        try {
+            body = json::parse(req.body.empty() ? "{}" : req.body);
+        } catch (...) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_json"},
+                {"message", "request body must be JSON"}
+            });
+            return;
+        }
+
+        const bool enabled = body.value("enabled", false);
+        const std::string host = trim_copy(body.value("host", std::string{}));
+        const std::string port = trim_copy(body.value("port", std::string{"22"}));
+        const std::string user = trim_copy(body.value("user", std::string{}));
+
+        if (!valid_idrac_host_arg(host)) {
+            reply_json_local(deps, res, 400, json{{"ok", false}, {"error", "invalid_host"}, {"message", "invalid iDRAC host/IP"}});
+            return;
+        }
+        if (!valid_idrac_port_arg(port)) {
+            reply_json_local(deps, res, 400, json{{"ok", false}, {"error", "invalid_port"}, {"message", "invalid iDRAC SSH port"}});
+            return;
+        }
+        if (!valid_idrac_user_arg(user)) {
+            reply_json_local(deps, res, 400, json{{"ok", false}, {"error", "invalid_user"}, {"message", "invalid iDRAC username"}});
+            return;
+        }
+
+        args.insert(args.end(), {
+            "--enabled", enabled ? "1" : "0",
+            "--host", host,
+            "--port", port,
+            "--user", user
+        });
+    }
+
+    const CommandResult cr = run_wrapper_with_args(wrapper, args);
+
+    std::map<std::string, std::string> audit_fields{
+        {"action", action},
+        {"actor", audit_trunc(actor_fp, 128)},
+        {"exit_code", std::to_string(cr.exit_code)}
+    };
+
+    if (cr.exit_code != 0) {
+        audit_fields["wrapper_output"] = audit_trunc(cr.output);
+        emit_audit(deps, "error", audit_fields);
+
+        std::string msg = trim_copy(cr.output);
+        if (msg.empty()) msg = "iDRAC backend operation failed";
+        msg = audit_trunc(msg, 900);
+
+        reply_json_local(deps, res, 500, json{
+            {"ok", false},
+            {"error", "idrac_backend_failed"},
+            {"message", msg},
+            {"output", cr.output},
+            {"exit_code", cr.exit_code}
+        });
+        return;
+    }
+
+    emit_audit(deps, "ok", audit_fields);
+
+    reply_json_local(deps, res, 200, json{
+        {"ok", true},
+        {"action", action},
+        {"output", cr.output}
+    });
 }
 
 void handle_drive_locate(const DriveLocateRoutesDeps& deps,
@@ -235,7 +363,10 @@ void handle_drive_locate(const DriveLocateRoutesDeps& deps,
         ? "/usr/local/sbin/pqnas-drive-locate"
         : deps.wrapper_path;
 
-    const CommandResult cr = run_drive_locate_wrapper(wrapper, action, device);
+    const CommandResult cr = run_wrapper_with_args(wrapper, {
+        "--action", action,
+        "--device", device
+    });
     audit_fields["exit_code"] = std::to_string(cr.exit_code);
 
     if (cr.exit_code != 0) {
@@ -281,6 +412,37 @@ void register_drive_locate_routes(httplib::Server& srv,
     srv.Post("/api/v4/system/drives/locate/stop",
              [deps](const httplib::Request& req, httplib::Response& res) {
                  handle_drive_locate(deps, req, res, "locate-off");
+             });
+
+
+    srv.Get("/api/v4/system/drives/locate/idrac/config",
+            [deps](const httplib::Request& req, httplib::Response& res) {
+                handle_idrac_backend_action(deps, req, res, "idrac-status");
+            });
+
+    srv.Post("/api/v4/system/drives/locate/idrac/save",
+             [deps](const httplib::Request& req, httplib::Response& res) {
+                 handle_idrac_backend_action(deps, req, res, "idrac-save-config");
+             });
+
+    srv.Post("/api/v4/system/drives/locate/idrac/generate-key",
+             [deps](const httplib::Request& req, httplib::Response& res) {
+                 handle_idrac_backend_action(deps, req, res, "idrac-generate-key");
+             });
+
+    srv.Get("/api/v4/system/drives/locate/idrac/public-key",
+            [deps](const httplib::Request& req, httplib::Response& res) {
+                handle_idrac_backend_action(deps, req, res, "idrac-public-key");
+            });
+
+    srv.Post("/api/v4/system/drives/locate/idrac/test-connection",
+             [deps](const httplib::Request& req, httplib::Response& res) {
+                 handle_idrac_backend_action(deps, req, res, "idrac-test-connection");
+             });
+
+    srv.Post("/api/v4/system/drives/locate/idrac/test-inventory",
+             [deps](const httplib::Request& req, httplib::Response& res) {
+                 handle_idrac_backend_action(deps, req, res, "idrac-test-inventory");
              });
 }
 
