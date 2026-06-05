@@ -13215,6 +13215,9 @@ srv.Post("/api/v4/poolmgr/add-slot", [&](const httplib::Request& req, httplib::R
     });
     pool["slot_count"] = static_cast<int>(pool["slots"].size());
 
+    pqnas::enrich_pool_slots_with_runtime_identity_v3(&pool);
+
+
     std::string err;
     if (!pqnas::write_pools_cfg_v3(users_path, cfg, &err)) {
         reply_json(res, 500, json{
@@ -13325,6 +13328,9 @@ srv.Post("/api/v4/poolmgr/remove-slot", [&](const httplib::Request& req, httplib
     for (size_t i = 0; i < pool["slots"].size(); ++i) {
         pool["slots"][i]["index"] = static_cast<int>(i);
     }
+
+    pqnas::enrich_pool_slots_with_runtime_identity_v3(&pool);
+
 
     std::string err;
     if (!pqnas::write_pools_cfg_v3(users_path, cfg, &err)) {
@@ -13455,6 +13461,8 @@ srv.Post("/api/v4/poolmgr/set-layout", [&](const httplib::Request& req, httplib:
     }
 
     std::string err;
+    pqnas::enrich_pool_slots_with_runtime_identity_v3(&cfg["pools"][mount]);
+
     if (!pqnas::write_pools_cfg_v3(users_path, cfg, &err)) {
         reply_json(res, 500, json{{"ok", false}, {"error", "write_failed"}, {"detail", err}}.dump());
         return;

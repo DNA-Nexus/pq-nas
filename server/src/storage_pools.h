@@ -18,6 +18,10 @@ namespace pqnas {
     void ensure_pools_cfg_shape_v3(json* cfg);
     void normalize_pool_entry_v3(json* pool_obj);
 
+    // Enrich already-selected/saved slot devices with stable runtime identity.
+    // Call this only when saving a layout that was built from current live devices.
+    void enrich_pool_slots_with_runtime_identity_v3(json* pool_obj);
+
     // Lookup UI display name for a mount.
     std::string pools_display_name_for_mount_v3(const json& cfg, const std::string& mount);
 

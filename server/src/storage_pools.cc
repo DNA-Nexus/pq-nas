@@ -1,6 +1,9 @@
 #include "storage_pools.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
+#include <sstream>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -72,6 +75,362 @@ std::string lower_ascii_copy(std::string s) {
     return s;
 }
 
+
+std::string json_string_trimmed(const json& j, const char* key) {
+    if (!j.is_object() || !j.contains(key) || !j[key].is_string()) return "";
+    return trim_copy_safe(j[key].get<std::string>());
+}
+
+std::string basename_copy(const std::string& path) {
+    if (path.empty()) return "";
+    const auto name = std::filesystem::path(path).filename().string();
+    if (!name.empty()) return name;
+
+    const auto pos = path.find_last_of('/');
+    return pos == std::string::npos ? path : path.substr(pos + 1);
+}
+
+bool is_dev_path(const std::string& s) {
+    return s.rfind("/dev/", 0) == 0;
+}
+
+bool same_file_best_effort(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty()) return false;
+
+    std::error_code ec;
+    const bool eq = std::filesystem::equivalent(a, b, ec);
+    return !ec && eq;
+}
+
+std::string first_samefile_link_under(const std::string& dir, const std::string& dev) {
+    if (!is_dev_path(dev)) return "";
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec) || ec) return "";
+
+    std::vector<std::string> matches;
+
+    for (const auto& ent : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) break;
+
+        const std::string p = ent.path().string();
+        if (p.empty()) continue;
+
+        if (same_file_best_effort(p, dev)) {
+            matches.push_back(p);
+        }
+    }
+
+    if (matches.empty()) return "";
+
+    std::sort(matches.begin(), matches.end());
+    return matches.front();
+}
+
+std::string read_first_line_trimmed(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return "";
+
+    std::string s;
+    std::getline(f, s);
+    return trim_copy_safe(s);
+}
+
+std::string sys_block_name_from_dev(const std::string& dev) {
+    const std::string base = basename_copy(dev);
+    if (base.empty()) return "";
+    return base;
+}
+
+std::string derive_serial_short_from_disk_id(const std::string& disk_id) {
+    std::string s = trim_copy_safe(disk_id);
+    if (s.empty()) return "";
+
+    // Common USB by-id format:
+    // usb-Kingston_DataTraveler_3.0_E0D55EA574D4E9C059E50145-0:0
+    if (s.rfind("usb-", 0) == 0) {
+        const auto dash = s.rfind("-0:");
+        if (dash != std::string::npos) s = s.substr(0, dash);
+
+        const auto us = s.rfind('_');
+        if (us != std::string::npos && us + 1 < s.size()) {
+            return s.substr(us + 1);
+        }
+    }
+
+    if (s.rfind("wwn-", 0) == 0 && s.size() > 4) {
+        return s.substr(4);
+    }
+
+    return "";
+}
+
+
+std::string shell_quote_single(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+}
+
+std::string run_command_capture_limited(const std::string& cmd, std::size_t max_bytes = 65536) {
+    std::string out;
+
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) return out;
+
+    std::array<char, 4096> buf{};
+    while (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
+        out += buf.data();
+        if (out.size() >= max_bytes) {
+            out.resize(max_bytes);
+            break;
+        }
+    }
+
+    (void)pclose(fp);
+    return out;
+}
+
+std::map<std::string, std::string> parse_key_value_lines(const std::string& txt) {
+    std::map<std::string, std::string> out;
+
+    std::istringstream is(txt);
+    std::string line;
+
+    while (std::getline(is, line)) {
+        line = trim_copy_safe(line);
+        if (line.empty()) continue;
+
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+
+        const std::string k = trim_copy_safe(line.substr(0, eq));
+        const std::string v = trim_copy_safe(line.substr(eq + 1));
+
+        if (!k.empty()) out[k] = v;
+    }
+
+    return out;
+}
+
+std::map<std::string, std::string> udev_properties_for_dev(const std::string& dev) {
+    if (!is_dev_path(dev)) return {};
+
+    const std::string cmd =
+        "udevadm info --query=property --name=" + shell_quote_single(dev) + " 2>/dev/null";
+
+    const std::string out = run_command_capture_limited(cmd);
+    if (out.empty()) return {};
+
+    return parse_key_value_lines(out);
+}
+
+std::vector<std::string> split_space_list(const std::string& s) {
+    std::vector<std::string> out;
+    std::istringstream is(s);
+    std::string one;
+
+    while (is >> one) {
+        one = trim_copy_safe(one);
+        if (!one.empty()) out.push_back(one);
+    }
+
+    return out;
+}
+
+std::string first_devlink_with_prefix(const std::string& devlinks, const std::string& prefix) {
+    for (const auto& link : split_space_list(devlinks)) {
+        if (link.rfind(prefix, 0) == 0) return link;
+    }
+    return "";
+}
+
+void enrich_identity_from_udev(json* out, const std::string& dev) {
+    if (!out || !out->is_object() || !is_dev_path(dev)) return;
+
+    const auto props = udev_properties_for_dev(dev);
+    if (props.empty()) return;
+
+    auto get = [&](const char* key) -> std::string {
+        auto it = props.find(key);
+        if (it == props.end()) return "";
+        return trim_copy_safe(it->second);
+    };
+
+    const std::string devlinks = get("DEVLINKS");
+
+    if (!out->contains("by_id") || !(*out)["by_id"].is_string() ||
+        trim_copy_safe((*out)["by_id"].get<std::string>()).empty()) {
+        const std::string by_id = first_devlink_with_prefix(devlinks, "/dev/disk/by-id/");
+        if (!by_id.empty()) {
+            (*out)["by_id"] = by_id;
+            (*out)["disk_id"] = basename_copy(by_id);
+        }
+    }
+
+    if (!out->contains("by_path") || !(*out)["by_path"].is_string() ||
+        trim_copy_safe((*out)["by_path"].get<std::string>()).empty()) {
+        const std::string by_path = first_devlink_with_prefix(devlinks, "/dev/disk/by-path/");
+        if (!by_path.empty()) (*out)["by_path"] = by_path;
+    }
+
+    if (!out->contains("id_serial_short") || !(*out)["id_serial_short"].is_string() ||
+        trim_copy_safe((*out)["id_serial_short"].get<std::string>()).empty()) {
+        const std::string serial_short = get("ID_SERIAL_SHORT");
+        if (!serial_short.empty()) (*out)["id_serial_short"] = serial_short;
+    }
+
+    if (!out->contains("model") || !(*out)["model"].is_string() ||
+        trim_copy_safe((*out)["model"].get<std::string>()).empty()) {
+        std::string model = get("ID_MODEL");
+        std::replace(model.begin(), model.end(), '_', ' ');
+        if (!model.empty()) (*out)["model"] = model;
+    }
+
+    if (!out->contains("disk_id") || !(*out)["disk_id"].is_string() ||
+        trim_copy_safe((*out)["disk_id"].get<std::string>()).empty()) {
+        const std::string by_id = json_string_trimmed(*out, "by_id");
+        if (!by_id.empty()) (*out)["disk_id"] = basename_copy(by_id);
+    }
+}
+
+void copy_string_identity_if_present(json* dst, const json& src, const char* key, bool overwrite = false) {
+    if (!dst || !dst->is_object() || !src.is_object()) return;
+    if (!src.contains(key) || !src[key].is_string()) return;
+
+    const std::string v = trim_copy_safe(src[key].get<std::string>());
+    if (v.empty()) return;
+
+    if (!overwrite && dst->contains(key) && (*dst)[key].is_string() &&
+        !trim_copy_safe((*dst)[key].get<std::string>()).empty()) {
+        return;
+    }
+
+    (*dst)[key] = v;
+}
+
+void copy_integer_identity_if_present(json* dst, const json& src, const char* key, bool overwrite = false) {
+    if (!dst || !dst->is_object() || !src.is_object()) return;
+    if (!src.contains(key) || !src[key].is_number_integer()) return;
+
+    if (!overwrite && dst->contains(key) && (*dst)[key].is_number_integer()) {
+        return;
+    }
+
+    (*dst)[key] = src[key];
+}
+
+json runtime_identity_for_dev(const std::string& dev_in) {
+    const std::string dev = trim_copy_safe(dev_in);
+    json out = json::object();
+
+    if (!is_dev_path(dev)) return out;
+
+    out["runtime_dev"] = dev;
+
+    const std::string by_id = first_samefile_link_under("/dev/disk/by-id", dev);
+    if (!by_id.empty()) {
+        out["by_id"] = by_id;
+        out["disk_id"] = basename_copy(by_id);
+    }
+
+    const std::string by_path = first_samefile_link_under("/dev/disk/by-path", dev);
+    if (!by_path.empty()) {
+        out["by_path"] = by_path;
+    }
+
+    const std::string block = sys_block_name_from_dev(dev);
+    if (!block.empty()) {
+        const std::string model = read_first_line_trimmed("/sys/class/block/" + block + "/device/model");
+        if (!model.empty()) out["model"] = model;
+
+        const std::string serial = read_first_line_trimmed("/sys/class/block/" + block + "/device/serial");
+        if (!serial.empty()) out["id_serial_short"] = serial;
+    }
+
+    enrich_identity_from_udev(&out, dev);
+
+    if (!out.contains("id_serial_short")) {
+        const std::string disk_id = json_string_trimmed(out, "disk_id");
+        const std::string derived = derive_serial_short_from_disk_id(disk_id);
+        if (!derived.empty()) out["id_serial_short"] = derived;
+    }
+
+    return out;
+}
+
+void copy_slot_identity_fields(json* dst, const json& src, bool overwrite = false) {
+    copy_string_identity_if_present(dst, src, "disk_id", overwrite);
+    copy_string_identity_if_present(dst, src, "by_id", overwrite);
+    copy_string_identity_if_present(dst, src, "by_path", overwrite);
+    copy_string_identity_if_present(dst, src, "runtime_dev", overwrite);
+    copy_string_identity_if_present(dst, src, "id_serial_short", overwrite);
+    copy_string_identity_if_present(dst, src, "model", overwrite);
+    copy_integer_identity_if_present(dst, src, "btrfs_devid", overwrite);
+}
+
+bool identity_string_equal(const json& a, const json& b, const char* key) {
+    const std::string av = json_string_trimmed(a, key);
+    const std::string bv = json_string_trimmed(b, key);
+    return !av.empty() && av == bv;
+}
+
+bool identity_integer_equal(const json& a, const json& b, const char* key) {
+    if (!a.is_object() || !b.is_object()) return false;
+    if (!a.contains(key) || !b.contains(key)) return false;
+    if (!a[key].is_number_integer() || !b[key].is_number_integer()) return false;
+    return a[key].get<int64_t>() == b[key].get<int64_t>();
+}
+
+int find_matching_runtime_member(const json& saved_slot,
+                                 const std::string& saved_device,
+                                 const std::vector<json>& runtime_members,
+                                 const std::set<int>& used_runtime_indexes) {
+    auto find_by_string_key = [&](const char* key) -> int {
+        for (int i = 0; i < static_cast<int>(runtime_members.size()); ++i) {
+            if (used_runtime_indexes.count(i)) continue;
+            if (identity_string_equal(saved_slot, runtime_members[static_cast<size_t>(i)], key)) {
+                return i;
+            }
+        }
+        return -1;
+    };
+
+    int idx = find_by_string_key("by_id");
+    if (idx >= 0) return idx;
+
+    idx = find_by_string_key("disk_id");
+    if (idx >= 0) return idx;
+
+    idx = find_by_string_key("by_path");
+    if (idx >= 0) return idx;
+
+    for (int i = 0; i < static_cast<int>(runtime_members.size()); ++i) {
+        if (used_runtime_indexes.count(i)) continue;
+        if (identity_integer_equal(saved_slot, runtime_members[static_cast<size_t>(i)], "btrfs_devid")) {
+            return i;
+        }
+    }
+
+    const std::string saved_runtime_dev = json_string_trimmed(saved_slot, "runtime_dev");
+
+    for (int i = 0; i < static_cast<int>(runtime_members.size()); ++i) {
+        if (used_runtime_indexes.count(i)) continue;
+
+        const std::string rt = json_string_trimmed(runtime_members[static_cast<size_t>(i)], "runtime_dev");
+        if (rt.empty()) continue;
+
+        if (!saved_runtime_dev.empty() && saved_runtime_dev == rt) return i;
+        if (!saved_device.empty() && saved_device == rt) return i;
+    }
+
+    return -1;
+}
+
 std::filesystem::path pools_cfg_path_from_users_path_local(const std::string& users_path) {
     std::string root = getenv_str("PQNAS_STORAGE_ROOT");
     if (root.empty()) root = "/srv/pqnas";
@@ -139,6 +498,12 @@ void normalize_slots_array(json* slots) {
             copy_slot_identity_field("by_id");
             copy_slot_identity_field("by_path");
             copy_slot_identity_field("runtime_dev");
+            copy_slot_identity_field("id_serial_short");
+            copy_slot_identity_field("model");
+
+            if (s.contains("btrfs_devid") && s["btrfs_devid"].is_number_integer()) {
+                one["btrfs_devid"] = s["btrfs_devid"];
+            }
         }
 
         out.push_back(std::move(one));
@@ -198,6 +563,36 @@ void normalize_pool_entry_v3(json* pool_obj) {
     }
 
     (*pool_obj)["slot_count"] = static_cast<int>((*pool_obj)["slots"].size());
+}
+
+
+void enrich_pool_slots_with_runtime_identity_v3(json* pool_obj) {
+    if (!pool_obj || !pool_obj->is_object()) return;
+
+    normalize_pool_entry_v3(pool_obj);
+
+    if (!pool_obj->contains("slots") || !(*pool_obj)["slots"].is_array()) return;
+
+    for (auto& s : (*pool_obj)["slots"]) {
+        if (!s.is_object()) continue;
+
+        std::string dev = json_string_trimmed(s, "runtime_dev");
+        if (dev.empty()) dev = json_string_trimmed(s, "device");
+        if (!is_dev_path(dev)) continue;
+
+        json id = runtime_identity_for_dev(dev);
+        if (!id.is_object() || id.empty()) continue;
+
+        copy_slot_identity_fields(&s, id, true);
+
+        const std::string rt = json_string_trimmed(id, "runtime_dev");
+        if (!rt.empty()) {
+            s["device"] = rt;       // legacy / last runtime path
+            s["runtime_dev"] = rt;  // explicit current runtime path
+        }
+    }
+
+    normalize_pool_entry_v3(pool_obj);
 }
 
 void ensure_pools_cfg_shape_v3(json* cfg) {
@@ -533,10 +928,25 @@ json merge_pool_runtime_and_config(const json& cfg_pool,
     // ----------------------------
     out["member_parent_disks"] = runtime_member_parents;
 
-    std::set<std::string> runtime_set(runtime_member_parents.begin(), runtime_member_parents.end());
-    std::set<std::string> desired_set;
+    std::vector<json> runtime_members;
+    runtime_members.reserve(runtime_member_parents.size());
+
+    for (const auto& dev : runtime_member_parents) {
+        json m = runtime_identity_for_dev(dev);
+        if (!m.is_object()) m = json::object();
+        if (!m.contains("runtime_dev") || !m["runtime_dev"].is_string()) {
+            m["runtime_dev"] = dev;
+        }
+        runtime_members.push_back(std::move(m));
+    }
+
+    out["runtime_members"] = runtime_members;
 
     json slots = json::array();
+
+    int assigned_count = 0;
+    int matched_count = 0;
+    std::set<int> matched_runtime_indexes;
 
     if (has_cfg && cfg_pool.contains("slots") && cfg_pool["slots"].is_array() && !cfg_pool["slots"].empty()) {
         for (const auto& s : cfg_pool["slots"]) {
@@ -548,36 +958,70 @@ json merge_pool_runtime_and_config(const json& cfg_pool,
             }
 
             const bool assigned = !dev.empty();
-            const bool present  = assigned && runtime_set.find(dev) != runtime_set.end();
+            if (assigned) ++assigned_count;
+
+            int match_idx = -1;
+            if (assigned) {
+                match_idx = find_matching_runtime_member(
+                    s,
+                    dev,
+                    runtime_members,
+                    matched_runtime_indexes
+                );
+            }
+
+            const bool present = match_idx >= 0;
+            if (present) {
+                matched_runtime_indexes.insert(match_idx);
+                ++matched_count;
+            }
+
+            std::string runtime_dev;
+            if (present) {
+                runtime_dev = json_string_trimmed(runtime_members[static_cast<size_t>(match_idx)], "runtime_dev");
+            }
 
             json one = {
                 {"index", index},
-                {"device", assigned ? json(dev) : json(nullptr)},
+                {"device", assigned ? json(!runtime_dev.empty() ? runtime_dev : dev) : json(nullptr)},
                 {"assigned", assigned},
                 {"present", present},
                 {"member", present}
             };
 
-            if (s.contains("disk_id") && s["disk_id"].is_string()) one["disk_id"] = s["disk_id"];
-            if (s.contains("by_id") && s["by_id"].is_string()) one["by_id"] = s["by_id"];
-            if (s.contains("by_path") && s["by_path"].is_string()) one["by_path"] = s["by_path"];
-            if (s.contains("runtime_dev") && s["runtime_dev"].is_string()) one["runtime_dev"] = s["runtime_dev"];
+            if (s.is_object()) {
+                copy_slot_identity_fields(&one, s, false);
+            }
 
-            if (assigned) desired_set.insert(dev);
-            slots.push_back(one);
+            if (present) {
+                copy_slot_identity_fields(&one, runtime_members[static_cast<size_t>(match_idx)], true);
+            }
+
+            slots.push_back(std::move(one));
         }
     } else {
-        // No config slots: best-effort slots from runtime members
+        // No config slots: best-effort slots from runtime members.
         int idx = 0;
-        for (const auto& dev : runtime_member_parents) {
-            slots.push_back(json{
+        for (const auto& m : runtime_members) {
+            const std::string dev = json_string_trimmed(m, "runtime_dev");
+
+            json one = {
                 {"index", idx++},
-                {"device", dev},
-                {"assigned", true},
+                {"device", dev.empty() ? json(nullptr) : json(dev)},
+                {"assigned", !dev.empty()},
                 {"present", true},
                 {"member", true}
-            });
-            desired_set.insert(dev);
+            };
+
+            copy_slot_identity_fields(&one, m, true);
+
+            if (!dev.empty()) {
+                ++assigned_count;
+                ++matched_count;
+                matched_runtime_indexes.insert(idx - 1);
+            }
+
+            slots.push_back(std::move(one));
         }
     }
 
@@ -591,8 +1035,19 @@ json merge_pool_runtime_and_config(const json& cfg_pool,
     // Status
     // ----------------------------
     const bool mounted = has_rt;
-    const bool layout_drift = desired_set != runtime_set;
-    const bool degraded = mounted && !desired_set.empty() && (runtime_set.size() < desired_set.size());
+
+    const bool layout_drift =
+        mounted &&
+        (
+            assigned_count != static_cast<int>(runtime_members.size()) ||
+            matched_count != assigned_count ||
+            matched_count != static_cast<int>(runtime_members.size())
+        );
+
+    const bool degraded =
+        mounted &&
+        assigned_count > 0 &&
+        static_cast<int>(runtime_members.size()) < assigned_count;
 
     out["status"] = json{
         {"mounted", mounted},
