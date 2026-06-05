@@ -1481,17 +1481,45 @@ html[data-theme="bright"] .systemModalCard{
             if (warn) warn.textContent = tr("system.storage_probe_failed", { error: String(e && e.message ? e.message : e) }, "Failed to probe storage: " + (e && e.message ? e.message : e));
         }
     }
-    document.addEventListener("click", (ev) => {
-        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateToggle");
-        if (!btn) return;
-
+    function setIdracCardCollapsed(collapsed) {
         const card = document.getElementById("idracDriveLocateCard");
+        const header = document.getElementById("idracDriveLocateHeader");
         if (!card) return;
 
-        const collapsed = card.classList.toggle("collapsed");
-        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-        btn.setAttribute("title", collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings");
-        btn.setAttribute("aria-label", collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings");
+        card.classList.toggle("collapsed", !!collapsed);
+
+        if (header) {
+            header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+            header.setAttribute(
+                "title",
+                collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings"
+            );
+        }
+    }
+
+    function toggleIdracCard() {
+        const card = document.getElementById("idracDriveLocateCard");
+        if (!card) return;
+        setIdracCardCollapsed(!card.classList.contains("collapsed"));
+    }
+
+    document.addEventListener("click", (ev) => {
+        const header = ev.target && ev.target.closest && ev.target.closest("#idracDriveLocateHeader");
+        if (!header) return;
+
+        // Buttons inside the header, especially the ? help button, keep their own action.
+        if (ev.target.closest("button,a,input,select,textarea,label")) return;
+
+        toggleIdracCard();
+    });
+
+    document.addEventListener("keydown", (ev) => {
+        const header = ev.target && ev.target.closest && ev.target.closest("#idracDriveLocateHeader");
+        if (!header) return;
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+
+        ev.preventDefault();
+        toggleIdracCard();
     });
 
     document.addEventListener("click", (ev) => {

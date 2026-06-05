@@ -271,17 +271,34 @@
             display:none;
         }
 
-        #btnIdracLocateToggle{
-            width:34px;
-            height:34px;
-            min-width:34px;
-            padding:0;
-            border-radius:999px;
-            font-weight:950;
+        #idracDriveLocateCard > .hd{
+            cursor:pointer;
+            user-select:none;
+            transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+        }
+
+        #idracDriveLocateCard > .hd:hover{
+            background: color-mix(in srgb, var(--bg, #111) 82%, var(--fg, #fff) 18%);
+        }
+
+        #idracDriveLocateCard:not(.collapsed) > .hd{
+            background: color-mix(in srgb, var(--bg, #111) 74%, var(--fg, #fff) 26%);
+            border-bottom-color: rgba(var(--fg-rgb),0.24);
+            box-shadow: 0 1px 0 rgba(var(--fg-rgb),0.08) inset;
+        }
+
+        #idracDriveLocateCard > .hd:focus-visible{
+            outline: 3px solid rgba(var(--fg-rgb),0.18);
+            outline-offset: -3px;
+        }
+
+        #idracDriveLocateCard .idracAccordionMarker{
+            display:inline-block;
+            margin-right:8px;
             transition: transform 140ms ease;
         }
 
-        #idracDriveLocateCard:not(.collapsed) #btnIdracLocateToggle{
+        #idracDriveLocateCard:not(.collapsed) .idracAccordionMarker{
             transform: rotate(90deg);
         }
 
@@ -442,15 +459,17 @@
                 </section>
 
                 <section class="card span-12 collapsed" id="idracDriveLocateCard">
-                    <div class="hd">
-                        <div class="h">Advanced • Dell iDRAC / RACADM Drive Locate</div>
+                    <div class="hd"
+                         id="idracDriveLocateHeader"
+                         role="button"
+                         tabindex="0"
+                         aria-expanded="false"
+                         title="Show or hide Dell iDRAC backend settings">
+                        <div class="h">
+                            <span class="idracAccordionMarker" aria-hidden="true">▸</span>
+                            <span>Advanced • Dell iDRAC / RACADM Drive Locate</span>
+                        </div>
                         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                            <button class="btn"
-                                    id="btnIdracLocateToggle"
-                                    type="button"
-                                    title="Show Dell iDRAC backend settings"
-                                    aria-label="Show Dell iDRAC backend settings"
-                                    aria-expanded="false">▸</button>
                             <button class="btn"
                                     id="btnIdracLocateHelp"
                                     type="button"
@@ -548,7 +567,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/system.js?v=20260605-idrac-collapsed-1"></script>
+<script src="/static/system.js?v=20260605-idrac-header-accordion-1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>
