@@ -5585,6 +5585,41 @@ static bool ensure_dir_fail_closed(const std::string& dir, std::string* err) {
 #include <algorithm>
 #include <cctype>
 
+
+namespace {
+
+const auto pqnas_server_started_at_local = std::chrono::system_clock::now();
+
+long long pqnas_server_started_at_epoch_local() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        pqnas_server_started_at_local.time_since_epoch()
+    ).count();
+}
+
+long long pqnas_server_uptime_seconds_local() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now() - pqnas_server_started_at_local
+    ).count();
+}
+
+std::string pqnas_server_started_at_iso_local() {
+    const std::time_t t = static_cast<std::time_t>(pqnas_server_started_at_epoch_local());
+    std::tm tm{};
+
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+
+    std::ostringstream os;
+    os << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return os.str();
+}
+
+} // namespace
+
+
 static bool validate_create_pool_devices(
     const json& devices_json,
     const json& disk_inventory,
@@ -22595,6 +22630,9 @@ LIMIT 2000;
             {"ok", true},
             {"generated_at_epoch", now_ts},
             {"generated_at_iso", iso_utc_from_epoch_local(now_ts)},
+            {"server_started_at_epoch", pqnas_server_started_at_epoch_local()},
+            {"server_started_at_iso", pqnas_server_started_at_iso_local()},
+            {"server_uptime_seconds", pqnas_server_uptime_seconds_local()},
             {"method", "live filesystem scan"},
             {"note", "MIME types are extension-based in this v1 implementation."},
             {"users", users_j},
@@ -22634,6 +22672,10 @@ LIMIT 2000;
             json cached;
             std::string cache_err;
             if (admin_stats_load_latest_snapshot_local(&cached, &cache_err)) {
+                cached["server_started_at_epoch"] = pqnas_server_started_at_epoch_local();
+                cached["server_started_at_iso"] = pqnas_server_started_at_iso_local();
+                cached["server_uptime_seconds"] = pqnas_server_uptime_seconds_local();
+
                 reply_json(res, 200, cached.dump());
                 return;
             }
@@ -22684,6 +22726,10 @@ LIMIT 2000;
                 }
             }
         }
+
+        out["server_started_at_epoch"] = pqnas_server_started_at_epoch_local();
+        out["server_started_at_iso"] = pqnas_server_started_at_iso_local();
+        out["server_uptime_seconds"] = pqnas_server_uptime_seconds_local();
 
         reply_json(res, 200, out.dump());
     });

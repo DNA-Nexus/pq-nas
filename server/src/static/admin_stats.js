@@ -24,6 +24,9 @@
     let latestSummary = null;
     let latestTrendPayload = null;
     let latestCircleStackStats = null;
+    let latestServerStartedAtEpoch = 0;
+    let uptimeTimer = null;
+    let latestAvailability = null;
 
     function esc(s) {
         return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -62,6 +65,208 @@
         const digits = i === 0 ? 0 : (v >= 100 ? 1 : 2);
         return `${v.toFixed(digits)} ${units[i]}`;
     }
+
+    function fmtUptime(seconds) {
+        let n = Math.max(0, Math.floor(Number(seconds || 0)));
+        if (!Number.isFinite(n)) n = 0;
+
+        const days = Math.floor(n / 86400);
+        n %= 86400;
+        const hours = Math.floor(n / 3600);
+        n %= 3600;
+        const mins = Math.floor(n / 60);
+        const secs = n % 60;
+
+        if (days > 0) return `${days}d ${hours}h ${mins}m`;
+        if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+        if (mins > 0) return `${mins}m ${secs}s`;
+        return `${secs}s`;
+    }
+
+    function updateUptimeCard() {
+        const valueEl = $("cardUptime");
+        const miniEl = $("cardUptimeMini");
+        if (!valueEl || !miniEl) return;
+
+        const started = Number(latestServerStartedAtEpoch || 0);
+        if (!Number.isFinite(started) || started <= 0) {
+            valueEl.textContent = "—";
+            miniEl.textContent = "Server start time not available yet";
+            return;
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        valueEl.textContent = fmtUptime(now - started);
+
+        const startedDate = new Date(started * 1000);
+        miniEl.textContent = Number.isNaN(startedDate.getTime())
+            ? "Started: —"
+            : `Started ${startedDate.toLocaleString()}`;
+    }
+
+    function startUptimeTicker() {
+        if (uptimeTimer) return;
+        uptimeTimer = window.setInterval(updateUptimeCard, 1000);
+    }
+
+    function trendPointEpochSeconds(p) {
+        if (!p || typeof p !== "object") return 0;
+
+        for (const key of ["t", "generated_at_epoch", "bucket_epoch"]) {
+            const n = Number(p[key]);
+            if (Number.isFinite(n) && n > 0) return Math.floor(n);
+        }
+
+        const iso = String(p.iso || p.generated_at_iso || "").trim();
+        if (iso) {
+            const ms = Date.parse(iso);
+            if (Number.isFinite(ms) && ms > 0) return Math.floor(ms / 1000);
+        }
+
+        return 0;
+    }
+
+    function fmtAvailabilityPercent(n) {
+        const v = Number(n);
+        if (!Number.isFinite(v)) return "—";
+        if (v >= 99.995) return v.toFixed(3) + "%";
+        if (v >= 99.95) return v.toFixed(3) + "%";
+        return v.toFixed(2) + "%";
+    }
+
+    function calculateLocalAvailability(points) {
+        const now = Math.floor(Date.now() / 1000);
+        const windowSeconds = 30 * 86400;
+        const windowStart = now - windowSeconds;
+
+        const sampleTimes = [];
+
+        for (const p of Array.isArray(points) ? points : []) {
+            const t = trendPointEpochSeconds(p);
+            if (t >= windowStart && t <= now) sampleTimes.push(t);
+        }
+
+        // The fact that this request succeeded proves the server is reachable right now
+        // from the admin browser. Include "now" as a final local up-sample.
+        sampleTimes.push(now);
+
+        const times = Array.from(new Set(sampleTimes))
+            .sort((a, b) => a - b);
+
+        if (times.length < 2) {
+            return {
+                ok: false,
+                reason: "not_enough_samples",
+                availability_percent: null,
+                downtime_seconds: 0,
+                observed_seconds: 0,
+                sample_count: times.length,
+                window_days: 30,
+                source: "local_admin_stats_samples"
+            };
+        }
+
+        const expectedInterval = 60 * 60;       // current admin stats sampler interval
+        const gapTolerance = expectedInterval * 2;
+
+        let downtime = 0;
+
+        for (let i = 1; i < times.length; i++) {
+            const gap = times[i] - times[i - 1];
+            if (gap > gapTolerance) {
+                downtime += Math.max(0, gap - expectedInterval);
+            }
+        }
+
+        const observedStart = times[0];
+        const observedSeconds = Math.max(1, now - observedStart);
+        const upSeconds = Math.max(0, observedSeconds - downtime);
+        const availability = Math.max(0, Math.min(100, (upSeconds / observedSeconds) * 100));
+
+        return {
+            ok: true,
+            availability_percent: availability,
+            downtime_seconds: downtime,
+            uptime_seconds: upSeconds,
+            observed_seconds: observedSeconds,
+            sample_count: times.length,
+            first_sample_epoch: observedStart,
+            last_sample_epoch: times[times.length - 1],
+            expected_interval_seconds: expectedInterval,
+            gap_tolerance_seconds: gapTolerance,
+            window_days: 30,
+            source: "local_admin_stats_samples"
+        };
+    }
+
+    function renderAvailability(av = latestAvailability) {
+        const valueEl = $("cardAvailability");
+        const miniEl = $("cardAvailabilityMini");
+        if (!valueEl || !miniEl) return;
+
+        const data = av || {};
+        latestAvailability = data;
+
+        if (!data.ok) {
+            valueEl.textContent = "—";
+            if (data.reason === "not_enough_samples") {
+                miniEl.textContent = `Need more samples · ${fmtNum(data.sample_count || 0)} sample${Number(data.sample_count || 0) === 1 ? "" : "s"}`;
+            } else if (data.error) {
+                miniEl.textContent = `Unavailable · ${data.error}`;
+            } else {
+                miniEl.textContent = "Last 30 days · local estimate";
+            }
+            return;
+        }
+
+        valueEl.textContent = fmtAvailabilityPercent(data.availability_percent);
+
+        const down = fmtUptime(data.downtime_seconds || 0);
+        const samples = fmtNum(data.sample_count || 0);
+        const observedDays = Math.max(0, Number(data.observed_seconds || 0) / 86400);
+
+        miniEl.textContent = `Last ${observedDays.toFixed(observedDays < 2 ? 1 : 0)}d observed · ${down} downtime · ${samples} samples`;
+    }
+
+    async function loadAvailability() {
+        renderAvailability({
+            ok: false,
+            reason: "loading",
+            sample_count: 0
+        });
+
+        try {
+            const r = await fetch("/api/v4/admin/stats/trends?period=30d&bucket=raw", {
+                headers: { "Accept": "application/json" },
+                credentials: "include",
+                cache: "no-store"
+            });
+
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) {
+                throw new Error(j.message || j.error || `HTTP ${r.status}`);
+            }
+
+            const points = Array.isArray(j.points) ? j.points : [];
+            const av = calculateLocalAvailability(points);
+
+            av.period = "30d";
+            av.bucket = "raw";
+            av.generated_at_iso = new Date().toISOString();
+
+            latestAvailability = av;
+            renderAvailability(av);
+        } catch (e) {
+            latestAvailability = {
+                ok: false,
+                error: String(e && e.message ? e.message : e),
+                source: "local_admin_stats_samples",
+                window_days: 30
+            };
+            renderAvailability(latestAvailability);
+        }
+    }
+
 
     function fmtShortBytes(bytes) {
         const n = Number(bytes || 0);
@@ -337,7 +542,8 @@
             trend_period: currentTrendPeriod,
             summary: latestSummary,
             trends: latestTrendPayload,
-            circle_stack: latestCircleStackStats
+            circle_stack: latestCircleStackStats,
+            availability: latestAvailability
         };
     }
 
@@ -736,6 +942,11 @@
             const workspaces = j.workspaces || {};
             const files = j.files || {};
 
+            const startedEpoch = Number(j.server_started_at_epoch || 0);
+            latestServerStartedAtEpoch = Number.isFinite(startedEpoch) ? startedEpoch : 0;
+            updateUptimeCard();
+            startUptimeTicker();
+
             setText("cardUsers", fmtNum(users.total));
             setText(
                 "cardUsersMini",
@@ -796,6 +1007,7 @@
                 await loadStats(true);
                 await loadCircleStackStats();
                 await loadTrends(currentTrendPeriod);
+                await loadAvailability();
             });
         }
 
@@ -819,11 +1031,13 @@
         loadStats(false);
         loadCircleStackStats();
         loadTrends(currentTrendPeriod);
+        loadAvailability();
 
         window.addEventListener("pqnas-language-changed", () => {
             applyStaticI18n();
             renderGrowthInsights();
             if (latestTrendPayload) renderTrends(latestTrendPayload);
+            if (latestAvailability) renderAvailability(latestAvailability);
         });
 
         window.addEventListener("resize", () => {

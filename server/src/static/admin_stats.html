@@ -102,7 +102,7 @@
 
         .grid{
             display:grid;
-            grid-template-columns:repeat(4, minmax(150px, 1fr));
+            grid-template-columns:repeat(6, minmax(150px, 1fr));
             gap:14px;
         }
 
@@ -569,6 +569,16 @@
                 <div id="cardWorkspaces" class="value">—</div>
                 <div id="cardWorkspacesMini" class="mini">—</div>
             </div>
+            <div class="card">
+                <div class="label">Server uptime</div>
+                <div id="cardUptime" class="value">—</div>
+                <div id="cardUptimeMini" class="mini">Waiting for server data</div>
+            </div>
+            <div class="card">
+                <div class="label">Availability</div>
+                <div id="cardAvailability" class="value">—</div>
+                <div id="cardAvailabilityMini" class="mini">Last 30 days · local estimate</div>
+            </div>
         </section>
 
 
@@ -822,7 +832,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_stats.js?v=20260605-stats-export-1"></script>
+<script src="/static/admin_stats.js?v=20260605-stats-availability-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
