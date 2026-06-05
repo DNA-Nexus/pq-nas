@@ -100,8 +100,48 @@ done
 
 [[ -n "$LEDCTL" ]] || die "ledctl not found; install ledmon"
 
+is_megaraid_controller_present() {
+    command -v lspci >/dev/null 2>&1 || return 1
+    lspci -nn 2>/dev/null | grep -Eiq 'MegaRAID|PERC|LSI|Broadcom.*SAS|RAID bus controller'
+}
+
+run_ledctl_pattern() {
+    local pattern="$1"
+    local out=""
+    local rc=0
+
+    set +e
+    out="$("$LEDCTL" "${pattern}=${CANON}" 2>&1)"
+    rc=$?
+    set -e
+
+    if [[ -n "$out" ]]; then
+        printf '%s\n' "$out"
+    fi
+
+    return "$rc"
+}
+
 if [[ "$ACTION" == "locate-on" ]]; then
-    exec "$LEDCTL" "locate=$CANON"
-else
-    exec "$LEDCTL" "locate_off=$CANON"
+    OUT="$(run_ledctl_pattern locate)" || {
+        RC=$?
+        if is_megaraid_controller_present; then
+            die "drive locate is not available through ledctl for ${CANON}. MegaRAID/PERC/LSI controller detected; this hardware usually needs a storcli/perccli backend or iDRAC/OpenManage locate support. ledctl output: ${OUT}"
+        fi
+        die "ledctl locate failed for ${CANON}: ${OUT}"
+    }
+    exit 0
 fi
+
+# Stop locate. ledctl commonly supports normal=...; keep locate_off as fallback.
+OUT="$(run_ledctl_pattern normal)" || {
+    RC=$?
+    OUT2="$(run_ledctl_pattern locate_off)" || {
+        RC2=$?
+        if is_megaraid_controller_present; then
+            die "drive locate stop is not available through ledctl for ${CANON}. MegaRAID/PERC/LSI controller detected; this hardware usually needs a storcli/perccli backend or iDRAC/OpenManage locate support. ledctl output: ${OUT}; fallback output: ${OUT2}"
+        fi
+        die "ledctl stop locate failed for ${CANON}: ${OUT}; fallback output: ${OUT2}"
+    }
+}
+exit 0

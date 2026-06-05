@@ -242,10 +242,17 @@ void handle_drive_locate(const DriveLocateRoutesDeps& deps,
         audit_fields["wrapper_output"] = audit_trunc(cr.output);
         emit_audit(deps, "error", audit_fields);
 
+        std::string msg = trim_copy(cr.output);
+        if (msg.empty()) {
+            msg = "drive locate wrapper failed";
+        }
+        msg = audit_trunc(msg, 900);
+
         reply_json_local(deps, res, 500, json{
             {"ok", false},
             {"error", "locate_failed"},
-            {"message", "drive locate wrapper failed"},
+            {"message", msg},
+            {"detail", "drive locate wrapper failed"},
             {"exit_code", cr.exit_code},
             {"output", cr.output}
         });
