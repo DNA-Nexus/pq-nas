@@ -267,6 +267,43 @@
             color: rgba(var(--warn-rgb),0.95);
         }
 
+        #idracDriveLocateCard.collapsed > .bd{
+            display:none;
+        }
+
+        #btnIdracLocateToggle{
+            width:34px;
+            height:34px;
+            min-width:34px;
+            padding:0;
+            border-radius:999px;
+            font-weight:950;
+            transition: transform 140ms ease;
+        }
+
+        #idracDriveLocateCard:not(.collapsed) #btnIdracLocateToggle{
+            transform: rotate(90deg);
+        }
+
+        #idracDriveLocateCard{
+            background: color-mix(in srgb, var(--bg, #111) 94%, var(--fg, #fff) 6%);
+        }
+
+        #idracDriveLocateCard .bd{
+            background: color-mix(in srgb, var(--bg, #111) 92%, var(--fg, #fff) 8%);
+        }
+
+        #idracDriveLocateCard .kv,
+        #idracDriveLocateCard input,
+        #idracDriveLocateCard textarea,
+        #idracDriveLocateCard pre{
+            background: color-mix(in srgb, var(--bg, #111) 88%, var(--fg, #fff) 12%) !important;
+        }
+
+        #idracDriveLocateCard input{
+            color: var(--fg);
+        }
+
         .statusCard > div > div{
             font-weight: 700;
         }
@@ -404,10 +441,24 @@
                     </div>
                 </section>
 
-                <section class="card span-12" id="idracDriveLocateCard">
+                <section class="card span-12 collapsed" id="idracDriveLocateCard">
                     <div class="hd">
                         <div class="h">Advanced • Dell iDRAC / RACADM Drive Locate</div>
-                        <span class="pill warn" id="idracLocatePill"><span class="k">Backend:</span> <span class="v">not checked</span></span>
+                        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                            <button class="btn"
+                                    id="btnIdracLocateToggle"
+                                    type="button"
+                                    title="Show Dell iDRAC backend settings"
+                                    aria-label="Show Dell iDRAC backend settings"
+                                    aria-expanded="false">▸</button>
+                            <button class="btn"
+                                    id="btnIdracLocateHelp"
+                                    type="button"
+                                    title="Dell iDRAC drive locate help"
+                                    aria-label="Dell iDRAC drive locate help"
+                                    style="width:34px; height:34px; min-width:34px; padding:0; border-radius:999px; font-weight:950;">?</button>
+                            <span class="pill warn" id="idracLocatePill"><span class="k">Backend:</span> <span class="v">not checked</span></span>
+                        </div>
                     </div>
                     <div class="bd">
                         <div class="note">
@@ -456,18 +507,7 @@
                         <pre id="idracLocateOutput" class="note mono"
                              style="white-space:pre-wrap; overflow:auto; max-height:260px; margin-top:12px; padding:10px; border-radius:12px; border:1px solid rgba(var(--fg-rgb),0.12); background:rgba(0,0,0,0.18);">Not checked yet.</pre>
 
-                        <details class="note" style="margin-top:12px;">
-                            <summary style="cursor:pointer; font-weight:800;">Dell iDRAC user permission example</summary>
-                            <div style="margin-top:8px;">
-                                Create a dedicated iDRAC user such as <span class="mono">pqnas-locate</span>.
-                                Known working permissions from testing:
-                                <br>Role: <b>Operator</b>
-                                <br>Enable: <b>Login</b>, <b>Configure</b>, <b>System Control</b>, <b>System Operations</b>
-                                <br>Disable: <b>Configure Users</b>, <b>Logs</b>, <b>Access Virtual Console</b>, <b>Access Virtual Media</b>, <b>Debug</b>
-                                <br>IPMI LAN/Serial privileges: <b>None</b>
-                                <br>SNMP v3: <b>Disabled</b>
-                            </div>
-                        </details>
+
                     </div>
                 </section>
 
@@ -508,7 +548,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/system.js?v=20260604-drive-name-dark-green-1"></script>
+<script src="/static/system.js?v=20260605-idrac-collapsed-1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

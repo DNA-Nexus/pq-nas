@@ -433,6 +433,90 @@ html[data-theme="bright"] .systemModalCard{
         URL.revokeObjectURL(url);
     }
 
+    function openIdracLocateHelpModal() {
+        const old = document.getElementById("idracLocateHelpModalOverlay");
+        if (old) old.remove();
+
+        const overlay = document.createElement("div");
+        overlay.id = "idracLocateHelpModalOverlay";
+        overlay.style.cssText = [
+            "position:fixed",
+            "inset:0",
+            "z-index:99999",
+            "background:rgba(0,0,0,0.72)",
+            "display:flex",
+            "align-items:center",
+            "justify-content:center",
+            "padding:24px"
+        ].join(";");
+
+        const box = document.createElement("div");
+        box.className = "idracHelpModalBox";
+        box.style.cssText = [
+            "width:min(980px,96vw)",
+            "max-height:92vh",
+            "overflow:auto",
+            "border-radius:18px",
+            "border:1px solid rgba(var(--fg-rgb),0.22)",
+            "background:color-mix(in srgb, var(--bg, #111) 94%, var(--fg, #fff) 6%)",
+            "color:var(--fg)",
+            "box-shadow:0 24px 80px rgba(0,0,0,0.65)"
+        ].join(";");
+
+        box.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(var(--fg-rgb),0.14);">
+                <div style="font-size:13px; letter-spacing:0.10em; text-transform:uppercase; font-weight:900;">
+                    Dell iDRAC / RACADM Drive Locate Help
+                </div>
+                <button class="btn" id="btnCloseIdracLocateHelp" type="button" style="width:36px; height:36px; min-width:36px; padding:0; border-radius:999px;">×</button>
+            </div>
+
+            <div style="padding:16px;">
+                <p class="note" style="margin-top:0;">
+                    This optional backend is intended for Dell PowerEdge servers with iDRAC and PERC/RAID controllers.
+                    DNA-Nexus uses a dedicated iDRAC user over SSH and runs only RACADM inventory plus drive blink/unblink commands.
+                </p>
+
+                <div class="note" style="margin-top:12px;">
+                    <b>Recommended iDRAC user:</b> <span class="mono">pqnas-locate</span><br>
+                    <b>Known working permission set:</b><br>
+                    Role: <b>Operator</b><br>
+                    Enable: <b>Login</b>, <b>Configure</b>, <b>System Control</b>, <b>System Operations</b><br>
+                    Disable: <b>Configure Users</b>, <b>Logs</b>, <b>Access Virtual Console</b>, <b>Access Virtual Media</b>, <b>Debug</b><br>
+                    IPMI LAN/Serial privileges: <b>None</b><br>
+                    SNMP v3: <b>Disabled</b>
+                </div>
+
+                <div class="note" style="margin-top:12px;">
+                    Do not use the iDRAC root/Admin account. Upload or paste the DNA-Nexus public key into
+                    iDRAC → User Authentication → <span class="mono">pqnas-locate</span> → SSH Key Configurations.
+                </div>
+
+                <img src="/static/help/dell-idrac-drive-locate-permissions.png"
+                     alt="Dell iDRAC user permissions example for pqnas-locate"
+                     style="display:block; margin-top:14px; max-width:100%; border-radius:14px; border:1px solid rgba(var(--fg-rgb),0.16); background:rgba(0,0,0,0.18);">
+            </div>
+        `;
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.addEventListener("click", (ev) => {
+            if (ev.target === overlay) close();
+        });
+        const btn = document.getElementById("btnCloseIdracLocateHelp");
+        if (btn) btn.addEventListener("click", close);
+
+        const onKey = (ev) => {
+            if (ev.key === "Escape") {
+                close();
+                document.removeEventListener("keydown", onKey);
+            }
+        };
+        document.addEventListener("keydown", onKey);
+    }
+
 
     // drive-health-refresh-now: frontend: backend-triggered SMART/NVMe refresh.
     async function refreshDriveSmartNow() {
@@ -1397,6 +1481,25 @@ html[data-theme="bright"] .systemModalCard{
             if (warn) warn.textContent = tr("system.storage_probe_failed", { error: String(e && e.message ? e.message : e) }, "Failed to probe storage: " + (e && e.message ? e.message : e));
         }
     }
+    document.addEventListener("click", (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateToggle");
+        if (!btn) return;
+
+        const card = document.getElementById("idracDriveLocateCard");
+        if (!card) return;
+
+        const collapsed = card.classList.toggle("collapsed");
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        btn.setAttribute("title", collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings");
+        btn.setAttribute("aria-label", collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings");
+    });
+
+    document.addEventListener("click", (ev) => {
+        const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateHelp");
+        if (!btn) return;
+        openIdracLocateHelpModal();
+    });
+
     document.addEventListener("click", async (ev) => {
         const btn = ev.target && ev.target.closest && ev.target.closest("#btnIdracLocateRefresh");
         if (!btn) return;
