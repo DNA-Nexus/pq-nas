@@ -88,6 +88,7 @@ CLEAN_CONFIG_DIR="$REL_ROOT/config"
 SYSTEMD_DIR="$REL_ROOT/systemd"
 UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
+DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
 
 # DNA Connect runtime for alerts
 # Override from environment if needed:
@@ -280,6 +281,21 @@ test -f "$STAGE/libexec/pqnas/pqnas_update_apply.py" || {
 test -f "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh" || {
   echo "ERROR: Update Center root apply wrapper did not stage"
   exit 1
+}
+
+# Drive-bay locate root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-drive-locate
+if [[ ! -f "$DRIVE_LOCATE_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing drive locate wrapper: $DRIVE_LOCATE_WRAPPER_SRC"
+  exit 21
+fi
+
+install -m 0755   "$DRIVE_LOCATE_WRAPPER_SRC"   "$STAGE/libexec/pqnas/pqnas-drive-locate"
+
+test -x "$STAGE/libexec/pqnas/pqnas-drive-locate" || {
+  echo "ERROR: Drive locate root wrapper did not stage"
+  exit 22
 }
 
 # Staging update manifest at tarball root:

@@ -3259,7 +3259,7 @@ class ExecuteScreen(Screen):
             self.logw.write("Installing Update Center apply helper and runtime dirs ?")
             ensure_update_center_runtime_dirs(log=self.logw)
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
-            install_drive_locate_assets(REPO_ROOT, log=log)
+            install_drive_locate_assets(asset_root, log=self.logw)
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
