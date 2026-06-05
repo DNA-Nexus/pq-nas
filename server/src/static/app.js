@@ -33,6 +33,10 @@
     const activityRefreshBtn = document.getElementById("activityRefreshBtn");
     const activityList = document.getElementById("activityList");
     const activityStatus = document.getElementById("activityStatus");
+    const activityPager = document.getElementById("activityPager");
+    const activityPrevBtn = document.getElementById("activityPrevBtn");
+    const activityNextBtn = document.getElementById("activityNextBtn");
+    const activityPageInfo = document.getElementById("activityPageInfo");
     const contentGrid = document.getElementById("contentGrid");
 
     const appsList = document.getElementById("appsList");
@@ -319,6 +323,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     let installedApps = [];     // [{id, ver, name?, title?, ...}, ...]
     let meFpHex = "";           // fingerprint_hex from /api/v4/me (for desktop layout storage)
     let launchPolicyByAppId = {}; // { [appId]: { default_launch, window_profile, allow_user_override } }
+
+    const ACTIVITY_PAGE_SIZE = 25;
+    let activityOffset = 0;
+    let activityTotal = 0;
+    let activityHasMore = false;
 
     const APP_FRAME_CACHE_MAX = 3;
     const appFrameCache = new Map(); // key: "appId@ver" -> { frameWrap, frame, lastUsed }
@@ -3431,8 +3440,46 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         }
     }
 
-    async function loadActivity() {
+    function updateActivityPager(eventsOnPage = 0) {
+        if (!activityPager || !activityPrevBtn || !activityNextBtn || !activityPageInfo) return;
+
+        const total = Math.max(0, Math.trunc(Number(activityTotal || 0)));
+        const offset = Math.max(0, Math.trunc(Number(activityOffset || 0)));
+        const count = Math.max(0, Math.trunc(Number(eventsOnPage || 0)));
+
+        const show = total > ACTIVITY_PAGE_SIZE || offset > 0 || activityHasMore;
+        activityPager.style.display = show ? "" : "none";
+
+        activityPrevBtn.disabled = offset <= 0;
+        activityNextBtn.disabled = !activityHasMore;
+
+        if (!show) {
+            activityPageInfo.textContent = "";
+            return;
+        }
+
+        const start = count > 0 ? offset + 1 : 0;
+        const end = count > 0 ? offset + count : 0;
+
+        activityPageInfo.textContent = count > 0
+            ? tr("activity.page_info", { start, end, total }, `${start}-${end} of ${total}`)
+            : tr("activity.page_empty", { total }, `0 of ${total}`);
+    }
+
+    async function loadActivity(opts = {}) {
         if (!activityList) return;
+
+        if (opts && opts.reset) {
+            activityOffset = 0;
+        } else if (opts && Object.prototype.hasOwnProperty.call(opts, "offset")) {
+            const requestedOffset = Number(opts.offset);
+            activityOffset = Number.isFinite(requestedOffset)
+                ? Math.max(0, Math.trunc(requestedOffset))
+                : 0;
+        }
+
+        const limit = ACTIVITY_PAGE_SIZE;
+        const offset = Math.max(0, Math.trunc(Number(activityOffset || 0)));
 
         try {
             if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
@@ -3443,7 +3490,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (activityStatus) activityStatus.textContent = tr("common.loading", null, "Loading…");
 
         try {
-            const r = await fetch("/api/v4/activity/list?limit=50", {
+            const r = await fetch(`/api/v4/activity/list?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`, {
                 credentials: "include",
                 headers: { "Accept": "application/json" },
                 cache: "no-store"
@@ -3455,14 +3502,48 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             }
 
             const events = Array.isArray(j.events) ? j.events : [];
+
+            const responseTotal = Number(j.total);
+            activityTotal = Number.isFinite(responseTotal)
+                ? Math.max(0, Math.trunc(responseTotal))
+                : events.length;
+
+            const responseOffset = Number(j.offset);
+            activityOffset = Number.isFinite(responseOffset)
+                ? Math.max(0, Math.trunc(responseOffset))
+                : offset;
+
+            activityHasMore = !!j.has_more;
+
+            // If the current page became empty because activity was deleted/rotated,
+            // jump to the last valid page instead of showing a dead page.
+            if (events.length === 0 && activityOffset > 0 && activityTotal > 0) {
+                const lastOffset = Math.max(0, Math.floor((activityTotal - 1) / limit) * limit);
+                if (lastOffset !== activityOffset) {
+                    return loadActivity({ offset: lastOffset });
+                }
+            }
+
             renderActivityEvents(events);
+            updateActivityPager(events.length);
 
             if (activityStatus) {
-                activityStatus.textContent = events.length
-                    ? tr("activity.recent_events", { count: events.length }, `${events.length} recent event${events.length === 1 ? "" : "s"}`)
-                    : tr("activity.no_recent", null, "No recent activity");
+                if (events.length) {
+                    const start = activityOffset + 1;
+                    const end = activityOffset + events.length;
+                    activityStatus.textContent = tr(
+                        "activity.showing_range",
+                        { start, end, total: activityTotal },
+                        `Showing ${start}-${end} of ${activityTotal} events`
+                    );
+                } else {
+                    activityStatus.textContent = tr("activity.no_recent", null, "No recent activity");
+                }
             }
         } catch (e) {
+            activityHasMore = false;
+            updateActivityPager(0);
+
             activityList.replaceChildren();
 
             const err = document.createElement("div");
@@ -3484,7 +3565,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             ? tr("activity.my_activity", null, "My Activity")
             : tr("activity.close_activity", null, "Close Activity");
 
-        if (!hidden) loadActivity();
+        if (!hidden) loadActivity({ reset: true });
 
         try { localStorage.setItem("pqnas_hide_activity", hidden ? "1" : "0"); } catch {}
     }
@@ -3513,7 +3594,20 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     }
 
     if (activityRefreshBtn) {
-        activityRefreshBtn.addEventListener("click", () => loadActivity());
+        activityRefreshBtn.addEventListener("click", () => loadActivity({ offset: activityOffset }));
+    }
+
+    if (activityPrevBtn) {
+        activityPrevBtn.addEventListener("click", () => {
+            loadActivity({ offset: Math.max(0, activityOffset - ACTIVITY_PAGE_SIZE) });
+        });
+    }
+
+    if (activityNextBtn) {
+        activityNextBtn.addEventListener("click", () => {
+            if (!activityHasMore) return;
+            loadActivity({ offset: activityOffset + ACTIVITY_PAGE_SIZE });
+        });
     }
 
     if (navHome) navHome.addEventListener("click", () => renderHome());

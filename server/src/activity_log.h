@@ -72,6 +72,14 @@ std::vector<ActivityRow> list_user_activity(
     std::string* error_out = nullptr
 );
 
+std::vector<ActivityRow> list_user_activity(
+    const std::filesystem::path& user_root,
+    int limit,
+    int offset,
+    long long* total_out = nullptr,
+    std::string* error_out = nullptr
+);
+
 nlohmann::json activity_row_to_json(const ActivityRow& row);
 
 } // namespace pqnas::activity

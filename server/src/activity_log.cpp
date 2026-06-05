@@ -469,7 +469,20 @@ std::vector<ActivityRow> list_user_activity(
     int limit,
     std::string* error_out
 ) {
+    return list_user_activity(user_root, limit, 0, nullptr, error_out);
+}
+
+std::vector<ActivityRow> list_user_activity(
+    const std::filesystem::path& user_root,
+    int limit,
+    int offset,
+    long long* total_out,
+    std::string* error_out
+) {
     std::vector<ActivityRow> rows;
+
+    if (total_out) *total_out = 0;
+    if (error_out) error_out->clear();
 
     try {
         if (user_root.empty()) {
@@ -478,6 +491,7 @@ std::vector<ActivityRow> list_user_activity(
         }
 
         limit = std::clamp(limit, 1, 500);
+        offset = std::clamp(offset, 0, 1000000);
 
         if (!ensure_activity_dir(user_root, error_out)) {
             return rows;
@@ -506,6 +520,33 @@ std::vector<ActivityRow> list_user_activity(
             return rows;
         }
 
+        if (total_out) {
+            static constexpr const char* kCount = R"SQL(
+SELECT COUNT(*)
+FROM activity_events;
+)SQL";
+
+            sqlite3_stmt* count_st = nullptr;
+            const int count_prep_rc = sqlite3_prepare_v2(db, kCount, -1, &count_st, nullptr);
+            if (count_prep_rc != SQLITE_OK) {
+                if (error_out) *error_out = sqlite_err(db);
+                sqlite3_close(db);
+                return rows;
+            }
+
+            const int count_step_rc = sqlite3_step(count_st);
+            if (count_step_rc == SQLITE_ROW) {
+                *total_out = sqlite3_column_int64(count_st, 0);
+            } else if (count_step_rc != SQLITE_DONE) {
+                if (error_out) *error_out = sqlite_err(db);
+                sqlite3_finalize(count_st);
+                sqlite3_close(db);
+                return rows;
+            }
+
+            sqlite3_finalize(count_st);
+        }
+
         static constexpr const char* kSelect = R"SQL(
 SELECT
     id,
@@ -530,7 +571,7 @@ SELECT
     details_json
 FROM activity_events
 ORDER BY created_at_epoch DESC, id DESC
-LIMIT ?;
+LIMIT ? OFFSET ?;
 )SQL";
 
         sqlite3_stmt* st = nullptr;
@@ -542,6 +583,7 @@ LIMIT ?;
         }
 
         sqlite3_bind_int(st, 1, limit);
+        sqlite3_bind_int(st, 2, offset);
 
         while (sqlite3_step(st) == SQLITE_ROW) {
             ActivityRow row;

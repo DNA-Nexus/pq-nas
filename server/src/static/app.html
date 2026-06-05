@@ -357,6 +357,36 @@
             flex: 0 0 auto;
         }
 
+        .activityPager{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:8px;
+            margin: -4px 0 12px;
+            flex: 0 0 auto;
+        }
+
+        .activityPager .btn{
+            padding:6px 9px;
+            border-radius:12px;
+            font-size:12px;
+            min-width:76px;
+        }
+
+        .activityPager .btn:disabled{
+            opacity:0.45;
+            cursor:not-allowed;
+            transform:none;
+        }
+
+        .activityPageInfo{
+            flex:1 1 auto;
+            text-align:center;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+
         .activityList{
             display:flex;
             flex-direction:column;
@@ -587,6 +617,11 @@
                     <div class="mini" id="activityStatus" data-i18n="shell.activity.recent">Recent account activity</div>
                     <button class="btn secondary" id="activityRefreshBtn" type="button" data-i18n="common.refresh">Refresh</button>
                 </div>
+                <div class="activityPager" id="activityPager" style="display:none">
+                    <button class="btn secondary" id="activityPrevBtn" type="button">Previous</button>
+                    <div class="mini activityPageInfo" id="activityPageInfo"></div>
+                    <button class="btn secondary" id="activityNextBtn" type="button">Next</button>
+                </div>
                 <div id="activityList" class="activityList">
                     <div class="activityEmpty" data-i18n="shell.activity.open_to_load">Open this panel to load your recent activity.</div>
                 </div>
@@ -599,7 +634,7 @@
 
 <script src="/static/people_editor_modal.js?v=20260518-people-i18n-2"></script>
 <script src="/static/people.js?v=20260518-people-i18n-2"></script>
-<script src="/static/app.js?v=20260602-shell-version-from-me-v1"></script>
+<script src="/static/app.js?v=20260605-activity-pagination-1"></script>
 <script src="/static/node_profile.js?v=20260529-node-profile-4"></script>
 <script>
     (function(){

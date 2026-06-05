@@ -40,6 +40,17 @@ int parse_limit_local(const httplib::Request& req, int fallback) {
     }
 }
 
+int parse_offset_local(const httplib::Request& req, int fallback) {
+    if (!req.has_param("offset")) return fallback;
+
+    try {
+        const int n = std::stoi(req.get_param_value("offset"));
+        return std::clamp(n, 0, 1000000);
+    } catch (...) {
+        return fallback;
+    }
+}
+
 } // namespace
 
 void register_activity_routes(httplib::Server& srv, const ActivityRoutesDeps& deps) {
@@ -67,6 +78,7 @@ void register_activity_routes(httplib::Server& srv, const ActivityRoutesDeps& de
         }
 
         const int limit = parse_limit_local(req, 100);
+        const int offset = parse_offset_local(req, 0);
 
         const std::filesystem::path user_root = deps.user_dir_for_fp(*deps.users, actor_fp);
         if (user_root.empty()) {
@@ -89,13 +101,20 @@ void register_activity_routes(httplib::Server& srv, const ActivityRoutesDeps& de
             reply_json_local(deps, res, 200, json{
                 {"ok", true},
                 {"events", json::array()},
-                {"count", 0}
+                {"count", 0},
+                {"total", 0},
+                {"limit", limit},
+                {"offset", offset},
+                {"has_more", false},
+                {"next_offset", nullptr},
+                {"prev_offset", nullptr}
             });
             return;
         }
 
         std::string err;
-        const auto rows = activity::list_user_activity(user_root, limit, &err);
+        long long total = 0;
+        const auto rows = activity::list_user_activity(user_root, limit, offset, &total, &err);
         if (!err.empty()) {
             reply_json_local(deps, res, 500, json{
                 {"ok", false},
@@ -129,11 +148,23 @@ void register_activity_routes(httplib::Server& srv, const ActivityRoutesDeps& de
             events.push_back(std::move(item));
         }
 
-        reply_json_local(deps, res, 200, json{
+        const int returned = static_cast<int>(events.size());
+        const bool has_more = (offset + returned) < total;
+
+        json body = {
             {"ok", true},
             {"events", events},
-            {"count", events.size()}
-        });
+            {"count", returned},
+            {"total", total},
+            {"limit", limit},
+            {"offset", offset},
+            {"has_more", has_more}
+        };
+
+        body["next_offset"] = has_more ? json(offset + returned) : json(nullptr);
+        body["prev_offset"] = offset > 0 ? json(std::max(0, offset - limit)) : json(nullptr);
+
+        reply_json_local(deps, res, 200, body);
     });
 }
 
