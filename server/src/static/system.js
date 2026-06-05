@@ -989,7 +989,7 @@ html[data-theme="bright"] .systemModalCard{
             const key = "mp_" + mp.replace(/[^a-zA-Z0-9]+/g, "_");
 
             cards.push(`
-<section class="card ${single ? "span-12" : "span-6"}">
+<section class="card volumeFsCard">
   <div class="hd">
     <div class="h">
       ${escapeHtml(label)} •
@@ -1039,7 +1039,7 @@ html[data-theme="bright"] .systemModalCard{
         `.trim());
         }
 
-        host.innerHTML = `<div class="grid">${cards.join("\n")}</div>`;
+        host.innerHTML = `<div class="volumeFsGrid ${single ? "single" : ""}">${cards.join("\n")}</div>`;
     }
 
     function renderDrives(j) {
@@ -1481,45 +1481,86 @@ html[data-theme="bright"] .systemModalCard{
             if (warn) warn.textContent = tr("system.storage_probe_failed", { error: String(e && e.message ? e.message : e) }, "Failed to probe storage: " + (e && e.message ? e.message : e));
         }
     }
-    function setIdracCardCollapsed(collapsed) {
-        const card = document.getElementById("idracDriveLocateCard");
-        const header = document.getElementById("idracDriveLocateHeader");
+
+    function syncSystemCardAccordionState(card) {
         if (!card) return;
 
-        card.classList.toggle("collapsed", !!collapsed);
+        const header = card.querySelector(":scope > .hd");
+        if (!header) return;
 
-        if (header) {
-            header.setAttribute("aria-expanded", collapsed ? "false" : "true");
-            header.setAttribute(
-                "title",
-                collapsed ? "Show Dell iDRAC backend settings" : "Hide Dell iDRAC backend settings"
-            );
-        }
+        const collapsed = card.classList.contains("collapsed");
+        card.classList.toggle("is-open", !collapsed);
+
+        header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        header.setAttribute(
+            "title",
+            collapsed ? "Show section" : "Hide section"
+        );
     }
 
-    function toggleIdracCard() {
-        const card = document.getElementById("idracDriveLocateCard");
+    function initSystemCardAccordions() {
+        const cards = Array.from(document.querySelectorAll(".content > .grid > .card"));
+
+        cards.forEach((card, idx) => {
+            const header = card.querySelector(":scope > .hd");
+            const body = card.querySelector(":scope > .bd");
+            if (!header || !body) return;
+
+            card.classList.add("systemCollapsible");
+
+            if (!card.dataset.systemAccordionReady) {
+                card.dataset.systemAccordionReady = "1";
+
+                // Default: closed, same idea as admin/settings accordion behavior.
+                card.classList.add("collapsed");
+
+                if (!card.id) {
+                    card.id = `systemCardAccordion_${idx}`;
+                }
+
+                header.setAttribute("role", "button");
+                header.setAttribute("tabindex", "0");
+
+                const title = header.querySelector(":scope .h");
+                if (title && !title.querySelector(".systemAccordionMarker") && !title.querySelector(".idracAccordionMarker")) {
+                    const marker = document.createElement("span");
+                    marker.className = "systemAccordionMarker";
+                    marker.setAttribute("aria-hidden", "true");
+                    marker.textContent = "▸";
+                    title.insertBefore(marker, title.firstChild);
+                }
+            }
+
+            syncSystemCardAccordionState(card);
+        });
+    }
+
+    function toggleSystemCardAccordion(card) {
         if (!card) return;
-        setIdracCardCollapsed(!card.classList.contains("collapsed"));
+        card.classList.toggle("collapsed");
+        syncSystemCardAccordionState(card);
     }
 
     document.addEventListener("click", (ev) => {
-        const header = ev.target && ev.target.closest && ev.target.closest("#idracDriveLocateHeader");
+        const header = ev.target && ev.target.closest && ev.target.closest(".systemCollapsible > .hd");
         if (!header) return;
 
-        // Buttons inside the header, especially the ? help button, keep their own action.
+        // Buttons/inputs inside the header keep their own action.
+        // This keeps the iDRAC ? help button from also toggling the card.
         if (ev.target.closest("button,a,input,select,textarea,label")) return;
 
-        toggleIdracCard();
+        const card = header.closest(".systemCollapsible");
+        toggleSystemCardAccordion(card);
     });
 
     document.addEventListener("keydown", (ev) => {
-        const header = ev.target && ev.target.closest && ev.target.closest("#idracDriveLocateHeader");
+        const header = ev.target && ev.target.closest && ev.target.closest(".systemCollapsible > .hd");
         if (!header) return;
         if (ev.key !== "Enter" && ev.key !== " ") return;
 
         ev.preventDefault();
-        toggleIdracCard();
+        const card = header.closest(".systemCollapsible");
+        toggleSystemCardAccordion(card);
     });
 
     document.addEventListener("click", (ev) => {
@@ -1695,6 +1736,7 @@ html[data-theme="bright"] .systemModalCard{
             window.PQNAS_I18N.apply(document);
         }
         ensureDriveRefreshControls();
+        initSystemCardAccordions();
         if (lastSystemPayload) render(lastSystemPayload);
         if (lastStoragePayload) renderStorage(lastStoragePayload);
         if (lastDrivesPayload) renderDrives(lastDrivesPayload);
@@ -1703,6 +1745,8 @@ html[data-theme="bright"] .systemModalCard{
     if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
         window.PQNAS_I18N.ready().then(() => window.PQNAS_I18N.apply(document)).catch(() => {});
     }
+
+    initSystemCardAccordions();
 
     refreshOnce();
     setInterval(refreshOnce, 3000);

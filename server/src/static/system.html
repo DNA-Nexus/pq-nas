@@ -324,6 +324,220 @@
         .statusCard > div > div{
             font-weight: 700;
         }
+
+        /* System page card accordion */
+        .systemCollapsible > .hd{
+            cursor:pointer;
+            user-select:none;
+            transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+        }
+
+        .systemCollapsible > .hd:hover{
+            background: color-mix(in srgb, var(--bg, #111) 78%, #7dd3fc 22%) !important;
+            border-bottom-color: rgba(125,211,252,0.36) !important;
+        }
+
+        .systemCollapsible:not(.collapsed) > .hd{
+            background: linear-gradient(
+                180deg,
+                rgba(125,211,252,0.34),
+                rgba(56,189,248,0.20)
+            ) !important;
+            border-bottom-color: rgba(125,211,252,0.58) !important;
+            box-shadow:
+                0 0 0 1px rgba(125,211,252,0.16) inset,
+                0 12px 30px rgba(56,189,248,0.10);
+        }
+
+        .systemCollapsible:not(.collapsed) > .hd .h{
+            color: rgba(225,245,255,0.96);
+        }
+
+        html[data-theme="bright"] .systemCollapsible:not(.collapsed) > .hd .h{
+            color: #075985;
+        }
+
+        .systemCollapsible > .hd:focus-visible{
+            outline: 3px solid rgba(125,211,252,0.42);
+            outline-offset: -3px;
+        }
+
+        .systemCollapsible.collapsed > .bd{
+            display:none;
+        }
+
+        .systemAccordionMarker,
+        .idracAccordionMarker{
+            display:inline-block;
+            margin-right:8px;
+            transition: transform 140ms ease;
+        }
+
+        .systemCollapsible:not(.collapsed) .systemAccordionMarker,
+        .systemCollapsible:not(.collapsed) .idracAccordionMarker{
+            transform: rotate(90deg);
+        }
+
+
+
+
+
+
+
+
+        /* Settings-page matching accordion colors */
+        .card.systemCollapsible > .hd{
+            cursor:pointer !important;
+            user-select:none;
+            transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+        }
+
+        .card.systemCollapsible.collapsed > .bd{
+            display:none !important;
+        }
+
+        .card.systemCollapsible > .bd{
+            background: transparent !important;
+        }
+
+        .card.systemCollapsible:not(.is-open) > .hd:hover{
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(207,232,255,0.42) 0%,
+                    rgba(226,242,255,0.22) 48%,
+                    rgba(255,255,255,0.00) 100%
+                ) !important;
+            border-bottom-color: rgba(80,150,220,0.34) !important;
+        }
+
+        .card.systemCollapsible.is-open > .hd{
+            background:
+                linear-gradient(
+                    90deg,
+                    #cfe8ff 0%,
+                    #dff1ff 46%,
+                    #f4fbff 100%
+                ) !important;
+            border-bottom-color: #5aa8f5 !important;
+            box-shadow:
+                0 0 0 1px rgba(90,168,245,0.22) inset,
+                0 8px 18px rgba(90,168,245,0.10) !important;
+        }
+
+        .card.systemCollapsible.is-open > .hd .h{
+            color:#123a5f !important;
+        }
+
+        html[data-theme="dark"] .card.systemCollapsible.is-open > .hd,
+        html[data-theme="cpunk_orange"] .card.systemCollapsible.is-open > .hd{
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(90,168,245,0.32) 0%,
+                    rgba(90,168,245,0.18) 48%,
+                    rgba(var(--fg-rgb),0.04) 100%
+                ) !important;
+            border-bottom-color: rgba(125,211,252,0.58) !important;
+        }
+
+        html[data-theme="dark"] .card.systemCollapsible.is-open > .hd .h,
+        html[data-theme="cpunk_orange"] .card.systemCollapsible.is-open > .hd .h{
+            color:rgba(235,250,255,0.98) !important;
+        }
+
+        .card.systemCollapsible.is-open .systemAccordionMarker,
+        .card.systemCollapsible.is-open .idracAccordionMarker{
+            transform: rotate(90deg) !important;
+        }
+
+
+        /* CPUNK orange theme: keep open accordion headers orange, not blue */
+        html[data-theme="cpunk_orange"] .card.systemCollapsible.is-open > .hd{
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(255,122,24,0.34) 0%,
+                    rgba(255,143,48,0.20) 46%,
+                    rgba(255,122,24,0.05) 100%
+                ) !important;
+            border-bottom-color: rgba(255,122,24,0.68) !important;
+            box-shadow:
+                0 0 0 1px rgba(255,122,24,0.22) inset,
+                0 10px 24px rgba(255,122,24,0.10) !important;
+        }
+
+        html[data-theme="cpunk_orange"] .card.systemCollapsible.is-open > .hd .h{
+            color: rgba(255,238,220,0.98) !important;
+        }
+
+        html[data-theme="cpunk_orange"] .card.systemCollapsible:not(.is-open) > .hd:hover{
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(255,122,24,0.18) 0%,
+                    rgba(255,143,48,0.08) 48%,
+                    rgba(255,122,24,0.02) 100%
+                ) !important;
+            border-bottom-color: rgba(255,122,24,0.34) !important;
+        }
+
+
+        /* Compact filesystem/volume card grid.
+           This is separate from the main 12-column dashboard grid so dozens of
+           mounted volumes/JBOD pools can fit more densely. */
+        .volumeHost{
+            border:0 !important;
+            background:transparent !important;
+            box-shadow:none !important;
+            overflow:visible !important;
+        }
+
+        .volumeFsGrid{
+            display:grid;
+            grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+            gap:12px;
+            width:100%;
+        }
+
+        .volumeFsGrid.single{
+            grid-template-columns:minmax(0, 1fr);
+        }
+
+        .volumeFsCard{
+            min-width:0;
+            max-width:none;
+        }
+
+        .volumeFsCard .hd{
+            min-height:46px;
+            padding:10px 12px;
+        }
+
+        .volumeFsCard .hd .h{
+            font-size:11px;
+            line-height:1.25;
+        }
+
+        .volumeFsCard .bd{
+            padding:12px;
+        }
+
+        .volumeFsCard .kv{
+            padding:9px 10px;
+            margin-top:8px;
+        }
+
+        .volumeFsCard .bar{
+            height:10px;
+        }
+
+        @media (max-width: 720px){
+            .volumeFsGrid{
+                grid-template-columns:1fr;
+            }
+        }
+
     </style>
 </head>
 
@@ -378,7 +592,7 @@
 
         <div class="content">
             <div class="grid">
-                <section class="card span-6">
+                <section class="card span-12">
                     <div class="hd">
                         <div class="h" data-i18n="system.os">OS</div>
                         <span class="pill ok" id="osPill"><span class="k" data-i18n="system.kernel">Kernel:</span> <span class="v">—</span></span>
@@ -391,7 +605,7 @@
                     </div>
                 </section>
 
-                <section class="card span-6">
+                <section class="card span-12">
                     <div class="hd">
                         <div class="h" data-i18n="system.cpu">CPU</div>
                         <span class="pill ok" id="cpuPill"><span class="k" data-i18n="system.load">Load:</span> <span class="v">—</span></span>
@@ -409,7 +623,7 @@
                     </div>
                 </section>
 
-                <section class="card span-6">
+                <section class="card span-12">
                     <div class="hd">
                         <div class="h" data-i18n="system.memory">Memory</div>
                         <span class="pill ok" id="memPill"><span class="k" data-i18n="system.used">Used:</span> <span class="v">—</span></span>
@@ -422,11 +636,11 @@
                     </div>
                 </section>
 
-                <section class="card span-6">
+                <section class="card span-12 volumeHost">
                     <div id="diskMulti" class="span-12"></div>
                 </section>
 
-                <section class="card span-6">
+                <section class="card span-12">
                     <div class="hd">
                         <div class="h" data-i18n="system.storage">Storage</div>
                     </div>
@@ -567,7 +781,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/system.js?v=20260605-idrac-header-accordion-1"></script>
+<script src="/static/system.js?v=20260605-volume-compact-grid-1"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>
