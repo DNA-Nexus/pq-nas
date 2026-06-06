@@ -188,6 +188,7 @@ add_executable(pqnas_server
         server/src/storage/snapshots/snapshot_scheduler.cc
 
         server/src/routes_v5.cc
+        server/src/password_credentials.cpp
         server/src/session_cookie.cc
         server/src/policy.cc
         server/src/audit_log.cc
