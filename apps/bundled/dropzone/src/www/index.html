@@ -5,7 +5,7 @@
   <title>DNA-Nexus • Drop Zone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="/static/i18n.js?v=20260519-dropzone-i18n-1"></script>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=20260606-branded-dropzone-logo-upload-1">
 </head>
 <body>
 <main class="dzShell">
@@ -101,6 +101,88 @@
         </label>
       </div>
 
+      <section class="dzBrandingBox">
+        <label class="dzCheckLabel">
+          <input id="brandEnabledInput" name="branding_enabled" type="checkbox">
+          <span>Branded Drop Zone <span class="dzHint">business customers</span></span>
+        </label>
+
+        <p class="dzSectionHint">
+          Customize the public upload page with the customer company's own text, logo and colors.
+        </p>
+
+        <div class="dzTemplateRow">
+          <label class="dzTemplateSelectWrap">
+            <span>Template</span>
+            <select id="brandTemplateSelect" name="brand_template"></select>
+          </label>
+          <button id="brandTemplateApplyBtn" class="dzGhost" type="button">Use</button>
+          <button id="brandTemplateSaveBtn" class="dzGhost" type="button">Save</button>
+          <button id="brandTemplateDeleteBtn" class="dzGhost danger" type="button">Delete</button>
+        </div>
+
+        <div class="dzGrid2">
+          <label>
+            <span>Company name</span>
+            <input id="brandCompanyInput" name="brand_company" type="text" maxlength="120" placeholder="Vakka-Suomen Puhelin">
+          </label>
+
+          <label>
+            <span>Logo URL</span>
+            <input id="brandLogoUrlInput" name="brand_logo_url" type="text" placeholder="/static/customer-logo.png, https://... or uploaded logo">
+          </label>
+
+          <div class="dzLogoUploadBox">
+            <div class="dzLogoPreviewShell">
+              <img id="brandLogoPreview" class="dzLogoPreview" alt="">
+              <span id="brandLogoPreviewEmpty" class="dzLogoPreviewEmpty">No logo</span>
+            </div>
+
+            <input id="brandLogoFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+
+            <div class="dzLogoUploadActions">
+              <button id="brandLogoPickBtn" class="dzGhost" type="button">Upload logo</button>
+              <button id="brandLogoClearBtn" class="dzGhost danger" type="button">Clear</button>
+              <div id="brandLogoStatus" class="dzLogoStatus"></div>
+            </div>
+          </div>
+        </div>
+
+        <label>
+          <span>Page title</span>
+          <input id="brandTitleInput" name="brand_title" type="text" maxlength="140" placeholder="Send files securely">
+        </label>
+
+        <label>
+          <span>Description</span>
+          <input id="brandDescriptionInput" name="brand_description" type="text" maxlength="360" placeholder="Upload files directly to our secure DNA-Nexus server.">
+        </label>
+
+        <div class="dzGrid2">
+          <label>
+            <span>Primary color</span>
+            <input id="brandPrimaryColorInput" name="brand_primary_color" type="color" value="#ff9f1c">
+          </label>
+
+          <label>
+            <span>Background color</span>
+            <input id="brandBackgroundColorInput" name="brand_background_color" type="color" value="#080a0f">
+          </label>
+        </div>
+
+        <div class="dzGrid2">
+          <label>
+            <span>Upload button text</span>
+            <input id="brandButtonTextInput" name="brand_button_text" type="text" maxlength="80" placeholder="Upload files">
+          </label>
+
+          <label>
+            <span>Footer text</span>
+            <input id="brandFooterTextInput" name="brand_footer_text" type="text" maxlength="180" placeholder="Secured by DNA-Nexus">
+          </label>
+        </div>
+      </section>
+
       <div id="createResult" class="dzCreateResult hidden"></div>
 
       <div class="dzModalActions">
@@ -111,6 +193,6 @@
   </section>
 </div>
 
-<script src="./app.js?v=20260519-dropzone-full-i18n-1"></script>
+<script src="./app.js?v=20260606-branded-dropzone-logo-upload-1"></script>
 </body>
 </html>

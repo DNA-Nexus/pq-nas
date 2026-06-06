@@ -44,6 +44,51 @@ static std::string col_text(sqlite3_stmt* stmt, int col) {
     return p ? std::string(reinterpret_cast<const char*>(p)) : std::string{};
 }
 
+static bool column_exists(sqlite3* db,
+                          const char* table_name,
+                          const char* column_name,
+                          bool* exists,
+                          std::string* err) {
+    if (err) err->clear();
+    if (exists) *exists = false;
+
+    if (!db || !table_name || !column_name || !exists) {
+        if (err) *err = "column_exists invalid arguments";
+        return false;
+    }
+
+    const std::string sql = std::string("PRAGMA table_info(") + table_name + ")";
+    sqlite3_stmt* stmt = nullptr;
+
+    const int rc_prep = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    if (rc_prep != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    while (true) {
+        const int rc = sqlite3_step(stmt);
+
+        if (rc == SQLITE_ROW) {
+            if (col_text(stmt, 1) == column_name) {
+                *exists = true;
+                sqlite3_finalize(stmt);
+                return true;
+            }
+            continue;
+        }
+
+        if (rc == SQLITE_DONE) break;
+
+        if (err) *err = sqlite3_errmsg(db);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    sqlite3_finalize(stmt);
+    return true;
+}
+
 // Centralized row mapping keeps SELECT column ordering explicit.
 // If kSelectDropZoneColumns changes, update this mapper at the same time.
 static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
@@ -65,7 +110,8 @@ static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
     rec.bytes_uploaded   = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 11));
     rec.upload_count     = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 12));
 
-    rec.disabled         = sqlite3_column_int(stmt, 13) != 0;
+    rec.branding_json    = col_text(stmt, 13);
+    rec.disabled         = sqlite3_column_int(stmt, 14) != 0;
 
     return rec;
 }
@@ -76,7 +122,7 @@ static const char* kSelectDropZoneColumns =
     "SELECT "
     "  id, token_hash, owner_fp, name, destination_path, password_hash, "
     "  created_epoch, expires_epoch, last_used_epoch, "
-    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, disabled "
+    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled "
     "FROM drop_zones ";
 
 } // namespace
@@ -185,6 +231,8 @@ CREATE TABLE IF NOT EXISTS drop_zones (
     bytes_uploaded    INTEGER NOT NULL DEFAULT 0,
     upload_count      INTEGER NOT NULL DEFAULT 0,
 
+    branding_json     TEXT NOT NULL DEFAULT '',
+
     disabled          INTEGER NOT NULL DEFAULT 0
 );
 
@@ -224,7 +272,22 @@ CREATE INDEX IF NOT EXISTS idx_drop_zone_uploads_zone_created
 ON drop_zone_uploads(drop_zone_id, created_epoch DESC, id DESC);
 )SQL";
 
-    return exec_sql(db_, kSchema, err);
+    if (!exec_sql(db_, kSchema, err)) return false;
+
+    // Migration for existing installations created before Branded Drop Zone.
+    // CREATE TABLE IF NOT EXISTS does not add columns to existing tables.
+    bool has_branding_json = false;
+    if (!column_exists(db_, "drop_zones", "branding_json", &has_branding_json, err)) {
+        return false;
+    }
+
+    if (!has_branding_json) {
+        if (!exec_sql(db_, "ALTER TABLE drop_zones ADD COLUMN branding_json TEXT NOT NULL DEFAULT '';", err)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
@@ -244,9 +307,9 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
         "INSERT INTO drop_zones ("
         "  id, token_hash, owner_fp, name, destination_path, password_hash, "
         "  created_epoch, expires_epoch, last_used_epoch, "
-        "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, disabled"
+        "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled"
         ") VALUES ("
-        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14"
+        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
         ")";
 
     sqlite3_stmt* stmt = nullptr;
@@ -271,7 +334,8 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
     sqlite3_bind_int64(stmt, 11, static_cast<sqlite3_int64>(rec.max_total_bytes));
     sqlite3_bind_int64(stmt, 12, static_cast<sqlite3_int64>(rec.bytes_uploaded));
     sqlite3_bind_int64(stmt, 13, static_cast<sqlite3_int64>(rec.upload_count));
-    sqlite3_bind_int(stmt, 14, rec.disabled ? 1 : 0);
+    sqlite3_bind_text(stmt, 14, rec.branding_json.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 15, rec.disabled ? 1 : 0);
 
     const int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {

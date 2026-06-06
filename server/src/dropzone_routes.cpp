@@ -90,6 +90,189 @@ static void audit_local(const DropZoneRoutesDeps& deps,
     if (deps.audit_emit) deps.audit_emit(event, outcome, fields);
 }
 
+
+static std::string dz_trim_copy_local(std::string s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.erase(s.begin());
+    }
+
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+        s.pop_back();
+    }
+
+    return s;
+}
+
+static std::string dz_branding_string_field_local(const json& j,
+                                                  const char* key,
+                                                  std::size_t max_len) {
+    if (!j.is_object() || !j.contains(key) || !j[key].is_string()) {
+        return {};
+    }
+
+    std::string s;
+    try {
+        s = j[key].get<std::string>();
+    } catch (...) {
+        return {};
+    }
+
+    for (char& c : s) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (c == '\r' || c == '\n' || uc < 32 || uc == 127) {
+            c = ' ';
+        }
+    }
+
+    s = dz_trim_copy_local(std::move(s));
+    if (max_len > 0 && s.size() > max_len) {
+        s.resize(max_len);
+    }
+
+    return s;
+}
+
+static bool dz_is_hex_color_local(const std::string& s) {
+    if (!(s.size() == 4 || s.size() == 7)) return false;
+    if (s.empty() || s[0] != '#') return false;
+
+    for (std::size_t i = 1; i < s.size(); ++i) {
+        if (!std::isxdigit(static_cast<unsigned char>(s[i]))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static std::string dz_branding_color_field_local(const json& j, const char* key) {
+    const std::string s = dz_branding_string_field_local(j, key, 16);
+    return dz_is_hex_color_local(s) ? s : std::string{};
+}
+
+static bool dz_is_allowed_logo_data_url_local(const std::string& s) {
+    static constexpr std::size_t kMaxLogoDataUrlBytes = 350000;
+
+    if (s.empty() || s.size() > kMaxLogoDataUrlBytes) return false;
+
+    static const std::array<const char*, 4> kAllowedPrefixes = {
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/webp;base64,",
+        "data:image/gif;base64,"
+    };
+
+    std::size_t prefix_len = 0;
+    bool matched = false;
+
+    for (const char* prefix : kAllowedPrefixes) {
+        const std::string p(prefix);
+        if (s.rfind(p, 0) == 0) {
+            prefix_len = p.size();
+            matched = true;
+            break;
+        }
+    }
+
+    if (!matched || prefix_len >= s.size()) return false;
+
+    for (std::size_t i = prefix_len; i < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        const bool ok =
+            std::isalnum(c) ||
+            c == '+' ||
+            c == '/' ||
+            c == '=';
+
+        if (!ok) return false;
+    }
+
+    return true;
+}
+
+static std::string dz_branding_logo_url_field_local(const json& j) {
+    if (!j.is_object() || !j.contains("logo_url") || !j["logo_url"].is_string()) {
+        return {};
+    }
+
+    std::string s;
+    try {
+        s = j["logo_url"].get<std::string>();
+    } catch (...) {
+        return {};
+    }
+
+    s = dz_trim_copy_local(std::move(s));
+    if (s.empty()) return {};
+
+    for (const unsigned char c : s) {
+        if (c <= 31 || c == 127 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '\\') {
+            return {};
+        }
+    }
+
+    // Same-origin absolute paths and HTTPS logos.
+    if (s.size() <= 500 && s.rfind("https://", 0) == 0) return s;
+    if (s.size() <= 500 && s.rfind("/", 0) == 0 && s.rfind("//", 0) != 0) return s;
+
+    // Uploaded-logo MVP: small inline image data URLs only.
+    // SVG is intentionally not allowed here.
+    if (dz_is_allowed_logo_data_url_local(s)) return s;
+
+    return {};
+}
+
+static json dropzone_sanitize_branding_json_local(const json& raw) {
+    json src = raw;
+
+    if (raw.is_object() && raw.contains("branding") && raw["branding"].is_object()) {
+        src = raw["branding"];
+    }
+
+    if (!src.is_object()) return json::object();
+
+    json out = json::object();
+
+    auto add_text = [&](const char* key, std::size_t max_len) {
+        const std::string v = dz_branding_string_field_local(src, key, max_len);
+        if (!v.empty()) out[key] = v;
+    };
+
+    auto add_color = [&](const char* key) {
+        const std::string v = dz_branding_color_field_local(src, key);
+        if (!v.empty()) out[key] = v;
+    };
+
+    add_text("company_name", 120);
+    add_text("kicker", 80);
+    add_text("title", 140);
+    add_text("description", 360);
+    add_text("button_text", 80);
+    add_text("footer_text", 180);
+
+    const std::string logo_url = dz_branding_logo_url_field_local(src);
+    if (!logo_url.empty()) out["logo_url"] = logo_url;
+
+    add_color("primary_color");
+    add_color("background_color");
+    add_color("panel_color");
+    add_color("text_color");
+    add_color("button_text_color");
+
+    return out;
+}
+
+static json dropzone_public_branding_json_local(const std::string& raw) {
+    if (raw.empty()) return json::object();
+
+    try {
+        const json parsed = json::parse(raw);
+        return dropzone_sanitize_branding_json_local(parsed);
+    } catch (...) {
+        return json::object();
+    }
+}
+
 static json dropzone_to_json_local(const DropZoneRec& rec) {
     return json{
         {"id", rec.id},
@@ -106,7 +289,8 @@ static json dropzone_to_json_local(const DropZoneRec& rec) {
         {"upload_count", rec.upload_count},
 
         {"password_required", !rec.password_hash.empty()},
-        {"disabled", rec.disabled}
+        {"disabled", rec.disabled},
+        {"branding", dropzone_public_branding_json_local(rec.branding_json)}
     };
 }
 
@@ -1280,6 +1464,14 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         const std::uint64_t max_total_bytes =
             json_u64_local(in, "max_total_bytes", 0, kMaxConfiguredTotalBytes);
 
+        json branding_input = json::object();
+        if (in.contains("branding")) {
+            branding_input = in["branding"];
+        }
+
+        const json branding = dropzone_sanitize_branding_json_local(branding_input);
+        const std::string branding_json = branding.empty() ? std::string{} : branding.dump();
+
         const std::int64_t now = deps.now_epoch();
 
         const std::string id = "dz_" + deps.random_b64url(18);
@@ -1330,6 +1522,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         rec.name = name;
         rec.destination_path = dest_norm;
         rec.password_hash = password_hash;
+        rec.branding_json = branding_json;
         rec.created_epoch = now;
         rec.expires_epoch = now + expires_in;
         rec.last_used_epoch = 0;
@@ -1572,7 +1765,8 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
             {"max_total_bytes", rec.max_total_bytes},
             {"bytes_uploaded", rec.bytes_uploaded},
             {"upload_count", rec.upload_count},
-            {"password_required", !rec.password_hash.empty()}
+            {"password_required", !rec.password_hash.empty()},
+            {"branding", dropzone_public_branding_json_local(rec.branding_json)}
         });
     });
 
@@ -3197,6 +3391,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       --muted: rgba(243,246,255,.68);
       --line: rgba(255,255,255,.14);
       --accent: #ff9f1c;
+      --button-text: #160d00;
       --good: #50fa7b;
       --bad: #ff5555;
     }
@@ -3229,6 +3424,30 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
     .hero {
       padding: 30px;
       border-bottom: 1px solid var(--line);
+    }
+
+    .brandBar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .brandLogo {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      object-fit: contain;
+      background: rgba(255,255,255,.92);
+      border: 1px solid var(--line);
+      padding: 6px;
+    }
+
+    .brandName {
+      color: var(--text);
+      font-weight: 900;
+      font-size: 16px;
+      line-height: 1.25;
     }
 
     .kicker {
@@ -3375,7 +3594,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       border-radius: 14px;
       padding: 12px 16px;
       background: var(--accent);
-      color: #160d00;
+      color: var(--button-text);
       font-weight: 900;
       cursor: pointer;
     }
@@ -3451,6 +3670,13 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       font-size: 13px;
     }
 
+    .pageFooter {
+      padding: 0 30px 26px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
     @media (max-width: 640px) {
       .fieldGrid {
         grid-template-columns: 1fr;
@@ -3461,9 +3687,13 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="kicker" data-i18n="dropzone.public.kicker">DNA-Nexus Drop Zone</div>
-      <h1 data-i18n="dropzone.public.title">Secure upload area</h1>
-      <p class="sub" data-i18n="dropzone.public.hero_text">
+      <div id="brandBar" class="brandBar" style="display:none">
+        <img id="brandLogo" class="brandLogo" alt="">
+        <div id="brandName" class="brandName"></div>
+      </div>
+      <div id="pageKicker" class="kicker" data-i18n="dropzone.public.kicker">DNA-Nexus Drop Zone</div>
+      <h1 id="pageTitle" data-i18n="dropzone.public.title">Secure upload area</h1>
+      <p id="pageSubtitle" class="sub" data-i18n="dropzone.public.hero_text">
         You can upload files here. You cannot browse, download, rename,
         or delete anything on this server.
       </p>
@@ -3513,6 +3743,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
         </div>
       </div>
     </section>
+    <footer id="pageFooter" class="pageFooter" style="display:none"></footer>
   </main>
 
   <script>
@@ -3537,6 +3768,80 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
 
     function zoneName(info) {
       return info && info.name ? info.name : tr("dropzone.default_name", null, "Drop Zone");
+    }
+
+
+    function cssHexColor(value) {
+      const s = String(value || "").trim();
+      return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(s) ? s : "";
+    }
+
+    function setTextIfPresent(id, value) {
+      const node = document.getElementById(id);
+      const s = String(value || "").trim();
+      if (node && s) node.textContent = s;
+    }
+
+    function applyBranding(info) {
+      const b = info && info.branding && typeof info.branding === "object" ? info.branding : {};
+      const hasBranding = Object.keys(b).length > 0;
+      if (!hasBranding) return;
+
+      const root = document.documentElement;
+      const primary = cssHexColor(b.primary_color);
+      const bg = cssHexColor(b.background_color);
+      const panel = cssHexColor(b.panel_color);
+      const text = cssHexColor(b.text_color);
+      const buttonText = cssHexColor(b.button_text_color);
+
+      if (primary) root.style.setProperty("--accent", primary);
+      if (bg) root.style.setProperty("--bg", bg);
+      if (panel) root.style.setProperty("--panel", panel);
+      if (text) root.style.setProperty("--text", text);
+      if (buttonText) root.style.setProperty("--button-text", buttonText);
+
+      const company = String(b.company_name || "").trim();
+      const logoUrl = String(b.logo_url || "").trim();
+
+      const brandBar = document.getElementById("brandBar");
+      const brandName = document.getElementById("brandName");
+      const brandLogo = document.getElementById("brandLogo");
+
+      if (brandBar && (company || logoUrl)) {
+        brandBar.style.display = "flex";
+      }
+
+      if (brandName && company) {
+        brandName.textContent = company;
+      }
+
+      if (brandLogo) {
+        if (logoUrl) {
+          brandLogo.src = logoUrl;
+          brandLogo.alt = company || "Logo";
+          brandLogo.style.display = "";
+        } else {
+          brandLogo.removeAttribute("src");
+          brandLogo.style.display = "none";
+        }
+      }
+
+      if (b.kicker) setTextIfPresent("pageKicker", b.kicker);
+      else if (company) setTextIfPresent("pageKicker", company);
+
+      if (b.title) setTextIfPresent("pageTitle", b.title);
+      if (b.description) setTextIfPresent("pageSubtitle", b.description);
+      if (b.button_text) setTextIfPresent("uploadBtn", b.button_text);
+
+      const footer = document.getElementById("pageFooter");
+      if (footer && b.footer_text) {
+        footer.textContent = b.footer_text;
+        footer.style.display = "";
+      }
+
+      if (company) {
+        document.title = `${company} • Drop Zone`;
+      }
     }
 
     function publicStatusLines(info) {
@@ -3870,6 +4175,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
 
         if (info && info.ok) {
           CURRENT_INFO = info;
+          applyBranding(info);
           setStatus("good", zoneName(info), publicStatusLines(info));
         }
 
@@ -3988,6 +4294,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
           return;
         }
 
+        applyBranding(json);
         setStatus("good", zoneName(json), publicStatusLines(json));
 
         CURRENT_INFO = json;

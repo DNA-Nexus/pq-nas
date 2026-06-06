@@ -35,6 +35,12 @@ struct DropZoneRec {
     // Non-empty should contain a password hash, never the plaintext password.
     std::string password_hash;
 
+    // Optional Branded Drop Zone page configuration.
+    //
+    // Stored as sanitized JSON owned by the route layer. Empty means the public
+    // page uses the normal DNA-Nexus Drop Zone look.
+    std::string branding_json;
+
     std::int64_t created_epoch = 0;
     std::int64_t expires_epoch = 0;
     std::int64_t last_used_epoch = 0;

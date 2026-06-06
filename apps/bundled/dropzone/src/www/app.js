@@ -22,6 +22,270 @@
   const maxFileInput = el("maxFileInput");
   const maxTotalInput = el("maxTotalInput");
 
+  const brandEnabledInput = el("brandEnabledInput");
+  const brandCompanyInput = el("brandCompanyInput");
+  const brandLogoUrlInput = el("brandLogoUrlInput");
+  const brandLogoFileInput = el("brandLogoFileInput");
+  const brandLogoPickBtn = el("brandLogoPickBtn");
+  const brandLogoClearBtn = el("brandLogoClearBtn");
+  const brandLogoPreview = el("brandLogoPreview");
+  const brandLogoPreviewEmpty = el("brandLogoPreviewEmpty");
+  const brandLogoStatus = el("brandLogoStatus");
+  const brandTitleInput = el("brandTitleInput");
+  const brandDescriptionInput = el("brandDescriptionInput");
+  const brandPrimaryColorInput = el("brandPrimaryColorInput");
+  const brandBackgroundColorInput = el("brandBackgroundColorInput");
+  const brandButtonTextInput = el("brandButtonTextInput");
+  const brandFooterTextInput = el("brandFooterTextInput");
+
+  const brandTemplateSelect = el("brandTemplateSelect");
+  const brandTemplateApplyBtn = el("brandTemplateApplyBtn");
+  const brandTemplateSaveBtn = el("brandTemplateSaveBtn");
+  const brandTemplateDeleteBtn = el("brandTemplateDeleteBtn");
+
+
+  const BRAND_TEMPLATE_STORAGE_KEY = "pqnas.dropzone.brandTemplates.v1";
+
+  const BUILTIN_BRAND_TEMPLATES = [
+    {
+      id: "builtin_secure_documents",
+      name: "Secure documents",
+      branding: {
+        title: "Send documents securely",
+        description: "Upload contracts, forms and other documents directly to our secure DNA-Nexus server.",
+        primary_color: "#ff9f1c",
+        background_color: "#080a0f",
+        button_text: "Upload documents",
+        footer_text: "Secured by DNA-Nexus"
+      }
+    },
+    {
+      id: "builtin_accounting_receipts",
+      name: "Accounting receipts",
+      branding: {
+        title: "Send receipts and payroll files",
+        description: "Upload receipts, invoices, payroll material and accounting documents securely.",
+        primary_color: "#2f80ed",
+        background_color: "#07111f",
+        button_text: "Upload accounting files",
+        footer_text: "Secure file intake powered by DNA-Nexus"
+      }
+    },
+    {
+      id: "builtin_media_delivery",
+      name: "Photo / video delivery",
+      branding: {
+        title: "Send photos and videos",
+        description: "Upload large media files directly to our secure storage. No email attachment limits.",
+        primary_color: "#9b51e0",
+        background_color: "#10091a",
+        button_text: "Upload media files",
+        footer_text: "Large file delivery secured by DNA-Nexus"
+      }
+    },
+    {
+      id: "builtin_support_logs",
+      name: "Support logs",
+      branding: {
+        title: "Send support files",
+        description: "Upload logs, screenshots and diagnostic files so our support team can help you faster.",
+        primary_color: "#27ae60",
+        background_color: "#06140d",
+        button_text: "Upload support files",
+        footer_text: "Support file upload secured by DNA-Nexus"
+      }
+    },
+    {
+      id: "builtin_job_applications",
+      name: "Job applications",
+      branding: {
+        title: "Send your application securely",
+        description: "Upload your CV, application letter and attachments through this secure upload page.",
+        primary_color: "#f2994a",
+        background_color: "#111014",
+        button_text: "Upload application",
+        footer_text: "Recruitment file intake secured by DNA-Nexus"
+      }
+    }
+  ];
+
+  function dzString(v) {
+    return String(v == null ? "" : v).trim();
+  }
+
+  function currentBrandingFromForm() {
+    return {
+      company_name: dzString(brandCompanyInput?.value),
+      logo_url: dzString(brandLogoUrlInput?.value),
+      title: dzString(brandTitleInput?.value),
+      description: dzString(brandDescriptionInput?.value),
+      primary_color: dzString(brandPrimaryColorInput?.value),
+      background_color: dzString(brandBackgroundColorInput?.value),
+      button_text: dzString(brandButtonTextInput?.value),
+      footer_text: dzString(brandFooterTextInput?.value)
+    };
+  }
+
+  function applyBrandingToForm(branding, opts = {}) {
+    const b = branding && typeof branding === "object" ? branding : {};
+    const preserveIdentity = !!opts.preserveIdentity;
+
+    if (brandEnabledInput) brandEnabledInput.checked = true;
+
+    if (!preserveIdentity || Object.prototype.hasOwnProperty.call(b, "company_name")) {
+      if (brandCompanyInput && b.company_name != null) brandCompanyInput.value = String(b.company_name || "");
+    }
+
+    if (!preserveIdentity || Object.prototype.hasOwnProperty.call(b, "logo_url")) {
+      if (brandLogoUrlInput && b.logo_url != null) brandLogoUrlInput.value = String(b.logo_url || "");
+    }
+
+    updateBrandLogoPreview();
+
+    if (brandTitleInput && b.title != null) brandTitleInput.value = String(b.title || "");
+    if (brandDescriptionInput && b.description != null) brandDescriptionInput.value = String(b.description || "");
+    if (brandPrimaryColorInput && b.primary_color) brandPrimaryColorInput.value = String(b.primary_color);
+    if (brandBackgroundColorInput && b.background_color) brandBackgroundColorInput.value = String(b.background_color);
+    if (brandButtonTextInput && b.button_text != null) brandButtonTextInput.value = String(b.button_text || "");
+    if (brandFooterTextInput && b.footer_text != null) brandFooterTextInput.value = String(b.footer_text || "");
+  }
+
+  function loadCustomBrandTemplates() {
+    try {
+      const raw = localStorage.getItem(BRAND_TEMPLATE_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+          .filter((t) => t && typeof t === "object")
+          .filter((t) => typeof t.id === "string" && typeof t.name === "string")
+          .filter((t) => t.branding && typeof t.branding === "object")
+          .slice(0, 50);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveCustomBrandTemplates(templates) {
+    try {
+      localStorage.setItem(BRAND_TEMPLATE_STORAGE_KEY, JSON.stringify((templates || []).slice(0, 50)));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function allBrandTemplates() {
+    const builtins = BUILTIN_BRAND_TEMPLATES.map((t) => ({ ...t, builtin: true }));
+    const custom = loadCustomBrandTemplates().map((t) => ({ ...t, builtin: false }));
+    return { builtins, custom, all: [...builtins, ...custom] };
+  }
+
+  function refreshBrandTemplateSelect(selectedId = "") {
+    if (!brandTemplateSelect) return;
+
+    const { builtins, custom } = allBrandTemplates();
+
+    brandTemplateSelect.innerHTML = "";
+
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "Choose template…";
+    brandTemplateSelect.appendChild(empty);
+
+    const addGroup = (label, rows) => {
+      if (!rows.length) return;
+
+      const group = document.createElement("optgroup");
+      group.label = label;
+
+      for (const row of rows) {
+        const opt = document.createElement("option");
+        opt.value = row.id;
+        opt.textContent = row.name;
+        group.appendChild(opt);
+      }
+
+      brandTemplateSelect.appendChild(group);
+    };
+
+    addGroup("Built-in", builtins);
+    addGroup("Saved", custom);
+
+    if (selectedId) {
+      brandTemplateSelect.value = selectedId;
+    }
+  }
+
+  function selectedBrandTemplate() {
+    const id = dzString(brandTemplateSelect?.value);
+    if (!id) return null;
+
+    const { all } = allBrandTemplates();
+    return all.find((t) => t.id === id) || null;
+  }
+
+  function applySelectedBrandTemplate() {
+    const t = selectedBrandTemplate();
+    if (!t) return;
+
+    applyBrandingToForm(t.branding, {
+      preserveIdentity: !!t.builtin
+    });
+  }
+
+  function saveCurrentBrandTemplate() {
+    if (brandEnabledInput) brandEnabledInput.checked = true;
+
+    const current = selectedBrandTemplate();
+    const currentCustom = current && !current.builtin ? current : null;
+
+    const branding = currentBrandingFromForm();
+    const fallbackName =
+        branding.company_name ||
+        branding.title ||
+        "Branded upload page";
+
+    const name = dzString(window.prompt("Template name", currentCustom ? currentCustom.name : fallbackName));
+    if (!name) return;
+
+    const custom = loadCustomBrandTemplates();
+    const id = currentCustom
+        ? currentCustom.id
+        : `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const next = custom.filter((t) => t.id !== id);
+    next.unshift({
+      id,
+      name: name.slice(0, 120),
+      branding
+    });
+
+    if (!saveCustomBrandTemplates(next)) {
+      window.alert("Could not save template. Browser storage may be full or disabled.");
+      return;
+    }
+
+    refreshBrandTemplateSelect(id);
+  }
+
+  function deleteSelectedBrandTemplate() {
+    const t = selectedBrandTemplate();
+    if (!t) return;
+
+    if (t.builtin) {
+      window.alert("Built-in templates cannot be deleted.");
+      return;
+    }
+
+    const ok = window.confirm(`Delete template "${t.name}"?`);
+    if (!ok) return;
+
+    const next = loadCustomBrandTemplates().filter((row) => row.id !== t.id);
+    saveCustomBrandTemplates(next);
+    refreshBrandTemplateSelect("");
+  }
+
   async function getAppVersion() {
     const m = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
     if (m && m[2]) return decodeURIComponent(m[2]);
@@ -291,6 +555,20 @@
     if (zoneNameInput) zoneNameInput.value = tr("dropzone.default_name", null, "Drop Zone");
     if (destInput) destInput.value = tr("dropzone.default_destination", null, "Incoming/Drop Zones/Drop Zone");
 
+    if (brandEnabledInput) brandEnabledInput.checked = false;
+    if (brandCompanyInput) brandCompanyInput.value = "";
+    if (brandLogoUrlInput) brandLogoUrlInput.value = "";
+    clearBrandLogoPreviewStatus();
+    updateBrandLogoPreview();
+    if (brandTitleInput) brandTitleInput.value = "Send files securely";
+    if (brandDescriptionInput) brandDescriptionInput.value = "Upload files directly to our secure DNA-Nexus server.";
+    if (brandPrimaryColorInput) brandPrimaryColorInput.value = "#ff9f1c";
+    if (brandBackgroundColorInput) brandBackgroundColorInput.value = "#080a0f";
+    if (brandButtonTextInput) brandButtonTextInput.value = "Upload files";
+    if (brandFooterTextInput) brandFooterTextInput.value = "Secured by DNA-Nexus";
+
+    refreshBrandTemplateSelect();
+
     createModal.classList.remove("hidden");
     createModal.setAttribute("aria-hidden", "false");
 
@@ -393,6 +671,7 @@
       const maxFile = fmtBytes(z.max_file_bytes || 0);
       const maxTotal = fmtBytes(z.max_total_bytes || 0);
       const disabled = !!z.disabled;
+      const branded = !!(z.branding && typeof z.branding === "object" && Object.keys(z.branding).length > 0);
 
       return `
         <article class="dzCard" data-zone-id="${escapeHtml(id)}">
@@ -400,6 +679,7 @@
             <div>
               <div class="dzCardTitle">${escapeHtml(name)}</div>
               <div class="dzCardMeta">${escapeHtml(tr("dropzone.destination", null, "Destination"))}: ${escapeHtml(dest)}</div>
+              ${branded ? `<div class="dzCardMeta">${escapeHtml(tr("dropzone.branded_page", null, "Branded page"))}: ${escapeHtml((z.branding && z.branding.company_name) || tr("common.enabled", null, "Enabled"))}</div>` : ""}
             </div>
             <div class="dzBadge ${disabled ? "bad" : "ok"}">
               ${disabled ? tr("dropzone.disabled", null, "Disabled") : tr("dropzone.active", null, "Active")}
@@ -450,6 +730,116 @@
     }
   }
 
+  function formStringValue(input) {
+    return String(input?.value || "").trim();
+  }
+
+
+  const BRAND_LOGO_MAX_BYTES = 256 * 1024;
+  const BRAND_LOGO_ALLOWED_TYPES = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif"
+  ]);
+
+  function setBrandLogoStatus(text, kind = "") {
+    if (!brandLogoStatus) return;
+    brandLogoStatus.textContent = text || "";
+    brandLogoStatus.className = `dzLogoStatus ${kind || ""}`.trim();
+  }
+
+  function clearBrandLogoPreviewStatus() {
+    setBrandLogoStatus("");
+  }
+
+  function isDisplayableLogoSrc(src) {
+    const s = String(src || "").trim();
+    return (
+      s.startsWith("https://") ||
+      (s.startsWith("/") && !s.startsWith("//")) ||
+      s.startsWith("data:image/png;base64,") ||
+      s.startsWith("data:image/jpeg;base64,") ||
+      s.startsWith("data:image/webp;base64,") ||
+      s.startsWith("data:image/gif;base64,")
+    );
+  }
+
+  function updateBrandLogoPreview() {
+    const src = String(brandLogoUrlInput?.value || "").trim();
+    const ok = isDisplayableLogoSrc(src);
+
+    if (brandLogoPreview) {
+      if (ok) {
+        brandLogoPreview.src = src;
+        brandLogoPreview.style.display = "";
+      } else {
+        brandLogoPreview.removeAttribute("src");
+        brandLogoPreview.style.display = "none";
+      }
+    }
+
+    if (brandLogoPreviewEmpty) {
+      brandLogoPreviewEmpty.style.display = ok ? "none" : "";
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read logo file."));
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleBrandLogoFileSelected() {
+    const file = brandLogoFileInput && brandLogoFileInput.files
+        ? brandLogoFileInput.files[0]
+        : null;
+
+    if (!file) return;
+
+    if (!BRAND_LOGO_ALLOWED_TYPES.has(file.type)) {
+      setBrandLogoStatus("Use PNG, JPG, WebP or GIF.", "fail");
+      if (brandLogoFileInput) brandLogoFileInput.value = "";
+      return;
+    }
+
+    if (file.size > BRAND_LOGO_MAX_BYTES) {
+      setBrandLogoStatus("Logo is too large. Maximum size is 256 KB.", "fail");
+      if (brandLogoFileInput) brandLogoFileInput.value = "";
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+
+      if (!isDisplayableLogoSrc(dataUrl)) {
+        setBrandLogoStatus("Unsupported logo format.", "fail");
+        return;
+      }
+
+      if (brandLogoUrlInput) brandLogoUrlInput.value = dataUrl;
+      if (brandEnabledInput) brandEnabledInput.checked = true;
+
+      updateBrandLogoPreview();
+      setBrandLogoStatus(`Uploaded: ${file.name} (${Math.ceil(file.size / 1024)} KB)`, "ok");
+    } catch (e) {
+      setBrandLogoStatus(e && e.message ? e.message : "Could not load logo.", "fail");
+    } finally {
+      if (brandLogoFileInput) brandLogoFileInput.value = "";
+    }
+  }
+
+  function clearBrandLogo() {
+    if (brandLogoUrlInput) brandLogoUrlInput.value = "";
+    if (brandLogoFileInput) brandLogoFileInput.value = "";
+    updateBrandLogoPreview();
+    setBrandLogoStatus("Logo cleared.");
+  }
+
+
   async function createDropZone(ev) {
     ev?.preventDefault?.();
 
@@ -477,6 +867,19 @@
       };
 
       if (password) body.password = password;
+
+      if (brandEnabledInput && brandEnabledInput.checked) {
+        body.branding = {
+          company_name: formStringValue(brandCompanyInput),
+          logo_url: formStringValue(brandLogoUrlInput),
+          title: formStringValue(brandTitleInput),
+          description: formStringValue(brandDescriptionInput),
+          primary_color: formStringValue(brandPrimaryColorInput),
+          background_color: formStringValue(brandBackgroundColorInput),
+          button_text: formStringValue(brandButtonTextInput),
+          footer_text: formStringValue(brandFooterTextInput)
+        };
+      }
 
       const json = await apiJson("/api/v4/dropzones/create", {
         method: "POST",
@@ -571,6 +974,17 @@
   modalCloseBtn?.addEventListener("click", closeCreateModal);
   cancelCreateBtn?.addEventListener("click", closeCreateModal);
   createForm?.addEventListener("submit", createDropZone);
+  brandLogoPickBtn?.addEventListener("click", () => brandLogoFileInput?.click());
+  brandLogoFileInput?.addEventListener("change", handleBrandLogoFileSelected);
+  brandLogoClearBtn?.addEventListener("click", clearBrandLogo);
+  brandLogoUrlInput?.addEventListener("input", () => {
+    clearBrandLogoPreviewStatus();
+    updateBrandLogoPreview();
+  });
+  brandTemplateApplyBtn?.addEventListener("click", applySelectedBrandTemplate);
+  brandTemplateSaveBtn?.addEventListener("click", saveCurrentBrandTemplate);
+  brandTemplateDeleteBtn?.addEventListener("click", deleteSelectedBrandTemplate);
+  brandTemplateSelect?.addEventListener("change", applySelectedBrandTemplate);
 
   createModal?.addEventListener("click", (ev) => {
     if (ev.target && ev.target.getAttribute("data-close-modal") === "1") {
@@ -599,6 +1013,7 @@
         window.PQNAS_I18N.apply(document);
       }
     } catch (_) {}
+    refreshBrandTemplateSelect();
     loadZones();
   });
 
