@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PDF file icon">
+  <path d="M17 6h26l10 10v42H17z" fill="#f8fafc" stroke="#8a99aa" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M43 6v11h10" fill="#e2e8f0" stroke="#8a99aa" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M23 25h18M23 30h18M23 35h13" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+  <rect x="16" y="38" width="32" height="13" rx="3" fill="#dc2626"/>
+  <text x="32" y="47" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="8" font-weight="700" fill="#ffffff">PDF</text>
+</svg>
