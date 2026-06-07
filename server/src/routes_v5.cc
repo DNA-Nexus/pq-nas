@@ -1003,6 +1003,222 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     });
 
 
+
+    // ---- POST /api/auth/password/set ----
+    //
+    // Admin password set/reset endpoint.
+    // Requires a valid admin pqnas_session cookie.
+    // Body:
+    //   { "fingerprint": "...", "login": "user@example.com", "password": "new password" }
+    srv.Post("/api/auth/password/set", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "auth_cookie_checker_not_configured"}}.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "password.set", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string target_fp = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "fingerprint"));
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string password = v5_json_string_or_empty(j, "password");
+
+        if (target_fp.empty() || routes_v5_has_control_chars(target_fp)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_fingerprint"}}.dump());
+            return;
+        }
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        if (password.size() < 12 || password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        const auto target_user = ctx.users->get(target_fp);
+        if (!target_user.has_value()) {
+            routes_v5_audit_password(ctx, req, "password.set", "deny", login, target_fp, "target_user_missing");
+            reply_json(res, 404, json{{"ok", false}, {"error", "user_not_found"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        const auto existing_login = creds.get(login);
+        if (existing_login.has_value() && existing_login->fingerprint != target_fp) {
+            routes_v5_audit_password(ctx, req, "password.set", "deny", login, target_fp, "login_belongs_to_other_fingerprint");
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_already_exists"}}.dump());
+            return;
+        }
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::PasswordCredentialRec rec;
+        if (existing_login.has_value()) {
+            rec = *existing_login;
+        } else {
+            rec.login = login;
+            rec.fingerprint = target_fp;
+            rec.created_at = now_iso;
+        }
+
+        rec.login = login;
+        rec.fingerprint = target_fp;
+        rec.password_hash = hash;
+        rec.enabled = true;
+        rec.updated_at = now_iso;
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.set", "ok", login, target_fp, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", target_fp},
+            {"role", target_user->role}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/password/change ----
+    //
+    // Self-service password change endpoint.
+    // Requires a valid pqnas_session cookie and the current password.
+    // Body:
+    //   { "login": "user@example.com", "current_password": "...", "new_password": "..." }
+    srv.Post("/api/auth/password/change", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "auth_cookie_checker_not_configured"}}.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string current_password = v5_json_string_or_empty(j, "current_password");
+        const std::string new_password = v5_json_string_or_empty(j, "new_password");
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login) ||
+            current_password.empty() || current_password.size() > 1024) {
+            routes_v5_audit_password(ctx, req, "password.change", "deny", login, actor_fp, "invalid_input");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        if (new_password.size() < 12 || new_password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.change.") + login,
+                ip_for_rate_limit,
+                8,
+                std::chrono::seconds(60))) {
+            routes_v5_audit_password(ctx, req, "password.change", "deny", login, actor_fp, "rate_limited");
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_password_change_attempts"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentialRec rec;
+        if (!creds.verify_password(login, current_password, &rec) || rec.fingerprint != actor_fp) {
+            routes_v5_audit_password(ctx, req, "password.change", "deny", login, actor_fp, "bad_current_password");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(new_password, hash)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        rec.password_hash = hash;
+        rec.enabled = true;
+        rec.updated_at = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.change", "ok", login, actor_fp, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", actor_fp}
+        }.dump());
+    });
+
     // ---- POST/GET /api/v5/session ----
 	// Route group: /api/v5/session
 	// Issues a signed request token (st) and correlation key (k). Inserts PendingEntry.
