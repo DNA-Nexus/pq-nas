@@ -2177,6 +2177,84 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 // Render desktop icons on Home
         renderDesktopIcons();
     }
+    let passwordAuthConfigLoaded = false;
+    let passwordAuthEnabled = false;
+    let passwordAuthConfigError = "";
+
+    async function loadPasswordAuthConfig() {
+        passwordAuthConfigError = "";
+
+        try {
+            const r = await fetch("/api/auth/config", {
+                credentials: "include",
+                cache: "no-store"
+            });
+
+            const j = await r.json().catch(() => null);
+
+            if (!r.ok || !j || j.ok === false) {
+                throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+            }
+
+            passwordAuthEnabled = !!j.password_enabled;
+            passwordAuthConfigLoaded = true;
+        } catch (e) {
+            passwordAuthEnabled = false;
+            passwordAuthConfigLoaded = true;
+            passwordAuthConfigError = String(e && e.message ? e.message : e);
+        }
+    }
+
+    async function changeOwnPasswordFromSettings() {
+        const login = (document.getElementById("settingsPasswordLogin")?.value || "").trim();
+        const current_password = document.getElementById("settingsCurrentPassword")?.value || "";
+        const new_password = document.getElementById("settingsNewPassword")?.value || "";
+        const confirm_password = document.getElementById("settingsConfirmPassword")?.value || "";
+
+        if (!login) {
+            throw new Error(tr("settings.password.login_required", null, "Enter your login/email."));
+        }
+
+        if (!current_password) {
+            throw new Error(tr("settings.password.current_required", null, "Enter your current password."));
+        }
+
+        if (new_password.length < 12) {
+            throw new Error(tr("settings.password.too_short", null, "New password must be at least 12 characters."));
+        }
+
+        if (new_password !== confirm_password) {
+            throw new Error(tr("settings.password.mismatch", null, "New password and confirmation do not match."));
+        }
+
+        const r = await fetch("/api/auth/password/change", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                login,
+                current_password,
+                new_password
+            })
+        });
+
+        const j = await r.json().catch(() => null);
+
+        if (!r.ok || !j || j.ok === false) {
+            const msg = j && (j.message || j.error)
+                ? (j.message || j.error)
+                : `HTTP ${r.status}`;
+            throw new Error(msg);
+        }
+
+        try {
+            localStorage.setItem("pqnas_password_login", login);
+        } catch {}
+
+        return j;
+    }
+
     async function loadUserProfile() {
         if (!authed) {
             userProfile = null;
@@ -2320,7 +2398,87 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             });
         }
 
+        if (!passwordAuthConfigLoaded && authed) {
+            loadPasswordAuthConfig().then(() => {
+                if (currentView === "user_settings") renderUserSettings(messageText, messageKind);
+            });
+        }
+
         const p = userProfile || {};
+
+        const passwordLoginHint = (() => {
+            try { return localStorage.getItem("pqnas_password_login") || ""; } catch { return ""; }
+        })();
+
+        const passwordLoginValue = passwordLoginHint || p.email || "";
+
+        const passwordCard = passwordAuthEnabled ? `
+    <div class="card" style="padding:14px; margin-top:12px;">
+        <h3 style="margin:0 0 8px 0; font-size:18px;">
+            ${escapeHtml(tr("settings.password.title", null, "Password"))}
+        </h3>
+
+        <div class="mini" style="line-height:1.5; margin-bottom:12px;">
+            ${escapeHtml(tr("settings.password.desc", null, "Change the password used to sign in to DNA-Nexus on password-auth installations."))}
+        </div>
+
+        <div style="display:grid; gap:10px; max-width:540px;">
+            <label>
+                <div class="mini" style="margin-bottom:4px;">${escapeHtml(tr("settings.password.login", null, "Login / email"))}</div>
+                <input
+                    id="settingsPasswordLogin"
+                    type="text"
+                    autocomplete="username"
+                    value="${escapeHtml(passwordLoginValue)}"
+                    placeholder="you@example.com"
+                    style="width:100%; box-sizing:border-box;"
+                >
+            </label>
+
+            <label>
+                <div class="mini" style="margin-bottom:4px;">${escapeHtml(tr("settings.password.current", null, "Current password"))}</div>
+                <input
+                    id="settingsCurrentPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    style="width:100%; box-sizing:border-box;"
+                >
+            </label>
+
+            <label>
+                <div class="mini" style="margin-bottom:4px;">${escapeHtml(tr("settings.password.new", null, "New password"))}</div>
+                <input
+                    id="settingsNewPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="12"
+                    style="width:100%; box-sizing:border-box;"
+                >
+            </label>
+
+            <label>
+                <div class="mini" style="margin-bottom:4px;">${escapeHtml(tr("settings.password.confirm", null, "Confirm new password"))}</div>
+                <input
+                    id="settingsConfirmPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="12"
+                    style="width:100%; box-sizing:border-box;"
+                >
+            </label>
+
+            <div class="mini" style="line-height:1.5;">
+                ${escapeHtml(tr("settings.password.help", null, "Use at least 12 characters. A longer passphrase is recommended."))}
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                <button class="btn" id="settingsPasswordChangeBtn" type="button">
+                    ${escapeHtml(tr("settings.password.change", null, "Change password"))}
+                </button>
+            </div>
+        </div>
+    </div>
+` : "";
 
         const profileCard = `
     <div class="card" style="padding:14px; margin-top:12px;">
@@ -2468,6 +2626,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             ` : ""}
             
         ${profileCard}
+        ${passwordCard}
         
             <div class="card" style="padding:14px; margin-top:12px;">
                 <h3 style="margin:0 0 8px 0; font-size:18px;">
@@ -2541,6 +2700,27 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     renderUserSettings();
                 } catch (e) {
                     renderUserSettings(tr("settings.profile.reload_failed", { error: String(e && e.message ? e.message : e) }, `Profile reload failed: ${String(e && e.message ? e.message : e)}`), "err");
+                }
+            });
+        }
+
+
+        const passwordChangeBtn = (homeContent || homeBlurb).querySelector("#settingsPasswordChangeBtn");
+        if (passwordChangeBtn) {
+            passwordChangeBtn.addEventListener("click", async () => {
+                const oldText = passwordChangeBtn.textContent;
+                passwordChangeBtn.disabled = true;
+                passwordChangeBtn.textContent = tr("settings.password.changing", null, "Changing…");
+
+                try {
+                    await changeOwnPasswordFromSettings();
+                    renderUserSettings(tr("settings.password.changed", null, "Password changed."), "ok");
+                } catch (e) {
+                    const msg = tr("settings.password.change_failed", { error: String(e && e.message ? e.message : e) }, `Password change failed: ${String(e && e.message ? e.message : e)}`);
+                    renderUserSettings(msg, "err");
+                } finally {
+                    passwordChangeBtn.disabled = false;
+                    passwordChangeBtn.textContent = oldText;
                 }
             });
         }

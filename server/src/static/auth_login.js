@@ -181,6 +181,10 @@
                     return;
                 }
 
+                try {
+                    localStorage.setItem("pqnas_password_login", login);
+                } catch {}
+
                 const ping = await fetch("/api/v4/me", {
                     cache: "no-store",
                     credentials: "include",

@@ -13,6 +13,15 @@
 (function () {
     const $ = (id) => document.getElementById(id);
 
+    // --- password auth / own password ---
+    const adminPasswordChangeCard = $("adminPasswordChangeCard");
+    const adminPasswordAuthPill = $("adminPasswordAuthPill");
+    const adminPasswordLogin = $("adminPasswordLogin");
+    const adminPasswordCurrent = $("adminPasswordCurrent");
+    const adminPasswordNew = $("adminPasswordNew");
+    const adminPasswordConfirm = $("adminPasswordConfirm");
+    const btnAdminPasswordChange = $("btnAdminPasswordChange");
+
     // --- audit level controls ---
     const statusPill = $("statusPill");
     const persistedVal = $("persistedVal");
@@ -488,6 +497,116 @@
     // ---------------------------
     // HTTP helper (robust JSON parsing)
     // ---------------------------
+    function tAdminPassword(key, fallback, vars) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, vars || null, fallback);
+        }
+
+        let out = String(fallback ?? key);
+        if (vars && typeof vars === "object") {
+            for (const [k, v] of Object.entries(vars)) {
+                out = out.replaceAll(`{${k}}`, String(v));
+            }
+        }
+        return out;
+    }
+
+    async function loadAdminPasswordAuthConfig() {
+        if (!adminPasswordChangeCard) return;
+
+        try {
+            const r = await fetch("/api/auth/config", {
+                credentials: "include",
+                cache: "no-store"
+            });
+
+            const j = await r.json().catch(() => null);
+
+            if (!r.ok || !j || j.ok === false) {
+                throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+            }
+
+            const enabled = !!j.password_enabled;
+
+            adminPasswordChangeCard.classList.toggle("hidden", !enabled);
+
+            if (adminPasswordAuthPill) {
+                adminPasswordAuthPill.className = "pill " + (enabled ? "ok" : "warn");
+                adminPasswordAuthPill.innerHTML =
+                    `<span class="k">${escapeHtml(tAdminPassword("admin.password.auth_label", "Password auth:"))}</span> <span class="v">${escapeHtml(enabled ? tAdminPassword("admin.password.enabled", "enabled") : tAdminPassword("admin.password.disabled", "disabled"))}</span>`;
+            }
+
+            if (enabled && adminPasswordLogin && !adminPasswordLogin.value) {
+                try {
+                    adminPasswordLogin.value = localStorage.getItem("pqnas_password_login") || "";
+                } catch (_) {}
+            }
+        } catch (e) {
+            adminPasswordChangeCard.classList.add("hidden");
+
+            if (adminPasswordAuthPill) {
+                adminPasswordAuthPill.className = "pill fail";
+                adminPasswordAuthPill.innerHTML =
+                    `<span class="k">${escapeHtml(tAdminPassword("admin.password.auth_label", "Password auth:"))}</span> <span class="v">${escapeHtml(String(e && e.message ? e.message : e))}</span>`;
+            }
+        }
+    }
+
+    async function changeAdminOwnPassword() {
+        const login = String(adminPasswordLogin?.value || "").trim();
+        const current_password = String(adminPasswordCurrent?.value || "");
+        const new_password = String(adminPasswordNew?.value || "");
+        const confirm_password = String(adminPasswordConfirm?.value || "");
+
+        if (!login) {
+            throw new Error(tAdminPassword("settings.password.login_required", "Enter your login/email."));
+        }
+
+        if (!current_password) {
+            throw new Error(tAdminPassword("settings.password.current_required", "Enter your current password."));
+        }
+
+        if (new_password.length < 12) {
+            throw new Error(tAdminPassword("settings.password.too_short", "New password must be at least 12 characters."));
+        }
+
+        if (new_password !== confirm_password) {
+            throw new Error(tAdminPassword("settings.password.mismatch", "New password and confirmation do not match."));
+        }
+
+        const r = await fetch("/api/auth/password/change", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                login,
+                current_password,
+                new_password
+            })
+        });
+
+        const j = await r.json().catch(() => null);
+
+        if (!r.ok || !j || j.ok === false) {
+            const msg = j && (j.message || j.error)
+                ? (j.message || j.error)
+                : `HTTP ${r.status}`;
+            throw new Error(msg);
+        }
+
+        try {
+            localStorage.setItem("pqnas_password_login", login);
+        } catch (_) {}
+
+        if (adminPasswordCurrent) adminPasswordCurrent.value = "";
+        if (adminPasswordNew) adminPasswordNew.value = "";
+        if (adminPasswordConfirm) adminPasswordConfirm.value = "";
+
+        return j;
+    }
+
     async function fetchJsonOrThrow(url, opts) {
         const r = await fetch(url, opts);
 
@@ -1973,6 +2092,30 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         }
     });
 
+
+    // ---------------------------
+    // Wire password auth / own password
+    // ---------------------------
+    btnAdminPasswordChange?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const oldText = btnAdminPasswordChange.textContent;
+        btnAdminPasswordChange.disabled = true;
+        btnAdminPasswordChange.textContent = tAdminPassword("settings.password.changing", "Changing…");
+
+        try {
+            await changeAdminOwnPassword();
+            showToast("ok", tAdminPassword("admin.password.changed_title", "Password changed"), tAdminPassword("admin.password.changed_body", "Your admin password was changed."));
+        } catch (e) {
+            console.error(e);
+            showToast("fail", tAdminPassword("admin.password.failed_title", "Password change failed"), String(e && e.message ? e.message : e));
+        } finally {
+            btnAdminPasswordChange.disabled = false;
+            btnAdminPasswordChange.textContent = oldText;
+        }
+    });
+
+    loadAdminPasswordAuthConfig();
 
     // ---------------------------
     // Wire System Backups

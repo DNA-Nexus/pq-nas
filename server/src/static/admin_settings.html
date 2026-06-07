@@ -662,6 +662,36 @@
             color: rgba(var(--fg-rgb),0.72);
             letter-spacing:0.02em;
         }
+
+        .passwordSettingsGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap:12px;
+            width:100%;
+            max-width:760px;
+        }
+
+        .passwordSettingsField{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:0;
+        }
+
+        .passwordSettingsField .label{
+            font-size:12px;
+            font-weight:900;
+            color: rgba(var(--fg-rgb),0.72);
+            letter-spacing:0.02em;
+        }
+
+        .passwordSettingsActions{
+            display:flex;
+            gap:10px;
+            flex-wrap:wrap;
+            align-items:center;
+            margin-top:12px;
+        }
     </style>
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
@@ -714,6 +744,71 @@
         </div>
 
         <div class="content">
+
+            <div class="card accordion hidden" id="adminPasswordChangeCard" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
+                    <div class="h" data-i18n="admin.password.card_title">Security • Password</div>
+                    <div class="pill warn" id="adminPasswordAuthPill">
+                        <span class="k" data-i18n="admin.password.auth_label">Password auth:</span> <span class="v" data-i18n="admin.password.checking">checking…</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <div style="font-weight:950;" data-i18n="admin.password.change_my">Change my admin password</div>
+                    </div>
+
+                    <div class="note">
+                        <span data-i18n="admin.password.desc">This card is only shown when password authentication is enabled. It changes the password for the currently signed-in admin account.</span>
+                    </div>
+
+                    <div class="passwordSettingsGrid" style="margin-top:12px;">
+                        <label class="passwordSettingsField">
+                            <span class="label" data-i18n="settings.password.login">Login / email</span>
+                            <input id="adminPasswordLogin"
+                                   class="input"
+                                   type="text"
+                                   autocomplete="username"
+                                   placeholder="you@example.com" />
+                        </label>
+
+                        <label class="passwordSettingsField">
+                            <span class="label" data-i18n="settings.password.current">Current password</span>
+                            <input id="adminPasswordCurrent"
+                                   class="input"
+                                   type="password"
+                                   autocomplete="current-password" />
+                        </label>
+
+                        <label class="passwordSettingsField">
+                            <span class="label" data-i18n="settings.password.new">New password</span>
+                            <input id="adminPasswordNew"
+                                   class="input"
+                                   type="password"
+                                   autocomplete="new-password"
+                                   minlength="12" />
+                        </label>
+
+                        <label class="passwordSettingsField">
+                            <span class="label" data-i18n="settings.password.confirm">Confirm new password</span>
+                            <input id="adminPasswordConfirm"
+                                   class="input"
+                                   type="password"
+                                   autocomplete="new-password"
+                                   minlength="12" />
+                        </label>
+                    </div>
+
+                    <div class="note">
+                        <span data-i18n="settings.password.help">Use at least 12 characters. A longer passphrase is recommended.</span>
+                    </div>
+
+                    <div class="passwordSettingsActions">
+                        <button id="btnAdminPasswordChange" class="btn primary" type="button" data-i18n="settings.password.change">Change password</button>
+                    </div>
+                </div>
+            </div>
 
             <div class="card accordion open" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="true">
