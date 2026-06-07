@@ -36,6 +36,7 @@
 #include "routes_v5.h"
 #include "users_registry.h"
 #include "password_credentials.h"
+#include "dna_identity_generator.h"
 #include <openssl/sha.h>
 #include <cstdlib>
 #include <filesystem>
@@ -659,24 +660,6 @@ static std::string routes_v5_b64std_from_string(const std::string& s) {
     return out;
 }
 
-static std::string routes_v5_random_fingerprint_hex() {
-    if (sodium_init() < 0) return {};
-
-    unsigned char bytes[32];
-    randombytes_buf(bytes, sizeof(bytes));
-
-    static const char hex[] = "0123456789abcdef";
-    std::string out;
-    out.resize(sizeof(bytes) * 2);
-
-    for (std::size_t i = 0; i < sizeof(bytes); ++i) {
-        out[i * 2]     = hex[(bytes[i] >> 4) & 0x0f];
-        out[i * 2 + 1] = hex[bytes[i] & 0x0f];
-    }
-
-    return out;
-}
-
 static std::string routes_v5_bootstrap_token_from_req(const httplib::Request& req,
                                                       const nlohmann::json& j) {
     auto it = req.headers.find("X-PQNAS-Bootstrap-Token");
@@ -830,14 +813,16 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        const std::string fp_hex = have_existing_admin
-            ? existing_admin.fingerprint
-            : routes_v5_random_fingerprint_hex();
-
-        if (fp_hex.empty()) {
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "fingerprint_rng_failed"}}.dump());
+        if (!have_existing_admin) {
+            reply_json(res, 501, json{
+                {"ok", false},
+                {"error", "dna_identity_generation_required"},
+                {"message", "Password bootstrap no longer creates random fingerprints. Create the first admin with DNA Connect or the CPUNK/DNA identity generator."}
+            }.dump());
             return;
         }
+
+        const std::string fp_hex = existing_admin.fingerprint;
 
         const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
 
@@ -1216,6 +1201,176 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"ok", true},
             {"login", login},
             {"fingerprint", actor_fp}
+        }.dump());
+    });
+
+
+    // ---- POST /api/admin/users/password-create ----
+    //
+    // Admin-only password-auth user provisioning.
+    //
+    // This creates a CPUNK/DNA-style identity:
+    //   24-word BIP39 recovery phrase
+    //   -> deterministic ML-DSA-87 keypair
+    //   -> fingerprint = SHA3-512(public key)
+    //
+    // Recovery words are returned once and are not stored by the server.
+    srv.Post("/api/admin/users/password-create", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "auth_cookie_checker_not_configured"}}.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string password = v5_json_string_or_empty(j, "password");
+        const std::string name = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "name"));
+
+        std::string role = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "role")));
+        if (role.empty()) role = "user";
+
+        std::string status = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "status")));
+        if (status.empty()) status = "disabled";
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        if (password.size() < 12 || password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        if (role != "user" && role != "admin") {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_role"}}.dump());
+            return;
+        }
+
+        if (status != "enabled" && status != "disabled" && status != "pending") {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_status"}}.dump());
+            return;
+        }
+
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        if (creds.get(login).has_value()) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, "", "login_already_exists");
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_already_exists"}}.dump());
+            return;
+        }
+
+        pqnas::GeneratedDnaIdentity ident;
+        std::string gen_error;
+        if (!pqnas::generate_dna_identity(ident, gen_error)) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, "", "identity_generation_failed");
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "identity_generation_failed"},
+                {"message", gen_error}
+            }.dump());
+            return;
+        }
+
+        if (ctx.users->get(ident.fingerprint_hex).has_value()) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "fingerprint_collision");
+            reply_json(res, 409, json{{"ok", false}, {"error", "fingerprint_already_exists"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::UserRec u;
+        u.fingerprint = ident.fingerprint_hex;
+        u.name = name.empty() ? login : name;
+        u.role = role;
+        u.status = status;
+        u.added_at = now_iso;
+        u.last_seen = "";
+        u.notes = "Created by password-auth provisioning with CPUNK/DNA recovery phrase";
+        u.group = "";
+        u.email = login;
+        u.address = "";
+        u.avatar_url = "";
+        u.storage_state = "unallocated";
+        u.quota_bytes = 0;
+        u.root_rel = "";
+        u.storage_pool_id = "";
+        u.storage_set_at = "";
+        u.storage_set_by = "";
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentialRec rec;
+        rec.login = login;
+        rec.fingerprint = ident.fingerprint_hex;
+        rec.password_hash = hash;
+        rec.enabled = true;
+        rec.created_at = now_iso;
+        rec.updated_at = now_iso;
+
+        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "users_save_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
+            return;
+        }
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "credentials_save_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.user_create", "ok", login, ident.fingerprint_hex, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", ident.fingerprint_hex},
+            {"role", role},
+            {"status", status},
+            {"public_key_b64", ident.public_key_b64},
+            {"recovery_words", ident.recovery_words},
+            {"recovery_words_shown_once", true},
+            {"warning", "Recovery words are shown once and are not stored by the server."}
         }.dump());
     });
 

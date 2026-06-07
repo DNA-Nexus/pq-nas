@@ -189,6 +189,7 @@ add_executable(pqnas_server
 
         server/src/routes_v5.cc
         server/src/password_credentials.cpp
+        server/src/dna_identity_generator.cpp
         server/src/session_cookie.cc
         server/src/policy.cc
         server/src/audit_log.cc
