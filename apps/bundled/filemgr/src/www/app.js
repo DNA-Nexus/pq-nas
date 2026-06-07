@@ -546,10 +546,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function applyViewModeToDom() {
     if (gridEl) gridEl.classList.toggle("list", viewMode === "list");
-    if (viewToggleTxt) viewToggleTxt.textContent = (viewMode === "list") ? "Grid" : "List";
-    if (viewToggleBtn) viewToggleBtn.title = (viewMode === "list")
-        ? "Switch to grid view"
-        : "Switch to list view";
+    if (viewToggleTxt) {
+      viewToggleTxt.textContent = (viewMode === "list")
+          ? tr("filemgr.view.grid", null, "Grid")
+          : tr("filemgr.view.list", null, "List");
+    }
+    if (viewToggleBtn) {
+      viewToggleBtn.title = (viewMode === "list")
+          ? tr("filemgr.view.switch_to_grid", null, "Switch to grid view")
+          : tr("filemgr.view.switch_to_list", null, "Switch to list view");
+    }
   }
 
   function setViewMode(next) {
@@ -733,9 +739,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function applyFavoritesFilterUi() {
-    if (favoritesToggleTxt) favoritesToggleTxt.textContent = favoritesOnly ? "All" : "Favorites";
+    if (favoritesToggleTxt) {
+      favoritesToggleTxt.textContent = favoritesOnly
+          ? tr("filemgr.favorites.all", null, "All")
+          : tr("filemgr.favorites", null, "Favorites");
+    }
     if (favoritesToggleBtn) {
-      favoritesToggleBtn.title = favoritesOnly ? "Show all items" : "Show favorites only";
+      favoritesToggleBtn.title = favoritesOnly
+          ? tr("filemgr.menu.show_all", null, "Show all items")
+          : tr("filemgr.menu.show_favorites_only", null, "Show favorites only");
       favoritesToggleBtn.classList.toggle("active", favoritesOnly);
     }
   }

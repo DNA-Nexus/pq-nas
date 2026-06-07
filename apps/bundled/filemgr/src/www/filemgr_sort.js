@@ -6,26 +6,43 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const FM = window.PQNAS_FILEMGR;
     const SORT_KEY = "pqnas_filemgr_sort_mode_v1";
 
+    function tr(key, vars = null, fallback = "") {
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+                return window.PQNAS_I18N.t(key, vars, fallback || key);
+            }
+        } catch (_) {}
+        return fallback || key;
+    }
+
     const MODES = [
         {
             id: "dirs_first",
             shortLabel: "Dirs",
-            title: "Directories first, then name"
+            shortLabelKey: "filemgr.sort.dirs",
+            title: "Directories first, then name",
+            titleKey: "filemgr.sort.dirs_title"
         },
         {
             id: "name_az",
             shortLabel: "A–Z",
-            title: "Alphabetical (A–Z)"
+            shortLabelKey: "filemgr.sort.name_az",
+            title: "Alphabetical (A–Z)",
+            titleKey: "filemgr.sort.name_az_title"
         },
         {
             id: "type_az",
             shortLabel: "Type",
-            title: "File type, then name"
+            shortLabelKey: "filemgr.sort.type_az",
+            title: "File type, then name",
+            titleKey: "filemgr.sort.type_az_title"
         },
         {
             id: "favorites_first",
             shortLabel: "★ First",
-            title: "Favorites first"
+            shortLabelKey: "filemgr.sort.favorites_first",
+            title: "Favorites first",
+            titleKey: "filemgr.sort.favorites_first_title"
         }
     ];
 
@@ -57,6 +74,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     function getMode() {
         return MODES.find((m) => m.id === currentModeId) || MODES[0];
+    }
+
+    function modeShortLabel(mode = null) {
+        const m = mode || getMode();
+        return tr(m.shortLabelKey || "", null, m.shortLabel || m.id || "");
+    }
+
+    function modeTitle(mode = null) {
+        const m = mode || getMode();
+        return tr(m.titleKey || "", null, m.title || m.id || "");
     }
 
     function loadMode() {
@@ -169,15 +196,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     function applyButtonUi(btn, txtEl, iconEl) {
         const mode = getMode();
         const idx = MODES.findIndex((m) => m.id === mode.id);
+        const title = modeTitle(mode);
+        const buttonTitle = tr("filemgr.sort.button_title", { sort: title }, `Sort: ${title}. Click to change.`);
 
         if (btn) {
-            btn.title = `Sort: ${mode.title}. Click to change.`;
-            btn.setAttribute("aria-label", `Sort: ${mode.title}. Click to change.`);
+            btn.title = buttonTitle;
+            btn.setAttribute("aria-label", buttonTitle);
             btn.dataset.sortMode = mode.id;
         }
 
         if (txtEl) {
-            txtEl.textContent = mode.shortLabel;
+            txtEl.textContent = modeShortLabel(mode);
         }
 
         if (iconEl) {
@@ -191,6 +220,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         loadMode,
         saveMode,
         getMode,
+        modeShortLabel,
+        modeTitle,
         setMode,
         cycleMode,
         sortItems,
