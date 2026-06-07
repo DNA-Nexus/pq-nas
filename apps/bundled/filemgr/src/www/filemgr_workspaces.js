@@ -706,6 +706,37 @@
         }
     }
 
+    function refreshWorkspaceTranslations() {
+        try {
+            if (scopeBar && window.PQNAS_I18N && typeof window.PQNAS_I18N.apply === "function") {
+                window.PQNAS_I18N.apply(scopeBar);
+            }
+        } catch (_) {}
+
+        if (scopeSelect) {
+            for (const opt of Array.from(scopeSelect.options || [])) {
+                if (opt.value === "user") {
+                    const label = tr("filemgr.ws.my_files", null, "My files");
+                    opt.textContent = label;
+                    opt.dataset.name = label;
+                    continue;
+                }
+
+                if (String(opt.value || "").startsWith("workspace:")) {
+                    const kind = String(opt.dataset.kind || "admin");
+                    const displayKind = String(opt.dataset.displayKind || "");
+                    const isSharedSpace = kind === "personal" || displayKind === "shared_space";
+                    const name = String(opt.dataset.name || "").trim() || String(opt.textContent || "").replace(/^.*?·\s*/, "");
+                    opt.textContent = isSharedSpace
+                        ? `${tr("filemgr.ws.shared_space", null, "Shared Space")} · ${name}`
+                        : `${tr("filemgr.ws.workspace", null, "Workspace")} · ${name}`;
+                }
+            }
+        }
+
+        applyScopeUi();
+    }
+
     async function refreshWorkspaceChoices() {
         try {
             const workspaces = await fetchWorkspaces();
@@ -2239,8 +2270,8 @@
             });
         } catch (e) {
             if (workspaceMembersStatus) {
-                workspaceMembersStatus.textContent =
-                    `Leave failed: ${String(e && e.message ? e.message : e)}`;
+                const msg = String(e && e.message ? e.message : e);
+                workspaceMembersStatus.textContent = tr("filemgr.ws.leave_failed", { error: msg }, `Leave failed: ${msg}`);
             }
         } finally {
             workspaceLeaveBtn.disabled = false;
@@ -2354,6 +2385,18 @@
             return out;
         }
     };
+
+    window.addEventListener("pqnas-language-changed", () => {
+        refreshWorkspaceTranslations();
+    });
+
+    try {
+        if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
+            window.PQNAS_I18N.ready()
+                .then(() => refreshWorkspaceTranslations())
+                .catch(() => {});
+        }
+    } catch (_) {}
 
     initWorkspaces();
 })();

@@ -1251,18 +1251,21 @@
     html[data-theme="bright"] .scopeSelect{
       color: var(--fg);
     }
-    body.scope-workspace #scopeBar::before{
-      content:"WORKSPACE";
-      display:inline-flex;
+    .scopeModeBadge{
+      display:none;
       align-items:center;
       padding:4px 10px;
       border-radius:999px;
       font-size:11px;
       font-weight:950;
       letter-spacing:0.04em;
+      text-transform:uppercase;
       border:1px solid var(--fm-scope-chip-border);
       background: var(--fm-scope-chip-bg);
       color: var(--fm-scope-chip-text);
+    }
+    body.scope-workspace .scopeModeBadge{
+      display:inline-flex;
     }
     .hidden{ display:none !important; }
 
@@ -1696,6 +1699,7 @@
         <div class="title" id="titleLine" data-tour="filemgr-screen" data-i18n="filemgr.title">File Manager</div>
 
         <div id="scopeBar" data-tour="filemgr-location" class="scopeBar hidden" aria-live="polite">
+          <span id="scopeModeBadge" class="scopeModeBadge" data-i18n="filemgr.ws.scope_badge">Workspace</span>
           <label for="scopeSelect" class="scopeLbl" data-i18n="filemgr.location">Location</label>
 
           <select id="scopeSelect" class="scopeSelect">
@@ -1706,7 +1710,7 @@
 
           <div id="workspaceActions" class="scopeActions">
             <button id="workspaceCreateSharedBtn" class="btn secondary" type="button" title="Create a Shared Space" data-i18n="filemgr.new_shared_space" data-i18n-title="filemgr.ws.create_shared_space_title">New Shared Space</button>
-            <button id="workspaceMembersBtn" class="btn secondary hidden" type="button" title="List workspace members">
+            <button id="workspaceMembersBtn" class="btn secondary hidden" type="button" title="List workspace members" data-i18n-title="filemgr.ws.list_workspace_members_title">
               <span class="btnTxt" data-i18n="filemgr.members">Members</span>
             </button>
           </div>

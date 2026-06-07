@@ -35,7 +35,13 @@
 
 #include "routes_v5.h"
 #include "users_registry.h"
+#include "password_credentials.h"
 #include <openssl/sha.h>
+#include <cstdlib>
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
+#include <sodium.h>
 
 #include <algorithm>
 #include <chrono>
@@ -556,13 +562,461 @@ static void reply_pending_or_promoted_status(const RoutesV5Context& ctx,
     }.dump());
 }
 
+
+static std::string routes_v5_trim_ascii_copy(const std::string& s) {
+    std::size_t a = 0;
+    while (a < s.size()) {
+        const unsigned char c = static_cast<unsigned char>(s[a]);
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
+        ++a;
+    }
+
+    std::size_t b = s.size();
+    while (b > a) {
+        const unsigned char c = static_cast<unsigned char>(s[b - 1]);
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
+        --b;
+    }
+
+    return s.substr(a, b - a);
+}
+
+static std::string routes_v5_lower_ascii_copy(std::string s) {
+    for (char& ch : s) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return s;
+}
+
+static std::string routes_v5_auth_mode() {
+    // Login UI/auth selection is separate from the older PQNAS_AUTH_MODE=v5
+    // server auth-stack selector. Keep PQNAS_AUTH_MODE=v5 intact and use
+    // PQNAS_LOGIN_MODE=password for the new password-only login mode.
+    const char* login_raw = std::getenv("PQNAS_LOGIN_MODE");
+    std::string login_mode = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(login_raw ? login_raw : ""));
+
+    if (login_mode == "password") return "password";
+    if (login_mode == "qr") return "qr";
+
+    // Backward-compatible emergency override only. Existing deployments often
+    // have PQNAS_AUTH_MODE=v5, which must continue to mean QR/v5 auth stack.
+    const char* raw = std::getenv("PQNAS_AUTH_MODE");
+    std::string mode = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(raw ? raw : ""));
+
+    if (mode == "password") return "password";
+    return "qr";
+}
+
+static bool routes_v5_qr_auth_enabled() {
+    return routes_v5_auth_mode() == "qr";
+}
+
+static bool routes_v5_password_auth_enabled() {
+    return routes_v5_auth_mode() == "password";
+}
+
+static bool routes_v5_has_control_chars(const std::string& s) {
+    for (unsigned char c : s) {
+        if (c < 0x20 || c == 0x7f) return true;
+    }
+    return false;
+}
+
+static std::string routes_v5_password_credentials_path(const RoutesV5Context& ctx) {
+    const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
+    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    if (ctx.users_path && !ctx.users_path->empty()) {
+        std::filesystem::path p(*ctx.users_path);
+        return (p.parent_path() / "password_credentials.json").string();
+    }
+
+    return "/var/lib/pqnas/password_credentials.json";
+}
+
+static std::string routes_v5_b64std_from_string(const std::string& s) {
+    if (sodium_init() < 0) return {};
+
+    const std::size_t out_len =
+        sodium_base64_ENCODED_LEN(s.size(), sodium_base64_VARIANT_ORIGINAL);
+
+    std::string out(out_len, '\0');
+
+    char* encoded = sodium_bin2base64(out.data(),
+                                      out.size(),
+                                      reinterpret_cast<const unsigned char*>(s.data()),
+                                      s.size(),
+                                      sodium_base64_VARIANT_ORIGINAL);
+    if (!encoded) return {};
+
+    while (!out.empty() && out.back() == '\0') {
+        out.pop_back();
+    }
+
+    return out;
+}
+
+static std::string routes_v5_random_fingerprint_hex() {
+    if (sodium_init() < 0) return {};
+
+    unsigned char bytes[32];
+    randombytes_buf(bytes, sizeof(bytes));
+
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    out.resize(sizeof(bytes) * 2);
+
+    for (std::size_t i = 0; i < sizeof(bytes); ++i) {
+        out[i * 2]     = hex[(bytes[i] >> 4) & 0x0f];
+        out[i * 2 + 1] = hex[bytes[i] & 0x0f];
+    }
+
+    return out;
+}
+
+static std::string routes_v5_bootstrap_token_from_req(const httplib::Request& req,
+                                                      const nlohmann::json& j) {
+    auto it = req.headers.find("X-PQNAS-Bootstrap-Token");
+    if (it != req.headers.end()) {
+        const std::string v = routes_v5_trim_ascii_copy(it->second);
+        if (!v.empty()) return v;
+    }
+
+    if (j.is_object() && j.contains("bootstrap_token") && j["bootstrap_token"].is_string()) {
+        return routes_v5_trim_ascii_copy(j["bootstrap_token"].get<std::string>());
+    }
+
+    return {};
+}
+
+static void routes_v5_audit_password(const RoutesV5Context& ctx,
+                                     const httplib::Request& req,
+                                     const std::string& event,
+                                     const std::string& outcome,
+                                     const std::string& login,
+                                     const std::string& fingerprint,
+                                     const std::string& reason) {
+    if (!ctx.audit_emit) return;
+
+    ctx.audit_emit(event, outcome, [&](std::map<std::string,std::string>& f) {
+        const std::string ip = ctx.client_ip ? ctx.client_ip(req) : req.remote_addr;
+        if (!ip.empty()) f["ip"] = ip;
+        if (!login.empty()) f["login"] = login;
+        if (!fingerprint.empty()) f["fingerprint"] = fingerprint;
+        if (!reason.empty()) f["reason"] = reason;
+    });
+}
+
 void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
+
+    // ---- GET /api/auth/config ----
+    srv.Get("/api/auth/config", [&](const httplib::Request&, httplib::Response& res) {
+        const std::string mode = routes_v5_auth_mode();
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"mode", mode},
+            {"qr_enabled", mode == "qr"},
+            {"password_enabled", mode == "password"}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/password/bootstrap-admin ----
+    //
+    // One-time installer helper. Only works when:
+    // - PQNAS_AUTH_MODE=password
+    // - PQNAS_PASSWORD_BOOTSTRAP_TOKEN is set
+    // - request provides matching X-PQNAS-Bootstrap-Token or bootstrap_token
+    // - there is no enabled admin in UsersRegistry yet
+    srv.Post("/api/auth/password/bootstrap-admin", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        const char* token_env = std::getenv("PQNAS_PASSWORD_BOOTSTRAP_TOKEN");
+        const std::string expected_token = routes_v5_trim_ascii_copy(token_env ? token_env : "");
+        if (expected_token.empty()) {
+            reply_json(res, 403, json{{"ok", false}, {"error", "bootstrap_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string got_token = routes_v5_bootstrap_token_from_req(req, j);
+        if (got_token.empty() || got_token != expected_token) {
+            reply_json(res, 403, json{{"ok", false}, {"error", "bootstrap_denied"}}.dump());
+            return;
+        }
+
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        pqnas::UserRec existing_admin;
+        bool have_existing_admin = false;
+        int enabled_admin_count = 0;
+
+        const std::string requested_fingerprint =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "fingerprint"));
+
+        {
+            const auto snap = ctx.users->snapshot();
+            for (const auto& kv : snap) {
+                const pqnas::UserRec& candidate = kv.second;
+                if (candidate.status == "enabled" && candidate.role == "admin") {
+                    ++enabled_admin_count;
+
+                    if (!requested_fingerprint.empty()) {
+                        if (candidate.fingerprint == requested_fingerprint) {
+                            existing_admin = candidate;
+                            have_existing_admin = true;
+                        }
+                    } else if (enabled_admin_count == 1) {
+                        existing_admin = candidate;
+                        have_existing_admin = true;
+                    }
+                }
+            }
+        }
+
+        if (enabled_admin_count > 1 && requested_fingerprint.empty()) {
+            reply_json(res, 409, json{
+                {"ok", false},
+                {"error", "multiple_admins_require_fingerprint"}
+            }.dump());
+            return;
+        }
+
+        if (!requested_fingerprint.empty() && !have_existing_admin) {
+            reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "admin_fingerprint_not_found"}
+            }.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string password = v5_json_string_or_empty(j, "password");
+        const std::string name = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "name"));
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        if (password.size() < 12 || password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        if (creds.get(login).has_value()) {
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_already_exists"}}.dump());
+            return;
+        }
+
+        const std::string fp_hex = have_existing_admin
+            ? existing_admin.fingerprint
+            : routes_v5_random_fingerprint_hex();
+
+        if (fp_hex.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "fingerprint_rng_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::UserRec u;
+        if (!have_existing_admin) {
+            u.fingerprint = fp_hex;
+            u.name = name.empty() ? login : name;
+            u.role = "admin";
+            u.status = "enabled";
+            u.added_at = now_iso;
+            u.last_seen = "";
+            u.notes = "Created by password bootstrap";
+            u.group = "";
+            u.email = login;
+            u.address = "";
+            u.avatar_url = "";
+            u.storage_state = "unallocated";
+            u.quota_bytes = 0;
+            u.root_rel = "";
+            u.storage_pool_id = "";
+            u.storage_set_at = "";
+            u.storage_set_by = "";
+        }
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentialRec rec;
+        rec.login = login;
+        rec.fingerprint = fp_hex;
+        rec.password_hash = hash;
+        rec.enabled = true;
+        rec.created_at = now_iso;
+        rec.updated_at = now_iso;
+
+        if (!have_existing_admin) {
+            if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
+                return;
+            }
+        }
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "ok", login, fp_hex, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"fingerprint", fp_hex},
+            {"login", login},
+            {"attached_to_existing_admin", have_existing_admin}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/password/login ----
+    srv.Post("/api/auth/password/login", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string password = v5_json_string_or_empty(j, "password");
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login) ||
+            password.empty() || password.size() > 1024) {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, "", "invalid_input");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.login.") + login,
+                ip_for_rate_limit,
+                10,
+                std::chrono::seconds(60))) {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, "", "rate_limited");
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_login_attempts"}}.dump());
+            return;
+        }
+
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty() ||
+            !ctx.cookie_key || !ctx.session_cookie_mint) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_login_not_configured"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentialRec rec;
+        if (!creds.verify_password(login, password, &rec)) {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, "", "bad_credentials");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const auto user_opt = ctx.users->get(rec.fingerprint);
+        if (!user_opt.has_value() || user_opt->status != "enabled") {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, rec.fingerprint, "user_disabled_or_missing");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
+        const long sess_exp = now + (ctx.sess_ttl ? *ctx.sess_ttl : 3600);
+
+        const std::string fp_b64 = routes_v5_b64std_from_string(rec.fingerprint);
+        if (fp_b64.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "fingerprint_b64_failed"}}.dump());
+            return;
+        }
+
+        std::string cookie_val;
+        if (!ctx.session_cookie_mint(ctx.cookie_key, fp_b64, now, sess_exp, cookie_val) ||
+            cookie_val.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "cookie_mint_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+        if (!now_iso.empty()) {
+            ctx.users->touch_last_seen(rec.fingerprint, now_iso);
+            ctx.users->save(*ctx.users_path);
+        }
+
+        const std::string set_cookie =
+            std::string("pqnas_session=") + cookie_val +
+            "; Path=/" +
+            "; HttpOnly" +
+            "; SameSite=Strict" +
+            "; Secure";
+
+        res.set_header("Set-Cookie", set_cookie);
+
+        routes_v5_audit_password(ctx, req, "password.login", "ok", login, rec.fingerprint, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"fingerprint", rec.fingerprint},
+            {"role", user_opt->role},
+            {"expires_at", sess_exp}
+        }.dump());
+    });
+
 
     // ---- POST/GET /api/v5/session ----
 	// Route group: /api/v5/session
 	// Issues a signed request token (st) and correlation key (k). Inserts PendingEntry.
 
     auto session_handler = [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_qr_auth_enabled()) {
+            reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "qr_auth_disabled"},
+                {"mode", routes_v5_auth_mode()}
+            }.dump());
+            return;
+        }
+
         const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
         if (!routes_v5_simple_ip_rate_limit_allow(
                 "v5.session",
