@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">Drop Zone</title>
+  <desc id="desc">Branded customer upload portals.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#0b3558"/><stop offset="1" stop-color="#1aa0c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" rx="42" fill="#fff"/>
+  <rect x="40" y="40" width="820" height="540" rx="34" fill="#f1f7fb" stroke="#dbe5ee"/>
+  <circle cx="760" cy="120" r="78" fill="#2bbf8a" opacity=".10"/>
+  <circle cx="150" cy="505" r="95" fill="#1aa0c8" opacity=".10"/>
+  <path d="M450 120c88 105 150 190 150 278 0 83-67 150-150 150s-150-67-150-150c0-88 62-173 150-278z" fill="url(#g)"/><path d="M380 400h140M450 330v140M405 375l45-45 45 45" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="450" y="535" fill="#0b3558" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">Drop Zone</text>
+  <text x="450" y="570" fill="#64748b" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">Branded customer upload portals.</text>
+</svg>

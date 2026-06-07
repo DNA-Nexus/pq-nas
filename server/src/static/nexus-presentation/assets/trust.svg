@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">Clear control</title>
+  <desc id="desc">Manage sharing, access and activity.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#0b3558"/><stop offset="1" stop-color="#1aa0c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" rx="42" fill="#fff"/>
+  <rect x="40" y="40" width="820" height="540" rx="34" fill="#f1f7fb" stroke="#dbe5ee"/>
+  <circle cx="760" cy="120" r="78" fill="#2bbf8a" opacity=".10"/>
+  <circle cx="150" cy="505" r="95" fill="#1aa0c8" opacity=".10"/>
+  <path d="M450 110l190 70v128c0 122-77 189-190 229-113-40-190-107-190-229V180z" fill="url(#g)"/><path d="M365 304l55 55 116-126" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="450" y="535" fill="#0b3558" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">Clear control</text>
+  <text x="450" y="570" fill="#64748b" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">Manage sharing, access and activity.</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">DNA-Nexus Cloud</title>
+  <desc id="desc">More utility than ordinary storage.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#0b3558"/><stop offset="1" stop-color="#1aa0c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" rx="42" fill="#fff"/>
+  <rect x="40" y="40" width="820" height="540" rx="34" fill="#f1f7fb" stroke="#dbe5ee"/>
+  <circle cx="760" cy="120" r="78" fill="#2bbf8a" opacity=".10"/>
+  <circle cx="150" cy="505" r="95" fill="#1aa0c8" opacity=".10"/>
+  <path d="M322 360h252c56 0 102-39 102-91 0-48-38-86-89-90-24-61-83-101-153-101-82 0-151 55-165 129-55 8-97 50-97 103 0 28 12 53 32 71 29 26 70 29 118 29z" fill="url(#g)"/>
+  <text x="450" y="535" fill="#0b3558" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">DNA-Nexus Cloud</text>
+  <text x="450" y="570" fill="#64748b" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">More utility than ordinary storage.</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">Administration</title>
+  <desc id="desc">Users, apps, updates and system health.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#0b3558"/><stop offset="1" stop-color="#1aa0c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" rx="42" fill="#fff"/>
+  <rect x="40" y="40" width="820" height="540" rx="34" fill="#f1f7fb" stroke="#dbe5ee"/>
+  <circle cx="760" cy="120" r="78" fill="#2bbf8a" opacity=".10"/>
+  <circle cx="150" cy="505" r="95" fill="#1aa0c8" opacity=".10"/>
+  <g fill="url(#g)"><rect x="225" y="170" width="450" height="90" rx="24"/><rect x="225" y="285" width="450" height="90" rx="24"/><rect x="225" y="400" width="450" height="90" rx="24"/></g><g fill="#fff"><circle cx="285" cy="215" r="16"/><circle cx="285" cy="330" r="16"/><circle cx="285" cy="445" r="16"/></g>
+  <text x="450" y="535" fill="#0b3558" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">Administration</text>
+  <text x="450" y="570" fill="#64748b" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">Users, apps, updates and system health.</text>
+</svg>

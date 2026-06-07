@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">File Manager</title>
+  <desc id="desc">Versioning, trash, sharing and workspaces.</desc>
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#0b3558"/><stop offset="1" stop-color="#1aa0c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" rx="42" fill="#fff"/>
+  <rect x="40" y="40" width="820" height="540" rx="34" fill="#f1f7fb" stroke="#dbe5ee"/>
+  <circle cx="760" cy="120" r="78" fill="#2bbf8a" opacity=".10"/>
+  <circle cx="150" cy="505" r="95" fill="#1aa0c8" opacity=".10"/>
+  <g fill="url(#g)"><path d="M250 180h170l45 55h185v230H250z"/><rect x="295" y="270" width="310" height="28" rx="14" fill="#fff" opacity=".85"/><rect x="295" y="325" width="240" height="28" rx="14" fill="#fff" opacity=".75"/><rect x="295" y="380" width="285" height="28" rx="14" fill="#fff" opacity=".65"/></g>
+  <text x="450" y="535" fill="#0b3558" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">File Manager</text>
+  <text x="450" y="570" fill="#64748b" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">Versioning, trash, sharing and workspaces.</text>
+</svg>

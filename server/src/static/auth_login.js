@@ -114,6 +114,13 @@
                 Use your DNA-Nexus username or email address.
             </div>
 
+            <div class="presentationLinkWrap">
+                <a class="presentationLink"
+                   href="/static/nexus-presentation/index.html"
+                   target="_blank"
+                   rel="noopener">What is DNA-Nexus?</a>
+            </div>
+
             <form id="passwordLoginForm" class="passwordForm" autocomplete="on">
                 <label>
                     Email / username

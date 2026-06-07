@@ -1,44 +1,48 @@
-(function(){
-  const body=document.body;
-  const toggle=document.querySelector("[data-nav-toggle]");
-  const links=document.querySelectorAll(".nav-links a");
-  if(toggle){
-    toggle.addEventListener("click",()=>{
-      const open=body.classList.toggle("menu-open");
-      toggle.setAttribute("aria-expanded",open?"true":"false");
+(function () {
+  const body = document.body;
+  const toggle = document.querySelector("[data-nav-toggle]");
+  const links = document.querySelectorAll(".nav-links a");
+
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const open = body.classList.toggle("menu-open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
-  links.forEach(link=>link.addEventListener("click",()=>{
-    body.classList.remove("menu-open");
-    if(toggle)toggle.setAttribute("aria-expanded","false");
-  }));
-  const current=(location.pathname.split("/").pop()||"index.html").toLowerCase();
-  links.forEach(link=>{
-    const href=(link.getAttribute("href")||"").toLowerCase();
-    if(href===current || (current===""&&href==="index.html")) link.classList.add("active");
+
+  links.forEach((link) => {
+    link.addEventListener("click", () => {
+      body.classList.remove("menu-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
   });
 
-  const languageMeta={
-    en:{badge:"GB",name:"English"},fi:{badge:"FI",name:"Suomi"},zh:{badge:"CN",name:"简体中文"},
-    sv:{badge:"SE",name:"Svenska"},uk:{badge:"UA",name:"Українська"},de:{badge:"DE",name:"Deutsch"},
-    et:{badge:"EE",name:"Eesti"},pl:{badge:"PL",name:"Polski"},es:{badge:"ES",name:"Español"},
-    fr:{badge:"FR",name:"Français"},it:{badge:"IT",name:"Italiano"},tr:{badge:"TR",name:"Türkçe"}
+  const current = (location.pathname.split("/").pop() || "index.html").toLowerCase();
+  links.forEach((link) => {
+    const href = (link.getAttribute("href") || "").toLowerCase();
+    if (href === current || (current === "" && href === "index.html")) link.classList.add("active");
+  });
+
+  const meta = {
+    en: ["GB", "English"], fi: ["FI", "Suomi"], zh: ["CN", "简体中文"], sv: ["SE", "Svenska"],
+    uk: ["UA", "Українська"], de: ["DE", "Deutsch"], et: ["EE", "Eesti"], pl: ["PL", "Polski"],
+    es: ["ES", "Español"], fr: ["FR", "Français"], it: ["IT", "Italiano"], tr: ["TR", "Türkçe"]
   };
-  const select=document.querySelector("[data-language-select]");
-  const badge=document.querySelector("[data-language-badge]");
-  if(select&&badge){
-    const saved=localStorage.getItem("dnaNexusPresentationLang");
-    if(saved&&languageMeta[saved]) select.value=saved;
-    const update=()=>{
-      const meta=languageMeta[select.value]||languageMeta.en;
-      badge.textContent=meta.badge;
-      select.setAttribute("aria-label","Language: "+meta.name);
+
+  const select = document.querySelector("[data-language-select]");
+  const badge = document.querySelector("[data-language-badge]");
+  if (select && badge) {
+    const saved = localStorage.getItem("dnaNexusPresentationLang");
+    if (saved && meta[saved]) select.value = saved;
+    const update = () => {
+      const m = meta[select.value] || meta.en;
+      badge.textContent = m[0];
+      select.setAttribute("aria-label", "Language: " + m[1]);
     };
     update();
-    select.addEventListener("change",()=>{
-      localStorage.setItem("dnaNexusPresentationLang",select.value);
+    select.addEventListener("change", () => {
+      localStorage.setItem("dnaNexusPresentationLang", select.value);
       update();
-      // Placeholder only. Later this can redirect to translated pages or load translated strings.
     });
   }
 })();
