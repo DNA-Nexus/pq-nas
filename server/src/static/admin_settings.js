@@ -647,7 +647,7 @@
             if (adminPasswordUserCreatePill) {
                 adminPasswordUserCreatePill.className = "pill " + (enabled ? "ok" : "warn");
                 adminPasswordUserCreatePill.innerHTML =
-                    `<span class="k">Password auth:</span> <span class="v">${escapeHtml(enabled ? "enabled" : "disabled")}</span>`;
+                    `<span class="k">${escapeHtml(tAdminPassword("admin.password.auth_label", "Password auth:"))}</span> <span class="v">${escapeHtml(enabled ? tAdminPassword("admin.password.enabled", "enabled") : tAdminPassword("admin.password.disabled", "disabled"))}</span>`;
             }
         } catch (e) {
             adminPasswordUserCreateCard.classList.add("hidden");
@@ -655,7 +655,7 @@
             if (adminPasswordUserCreatePill) {
                 adminPasswordUserCreatePill.className = "pill fail";
                 adminPasswordUserCreatePill.innerHTML =
-                    `<span class="k">Password auth:</span> <span class="v">${escapeHtml(String(e && e.message ? e.message : e))}</span>`;
+                    `<span class="k">${escapeHtml(tAdminPassword("admin.password.auth_label", "Password auth:"))}</span> <span class="v">${escapeHtml(String(e && e.message ? e.message : e))}</span>`;
             }
         }
     }
@@ -678,10 +678,10 @@
         const status = String(adminCreatePasswordUserStatus?.value || "disabled").trim() || "disabled";
         const quotaRaw = String(adminCreatePasswordUserQuota?.value || "").trim();
 
-        if (!login) throw new Error("Login/email is required.");
-        if (password.length < 12) throw new Error("Initial password must be at least 12 characters.");
-        if (role !== "user" && role !== "admin") throw new Error("Invalid role.");
-        if (status !== "enabled" && status !== "disabled" && status !== "pending") throw new Error("Invalid status.");
+        if (!login) throw new Error(tAdminPassword("admin.password_user_create.login_required", "Login/email is required."));
+        if (password.length < 12) throw new Error(tAdminPassword("admin.password_user_create.initial_password_too_short", "Initial password must be at least 12 characters."));
+        if (role !== "user" && role !== "admin") throw new Error(tAdminPassword("admin.password_user_create.invalid_role", "Invalid role."));
+        if (status !== "enabled" && status !== "disabled" && status !== "pending") throw new Error(tAdminPassword("admin.password_user_create.invalid_status", "Invalid status."));
 
         const body = {
             name,
@@ -694,7 +694,7 @@
         if (quotaRaw !== "") {
             const quota = Number(quotaRaw);
             if (!Number.isSafeInteger(quota) || quota < 0) {
-                throw new Error("Quota bytes must be a non-negative whole number.");
+                throw new Error(tAdminPassword("admin.password_user_create.invalid_quota_bytes", "Quota bytes must be a non-negative whole number."));
             }
             body.quota_bytes = quota;
         }
@@ -717,6 +717,14 @@
         return j;
     }
 
+    function passwordUserCreateStatusText(status) {
+        const s = String(status || "");
+        if (s === "enabled") return tAdminPassword("admin.password_user_create.status_result_enabled", "enabled");
+        if (s === "disabled") return tAdminPassword("admin.password_user_create.status_result_disabled", "disabled");
+        if (s === "pending") return tAdminPassword("admin.password_user_create.status_result_pending", "pending");
+        return s;
+    }
+
     function showPasswordUserCreateResult(j) {
         if (!adminCreatePasswordUserResult) return;
 
@@ -737,7 +745,7 @@
         }
 
         if (adminCreatePasswordUserResultStatus) {
-            adminCreatePasswordUserResultStatus.textContent = j.status || "";
+            adminCreatePasswordUserResultStatus.textContent = passwordUserCreateStatusText(j.status);
         }
 
         if (adminCreatePasswordUserResultQuota) {
@@ -2923,55 +2931,55 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const card = document.getElementById("adminPasswordUserCreateCard");
         if (!card) return;
 
-        setText(card.querySelector(".hd .h"), "admin.create_password_user.card_title", "Security • Create password user");
+        setText(card.querySelector(".hd .h"), "admin.password_user_create.card_title", "Security • Create password user");
 
         const bd = card.querySelector(".bd");
         if (!bd) return;
 
         const rowTitle = bd.querySelector(".row div");
-        setText(rowTitle, "admin.create_password_user.heading", "Create password-auth user with DNA recovery phrase");
+        setText(rowTitle, "admin.password_user_create.heading", "Create password-auth user with DNA recovery phrase");
 
         const notes = bd.querySelectorAll(".note");
-        setText(notes[0], "admin.create_password_user.desc", "Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.");
-        setText(notes[1], "admin.create_password_user.default_status_note", "Default status is disabled, so the user cannot sign in until approved/enabled.");
+        setText(notes[0], "admin.password_user_create.desc", "Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.");
+        setText(notes[1], "admin.password_user_create.default_status_note", "Default status is disabled, so the user cannot sign in until approved/enabled.");
 
         const labels = bd.querySelectorAll(".passwordUserCreateField .label");
-        setText(labels[0], "admin.create_password_user.name", "Name");
-        setText(labels[1], "admin.create_password_user.login", "Login / email");
-        setText(labels[2], "admin.create_password_user.initial_password", "Initial password");
-        setText(labels[3], "admin.create_password_user.role", "Role");
-        setText(labels[4], "admin.create_password_user.status", "Status");
-        setText(labels[5], "admin.create_password_user.quota_bytes", "Quota bytes");
+        setText(labels[0], "admin.password_user_create.name", "Name");
+        setText(labels[1], "admin.password_user_create.login", "Login / email");
+        setText(labels[2], "admin.password_user_create.initial_password", "Initial password");
+        setText(labels[3], "admin.password_user_create.role", "Role");
+        setText(labels[4], "admin.password_user_create.status", "Status");
+        setText(labels[5], "admin.password_user_create.quota_bytes", "Quota bytes");
 
         const status = document.getElementById("adminCreatePasswordUserStatus");
         if (status && status.options.length >= 3) {
-            status.options[0].textContent = t("admin.create_password_user.status_disabled", "disabled — needs approval");
-            status.options[1].textContent = t("admin.create_password_user.status_enabled", "enabled — can sign in immediately");
-            status.options[2].textContent = t("admin.create_password_user.status_pending", "pending");
+            status.options[0].textContent = t("admin.password_user_create.status_disabled", "disabled — needs approval");
+            status.options[1].textContent = t("admin.password_user_create.status_enabled", "enabled — can sign in immediately");
+            status.options[2].textContent = t("admin.password_user_create.status_pending", "pending");
         }
 
         const btn = document.getElementById("btnAdminCreatePasswordUser");
         if (btn && btn.textContent !== "Creating…") {
-            setText(btn, "admin.create_password_user.create", "Create password user");
+            setText(btn, "admin.password_user_create.create_button", "Create password user");
         }
 
         const result = document.getElementById("adminCreatePasswordUserResult");
         if (result) {
             const title = result.querySelector("div[style*='font-weight']");
-            setText(title, "admin.create_password_user.recovery_title", "Recovery words — shown once");
+            setText(title, "admin.password_user_create.result_title", "Recovery words — shown once");
 
             const resultNotes = result.querySelectorAll(".note");
-            setText(resultNotes[0], "admin.create_password_user.recovery_desc", "Copy these 24 words now. They are not stored by the server and cannot be shown again.");
+            setText(resultNotes[0], "admin.password_user_create.result_note", "Copy these 24 words now. They are not stored by the server and cannot be shown again.");
 
             const infoDivs = resultNotes[1]?.querySelectorAll("div") || [];
-            if (infoDivs[0]?.firstElementChild) setText(infoDivs[0].firstElementChild, "admin.create_password_user.result_login", "Login:");
-            if (infoDivs[1]?.firstElementChild) setText(infoDivs[1].firstElementChild, "admin.create_password_user.result_fingerprint", "Fingerprint:");
-            if (infoDivs[2]?.firstElementChild) setText(infoDivs[2].firstElementChild, "admin.create_password_user.result_status", "Status:");
-            if (infoDivs[3]?.firstElementChild) setText(infoDivs[3].firstElementChild, "admin.create_password_user.result_quota", "Quota bytes:");
+            if (infoDivs[0]?.firstElementChild) setText(infoDivs[0].firstElementChild, "admin.password_user_create.result_login", "Login:");
+            if (infoDivs[1]?.firstElementChild) setText(infoDivs[1].firstElementChild, "admin.password_user_create.result_fingerprint", "Fingerprint:");
+            if (infoDivs[2]?.firstElementChild) setText(infoDivs[2].firstElementChild, "admin.password_user_create.result_status", "Status:");
+            if (infoDivs[3]?.firstElementChild) setText(infoDivs[3].firstElementChild, "admin.password_user_create.result_quota_bytes", "Quota bytes:");
 
             const copied = document.getElementById("adminCreatePasswordUserCopied");
             const copiedText = copied?.parentElement?.querySelector("span");
-            setText(copiedText, "admin.create_password_user.copied", "I have copied the recovery words.");
+            setText(copiedText, "admin.password_user_create.copied_checkbox", "I have copied the recovery words.");
         }
     }
 

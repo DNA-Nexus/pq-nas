@@ -790,34 +790,35 @@
 
             <div class="card accordion hidden" id="adminPasswordUserCreateCard" data-acc="password-user-create">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
-                    <div class="h">Security • Create password user</div>
+                    <div class="h" data-i18n="admin.password_user_create.card_title">Security • Create password user</div>
                     <div class="pill warn" id="adminPasswordUserCreatePill">
-                        <span class="k">Password auth:</span> <span class="v">checking…</span>
+                        <span class="k" data-i18n="admin.password.auth_label">Password auth:</span> <span class="v" data-i18n="admin.password.checking">checking…</span>
                     </div>
                     <span class="chev" aria-hidden="true">▸</span>
                 </div>
 
                 <div class="bd">
                     <div class="row">
-                        <div style="font-weight:950;">Create password-auth user with DNA recovery phrase</div>
+                        <div style="font-weight:950;" data-i18n="admin.password_user_create.heading">Create password-auth user with DNA recovery phrase</div>
                     </div>
 
-                    <div class="note">
+                    <div class="note" data-i18n="admin.password_user_create.desc">
                         Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.
                     </div>
 
                     <div class="passwordUserCreateGrid" style="margin-top:12px;">
                         <label class="passwordUserCreateField">
-                            <span class="label">Name</span>
+                            <span class="label" data-i18n="admin.password_user_create.name">Name</span>
                             <input id="adminCreatePasswordUserName"
                                    class="input"
                                    type="text"
                                    autocomplete="off"
-                                   placeholder="User name" />
+                                   placeholder="User name"
+                                   data-i18n-placeholder="admin.password_user_create.name_placeholder" />
                         </label>
 
                         <label class="passwordUserCreateField">
-                            <span class="label">Login / email</span>
+                            <span class="label" data-i18n="admin.password_user_create.login">Login / email</span>
                             <input id="adminCreatePasswordUserLogin"
                                    class="input"
                                    type="email"
@@ -826,7 +827,7 @@
                         </label>
 
                         <label class="passwordUserCreateField">
-                            <span class="label">Initial password</span>
+                            <span class="label" data-i18n="admin.password_user_create.initial_password">Initial password</span>
                             <input id="adminCreatePasswordUserPassword"
                                    class="input"
                                    type="password"
@@ -835,24 +836,24 @@
                         </label>
 
                         <label class="passwordUserCreateField">
-                            <span class="label">Role</span>
+                            <span class="label" data-i18n="admin.password_user_create.role">Role</span>
                             <select id="adminCreatePasswordUserRole" class="input">
-                                <option value="user" selected>user</option>
-                                <option value="admin">admin</option>
+                                <option value="user" selected data-i18n="admin.password_user_create.role_user">user</option>
+                                <option value="admin" data-i18n="admin.password_user_create.role_admin">admin</option>
                             </select>
                         </label>
 
                         <label class="passwordUserCreateField">
-                            <span class="label">Status</span>
+                            <span class="label" data-i18n="admin.password_user_create.status">Status</span>
                             <select id="adminCreatePasswordUserStatus" class="input">
-                                <option value="disabled" selected>disabled — needs approval</option>
-                                <option value="enabled">enabled — can sign in immediately</option>
-                                <option value="pending">pending</option>
+                                <option value="disabled" selected data-i18n="admin.password_user_create.status_disabled">disabled — needs approval</option>
+                                <option value="enabled" data-i18n="admin.password_user_create.status_enabled">enabled — can sign in immediately</option>
+                                <option value="pending" data-i18n="admin.password_user_create.status_pending">pending</option>
                             </select>
                         </label>
 
                         <label class="passwordUserCreateField">
-                            <span class="label">Quota bytes</span>
+                            <span class="label" data-i18n="admin.password_user_create.quota_bytes">Quota bytes</span>
                             <input id="adminCreatePasswordUserQuota"
                                    class="input"
                                    type="number"
@@ -862,17 +863,17 @@
                         </label>
                     </div>
 
-                    <div class="note">
+                    <div class="note" data-i18n="admin.password_user_create.default_status_note">
                         Default status is disabled, so the user cannot sign in until approved/enabled.
                     </div>
 
                     <div class="passwordSettingsActions" style="margin-top:12px;">
-                        <button id="btnAdminCreatePasswordUser" class="btn primary" type="button">Create password user</button>
+                        <button id="btnAdminCreatePasswordUser" class="btn primary" type="button" data-i18n="admin.password_user_create.create_button">Create password user</button>
                     </div>
 
                     <div class="passwordRecoveryBox" id="adminCreatePasswordUserResult">
-                        <div style="font-weight:950; margin-bottom:8px;">Recovery words — shown once</div>
-                        <div class="note" style="margin-bottom:10px;">
+                        <div style="font-weight:950; margin-bottom:8px;" data-i18n="admin.password_user_create.result_title">Recovery words — shown once</div>
+                        <div class="note" style="margin-bottom:10px;" data-i18n="admin.password_user_create.result_note">
                             Copy these 24 words now. They are not stored by the server and cannot be shown again.
                         </div>
 
@@ -881,15 +882,15 @@
                                   readonly></textarea>
 
                         <div class="note" style="margin-top:10px;">
-                            <div><b>Login:</b> <span id="adminCreatePasswordUserResultLogin"></span></div>
-                            <div><b>Fingerprint:</b> <span id="adminCreatePasswordUserResultFingerprint"></span></div>
-                            <div><b>Status:</b> <span id="adminCreatePasswordUserResultStatus"></span></div>
-                            <div><b>Quota bytes:</b> <span id="adminCreatePasswordUserResultQuota"></span></div>
+                            <div><b data-i18n="admin.password_user_create.result_login">Login:</b> <span id="adminCreatePasswordUserResultLogin"></span></div>
+                            <div><b data-i18n="admin.password_user_create.result_fingerprint">Fingerprint:</b> <span id="adminCreatePasswordUserResultFingerprint"></span></div>
+                            <div><b data-i18n="admin.password_user_create.result_status">Status:</b> <span id="adminCreatePasswordUserResultStatus"></span></div>
+                            <div><b data-i18n="admin.password_user_create.result_quota_bytes">Quota bytes:</b> <span id="adminCreatePasswordUserResultQuota"></span></div>
                         </div>
 
                         <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
                             <input id="adminCreatePasswordUserCopied" type="checkbox" />
-                            <span>I have copied the recovery words.</span>
+                            <span data-i18n="admin.password_user_create.copied_checkbox">I have copied the recovery words.</span>
                         </label>
                     </div>
                 </div>
