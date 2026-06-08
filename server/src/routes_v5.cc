@@ -850,16 +850,30 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        if (!have_existing_admin) {
-            reply_json(res, 501, json{
-                {"ok", false},
-                {"error", "dna_identity_generation_required"},
-                {"message", "Password bootstrap no longer creates random fingerprints. Create the first admin with DNA Connect or the CPUNK/DNA identity generator."}
-            }.dump());
-            return;
-        }
+        bool bootstrap_created_first_admin = false;
+        std::string bootstrap_recovery_words;
 
-        const std::string fp_hex = existing_admin.fingerprint;
+        std::string fp_hex;
+        if (have_existing_admin) {
+            fp_hex = existing_admin.fingerprint;
+        } else {
+            pqnas::GeneratedDnaIdentity ident;
+            std::string gen_error;
+
+            if (!pqnas::generate_dna_identity(ident, gen_error)) {
+                routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", login, "", "identity_generation_failed");
+                reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "identity_generation_failed"},
+                    {"message", gen_error}
+                }.dump());
+                return;
+            }
+
+            fp_hex = ident.fingerprint_hex;
+            bootstrap_recovery_words = ident.recovery_words;
+            bootstrap_created_first_admin = true;
+        }
 
         const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
 
@@ -912,12 +926,21 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "ok", login, fp_hex, "");
 
-        reply_json(res, 200, json{
+        json out = {
             {"ok", true},
-            {"fingerprint", fp_hex},
             {"login", login},
-            {"attached_to_existing_admin", have_existing_admin}
-        }.dump());
+            {"fingerprint", fp_hex},
+            {"attached_to_existing_admin", have_existing_admin},
+            {"created_first_admin", bootstrap_created_first_admin}
+        };
+
+        if (bootstrap_created_first_admin) {
+            out["recovery_words"] = bootstrap_recovery_words;
+            out["recovery_words_shown_once"] = true;
+            out["warning"] = "Recovery words are shown once and are not stored by the server. Remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN after bootstrap.";
+        }
+
+        reply_json(res, 200, out.dump());
     });
 
     // ---- POST /api/auth/password/login ----

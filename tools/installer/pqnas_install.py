@@ -26,8 +26,9 @@ import os
 import re
 import shlex
 import subprocess
+import secrets
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -659,6 +660,10 @@ class InstallState:
     #   password = username/email + password login
     login_mode: str = "qr"
 
+    # Temporary first-admin bootstrap token for password-mode installs.
+    # Written only when login_mode=password. Remove after first admin bootstrap.
+    password_bootstrap_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+
     # Optional nginx reverse proxy (HTTP-only for now)
     nginx_enabled: bool = False
     nginx_hostname: str = ""  # server_name (e.g. nas.example.com or 192.168.1.50)
@@ -1133,6 +1138,7 @@ def write_env_file(
         dna_lib_path: Optional[str] = None,
         auth_mode: Optional[str] = None,
         login_mode: Optional[str] = None,
+        password_bootstrap_token: Optional[str] = None,
         tls_spki_pin_sha256: Optional[str] = None,
 ) -> None:
 
@@ -1189,6 +1195,9 @@ def write_env_file(
         if lm not in ("qr", "password"):
             raise ValueError(f"invalid login_mode: {login_mode}")
         lines += [f"PQNAS_LOGIN_MODE={lm}"]
+
+        if lm == "password" and password_bootstrap_token:
+            lines += [f"PQNAS_PASSWORD_BOOTSTRAP_TOKEN={password_bootstrap_token}"]
 
     # Android app pairing requires this when QR pairing is used.
     # It is not secret; it pins the expected HTTPS certificate public key.
@@ -2867,6 +2876,7 @@ class HealthScreen(Screen):
         nginx_port: int,
         auth_mode: str,
         login_mode: str,
+        password_bootstrap_token: str,
     ) -> None:
         super().__init__()
         self.mp = mp
@@ -2877,6 +2887,7 @@ class HealthScreen(Screen):
         self.nginx_port = nginx_port
         self.auth_mode = auth_mode
         self.login_mode = login_mode
+        self.password_bootstrap_token = password_bootstrap_token
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -2917,6 +2928,20 @@ class HealthScreen(Screen):
             "",
             f"[b]Access URL:[/b] {url}",
         ]
+
+        if self.login_mode == "password":
+            lines += [
+                "",
+                "[b]First password admin bootstrap[/b]",
+                "Create the first admin after install with:",
+                "curl -k -X POST https://<your-host>/api/auth/password/bootstrap-admin \\",
+                "  -H 'Content-Type: application/json' \\",
+                f"  -H 'X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}' \\",
+                "  -d '{\"login\":\"admin@example.com\",\"password\":\"change-this-long-password\",\"name\":\"Admin\"}'",
+                "",
+                "The response shows 24 recovery words once.",
+                "After bootstrap, remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
+            ]
 
 
         if self.nginx_enabled and self.nginx_hostname:
@@ -3012,6 +3037,9 @@ class ExecuteScreen(Screen):
         log_line(self.logw, f"Mode: {mode}")
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
         log_line(self.logw, f"Login mode: {'username/password' if st.login_mode == 'password' else 'QR / DNA Connect'}")
+        if st.login_mode == "password":
+            log_line(self.logw, "First password admin bootstrap token will be written to /etc/pqnas/pqnas.env.")
+            log_line(self.logw, "After the service starts, create the first admin with /api/auth/password/bootstrap-admin.")
         log_line(self.logw, "")
         log_line(
             self.logw,
@@ -3186,6 +3214,7 @@ class ExecuteScreen(Screen):
                 dna_lib_path=dna_path,
                 auth_mode=st.auth_mode,
                 login_mode=st.login_mode,
+                password_bootstrap_token=st.password_bootstrap_token,
                 tls_spki_pin_sha256=tls_spki_pin_sha256,
             )
 
@@ -3390,6 +3419,7 @@ class ExecuteScreen(Screen):
                             dna_lib_path=dna_path,
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
+                            password_bootstrap_token=st.password_bootstrap_token,
                             tls_spki_pin_sha256=tls_spki_pin_sha256,
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -3424,6 +3454,7 @@ class ExecuteScreen(Screen):
                             dna_lib_path=dna_path,
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
+                            password_bootstrap_token=st.password_bootstrap_token,
                             tls_spki_pin_sha256="",
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -3464,6 +3495,7 @@ class ExecuteScreen(Screen):
                     nginx_port=st.nginx_listen_port,
                     auth_mode=st.auth_mode,
                     login_mode=st.login_mode,
+                    password_bootstrap_token=st.password_bootstrap_token,
                 )
             )
             return
