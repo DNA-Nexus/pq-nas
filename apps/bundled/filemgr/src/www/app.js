@@ -5094,6 +5094,26 @@ function describeMoveItems(items) {
       const msg = j && (j.message || j.error || j.detail)
           ? [j.error, j.message, j.detail].filter(Boolean).join(" ")
           : `HTTP ${r.status}`;
+
+      const low = String(msg || "").toLowerCase();
+      const isNotFound =
+          r.status === 404 ||
+          low.includes("not_found") ||
+          low.includes("path not found") ||
+          low.includes("source not found");
+
+      if (isNotFound && !locked) {
+        clearSelection();
+        clearFileListCache();
+        await load(true);
+        status.textContent = tr(
+            "filemgr.delete.not_found_refreshed",
+            null,
+            "Item no longer exists. File list was refreshed."
+        );
+        return;
+      }
+
       status.textContent = locked
           ? msg
           : tr("filemgr.delete.failed", { error: msg }, `Move to trash failed: ${msg}`);

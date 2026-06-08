@@ -1,6 +1,7 @@
 #include "file_location_index.h"
 
 #include <sqlite3.h>
+#include <filesystem>
 #include <map>
 #include <vector>
 
@@ -763,7 +764,7 @@ std::vector<LogicalListItem> FileLocationIndex::list_immediate_children(const st
     }
 
     static const char* kSql =
-        "SELECT logical_rel_path, size_bytes, mtime_epoch "
+        "SELECT logical_rel_path, size_bytes, mtime_epoch, physical_path "
         "FROM file_locations "
         "WHERE fp = ?1 "
         "ORDER BY logical_rel_path ASC";
@@ -793,6 +794,16 @@ std::vector<LogicalListItem> FileLocationIndex::list_immediate_children(const st
         const char* rel_c = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         const std::string rel = rel_c ? rel_c : "";
         if (rel.empty()) continue;
+
+        const char* phys_c = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        const std::string physical_path = phys_c ? phys_c : "";
+        if (!physical_path.empty()) {
+            std::error_code phys_ec;
+            const auto phys_st = std::filesystem::symlink_status(physical_path, phys_ec);
+            if (phys_ec || !std::filesystem::exists(phys_st)) {
+                continue;
+            }
+        }
 
         if (!prefix.empty()) {
             if (rel.rfind(prefix, 0) != 0) continue;

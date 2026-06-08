@@ -111,11 +111,13 @@ directories. That exists so older layouts continue to work while PQ-NAS moves
 toward full metadata-first operation.
 
 Important nuance:
-- legacy fallback is allowed only for directories
-- legacy file fallback is intentionally refused
+- metadata remains preferred when a file location row exists
+- legacy fallback accepts regular files and directories that are physically
+  present under the user's resolved storage root
 
-That prevents raw physical files outside metadata from reappearing as logical
-user files and undermining file_locations as the source of truth.
+This is needed for restored snapshots and older installs whose physical user
+files predate the metadata-first file_locations layer. Path normalization and
+root containment are still enforced by resolve_legacy_user_path().
 
 Global file location index pointer
 ----------------------------------
@@ -427,8 +429,24 @@ bool resolve_existing_user_item(UsersRegistry& users,
         return false;
     }
 
+    if (std::filesystem::is_regular_file(st)) {
+        std::cerr << "[resolver] legacy file fallback"
+                  << " fp=" << fp_hex
+                  << " rel=" << rel_norm
+                  << " abs=" << abs.string()
+                  << "\n";
+
+        out->exists = true;
+        out->is_file = true;
+        out->is_dir = false;
+        out->from_metadata = false;
+        out->abs_path = std::move(abs);
+        out->has_physical_anchor = true;
+        return true;
+    }
+
     if (!std::filesystem::is_directory(st)) {
-        std::cerr << "[resolver] legacy file fallback refused"
+        std::cerr << "[resolver] legacy non-file fallback refused"
                   << " fp=" << fp_hex
                   << " rel=" << rel_norm
                   << " abs=" << abs.string()

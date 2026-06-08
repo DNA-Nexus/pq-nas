@@ -32224,7 +32224,7 @@ srv.Post("/api/v4/files/delete", [&](const httplib::Request& req, httplib::Respo
         );
 
 
-        {
+        if (item.from_metadata) {
             std::string derr;
             if (!idx->erase(fp_hex, rel_norm, &derr)) {
                 audit_fail("metadata_erase_failed", 500, derr);
@@ -32236,6 +32236,8 @@ srv.Post("/api/v4/files/delete", [&](const httplib::Request& req, httplib::Respo
                 }.dump());
                 return;
             }
+        } else {
+            audit_warn("metadata_erase_skipped_legacy_file", "legacy physical file had no metadata row", rel_norm);
         }
 
         {
@@ -32707,7 +32709,7 @@ srv.Post("/api/v4/files/delete", [&](const httplib::Request& req, httplib::Respo
         );
 
 
-        {
+        if (item.from_metadata) {
             std::string derr;
             if (!idx->erase_subtree(fp_hex, rel_norm, &derr)) {
                 audit_fail("metadata_erase_subtree_failed", 500, derr);
@@ -32719,6 +32721,8 @@ srv.Post("/api/v4/files/delete", [&](const httplib::Request& req, httplib::Respo
                 }.dump());
                 return;
             }
+        } else {
+            audit_warn("metadata_erase_skipped_legacy_dir", "legacy physical directory had no metadata subtree", rel_norm);
         }
 
         {
