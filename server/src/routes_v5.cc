@@ -614,6 +614,43 @@ static bool routes_v5_qr_auth_enabled() {
     return routes_v5_auth_mode() == "qr";
 }
 
+
+static std::string routes_v5_normalize_recovery_words(std::string s) {
+    std::string out;
+    out.reserve(s.size());
+
+    bool in_space = true;
+
+    for (unsigned char uch : s) {
+        char ch = static_cast<char>(uch);
+
+        if (std::isspace(uch)) {
+            if (!in_space) {
+                out.push_back(' ');
+                in_space = true;
+            }
+            continue;
+        }
+
+        if (uch < 0x20 || uch == 0x7f) {
+            continue;
+        }
+
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+
+        out.push_back(ch);
+        in_space = false;
+    }
+
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+
+    return out;
+}
+
 static bool routes_v5_password_auth_enabled() {
     return routes_v5_auth_mode() == "password";
 }
@@ -988,6 +1025,126 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     });
 
 
+
+
+    // ---- POST /api/auth/password/recover ----
+    //
+    // Password recovery using CPUNK/DNA 24-word recovery phrase.
+    // This does NOT create users and does NOT enable disabled/pending users.
+    //
+    // Body:
+    //   { "login": "user@example.com", "recovery_words": "24 words ...", "new_password": "..." }
+    srv.Post("/api/auth/password/recover", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string recovery_words =
+            routes_v5_normalize_recovery_words(v5_json_string_or_empty(j, "recovery_words"));
+        const std::string new_password = v5_json_string_or_empty(j, "new_password");
+
+        const auto generic_fail = [&]() {
+            reply_json(res, 401, json{{"ok", false}, {"error", "recovery_failed"}}.dump());
+        };
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login) ||
+            recovery_words.empty() || recovery_words.size() > 512) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "invalid_input");
+            generic_fail();
+            return;
+        }
+
+        if (new_password.size() < 12 || new_password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.recover.") + login,
+                ip_for_rate_limit,
+                6,
+                std::chrono::seconds(300))) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "rate_limited");
+            res.set_header("Retry-After", "300");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_recovery_attempts"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        auto existing = creds.get(login);
+        if (!existing.has_value()) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "login_missing");
+            generic_fail();
+            return;
+        }
+
+        pqnas::GeneratedDnaIdentity ident;
+        std::string gen_error;
+        if (!pqnas::derive_dna_identity_from_recovery_words(recovery_words, ident, gen_error)) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "identity_derivation_failed");
+            generic_fail();
+            return;
+        }
+
+        if (existing->fingerprint != ident.fingerprint_hex) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "fingerprint_mismatch");
+            generic_fail();
+            return;
+        }
+
+        auto user = ctx.users->get(existing->fingerprint);
+        if (!user.has_value()) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, existing->fingerprint, "user_missing");
+            generic_fail();
+            return;
+        }
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(new_password, hash)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentialRec rec = *existing;
+        rec.password_hash = hash;
+        rec.updated_at = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.recover", "ok", login, existing->fingerprint, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"account_status", user->status},
+            {"login_allowed", user->status == "enabled"}
+        }.dump());
+    });
 
     // ---- POST /api/auth/password/set ----
     //

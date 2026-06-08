@@ -26,4 +26,10 @@ struct GeneratedDnaIdentity {
 // Private key and seeds are wiped and are not returned.
 bool generate_dna_identity(GeneratedDnaIdentity& out, std::string& error);
 
+// Derives the same CPUNK/DNA fingerprint from 24 recovery words.
+// Does not return or store the recovery words.
+bool derive_dna_identity_from_recovery_words(const std::string& recovery_words,
+                                             GeneratedDnaIdentity& out,
+                                             std::string& error);
+
 } // namespace pqnas
