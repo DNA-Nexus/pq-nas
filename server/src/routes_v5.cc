@@ -144,6 +144,16 @@ static std::string routes_v5_request_ip(
     return req.remote_addr.empty() ? "?" : req.remote_addr;
 }
 
+static void routes_v5_secure_clear_string(std::string& s) {
+    if (s.empty()) {
+        return;
+    }
+
+    sodium_memzero(s.data(), s.size());
+    s.clear();
+    s.shrink_to_fit();
+}
+
 // Normalizes base64 values that arrive via URL/query decoding.
 // Some stacks decode '+' as space in query parameters (application/x-www-form-urlencoded).
 // We reverse that and trim surrounding whitespace to keep k parsing robust.
@@ -923,6 +933,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         std::string hash;
         if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            routes_v5_secure_clear_string(bootstrap_recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
             return;
         }
@@ -937,12 +948,23 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         if (!have_existing_admin) {
             if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+                routes_v5_secure_clear_string(bootstrap_recovery_words);
                 reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
                 return;
             }
         }
 
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            if (!have_existing_admin) {
+                const bool rolled_back =
+                    ctx.users->erase(fp_hex) &&
+                    ctx.users->save(*ctx.users_path);
+                if (!rolled_back) {
+                    routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", login, fp_hex, "user_rollback_failed");
+                }
+            }
+
+            routes_v5_secure_clear_string(bootstrap_recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
             return;
         }
@@ -963,7 +985,9 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             out["warning"] = "Recovery words are shown once and are not stored by the server. Remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN after bootstrap.";
         }
 
-        reply_json(res, 200, out.dump());
+        const std::string response_body = out.dump();
+        routes_v5_secure_clear_string(bootstrap_recovery_words);
+        reply_json(res, 200, response_body);
     });
 
     // ---- POST /api/auth/password/login ----
@@ -1543,6 +1567,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         if (ctx.users->get(ident.fingerprint_hex).has_value()) {
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "fingerprint_collision");
+            routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 409, json{{"ok", false}, {"error", "fingerprint_already_exists"}}.dump());
             return;
         }
@@ -1584,12 +1609,22 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "users_save_failed");
+            routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
             return;
         }
 
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "credentials_save_failed");
+
+            const bool rolled_back =
+                ctx.users->erase(ident.fingerprint_hex) &&
+                ctx.users->save(*ctx.users_path);
+            if (!rolled_back) {
+                routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "user_rollback_failed");
+            }
+
+            routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
             return;
         }
@@ -1612,7 +1647,9 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             out["public_key_b64"] = ident.public_key_b64;
         }
 
-        reply_json(res, 200, out.dump());
+        const std::string response_body = out.dump();
+        routes_v5_secure_clear_string(ident.recovery_words);
+        reply_json(res, 200, response_body);
     });
 
     // ---- POST/GET /api/v5/session ----
