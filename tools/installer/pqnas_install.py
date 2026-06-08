@@ -650,8 +650,14 @@ class InstallState:
     plan: List[List[str]] = None
     plan_notes: List[str] = None
 
-    # Login authentication mode (installer forces v5-only)
-    auth_mode: str = "v5"   # v5-only
+    # Internal verifier/session mode. Keep this v5-only.
+    # Do not use this for QR-vs-password UI selection.
+    auth_mode: str = "v5"
+
+    # Browser login method selected by installer:
+    #   qr       = DNA Connect / QR login
+    #   password = username/email + password login
+    login_mode: str = "qr"
 
     # Optional nginx reverse proxy (HTTP-only for now)
     nginx_enabled: bool = False
@@ -1126,6 +1132,7 @@ def write_env_file(
         rp_id: Optional[str] = None,
         dna_lib_path: Optional[str] = None,
         auth_mode: Optional[str] = None,
+        login_mode: Optional[str] = None,
         tls_spki_pin_sha256: Optional[str] = None,
 ) -> None:
 
@@ -1169,13 +1176,24 @@ def write_env_file(
     if rp_id:
         lines += [f"PQNAS_RP_ID={rp_id}"]
 
-    # Login authentication mode (v4 | v5 | auto)
+    # Internal verifier/session mode.
+    # Keep this separate from QR-vs-password browser login selection.
+    if auth_mode or login_mode:
+        lines += [""]
+
     if auth_mode:
         lines += [f"PQNAS_AUTH_MODE={auth_mode}"]
-        # Android app pairing requires this when QR pairing is used.
-        # It is not secret; it pins the expected HTTPS certificate public key.
-        if tls_spki_pin_sha256:
-            lines += ["", f"PQNAS_TLS_SPKI_SHA256_PIN={tls_spki_pin_sha256}"]
+
+    if login_mode:
+        lm = login_mode.strip().lower()
+        if lm not in ("qr", "password"):
+            raise ValueError(f"invalid login_mode: {login_mode}")
+        lines += [f"PQNAS_LOGIN_MODE={lm}"]
+
+    # Android app pairing requires this when QR pairing is used.
+    # It is not secret; it pins the expected HTTPS certificate public key.
+    if auth_mode and tls_spki_pin_sha256:
+        lines += [f"PQNAS_TLS_SPKI_SHA256_PIN={tls_spki_pin_sha256}"]
 
 
     # DNA engine .so path for /api/v4/verify
@@ -2422,6 +2440,7 @@ class PlanScreen(Screen):
         text.append(f"[b]Disk:[/b] {d.name} ({d.size})  {d.model}  serial={d.serial}")
         text.append(f"[b]Mode:[/b] {app.state.install_mode}")
         text.append(f"[b]Backend:[/b] {app.state.backend}")
+        text.append(f"[b]Login:[/b] {'Username/password' if app.state.login_mode == 'password' else 'QR / DNA Connect'}")
         text.append(f"[b]Mountpoint:[/b] {app.state.mountpoint}\n")
         text.append("[b]Notes:[/b]")
         for n in (app.state.plan_notes or []):
@@ -2522,6 +2541,10 @@ class ReverseProxyScreen(Screen):
 
         self.host_in.value = st.nginx_hostname or ""
 
+        # browser login method
+        for btn in self.login_mode.query(RadioButton):
+            btn.value = (btn.id == st.login_mode)
+
         # https on/off
         for btn in self.https_enable.query(RadioButton):
             btn.value = (btn.id == ("https_on" if st.https_enabled else "https_off"))
@@ -2608,7 +2631,18 @@ class ReverseProxyScreen(Screen):
                 )
                 return
 
+        login_mode = "qr"
+        for btn in self.login_mode.query(RadioButton):
+            if btn.value:
+                login_mode = btn.id
+                break
+
+        if login_mode not in ("qr", "password"):
+            self.err.update("Choose QR login or username/password login.")
+            return
+
         st.auth_mode = "v5"
+        st.login_mode = login_mode
         app.push_screen(ConfirmScreen())
 
 class ConfirmScreen(Screen):
@@ -2832,6 +2866,7 @@ class HealthScreen(Screen):
         nginx_hostname: str,
         nginx_port: int,
         auth_mode: str,
+        login_mode: str,
     ) -> None:
         super().__init__()
         self.mp = mp
@@ -2841,6 +2876,7 @@ class HealthScreen(Screen):
         self.nginx_hostname = nginx_hostname
         self.nginx_port = nginx_port
         self.auth_mode = auth_mode
+        self.login_mode = login_mode
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -2877,6 +2913,7 @@ class HealthScreen(Screen):
             f"[b]Mode:[/b] {self.mode}",
             f"[b]Backend:[/b] {self.backend}",
             f"[b]Auth mode:[/b] v5 (forced by installer)",
+            f"[b]Login mode:[/b] {'Username/password' if self.login_mode == 'password' else 'QR / DNA Connect'}",
             "",
             f"[b]Access URL:[/b] {url}",
         ]
@@ -2974,6 +3011,7 @@ class ExecuteScreen(Screen):
         log_line(self.logw, "Installing... please wait.")
         log_line(self.logw, f"Mode: {mode}")
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
+        log_line(self.logw, f"Login mode: {'username/password' if st.login_mode == 'password' else 'QR / DNA Connect'}")
         log_line(self.logw, "")
         log_line(
             self.logw,
@@ -3147,6 +3185,7 @@ class ExecuteScreen(Screen):
                 rp_id=rp_id,
                 dna_lib_path=dna_path,
                 auth_mode=st.auth_mode,
+                login_mode=st.login_mode,
                 tls_spki_pin_sha256=tls_spki_pin_sha256,
             )
 
@@ -3350,6 +3389,7 @@ class ExecuteScreen(Screen):
                             rp_id=st.nginx_hostname,
                             dna_lib_path=dna_path,
                             auth_mode=st.auth_mode,
+                            login_mode=st.login_mode,
                             tls_spki_pin_sha256=tls_spki_pin_sha256,
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -3383,6 +3423,7 @@ class ExecuteScreen(Screen):
                             rp_id=st.nginx_hostname,
                             dna_lib_path=dna_path,
                             auth_mode=st.auth_mode,
+                            login_mode=st.login_mode,
                             tls_spki_pin_sha256="",
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -3422,6 +3463,7 @@ class ExecuteScreen(Screen):
                     nginx_hostname=st.nginx_hostname,
                     nginx_port=st.nginx_listen_port,
                     auth_mode=st.auth_mode,
+                    login_mode=st.login_mode,
                 )
             )
             return

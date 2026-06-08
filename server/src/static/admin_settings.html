@@ -663,6 +663,49 @@
             letter-spacing:0.02em;
         }
 
+        .passwordUserCreateGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap:12px;
+            width:100%;
+            max-width:880px;
+        }
+
+        .passwordUserCreateField{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:0;
+        }
+
+        .passwordUserCreateField .label{
+            font-size:12px;
+            font-weight:900;
+            color: rgba(var(--fg-rgb),0.72);
+            letter-spacing:0.02em;
+        }
+
+        .passwordRecoveryBox{
+            display:none;
+            margin-top:14px;
+            padding:14px;
+            border:1px solid rgba(var(--accent-rgb),0.35);
+            border-radius:14px;
+            background:rgba(var(--accent-rgb),0.08);
+        }
+
+        .passwordRecoveryBox.show{
+            display:block;
+        }
+
+        .passwordRecoveryWords{
+            width:100%;
+            min-height:92px;
+            box-sizing:border-box;
+            resize:vertical;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+
         .passwordSettingsGrid{
             display:grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -744,6 +787,113 @@
         </div>
 
         <div class="content">
+
+            <div class="card accordion hidden" id="adminPasswordUserCreateCard" data-acc="password-user-create">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
+                    <div class="h">Security • Create password user</div>
+                    <div class="pill warn" id="adminPasswordUserCreatePill">
+                        <span class="k">Password auth:</span> <span class="v">checking…</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <div style="font-weight:950;">Create password-auth user with DNA recovery phrase</div>
+                    </div>
+
+                    <div class="note">
+                        Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.
+                    </div>
+
+                    <div class="passwordUserCreateGrid" style="margin-top:12px;">
+                        <label class="passwordUserCreateField">
+                            <span class="label">Name</span>
+                            <input id="adminCreatePasswordUserName"
+                                   class="input"
+                                   type="text"
+                                   autocomplete="off"
+                                   placeholder="User name" />
+                        </label>
+
+                        <label class="passwordUserCreateField">
+                            <span class="label">Login / email</span>
+                            <input id="adminCreatePasswordUserLogin"
+                                   class="input"
+                                   type="email"
+                                   autocomplete="off"
+                                   placeholder="user@example.com" />
+                        </label>
+
+                        <label class="passwordUserCreateField">
+                            <span class="label">Initial password</span>
+                            <input id="adminCreatePasswordUserPassword"
+                                   class="input"
+                                   type="password"
+                                   autocomplete="new-password"
+                                   minlength="12" />
+                        </label>
+
+                        <label class="passwordUserCreateField">
+                            <span class="label">Role</span>
+                            <select id="adminCreatePasswordUserRole" class="input">
+                                <option value="user" selected>user</option>
+                                <option value="admin">admin</option>
+                            </select>
+                        </label>
+
+                        <label class="passwordUserCreateField">
+                            <span class="label">Status</span>
+                            <select id="adminCreatePasswordUserStatus" class="input">
+                                <option value="disabled" selected>disabled — needs approval</option>
+                                <option value="enabled">enabled — can sign in immediately</option>
+                                <option value="pending">pending</option>
+                            </select>
+                        </label>
+
+                        <label class="passwordUserCreateField">
+                            <span class="label">Quota bytes</span>
+                            <input id="adminCreatePasswordUserQuota"
+                                   class="input"
+                                   type="number"
+                                   min="0"
+                                   step="1"
+                                   placeholder="0" />
+                        </label>
+                    </div>
+
+                    <div class="note">
+                        Default status is disabled, so the user cannot sign in until approved/enabled.
+                    </div>
+
+                    <div class="passwordSettingsActions" style="margin-top:12px;">
+                        <button id="btnAdminCreatePasswordUser" class="btn primary" type="button">Create password user</button>
+                    </div>
+
+                    <div class="passwordRecoveryBox" id="adminCreatePasswordUserResult">
+                        <div style="font-weight:950; margin-bottom:8px;">Recovery words — shown once</div>
+                        <div class="note" style="margin-bottom:10px;">
+                            Copy these 24 words now. They are not stored by the server and cannot be shown again.
+                        </div>
+
+                        <textarea id="adminCreatePasswordUserRecovery"
+                                  class="input passwordRecoveryWords"
+                                  readonly></textarea>
+
+                        <div class="note" style="margin-top:10px;">
+                            <div><b>Login:</b> <span id="adminCreatePasswordUserResultLogin"></span></div>
+                            <div><b>Fingerprint:</b> <span id="adminCreatePasswordUserResultFingerprint"></span></div>
+                            <div><b>Status:</b> <span id="adminCreatePasswordUserResultStatus"></span></div>
+                            <div><b>Quota bytes:</b> <span id="adminCreatePasswordUserResultQuota"></span></div>
+                        </div>
+
+                        <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+                            <input id="adminCreatePasswordUserCopied" type="checkbox" />
+                            <span>I have copied the recovery words.</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
 
             <div class="card accordion hidden" id="adminPasswordChangeCard" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
