@@ -154,6 +154,23 @@ static void routes_v5_secure_clear_string(std::string& s) {
     s.shrink_to_fit();
 }
 
+static bool routes_v5_append_json_member_to_object(std::string& object_json,
+                                                   const std::string& member_json) {
+    if (object_json.empty() || object_json.back() != '}') {
+        return false;
+    }
+
+    object_json.pop_back();
+
+    if (object_json.size() > 1) {
+        object_json.push_back(',');
+    }
+
+    object_json += member_json;
+    object_json.push_back('}');
+    return true;
+}
+
 // Normalizes base64 values that arrive via URL/query decoding.
 // Some stacks decode '+' as space in query parameters (application/x-www-form-urlencoded).
 // We reverse that and trim surrounding whitespace to keep k parsing robust.
@@ -905,6 +922,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
             fp_hex = ident.fingerprint_hex;
             bootstrap_recovery_words = ident.recovery_words;
+            routes_v5_secure_clear_string(ident.recovery_words);
             bootstrap_created_first_admin = true;
         }
 
@@ -980,14 +998,31 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         };
 
         if (bootstrap_created_first_admin) {
-            out["recovery_words"] = bootstrap_recovery_words;
             out["recovery_words_shown_once"] = true;
             out["warning"] = "Recovery words are shown once and are not stored by the server. Remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN after bootstrap.";
         }
 
-        const std::string response_body = out.dump();
+        std::string response_body = out.dump();
+
+        if (bootstrap_created_first_admin) {
+            std::string recovery_words_json = json(bootstrap_recovery_words).dump();
+
+            if (!routes_v5_append_json_member_to_object(
+                    response_body,
+                    std::string("\"recovery_words\":") + recovery_words_json)) {
+                routes_v5_secure_clear_string(recovery_words_json);
+                routes_v5_secure_clear_string(bootstrap_recovery_words);
+                routes_v5_secure_clear_string(response_body);
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "response_build_failed"}}.dump());
+                return;
+            }
+
+            routes_v5_secure_clear_string(recovery_words_json);
+        }
+
         routes_v5_secure_clear_string(bootstrap_recovery_words);
         reply_json(res, 200, response_body);
+        routes_v5_secure_clear_string(response_body);
     });
 
     // ---- POST /api/auth/password/login ----
@@ -1595,6 +1630,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         std::string hash;
         if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
             return;
         }
@@ -1638,7 +1674,6 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"role", role},
             {"status", status},
             {"quota_bytes", requested_quota_bytes},
-            {"recovery_words", ident.recovery_words},
             {"recovery_words_shown_once", true},
             {"warning", "Recovery words are shown once and are not stored by the server."}
         };
@@ -1647,9 +1682,23 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             out["public_key_b64"] = ident.public_key_b64;
         }
 
-        const std::string response_body = out.dump();
+        std::string response_body = out.dump();
+        std::string recovery_words_json = json(ident.recovery_words).dump();
+
+        if (!routes_v5_append_json_member_to_object(
+                response_body,
+                std::string("\"recovery_words\":") + recovery_words_json)) {
+            routes_v5_secure_clear_string(recovery_words_json);
+            routes_v5_secure_clear_string(ident.recovery_words);
+            routes_v5_secure_clear_string(response_body);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "response_build_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_secure_clear_string(recovery_words_json);
         routes_v5_secure_clear_string(ident.recovery_words);
         reply_json(res, 200, response_body);
+        routes_v5_secure_clear_string(response_body);
     });
 
     // ---- POST/GET /api/v5/session ----
