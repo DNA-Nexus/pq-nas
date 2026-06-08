@@ -37,16 +37,20 @@ When an external program must be executed, use an argument-vector based executio
 
 Example concept:
 
-    program: /usr/local/bin/nodus-cli
-    argv:
-      - /usr/local/bin/nodus-cli
-      - -i
-      - /srv/pqnas/config/nodus/identity
-      - identity-init
+```text
+program: /usr/local/bin/nodus-cli
+argv:
+  - /usr/local/bin/nodus-cli
+  - -i
+  - /srv/pqnas/config/nodus/identity
+  - identity-init
+```
 
 Avoid this:
 
-    /bin/sh -c "timeout 5 /usr/local/bin/nodus-cli -i '/srv/pqnas/config/nodus/identity' identity-init 2>&1"
+```bash
+/bin/sh -c "timeout 5 /usr/local/bin/nodus-cli -i '/srv/pqnas/config/nodus/identity' identity-init 2>&1"
+```
 
 The external tool may still be used, but it must be executed as a program with arguments, not as shell code.
 
@@ -99,15 +103,19 @@ Rules:
 
 Dangerous pattern:
 
-    validate path string
-    later open/remove/copy path
+```text
+validate path string
+later open/remove/copy path
+```
 
 Safer pattern:
 
-    resolve allowed root
-    open/check using filesystem APIs
-    verify the final target is still inside the allowed root
-    avoid following symlinks unless explicitly intended
+```text
+resolve allowed root
+open/check using filesystem APIs
+verify the final target is still inside the allowed root
+avoid following symlinks unless explicitly intended
+```
 
 ---
 
@@ -119,8 +127,10 @@ A bug can happen when code checks a path or state, then later uses it after an a
 
 Dangerous pattern:
 
-    if file exists and is safe:
-        open file later
+```text
+if file exists and is safe:
+    open file later
+```
 
 Between the check and the open, the file may have been replaced.
 
@@ -188,6 +198,10 @@ Admin routes must use admin authorization helpers.
 
 Mutation routes using cookies should also enforce same-origin protection.
 
+Login attempts must never create users. User creation must be explicit, auditable, and tied to a provisioning flow such as admin user creation, bootstrap, invitation, or future approved onboarding.
+
+Recovery flows must not create users and must not enable disabled or pending users unless a separate explicit admin-approved state transition is performed.
+
 ---
 
 ## 7. Rate-limit sensitive and expensive endpoints
@@ -196,6 +210,8 @@ Add rate limits to endpoints that are:
 
 - login or verification related
 - token/session related
+- password recovery related
+- bootstrap or first-admin related
 - upload related
 - update/install related
 - federation related
@@ -207,7 +223,21 @@ Add rate limits to endpoints that are:
 
 Rate-limit keys should normally include client IP and route/action name.
 
+For account-bound flows, use both:
+
+- per-IP limits, to stop one client from hammering
+- global per-login or per-token limits, to slow distributed attempts from many IPs
+
+Examples:
+
+- password login: per-IP + per-login global limit
+- password recovery: per-IP + per-login global limit
+- bootstrap token: per-IP + global bootstrap limit
+- invite token: per-IP + per-token global limit
+
 Rate-limited responses should return HTTP 429 and a safe generic error.
+
+Audit logs may distinguish local rate limits from global rate limits, but user-facing errors should stay generic.
 
 ---
 
@@ -228,6 +258,16 @@ Sensitive cookies should have:
 - invalidation behavior after key rotation
 - no exposure to JavaScript unless absolutely required
 
+Cookie claim construction must not rely on unsafe string concatenation with unvalidated input.
+
+If hand-built JSON is unavoidable:
+
+- validate every interpolated value with a strict allowlist
+- reject quotes, backslashes, braces, control characters, and unexpected encodings
+- prefer JSON library serialization over manual concatenation
+- verify parsed claims after decoding
+- fail closed on malformed or unexpected claim fields
+
 ---
 
 ## 9. Secrets must never enter the repository
@@ -241,6 +281,11 @@ Never commit:
 - `keys.env`
 - production `pqnas.env`
 - certificates with private material
+- bootstrap tokens
+- invite tokens
+- recovery phrases
+- test recovery words
+- test passwords
 - debug dumps containing credentials
 
 Pre-commit scanning is a guardrail, not a replacement for care.
@@ -255,13 +300,19 @@ Environment files that may contain secrets or security-sensitive configuration s
 
 Recommended default:
 
-    owner: root
-    group: root
-    mode: 0600
+```text
+owner: root
+group: root
+mode: 0600
+```
 
 Do not print env file contents during debugging.
 
 Use `stat` or `ls -l` to verify permissions without exposing values.
+
+Temporary bootstrap tokens must be removed after first use.
+
+If an installer writes a bootstrap token into an env file, the installer and documentation must clearly tell the admin to remove it after the first admin account has been created.
 
 ---
 
@@ -280,8 +331,13 @@ Examples:
 - runtime directories
 - static asset install paths
 - service user ownership
+- auth mode selection
+- bootstrap token handling
+- first-admin setup flow
 
 Fresh installs must work securely without undocumented manual edits.
+
+Installer choices must map clearly to runtime behavior. For example, internal verifier/session mode and browser login mode should be separate settings when they control different security behaviors.
 
 ---
 
@@ -302,6 +358,8 @@ Examples:
 - tool paths
 - timeout values
 - runtime directories
+- auth/login mode
+- bootstrap token behavior
 
 ---
 
@@ -382,6 +440,8 @@ Avoid exposing:
 - session IDs
 - secret config values
 - private media paths
+- recovery phrases
+- password reset metadata that reveals account existence
 
 ---
 
@@ -397,11 +457,16 @@ Avoid logging:
 - private keys
 - cookie keys
 - invite secrets
+- bootstrap tokens
+- recovery phrases
+- raw passwords
 - raw Authorization headers
 - full paths to private files
 - raw external command output
 
 When logging identifiers, prefer shortened or hashed forms if the full value is not required.
+
+Authentication failures should use safe, generic user-facing errors. Audit logs may contain structured reason codes, but must not include passwords, recovery phrases, tokens, or session values.
 
 ---
 
@@ -419,8 +484,13 @@ Especially watch:
 - temporary job records
 - upload records
 - failed attempts
+- rate-limit buckets
+- login/recovery attempt records
+- invitation/bootstrap records
 
 Unbounded tables become a denial-of-service risk.
+
+In-memory rate-limit maps must have cleanup behavior or a bounded size. Attackers may use random login names or tokens to create many unique buckets.
 
 ---
 
@@ -453,6 +523,8 @@ Preferred workflow:
 
 Avoid combining unrelated security changes into one large commit.
 
+When multiple small fixes are related to the same red-team finding, keep the commit message clear enough that a reviewer can map it back to the finding.
+
 ---
 
 ## 21. Add tests or guard scripts when possible
@@ -468,6 +540,10 @@ Useful guard types:
 - installer permission checks
 - dependency version checks
 - canonicalization tests
+- auth-mode gating tests
+- password recovery tests
+- timing-oracle smoke checks
+- secret scanning for recovery words and test passwords
 
 A small guard is often better than a comment.
 
@@ -501,6 +577,8 @@ Preferred directives include:
 
 `NoNewPrivileges=yes` should be enabled when the service no longer requires tightly scoped sudo helpers.
 
+If the service still requires helper commands, document the reason and keep the helper boundary narrow.
+
 ---
 
 ## 24. When shell execution still exists
@@ -522,7 +600,174 @@ Legacy shell usage should shrink over time.
 
 ---
 
-## 25. Default decision rule
+## 25. Password authentication rules
+
+Password authentication must preserve the internal DNA-Nexus identity model.
+
+Rules:
+
+- internal user identity remains fingerprint-based
+- login/email maps to a fingerprint
+- login attempts must never create users
+- admin/user provisioning creates users explicitly
+- recovery must not create users
+- recovery must not enable disabled or pending users
+- password mode must not accidentally allow QR login if QR is disabled by config
+- QR mode must not accidentally expose password endpoints as an unintended login path
+- `/api/auth/config` may expose mode information only if it does not leak secrets
+
+Password storage rules:
+
+- store password hashes only, never plaintext
+- use Argon2id or an approved password hashing scheme
+- use library-provided password hash string formats when available
+- enforce reasonable password length limits
+- reject empty passwords
+- avoid logging passwords or password hashes
+
+Password verification rules:
+
+- missing login and wrong password paths should have similar timing
+- disabled or empty-hash accounts should not create a strong account-existence timing oracle
+- if a dummy password verify is used, it must always fail authentication
+- dummy verify return values must be consumed if the crypto library marks them `warn_unused_result`
+
+---
+
+## 26. Recovery phrases and one-time secrets
+
+Recovery phrases, bootstrap tokens, invite tokens, and similar values are one-time or highly sensitive secrets.
+
+Rules:
+
+- show recovery phrases once
+- do not store recovery phrases on the server
+- do not log recovery phrases
+- do not include recovery phrases in audit logs
+- do not include recovery phrases in user activity
+- do not include recovery phrases in screenshots, sample docs, or committed test logs
+- clear application-owned memory copies as soon as practical
+- clear recovery phrase copies on success and on error paths
+- clear partially generated recovery phrases if identity generation fails
+- document any unavoidable framework-level copies
+
+When returning a one-time secret to the client:
+
+- build the response carefully
+- avoid storing the secret in long-lived objects
+- avoid storing the secret inside generic JSON objects longer than needed
+- serialize the secret as late as practical
+- clear intermediate strings after sending the response when possible
+- accept that the HTTP framework may hold an internal copy until the response is sent
+
+Known limitation:
+
+Some transient copies may still exist in standard library strings, JSON temporary objects, allocator buffers, or HTTP framework response buffers. These should be minimized and documented, but eliminating them fully may require secure allocators or custom response streaming.
+
+---
+
+## 27. Multi-file state updates need rollback or repair
+
+Security-sensitive operations often update more than one persistent file.
+
+Examples:
+
+- `users.json`
+- `password_credentials.json`
+- shares/config files
+- workspace metadata
+- app manifests
+- update state files
+- audit/activity side records
+
+If one save succeeds and a later save fails, the system can be left in a half-created or inconsistent state.
+
+Rules:
+
+- identify every multi-file mutation
+- order writes deliberately
+- use atomic write/rename helpers
+- apply best-effort rollback when possible
+- audit-log rollback failures
+- make repair/reconciliation possible after a crash
+- fail closed if the final state is not safe
+- avoid granting access until all required state has been written successfully
+
+Example:
+
+If user creation writes `users.json` first and `password_credentials.json` second, then failure in the second write must roll back the new user or leave the account disabled and unauthenticated.
+
+---
+
+## 28. JSON construction rules
+
+Prefer library-based JSON construction and serialization.
+
+Avoid hand-built JSON strings.
+
+If hand-built JSON is unavoidable:
+
+- only interpolate values validated by strict allowlists
+- use JSON serialization for string values
+- reject dangerous characters before interpolation
+- ensure the final output is valid JSON
+- do not concatenate unescaped user input into JSON
+- avoid storing secrets in generic JSON DOM objects longer than necessary
+- clear secret-bearing serialized strings after use when possible
+
+For security-sensitive claims such as session cookies:
+
+- validate claim fields before minting
+- validate claim fields after parsing
+- reject malformed or unexpected encodings
+- prefer compact allowlists over broad string acceptance
+
+---
+
+## 29. Bootstrap and first-admin setup
+
+Fresh installs must not require undocumented manual authentication setup.
+
+If password login mode is selected during installation:
+
+- the installer must provide a safe first-admin bootstrap path
+- bootstrap tokens must be random and high entropy
+- bootstrap tokens must be temporary
+- bootstrap endpoints must be disabled when no token is configured
+- bootstrap endpoints must be rate-limited per IP and globally
+- bootstrap must create a real internal identity, not a fake placeholder
+- bootstrap must return recovery words once
+- bootstrap must clearly instruct the admin to remove the token after use
+
+Bootstrap must not:
+
+- create users from ordinary login attempts
+- leak whether a guessed token was close
+- store recovery phrases
+- leave enabled admin access with missing credentials
+- silently fall back to unsafe default credentials
+
+---
+
+## 30. Timing and enumeration resistance
+
+Authentication and recovery endpoints must avoid easy account enumeration.
+
+Rules:
+
+- use generic errors for invalid login/password combinations
+- avoid distinct user-facing errors for missing user vs wrong password
+- avoid fast-return paths that clearly distinguish existing and missing accounts
+- use dummy password verification where practical
+- rate-limit both per IP and per account/login
+- audit reason codes internally without exposing them to attackers
+- avoid returning account status details before authentication
+
+Some timing differences may remain due to system load, storage access, network latency, or cache state. The goal is to remove obvious deterministic timing oracles.
+
+---
+
+## 31. Default decision rule
 
 When uncertain, choose the safer default:
 
@@ -534,6 +779,8 @@ When uncertain, choose the safer default:
 - explicit authorization instead of implicit trust
 - sanitized summary instead of raw technical detail
 - installer-backed default instead of manual setup
+- temporary secret instead of permanent bootstrap access
+- rollback/repair instead of inconsistent partial state
 
 ---
 
@@ -547,7 +794,9 @@ New DNA-Nexus / PQ-NAS code should be written with these assumptions:
 - every debug endpoint can become an information leak
 - every installer omission becomes a production misconfiguration
 - every security fix should be small, testable, and repeatable
+- every one-time secret should have the shortest practical lifetime
+- every multi-file state change needs rollback, repair, or fail-closed behavior
 
 The baseline rule is simple:
 
-Do not rely on shell quoting, UI hiding, manual setup, path strings, or developer memory as security controls.
+Do not rely on shell quoting, UI hiding, manual setup, path strings, timing differences, framework cleanup, or developer memory as security controls.
