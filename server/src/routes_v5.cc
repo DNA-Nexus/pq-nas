@@ -775,6 +775,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                "password.bootstrap.global",
+                "global",
+                20,
+                std::chrono::seconds(3600))) {
+            routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", "", "", "global_rate_limited");
+            res.set_header("Retry-After", "3600");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_bootstrap_attempts"}}.dump());
+            return;
+        }
+
         json j;
         std::string err;
         if (!parse_json_body(req, j, err)) {

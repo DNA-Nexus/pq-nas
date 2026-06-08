@@ -67,9 +67,9 @@ static bool b64url_dec(const std::string& s, std::string& outBin) {
 }
 
 // fingerprint_b64 is embedded into hand-built JSON in session_cookie_mint().
-// Keep it strictly base64-standard so quote/backslash/control injection cannot
-// alter the claims JSON structure even if an upstream credential store is
-// corrupted or tampered.
+// Keep it strictly base64-standard/base64url so quote/backslash/control
+// injection cannot alter the claims JSON structure even if an upstream
+// credential store is corrupted or tampered.
 static bool session_cookie_valid_fingerprint_b64(const std::string& s) {
     if (s.empty() || s.size() > 512) {
         return false;
@@ -85,7 +85,9 @@ static bool session_cookie_valid_fingerprint_b64(const std::string& s) {
             (c >= static_cast<unsigned char>('0') && c <= static_cast<unsigned char>('9'));
         const bool is_symbol =
             c == static_cast<unsigned char>('+') ||
-            c == static_cast<unsigned char>('/');
+            c == static_cast<unsigned char>('/') ||
+            c == static_cast<unsigned char>('-') ||
+            c == static_cast<unsigned char>('_');
 
         if (c == static_cast<unsigned char>('=')) {
             seen_padding = true;
