@@ -2903,3 +2903,90 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     syncRetentionModeUi();
     refreshAll();
 })();
+
+
+// pqnas-admin-create-password-user-i18n-v1
+(() => {
+    function t(key, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, null, fallback);
+        }
+        return fallback;
+    }
+
+    function setText(el, key, fallback) {
+        if (el) el.textContent = t(key, fallback);
+    }
+
+    function apply() {
+        const card = document.getElementById("adminPasswordUserCreateCard");
+        if (!card) return;
+
+        setText(card.querySelector(".hd .h"), "admin.create_password_user.card_title", "Security • Create password user");
+
+        const bd = card.querySelector(".bd");
+        if (!bd) return;
+
+        const rowTitle = bd.querySelector(".row div");
+        setText(rowTitle, "admin.create_password_user.heading", "Create password-auth user with DNA recovery phrase");
+
+        const notes = bd.querySelectorAll(".note");
+        setText(notes[0], "admin.create_password_user.desc", "Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.");
+        setText(notes[1], "admin.create_password_user.default_status_note", "Default status is disabled, so the user cannot sign in until approved/enabled.");
+
+        const labels = bd.querySelectorAll(".passwordUserCreateField .label");
+        setText(labels[0], "admin.create_password_user.name", "Name");
+        setText(labels[1], "admin.create_password_user.login", "Login / email");
+        setText(labels[2], "admin.create_password_user.initial_password", "Initial password");
+        setText(labels[3], "admin.create_password_user.role", "Role");
+        setText(labels[4], "admin.create_password_user.status", "Status");
+        setText(labels[5], "admin.create_password_user.quota_bytes", "Quota bytes");
+
+        const status = document.getElementById("adminCreatePasswordUserStatus");
+        if (status && status.options.length >= 3) {
+            status.options[0].textContent = t("admin.create_password_user.status_disabled", "disabled — needs approval");
+            status.options[1].textContent = t("admin.create_password_user.status_enabled", "enabled — can sign in immediately");
+            status.options[2].textContent = t("admin.create_password_user.status_pending", "pending");
+        }
+
+        const btn = document.getElementById("btnAdminCreatePasswordUser");
+        if (btn && btn.textContent !== "Creating…") {
+            setText(btn, "admin.create_password_user.create", "Create password user");
+        }
+
+        const result = document.getElementById("adminCreatePasswordUserResult");
+        if (result) {
+            const title = result.querySelector("div[style*='font-weight']");
+            setText(title, "admin.create_password_user.recovery_title", "Recovery words — shown once");
+
+            const resultNotes = result.querySelectorAll(".note");
+            setText(resultNotes[0], "admin.create_password_user.recovery_desc", "Copy these 24 words now. They are not stored by the server and cannot be shown again.");
+
+            const infoDivs = resultNotes[1]?.querySelectorAll("div") || [];
+            if (infoDivs[0]?.firstElementChild) setText(infoDivs[0].firstElementChild, "admin.create_password_user.result_login", "Login:");
+            if (infoDivs[1]?.firstElementChild) setText(infoDivs[1].firstElementChild, "admin.create_password_user.result_fingerprint", "Fingerprint:");
+            if (infoDivs[2]?.firstElementChild) setText(infoDivs[2].firstElementChild, "admin.create_password_user.result_status", "Status:");
+            if (infoDivs[3]?.firstElementChild) setText(infoDivs[3].firstElementChild, "admin.create_password_user.result_quota", "Quota bytes:");
+
+            const copied = document.getElementById("adminCreatePasswordUserCopied");
+            const copiedText = copied?.parentElement?.querySelector("span");
+            setText(copiedText, "admin.create_password_user.copied", "I have copied the recovery words.");
+        }
+    }
+
+    let tries = 0;
+    const timer = setInterval(() => {
+        tries += 1;
+        apply();
+        if (document.getElementById("adminPasswordUserCreateCard") || tries > 80) {
+            clearInterval(timer);
+        }
+    }, 250);
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", apply, { once: true });
+    } else {
+        apply();
+    }
+})();

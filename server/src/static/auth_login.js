@@ -760,3 +760,58 @@
         startRecoveryRetryInstaller();
     }
 })();
+
+
+// pqnas-password-recovery-i18n-v1
+(() => {
+    function t(key, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, null, fallback);
+        }
+        return fallback;
+    }
+
+    function apply() {
+        const forgot = document.getElementById("pqnasForgotPasswordBtn");
+        if (forgot) forgot.textContent = t("auth.recovery.forgot", "Forgot password?");
+
+        const panel = document.getElementById("pqnasRecoveryPanel");
+        if (!panel) return;
+
+        const h3 = panel.querySelector("h3");
+        if (h3) h3.textContent = t("auth.recovery.title", "Recover password");
+
+        const desc = panel.querySelector("p");
+        if (desc) desc.textContent = t("auth.recovery.desc", "Enter your login, 24 recovery words, and a new password.");
+
+        const labels = panel.querySelectorAll("label > div:first-child");
+        if (labels[0]) labels[0].textContent = t("auth.recovery.login", "Login / email");
+        if (labels[1]) labels[1].textContent = t("auth.recovery.words", "24 recovery words");
+        if (labels[2]) labels[2].textContent = t("auth.recovery.new_password", "New password");
+        if (labels[3]) labels[3].textContent = t("auth.recovery.confirm_password", "Confirm new password");
+
+        const submit = document.getElementById("pqnasRecoverySubmitBtn");
+        if (submit && submit.textContent !== "Resetting…") {
+            submit.textContent = t("auth.recovery.reset", "Reset password");
+        }
+
+        const cancel = document.getElementById("pqnasRecoveryCancelBtn");
+        if (cancel) cancel.textContent = t("auth.recovery.cancel", "Cancel");
+    }
+
+    let tries = 0;
+    const timer = setInterval(() => {
+        tries += 1;
+        apply();
+        if (document.getElementById("pqnasForgotPasswordBtn") || tries > 80) {
+            clearInterval(timer);
+        }
+    }, 250);
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", apply, { once: true });
+    } else {
+        apply();
+    }
+})();
