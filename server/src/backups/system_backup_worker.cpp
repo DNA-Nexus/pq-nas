@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -112,6 +114,13 @@ bool copy_regular_file_safe(const std::filesystem::path& src,
         return false;
     }
 
+    std::filesystem::permissions(
+        dst,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace,
+        ec
+    );
+
     return true;
 }
 
@@ -204,90 +213,253 @@ nlohmann::json source_json(const SystemBackupSource& s,
     };
 }
 
+
+std::string trim_ascii_copy_local(std::string s) {
+    auto is_ws = [](unsigned char c) {
+        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    };
+
+    std::size_t a = 0;
+    while (a < s.size() && is_ws(static_cast<unsigned char>(s[a]))) ++a;
+
+    std::size_t b = s.size();
+    while (b > a && is_ws(static_cast<unsigned char>(s[b - 1]))) --b;
+
+    return s.substr(a, b - a);
+}
+
+std::filesystem::path env_path_or_empty_local(const char* name) {
+    if (!name || !*name) return {};
+
+    const char* raw = std::getenv(name);
+    if (!raw) return {};
+
+    const std::string v = trim_ascii_copy_local(raw);
+    return v.empty() ? std::filesystem::path{} : std::filesystem::path(v);
+}
+
+std::filesystem::path configured_path_local(const char* env_name,
+                                            const std::vector<std::filesystem::path>& fallbacks) {
+    const auto env_path = env_path_or_empty_local(env_name);
+    if (!env_path.empty()) {
+        return env_path;
+    }
+
+    std::filesystem::path first;
+    for (const auto& p : fallbacks) {
+        if (p.empty()) continue;
+        if (first.empty()) first = p;
+
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(p, ec)) {
+            return p;
+        }
+    }
+
+    return first;
+}
+
+std::filesystem::path password_credentials_path_for_backup_local(const std::filesystem::path& users_path) {
+    const auto env_path = env_path_or_empty_local("PQNAS_PASSWORD_CREDENTIALS_PATH");
+    if (!env_path.empty()) {
+        return env_path;
+    }
+
+    if (!users_path.empty() && !users_path.parent_path().empty()) {
+        return users_path.parent_path() / "password_credentials.json";
+    }
+
+    return "/var/lib/pqnas/password_credentials.json";
+}
+
+std::string env_key_from_line_local(const std::string& line) {
+    std::string s = trim_ascii_copy_local(line);
+    if (s.rfind("export ", 0) == 0) {
+        s = trim_ascii_copy_local(s.substr(7));
+    }
+
+    const std::size_t eq = s.find('=');
+    if (eq == std::string::npos) return {};
+
+    return trim_ascii_copy_local(s.substr(0, eq));
+}
+
+bool should_redact_env_key_local(const std::string& key) {
+    if (key.empty()) return false;
+
+    return key == "PQNAS_PASSWORD_BOOTSTRAP_TOKEN" ||
+           key == "PQNAS_SERVER_SK_B64URL" ||
+           key == "PQNAS_COOKIE_KEY_B64URL" ||
+           key.find("PRIVATE_KEY") != std::string::npos ||
+           key.find("_SECRET") != std::string::npos ||
+           key.find("_TOKEN") != std::string::npos;
+}
+
+bool copy_env_file_redacted_safe(const std::filesystem::path& src,
+                                 const std::filesystem::path& dst,
+                                 std::string* err) {
+    std::error_code ec;
+    std::filesystem::create_directories(dst.parent_path(), ec);
+    if (ec) {
+        if (err) *err = "failed to create destination directory: " + ec.message();
+        return false;
+    }
+
+    std::ifstream in(src);
+    if (!in.good()) {
+        if (err) *err = "failed to open source env file";
+        return false;
+    }
+
+    std::ofstream out(dst, std::ios::trunc);
+    if (!out.good()) {
+        if (err) *err = "failed to open destination env file";
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::string key = env_key_from_line_local(line);
+        if (should_redact_env_key_local(key)) {
+            out << "# " << key << " redacted by PQ-NAS system backup\n";
+        } else {
+            out << line << "\n";
+        }
+    }
+
+    out.flush();
+    if (!out.good()) {
+        if (err) *err = "failed to write redacted env file";
+        return false;
+    }
+
+    std::filesystem::permissions(
+        dst,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace,
+        ec
+    );
+
+    return true;
+}
+
 std::vector<SystemBackupSource> default_sources() {
     std::vector<SystemBackupSource> v;
 
-    // Core System
-    v.push_back({
+    auto add_regular = [&](const std::string& set_id,
+                           const std::string& label,
+                           const std::filesystem::path& source_path,
+                           const std::filesystem::path& backup_relative_path,
+                           bool optional = true) {
+        if (source_path.empty() || backup_relative_path.empty()) return;
+
+        v.push_back({
+            set_id,
+            label,
+            SystemBackupSourceKind::RegularFile,
+            source_path,
+            backup_relative_path,
+            optional
+        });
+    };
+
+    auto add_sqlite = [&](const std::string& set_id,
+                          const std::string& label,
+                          const std::filesystem::path& source_path,
+                          const std::filesystem::path& backup_relative_path,
+                          bool optional = true) {
+        if (source_path.empty() || backup_relative_path.empty()) return;
+
+        v.push_back({
+            set_id,
+            label,
+            SystemBackupSourceKind::SQLiteDatabase,
+            source_path,
+            backup_relative_path,
+            optional
+        });
+    };
+
+    // Core system config. This is copied through a redacting path so temporary
+    // bootstrap tokens or accidental secrets do not get preserved in backups.
+    add_regular(
         "core",
         "PQ-NAS environment",
-        SystemBackupSourceKind::RegularFile,
         "/etc/pqnas/pqnas.env",
-        "core/etc/pqnas/pqnas.env",
-        true
-    });
+        "core/etc/pqnas/pqnas.env"
+    );
 
-    // Users & Auth. Prefer the current config path. Keep legacy root fallback
-    // only if it actually exists, so status/UI does not show a harmless missing
-    // users.json warning on normal installs.
-    const std::filesystem::path users_config_path = "/srv/pqnas/config/users.json";
-    const std::filesystem::path users_legacy_path = "/srv/pqnas/users.json";
+    // Current installer/runtime layout uses /etc/pqnas through env vars.
+    // Keep /srv/pqnas fallbacks so older dev/prototype installs still back up.
+    const std::filesystem::path admin_settings_path = configured_path_local(
+        "PQNAS_ADMIN_SETTINGS_PATH",
+        {"/etc/pqnas/admin_settings.json", "/srv/pqnas/config/admin_settings.json"}
+    );
 
-    if (std::filesystem::is_regular_file(users_config_path)) {
-        v.push_back({
-            "users_auth",
-            "Users registry",
-            SystemBackupSourceKind::RegularFile,
-            users_config_path,
-            "users/users.json",
-            true
-        });
-    } else if (std::filesystem::is_regular_file(users_legacy_path)) {
-        v.push_back({
-            "users_auth",
-            "Users registry",
-            SystemBackupSourceKind::RegularFile,
-            users_legacy_path,
-            "users/users.json",
-            true
-        });
-    } else {
-        v.push_back({
-            "users_auth",
-            "Users registry",
-            SystemBackupSourceKind::RegularFile,
-            users_config_path,
-            "users/users.json",
-            true
-        });
-    }
+    const std::filesystem::path policy_path = configured_path_local(
+        "PQNAS_POLICY_PATH",
+        {"/etc/pqnas/policy.json", "/srv/pqnas/config/policy.json"}
+    );
+
+    const std::filesystem::path users_path = configured_path_local(
+        "PQNAS_USERS_PATH",
+        {"/etc/pqnas/users.json", "/srv/pqnas/config/users.json", "/srv/pqnas/users.json"}
+    );
+
+    const std::filesystem::path shares_path = configured_path_local(
+        "PQNAS_SHARES_PATH",
+        {"/etc/pqnas/shares.json", "/srv/pqnas/config/shares.json", "/srv/pqnas/shares.json"}
+    );
+
+    const std::filesystem::path pools_path = configured_path_local(
+        "PQNAS_POOLS_PATH",
+        {"/etc/pqnas/pools.json", "/srv/pqnas/config/pools.json"}
+    );
+
+    const std::filesystem::path app_auth_path = configured_path_local(
+        "PQNAS_APP_AUTH_PATH",
+        {"/etc/pqnas/app_auth.json", "/srv/pqnas/config/app_auth.json"}
+    );
+
+    const std::filesystem::path password_credentials_path =
+        password_credentials_path_for_backup_local(users_path);
+
+    add_regular("config", "Admin settings", admin_settings_path, "config/admin_settings.json");
+    add_regular("config", "Policy", policy_path, "config/policy.json");
+    add_regular("users_auth", "Users registry", users_path, "users/users.json");
+    add_regular("users_auth", "Password credentials", password_credentials_path, "users/password_credentials.json");
+    add_regular("shares", "Share registry", shares_path, "shares/shares.json");
+    add_regular("storage", "Storage pools", pools_path, "storage/pools.json");
+    add_regular("auth", "App auth store", app_auth_path, "auth/app_auth.json");
 
     // Circle Stack
-    v.push_back({
+    add_sqlite(
         "circle_stack",
         "Circle Stack local database",
-        SystemBackupSourceKind::SQLiteDatabase,
         "/srv/pqnas/circlestack.db",
-        "circlestack/circlestack.db",
-        true
-    });
+        "circlestack/circlestack.db"
+    );
 
-    v.push_back({
+    add_sqlite(
         "circle_stack",
         "Circle Stack federation outbox",
-        SystemBackupSourceKind::SQLiteDatabase,
         "/srv/pqnas/config/circlestack_federation_outbox.sqlite3",
-        "circlestack/circlestack_federation_outbox.sqlite3",
-        true
-    });
+        "circlestack/circlestack_federation_outbox.sqlite3"
+    );
 
-    v.push_back({
+    add_sqlite(
         "circle_stack",
         "Circle Stack federation inbox",
-        SystemBackupSourceKind::SQLiteDatabase,
         "/srv/pqnas/config/circlestack_federation_inbox.sqlite3",
-        "circlestack/circlestack_federation_inbox.sqlite3",
-        true
-    });
+        "circlestack/circlestack_federation_inbox.sqlite3"
+    );
 
-    v.push_back({
+    add_sqlite(
         "circle_stack",
         "Circle Stack federation remote feed",
-        SystemBackupSourceKind::SQLiteDatabase,
         "/srv/pqnas/config/circlestack_federation_remote_feed.sqlite3",
-        "circlestack/circlestack_federation_remote_feed.sqlite3",
-        true
-    });
+        "circlestack/circlestack_federation_remote_feed.sqlite3"
+    );
 
     return v;
 }
@@ -502,7 +674,7 @@ SystemBackupRunResult SystemBackupWorker::run_now(const std::string& tier_in,
         {"reason", reason},
         {"created_epoch", now_epoch_seconds()},
         {"backup_dir", r.backup_dir.string()},
-        {"included_policy", "core_config_users_auth_circlestack_only"},
+        {"included_policy", "core_config_users_auth_password_credentials_app_auth_shares_pools_circlestack_only"},
         {"files", nlohmann::json::array()}
     };
 
@@ -537,6 +709,8 @@ SystemBackupRunResult SystemBackupWorker::run_now(const std::string& tier_in,
 
         if (src.kind == SystemBackupSourceKind::SQLiteDatabase) {
             ok = sqlite_backup_database(src.source_path, dst, &err);
+        } else if (src.backup_relative_path == std::filesystem::path("core/etc/pqnas/pqnas.env")) {
+            ok = copy_env_file_redacted_safe(src.source_path, dst, &err);
         } else {
             ok = copy_regular_file_safe(src.source_path, dst, &err);
         }
