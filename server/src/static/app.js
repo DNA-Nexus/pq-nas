@@ -3195,8 +3195,13 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     authed = ok && r.ok;
 
                     // Show backend version from version.h via /api/v4/me.
-                    if (!versionShown && statusLine) {
+                    // statusLine starts as an i18n placeholder ("Loading…").
+                    // Remove data-i18n before writing the dynamic version, otherwise
+                    // a late i18n apply() can translate it back to "Loading…".
+                    if (statusLine) {
                         const serverVersion = String(j.server_version || j.current_server_version || j.version || "").trim();
+                        statusLine.removeAttribute("data-i18n");
+                        statusLine.removeAttribute("data-i18n-fallback");
                         statusLine.textContent = serverVersion ? `DNA-Nexus v${serverVersion}` : "DNA-Nexus";
                         versionShown = true;
                     }
