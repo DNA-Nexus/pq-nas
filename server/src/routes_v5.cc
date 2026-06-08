@@ -1248,6 +1248,16 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
         const std::string password = v5_json_string_or_empty(j, "password");
         const std::string name = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "name"));
+        const bool include_public_key = j.value("include_public_key", false);
+
+        std::uint64_t requested_quota_bytes = 0;
+        if (j.contains("quota_bytes") && !j["quota_bytes"].is_null()) {
+            if (!j["quota_bytes"].is_number_unsigned()) {
+                reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_quota_bytes"}}.dump());
+                return;
+            }
+            requested_quota_bytes = j["quota_bytes"].get<std::uint64_t>();
+        }
 
         std::string role = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "role")));
         if (role.empty()) role = "user";
@@ -1327,7 +1337,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         u.address = "";
         u.avatar_url = "";
         u.storage_state = "unallocated";
-        u.quota_bytes = 0;
+        u.quota_bytes = requested_quota_bytes;
         u.root_rel = "";
         u.storage_pool_id = "";
         u.storage_set_at = "";
@@ -1361,17 +1371,23 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         routes_v5_audit_password(ctx, req, "password.user_create", "ok", login, ident.fingerprint_hex, "");
 
-        reply_json(res, 200, json{
+        json out = {
             {"ok", true},
             {"login", login},
             {"fingerprint", ident.fingerprint_hex},
             {"role", role},
             {"status", status},
-            {"public_key_b64", ident.public_key_b64},
+            {"quota_bytes", requested_quota_bytes},
             {"recovery_words", ident.recovery_words},
             {"recovery_words_shown_once", true},
             {"warning", "Recovery words are shown once and are not stored by the server."}
-        }.dump());
+        };
+
+        if (include_public_key) {
+            out["public_key_b64"] = ident.public_key_b64;
+        }
+
+        reply_json(res, 200, out.dump());
     });
 
     // ---- POST/GET /api/v5/session ----
