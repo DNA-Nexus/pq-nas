@@ -911,6 +911,8 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             std::string gen_error;
 
             if (!pqnas::generate_dna_identity(ident, gen_error)) {
+                // identity_generation_failed_clear_v1
+                routes_v5_secure_clear_string(ident.recovery_words);
                 routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", login, "", "identity_generation_failed");
                 reply_json(res, 500, json{
                     {"ok", false},
@@ -1591,6 +1593,8 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         pqnas::GeneratedDnaIdentity ident;
         std::string gen_error;
         if (!pqnas::generate_dna_identity(ident, gen_error)) {
+            // identity_generation_failed_clear_v1
+            routes_v5_secure_clear_string(ident.recovery_words);
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, "", "identity_generation_failed");
             reply_json(res, 500, json{
                 {"ok", false},
