@@ -66,6 +66,44 @@ static bool b64url_dec(const std::string& s, std::string& outBin) {
     return true;
 }
 
+// fingerprint_b64 is embedded into hand-built JSON in session_cookie_mint().
+// Keep it strictly base64-standard so quote/backslash/control injection cannot
+// alter the claims JSON structure even if an upstream credential store is
+// corrupted or tampered.
+static bool session_cookie_valid_fingerprint_b64(const std::string& s) {
+    if (s.empty() || s.size() > 512) {
+        return false;
+    }
+
+    bool seen_padding = false;
+
+    for (unsigned char c : s) {
+        const bool is_alpha =
+            (c >= static_cast<unsigned char>('A') && c <= static_cast<unsigned char>('Z')) ||
+            (c >= static_cast<unsigned char>('a') && c <= static_cast<unsigned char>('z'));
+        const bool is_digit =
+            (c >= static_cast<unsigned char>('0') && c <= static_cast<unsigned char>('9'));
+        const bool is_symbol =
+            c == static_cast<unsigned char>('+') ||
+            c == static_cast<unsigned char>('/');
+
+        if (c == static_cast<unsigned char>('=')) {
+            seen_padding = true;
+            continue;
+        }
+
+        if (seen_padding) {
+            return false; // base64 padding may only appear at the end
+        }
+
+        if (!is_alpha && !is_digit && !is_symbol) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // Mint cookie
 // -----------------------------------------------------------------------------
@@ -74,6 +112,12 @@ bool session_cookie_mint(const unsigned char key32[32],
                          const std::string& fingerprint_b64,
                          long iat, long exp,
                          std::string& out_cookie_value) {
+    out_cookie_value.clear();
+
+    if (!session_cookie_valid_fingerprint_b64(fingerprint_b64)) {
+        return false;
+    }
+
     /*
      * Build a compact JSON claim set.
      *
@@ -161,6 +205,9 @@ bool session_cookie_verify(const unsigned char key32[32],
     auto q = claims.find('"', p);
     if (q == std::string::npos) return false;
     out_fingerprint_b64 = claims.substr(p, q - p);
+    if (!session_cookie_valid_fingerprint_b64(out_fingerprint_b64)) {
+        return false;
+    }
 
     // Extract exp: find `"exp":12345`
     auto e = claims.find("\"exp\":");

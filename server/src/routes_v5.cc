@@ -763,6 +763,18 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                "password.bootstrap",
+                ip_for_rate_limit,
+                5,
+                std::chrono::seconds(300))) {
+            routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", "", "", "rate_limited");
+            res.set_header("Retry-After", "300");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_bootstrap_attempts"}}.dump());
+            return;
+        }
+
         json j;
         std::string err;
         if (!parse_json_body(req, j, err)) {
@@ -979,6 +991,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.login.global.") + login,
+                "global",
+                30,
+                std::chrono::seconds(300))) {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, "", "global_rate_limited");
+            res.set_header("Retry-After", "300");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_login_attempts"}}.dump());
+            return;
+        }
+
         if (!ctx.users || !ctx.users_path || ctx.users_path->empty() ||
             !ctx.cookie_key || !ctx.session_cookie_mint) {
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_login_not_configured"}}.dump());
@@ -1099,6 +1122,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
                 std::chrono::seconds(300))) {
             routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "rate_limited");
             res.set_header("Retry-After", "300");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_recovery_attempts"}}.dump());
+            return;
+        }
+
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.recover.global.") + login,
+                "global",
+                12,
+                std::chrono::seconds(900))) {
+            routes_v5_audit_password(ctx, req, "password.recover", "deny", login, "", "global_rate_limited");
+            res.set_header("Retry-After", "900");
             reply_json(res, 429, json{{"ok", false}, {"error", "too_many_recovery_attempts"}}.dump());
             return;
         }
