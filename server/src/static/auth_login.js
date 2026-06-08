@@ -815,3 +815,104 @@
         apply();
     }
 })();
+
+
+// pqnas-base-login-i18n-v1
+(() => {
+    function t(key, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, null, fallback);
+        }
+        return fallback;
+    }
+
+    // pqnas-base-login-i18n-preserve-inputs-v2
+    function findTextElementByExactText(text) {
+        const wanted = String(text).trim();
+
+        // Do NOT include <label> here. Some login labels contain the <input>
+        // as a child, and setting label.textContent would remove that input.
+        const all = Array.from(document.querySelectorAll("h1,h2,h3,p,div,span"));
+        return all.find(el => String(el.textContent || "").trim() === wanted) || null;
+    }
+
+    function setExact(oldText, key, fallback) {
+        const el = findTextElementByExactText(oldText);
+        if (el) el.textContent = t(key, fallback);
+    }
+
+    function setLoginLabel(oldText, key, fallback) {
+        const labels = Array.from(document.querySelectorAll("label"));
+        const label = labels.find(el => String(el.textContent || "").trim() === oldText);
+        if (!label) return;
+
+        const translated = t(key, fallback);
+
+        // Prefer replacing an existing text node so child inputs survive.
+        for (const node of Array.from(label.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE && String(node.nodeValue || "").trim() === oldText) {
+                node.nodeValue = translated;
+                return;
+            }
+        }
+
+        // If the label has an element for the visible text, update only that.
+        for (const child of Array.from(label.children)) {
+            if (!/^(INPUT|TEXTAREA|SELECT|BUTTON)$/i.test(child.tagName) &&
+                String(child.textContent || "").trim() === oldText) {
+                child.textContent = translated;
+                return;
+            }
+        }
+
+        // Last resort: insert a text node before the first form control.
+        const control = label.querySelector("input,textarea,select,button");
+        if (control) {
+            label.insertBefore(document.createTextNode(translated), control);
+        }
+    }
+
+    function applyBaseLoginI18n() {
+        setExact("Sign in", "auth.login.title", "Sign in");
+        setExact("Use your DNA-Nexus username or email address.", "auth.login.subtitle", "Use your DNA-Nexus username or email address.");
+        setExact("What Is DNA-Nexus?", "auth.login.what_is", "What Is DNA-Nexus?");
+        setLoginLabel("Email / username", "auth.login.email", "Email / username");
+        setLoginLabel("Password", "auth.login.password", "Password");
+
+        const buttons = Array.from(document.querySelectorAll("button"));
+        for (const b of buttons) {
+            const txt = String(b.textContent || "").trim();
+            if (txt === "Sign in") {
+                b.textContent = t("auth.login.submit", "Sign in");
+            } else if (txt === "Signing in…") {
+                b.textContent = t("auth.login.signing_in", "Signing in…");
+            }
+        }
+
+        const all = Array.from(document.querySelectorAll("div,span,p"));
+        for (const el of all) {
+            const txt = String(el.textContent || "").trim();
+            if (txt === "Ready.") {
+                el.textContent = t("auth.login.ready", "Ready.");
+            } else if (txt === "Invalid login or password.") {
+                el.textContent = t("auth.login.invalid", "Invalid login or password.");
+            }
+        }
+    }
+
+    let tries = 0;
+    const timer = setInterval(() => {
+        tries += 1;
+        applyBaseLoginI18n();
+        if (document.querySelector('input[type="password"]') || tries > 80) {
+            clearInterval(timer);
+        }
+    }, 250);
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", applyBaseLoginI18n, { once: true });
+    } else {
+        applyBaseLoginI18n();
+    }
+})();
