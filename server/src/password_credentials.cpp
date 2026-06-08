@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <system_error>
 #include <unistd.h>
 
@@ -45,6 +46,55 @@ static bool json_bool_or_default(const json& j, const char* key, bool def) {
     if (v.is_boolean()) return v.get<bool>();
     return def;
 }
+
+
+static bool password_credentials_dummy_verify(const std::string& password) {
+    // Timing equalizer for missing/disabled logins.
+    //
+    // Without this, a missing login returns immediately while an existing login
+    // with a wrong password pays the Argon2id verification cost. That creates a
+    // login-existence timing oracle.
+    static std::once_flag once;
+    static std::string dummy_hash;
+    static bool dummy_ready = false;
+
+    std::call_once(once, []() {
+        char hash[crypto_pwhash_STRBYTES];
+
+        static constexpr char kDummyPassword[] =
+            "pqnas-password-credentials-dummy-timing-equalizer";
+
+        if (crypto_pwhash_str_alg(hash,
+                                  kDummyPassword,
+                                  sizeof(kDummyPassword) - 1,
+                                  crypto_pwhash_OPSLIMIT_INTERACTIVE,
+                                  crypto_pwhash_MEMLIMIT_INTERACTIVE,
+                                  crypto_pwhash_ALG_ARGON2ID13) == 0) {
+            dummy_hash = hash;
+            dummy_ready = true;
+        }
+
+        sodium_memzero(hash, sizeof(hash));
+    });
+
+    if (!dummy_ready || dummy_hash.empty()) {
+        return false;
+    }
+
+    const int rc = crypto_pwhash_str_verify(dummy_hash.c_str(),
+                                             password.data(),
+                                             password.size());
+
+    // The result is intentionally not used for authentication. This function is
+    // only a timing equalizer for missing/disabled accounts, but we still read
+    // the return value because libsodium marks it warn_unused_result.
+    if (rc == 0) {
+        return false;
+    }
+
+    return false;
+}
+
 
 } // namespace
 
@@ -217,18 +267,18 @@ bool PasswordCredentials::verify_password(const std::string& normalized_login,
         return false;
     }
 
+    if (!sodium_ready()) {
+        return false;
+    }
+
     const auto rec_opt = get(normalized_login);
     if (!rec_opt.has_value()) {
-        return false;
+        return password_credentials_dummy_verify(password);
     }
 
     const PasswordCredentialRec& rec = *rec_opt;
     if (!rec.enabled || rec.password_hash.empty()) {
-        return false;
-    }
-
-    if (!sodium_ready()) {
-        return false;
+        return password_credentials_dummy_verify(password);
     }
 
     const int rc = crypto_pwhash_str_verify(rec.password_hash.c_str(),
