@@ -2498,7 +2498,14 @@ class ReverseProxyScreen(Screen):
             )
             yield self.enable
 
-            yield Static("\n[b]Login authentication mode:[/b] v5 (stateless) — forced by installer", classes="muted")
+            yield Static("\n[b]Internal auth/session mode:[/b] v5 (stateless) — forced by installer", classes="muted")
+
+            yield Static("\n[b]Browser login method[/b]", classes="muted")
+            self.login_mode = RadioSet(
+                RadioButton("QR / DNA Connect", id="qr"),
+                RadioButton("Username/password", id="password"),
+            )
+            yield self.login_mode
 
             yield Static(
                 "\n[b]Public hostname or IP[/b] "
