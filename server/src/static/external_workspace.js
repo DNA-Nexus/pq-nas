@@ -123,6 +123,8 @@ let signedIn = false;
     })();
     let textEditState = null;
     let textEditDrag = null;
+    let textEditLease = null;
+    let textEditLeaseTimer = 0;
     let textEditFindMatchCase = false;
     let textEditFindMatches = [];
     let textEditFindIndex = -1;
@@ -2103,6 +2105,134 @@ html[data-theme="bright"] .externalDialogInput{
         return `/api/v4/workspaces/files/write_text?${qs.toString()}`;
     }
 
+    function ensureExternalWorkspaceSessionId() {
+        if (currentSessionId) return currentSessionId;
+
+        try {
+            if (window.crypto && typeof window.crypto.randomUUID === "function") {
+                currentSessionId = window.crypto.randomUUID();
+                return currentSessionId;
+            }
+        } catch (_) {}
+
+        try {
+            const bytes = new Uint8Array(16);
+            window.crypto && window.crypto.getRandomValues && window.crypto.getRandomValues(bytes);
+            currentSessionId = "ext_" + Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+            return currentSessionId;
+        } catch (_) {}
+
+        currentSessionId = "ext_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+        return currentSessionId;
+    }
+
+    function editLeaseAcquireUrl() {
+        return "/api/v4/workspaces/files/edit_lease/acquire";
+    }
+
+    function editLeaseRefreshUrl() {
+        return "/api/v4/workspaces/files/edit_lease/refresh";
+    }
+
+    function editLeaseReleaseUrl() {
+        return "/api/v4/workspaces/files/edit_lease/release";
+    }
+
+    function clearTextEditLeaseTimer() {
+        if (textEditLeaseTimer) {
+            clearInterval(textEditLeaseTimer);
+            textEditLeaseTimer = 0;
+        }
+    }
+
+    async function acquireTextEditLease(rel) {
+        const sessionId = ensureExternalWorkspaceSessionId();
+
+        const j = await apiJson(editLeaseAcquireUrl(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                path: rel,
+                session_id: sessionId,
+                lease_seconds: 60
+            })
+        });
+
+        textEditLease = {
+            rel,
+            sessionId,
+            lease: j.lease || null
+        };
+
+        return j;
+    }
+
+    async function refreshTextEditLease() {
+        if (!textEditLease) return null;
+
+        const j = await apiJson(editLeaseRefreshUrl(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                path: textEditLease.rel,
+                session_id: textEditLease.sessionId,
+                lease_seconds: 60
+            })
+        });
+
+        textEditLease.lease = j.lease || textEditLease.lease || null;
+        return j;
+    }
+
+    function startTextEditLeaseTimer() {
+        clearTextEditLeaseTimer();
+        if (!textEditLease) return;
+
+        textEditLeaseTimer = window.setInterval(async () => {
+            if (!textEditModal || !textEditModal.classList.contains("show")) return;
+
+            try {
+                await refreshTextEditLease();
+            } catch (e) {
+                clearTextEditLeaseTimer();
+                textEditLease = null;
+                if (textEditArea) textEditArea.readOnly = true;
+                setTextEditStatus(
+                    tr("external.textedit.lease_lost", null, "Edit lock was lost. Reload to try editing again."),
+                    "bad"
+                );
+                syncTextEditDirty();
+            }
+        }, 20000);
+    }
+
+    async function releaseTextEditLeaseBestEffort() {
+        if (!textEditLease) return;
+
+        const lease = textEditLease;
+        textEditLease = null;
+        clearTextEditLeaseTimer();
+
+        try {
+            await fetch(editLeaseReleaseUrl(), {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    workspace_id: workspaceId,
+                    path: lease.rel,
+                    session_id: lease.sessionId
+                })
+            });
+        } catch (_) {}
+    }
+
     function pickTextFromReadResponse(j) {
         if (!j || typeof j !== "object") return "";
         if (typeof j.text === "string") return j.text;
@@ -2158,6 +2288,8 @@ html[data-theme="bright"] .externalDialogInput{
             });
             if (!ok) return false;
         }
+
+        await releaseTextEditLeaseBestEffort();
 
         if (textEditModal) {
             textEditModal.classList.remove("show");
@@ -2274,6 +2406,7 @@ html[data-theme="bright"] .externalDialogInput{
             if (!ok) return;
         }
 
+        await releaseTextEditLeaseBestEffort();
         resetTextEditorPosition();
 
         if (textEditTitle) textEditTitle.textContent = tr("external.textedit.title", null, "Edit text file");
@@ -2297,16 +2430,44 @@ html[data-theme="bright"] .externalDialogInput{
             sha256: pickSha256FromHashResponse(j)
         };
 
+        let editable = false;
+        let leaseMessage = "";
+
+        if (canEdit) {
+            try {
+                const leasej = await acquireTextEditLease(rel);
+                startTextEditLeaseTimer();
+                editable = true;
+
+                if (leasej && leasej.lease && leasej.lease.expires_at) {
+                    leaseMessage = ` · edit lock until ${leasej.lease.expires_at}`;
+                }
+            } catch (e) {
+                editable = false;
+                leaseMessage = "";
+                setTextEditStatus(
+                    tr(
+                        "external.textedit.lease_failed",
+                        { error: String(e && e.message ? e.message : e) },
+                        `Could not acquire edit lock: ${String(e && e.message ? e.message : e)}`
+                    ),
+                    "bad"
+                );
+            }
+        }
+
         if (textEditArea) {
             textEditArea.value = text;
-            textEditArea.readOnly = false;
+            textEditArea.readOnly = !editable;
         }
 
         const bytes = j.bytes != null ? Number(j.bytes) : new Blob([text]).size;
         if (textEditInfo) {
-            textEditInfo.textContent = `${fmtSize(bytes)} · ${j.mime || tr("external.textedit.mime_text", null, "text")} · ${tr("external.textedit.editable", null, "editable")}`;
+            textEditInfo.textContent = editable
+                ? `${fmtSize(bytes)} · ${j.mime || tr("external.textedit.mime_text", null, "text")} · ${tr("external.textedit.editable", null, "editable")}${leaseMessage}`
+                : `${fmtSize(bytes)} · ${j.mime || tr("external.textedit.mime_text", null, "text")} · ${tr("external.textedit.read_only", null, "read-only")}`;
         }
-        setTextEditStatus(tr("external.status.ready_sentence", null, "Ready."), "good");
+        if (editable) setTextEditStatus(tr("external.status.ready_sentence", null, "Ready."), "good");
         syncTextEditDirty();
         updateTextEditorFind();
     }
@@ -2346,10 +2507,33 @@ html[data-theme="bright"] .externalDialogInput{
         setTextEditStatus(tr("external.textedit.saving", null, "Saving…"));
         if (textEditSaveBtn) textEditSaveBtn.disabled = true;
 
+        if (!textEditLease || textEditLease.rel !== rel) {
+            setTextEditStatus(tr("external.textedit.no_edit_lock", null, "No active edit lock. Reload to try editing again."), "bad");
+            if (textEditSaveBtn) textEditSaveBtn.disabled = false;
+            return;
+        }
+
+        try {
+            await refreshTextEditLease();
+        } catch (e) {
+            setTextEditStatus(
+                tr(
+                    "external.textedit.lease_refresh_failed",
+                    { error: String(e && e.message ? e.message : e) },
+                    `Edit lock refresh failed: ${String(e && e.message ? e.message : e)}`
+                ),
+                "bad"
+            );
+            if (textEditArea) textEditArea.readOnly = true;
+            if (textEditSaveBtn) textEditSaveBtn.disabled = true;
+            return;
+        }
+
         const body = {
             workspace_id: workspaceId,
             path: rel,
-            text
+            text,
+            session_id: textEditLease.sessionId
         };
 
         if (textEditState.mtimeEpoch) body.expected_mtime_epoch = textEditState.mtimeEpoch;
