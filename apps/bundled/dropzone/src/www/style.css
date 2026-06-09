@@ -505,3 +505,69 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.dzListToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0 16px;
+}
+
+.dzSearchWrap {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+
+.dzSearchInput {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  background: rgba(255,255,255,.055);
+  color: var(--dz-text);
+  padding: 11px 13px;
+  font: inherit;
+  outline: none;
+}
+
+.dzSearchInput:focus {
+  border-color: rgba(255,159,28,.55);
+  box-shadow: 0 0 0 3px rgba(255,159,28,.12);
+}
+
+.dzFilterChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dzFilterChip {
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  color: var(--dz-muted);
+  padding: 8px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dzFilterChip.active {
+  border-color: rgba(255,159,28,.55);
+  background: rgba(255,159,28,.16);
+  color: var(--dz-text);
+}
+
+.dzFilterCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.22);
+  color: inherit;
+  font-size: .86em;
+}

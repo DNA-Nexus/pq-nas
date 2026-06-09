@@ -563,6 +563,10 @@
 
   const DROPZONE_LINK_STORAGE_KEY = "pqnas.dropzone.ownerLinks.v1";
 
+  let dropZoneListCache = [];
+  let dropZoneSearchText = "";
+  let dropZoneStatusFilter = "all";
+
   function readSavedDropZoneLinks() {
     try {
       const raw = localStorage.getItem(DROPZONE_LINK_STORAGE_KEY);
@@ -736,15 +740,144 @@
     return json;
   }
 
+  function dropZoneSearchHaystack(z) {
+    const branding = z && z.branding && typeof z.branding === "object" ? z.branding : {};
+
+    return [
+      z && z.id,
+      z && z.name,
+      z && z.destination_path,
+      z && z.status,
+      branding.company_name,
+      branding.title,
+      branding.description,
+      branding.footer_text,
+      branding.button_text
+    ].map((v) => String(v || "").toLowerCase()).join(" ");
+  }
+
+  function zoneMatchesCurrentFilters(z) {
+    const status = dropZoneStatus(z).key;
+
+    if (dropZoneStatusFilter !== "all" && status !== dropZoneStatusFilter) {
+      return false;
+    }
+
+    const q = String(dropZoneSearchText || "").trim().toLowerCase();
+    if (!q) return true;
+
+    return dropZoneSearchHaystack(z).includes(q);
+  }
+
+  function ensureDropZoneListToolbar() {
+    if (!zonesList) return;
+
+    const existing = document.getElementById("dzListToolbar");
+    if (existing) return;
+
+    const toolbar = document.createElement("div");
+    toolbar.id = "dzListToolbar";
+    toolbar.className = "dzListToolbar";
+    toolbar.innerHTML = `
+      <div class="dzSearchWrap">
+        <input
+          class="dzSearchInput"
+          type="search"
+          autocomplete="off"
+          placeholder="${escapeHtml(tr("dropzone.search_placeholder", null, "Search Drop Zones…"))}"
+        >
+      </div>
+
+      <div class="dzFilterChips" role="group" aria-label="${escapeHtml(tr("dropzone.status_filter", null, "Status filter"))}">
+        <button class="dzFilterChip active" type="button" data-dz-filter="all">
+          ${escapeHtml(tr("dropzone.filter_all", null, "All"))}
+          <span class="dzFilterCount" data-dz-count="all">0</span>
+        </button>
+        <button class="dzFilterChip" type="button" data-dz-filter="active">
+          ${escapeHtml(tr("dropzone.filter_active", null, "Active"))}
+          <span class="dzFilterCount" data-dz-count="active">0</span>
+        </button>
+        <button class="dzFilterChip" type="button" data-dz-filter="expired">
+          ${escapeHtml(tr("dropzone.filter_expired", null, "Expired"))}
+          <span class="dzFilterCount" data-dz-count="expired">0</span>
+        </button>
+        <button class="dzFilterChip" type="button" data-dz-filter="disabled">
+          ${escapeHtml(tr("dropzone.filter_disabled", null, "Disabled"))}
+          <span class="dzFilterCount" data-dz-count="disabled">0</span>
+        </button>
+      </div>
+    `;
+
+    zonesList.parentNode.insertBefore(toolbar, zonesList);
+
+    const input = toolbar.querySelector(".dzSearchInput");
+    if (input) {
+      input.value = dropZoneSearchText;
+      input.addEventListener("input", () => {
+        dropZoneSearchText = input.value || "";
+        renderZones(dropZoneListCache);
+      });
+    }
+
+    toolbar.addEventListener("click", (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest(".dzFilterChip") : null;
+      if (!btn) return;
+
+      dropZoneStatusFilter = btn.getAttribute("data-dz-filter") || "all";
+      renderZones(dropZoneListCache);
+    });
+  }
+
+  function updateDropZoneListToolbar(zones) {
+    const toolbar = document.getElementById("dzListToolbar");
+    if (!toolbar) return;
+
+    const allZones = Array.isArray(zones) ? zones : [];
+    const counts = { all: allZones.length, active: 0, expired: 0, disabled: 0 };
+
+    for (const z of allZones) {
+      const key = dropZoneStatus(z).key;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+
+    toolbar.querySelectorAll("[data-dz-count]").forEach((el) => {
+      const key = el.getAttribute("data-dz-count") || "all";
+      el.textContent = String(counts[key] || 0);
+    });
+
+    toolbar.querySelectorAll(".dzFilterChip").forEach((btn) => {
+      const key = btn.getAttribute("data-dz-filter") || "all";
+      btn.classList.toggle("active", key === dropZoneStatusFilter);
+    });
+
+    const input = toolbar.querySelector(".dzSearchInput");
+    if (input && document.activeElement !== input && input.value !== dropZoneSearchText) {
+      input.value = dropZoneSearchText;
+    }
+  }
+
   function renderZones(zones) {
     if (!zonesList) return;
 
-    if (!Array.isArray(zones) || zones.length === 0) {
+    const allZones = Array.isArray(zones) ? zones : [];
+    dropZoneListCache = allZones;
+
+    ensureDropZoneListToolbar();
+    updateDropZoneListToolbar(allZones);
+
+    if (allZones.length === 0) {
       renderEmpty(tr("dropzone.empty", null, "No Drop Zones yet. Create one when you need an outsider upload link."));
       return;
     }
 
-    zonesList.innerHTML = zones.map((z) => {
+    const visibleZones = allZones.filter(zoneMatchesCurrentFilters);
+
+    if (visibleZones.length === 0) {
+      renderEmpty(tr("dropzone.no_matches", null, "No Drop Zones match the current search or filter."));
+      return;
+    }
+
+    zonesList.innerHTML = visibleZones.map((z) => {
       const id = z.id || "";
       const name = z.name || id || "Drop Zone";
       const dest = z.destination_path || "—";
