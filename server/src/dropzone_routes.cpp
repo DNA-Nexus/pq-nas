@@ -1582,6 +1582,109 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         });
     });
 
+    srv.Post("/api/v4/dropzones/update", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
+            !deps.dropzone_index) {
+            reply_json_local(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "dropzone route dependencies missing"}
+            });
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor(req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (!require_same_origin_for_cookie_mutation_local(req, res, deps)) {
+            return;
+        }
+
+        json in = json::parse(req.body, nullptr, false);
+        if (in.is_discarded() || !in.is_object()) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid json"}
+            });
+            return;
+        }
+
+        const std::string id = in.value("id", "");
+        if (id.empty()) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "missing id"}
+            });
+            return;
+        }
+
+        auto trim = [](std::string s) {
+            while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+            while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+            return s;
+        };
+
+        std::string name = trim(in.value("name", ""));
+        if (name.empty()) name = "Drop Zone";
+        if (name.size() > 120) name.resize(120);
+
+        constexpr std::uint64_t kMaxConfiguredFileBytes = 1024ULL * 1024ULL * 1024ULL * 1024ULL;          // 1 TiB.
+        constexpr std::uint64_t kMaxConfiguredTotalBytes = 10ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL; // 10 TiB.
+
+        const std::uint64_t max_file_bytes =
+            json_u64_local(in, "max_file_bytes", 0, kMaxConfiguredFileBytes);
+
+        const std::uint64_t max_total_bytes =
+            json_u64_local(in, "max_total_bytes", 0, kMaxConfiguredTotalBytes);
+
+        json branding_input = json::object();
+        if (in.contains("branding")) {
+            branding_input = in["branding"];
+        }
+
+        const json branding = dropzone_sanitize_branding_json_local(branding_input);
+        const std::string branding_json = branding.empty() ? std::string{} : branding.dump();
+
+        std::string err;
+        if (!deps.dropzone_index->update_settings(
+                id,
+                actor_fp,
+                name,
+                branding_json,
+                max_file_bytes,
+                max_total_bytes,
+                &err)) {
+            audit_local(deps, "v4.dropzones_update_fail", "fail", {
+                {"actor_fp", actor_fp},
+                {"dropzone_id", id},
+                {"reason", err}
+            });
+
+            reply_json_local(deps, res, 404, json{
+                {"ok", false},
+                {"error", "not_found"},
+                {"message", "drop zone not found"}
+            });
+            return;
+        }
+
+        audit_local(deps, "v4.dropzones_update_ok", "ok", {
+            {"actor_fp", actor_fp},
+            {"dropzone_id", id}
+        });
+
+        reply_json_local(deps, res, 200, json{
+            {"ok", true},
+            {"id", id}
+        });
+    });
+
     srv.Post("/api/v4/dropzones/renew", [&](const httplib::Request& req, httplib::Response& res) {
         if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
             !deps.dropzone_index || !deps.now_epoch) {

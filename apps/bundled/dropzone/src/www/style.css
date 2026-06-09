@@ -1058,7 +1058,7 @@ textarea.dzEditInput {
 }
 
 .dzEditPreview.disabledPreview::after {
-  content: "Branding disabled";
+  content: attr(data-disabled-label);
   position: absolute;
   right: 12px;
   top: 12px;

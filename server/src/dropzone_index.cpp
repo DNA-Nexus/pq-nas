@@ -592,6 +592,59 @@ bool DropZoneIndex::set_expires_epoch(const std::string& id,
     return true;
 }
 
+bool DropZoneIndex::update_settings(const std::string& id,
+                                    const std::string& owner_fp,
+                                    const std::string& name,
+                                    const std::string& branding_json,
+                                    std::uint64_t max_file_bytes,
+                                    std::uint64_t max_total_bytes,
+                                    std::string* err) {
+    std::lock_guard<std::mutex> lk(mu_);
+
+    if (err) err->clear();
+
+    if (!db_) {
+        if (err) *err = "db not open";
+        return false;
+    }
+
+    const char* sql =
+        "UPDATE drop_zones "
+        "SET name = ?1, branding_json = ?2, max_file_bytes = ?3, max_total_bytes = ?4 "
+        "WHERE id = ?5 AND owner_fp = ?6";
+
+    sqlite3_stmt* stmt = nullptr;
+    const int rc_prep = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc_prep != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db_);
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, branding_json.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(max_file_bytes));
+    sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(max_total_bytes));
+    sqlite3_bind_text(stmt, 5, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db_);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    const int changed = sqlite3_changes(db_);
+    sqlite3_finalize(stmt);
+
+    if (changed != 1) {
+        if (err) *err = "update_settings_no_match";
+        return false;
+    }
+
+    return true;
+}
+
 bool DropZoneIndex::remove(const std::string& id,
                            const std::string& owner_fp,
                            std::string* err) {

@@ -159,6 +159,14 @@ public:
                            bool also_enable,
                            std::string* err);
 
+    bool update_settings(const std::string& id,
+                         const std::string& owner_fp,
+                         const std::string& name,
+                         const std::string& branding_json,
+                         std::uint64_t max_file_bytes,
+                         std::uint64_t max_total_bytes,
+                         std::string* err);
+
     bool remove(const std::string& id,
                 const std::string& owner_fp,
                 std::string* err);

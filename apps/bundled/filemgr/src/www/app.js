@@ -435,8 +435,54 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     showQuotaLine("", text);
   }
 
+  function normalizeDeepLinkPath(raw) {
+    let p = String(raw || "").trim();
+    if (!p) return "";
+
+    p = p.replace(/\\/g, "/");
+
+    // Some callers may pass "/foo/bar"; File Manager paths are relative to the
+    // current user/root scope, so strip leading slashes.
+    p = p.replace(/^\/+/, "");
+
+    const parts = [];
+    for (const part of p.split("/")) {
+      const x = String(part || "").trim();
+      if (!x || x === ".") continue;
+      if (x === "..") continue;
+      parts.push(x);
+    }
+
+    return parts.join("/");
+  }
+
+  function initialDeepLinkPath() {
+    try {
+      const qs = new URLSearchParams(window.location.search || "");
+      return normalizeDeepLinkPath(qs.get("path") || qs.get("p") || "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function updateDeepLinkPath(path) {
+    try {
+      const url = new URL(window.location.href);
+      const p = normalizeDeepLinkPath(path);
+
+      if (p) {
+        url.searchParams.set("path", p);
+      } else {
+        url.searchParams.delete("path");
+        url.searchParams.delete("p");
+      }
+
+      window.history.replaceState(null, "", url.toString());
+    } catch (_) {}
+  }
+
   // ---- State ----------------------------------------------------------------
-  let curPath = "";
+  let curPath = initialDeepLinkPath();
   let storageBlocked = false;
   let lastListedItems = [];
   let loadSeq = 0;
@@ -835,7 +881,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   window.addEventListener("focus", () => applyIconsNow());
 
   function setPathAndLoad(p) {
-    curPath = p || "";
+    curPath = normalizeDeepLinkPath(p || "");
+    updateDeepLinkPath(curPath);
     clearSelection();
     load();
   }
@@ -6982,7 +7029,8 @@ function describeMoveItems(items) {
         return;
       }
 
-      curPath = (typeof j.path === "string") ? j.path : curPath;
+      curPath = normalizeDeepLinkPath((typeof j.path === "string") ? j.path : curPath);
+      updateDeepLinkPath(curPath);
       renderBreadcrumb();
 
       const sortMode = sorter ? sorter.getMode() : null;

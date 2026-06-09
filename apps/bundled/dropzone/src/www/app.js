@@ -190,7 +190,7 @@
 
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "Choose template…";
+    empty.textContent = tr("dropzone.create.choose_template", null, "Choose template…");
     brandTemplateSelect.appendChild(empty);
 
     const addGroup = (label, rows) => {
@@ -1291,6 +1291,7 @@
     const logoUrl = String(data.logo_url || "").trim();
 
     preview.classList.toggle("disabledPreview", !enabled);
+    preview.setAttribute("data-disabled-label", tr("dropzone.create.branding_disabled", null, "Branding disabled"));
     preview.style.setProperty("--dz-edit-preview-primary", primary);
     preview.style.setProperty("--dz-edit-preview-bg", bg);
 
@@ -1896,6 +1897,7 @@
       const logoUrl = val("logo_url");
 
       preview.classList.toggle("disabledPreview", !enabled);
+    preview.setAttribute("data-disabled-label", tr("dropzone.create.branding_disabled", null, "Branding disabled"));
       preview.style.setProperty("--dz-edit-preview-primary", primary);
       preview.style.setProperty("--dz-edit-preview-bg", bg);
 
