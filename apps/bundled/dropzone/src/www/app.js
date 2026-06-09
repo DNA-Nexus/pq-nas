@@ -527,6 +527,89 @@
     }
   }
 
+  function nowEpoch() {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  function dropZoneStatus(z) {
+    const raw = String(z?.status || "").trim().toLowerCase();
+    const expiresEpoch = Number(z?.expires_epoch || 0);
+    const expired = raw === "expired" ||
+        !!z?.expired ||
+        (Number.isFinite(expiresEpoch) && expiresEpoch > 0 && expiresEpoch <= nowEpoch());
+
+    if (!!z?.disabled || raw === "disabled") {
+      return {
+        key: "disabled",
+        label: tr("dropzone.disabled", null, "Disabled"),
+        className: "bad"
+      };
+    }
+
+    if (expired) {
+      return {
+        key: "expired",
+        label: tr("dropzone.expired", null, "Expired"),
+        className: "warn"
+      };
+    }
+
+    return {
+      key: "active",
+      label: tr("dropzone.active", null, "Active"),
+      className: "ok"
+    };
+  }
+
+  const DROPZONE_LINK_STORAGE_KEY = "pqnas.dropzone.ownerLinks.v1";
+
+  function readSavedDropZoneLinks() {
+    try {
+      const raw = localStorage.getItem(DROPZONE_LINK_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveDropZoneLink(id, url) {
+    const zoneId = String(id || "").trim();
+    const fullUrl = String(url || "").trim();
+    if (!zoneId || !fullUrl) return;
+
+    try {
+      const links = readSavedDropZoneLinks();
+      links[zoneId] = {
+        url: fullUrl,
+        savedAt: Date.now()
+      };
+      localStorage.setItem(DROPZONE_LINK_STORAGE_KEY, JSON.stringify(links));
+    } catch (_) {}
+  }
+
+  function dropZonePublicUrl(z) {
+    const id = String(z?.id || "").trim();
+    const saved = id ? readSavedDropZoneLinks()[id] : null;
+
+    const candidates = [
+      z?.full_url,
+      z?.public_url,
+      z?.url,
+      z?.public_path,
+      saved && saved.url
+    ];
+
+    for (const value of candidates) {
+      const link = String(value || "").trim();
+      if (!link) continue;
+      if (link.startsWith("https://") || link.startsWith("http://")) return link;
+      if (link.startsWith("/") && !link.startsWith("//")) return `${window.location.origin}${link}`;
+    }
+
+    return "";
+  }
+
   function setBusy(on) {
     if (refreshBtn) refreshBtn.disabled = !!on;
     if (createBtn) createBtn.disabled = !!on;
@@ -657,7 +740,7 @@
     if (!zonesList) return;
 
     if (!Array.isArray(zones) || zones.length === 0) {
-      renderEmpty(tr("dropzone.empty", null, "No active Drop Zones yet. Create one when you need an outsider upload link."));
+      renderEmpty(tr("dropzone.empty", null, "No Drop Zones yet. Create one when you need an outsider upload link."));
       return;
     }
 
@@ -670,8 +753,12 @@
       const expires = fmtEpoch(z.expires_epoch);
       const maxFile = fmtBytes(z.max_file_bytes || 0);
       const maxTotal = fmtBytes(z.max_total_bytes || 0);
-      const disabled = !!z.disabled;
       const branded = !!(z.branding && typeof z.branding === "object" && Object.keys(z.branding).length > 0);
+      const status = dropZoneStatus(z);
+      const publicUrl = dropZonePublicUrl(z);
+      const canDisable = status.key === "active";
+      const canReenable = status.key === "disabled";
+      const canRenew = status.key === "expired";
 
       return `
         <article class="dzCard" data-zone-id="${escapeHtml(id)}">
@@ -681,8 +768,8 @@
               <div class="dzCardMeta">${escapeHtml(tr("dropzone.destination", null, "Destination"))}: ${escapeHtml(dest)}</div>
               ${branded ? `<div class="dzCardMeta">${escapeHtml(tr("dropzone.branded_page", null, "Branded page"))}: ${escapeHtml((z.branding && z.branding.company_name) || tr("common.enabled", null, "Enabled"))}</div>` : ""}
             </div>
-            <div class="dzBadge ${disabled ? "bad" : "ok"}">
-              ${disabled ? tr("dropzone.disabled", null, "Disabled") : tr("dropzone.active", null, "Active")}
+            <div class="dzBadge ${escapeHtml(status.className)}">
+              ${escapeHtml(status.label)}
             </div>
           </div>
 
@@ -695,9 +782,12 @@
           <div class="dzCardMeta">${escapeHtml(tr("dropzone.max_file", null, "Max file"))}: ${escapeHtml(maxFile)} · ${escapeHtml(tr("dropzone.total_limit", null, "Total limit"))}: ${escapeHtml(maxTotal)}</div>
 
           <div class="dzCardActions">
-            <button class="dzGhost dzDisableBtn" type="button" data-zone-id="${escapeHtml(id)}">
-              ${escapeHtml(tr("dropzone.disable", null, "Disable"))}
-            </button>
+            ${publicUrl ? `<button class="dzGhost dzCopyLinkBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.copy_link", null, "Copy link"))}</button>` : `<span class="dzHint">${escapeHtml(tr("dropzone.link_not_available", null, "Link is not available for this older Drop Zone."))}</span>`}
+            ${publicUrl ? `<button class="dzGhost dzPreviewBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.preview", null, "Preview"))}</button>` : ""}
+            ${canDisable ? `<button class="dzGhost dzDisableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.disable", null, "Disable"))}</button>` : ""}
+            ${canReenable ? `<button class="dzGhost dzEnableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.reenable", null, "Re-enable"))}</button>` : ""}
+            ${canRenew ? `<button class="dzGhost dzRenewBtn" type="button" data-zone-id="${escapeHtml(id)}" data-days="7">${escapeHtml(tr("dropzone.renew_7d", null, "Renew 7 days"))}</button>` : ""}
+            ${canRenew ? `<button class="dzGhost dzRenewBtn" type="button" data-zone-id="${escapeHtml(id)}" data-days="30">${escapeHtml(tr("dropzone.renew_30d", null, "Renew 30 days"))}</button>` : ""}
           </div>
         </article>
       `;
@@ -715,7 +805,13 @@
           ? json.drop_zones
           : (Array.isArray(json.zones) ? json.zones : []);
 
-      setStatus(tr("dropzone.active_count", { count: zones.length }, `${zones.length} active Drop Zone${zones.length === 1 ? "" : "s"}`));
+      const counts = zones.reduce((acc, z) => {
+        const key = dropZoneStatus(z).key;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, { active: 0, expired: 0, disabled: 0 });
+
+      setStatus(`${zones.length} Drop Zone${zones.length === 1 ? "" : "s"} · ${counts.active || 0} active · ${counts.expired || 0} expired · ${counts.disabled || 0} disabled`);
       renderZones(zones);
     } catch (e) {
       if (e && e.status === 404) {
@@ -890,6 +986,7 @@
       });
 
       const fullUrl = json.full_url || (json.url ? `${window.location.origin}${json.url}` : "");
+      saveDropZoneLink(json.id || "", fullUrl);
 
       showCreateResult("ok", `
         <div class="dzResultTitle">${escapeHtml(tr("dropzone.created_title", null, "Drop Zone created"))}</div>
@@ -959,13 +1056,98 @@
     }
   }
 
-  zonesList?.addEventListener("click", (ev) => {
-    const disableBtn = ev.target && ev.target.closest
-        ? ev.target.closest(".dzDisableBtn")
-        : null;
+  async function enableZone(id) {
+    if (!id) return;
 
+    setStatus(tr("dropzone.enabling", null, "Re-enabling Drop Zone…"));
+    setBusy(true);
+
+    try {
+      await apiJson("/api/v4/dropzones/disable", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id,
+          disabled: false
+        })
+      });
+
+      setStatus(tr("dropzone.enabled_status", null, "Drop Zone re-enabled."));
+      await loadZones();
+    } catch (e) {
+      setStatus(tr("dropzone.enable_failed", { error: String(e && e.message ? e.message : e) }, `Could not re-enable Drop Zone: ${e && e.message ? e.message : e}`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function renewZone(id, days) {
+    if (!id) return;
+
+    const safeDays = Number(days || 7);
+    const expiresInSeconds = Math.max(1, safeDays) * 24 * 60 * 60;
+
+    setStatus(tr("dropzone.renewing", null, "Renewing Drop Zone…"));
+    setBusy(true);
+
+    try {
+      await apiJson("/api/v4/dropzones/renew", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id,
+          expires_in_seconds: expiresInSeconds
+        })
+      });
+
+      setStatus(`Drop Zone renewed for ${safeDays} day${safeDays === 1 ? "" : "s"}.`);
+      await loadZones();
+    } catch (e) {
+      setStatus(tr("dropzone.renew_failed", { error: String(e && e.message ? e.message : e) }, `Could not renew Drop Zone: ${e && e.message ? e.message : e}`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  zonesList?.addEventListener("click", async (ev) => {
+    const target = ev.target && ev.target.closest ? ev.target : null;
+    if (!target) return;
+
+    const copyBtn = target.closest(".dzCopyLinkBtn");
+    if (copyBtn) {
+      const url = copyBtn.getAttribute("data-zone-url") || "";
+      const ok = await copyText(url);
+      setStatus(ok ? tr("dropzone.link_copied", null, "Link copied.") : tr("dropzone.copy_failed", null, "Could not copy link."));
+      return;
+    }
+
+    const previewBtn = target.closest(".dzPreviewBtn");
+    if (previewBtn) {
+      const url = previewBtn.getAttribute("data-zone-url") || "";
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const disableBtn = target.closest(".dzDisableBtn");
     if (disableBtn) {
       disableZone(disableBtn.getAttribute("data-zone-id") || "");
+      return;
+    }
+
+    const enableBtn = target.closest(".dzEnableBtn");
+    if (enableBtn) {
+      enableZone(enableBtn.getAttribute("data-zone-id") || "");
+      return;
+    }
+
+    const renewBtn = target.closest(".dzRenewBtn");
+    if (renewBtn) {
+      renewZone(renewBtn.getAttribute("data-zone-id") || "", Number(renewBtn.getAttribute("data-days") || 7));
+      return;
     }
   });
 

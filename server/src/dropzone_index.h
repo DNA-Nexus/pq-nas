@@ -150,6 +150,12 @@ public:
                       bool disabled,
                       std::string* err);
 
+    bool set_expires_epoch(const std::string& id,
+                           const std::string& owner_fp,
+                           std::int64_t expires_epoch,
+                           bool also_enable,
+                           std::string* err);
+
     // Returns completed upload records for a Drop Zone.
     //
     // This returns full internal records. Public routes must project these down

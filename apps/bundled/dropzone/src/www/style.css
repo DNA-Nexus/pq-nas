@@ -473,9 +473,15 @@ button:disabled {
   color: #ff9b9b;
 }
 
+.dzBadge.warn {
+  background: rgba(255,159,28,.16);
+  color: #ffd19a;
+}
+
 .dzCardActions {
   margin-top: 14px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 720px) {

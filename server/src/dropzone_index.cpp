@@ -530,6 +530,53 @@ bool DropZoneIndex::set_disabled(const std::string& id,
     return true;
 }
 
+bool DropZoneIndex::set_expires_epoch(const std::string& id,
+                                      const std::string& owner_fp,
+                                      std::int64_t expires_epoch,
+                                      bool also_enable,
+                                      std::string* err) {
+    std::lock_guard<std::mutex> lk(mu_);
+
+    if (err) err->clear();
+
+    if (!db_) {
+        if (err) *err = "db not open";
+        return false;
+    }
+
+    const char* sql = also_enable
+        ? "UPDATE drop_zones SET expires_epoch = ?1, disabled = 0 WHERE id = ?2 AND owner_fp = ?3"
+        : "UPDATE drop_zones SET expires_epoch = ?1 WHERE id = ?2 AND owner_fp = ?3";
+
+    sqlite3_stmt* stmt = nullptr;
+    const int rc_prep = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc_prep != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db_);
+        return false;
+    }
+
+    sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(expires_epoch));
+    sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db_);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    const int changed = sqlite3_changes(db_);
+    sqlite3_finalize(stmt);
+
+    if (changed != 1) {
+        if (err) *err = "set_expires_no_match";
+        return false;
+    }
+
+    return true;
+}
+
 bool DropZoneIndex::record_upload(const DropZoneUploadRec& rec, std::string* err) {
     std::lock_guard<std::mutex> lk(mu_);
 
