@@ -1645,7 +1645,7 @@
   "dropzone.password": "Parola",
   "dropzone.placeholder.customer_files": "Müşteri dosyaları",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Müşteri dosyaları",
-  "dropzone.placeholder.password": "Genel yüklemeler için henüz bağlanmadı",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Zaten yüklendi",
   "dropzone.public.checking": "Drop Zone kontrol ediliyor…",
   "dropzone.public.choose_files": "Dosya seç",

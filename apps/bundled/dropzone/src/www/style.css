@@ -1190,3 +1190,12 @@ textarea.dzEditInput {
 .dzManageActions .dzGhost {
   margin-top: 0;
 }
+
+
+.dzBrandConfigPanel[hidden] {
+  display: none !important;
+}
+
+.dzBrandConfigPanel {
+  margin-top: 10px;
+}

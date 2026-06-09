@@ -1645,7 +1645,7 @@
   "dropzone.password": "Parool",
   "dropzone.placeholder.customer_files": "Kliendi failid",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Kliendi failid",
-  "dropzone.placeholder.password": "Pole veel avalike üleslaadimiste jaoks ühendatud",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Juba üles laaditud",
   "dropzone.public.checking": "Drop Zone’i kontrollimine…",
   "dropzone.public.choose_files": "Vali failid",

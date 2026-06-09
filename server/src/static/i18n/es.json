@@ -1645,7 +1645,7 @@
   "dropzone.password": "Contraseña",
   "dropzone.placeholder.customer_files": "Archivos de cliente",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Archivos de cliente",
-  "dropzone.placeholder.password": "Aún no conectado para subidas públicas",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Ya subido",
   "dropzone.public.checking": "Comprobando Drop Zone...",
   "dropzone.public.choose_files": "Elegir archivos",

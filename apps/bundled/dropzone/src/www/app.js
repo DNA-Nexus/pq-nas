@@ -23,6 +23,7 @@
   const maxTotalInput = el("maxTotalInput");
 
   const brandEnabledInput = el("brandEnabledInput");
+  const brandConfigPanel = el("brandConfigPanel");
   const brandCompanyInput = el("brandCompanyInput");
   const brandLogoUrlInput = el("brandLogoUrlInput");
   const brandLogoFileInput = el("brandLogoFileInput");
@@ -43,6 +44,11 @@
   const brandTemplateSaveBtn = el("brandTemplateSaveBtn");
   const brandTemplateDeleteBtn = el("brandTemplateDeleteBtn");
 
+
+  function syncBrandConfigVisibility() {
+    if (!brandConfigPanel || !brandEnabledInput) return;
+    brandConfigPanel.hidden = !brandEnabledInput.checked;
+  }
 
   const BRAND_TEMPLATE_STORAGE_KEY = "pqnas.dropzone.brandTemplates.v1";
 
@@ -287,9 +293,8 @@
   }
 
   async function getAppVersion() {
-    const m = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
-    if (m && m[2]) return decodeURIComponent(m[2]);
-
+    // Prefer the app manifest version. The URL path may point to an installed
+    // runtime directory whose name can lag behind the manifest during dev copies.
     for (const url of ["../manifest.json", "./manifest.json"]) {
       try {
         const r = await fetch(url, {
@@ -297,11 +302,15 @@
           headers: { "Accept": "application/json" }
         });
         if (!r.ok) continue;
+
         const j = await r.json();
         const ver = j && typeof j.version === "string" ? j.version.trim() : "";
         if (ver) return ver;
       } catch (_) {}
     }
+
+    const m = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
+    if (m && m[2]) return decodeURIComponent(m[2]);
 
     return "";
   }
@@ -795,6 +804,8 @@
     if (brandFooterTextInput) brandFooterTextInput.value = "Secured by DNA-Nexus";
 
     refreshBrandTemplateSelect();
+
+    syncBrandConfigVisibility();
 
     createModal.classList.remove("hidden");
     createModal.setAttribute("aria-hidden", "false");
@@ -2173,6 +2184,10 @@
   modalCloseBtn?.addEventListener("click", closeCreateModal);
   cancelCreateBtn?.addEventListener("click", closeCreateModal);
   createForm?.addEventListener("submit", createDropZone);
+  createForm?.addEventListener("reset", () => {
+    setTimeout(syncBrandConfigVisibility, 0);
+  });
+  brandEnabledInput?.addEventListener("change", syncBrandConfigVisibility);
   brandLogoPickBtn?.addEventListener("click", () => brandLogoFileInput?.click());
   brandLogoFileInput?.addEventListener("change", handleBrandLogoFileSelected);
   brandLogoClearBtn?.addEventListener("click", clearBrandLogo);
@@ -2203,6 +2218,7 @@
         window.PQNAS_I18N.apply(document);
       }
     } catch (_) {}
+    syncBrandConfigVisibility();
     loadZones();
   }
 

@@ -1646,7 +1646,7 @@
   "dropzone.password": "Salasana",
   "dropzone.placeholder.customer_files": "Asiakkaan tiedostot",
   "dropzone.placeholder.destination": "Saapuvat/Drop Zonet/Asiakkaan tiedostot",
-  "dropzone.placeholder.password": "Ei vielä käytössä julkisissa latauksissa",
+  "dropzone.placeholder.password": "Valinnainen salasana julkiselle lataussivulle",
   "dropzone.public.already_uploaded": "Jo lähetetty",
   "dropzone.public.checking": "Tarkistetaan Drop Zonea…",
   "dropzone.public.choose_files": "Valitse tiedostot",

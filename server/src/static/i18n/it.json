@@ -1645,7 +1645,7 @@
   "dropzone.password": "Password",
   "dropzone.placeholder.customer_files": "File cliente",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/File cliente",
-  "dropzone.placeholder.password": "Non collegato ancora per upload pubblici",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Già caricati",
   "dropzone.public.checking": "Controllo Drop Zone…",
   "dropzone.public.choose_files": "Scegli file",

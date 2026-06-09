@@ -73,7 +73,7 @@
 
         <label>
           <span data-i18n="dropzone.password">Password</span> <span class="dzHint" data-i18n="dropzone.optional">optional</span>
-          <input id="passwordInput" name="password" type="password" placeholder="Not wired for public uploads yet" data-i18n-placeholder="dropzone.placeholder.password">
+          <input id="passwordInput" name="password" type="password" placeholder="Optional password for public upload page" data-i18n-placeholder="dropzone.placeholder.password">
         </label>
       </div>
 
@@ -107,7 +107,8 @@
           <span><span data-i18n="dropzone.create.branded_title">Branded Drop Zone</span> <span class="dzHint" data-i18n="dropzone.create.business_customers">business customers</span></span>
         </label>
 
-        <p class="dzSectionHint" data-i18n="dropzone.create.branding_desc">
+                <div id="brandConfigPanel" class="dzBrandConfigPanel">
+<p class="dzSectionHint" data-i18n="dropzone.create.branding_desc">
           Customize the public upload page with the customer company's own text, logo and colors.
         </p>
 
@@ -180,6 +181,7 @@
             <span data-i18n="dropzone.brand_footer_text">Footer text</span>
             <input id="brandFooterTextInput" name="brand_footer_text" type="text" maxlength="180" placeholder="Secured by DNA-Nexus">
           </label>
+        </div>
         </div>
       </section>
 

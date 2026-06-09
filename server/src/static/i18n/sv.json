@@ -1645,7 +1645,7 @@
   "dropzone.password": "Lösenord",
   "dropzone.placeholder.customer_files": "Kundfiler",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Kundfiler",
-  "dropzone.placeholder.password": "Inte kopplat för publika uppladdningar ännu",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Redan uppladdad",
   "dropzone.public.checking": "Kontrollerar Drop Zone?",
   "dropzone.public.choose_files": "Välj filer",

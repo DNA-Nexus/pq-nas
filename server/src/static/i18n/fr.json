@@ -1645,7 +1645,7 @@
   "dropzone.password": "Mot de passe",
   "dropzone.placeholder.customer_files": "Fichiers client",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Customer files",
-  "dropzone.placeholder.password": "Pas encore câblé pour les téléversements publics",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Déjà téléversé",
   "dropzone.public.checking": "Vérification de la Drop Zone…",
   "dropzone.public.choose_files": "Choisir des fichiers",

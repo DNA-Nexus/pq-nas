@@ -1645,7 +1645,7 @@
   "dropzone.password": "Пароль",
   "dropzone.placeholder.customer_files": "Файли клієнта",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/Customer files",
-  "dropzone.placeholder.password": "Ще не налаштовано для публічних завантажень",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "Вже завантажено",
   "dropzone.public.checking": "Перевірка зони завантаження…",
   "dropzone.public.choose_files": "Вибрати файли",

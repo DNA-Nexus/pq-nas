@@ -1645,7 +1645,7 @@
   "dropzone.password": "密码",
   "dropzone.placeholder.customer_files": "客户文件",
   "dropzone.placeholder.destination": "Incoming/Drop Zones/客户文件",
-  "dropzone.placeholder.password": "公开上传尚未接入",
+  "dropzone.placeholder.password": "Optional password for public upload page",
   "dropzone.public.already_uploaded": "已上传",
   "dropzone.public.checking": "正在检查 Drop Zone…",
   "dropzone.public.choose_files": "选择文件",
