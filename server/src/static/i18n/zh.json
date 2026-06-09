@@ -4495,5 +4495,10 @@
   "dropzone.create.clear_logo": "清除",
   "dropzone.create.page_title": "页面标题",
   "dropzone.create.upload_button_text": "上传按钮文本",
-  "dropzone.create.branding_disabled": "品牌化已关闭"
+  "dropzone.create.branding_disabled": "品牌化已关闭",
+  "dropzone.public.drop_hint": "Drag files here or choose multiple files at once.",
+  "dropzone.public.upload_file_count": "Upload {count} files",
+  "dropzone.public.file_list_more": "+{count} more file(s)",
+  "dropzone.public.show_more_uploads": "Show {count} more",
+  "dropzone.public.show_latest_uploads": "Show latest {count}"
 }

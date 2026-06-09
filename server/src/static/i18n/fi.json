@@ -4495,5 +4495,10 @@
   "dropzone.create.clear_logo": "Tyhjennä",
   "dropzone.create.page_title": "Sivun otsikko",
   "dropzone.create.upload_button_text": "Latausnapin teksti",
-  "dropzone.create.branding_disabled": "Brändäys pois"
+  "dropzone.create.branding_disabled": "Brändäys pois",
+  "dropzone.public.drop_hint": "Vedä tiedostot tähän tai valitse useita tiedostoja kerralla.",
+  "dropzone.public.upload_file_count": "Lähetä {count} tiedostoa",
+  "dropzone.public.file_list_more": "+{count} muuta tiedostoa",
+  "dropzone.public.show_more_uploads": "Näytä {count} lisää",
+  "dropzone.public.show_latest_uploads": "Näytä viimeisimmät {count}"
 }

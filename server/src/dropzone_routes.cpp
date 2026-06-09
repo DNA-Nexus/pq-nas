@@ -3786,6 +3786,58 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       color: var(--muted);
     }
 
+    .uploadBox.dragOver {
+      border-color: var(--accent);
+      background: rgba(255,255,255,.075);
+      box-shadow: 0 0 0 4px rgba(255,159,28,.12);
+    }
+
+    .dropHint {
+      margin: 14px auto 0;
+      padding: 12px 14px;
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      color: var(--muted);
+      background: rgba(0,0,0,.16);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .selectedFileList {
+      margin-top: 12px;
+      display: grid;
+      gap: 7px;
+      text-align: left;
+    }
+
+    .selectedFileItem {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 9px 11px;
+      background: rgba(0,0,0,.18);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .selectedFileItem strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .selectedFileMore {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
     .fieldGrid {
       margin-top: 18px;
       display: grid;
@@ -3939,6 +3991,23 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       font-size: 13px;
     }
 
+    .uploadedListToggle {
+      width: 100%;
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .uploadedListToggle:hover {
+      border-color: var(--accent);
+      background: rgba(255,255,255,.09);
+    }
+
     .pageFooter {
       padding: 0 30px 26px;
       color: var(--muted);
@@ -3977,6 +4046,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       <div id="uploadBox" class="uploadBox" style="display:none">
         <strong data-i18n="dropzone.public.select_files">Select files to upload</strong>
         <span data-i18n="dropzone.public.upload_help">Files are uploaded one-by-one into this Drop Zone.</span>
+        <div class="dropHint" data-i18n="dropzone.public.drop_hint">Drag files here or choose multiple files at once.</div>
 
         <div id="passwordBox" class="fieldGrid" style="display:none">
           <label>
@@ -4002,6 +4072,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
           <button id="filePickBtn" class="filePickerButton" type="button" data-i18n="dropzone.public.choose_files">Choose files</button>
           <span id="filePickName" class="filePickerName" data-i18n="dropzone.public.no_file_chosen">No file chosen</span>
         </div>
+        <div id="selectedFileList" class="selectedFileList" aria-live="polite"></div>
         <button id="uploadBtn" type="button" data-i18n="dropzone.public.upload_selected">Upload selected files</button>
 
         <div id="uploadLog" class="uploadLog"></div>
@@ -4018,6 +4089,9 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
   <script>
     const TOKEN = ")HTML") + token + R"HTML(";
     let CURRENT_INFO = null;
+    let SELECTED_DROP_FILES = [];
+    let SHOW_ALL_UPLOADED_FILES = false;
+    const UPLOADED_LIST_COLLAPSED_LIMIT = 10;
 
     function tr(key, params, fallback) {
       try {
@@ -4183,19 +4257,140 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       if (pickBtn) pickBtn.disabled = !!on;
     }
 
-    function updateFilePickLabel() {
-      const input = document.getElementById("fileInput");
-      const label = document.getElementById("filePickName");
-      if (!input || !label) return;
+    function selectedUploadFiles() {
+      if (Array.isArray(SELECTED_DROP_FILES) && SELECTED_DROP_FILES.length) {
+        return SELECTED_DROP_FILES;
+      }
 
-      const count = input.files ? input.files.length : 0;
+      const input = document.getElementById("fileInput");
+      return input && input.files ? Array.from(input.files) : [];
+    }
+
+    function renderSelectedFileList(files) {
+      const box = document.getElementById("selectedFileList");
+      if (!box) return;
+
+      const rows = Array.isArray(files) ? files : [];
+      box.innerHTML = "";
+
+      if (!rows.length) return;
+
+      const maxShown = 8;
+      for (const file of rows.slice(0, maxShown)) {
+        const item = document.createElement("div");
+        item.className = "selectedFileItem";
+
+        const name = document.createElement("strong");
+        name.textContent = file && file.name ? file.name : tr("dropzone.public.file", null, "file");
+
+        const size = document.createElement("span");
+        size.textContent = fmtBytes(file && file.size ? file.size : 0);
+
+        item.appendChild(name);
+        item.appendChild(size);
+        box.appendChild(item);
+      }
+
+      if (rows.length > maxShown) {
+        const more = document.createElement("div");
+        more.className = "selectedFileMore";
+        more.textContent = tr("dropzone.public.file_list_more", { count: rows.length - maxShown }, `+${rows.length - maxShown} more file(s)`);
+        box.appendChild(more);
+      }
+    }
+
+    function updateUploadButtonLabel() {
+      const btn = document.getElementById("uploadBtn");
+      if (!btn || btn.disabled) return;
+
+      const count = selectedUploadFiles().length;
+      btn.textContent = count > 1
+        ? tr("dropzone.public.upload_file_count", { count }, `Upload ${count} files`)
+        : tr("dropzone.public.upload_selected", null, "Upload selected files");
+    }
+
+    function updateFilePickLabel() {
+      const label = document.getElementById("filePickName");
+      if (!label) return;
+
+      const files = selectedUploadFiles();
+      const count = files.length;
+
       if (count <= 0) {
         label.textContent = tr("dropzone.public.no_file_chosen", null, "No file chosen");
       } else if (count === 1) {
-        label.textContent = input.files[0] ? input.files[0].name : tr("dropzone.public.one_file_selected", null, "1 file selected");
+        label.textContent = files[0] ? files[0].name : tr("dropzone.public.one_file_selected", null, "1 file selected");
       } else {
         label.textContent = tr("dropzone.public.files_selected", { count }, `${count} files selected`);
       }
+
+      renderSelectedFileList(files);
+      updateUploadButtonLabel();
+    }
+
+    function fileDragHasFiles(ev) {
+      try {
+        return !!(ev && ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes("Files"));
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function setSelectedFilesFromDrop(fileList) {
+      const files = Array.from(fileList || []).filter(Boolean);
+      if (!files.length) return;
+
+      SELECTED_DROP_FILES = files;
+
+      const input = document.getElementById("fileInput");
+
+      // Best-effort: keep the native input in sync in browsers that allow it.
+      try {
+        if (input && window.DataTransfer) {
+          const dt = new DataTransfer();
+          for (const file of files) dt.items.add(file);
+          input.files = dt.files;
+        }
+      } catch (_) {}
+
+      updateFilePickLabel();
+    }
+
+    function bindPublicDragAndDrop() {
+      const box = document.getElementById("uploadBox");
+      if (!box || box.dataset.dragDropBound === "1") return;
+
+      const stop = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+
+      box.addEventListener("dragenter", (ev) => {
+        if (!fileDragHasFiles(ev)) return;
+        stop(ev);
+        box.classList.add("dragOver");
+      });
+
+      box.addEventListener("dragover", (ev) => {
+        if (!fileDragHasFiles(ev)) return;
+        stop(ev);
+        box.classList.add("dragOver");
+        try { ev.dataTransfer.dropEffect = "copy"; } catch (_) {}
+      });
+
+      box.addEventListener("dragleave", (ev) => {
+        if (ev.relatedTarget && box.contains(ev.relatedTarget)) return;
+        box.classList.remove("dragOver");
+      });
+
+      box.addEventListener("drop", (ev) => {
+        if (!fileDragHasFiles(ev)) return;
+        stop(ev);
+        box.classList.remove("dragOver");
+        setSelectedFilesFromDrop(ev.dataTransfer.files);
+      });
+
+      box.dataset.dragDropBound = "1";
     }
 
     async function postDropZoneUploadJson(url, body) {
@@ -4360,7 +4555,9 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       const input = document.getElementById("fileInput");
       const log = document.getElementById("uploadLog");
 
-      if (!input || !input.files || input.files.length === 0) {
+      const files = selectedUploadFiles();
+
+      if (!files.length) {
         appendUploadLog("fail", tr("dropzone.public.select_files_first", null, "Select one or more files first."));
         return;
       }
@@ -4387,7 +4584,7 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
       let localUploaded = Number(CURRENT_INFO.bytes_uploaded || 0);
 
       try {
-        for (const file of Array.from(input.files)) {
+        for (const file of files) {
           if (!file || Number(file.size || 0) <= 0) {
             appendUploadLog("fail", tr("dropzone.public.empty_file_skipped", { name: file && file.name ? file.name : tr("dropzone.public.file", null, "file") }, `${file && file.name ? file.name : "file"}: skipped, empty files are not supported.`));
             continue;
@@ -4500,7 +4697,11 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
           return;
         }
 
-        for (const item of uploads) {
+        const visibleUploads = SHOW_ALL_UPLOADED_FILES
+          ? uploads
+          : uploads.slice(0, UPLOADED_LIST_COLLAPSED_LIMIT);
+
+        for (const item of visibleUploads) {
           const row = document.createElement("div");
           row.className = "uploadedItem";
 
@@ -4523,6 +4724,26 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
           row.appendChild(name);
           row.appendChild(meta);
           box.appendChild(row);
+        }
+
+        if (uploads.length > UPLOADED_LIST_COLLAPSED_LIMIT) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "uploadedListToggle";
+
+          if (SHOW_ALL_UPLOADED_FILES) {
+            btn.textContent = tr("dropzone.public.show_latest_uploads", { count: UPLOADED_LIST_COLLAPSED_LIMIT }, `Show latest ${UPLOADED_LIST_COLLAPSED_LIMIT}`);
+          } else {
+            const remaining = uploads.length - UPLOADED_LIST_COLLAPSED_LIMIT;
+            btn.textContent = tr("dropzone.public.show_more_uploads", { count: remaining }, `Show ${remaining} more`);
+          }
+
+          btn.addEventListener("click", () => {
+            SHOW_ALL_UPLOADED_FILES = !SHOW_ALL_UPLOADED_FILES;
+            refreshUploadedList();
+          });
+
+          box.appendChild(btn);
         }
       } catch (e) {
         box.textContent = tr("dropzone.public.uploaded_list_failed", null, "Could not load uploaded file list.");
@@ -4583,8 +4804,12 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
     document.getElementById("filePickBtn")?.addEventListener("click", () => {
       document.getElementById("fileInput")?.click();
     });
-    document.getElementById("fileInput")?.addEventListener("change", updateFilePickLabel);
+    document.getElementById("fileInput")?.addEventListener("change", () => {
+      SELECTED_DROP_FILES = [];
+      updateFilePickLabel();
+    });
     document.getElementById("uploadBtn")?.addEventListener("click", uploadSelectedFiles);
+    bindPublicDragAndDrop();
 
     updateFilePickLabel();
     main();

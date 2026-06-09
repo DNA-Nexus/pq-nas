@@ -4495,5 +4495,10 @@
   "dropzone.create.clear_logo": "Clear",
   "dropzone.create.page_title": "Page title",
   "dropzone.create.upload_button_text": "Upload button text",
-  "dropzone.create.branding_disabled": "Branding disabled"
+  "dropzone.create.branding_disabled": "Branding disabled",
+  "dropzone.public.drop_hint": "Drag files here or choose multiple files at once.",
+  "dropzone.public.upload_file_count": "Upload {count} files",
+  "dropzone.public.file_list_more": "+{count} more file(s)",
+  "dropzone.public.show_more_uploads": "Show {count} more",
+  "dropzone.public.show_latest_uploads": "Show latest {count}"
 }
