@@ -593,6 +593,145 @@
     } catch (_) {}
   }
 
+  function normalizeDropZoneDestinationPath(path) {
+    let p = String(path || "").trim();
+    if (!p || p === "—") return "";
+
+    p = p.replace(/\\/g, "/").replace(/^\/+/, "");
+
+    const parts = [];
+    for (const part of p.split("/")) {
+      const x = String(part || "").trim();
+      if (!x || x === ".") continue;
+      if (x === "..") continue;
+      parts.push(x);
+    }
+
+    return parts.join("/");
+  }
+
+  function compareAppVersionsDesc(a, b) {
+    const av = String(a || "");
+    const bv = String(b || "");
+
+    try {
+      return bv.localeCompare(av, undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+    } catch (_) {
+      return bv.localeCompare(av);
+    }
+  }
+
+  function appEntryUrl(appId, version) {
+    const id = encodeURIComponent(String(appId || "").trim());
+    const ver = encodeURIComponent(String(version || "").trim());
+
+    if (!id || !ver) return "";
+    return `/apps/${id}/${ver}/www/index.html`;
+  }
+
+  async function resolveInstalledAppEntryUrl(appId) {
+    const wanted = String(appId || "").trim();
+    if (!wanted) return "";
+
+    try {
+      const res = await fetch("/api/v4/apps", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || json.ok === false || !Array.isArray(json.installed)) {
+        return "";
+      }
+
+      const matches = json.installed
+          .filter((it) => String(it && it.id || "") === wanted && String(it && it.version || "").trim())
+          .sort((a, b) => compareAppVersionsDesc(a.version, b.version));
+
+      if (!matches.length) return "";
+
+      return appEntryUrl(matches[0].id, matches[0].version);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function fileManagerEntryFallbackCandidates() {
+    // Fallback only. Normal path uses /api/v4/apps and therefore survives
+    // future File Manager version bumps.
+    return [
+      "/apps/filemgr/1.1.2/www/index.html",
+      "/apps/filemgr/1.1.1/www/index.html",
+      "/apps/filemgr/1.1.0/www/index.html",
+      "/apps/filemgr/1.0.0/www/index.html"
+    ];
+  }
+
+  async function resolveFileManagerEntryUrl() {
+    const installedUrl = await resolveInstalledAppEntryUrl("filemgr");
+    if (installedUrl) return installedUrl;
+
+    const candidates = fileManagerEntryFallbackCandidates();
+
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            "Accept": "text/html,text/plain,*/*"
+          }
+        });
+
+        const text = await res.text().catch(() => "");
+        const trimmed = String(text || "").trim().toLowerCase();
+
+        if (res && res.ok && trimmed && trimmed !== "not found") {
+          return url;
+        }
+      } catch (_) {}
+    }
+
+    return candidates[0] || "/apps/filemgr/1.1.2/www/index.html";
+  }
+
+
+  async function openFileManagerDestination(path) {
+    const dest = normalizeDropZoneDestinationPath(path);
+    if (!dest) {
+      setStatus(tr("dropzone.folder_missing", null, "No destination folder configured for this Drop Zone."));
+      return;
+    }
+
+    // Open synchronously to avoid popup blockers, then resolve the installed
+    // File Manager version asynchronously.
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try { win.opener = null; } catch (_) {}
+      try {
+        win.document.title = "Opening File Manager…";
+        win.document.body.innerHTML = "<p style='font-family:sans-serif;padding:16px'>Opening File Manager…</p>";
+      } catch (_) {}
+    }
+
+    const entry = await resolveFileManagerEntryUrl();
+    const url = `${entry}?path=${encodeURIComponent(dest)}`;
+
+    if (win) {
+      win.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
   function dropZonePublicUrl(z) {
     const id = String(z?.id || "").trim();
     const saved = id ? readSavedDropZoneLinks()[id] : null;
@@ -924,6 +1063,7 @@
             <div class="dzCompactActions">
               ${publicUrl ? `<button class="dzGhost dzCopyLinkBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.copy_link", null, "Copy link"))}</button>` : ""}
               ${publicUrl ? `<button class="dzGhost dzPreviewBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.preview", null, "Preview"))}</button>` : ""}
+              ${dest && dest !== "—" ? `<button class="dzGhost dzOpenFolderBtn" type="button" data-zone-dest="${escapeHtml(dest)}">${escapeHtml(tr("dropzone.open_folder", null, "Open folder"))}</button>` : ""}
               ${canDisable ? `<button class="dzGhost dzDisableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.disable", null, "Disable"))}</button>` : ""}
               ${canReenable ? `<button class="dzGhost dzEnableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.reenable", null, "Re-enable"))}</button>` : ""}
               ${canRenew ? `<button class="dzGhost dzRenewBtn" type="button" data-zone-id="${escapeHtml(id)}" data-days="7">${escapeHtml(tr("dropzone.renew_7d", null, "Renew 7 days"))}</button>` : ""}
@@ -1509,6 +1649,12 @@
     if (previewBtn) {
       const url = previewBtn.getAttribute("data-zone-url") || "";
       if (url) openDropZonePreviewModal(url);
+      return;
+    }
+
+    const openFolderBtn = target.closest(".dzOpenFolderBtn");
+    if (openFolderBtn) {
+      openFileManagerDestination(openFolderBtn.getAttribute("data-zone-dest") || "");
       return;
     }
 
