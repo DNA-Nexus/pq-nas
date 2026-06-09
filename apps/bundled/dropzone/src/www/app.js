@@ -1105,6 +1105,37 @@
   }
 
 
+  function collectBrandingPayload() {
+    return {
+      company_name: formStringValue(brandCompanyInput),
+      logo_url: formStringValue(brandLogoUrlInput),
+      title: formStringValue(brandTitleInput),
+      description: formStringValue(brandDescriptionInput),
+      primary_color: formStringValue(brandPrimaryColorInput),
+      background_color: formStringValue(brandBackgroundColorInput),
+      button_text: formStringValue(brandButtonTextInput),
+      footer_text: formStringValue(brandFooterTextInput)
+    };
+  }
+
+  function brandingPayloadHasVisibleContent(branding) {
+    if (!branding || typeof branding !== "object") return false;
+
+    return [
+      branding.company_name,
+      branding.logo_url,
+      branding.title,
+      branding.description,
+      branding.button_text,
+      branding.footer_text
+    ].some((v) => String(v || "").trim().length > 0);
+  }
+
+  function shouldSubmitBrandingPayload(branding) {
+    return !!(brandEnabledInput && brandEnabledInput.checked) ||
+        brandingPayloadHasVisibleContent(branding);
+  }
+
   async function createDropZone(ev) {
     ev?.preventDefault?.();
 
@@ -1133,17 +1164,9 @@
 
       if (password) body.password = password;
 
-      if (brandEnabledInput && brandEnabledInput.checked) {
-        body.branding = {
-          company_name: formStringValue(brandCompanyInput),
-          logo_url: formStringValue(brandLogoUrlInput),
-          title: formStringValue(brandTitleInput),
-          description: formStringValue(brandDescriptionInput),
-          primary_color: formStringValue(brandPrimaryColorInput),
-          background_color: formStringValue(brandBackgroundColorInput),
-          button_text: formStringValue(brandButtonTextInput),
-          footer_text: formStringValue(brandFooterTextInput)
-        };
+      const brandingPayload = collectBrandingPayload();
+      if (shouldSubmitBrandingPayload(brandingPayload)) {
+        body.branding = brandingPayload;
       }
 
       const json = await apiJson("/api/v4/dropzones/create", {
@@ -1316,6 +1339,125 @@
     }
   }
 
+  function ensureDropZonePreviewModal() {
+    let modal = document.getElementById("dzPreviewModal");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "dzPreviewModal";
+    modal.className = "dzPreviewModal hidden";
+    modal.innerHTML = `
+      <div class="dzPreviewWindow" role="dialog" aria-modal="false" aria-label="${escapeHtml(tr("dropzone.preview", null, "Preview"))}">
+        <div class="dzPreviewHeader">
+          <div class="dzPreviewTitle">
+            <span>${escapeHtml(tr("dropzone.preview", null, "Preview"))}</span>
+            <span class="dzPreviewScale">50%</span>
+          </div>
+
+          <div class="dzPreviewHeaderActions">
+            <a class="dzGhost dzPreviewOpenFull" href="#" target="_blank" rel="noopener noreferrer">
+              ${escapeHtml(tr("dropzone.open_full_size", null, "Open full size"))}
+            </a>
+            <button class="dzGhost dzPreviewCloseBtn" type="button">
+              ${escapeHtml(tr("dropzone.close", null, "Close"))}
+            </button>
+          </div>
+        </div>
+
+        <div class="dzPreviewBody">
+          <div class="dzPreviewScaledFrame">
+            <iframe class="dzPreviewFrame" title="${escapeHtml(tr("dropzone.preview", null, "Preview"))}" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeBtn = modal.querySelector(".dzPreviewCloseBtn");
+    const frame = modal.querySelector(".dzPreviewFrame");
+    const win = modal.querySelector(".dzPreviewWindow");
+    const header = modal.querySelector(".dzPreviewHeader");
+
+    const close = () => {
+      modal.classList.add("hidden");
+      if (frame) frame.src = "about:blank";
+    };
+
+    closeBtn?.addEventListener("click", close);
+
+    modal.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") close();
+    });
+
+    // Small detached-window drag behavior.
+    let drag = null;
+
+    header?.addEventListener("mousedown", (ev) => {
+      if (ev.target && ev.target.closest && ev.target.closest("button,a")) return;
+      if (!win) return;
+
+      const rect = win.getBoundingClientRect();
+      drag = {
+        dx: ev.clientX - rect.left,
+        dy: ev.clientY - rect.top
+      };
+
+      win.style.left = `${rect.left}px`;
+      win.style.top = `${rect.top}px`;
+      win.style.transform = "none";
+      win.classList.add("dragging");
+
+      ev.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (ev) => {
+      if (!drag || !win) return;
+
+      const margin = 12;
+      const maxLeft = Math.max(margin, window.innerWidth - win.offsetWidth - margin);
+      const maxTop = Math.max(margin, window.innerHeight - win.offsetHeight - margin);
+
+      const left = Math.min(maxLeft, Math.max(margin, ev.clientX - drag.dx));
+      const top = Math.min(maxTop, Math.max(margin, ev.clientY - drag.dy));
+
+      win.style.left = `${left}px`;
+      win.style.top = `${top}px`;
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!drag || !win) return;
+      drag = null;
+      win.classList.remove("dragging");
+    });
+
+    return modal;
+  }
+
+  function openDropZonePreviewModal(url) {
+    const previewUrl = String(url || "").trim();
+    if (!previewUrl) return;
+
+    const modal = ensureDropZonePreviewModal();
+    const frame = modal.querySelector(".dzPreviewFrame");
+    const openFull = modal.querySelector(".dzPreviewOpenFull");
+    const win = modal.querySelector(".dzPreviewWindow");
+
+    if (openFull) openFull.href = previewUrl;
+    if (frame) frame.src = previewUrl;
+
+    // Reset position each time, so a previously dragged modal does not disappear
+    // after window size changes.
+    if (win) {
+      win.style.left = "50%";
+      win.style.top = "7vh";
+      win.style.transform = "translateX(-50%)";
+    }
+
+    modal.classList.remove("hidden");
+    modal.focus?.();
+  }
+
   zonesList?.addEventListener("click", async (ev) => {
     const target = ev.target && ev.target.closest ? ev.target : null;
     if (!target) return;
@@ -1366,7 +1508,7 @@
     const previewBtn = target.closest(".dzPreviewBtn");
     if (previewBtn) {
       const url = previewBtn.getAttribute("data-zone-url") || "";
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (url) openDropZonePreviewModal(url);
       return;
     }
 
