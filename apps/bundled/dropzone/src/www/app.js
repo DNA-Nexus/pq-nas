@@ -21,6 +21,7 @@
   const passwordInput = el("passwordInput");
   const maxFileInput = el("maxFileInput");
   const maxTotalInput = el("maxTotalInput");
+  const duplicatePolicyInput = el("duplicatePolicyInput");
 
   const brandEnabledInput = el("brandEnabledInput");
   const brandConfigPanel = el("brandConfigPanel");
@@ -573,6 +574,7 @@
   const DROPZONE_LINK_STORAGE_KEY = "pqnas.dropzone.ownerLinks.v1";
 
   let dropZoneListCache = [];
+  let dropZoneListRefreshSeq = 0;
   let dropZoneSearchText = "";
   let dropZoneStatusFilter = "all";
   const expandedDropZoneIds = new Set();
@@ -791,6 +793,8 @@
     if (zoneNameInput) zoneNameInput.value = tr("dropzone.default_name", null, "Drop Zone");
     if (destInput) destInput.value = tr("dropzone.default_destination", null, "Incoming/Drop Zones/Drop Zone");
 
+    if (duplicatePolicyInput) duplicatePolicyInput.value = "version";
+
     if (brandEnabledInput) brandEnabledInput.checked = false;
     if (brandCompanyInput) brandCompanyInput.value = "";
     if (brandLogoUrlInput) brandLogoUrlInput.value = "";
@@ -857,14 +861,24 @@
   }
 
   async function apiJson(url, opts) {
-    const res = await fetch(url, {
+    const options = opts || {};
+    const method = String(options.method || "GET").toUpperCase();
+    const cacheBust = method === "GET" || method === "HEAD";
+    const finalUrl = cacheBust
+        ? `${url}${String(url).includes("?") ? "&" : "?"}_=${Date.now()}_${Math.random().toString(36).slice(2)}`
+        : url;
+
+    const res = await fetch(finalUrl, {
+      ...options,
+      method,
       cache: "no-store",
       credentials: "include",
       headers: {
         "Accept": "application/json",
-        ...(opts && opts.headers ? opts.headers : {})
-      },
-      ...(opts || {})
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        ...(options.headers || {})
+      }
     });
 
     const text = await res.text().catch(() => "");
@@ -1122,11 +1136,17 @@
   }
 
   async function loadZones() {
+    const refreshSeq = ++dropZoneListRefreshSeq;
+
     setStatus(tr("common.loading", null, "Loading…"));
     setBusy(true);
 
     try {
       const json = await apiJson("/api/v4/dropzones/list");
+
+      if (refreshSeq !== dropZoneListRefreshSeq) {
+        return;
+      }
 
       const zones = Array.isArray(json.drop_zones)
           ? json.drop_zones
@@ -1141,6 +1161,10 @@
       setStatus(`${zones.length} Drop Zone${zones.length === 1 ? "" : "s"} · ${counts.active || 0} active · ${counts.expired || 0} expired · ${counts.disabled || 0} disabled`);
       renderZones(zones);
     } catch (e) {
+      if (refreshSeq !== dropZoneListRefreshSeq) {
+        return;
+      }
+
       if (e && e.status === 404) {
         setStatus(tr("dropzone.backend_not_wired", null, "Backend not wired yet."));
         renderEmpty(tr("dropzone.routes_missing", null, "Drop Zone UI is installed, but /api/v4/dropzones routes are missing."));
@@ -1149,7 +1173,9 @@
         renderEmpty(String(e && e.message ? e.message : e));
       }
     } finally {
-      setBusy(false);
+      if (refreshSeq === dropZoneListRefreshSeq) {
+        setBusy(false);
+      }
     }
   }
 
@@ -1554,6 +1580,7 @@
     const expiresInSeconds = Number(expiryInput?.value || 86400);
     const maxFileBytes = Number(maxFileInput?.value || 0);
     const maxTotalBytes = Number(maxTotalInput?.value || 0);
+    const duplicatePolicy = normalizeDuplicatePolicyValue(duplicatePolicyInput?.value);
     const password = String(passwordInput?.value || "");
 
     if (createResult) {
@@ -1569,7 +1596,8 @@
         destination_path: destinationPath,
         expires_in_seconds: Number.isFinite(expiresInSeconds) ? expiresInSeconds : 86400,
         max_file_bytes: Number.isFinite(maxFileBytes) ? maxFileBytes : 0,
-        max_total_bytes: Number.isFinite(maxTotalBytes) ? maxTotalBytes : 0
+        max_total_bytes: Number.isFinite(maxTotalBytes) ? maxTotalBytes : 0,
+        duplicate_policy: duplicatePolicy
       };
 
       if (password) body.password = password;
@@ -1925,6 +1953,26 @@
     return Number.isFinite(n) && n > 0 ? String(Math.floor(n)) : "0";
   }
 
+  function normalizeDuplicatePolicyValue(v) {
+    const s = String(v || "").trim();
+    if (s === "keep_both" || s === "reject") return s;
+    return "version";
+  }
+
+  function duplicatePolicyLabel(v) {
+    const policy = normalizeDuplicatePolicyValue(v);
+
+    if (policy === "keep_both") {
+      return tr("dropzone.duplicate_policy.keep_both", null, "Keep both files");
+    }
+
+    if (policy === "reject") {
+      return tr("dropzone.duplicate_policy.reject", null, "Reject duplicate filename");
+    }
+
+    return tr("dropzone.duplicate_policy.version", null, "Create new version");
+  }
+
   function openDropZoneEditModal(zone) {
     const z = zone && typeof zone === "object" ? zone : null;
     if (!z || !z.id) return;
@@ -2161,6 +2209,7 @@
         name: val("name") || "Drop Zone",
         max_file_bytes: num("max_file_bytes"),
         max_total_bytes: num("max_total_bytes"),
+        duplicate_policy: normalizeDuplicatePolicyValue(val("duplicate_policy")),
         branding: brandingEnabled ? {
           company_name: val("company_name"),
           logo_url: val("logo_url"),

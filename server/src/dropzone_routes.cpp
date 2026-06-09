@@ -4,6 +4,7 @@
 #include "user_quota.h"
 #include "gallery_meta.h"
 #include "file_location_index.h"
+#include "file_versions.h"
 
 #include <algorithm>
 #include <array>
@@ -27,6 +28,7 @@ namespace pqnas {
 namespace {
 
 using json = nlohmann::json;
+
 
 // -----------------------------------------------------------------------------
 // Drop Zone route-layer architecture
@@ -101,6 +103,30 @@ static std::string dz_trim_copy_local(std::string s) {
     }
 
     return s;
+}
+
+
+static std::string dz_normalize_duplicate_policy_local(std::string s) {
+    s = dz_trim_copy_local(std::move(s));
+
+    if (s == "keep_both" || s == "reject") {
+        return s;
+    }
+
+    // Default: preserve current live file as a File Manager version, then replace it.
+    return "version";
+}
+
+static std::string dz_duplicate_policy_from_json_local(const json& j) {
+    if (!j.is_object()) return "version";
+
+    try {
+        if (j.contains("duplicate_policy") && j["duplicate_policy"].is_string()) {
+            return dz_normalize_duplicate_policy_local(j["duplicate_policy"].get<std::string>());
+        }
+    } catch (...) {}
+
+    return "version";
 }
 
 static std::string dz_branding_string_field_local(const json& j,
@@ -293,6 +319,7 @@ static json dropzone_to_json_local(const DropZoneRec& rec) {
 
         {"password_required", !rec.password_hash.empty()},
         {"disabled", rec.disabled},
+        {"duplicate_policy", dz_normalize_duplicate_policy_local(rec.duplicate_policy)},
         {"branding", dropzone_public_branding_json_local(rec.branding_json)}
     };
 }
@@ -1480,6 +1507,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
 
         const json branding = dropzone_sanitize_branding_json_local(branding_input);
         const std::string branding_json = branding.empty() ? std::string{} : branding.dump();
+        const std::string duplicate_policy = dz_duplicate_policy_from_json_local(in);
 
         const std::int64_t now = deps.now_epoch();
 
@@ -1534,6 +1562,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         rec.destination_path = dest_norm;
         rec.password_hash = password_hash;
         rec.branding_json = branding_json;
+        rec.duplicate_policy = duplicate_policy;
         rec.created_epoch = now;
         rec.expires_epoch = now + expires_in;
         rec.last_used_epoch = 0;
@@ -1652,6 +1681,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
 
         const json branding = dropzone_sanitize_branding_json_local(branding_input);
         const std::string branding_json = branding.empty() ? std::string{} : branding.dump();
+        const std::string duplicate_policy = dz_duplicate_policy_from_json_local(in);
 
         std::string err;
         if (!deps.dropzone_index->update_settings(
@@ -1659,6 +1689,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
                 actor_fp,
                 name,
                 branding_json,
+                duplicate_policy,
                 max_file_bytes,
                 max_total_bytes,
                 &err)) {
@@ -3197,8 +3228,44 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
         const std::string safe_filename =
             safe_upload_filename_local(meta.value("safe_filename", original_filename));
 
-        const std::filesystem::path final_path =
-            unique_child_path_local(dest_dir, safe_filename);
+        const std::string duplicate_policy =
+            dz_normalize_duplicate_policy_local(rec.duplicate_policy);
+
+        std::filesystem::path final_path =
+            (dest_dir / safe_filename).lexically_normal();
+
+        bool should_preserve_existing_as_version = false;
+
+        if (duplicate_policy == "keep_both") {
+            final_path = unique_child_path_local(dest_dir, safe_filename);
+        } else {
+            std::error_code existing_ec;
+            const auto existing_st = std::filesystem::symlink_status(final_path, existing_ec);
+            const bool exists = !existing_ec && std::filesystem::exists(existing_st);
+
+            if (exists) {
+                if (std::filesystem::is_symlink(existing_st) ||
+                    !std::filesystem::is_regular_file(existing_st)) {
+                    reply_json_local(deps, res, 409, json{
+                        {"ok", false},
+                        {"error", "duplicate_not_versionable"},
+                        {"message", "Existing destination is not a regular file."}
+                    });
+                    return;
+                }
+
+                if (duplicate_policy == "reject") {
+                    reply_json_local(deps, res, 409, json{
+                        {"ok", false},
+                        {"error", "duplicate_filename"},
+                        {"message", "A file with the same name already exists."}
+                    });
+                    return;
+                }
+
+                should_preserve_existing_as_version = true;
+            }
+        }
 
         const std::filesystem::path final_norm = final_path.lexically_normal();
 
@@ -3277,6 +3344,37 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
 
             if (assembled_bytes != size_bytes) {
                 throw std::runtime_error("assembled size mismatch");
+            }
+
+            // Drop Zone duplicate filename versioning:
+            // preserve the previous live file as a normal File Manager version
+            // before replacing it with the uploaded file.
+            if (should_preserve_existing_as_version) {
+                if (!deps.file_versions) {
+                    throw std::runtime_error("file versions index missing");
+                }
+
+                pqnas::PreserveLiveFileVersionParams vp;
+                vp.scope_type = "user";
+                vp.scope_id = rec.owner_fp;
+                vp.scope_root = owner_root;
+                vp.logical_rel_path = quota_rel_path;
+                vp.live_abs_path = final_norm;
+                vp.event_kind = "overwrite_preserve";
+                vp.actor_fp = "dropzone:" + rec.id;
+                vp.users = nullptr;
+
+                pqnas::FileVersionRec preserved_version;
+                std::string version_err;
+                if (!deps.file_versions->preserve_live_file_version(vp, &preserved_version, &version_err)) {
+                    throw std::runtime_error("preserve existing file version failed: " + version_err);
+                }
+            }
+
+            if (should_preserve_existing_as_version) {
+                std::filesystem::remove(final_norm, ec);
+                if (ec) throw std::runtime_error("remove previous live file after preserving failed: " + ec.message());
+                ec.clear();
             }
 
             std::filesystem::rename(tmp, final_norm, ec);
@@ -3572,7 +3670,43 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
             return;
         }
 
-        const std::filesystem::path final_path = unique_child_path_local(dest_dir, safe_filename);
+        const std::string duplicate_policy =
+            dz_normalize_duplicate_policy_local(rec.duplicate_policy);
+
+        std::filesystem::path final_path =
+            (dest_dir / safe_filename).lexically_normal();
+
+        bool should_preserve_existing_as_version = false;
+
+        std::error_code existing_ec;
+        const auto existing_st = std::filesystem::symlink_status(final_path, existing_ec);
+        const bool exists = !existing_ec && std::filesystem::exists(existing_st);
+
+        if (duplicate_policy == "keep_both") {
+            final_path = unique_child_path_local(dest_dir, safe_filename);
+        } else if (exists) {
+            if (std::filesystem::is_symlink(existing_st) ||
+                !std::filesystem::is_regular_file(existing_st)) {
+                reply_json_local(deps, res, 409, json{
+                    {"ok", false},
+                    {"error", "duplicate_not_versionable"},
+                    {"message", "Existing destination is not a regular file."}
+                });
+                return;
+            }
+
+            if (duplicate_policy == "reject") {
+                reply_json_local(deps, res, 409, json{
+                    {"ok", false},
+                    {"error", "duplicate_filename"},
+                    {"message", "A file with the same name already exists."}
+                });
+                return;
+            }
+
+            should_preserve_existing_as_version = true;
+        }
+
         const std::filesystem::path final_norm = final_path.lexically_normal();
 
         if (!path_has_prefix_components_local(owner_root, final_norm)) {
@@ -3609,6 +3743,56 @@ srv.Put(R"(/api/public/dropzones/([A-Za-z0-9_-]{20,160})/uploads/chunk)",
                                        qc)) {
             return;
         }
+        // legacy Drop Zone duplicate filename versioning
+        if (should_preserve_existing_as_version) {
+            if (!deps.file_versions) {
+                reply_json_local(deps, res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "file versions index missing"}
+                });
+                return;
+            }
+
+            pqnas::PreserveLiveFileVersionParams vp;
+            vp.scope_type = "user";
+            vp.scope_id = rec.owner_fp;
+            vp.scope_root = owner_root;
+            vp.logical_rel_path = quota_rel_path;
+            vp.live_abs_path = final_norm;
+            vp.event_kind = "overwrite_preserve";
+            vp.actor_fp = "dropzone:" + rec.id;
+            vp.users = nullptr;
+
+            pqnas::FileVersionRec preserved_version;
+            std::string version_err;
+            if (!deps.file_versions->preserve_live_file_version(vp, &preserved_version, &version_err)) {
+                audit_local(deps, "public.dropzones_upload_version_preserve_fail", "fail", {
+                    {"dropzone_id", rec.id},
+                    {"owner_fp", rec.owner_fp},
+                    {"stored_path", quota_rel_path},
+                    {"reason", version_err}
+                });
+
+                reply_json_local(deps, res, 500, json{
+                    {"ok", false},
+                    {"error", "version_preserve_failed"},
+                    {"message", "Could not preserve existing file version."}
+                });
+                return;
+            }
+
+            std::filesystem::remove(final_norm, ec);
+            if (ec) {
+                reply_json_local(deps, res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "Could not replace existing file after preserving version."}
+                });
+                return;
+            }
+        }
+
         std::string werr;
         if (!write_file_atomic_local(final_norm, req.body, deps.random_b64url, &werr)) {
             audit_local(deps, "public.dropzones_upload_fail", "fail", {

@@ -14,6 +14,7 @@
 namespace pqnas {
 
 class GalleryMetaIndex;
+class FileVersionsIndex;
 
 // Dependencies injected from main.cpp into the Drop Zone route module.
 //
@@ -39,6 +40,11 @@ struct DropZoneRoutesDeps {
     // Drop Zone uploads must touch this so files are openable through normal
     // /api/v4/files routes after public upload completes.
     FileLocationIndex* file_locations = nullptr;
+
+    // File Manager version history index.
+    // Used when a Drop Zone is configured to turn duplicate filenames into
+    // normal File Manager versions instead of "name (1).ext" copies.
+    FileVersionsIndex* file_versions = nullptr;
 
     // User registry is used for owner auth checks and for validating that the
     // Drop Zone owner still exists, is enabled, and has allocated storage.

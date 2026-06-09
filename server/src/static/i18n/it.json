@@ -4508,5 +4508,10 @@
   "dropzone.clear_history.clearing": "Clearing Drop Zone upload history…",
   "dropzone.clear_history.cleared_status": "Upload history cleared ({count} row(s)).",
   "dropzone.clear_history.failed": "Could not clear upload history: {error}",
-  "dropzone.pending_uploads": "New uploads: {count}"
+  "dropzone.pending_uploads": "New uploads: {count}",
+  "dropzone.duplicate_policy": "When same filename already exists",
+  "dropzone.duplicate_policy.version": "Create new version",
+  "dropzone.duplicate_policy.keep_both": "Keep both files",
+  "dropzone.duplicate_policy.reject": "Reject duplicate filename",
+  "dropzone.duplicate_policy_hint": "Versioning keeps File Manager clean: the old live file is preserved in version history and the new upload becomes the current file."
 }

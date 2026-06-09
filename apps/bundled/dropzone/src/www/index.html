@@ -103,6 +103,20 @@
         </label>
       </div>
 
+      <section class="dzSettingsBox">
+        <label>
+          <span data-i18n="dropzone.duplicate_policy">When same filename already exists</span>
+          <select id="duplicatePolicyInput" name="duplicate_policy">
+            <option value="version" selected data-i18n="dropzone.duplicate_policy.version">Create new version</option>
+            <option value="keep_both" data-i18n="dropzone.duplicate_policy.keep_both">Keep both files</option>
+            <option value="reject" data-i18n="dropzone.duplicate_policy.reject">Reject duplicate filename</option>
+          </select>
+        </label>
+        <p class="dzSectionHint" data-i18n="dropzone.duplicate_policy_hint">
+          Versioning keeps File Manager clean: the old live file is preserved in version history and the new upload becomes the current file.
+        </p>
+      </section>
+
       <section class="dzBrandingBox">
         <label class="dzCheckLabel">
           <input id="brandEnabledInput" name="branding_enabled" type="checkbox">

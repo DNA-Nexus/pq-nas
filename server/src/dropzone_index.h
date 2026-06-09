@@ -44,6 +44,13 @@ struct DropZoneRec {
     // page uses the normal DNA-Nexus Drop Zone look.
     std::string branding_json;
 
+    // What to do when a public upload uses a filename that already exists in
+    // destination_path:
+    // - "version"   : preserve old live file as a File Manager version, then replace live file
+    // - "keep_both" : keep existing behavior and store as "name (1).ext"
+    // - "reject"    : reject duplicate filename
+    std::string duplicate_policy = "version";
+
     std::int64_t created_epoch = 0;
     std::int64_t expires_epoch = 0;
     std::int64_t last_used_epoch = 0;
@@ -168,6 +175,7 @@ public:
                          const std::string& owner_fp,
                          const std::string& name,
                          const std::string& branding_json,
+                         const std::string& duplicate_policy,
                          std::uint64_t max_file_bytes,
                          std::uint64_t max_total_bytes,
                          std::string* err);

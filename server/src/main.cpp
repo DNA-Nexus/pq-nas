@@ -11694,6 +11694,7 @@ trash_service.set_restore_unindexer(
     dropzone_deps.dropzone_index = &dropzone_index;
     dropzone_deps.file_facts = &gallery_meta_index;
     dropzone_deps.file_locations = &file_location_index;
+    dropzone_deps.file_versions = &file_versions_index;
     dropzone_deps.cookie_key = COOKIE_KEY;
     dropzone_deps.origin = &ORIGIN;
     dropzone_deps.random_b64url =

@@ -113,7 +113,12 @@ static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
 
     rec.branding_json    = col_text(stmt, 14);
     rec.disabled         = sqlite3_column_int(stmt, 15) != 0;
-    rec.pending_upload_count = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 16));
+    rec.duplicate_policy = col_text(stmt, 16);
+    if (rec.duplicate_policy != "keep_both" &&
+        rec.duplicate_policy != "reject") {
+        rec.duplicate_policy = "version";
+    }
+    rec.pending_upload_count = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 17));
 
     return rec;
 }
@@ -124,7 +129,7 @@ static const char* kSelectDropZoneColumns =
     "SELECT "
     "  id, token_hash, public_path, owner_fp, name, destination_path, password_hash, "
     "  created_epoch, expires_epoch, last_used_epoch, "
-    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled, "
+    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled, duplicate_policy, "
     "  (SELECT COUNT(*) FROM drop_zone_uploads u WHERE u.drop_zone_id = drop_zones.id) AS pending_upload_count "
     "FROM drop_zones ";
 
@@ -236,6 +241,7 @@ CREATE TABLE IF NOT EXISTS drop_zones (
     upload_count      INTEGER NOT NULL DEFAULT 0,
 
     branding_json     TEXT NOT NULL DEFAULT '',
+    duplicate_policy  TEXT NOT NULL DEFAULT 'version',
 
     disabled          INTEGER NOT NULL DEFAULT 0
 );
@@ -303,6 +309,18 @@ ON drop_zone_uploads(drop_zone_id, created_epoch DESC, id DESC);
         }
     }
 
+    // Migration for filename-collision behavior / File Manager versioning.
+    bool has_duplicate_policy = false;
+    if (!column_exists(db_, "drop_zones", "duplicate_policy", &has_duplicate_policy, err)) {
+        return false;
+    }
+
+    if (!has_duplicate_policy) {
+        if (!exec_sql(db_, "ALTER TABLE drop_zones ADD COLUMN duplicate_policy TEXT NOT NULL DEFAULT 'version';", err)) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -323,9 +341,9 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
         "INSERT INTO drop_zones ("
         "  id, token_hash, public_path, owner_fp, name, destination_path, password_hash, "
         "  created_epoch, expires_epoch, last_used_epoch, "
-        "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled"
+        "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled, duplicate_policy"
         ") VALUES ("
-        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16"
+        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17"
         ")";
 
     sqlite3_stmt* stmt = nullptr;
@@ -353,6 +371,11 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
     sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(rec.upload_count));
     sqlite3_bind_text(stmt, 15, rec.branding_json.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 16, rec.disabled ? 1 : 0);
+    const std::string duplicate_policy =
+        (rec.duplicate_policy == "keep_both" || rec.duplicate_policy == "reject")
+            ? rec.duplicate_policy
+            : std::string("version");
+    sqlite3_bind_text(stmt, 17, duplicate_policy.c_str(), -1, SQLITE_TRANSIENT);
 
     const int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
@@ -598,6 +621,7 @@ bool DropZoneIndex::update_settings(const std::string& id,
                                     const std::string& owner_fp,
                                     const std::string& name,
                                     const std::string& branding_json,
+                                    const std::string& duplicate_policy,
                                     std::uint64_t max_file_bytes,
                                     std::uint64_t max_total_bytes,
                                     std::string* err) {
@@ -612,8 +636,8 @@ bool DropZoneIndex::update_settings(const std::string& id,
 
     const char* sql =
         "UPDATE drop_zones "
-        "SET name = ?1, branding_json = ?2, max_file_bytes = ?3, max_total_bytes = ?4 "
-        "WHERE id = ?5 AND owner_fp = ?6";
+        "SET name = ?1, branding_json = ?2, duplicate_policy = ?3, max_file_bytes = ?4, max_total_bytes = ?5 "
+        "WHERE id = ?6 AND owner_fp = ?7";
 
     sqlite3_stmt* stmt = nullptr;
     const int rc_prep = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
@@ -622,12 +646,18 @@ bool DropZoneIndex::update_settings(const std::string& id,
         return false;
     }
 
+    const std::string normalized_duplicate_policy =
+        (duplicate_policy == "keep_both" || duplicate_policy == "reject")
+            ? duplicate_policy
+            : std::string("version");
+
     sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, branding_json.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(max_file_bytes));
-    sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(max_total_bytes));
-    sqlite3_bind_text(stmt, 5, id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, normalized_duplicate_policy.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 4, static_cast<sqlite3_int64>(max_file_bytes));
+    sqlite3_bind_int64(stmt, 5, static_cast<sqlite3_int64>(max_total_bytes));
+    sqlite3_bind_text(stmt, 6, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
 
     const int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {

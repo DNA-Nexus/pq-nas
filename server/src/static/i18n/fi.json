@@ -4508,5 +4508,10 @@
   "dropzone.clear_history.clearing": "Tyhjennetään Drop Zonen lähetyshistoriaa…",
   "dropzone.clear_history.cleared_status": "Lähetyshistoria tyhjennetty ({count} riviä).",
   "dropzone.clear_history.failed": "Lähetyshistoriaa ei voitu tyhjentää: {error}",
-  "dropzone.pending_uploads": "Uusia lähetyksiä: {count}"
+  "dropzone.pending_uploads": "Uusia lähetyksiä: {count}",
+  "dropzone.duplicate_policy": "Kun saman niminen tiedosto on jo olemassa",
+  "dropzone.duplicate_policy.version": "Luo uusi versio",
+  "dropzone.duplicate_policy.keep_both": "Säilytä molemmat tiedostot",
+  "dropzone.duplicate_policy.reject": "Hylkää sama tiedostonimi",
+  "dropzone.duplicate_policy_hint": "Versiointi pitää tiedostonhallinnan siistinä: vanha nykyinen tiedosto tallennetaan versiohistoriaan ja uusi lähetys muuttuu nykyiseksi tiedostoksi."
 }
