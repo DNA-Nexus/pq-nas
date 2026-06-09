@@ -1199,3 +1199,27 @@ textarea.dzEditInput {
 .dzBrandConfigPanel {
   margin-top: 10px;
 }
+
+
+/* Drop Zone select/dropdown native option colors.
+   Without explicit option colors, some browsers render the opened menu too light. */
+select {
+  color-scheme: dark;
+  background-color: #080b14;
+  color: var(--text);
+}
+
+select option,
+select optgroup {
+  background-color: #080b14;
+  color: var(--text);
+}
+
+select option:checked {
+  background-color: #1f2635;
+  color: var(--text);
+}
+
+select option:disabled {
+  color: rgba(243,246,255,.42);
+}
