@@ -1849,11 +1849,6 @@
               <div class="dzEditPreviewFooter" data-edit-preview-footer></div>
             </div>
           </div>
-
-          <div class="dzEditHint">
-            ${escapeHtml(tr("dropzone.edit.destination_hint", null, "Destination folder is intentionally not edited here. Changing it later should be a separate action because it does not move already uploaded files."))}
-          </div>
-
           <div class="dzEditActions">
             <button class="dzGhost dzEditCancelBtn" type="button">${escapeHtml(tr("dropzone.cancel", null, "Cancel"))}</button>
             <button class="dzPrimary" type="submit">${escapeHtml(tr("dropzone.save", null, "Save"))}</button>

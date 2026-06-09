@@ -750,3 +750,397 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+
+.dzPreviewModal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.dzPreviewModal.hidden {
+  display: none;
+}
+
+.dzPreviewWindow {
+  position: fixed;
+  left: 50%;
+  top: 7vh;
+  transform: translateX(-50%);
+  width: min(1120px, 92vw);
+  height: min(820px, 86vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,159,28,.26);
+  border-radius: 22px;
+  background: rgba(19,22,32,.98);
+  box-shadow: 0 24px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  pointer-events: auto;
+}
+
+.dzPreviewWindow.dragging {
+  user-select: none;
+}
+
+.dzPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(135deg, rgba(255,159,28,.16), rgba(255,159,28,.04));
+  cursor: move;
+}
+
+.dzPreviewTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 900;
+  color: var(--dz-text);
+}
+
+.dzPreviewScale {
+  border: 1px solid rgba(255,159,28,.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #ffd28a;
+  font-size: 12px;
+}
+
+.dzPreviewHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dzPreviewBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: rgba(0,0,0,.28);
+}
+
+.dzPreviewScaledFrame {
+  width: 200%;
+  height: 200%;
+  transform: scale(.5);
+  transform-origin: 0 0;
+}
+
+.dzPreviewFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+@media (max-width: 720px) {
+  .dzPreviewWindow {
+    width: 96vw;
+    height: 88vh;
+    top: 5vh;
+  }
+
+  .dzPreviewHeader {
+    align-items: stretch;
+    flex-direction: column;
+    cursor: default;
+  }
+
+  .dzPreviewHeaderActions {
+    justify-content: flex-start;
+  }
+}
+
+
+.dzEditModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0,0,0,.56);
+  backdrop-filter: blur(8px);
+}
+
+.dzEditModalCard {
+  width: min(920px, calc(100vw - 28px));
+  max-height: min(88vh, 940px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,159,28,.28);
+  border-radius: 24px;
+  background: rgba(19,22,32,.98);
+  color: var(--dz-text);
+  box-shadow: 0 28px 90px rgba(0,0,0,.58);
+}
+
+.dzEditModalHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(135deg, rgba(255,159,28,.15), rgba(255,159,28,.04));
+}
+
+.dzEditModalTitle {
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.dzEditModalSub {
+  margin-top: 4px;
+  color: var(--dz-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dzEditForm {
+  overflow: auto;
+  padding: 16px 18px 18px;
+}
+
+.dzEditGrid,
+.dzEditBrandGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dzEditBrandGrid {
+  margin-top: 12px;
+}
+
+.dzEditGrid label,
+.dzEditBrandGrid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dzEditGrid span,
+.dzEditBrandGrid span {
+  color: var(--dz-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dzEditWide {
+  grid-column: 1 / -1;
+}
+
+.dzEditInput {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  background: rgba(255,255,255,.055);
+  color: var(--dz-text);
+  padding: 10px 12px;
+  font: inherit;
+  outline: none;
+}
+
+textarea.dzEditInput {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.dzEditInput:focus {
+  border-color: rgba(255,159,28,.55);
+  box-shadow: 0 0 0 3px rgba(255,159,28,.12);
+}
+
+.dzEditToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 14px;
+  background: rgba(255,255,255,.045);
+  font-weight: 850;
+}
+
+.dzEditHint {
+  margin-top: 12px;
+  color: var(--dz-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dzEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .dzEditGrid,
+  .dzEditBrandGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dzEditModalHead {
+    flex-direction: column;
+  }
+
+  .dzEditActions {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+}
+
+
+.dzEditColorRow {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.dzEditColorPicker {
+  width: 54px;
+  height: 42px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  padding: 4px;
+  background: rgba(255,255,255,.06);
+  cursor: pointer;
+}
+
+.dzEditPreviewWrap {
+  margin-top: 16px;
+}
+
+.dzEditPreviewLabel {
+  color: var(--dz-muted);
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.dzEditPreview {
+  --dz-edit-preview-primary: #ff9f1c;
+  --dz-edit-preview-bg: #101217;
+
+  position: relative;
+  overflow: hidden;
+  min-height: 230px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 22px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--dz-edit-preview-primary) 30%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--dz-edit-preview-bg) 92%, #000), var(--dz-edit-preview-bg));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+}
+
+.dzEditPreview.disabledPreview {
+  opacity: .72;
+  filter: saturate(.72);
+}
+
+.dzEditPreview.disabledPreview::after {
+  content: "Branding disabled";
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: rgba(255,255,255,.72);
+  background: rgba(0,0,0,.28);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dzEditPreviewLogo {
+  max-width: 180px;
+  max-height: 62px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.dzEditPreviewLogo img {
+  max-width: 180px;
+  max-height: 62px;
+  object-fit: contain;
+}
+
+.dzEditPreviewLogo.textLogo {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--dz-edit-preview-primary) 82%, #fff 8%);
+  color: #101217;
+  font-weight: 950;
+  letter-spacing: .04em;
+}
+
+.dzEditPreviewTitle {
+  max-width: 620px;
+  text-align: center;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.dzEditPreviewDescription {
+  max-width: 620px;
+  text-align: center;
+  color: rgba(255,255,255,.78);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.dzEditPreviewButton {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 20px;
+  background: var(--dz-edit-preview-primary);
+  color: #101217;
+  font: inherit;
+  font-weight: 950;
+  box-shadow: 0 10px 26px rgba(0,0,0,.26);
+}
+
+.dzEditPreviewFooter {
+  color: rgba(255,255,255,.58);
+  font-size: 12px;
+}
+
+.dzEditPreviewFooter.hidden {
+  display: none;
+}
+
+
+.dzGhost.dzOpenFolderBtn {
+  border-color: rgba(80,170,255,.45);
+  background: rgba(80,170,255,.12);
+  color: #cfeaff;
+}
+
+.dzGhost.dzOpenFolderBtn:hover {
+  border-color: rgba(80,170,255,.76);
+  background: rgba(80,170,255,.20);
+  box-shadow: 0 0 0 3px rgba(80,170,255,.10);
+}
