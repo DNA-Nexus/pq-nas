@@ -1064,6 +1064,7 @@
               ${publicUrl ? `<button class="dzGhost dzCopyLinkBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.copy_link", null, "Copy link"))}</button>` : ""}
               ${publicUrl ? `<button class="dzGhost dzPreviewBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.preview", null, "Preview"))}</button>` : ""}
               ${dest && dest !== "—" ? `<button class="dzGhost dzOpenFolderBtn" type="button" data-zone-dest="${escapeHtml(dest)}">${escapeHtml(tr("dropzone.open_folder", null, "Open folder"))}</button>` : ""}
+              ${id ? `<button class="dzGhost dzEditBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.edit", null, "Edit"))}</button>` : ""}
               ${canDisable ? `<button class="dzGhost dzDisableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.disable", null, "Disable"))}</button>` : ""}
               ${canReenable ? `<button class="dzGhost dzEnableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.reenable", null, "Re-enable"))}</button>` : ""}
               ${canRenew ? `<button class="dzGhost dzRenewBtn" type="button" data-zone-id="${escapeHtml(id)}" data-days="7">${escapeHtml(tr("dropzone.renew_7d", null, "Renew 7 days"))}</button>` : ""}
@@ -1274,6 +1275,133 @@
   function shouldSubmitBrandingPayload(branding) {
     return !!(brandEnabledInput && brandEnabledInput.checked) ||
         brandingPayloadHasVisibleContent(branding);
+  }
+
+  function renderCreateBrandPreviewCard(preview, branding, enabled, fallbackName) {
+    if (!preview) return;
+
+    const data = branding && typeof branding === "object" ? branding : {};
+    const primary = normalizeEditColorValue(data.primary_color, "#ff9f1c");
+    const bg = normalizeEditColorValue(data.background_color, "#101217");
+    const company = String(data.company_name || "").trim();
+    const title = String(data.title || "").trim() || String(fallbackName || "").trim() || "Drop Zone";
+    const description = String(data.description || "").trim() || "Upload files securely.";
+    const buttonText = String(data.button_text || "").trim() || "Upload files";
+    const footer = String(data.footer_text || "").trim() || company;
+    const logoUrl = String(data.logo_url || "").trim();
+
+    preview.classList.toggle("disabledPreview", !enabled);
+    preview.style.setProperty("--dz-edit-preview-primary", primary);
+    preview.style.setProperty("--dz-edit-preview-bg", bg);
+
+    const logo = preview.querySelector("[data-brand-preview-logo]");
+    const titleEl = preview.querySelector("[data-brand-preview-title]");
+    const descEl = preview.querySelector("[data-brand-preview-description]");
+    const buttonEl = preview.querySelector("[data-brand-preview-button]");
+    const footerEl = preview.querySelector("[data-brand-preview-footer]");
+
+    if (logo) {
+      logo.innerHTML = "";
+
+      if (logoUrl) {
+        const img = document.createElement("img");
+        img.src = logoUrl;
+        img.alt = "";
+        logo.appendChild(img);
+        logo.classList.remove("textLogo");
+      } else {
+        logo.textContent = company ? company.slice(0, 2).toUpperCase() : "DZ";
+        logo.classList.add("textLogo");
+      }
+    }
+
+    if (titleEl) titleEl.textContent = title;
+    if (descEl) descEl.textContent = description;
+    if (buttonEl) buttonEl.textContent = buttonText;
+    if (footerEl) {
+      footerEl.textContent = footer || "";
+      footerEl.classList.toggle("hidden", !footer);
+    }
+  }
+
+  function collectCreateBrandingPreviewPayload() {
+    return {
+      company_name: formStringValue(brandCompanyInput),
+      logo_url: formStringValue(brandLogoUrlInput),
+      title: formStringValue(brandTitleInput),
+      description: formStringValue(brandDescriptionInput),
+      primary_color: formStringValue(brandPrimaryColorInput),
+      background_color: formStringValue(brandBackgroundColorInput),
+      button_text: formStringValue(brandButtonTextInput),
+      footer_text: formStringValue(brandFooterTextInput)
+    };
+  }
+
+  function ensureCreateBrandPreview() {
+    let preview = document.getElementById("dzCreateBrandPreview");
+    if (preview) return preview;
+
+    const anchor =
+      (brandFooterTextInput && (brandFooterTextInput.closest("label") || brandFooterTextInput.parentElement)) ||
+      (brandDescriptionInput && (brandDescriptionInput.closest("label") || brandDescriptionInput.parentElement)) ||
+      (brandButtonTextInput && (brandButtonTextInput.closest("label") || brandButtonTextInput.parentElement)) ||
+      (brandEnabledInput && (brandEnabledInput.closest("label") || brandEnabledInput.parentElement));
+
+    if (!anchor || !anchor.parentNode) return null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "dzEditPreviewWrap dzCreatePreviewWrap";
+    wrap.innerHTML = `
+      <div class="dzEditPreviewLabel">${escapeHtml(tr("dropzone.preview", null, "Preview"))}</div>
+      <div class="dzEditPreview" id="dzCreateBrandPreview">
+        <div class="dzEditPreviewLogo" data-brand-preview-logo></div>
+        <div class="dzEditPreviewTitle" data-brand-preview-title></div>
+        <div class="dzEditPreviewDescription" data-brand-preview-description></div>
+        <button class="dzEditPreviewButton" type="button" data-brand-preview-button></button>
+        <div class="dzEditPreviewFooter" data-brand-preview-footer></div>
+      </div>
+    `;
+
+    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+    return wrap.querySelector("#dzCreateBrandPreview");
+  }
+
+  function updateCreateBrandPreview() {
+    const preview = ensureCreateBrandPreview();
+    if (!preview) return;
+
+    const branding = collectCreateBrandingPreviewPayload();
+    const enabled = !!(brandEnabledInput && brandEnabledInput.checked);
+    const fallbackName = formStringValue(zoneNameInput) || "Drop Zone";
+
+    renderCreateBrandPreviewCard(preview, branding, enabled, fallbackName);
+  }
+
+  function bindCreateBrandPreviewInputs() {
+    const inputs = [
+      zoneNameInput,
+      brandEnabledInput,
+      brandCompanyInput,
+      brandLogoUrlInput,
+      brandTitleInput,
+      brandDescriptionInput,
+      brandPrimaryColorInput,
+      brandBackgroundColorInput,
+      brandButtonTextInput,
+      brandFooterTextInput
+    ];
+
+    for (const input of inputs) {
+      if (!input || input.dataset.createPreviewBound === "1") continue;
+
+      const handler = () => window.setTimeout(updateCreateBrandPreview, 0);
+
+      input.addEventListener("input", handler);
+      input.addEventListener("change", handler);
+      input.dataset.createPreviewBound = "1";
+    }
+
+    window.setTimeout(updateCreateBrandPreview, 0);
   }
 
   async function createDropZone(ev) {
@@ -1598,6 +1726,312 @@
     modal.focus?.();
   }
 
+  function normalizeEditColorValue(v, fallback = "#ff9f1c") {
+    const raw = String(v || "").trim();
+
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+      return raw;
+    }
+
+    if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+      return `#${raw}`;
+    }
+
+    return fallback;
+  }
+
+  function editTextValue(v) {
+    return String(v || "");
+  }
+
+  function editNumberValue(v) {
+    const n = Number(v || 0);
+    return Number.isFinite(n) && n > 0 ? String(Math.floor(n)) : "0";
+  }
+
+  function openDropZoneEditModal(zone) {
+    const z = zone && typeof zone === "object" ? zone : null;
+    if (!z || !z.id) return;
+
+    const branding = z.branding && typeof z.branding === "object" ? z.branding : {};
+    const hasBranding = Object.keys(branding).length > 0;
+
+    const modal = document.createElement("div");
+    modal.className = "dzEditModalBackdrop";
+    modal.innerHTML = `
+      <div class="dzEditModalCard" role="dialog" aria-modal="true" aria-label="${escapeHtml(tr("dropzone.edit.title", null, "Edit Drop Zone"))}">
+        <div class="dzEditModalHead">
+          <div>
+            <div class="dzEditModalTitle">${escapeHtml(tr("dropzone.edit.title", null, "Edit Drop Zone"))}</div>
+            <div class="dzEditModalSub">${escapeHtml(tr("dropzone.edit.subtitle", null, "Update branding, name, and upload limits. Destination folder is not changed here."))}</div>
+          </div>
+          <button class="dzGhost dzEditCloseBtn" type="button">${escapeHtml(tr("dropzone.close", null, "Close"))}</button>
+        </div>
+
+        <form class="dzEditForm">
+          <div class="dzEditGrid">
+            <label>
+              <span>${escapeHtml(tr("dropzone.name", null, "Name"))}</span>
+              <input class="dzEditInput" data-edit-field="name" type="text" maxlength="120" value="${escapeHtml(editTextValue(z.name || "Drop Zone"))}">
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.max_file_bytes", null, "Max file bytes"))}</span>
+              <input class="dzEditInput" data-edit-field="max_file_bytes" type="number" min="0" step="1" value="${escapeHtml(editNumberValue(z.max_file_bytes))}">
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.max_total_bytes", null, "Max total bytes"))}</span>
+              <input class="dzEditInput" data-edit-field="max_total_bytes" type="number" min="0" step="1" value="${escapeHtml(editNumberValue(z.max_total_bytes))}">
+            </label>
+          </div>
+
+          <label class="dzEditToggle">
+            <input data-edit-field="branding_enabled" type="checkbox" ${hasBranding ? "checked" : ""}>
+            <span>${escapeHtml(tr("dropzone.branding_enabled", null, "Use branded page"))}</span>
+          </label>
+
+          <div class="dzEditBrandGrid">
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_company", null, "Company name"))}</span>
+              <input class="dzEditInput" data-edit-field="company_name" type="text" maxlength="120" value="${escapeHtml(editTextValue(branding.company_name))}">
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_logo_url", null, "Logo URL"))}</span>
+              <input class="dzEditInput" data-edit-field="logo_url" type="text" value="${escapeHtml(editTextValue(branding.logo_url))}">
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_title", null, "Title"))}</span>
+              <input class="dzEditInput" data-edit-field="title" type="text" maxlength="140" value="${escapeHtml(editTextValue(branding.title))}">
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_primary_color", null, "Primary color"))}</span>
+              <div class="dzEditColorRow">
+                <input class="dzEditColorPicker" data-edit-color-for="primary_color" type="color" value="${escapeHtml(normalizeEditColorValue(branding.primary_color, "#ff9f1c"))}">
+                <input class="dzEditInput" data-edit-field="primary_color" type="text" placeholder="#ff9f1c" value="${escapeHtml(editTextValue(branding.primary_color || "#ff9f1c"))}">
+              </div>
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_background_color", null, "Background color"))}</span>
+              <div class="dzEditColorRow">
+                <input class="dzEditColorPicker" data-edit-color-for="background_color" type="color" value="${escapeHtml(normalizeEditColorValue(branding.background_color, "#101217"))}">
+                <input class="dzEditInput" data-edit-field="background_color" type="text" placeholder="#101217" value="${escapeHtml(editTextValue(branding.background_color || "#101217"))}">
+              </div>
+            </label>
+
+            <label>
+              <span>${escapeHtml(tr("dropzone.brand_button_text", null, "Button text"))}</span>
+              <input class="dzEditInput" data-edit-field="button_text" type="text" maxlength="80" value="${escapeHtml(editTextValue(branding.button_text))}">
+            </label>
+
+            <label class="dzEditWide">
+              <span>${escapeHtml(tr("dropzone.brand_description", null, "Description"))}</span>
+              <textarea class="dzEditInput" data-edit-field="description" maxlength="320">${escapeHtml(editTextValue(branding.description))}</textarea>
+            </label>
+
+            <label class="dzEditWide">
+              <span>${escapeHtml(tr("dropzone.brand_footer_text", null, "Footer text"))}</span>
+              <input class="dzEditInput" data-edit-field="footer_text" type="text" maxlength="180" value="${escapeHtml(editTextValue(branding.footer_text))}">
+            </label>
+          </div>
+
+          <div class="dzEditPreviewWrap">
+            <div class="dzEditPreviewLabel">${escapeHtml(tr("dropzone.edit.preview", null, "Preview"))}</div>
+            <div class="dzEditPreview" data-edit-preview>
+              <div class="dzEditPreviewLogo" data-edit-preview-logo></div>
+              <div class="dzEditPreviewTitle" data-edit-preview-title></div>
+              <div class="dzEditPreviewDescription" data-edit-preview-description></div>
+              <button class="dzEditPreviewButton" type="button" data-edit-preview-button></button>
+              <div class="dzEditPreviewFooter" data-edit-preview-footer></div>
+            </div>
+          </div>
+
+          <div class="dzEditHint">
+            ${escapeHtml(tr("dropzone.edit.destination_hint", null, "Destination folder is intentionally not edited here. Changing it later should be a separate action because it does not move already uploaded files."))}
+          </div>
+
+          <div class="dzEditActions">
+            <button class="dzGhost dzEditCancelBtn" type="button">${escapeHtml(tr("dropzone.cancel", null, "Cancel"))}</button>
+            <button class="dzPrimary" type="submit">${escapeHtml(tr("dropzone.save", null, "Save"))}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    const q = (sel) => modal.querySelector(sel);
+    const val = (field) => String(q(`[data-edit-field="${field}"]`)?.value || "").trim();
+    const num = (field) => {
+      const n = Number(val(field) || 0);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    };
+
+    const syncColorPair = (field, source) => {
+      const text = q(`[data-edit-field="${field}"]`);
+      const picker = q(`[data-edit-color-for="${field}"]`);
+      if (!text || !picker) return;
+
+      if (source === "picker") {
+        text.value = picker.value || "";
+        return;
+      }
+
+      const normalized = normalizeEditColorValue(text.value, picker.value || "#ff9f1c");
+      picker.value = normalized;
+    };
+
+    const updateEditPreview = () => {
+      const enabled = !!q('[data-edit-field="branding_enabled"]')?.checked;
+      const preview = q("[data-edit-preview]");
+      if (!preview) return;
+
+      const primary = normalizeEditColorValue(val("primary_color"), "#ff9f1c");
+      const bg = normalizeEditColorValue(val("background_color"), "#101217");
+      const company = val("company_name");
+      const title = val("title") || val("name") || "Drop Zone";
+      const description = val("description") || "Upload files securely.";
+      const buttonText = val("button_text") || "Upload files";
+      const footer = val("footer_text") || "";
+      const logoUrl = val("logo_url");
+
+      preview.classList.toggle("disabledPreview", !enabled);
+      preview.style.setProperty("--dz-edit-preview-primary", primary);
+      preview.style.setProperty("--dz-edit-preview-bg", bg);
+
+      const logo = q("[data-edit-preview-logo]");
+      const titleEl = q("[data-edit-preview-title]");
+      const descEl = q("[data-edit-preview-description]");
+      const buttonEl = q("[data-edit-preview-button]");
+      const footerEl = q("[data-edit-preview-footer]");
+
+      if (logo) {
+        logo.innerHTML = "";
+
+        if (logoUrl) {
+          const img = document.createElement("img");
+          img.src = logoUrl;
+          img.alt = "";
+          logo.appendChild(img);
+          logo.classList.remove("textLogo");
+        } else {
+          logo.textContent = company ? company.slice(0, 2).toUpperCase() : "DZ";
+          logo.classList.add("textLogo");
+        }
+      }
+
+      if (titleEl) titleEl.textContent = title;
+      if (descEl) descEl.textContent = description;
+      if (buttonEl) buttonEl.textContent = buttonText;
+      if (footerEl) {
+        footerEl.textContent = footer || (company ? company : "");
+        footerEl.classList.toggle("hidden", !(footer || company));
+      }
+    };
+
+    modal.querySelectorAll("[data-edit-color-for]").forEach((picker) => {
+      picker.addEventListener("input", () => {
+        syncColorPair(picker.getAttribute("data-edit-color-for") || "", "picker");
+        updateEditPreview();
+      });
+    });
+
+    modal.querySelectorAll("[data-edit-field]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const field = input.getAttribute("data-edit-field") || "";
+        if (field === "primary_color" || field === "background_color") {
+          syncColorPair(field, "text");
+        }
+        updateEditPreview();
+      });
+
+      input.addEventListener("change", () => {
+        const field = input.getAttribute("data-edit-field") || "";
+        if (field === "primary_color" || field === "background_color") {
+          syncColorPair(field, "text");
+        }
+        updateEditPreview();
+      });
+    });
+
+    syncColorPair("primary_color", "text");
+    syncColorPair("background_color", "text");
+    updateEditPreview();
+
+    q(".dzEditCloseBtn")?.addEventListener("click", close);
+    q(".dzEditCancelBtn")?.addEventListener("click", close);
+
+    modal.addEventListener("click", (ev) => {
+      if (ev.target === modal) close();
+    });
+
+    const onKey = (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        close();
+        document.removeEventListener("keydown", onKey, true);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+
+    q(".dzEditForm")?.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+
+      const brandingEnabled = !!q('[data-edit-field="branding_enabled"]')?.checked;
+
+      const body = {
+        id: z.id,
+        name: val("name") || "Drop Zone",
+        max_file_bytes: num("max_file_bytes"),
+        max_total_bytes: num("max_total_bytes"),
+        branding: brandingEnabled ? {
+          company_name: val("company_name"),
+          logo_url: val("logo_url"),
+          title: val("title"),
+          description: val("description"),
+          primary_color: val("primary_color"),
+          background_color: val("background_color"),
+          button_text: val("button_text"),
+          footer_text: val("footer_text")
+        } : {}
+      };
+
+      setStatus(tr("dropzone.edit.saving", null, "Saving Drop Zone…"));
+      setBusy(true);
+
+      try {
+        await apiJson("/api/v4/dropzones/update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        });
+
+        if (z.id && typeof expandedDropZoneIds !== "undefined") {
+          expandedDropZoneIds.add(String(z.id));
+        }
+
+        close();
+        setStatus(tr("dropzone.edit.saved", null, "Drop Zone saved."));
+        await loadZones();
+      } catch (e) {
+        setStatus(tr("dropzone.edit.failed", { error: String(e && e.message ? e.message : e) }, `Could not save Drop Zone: ${e && e.message ? e.message : e}`));
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    window.setTimeout(() => {
+      q('[data-edit-field="name"]')?.focus();
+    }, 0);
+  }
+
   zonesList?.addEventListener("click", async (ev) => {
     const target = ev.target && ev.target.closest ? ev.target : null;
     if (!target) return;
@@ -1655,6 +2089,14 @@
     const openFolderBtn = target.closest(".dzOpenFolderBtn");
     if (openFolderBtn) {
       openFileManagerDestination(openFolderBtn.getAttribute("data-zone-dest") || "");
+      return;
+    }
+
+    const editBtn = target.closest(".dzEditBtn");
+    if (editBtn) {
+      const id = editBtn.getAttribute("data-zone-id") || "";
+      const zone = (dropZoneListCache || []).find((z) => String(z && z.id || "") === String(id));
+      if (zone) openDropZoneEditModal(zone);
       return;
     }
 
@@ -1728,7 +2170,8 @@
       }
     } catch (_) {}
     refreshBrandTemplateSelect();
-    loadZones();
+    bindCreateBrandPreviewInputs();
+  loadZones();
   });
 
   if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
