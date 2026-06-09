@@ -96,22 +96,23 @@ static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
 
     rec.id               = col_text(stmt, 0);
     rec.token_hash       = col_text(stmt, 1);
-    rec.owner_fp         = col_text(stmt, 2);
-    rec.name             = col_text(stmt, 3);
-    rec.destination_path = col_text(stmt, 4);
-    rec.password_hash    = col_text(stmt, 5);
+    rec.public_path      = col_text(stmt, 2);
+    rec.owner_fp         = col_text(stmt, 3);
+    rec.name             = col_text(stmt, 4);
+    rec.destination_path = col_text(stmt, 5);
+    rec.password_hash    = col_text(stmt, 6);
 
-    rec.created_epoch    = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 6));
-    rec.expires_epoch    = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 7));
-    rec.last_used_epoch  = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 8));
+    rec.created_epoch    = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 7));
+    rec.expires_epoch    = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 8));
+    rec.last_used_epoch  = static_cast<std::int64_t>(sqlite3_column_int64(stmt, 9));
 
-    rec.max_file_bytes   = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 9));
-    rec.max_total_bytes  = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 10));
-    rec.bytes_uploaded   = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 11));
-    rec.upload_count     = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 12));
+    rec.max_file_bytes   = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 10));
+    rec.max_total_bytes  = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 11));
+    rec.bytes_uploaded   = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 12));
+    rec.upload_count     = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 13));
 
-    rec.branding_json    = col_text(stmt, 13);
-    rec.disabled         = sqlite3_column_int(stmt, 14) != 0;
+    rec.branding_json    = col_text(stmt, 14);
+    rec.disabled         = sqlite3_column_int(stmt, 15) != 0;
 
     return rec;
 }
@@ -120,7 +121,7 @@ static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
 // This avoids each query having its own subtly different column order.
 static const char* kSelectDropZoneColumns =
     "SELECT "
-    "  id, token_hash, owner_fp, name, destination_path, password_hash, "
+    "  id, token_hash, public_path, owner_fp, name, destination_path, password_hash, "
     "  created_epoch, expires_epoch, last_used_epoch, "
     "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled "
     "FROM drop_zones ";
@@ -214,6 +215,7 @@ bool DropZoneIndex::init_schema(std::string* err) {
 CREATE TABLE IF NOT EXISTS drop_zones (
     id                TEXT PRIMARY KEY,
     token_hash        TEXT NOT NULL UNIQUE,
+    public_path       TEXT NOT NULL DEFAULT '',
 
     owner_fp          TEXT NOT NULL,
 
@@ -274,8 +276,20 @@ ON drop_zone_uploads(drop_zone_id, created_epoch DESC, id DESC);
 
     if (!exec_sql(db_, kSchema, err)) return false;
 
-    // Migration for existing installations created before Branded Drop Zone.
+    // Migration for existing installations created before owner-visible public paths.
     // CREATE TABLE IF NOT EXISTS does not add columns to existing tables.
+    bool has_public_path = false;
+    if (!column_exists(db_, "drop_zones", "public_path", &has_public_path, err)) {
+        return false;
+    }
+
+    if (!has_public_path) {
+        if (!exec_sql(db_, "ALTER TABLE drop_zones ADD COLUMN public_path TEXT NOT NULL DEFAULT '';", err)) {
+            return false;
+        }
+    }
+
+    // Migration for existing installations created before Branded Drop Zone.
     bool has_branding_json = false;
     if (!column_exists(db_, "drop_zones", "branding_json", &has_branding_json, err)) {
         return false;
@@ -305,11 +319,11 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
     // layer before constructing DropZoneRec.
     static const char* kSql =
         "INSERT INTO drop_zones ("
-        "  id, token_hash, owner_fp, name, destination_path, password_hash, "
+        "  id, token_hash, public_path, owner_fp, name, destination_path, password_hash, "
         "  created_epoch, expires_epoch, last_used_epoch, "
         "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled"
         ") VALUES ("
-        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
+        "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16"
         ")";
 
     sqlite3_stmt* stmt = nullptr;
@@ -321,21 +335,22 @@ bool DropZoneIndex::insert(const DropZoneRec& rec, std::string* err) {
 
     sqlite3_bind_text(stmt, 1, rec.id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, rec.token_hash.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, rec.owner_fp.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, rec.name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 5, rec.destination_path.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, rec.password_hash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, rec.public_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, rec.owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, rec.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, rec.destination_path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, rec.password_hash.c_str(), -1, SQLITE_TRANSIENT);
 
-    sqlite3_bind_int64(stmt, 7, static_cast<sqlite3_int64>(rec.created_epoch));
-    sqlite3_bind_int64(stmt, 8, static_cast<sqlite3_int64>(rec.expires_epoch));
-    sqlite3_bind_int64(stmt, 9, static_cast<sqlite3_int64>(rec.last_used_epoch));
+    sqlite3_bind_int64(stmt, 8, static_cast<sqlite3_int64>(rec.created_epoch));
+    sqlite3_bind_int64(stmt, 9, static_cast<sqlite3_int64>(rec.expires_epoch));
+    sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(rec.last_used_epoch));
 
-    sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(rec.max_file_bytes));
-    sqlite3_bind_int64(stmt, 11, static_cast<sqlite3_int64>(rec.max_total_bytes));
-    sqlite3_bind_int64(stmt, 12, static_cast<sqlite3_int64>(rec.bytes_uploaded));
-    sqlite3_bind_int64(stmt, 13, static_cast<sqlite3_int64>(rec.upload_count));
-    sqlite3_bind_text(stmt, 14, rec.branding_json.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 15, rec.disabled ? 1 : 0);
+    sqlite3_bind_int64(stmt, 11, static_cast<sqlite3_int64>(rec.max_file_bytes));
+    sqlite3_bind_int64(stmt, 12, static_cast<sqlite3_int64>(rec.max_total_bytes));
+    sqlite3_bind_int64(stmt, 13, static_cast<sqlite3_int64>(rec.bytes_uploaded));
+    sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(rec.upload_count));
+    sqlite3_bind_text(stmt, 15, rec.branding_json.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 16, rec.disabled ? 1 : 0);
 
     const int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {

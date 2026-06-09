@@ -278,6 +278,7 @@ static json dropzone_to_json_local(const DropZoneRec& rec) {
         {"id", rec.id},
         {"name", rec.name},
         {"destination_path", rec.destination_path},
+        {"url", rec.public_path},
 
         {"created_epoch", rec.created_epoch},
         {"expires_epoch", rec.expires_epoch},
@@ -1344,7 +1345,13 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
 
         json zones = json::array();
         for (const auto& row : rows) {
-            zones.push_back(dropzone_to_json_local(row));
+            json zone = dropzone_to_json_local(row);
+
+            if (!row.public_path.empty() && deps.origin && !deps.origin->empty()) {
+                zone["full_url"] = *deps.origin + row.public_path;
+            }
+
+            zones.push_back(std::move(zone));
         }
 
         audit_local(deps, "v4.dropzones_list_ok", "ok", {
@@ -1476,6 +1483,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
 
         const std::string id = "dz_" + deps.random_b64url(18);
         const std::string token = deps.random_b64url(32);
+        const std::string url = "/dz/" + token;
 
         std::string herr;
         const std::string token_hash = sha256_hex_string_local(token, &herr);
@@ -1518,6 +1526,7 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         DropZoneRec rec;
         rec.id = id;
         rec.token_hash = token_hash;
+        rec.public_path = url;
         rec.owner_fp = actor_fp;
         rec.name = name;
         rec.destination_path = dest_norm;
@@ -1548,7 +1557,6 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
             return;
         }
 
-        const std::string url = "/dz/" + token;
         const std::string full_url = *deps.origin + url;
 
         audit_local(deps, "v4.dropzones_create_ok", "ok", {

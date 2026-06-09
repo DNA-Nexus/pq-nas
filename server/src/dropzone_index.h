@@ -20,11 +20,14 @@ namespace pqnas {
 // - counters for completed uploads
 //
 // Security note:
-// token_hash stores only a hash of the public URL token. The raw token should
-// only be returned at creation time and should not be persisted.
+ // token_hash stores the public lookup hash.
+ // public_path stores the owner-visible public URL path, for example /dz/<token>.
+ // Owner-authenticated management APIs may expose public_path/full_url.
+ // Public unauthenticated APIs must not expose owner_fp, token_hash or password_hash.
 struct DropZoneRec {
     std::string id;
     std::string token_hash;
+    std::string public_path;
 
     std::string owner_fp;
 
