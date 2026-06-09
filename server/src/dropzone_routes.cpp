@@ -288,6 +288,8 @@ static json dropzone_to_json_local(const DropZoneRec& rec) {
         {"max_total_bytes", rec.max_total_bytes},
         {"bytes_uploaded", rec.bytes_uploaded},
         {"upload_count", rec.upload_count},
+        {"pending_upload_count", rec.pending_upload_count},
+        {"has_pending_uploads", rec.pending_upload_count > 0},
 
         {"password_required", !rec.password_hash.empty()},
         {"disabled", rec.disabled},

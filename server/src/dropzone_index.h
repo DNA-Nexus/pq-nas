@@ -57,6 +57,11 @@ struct DropZoneRec {
     std::uint64_t bytes_uploaded = 0;
     std::uint64_t upload_count = 0;
 
+    // Current visible upload-history rows for owner UI notification badges.
+    // Clearing upload history resets this to zero naturally because it is loaded
+    // from drop_zone_uploads, not stored in drop_zones.
+    std::uint64_t pending_upload_count = 0;
+
     bool disabled = false;
 };
 

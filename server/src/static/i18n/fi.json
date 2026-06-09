@@ -4507,5 +4507,6 @@
   "dropzone.clear_history.confirm": "Tyhjennä historia",
   "dropzone.clear_history.clearing": "Tyhjennetään Drop Zonen lähetyshistoriaa…",
   "dropzone.clear_history.cleared_status": "Lähetyshistoria tyhjennetty ({count} riviä).",
-  "dropzone.clear_history.failed": "Lähetyshistoriaa ei voitu tyhjentää: {error}"
+  "dropzone.clear_history.failed": "Lähetyshistoriaa ei voitu tyhjentää: {error}",
+  "dropzone.pending_uploads": "Uusia lähetyksiä: {count}"
 }

@@ -1157,3 +1157,36 @@ textarea.dzEditInput {
   background: rgba(255,190,90,.18);
   box-shadow: 0 0 0 3px rgba(255,190,90,.10);
 }
+
+
+.dzPendingPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 32px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(255,190,90,.62);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255,190,90,.25), rgba(255,159,28,.16));
+  color: #ffe0ad;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 0 0 3px rgba(255,190,90,.08);
+}
+
+
+.dzManageActions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dzManageActions .dzGhost {
+  margin-top: 0;
+}

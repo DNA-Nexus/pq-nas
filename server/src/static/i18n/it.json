@@ -4507,5 +4507,6 @@
   "dropzone.clear_history.confirm": "Clear history",
   "dropzone.clear_history.clearing": "Clearing Drop Zone upload history…",
   "dropzone.clear_history.cleared_status": "Upload history cleared ({count} row(s)).",
-  "dropzone.clear_history.failed": "Could not clear upload history: {error}"
+  "dropzone.clear_history.failed": "Could not clear upload history: {error}",
+  "dropzone.pending_uploads": "New uploads: {count}"
 }

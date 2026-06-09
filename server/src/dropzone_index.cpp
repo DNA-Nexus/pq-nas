@@ -113,6 +113,7 @@ static DropZoneRec row_to_dropzone(sqlite3_stmt* stmt) {
 
     rec.branding_json    = col_text(stmt, 14);
     rec.disabled         = sqlite3_column_int(stmt, 15) != 0;
+    rec.pending_upload_count = static_cast<std::uint64_t>(sqlite3_column_int64(stmt, 16));
 
     return rec;
 }
@@ -123,7 +124,8 @@ static const char* kSelectDropZoneColumns =
     "SELECT "
     "  id, token_hash, public_path, owner_fp, name, destination_path, password_hash, "
     "  created_epoch, expires_epoch, last_used_epoch, "
-    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled "
+    "  max_file_bytes, max_total_bytes, bytes_uploaded, upload_count, branding_json, disabled, "
+    "  (SELECT COUNT(*) FROM drop_zone_uploads u WHERE u.drop_zone_id = drop_zones.id) AS pending_upload_count "
     "FROM drop_zones ";
 
 } // namespace
