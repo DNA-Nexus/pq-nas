@@ -167,6 +167,14 @@ public:
                          std::uint64_t max_total_bytes,
                          std::string* err);
 
+    // Owner-scoped metadata cleanup. This deletes completed upload history rows
+    // for the Drop Zone, but does not delete uploaded files from storage and does
+    // not reset denormalized bytes_uploaded/upload_count counters.
+    bool clear_upload_history(const std::string& id,
+                              const std::string& owner_fp,
+                              std::uint64_t* deleted_count,
+                              std::string* err);
+
     bool remove(const std::string& id,
                 const std::string& owner_fp,
                 std::string* err);

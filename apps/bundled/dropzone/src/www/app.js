@@ -1065,6 +1065,7 @@
               ${publicUrl ? `<button class="dzGhost dzPreviewBtn" type="button" data-zone-url="${escapeHtml(publicUrl)}">${escapeHtml(tr("dropzone.preview", null, "Preview"))}</button>` : ""}
               ${dest && dest !== "—" ? `<button class="dzGhost dzOpenFolderBtn" type="button" data-zone-dest="${escapeHtml(dest)}">${escapeHtml(tr("dropzone.open_folder", null, "Open folder"))}</button>` : ""}
               ${id ? `<button class="dzGhost dzEditBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.edit", null, "Edit"))}</button>` : ""}
+              ${id ? `<button class="dzGhost dzClearHistoryBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.clear_history", null, "Clear history"))}</button>` : ""}
               ${canDisable ? `<button class="dzGhost dzDisableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.disable", null, "Disable"))}</button>` : ""}
               ${canReenable ? `<button class="dzGhost dzEnableBtn" type="button" data-zone-id="${escapeHtml(id)}">${escapeHtml(tr("dropzone.reenable", null, "Re-enable"))}</button>` : ""}
               ${canRenew ? `<button class="dzGhost dzRenewBtn" type="button" data-zone-id="${escapeHtml(id)}" data-days="7">${escapeHtml(tr("dropzone.renew_7d", null, "Renew 7 days"))}</button>` : ""}
@@ -1569,6 +1570,44 @@
       await loadZones();
     } catch (e) {
       setStatus(tr("dropzone.renew_failed", { error: String(e && e.message ? e.message : e) }, `Could not renew Drop Zone: ${e && e.message ? e.message : e}`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearUploadHistory(id) {
+    if (!id) return;
+
+    const ok = await openDropZoneConfirmModal({
+      title: tr("dropzone.clear_history.title", null, "Clear upload history?"),
+      message: tr("dropzone.clear_history.message", null, "This clears the visible upload history for this Drop Zone. Files already stored in the destination folder are not deleted."),
+      confirmText: tr("dropzone.clear_history.confirm", null, "Clear history"),
+      cancelText: tr("dropzone.cancel", null, "Cancel"),
+      danger: true
+    });
+    if (!ok) return;
+
+    setStatus(tr("dropzone.clear_history.clearing", null, "Clearing Drop Zone upload history…"));
+    setBusy(true);
+
+    try {
+      const json = await apiJson("/api/v4/dropzones/clear-history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id })
+      });
+
+      if (id && typeof expandedDropZoneIds !== "undefined") {
+        expandedDropZoneIds.add(String(id));
+      }
+
+      const deleted = Number(json && json.deleted_count || 0);
+      setStatus(tr("dropzone.clear_history.cleared_status", { count: deleted }, `Upload history cleared (${deleted} row(s)).`));
+      await loadZones();
+    } catch (e) {
+      setStatus(tr("dropzone.clear_history.failed", { error: String(e && e.message ? e.message : e) }, `Could not clear upload history: ${e && e.message ? e.message : e}`));
     } finally {
       setBusy(false);
     }
@@ -2112,6 +2151,12 @@
     const renewBtn = target.closest(".dzRenewBtn");
     if (renewBtn) {
       renewZone(renewBtn.getAttribute("data-zone-id") || "", Number(renewBtn.getAttribute("data-days") || 7));
+      return;
+    }
+
+    const clearHistoryBtn = target.closest(".dzClearHistoryBtn");
+    if (clearHistoryBtn) {
+      clearUploadHistory(clearHistoryBtn.getAttribute("data-zone-id") || "");
       return;
     }
 

@@ -4500,5 +4500,12 @@
   "dropzone.public.upload_file_count": "Upload {count} files",
   "dropzone.public.file_list_more": "+{count} more file(s)",
   "dropzone.public.show_more_uploads": "Show {count} more",
-  "dropzone.public.show_latest_uploads": "Show latest {count}"
+  "dropzone.public.show_latest_uploads": "Show latest {count}",
+  "dropzone.clear_history": "Clear history",
+  "dropzone.clear_history.title": "Clear upload history?",
+  "dropzone.clear_history.message": "This clears the visible upload history for this Drop Zone. Files already stored in the destination folder are not deleted.",
+  "dropzone.clear_history.confirm": "Clear history",
+  "dropzone.clear_history.clearing": "Clearing Drop Zone upload history…",
+  "dropzone.clear_history.cleared_status": "Upload history cleared ({count} row(s)).",
+  "dropzone.clear_history.failed": "Could not clear upload history: {error}"
 }

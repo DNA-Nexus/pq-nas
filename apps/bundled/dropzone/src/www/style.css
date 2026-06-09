@@ -1144,3 +1144,16 @@ textarea.dzEditInput {
   background: rgba(80,170,255,.20);
   box-shadow: 0 0 0 3px rgba(80,170,255,.10);
 }
+
+
+.dzGhost.dzClearHistoryBtn {
+  border-color: rgba(255,190,90,.44);
+  background: rgba(255,190,90,.10);
+  color: #ffe0ad;
+}
+
+.dzGhost.dzClearHistoryBtn:hover {
+  border-color: rgba(255,190,90,.72);
+  background: rgba(255,190,90,.18);
+  box-shadow: 0 0 0 3px rgba(255,190,90,.10);
+}

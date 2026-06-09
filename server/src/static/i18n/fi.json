@@ -4500,5 +4500,12 @@
   "dropzone.public.upload_file_count": "Lähetä {count} tiedostoa",
   "dropzone.public.file_list_more": "+{count} muuta tiedostoa",
   "dropzone.public.show_more_uploads": "Näytä {count} lisää",
-  "dropzone.public.show_latest_uploads": "Näytä viimeisimmät {count}"
+  "dropzone.public.show_latest_uploads": "Näytä viimeisimmät {count}",
+  "dropzone.clear_history": "Tyhjennä historia",
+  "dropzone.clear_history.title": "Tyhjennetäänkö lähetyshistoria?",
+  "dropzone.clear_history.message": "Tämä tyhjentää tämän Drop Zonen näkyvän lähetyshistorian. Kohdekansioon jo tallennettuja tiedostoja ei poisteta.",
+  "dropzone.clear_history.confirm": "Tyhjennä historia",
+  "dropzone.clear_history.clearing": "Tyhjennetään Drop Zonen lähetyshistoriaa…",
+  "dropzone.clear_history.cleared_status": "Lähetyshistoria tyhjennetty ({count} riviä).",
+  "dropzone.clear_history.failed": "Lähetyshistoriaa ei voitu tyhjentää: {error}"
 }
