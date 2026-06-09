@@ -1,14 +1,59 @@
 :root {
   color-scheme: dark;
-  --bg: #080a0f;
-  --panel: rgba(255,255,255,.055);
-  --panel2: rgba(255,255,255,.08);
-  --text: #f3f6ff;
-  --muted: rgba(243,246,255,.66);
-  --line: rgba(255,255,255,.13);
-  --accent: #ff9f1c;
-  --good: #50fa7b;
+
+  /* Drop Zone local theme tokens.
+     They map to PQ-NAS global theme tokens when /static/theme.css is loaded,
+     but keep safe fallbacks for detached/dev use. */
+  --dz-bg: var(--bg, #080a0f);
+  --dz-panel: var(--panel, rgba(255,255,255,.055));
+  --dz-panel2: var(--panel2, rgba(255,255,255,.08));
+  --dz-text: var(--fg, #f3f6ff);
+  --dz-muted: var(--fg-dim, rgba(243,246,255,.66));
+  --dz-line: var(--border, rgba(255,255,255,.13));
+  --dz-line2: var(--border2, rgba(255,255,255,.10));
+  --dz-accent: var(--ok, #ff9f1c);
+  --dz-good: var(--ok, #50fa7b);
+
+  --dz-primary-fg: #160d00;
+  --dz-modal-bg: #10131d;
+  --dz-card-bg: rgba(0,0,0,.20);
+  --dz-soft-bg: rgba(255,255,255,.055);
+
+  --dz-field-bg: var(--field-bg, rgba(0,0,0,.24));
+  --dz-field-bg2: var(--field-bg2, rgba(0,0,0,.32));
+  --dz-field-text: var(--field-fg, var(--dz-text));
+  --dz-field-placeholder: var(--field-ph, rgba(243,246,255,.36));
+  --dz-field-border: var(--field-border, var(--dz-line));
+  --dz-field-focus: var(--field-border2, var(--dz-line));
+
+  --dz-select-bg: #080b14;
+  --dz-select-checked-bg: #1f2635;
 }
+
+html[data-theme="bright"] {
+  color-scheme: light;
+  --dz-primary-fg: #ffffff;
+  --dz-modal-bg: #ffffff;
+  --dz-card-bg: rgba(255,255,255,.92);
+  --dz-soft-bg: rgba(0,0,0,.035);
+  --dz-select-bg: #ffffff;
+  --dz-select-checked-bg: #dbeafe;
+}
+
+html[data-theme="cpunk_orange"] {
+  --dz-primary-fg: #160d00;
+}
+
+html[data-theme="win_classic"] {
+  color-scheme: light;
+  --dz-primary-fg: #000000;
+  --dz-modal-bg: #c0c0c0;
+  --dz-card-bg: #d4d0c8;
+  --dz-soft-bg: #d4d0c8;
+  --dz-select-bg: #ffffff;
+  --dz-select-checked-bg: #0a246a;
+}
+
 
 * {
   box-sizing: border-box;
@@ -20,9 +65,9 @@ body {
   background:
     radial-gradient(circle at top left, rgba(255,159,28,.22), transparent 34rem),
     radial-gradient(circle at bottom right, rgba(80,250,123,.10), transparent 34rem),
-    var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    var(--dz-bg);
+  color: var(--dz-text);
+  font-family: var(--sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 }
 
 .dzShell {
@@ -37,14 +82,14 @@ body {
   gap: 24px;
   align-items: center;
   padding: 28px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 24px;
   background: linear-gradient(135deg, rgba(255,255,255,.09), rgba(255,255,255,.035));
   box-shadow: 0 24px 70px rgba(0,0,0,.38);
 }
 
 .dzKicker {
-  color: var(--accent);
+  color: var(--dz-accent);
   text-transform: uppercase;
   letter-spacing: .14em;
   font-size: 12px;
@@ -80,7 +125,7 @@ h1 {
 .dzHero p {
   margin-top: 14px;
   max-width: 680px;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 16px;
   line-height: 1.55;
 }
@@ -88,9 +133,9 @@ h1 {
 .dzPanel {
   margin-top: 18px;
   padding: 22px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 22px;
-  background: var(--panel);
+  background: var(--dz-panel);
 }
 
 .dzPanelHead {
@@ -102,7 +147,7 @@ h1 {
 
 .dzPanelHead p {
   margin-top: 5px;
-  color: var(--muted);
+  color: var(--dz-muted);
 }
 
 button {
@@ -114,15 +159,15 @@ button {
 }
 
 .dzPrimary {
-  background: var(--accent);
-  color: #160d00;
+  background: var(--dz-accent);
+  color: var(--dz-primary-fg);
   min-width: 170px;
 }
 
 .dzGhost {
-  background: var(--panel2);
-  color: var(--text);
-  border: 1px solid var(--line);
+  background: var(--dz-panel2);
+  color: var(--dz-text);
+  border: 1px solid var(--dz-line);
 }
 
 .dzList {
@@ -133,14 +178,14 @@ button {
 
 .dzEmpty,
 .dzCard {
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 18px;
-  background: rgba(0,0,0,.20);
+  background: var(--dz-card-bg);
   padding: 16px;
 }
 
 .dzEmpty {
-  color: var(--muted);
+  color: var(--dz-muted);
 }
 
 .dzCardTitle {
@@ -149,7 +194,7 @@ button {
 
 .dzCardMeta {
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 14px;
 }
 .hidden {
@@ -182,10 +227,10 @@ button:disabled {
   width: min(680px, 100%);
   max-height: calc(100vh - 40px);
   overflow: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 24px;
-  background: #10131d;
-  color: var(--text);
+  background: var(--dz-modal-bg);
+  color: var(--dz-text);
   box-shadow: 0 26px 90px rgba(0,0,0,.45);
   padding: 22px;
 }
@@ -203,14 +248,14 @@ button:disabled {
 
 .dzModalHead p {
   margin-top: 4px;
-  color: var(--muted);
+  color: var(--dz-muted);
 }
 
 .dzIconBtn {
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
-  background: var(--panel2);
-  color: var(--text);
+  background: var(--dz-panel2);
+  color: var(--dz-text);
   width: 38px;
   height: 38px;
   min-width: 38px;
@@ -229,22 +274,22 @@ button:disabled {
   display: grid;
   gap: 7px;
   font-weight: 800;
-  color: var(--text);
+  color: var(--dz-text);
 }
 
 .dzForm input,
 .dzForm select {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
-  background: rgba(0,0,0,.24);
-  color: var(--text);
+  background: var(--dz-field-bg);
+  color: var(--dz-field-text);
   padding: 11px 12px;
   font: inherit;
 }
 
 .dzForm input::placeholder {
-  color: rgba(243,246,255,.36);
+  color: var(--dz-field-placeholder);
 }
 
 .dzGrid2 {
@@ -273,7 +318,7 @@ button:disabled {
 }
 
 .dzSectionHint {
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -284,7 +329,7 @@ button:disabled {
   height: 42px;
   padding: 4px;
   border-radius: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   background: rgba(255,255,255,.04);
   cursor: pointer;
 }
@@ -337,7 +382,7 @@ button:disabled {
 .dzLogoPreviewShell {
   width: 76px;
   height: 58px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
   background: rgba(255,255,255,.045);
   display: grid;
@@ -353,7 +398,7 @@ button:disabled {
 }
 
 .dzLogoPreviewEmpty {
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
 }
 
@@ -372,7 +417,7 @@ button:disabled {
 }
 
 .dzLogoStatus {
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
   min-width: 160px;
 }
@@ -397,13 +442,13 @@ button:disabled {
 }
 
 .dzHint {
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .dzCreateResult {
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 16px;
   padding: 14px;
   background: rgba(255,255,255,.06);
@@ -424,7 +469,7 @@ button:disabled {
 
 .dzResultUrl {
   margin-bottom: 12px;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   word-break: break-all;
 }
@@ -437,7 +482,7 @@ button:disabled {
 }
 
 .dzStats div {
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
   padding: 10px;
   background: rgba(255,255,255,.045);
@@ -445,7 +490,7 @@ button:disabled {
 
 .dzStats span {
   display: block;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
 }
 
@@ -648,7 +693,7 @@ button:disabled {
   flex-wrap: wrap;
   gap: 4px 14px;
   margin-top: 5px;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -664,7 +709,7 @@ button:disabled {
 .dzDetailsToggleText {
   display: inline-block;
   margin-top: 6px;
-  color: var(--accent);
+  color: var(--dz-accent);
   font-size: 12px;
   font-weight: 900;
 }
@@ -680,7 +725,7 @@ button:disabled {
 .dzDetailsPanel {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--dz-line);
 }
 
 .dzDetailsPanel.hidden {
@@ -699,7 +744,7 @@ button:disabled {
 }
 
 .dzDetailGrid > div {
-  border: 1px solid var(--line);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
   padding: 10px;
   background: rgba(255,255,255,.035);
@@ -708,7 +753,7 @@ button:disabled {
 
 .dzDetailGrid span {
   display: block;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-size: 12px;
   margin-bottom: 4px;
 }
@@ -722,7 +767,7 @@ button:disabled {
 
 .dzDetailsLink {
   margin-top: 10px;
-  color: var(--muted);
+  color: var(--dz-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
@@ -1205,21 +1250,338 @@ textarea.dzEditInput {
    Without explicit option colors, some browsers render the opened menu too light. */
 select {
   color-scheme: dark;
-  background-color: #080b14;
-  color: var(--text);
+  background-color: var(--dz-select-bg);
+  color: var(--dz-field-text);
 }
 
 select option,
 select optgroup {
-  background-color: #080b14;
-  color: var(--text);
+  background-color: var(--dz-select-bg);
+  color: var(--dz-field-text);
 }
 
 select option:checked {
-  background-color: #1f2635;
-  color: var(--text);
+  background-color: var(--dz-select-checked-bg);
+  color: var(--dz-field-text);
 }
 
 select option:disabled {
   color: rgba(243,246,255,.42);
+}
+
+
+/* Drop Zone bright/win_classic badge contrast pass.
+   Bright and Classic themes need stronger, less translucent pills. */
+html[data-theme="bright"] .appVersion,
+html[data-theme="bright"] .dzPendingPill,
+html[data-theme="bright"] .dzBadge,
+html[data-theme="bright"] .dzFilterChip,
+html[data-theme="bright"] .dzFilterCount {
+  box-shadow: none;
+}
+
+html[data-theme="bright"] .appVersion {
+  border-color: rgba(217,119,6,.62);
+  background: #fff1d6;
+  color: #9a5200;
+}
+
+html[data-theme="bright"] .dzBadge.ok {
+  border: 1px solid rgba(21,128,61,.46);
+  background: #d9fbe5;
+  color: #065f2f;
+}
+
+html[data-theme="bright"] .dzBadge.warn {
+  border: 1px solid rgba(217,119,6,.52);
+  background: #fff0c2;
+  color: #8a4a00;
+}
+
+html[data-theme="bright"] .dzBadge.bad {
+  border: 1px solid rgba(185,28,28,.46);
+  background: #ffe0e0;
+  color: #8f1111;
+}
+
+html[data-theme="bright"] .dzPendingPill {
+  border-color: rgba(217,119,6,.60);
+  background: #fff1d6;
+  color: #8a4a00;
+  box-shadow: 0 0 0 2px rgba(217,119,6,.10);
+}
+
+html[data-theme="bright"] .dzFilterChip {
+  border-color: rgba(15,23,42,.18);
+  background: rgba(255,255,255,.78);
+  color: #1f2937;
+}
+
+html[data-theme="bright"] .dzFilterChip.active {
+  border-color: rgba(217,119,6,.62);
+  background: #fff1d6;
+  color: #7c3f00;
+}
+
+html[data-theme="bright"] .dzFilterCount {
+  background: rgba(15,23,42,.14);
+  color: inherit;
+}
+
+html[data-theme="win_classic"] .appVersion {
+  border: 1px solid #808080;
+  background: #ffffcc;
+  color: #000000;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+html[data-theme="win_classic"] .dzBadge,
+html[data-theme="win_classic"] .dzPendingPill,
+html[data-theme="win_classic"] .dzFilterChip,
+html[data-theme="win_classic"] .dzFilterCount {
+  border-radius: 999px;
+  font-weight: 950;
+  box-shadow: none;
+}
+
+html[data-theme="win_classic"] .dzBadge.ok {
+  border: 1px solid #006000;
+  background: #008000;
+  color: #ffffff;
+}
+
+html[data-theme="win_classic"] .dzBadge.warn {
+  border: 1px solid #805000;
+  background: #ffcc66;
+  color: #000000;
+}
+
+html[data-theme="win_classic"] .dzBadge.bad {
+  border: 1px solid #800000;
+  background: #cc3333;
+  color: #ffffff;
+}
+
+html[data-theme="win_classic"] .dzPendingPill {
+  border: 1px solid #805000;
+  background: #ffcc66;
+  color: #000000;
+}
+
+html[data-theme="win_classic"] .dzFilterChip {
+  border: 1px solid #808080;
+  background: #d4d0c8;
+  color: #000000;
+}
+
+html[data-theme="win_classic"] .dzFilterChip.active {
+  border-color: #805000;
+  background: #ffcc66;
+  color: #000000;
+}
+
+html[data-theme="win_classic"] .dzFilterCount {
+  background: rgba(0,0,0,.16);
+  color: inherit;
+}
+
+
+/* Drop Zone win_classic softer badge colors.
+   Keep Classic readable, but avoid harsh traffic-light colors. */
+html[data-theme="win_classic"] .dzBadge.ok {
+  border: 1px solid #4f7f4f;
+  background: #c8e6c8;
+  color: #003000;
+}
+
+html[data-theme="win_classic"] .dzBadge.warn {
+  border: 1px solid #9a7a28;
+  background: #fff2b8;
+  color: #3a2800;
+}
+
+html[data-theme="win_classic"] .dzBadge.bad {
+  border: 1px solid #9a4a4a;
+  background: #f0c0c0;
+  color: #500000;
+}
+
+html[data-theme="win_classic"] .dzPendingPill {
+  border: 1px solid #9a7a28;
+  background: #ffe8a3;
+  color: #3a2800;
+}
+
+html[data-theme="win_classic"] .dzFilterChip.active {
+  border-color: #9a7a28;
+  background: #ffe8a3;
+  color: #000000;
+}
+
+
+/* Drop Zone softer opened-card surfaces for bright/classic.
+   Keep expanded cards readable without turning the whole card khaki/orange. */
+html[data-theme="bright"] .dzCardCompact.dzCardOpen {
+  border-color: rgba(15,23,42,.20);
+  background: rgba(255,255,255,.88);
+  box-shadow: 0 12px 34px rgba(15,23,42,.10);
+}
+
+html[data-theme="bright"] .dzCardCompact.dzCardOpen .dzCompactMain {
+  background: rgba(255,255,255,.58);
+  border-color: rgba(15,23,42,.10);
+  box-shadow: none;
+}
+
+html[data-theme="bright"] .dzCardCompact.dzCardOpen .dzDetailsPanel {
+  background: transparent;
+  border-top-color: rgba(15,23,42,.12);
+}
+
+html[data-theme="bright"] .dzCardCompact.dzCardOpen .dzDetailsToggleText {
+  color: #166534;
+}
+
+html[data-theme="bright"] .dzDetailGrid > div {
+  background: rgba(255,255,255,.62);
+  border-color: rgba(15,23,42,.18);
+}
+
+html[data-theme="bright"] .dzManageActions {
+  border-top-color: rgba(15,23,42,.12);
+}
+
+html[data-theme="win_classic"] .dzCardCompact.dzCardOpen {
+  border-color: #808080;
+  background: #d4d0c8;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+html[data-theme="win_classic"] .dzCardCompact.dzCardOpen .dzCompactMain {
+  background: #d4d0c8;
+  border-color: #b0aca4;
+  box-shadow: none;
+}
+
+html[data-theme="win_classic"] .dzCardCompact.dzCardOpen .dzDetailsPanel {
+  background: transparent;
+  border-top-color: #a0a0a0;
+}
+
+html[data-theme="win_classic"] .dzCardCompact.dzCardOpen .dzDetailsToggleText {
+  color: #006000;
+}
+
+html[data-theme="win_classic"] .dzDetailGrid > div {
+  background: #dcd8d0;
+  border-color: #808080;
+}
+
+html[data-theme="win_classic"] .dzManageActions {
+  border-top-color: #a0a0a0;
+}
+
+
+/* Drop Zone bright/win_classic action button contrast pass.
+   Clear history and Open folder were too faint in light/classic themes. */
+html[data-theme="bright"] .dzGhost.dzClearHistoryBtn {
+  border-color: rgba(217,119,6,.55);
+  background: #fff1d6;
+  color: #7c3f00;
+}
+
+html[data-theme="bright"] .dzGhost.dzClearHistoryBtn:hover {
+  border-color: rgba(217,119,6,.75);
+  background: #ffe5ad;
+  box-shadow: 0 0 0 3px rgba(217,119,6,.10);
+}
+
+html[data-theme="bright"] .dzGhost.dzOpenFolderBtn {
+  border-color: rgba(37,99,235,.45);
+  background: #eaf3ff;
+  color: #174ea6;
+}
+
+html[data-theme="bright"] .dzGhost.dzOpenFolderBtn:hover {
+  border-color: rgba(37,99,235,.68);
+  background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.10);
+}
+
+html[data-theme="bright"] .dzGhost.dzOpenFolderBtn:disabled {
+  opacity: .82;
+  border-color: rgba(37,99,235,.38);
+  background: #eef6ff;
+  color: #335c85;
+  cursor: not-allowed;
+}
+
+html[data-theme="win_classic"] .dzGhost.dzClearHistoryBtn {
+  border: 1px solid #9a7a28;
+  background: #ffe8a3;
+  color: #3a2800;
+}
+
+html[data-theme="win_classic"] .dzGhost.dzClearHistoryBtn:hover {
+  background: #fff2b8;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+html[data-theme="win_classic"] .dzGhost.dzOpenFolderBtn {
+  border: 1px solid #2f5f9f;
+  background: #d8e8ff;
+  color: #003060;
+}
+
+html[data-theme="win_classic"] .dzGhost.dzOpenFolderBtn:hover {
+  background: #c8dcf8;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+html[data-theme="win_classic"] .dzGhost.dzOpenFolderBtn:disabled {
+  opacity: .82;
+  border-color: #6f8fb8;
+  background: #e2ecf8;
+  color: #34506f;
+  cursor: not-allowed;
+}
+
+
+/* Drop Zone bright/win_classic primary button contrast pass.
+   Avoid traffic-light green for Create buttons in light/classic themes. */
+html[data-theme="bright"] .dzPrimary {
+  border: 1px solid rgba(37,99,235,.48);
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(37,99,235,.18);
+}
+
+html[data-theme="bright"] .dzPrimary:hover {
+  background: linear-gradient(180deg, #1d4ed8, #1e40af);
+  border-color: rgba(37,99,235,.68);
+}
+
+html[data-theme="bright"] .dzPrimary:disabled {
+  opacity: .68;
+  cursor: wait;
+}
+
+html[data-theme="win_classic"] .dzPrimary {
+  border: 1px solid #003c74;
+  background: #d8e8ff;
+  color: #000000;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+html[data-theme="win_classic"] .dzPrimary:hover {
+  background: #c8dcf8;
+}
+
+html[data-theme="win_classic"] .dzPrimary:active {
+  box-shadow: inset -1px -1px #ffffff, inset 1px 1px #808080;
+}
+
+html[data-theme="win_classic"] .dzPrimary:disabled {
+  opacity: .75;
+  cursor: wait;
 }
