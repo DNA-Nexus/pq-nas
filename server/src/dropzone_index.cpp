@@ -577,6 +577,86 @@ bool DropZoneIndex::set_expires_epoch(const std::string& id,
     return true;
 }
 
+bool DropZoneIndex::remove(const std::string& id,
+                           const std::string& owner_fp,
+                           std::string* err) {
+    std::lock_guard<std::mutex> lk(mu_);
+
+    if (err) err->clear();
+
+    if (!db_) {
+        if (err) *err = "db not open";
+        return false;
+    }
+
+    if (!exec_sql(db_, "BEGIN IMMEDIATE;", err)) {
+        return false;
+    }
+
+    auto rollback = [&]() {
+        std::string ignored;
+        (void)exec_sql(db_, "ROLLBACK;", &ignored);
+    };
+
+    sqlite3_stmt* stmt = nullptr;
+
+    const char* del_uploads = "DELETE FROM drop_zone_uploads WHERE drop_zone_id = ?1";
+    int rc_prep = sqlite3_prepare_v2(db_, del_uploads, -1, &stmt, nullptr);
+    if (rc_prep != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db_);
+        rollback();
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db_);
+        sqlite3_finalize(stmt);
+        rollback();
+        return false;
+    }
+
+    sqlite3_finalize(stmt);
+    stmt = nullptr;
+
+    const char* del_zone = "DELETE FROM drop_zones WHERE id = ?1 AND owner_fp = ?2";
+    rc_prep = sqlite3_prepare_v2(db_, del_zone, -1, &stmt, nullptr);
+    if (rc_prep != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db_);
+        rollback();
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, owner_fp.c_str(), -1, SQLITE_TRANSIENT);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db_);
+        sqlite3_finalize(stmt);
+        rollback();
+        return false;
+    }
+
+    const int changed = sqlite3_changes(db_);
+    sqlite3_finalize(stmt);
+
+    if (changed != 1) {
+        if (err) *err = "remove_no_match";
+        rollback();
+        return false;
+    }
+
+    if (!exec_sql(db_, "COMMIT;", err)) {
+        rollback();
+        return false;
+    }
+
+    return true;
+}
+
 bool DropZoneIndex::record_upload(const DropZoneUploadRec& rec, std::string* err) {
     std::lock_guard<std::mutex> lk(mu_);
 

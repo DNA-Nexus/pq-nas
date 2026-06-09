@@ -1663,6 +1663,75 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         });
     });
 
+    srv.Post("/api/v4/dropzones/delete", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
+            !deps.dropzone_index) {
+            reply_json_local(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "dropzone route dependencies missing"}
+            });
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor(req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (!require_same_origin_for_cookie_mutation_local(req, res, deps)) {
+            return;
+        }
+
+        json in = json::parse(req.body, nullptr, false);
+        if (in.is_discarded() || !in.is_object()) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid json"}
+            });
+            return;
+        }
+
+        const std::string id = in.value("id", "");
+        if (id.empty()) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "missing id"}
+            });
+            return;
+        }
+
+        std::string err;
+        if (!deps.dropzone_index->remove(id, actor_fp, &err)) {
+            audit_local(deps, "v4.dropzones_delete_fail", "fail", {
+                {"actor_fp", actor_fp},
+                {"dropzone_id", id},
+                {"reason", err}
+            });
+
+            reply_json_local(deps, res, 404, json{
+                {"ok", false},
+                {"error", "not_found"},
+                {"message", "drop zone not found"}
+            });
+            return;
+        }
+
+        audit_local(deps, "v4.dropzones_delete_ok", "ok", {
+            {"actor_fp", actor_fp},
+            {"dropzone_id", id}
+        });
+
+        reply_json_local(deps, res, 200, json{
+            {"ok", true},
+            {"id", id}
+        });
+    });
+
     srv.Post("/api/v4/dropzones/disable", [&](const httplib::Request& req, httplib::Response& res) {
         if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
             !deps.dropzone_index) {

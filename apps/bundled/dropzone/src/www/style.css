@@ -571,3 +571,182 @@ button:disabled {
   color: inherit;
   font-size: .86em;
 }
+
+
+.dzCardCompact {
+  padding: 12px 14px;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.dzCompactRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.dzCompactMain {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 14px;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.dzCompactMain:focus-visible {
+  outline: 2px solid rgba(255,159,28,.58);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.dzCardCompact.dzCardOpen {
+  border-color: rgba(255,159,28,.32);
+  box-shadow: 0 0 0 1px rgba(255,159,28,.08), 0 14px 30px rgba(0,0,0,.18);
+}
+
+.dzCardCompact.dzCardOpen .dzCompactMain {
+  background: linear-gradient(135deg, rgba(255,159,28,.14), rgba(255,159,28,.04));
+  border-color: rgba(255,159,28,.18);
+}
+
+.dzCardCompact.dzCardOpen .dzDetailsPanel {
+  background: rgba(255,159,28,.03);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.dzCardCompact.dzCardOpen .dzDetailsToggleText {
+  color: #ffd28a;
+}
+
+
+.dzCompactTitleLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.dzCompactTitle {
+  font-weight: 900;
+  color: var(--dz-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dzCompactMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.dzCompactMeta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.dzDetailsToggleText {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dzCompactActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dzDetailsPanel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.dzDetailsPanel.hidden {
+  display: none;
+}
+
+.dzStatsCompact {
+  margin-top: 0;
+}
+
+.dzDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.dzDetailGrid > div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255,255,255,.035);
+  min-width: 0;
+}
+
+.dzDetailGrid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.dzDetailGrid strong {
+  display: block;
+  color: var(--dz-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dzDetailsLink {
+  margin-top: 10px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dzNoLinkHint {
+  margin-top: 10px;
+}
+
+@media (max-width: 860px) {
+  .dzCompactRow {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .dzCompactActions {
+    justify-content: flex-start;
+  }
+
+  .dzCompactMeta span {
+    max-width: 100%;
+  }
+
+  .dzDetailGrid {
+    grid-template-columns: 1fr;
+  }
+}

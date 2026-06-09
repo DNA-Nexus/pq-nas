@@ -156,6 +156,10 @@ public:
                            bool also_enable,
                            std::string* err);
 
+    bool remove(const std::string& id,
+                const std::string& owner_fp,
+                std::string* err);
+
     // Returns completed upload records for a Drop Zone.
     //
     // This returns full internal records. Public routes must project these down
