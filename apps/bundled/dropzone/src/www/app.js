@@ -1158,7 +1158,12 @@
   }
 
 
-  const BRAND_LOGO_MAX_BYTES = 256 * 1024;
+  // Logo upload accepts a moderately large source image, then stores a small
+  // optimized inline data URL in branding.logo_url. Keep the final data URL
+  // small because it is saved inside Drop Zone branding JSON.
+  const BRAND_LOGO_MAX_INPUT_BYTES = 5 * 1024 * 1024;
+  const BRAND_LOGO_MAX_DATA_URL_BYTES = 256 * 1024;
+  const BRAND_LOGO_MAX_DIMENSION = 512;
   const BRAND_LOGO_ALLOWED_TYPES = new Set([
     "image/png",
     "image/jpeg",
@@ -1216,6 +1221,112 @@
     });
   }
 
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not encode resized logo."));
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not decode logo image."));
+      };
+
+      img.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve) => {
+      try {
+        canvas.toBlob((blob) => resolve(blob || null), type, quality);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+
+  async function resizeBrandLogoFileToDataUrl(file) {
+    if (file.size <= BRAND_LOGO_MAX_DATA_URL_BYTES) {
+      const originalDataUrl = await readFileAsDataUrl(file);
+      if (isDisplayableLogoSrc(originalDataUrl) && originalDataUrl.length <= BRAND_LOGO_MAX_DATA_URL_BYTES) {
+        return {
+          dataUrl: originalDataUrl,
+          originalBytes: file.size,
+          outputBytes: originalDataUrl.length,
+          resized: false
+        };
+      }
+    }
+
+    const img = await loadImageFromFile(file);
+    const srcW = Number(img.naturalWidth || img.width || 0);
+    const srcH = Number(img.naturalHeight || img.height || 0);
+
+    if (!srcW || !srcH) {
+      throw new Error("Could not read logo dimensions.");
+    }
+
+    const attempts = [
+      { maxDim: BRAND_LOGO_MAX_DIMENSION, type: "image/webp", quality: 0.86 },
+      { maxDim: BRAND_LOGO_MAX_DIMENSION, type: "image/webp", quality: 0.74 },
+      { maxDim: 384, type: "image/webp", quality: 0.78 },
+      { maxDim: 320, type: "image/webp", quality: 0.72 },
+      { maxDim: 256, type: "image/webp", quality: 0.70 },
+      { maxDim: 256, type: "image/png", quality: undefined }
+    ];
+
+    for (const attempt of attempts) {
+      const scale = Math.min(1, attempt.maxDim / Math.max(srcW, srcH));
+      const outW = Math.max(1, Math.round(srcW * scale));
+      const outH = Math.max(1, Math.round(srcH * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = outW;
+      canvas.height = outH;
+
+      const ctx = canvas.getContext("2d", { alpha: true });
+      if (!ctx) continue;
+
+      ctx.clearRect(0, 0, outW, outH);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, outW, outH);
+
+      const blob = await canvasToBlob(canvas, attempt.type, attempt.quality);
+      if (!blob) continue;
+
+      const dataUrl = await blobToDataUrl(blob);
+      if (!isDisplayableLogoSrc(dataUrl)) continue;
+
+      if (dataUrl.length <= BRAND_LOGO_MAX_DATA_URL_BYTES) {
+        return {
+          dataUrl,
+          originalBytes: file.size,
+          outputBytes: blob.size || dataUrl.length,
+          width: outW,
+          height: outH,
+          resized: true
+        };
+      }
+    }
+
+    throw new Error("Logo is still too large after resizing. Try a simpler PNG/JPG/WebP logo.");
+  }
+
   async function handleBrandLogoFileSelected() {
     const file = brandLogoFileInput && brandLogoFileInput.files
         ? brandLogoFileInput.files[0]
@@ -1229,14 +1340,17 @@
       return;
     }
 
-    if (file.size > BRAND_LOGO_MAX_BYTES) {
-      setBrandLogoStatus("Logo is too large. Maximum size is 256 KB.", "fail");
+    if (file.size > BRAND_LOGO_MAX_INPUT_BYTES) {
+      setBrandLogoStatus("Logo source is too large. Maximum source image size is 5 MB.", "fail");
       if (brandLogoFileInput) brandLogoFileInput.value = "";
       return;
     }
 
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      setBrandLogoStatus("Optimizing logo…");
+
+      const result = await resizeBrandLogoFileToDataUrl(file);
+      const dataUrl = result.dataUrl;
 
       if (!isDisplayableLogoSrc(dataUrl)) {
         setBrandLogoStatus("Unsupported logo format.", "fail");
@@ -1246,8 +1360,18 @@
       if (brandLogoUrlInput) brandLogoUrlInput.value = dataUrl;
       if (brandEnabledInput) brandEnabledInput.checked = true;
 
+      syncBrandConfigVisibility();
       updateBrandLogoPreview();
-      setBrandLogoStatus(`Uploaded: ${file.name} (${Math.ceil(file.size / 1024)} KB)`, "ok");
+      updateCreateBrandPreview();
+
+      const originalKb = Math.ceil((result.originalBytes || file.size) / 1024);
+      const outputKb = Math.ceil((result.outputBytes || dataUrl.length) / 1024);
+
+      if (result.resized) {
+        setBrandLogoStatus(`Uploaded and optimized: ${file.name} (${originalKb} KB → ${outputKb} KB)`, "ok");
+      } else {
+        setBrandLogoStatus(`Uploaded: ${file.name} (${originalKb} KB)`, "ok");
+      }
     } catch (e) {
       setBrandLogoStatus(e && e.message ? e.message : "Could not load logo.", "fail");
     } finally {
