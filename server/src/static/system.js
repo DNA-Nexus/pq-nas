@@ -124,7 +124,7 @@ html[data-theme="bright"] .systemModalCard{
 
             const okBtn = document.createElement("button");
             okBtn.type = "button";
-            okBtn.className = "btn";
+            okBtn.className = "pq-btn";
             okBtn.textContent = options.okText || tr("system.modal.ok", null, "OK");
             foot.appendChild(okBtn);
 
@@ -197,12 +197,12 @@ html[data-theme="bright"] .systemModalCard{
 
             const cancelBtn = document.createElement("button");
             cancelBtn.type = "button";
-            cancelBtn.className = "btn secondary";
+            cancelBtn.className = "pq-btn secondary";
             cancelBtn.textContent = options.cancelText || tr("system.modal.cancel", null, "Cancel");
 
             const okBtn = document.createElement("button");
             okBtn.type = "button";
-            okBtn.className = "btn";
+            okBtn.className = "pq-btn";
             okBtn.textContent = options.confirmText || tr("system.modal.continue", null, "Continue");
 
             foot.appendChild(cancelBtn);
@@ -474,7 +474,7 @@ html[data-theme="bright"] .systemModalCard{
                 <div style="font-size:13px; letter-spacing:0.10em; text-transform:uppercase; font-weight:900;">
                     ${escapeHtml(tr("system.idrac.help_title", null, "Dell iDRAC / RACADM Drive Locate Help"))}
                 </div>
-                <button class="btn" id="btnCloseIdracLocateHelp" type="button" style="width:36px; height:36px; min-width:36px; padding:0; border-radius:999px;">×</button>
+                <button class="pq-btn" id="btnCloseIdracLocateHelp" type="button" style="width:36px; height:36px; min-width:36px; padding:0; border-radius:999px;">×</button>
             </div>
 
             <div style="padding:16px;">
@@ -607,7 +607,7 @@ html[data-theme="bright"] .systemModalCard{
         row.style.flexWrap = "wrap";
         row.style.margin = "8px 0 12px 0";
         row.innerHTML = `
-            <button class="btn" id="btnDriveHealthRefreshNow" type="button" data-i18n="system.refresh_smart_now">
+            <button class="pq-btn" id="btnDriveHealthRefreshNow" type="button" data-i18n="system.refresh_smart_now">
                 ${escapeHtml(tr("system.refresh_smart_now", null, "Refresh SMART now"))}
             </button>
             <span class="note mono" id="driveHealthRefreshStatus"></span>
@@ -1242,14 +1242,14 @@ html[data-theme="bright"] .systemModalCard{
                 ${
                 d.selftest_supported
                     ? `
-                    <button class="btn js-drive-selftest"
+                    <button class="pq-btn js-drive-selftest"
                             type="button"
                             data-dev="${escapeHtml(d.dev || "")}"
                             data-type="short"
                             ${canRunSelftest ? "" : "disabled"}>
                         ${escapeHtml(tr("system.run_short_test", null, "Run short test"))}
                     </button>
-                    <button class="btn js-drive-selftest"
+                    <button class="pq-btn js-drive-selftest"
                             type="button"
                             data-dev="${escapeHtml(d.dev || "")}"
                             data-type="extended"
@@ -1264,14 +1264,14 @@ html[data-theme="bright"] .systemModalCard{
                 ${
                     canLocateDrive
                         ? `
-                        <button class="btn js-drive-locate"
+                        <button class="pq-btn js-drive-locate"
                                 type="button"
                                 data-action="start"
                                 data-device="${escapeHtml(locateDeviceRaw)}"
                                 title="${escapeHtml(tr("system.drive.locate_hint", null, "Tries to blink the drive bay identify LED if the hardware supports it."))}">
                             ${escapeHtml(tr("system.drive.locate", null, "Locate / LED"))}
                         </button>
-                        <button class="btn js-drive-locate"
+                        <button class="pq-btn js-drive-locate"
                                 type="button"
                                 data-action="stop"
                                 data-device="${escapeHtml(locateDeviceRaw)}"
