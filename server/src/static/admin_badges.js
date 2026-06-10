@@ -35,13 +35,13 @@
 
         if (role === "admin") {
             badge.textContent = tr("admin.badges.role.admin", null, "role: admin");
-            badge.className = "badge admin";
+            badge.className = "pq-badge ok";
         } else if (role === "user") {
             badge.textContent = tr("admin.badges.role.user", null, "role: user");
-            badge.className = "badge user";
+            badge.className = "pq-badge info";
         } else {
             badge.textContent = tr("admin.badges.role.unknown", null, "role: ?");
-            badge.className = "badge unknown";
+            badge.className = "pq-badge muted";
         }
     }
 

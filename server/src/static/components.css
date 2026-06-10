@@ -197,6 +197,12 @@
     color:rgba(var(--info-rgb),0.92);
 }
 
+.pq-badge.muted{
+    border-color:rgba(var(--fg-rgb),0.14);
+    background:rgba(255,255,255,0.03);
+    color:rgba(var(--fg-rgb),0.80);
+}
+
 /* ==============================
    Toolbar
    ============================== */
