@@ -29,6 +29,7 @@
 #include "file_versions_present.h"
 #include "file_versions_restore.h"
 #include "file_versions_read.h"
+#include "archive_zip_manifest.h"
 #include "file_locks.h"
 #include "trash_service.h"
 #include "trash_index.h"
@@ -11026,6 +11027,367 @@ srv.Get("/api/v4/workspaces/files/versions/summary",
         {"versions_bytes", stats.versions_bytes}
     }.dump());
 });
+
+
+srv.Get("/api/v4/workspaces/files/archive_manifest",
+        [&](const httplib::Request& req, httplib::Response& res) {
+    const std::string workspace_id =
+        req.has_param("workspace_id") ? trim_copy_safe(req.get_param_value("workspace_id")) : "";
+
+    if (workspace_id.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "missing workspace_id"}
+        }.dump());
+        return;
+    }
+
+    std::string actor_fp, actor_role;
+    bool actor_is_external = false;
+    if (!require_workspace_file_actor_for_workspace_local(
+            deps, req, res, workspace_id,
+            &actor_fp, &actor_role, &actor_is_external)) {
+        return;
+    }
+
+    (void)actor_role;
+    res.set_header("Cache-Control", "no-store");
+
+    if (!deps.workspaces->load(deps.workspaces_path)) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "workspaces_reload_failed"},
+            {"message", "failed to reload workspaces"}
+        }.dump());
+        return;
+    }
+
+    auto wopt = deps.workspaces->get(workspace_id);
+    if (!wopt.has_value()) {
+        deps.reply_json(res, 404, json{
+            {"ok", false},
+            {"error", "not_found"},
+            {"message", "workspace not found"}
+        }.dump());
+        return;
+    }
+
+    const WorkspaceRec& w = *wopt;
+
+    if (w.status != "enabled") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace disabled"}
+        }.dump());
+        return;
+    }
+
+    auto mopt = enabled_member_for_actor(w, actor_fp);
+    if (!mopt.has_value()) {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace access denied"}
+        }.dump());
+        return;
+    }
+
+    if (actor_is_external && mopt->member_kind != "external") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace external access denied"}
+        }.dump());
+        return;
+    }
+
+    if (w.storage_state != "allocated") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "storage_unallocated"},
+            {"message", "Workspace storage not allocated"}
+        }.dump());
+        return;
+    }
+
+    if (!w.storage_pool_id.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "pool_not_supported_yet"},
+            {"message", "workspace archive manifest currently supports default pool only"}
+        }.dump());
+        return;
+    }
+
+    std::string path_rel;
+    if (req.has_param("path")) path_rel = req.get_param_value("path");
+    if (path_rel.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "missing path"}
+        }.dump());
+        return;
+    }
+
+    std::string rel_norm;
+    std::string nerr;
+    if (!pqnas::normalize_user_rel_path_strict(path_rel, &rel_norm, &nerr)) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "invalid path"},
+            {"detail", nerr}
+        }.dump());
+        return;
+    }
+
+    const std::filesystem::path ws_root =
+        workspace_dir_for_default_pool_only(deps.users_path, w);
+
+    std::filesystem::path path_abs;
+    std::string perr;
+    if (!pqnas::resolve_user_path_strict(ws_root, rel_norm, &path_abs, &perr)) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "invalid path"},
+            {"detail", perr}
+        }.dump());
+        return;
+    }
+
+    std::error_code ec;
+    auto st = std::filesystem::symlink_status(path_abs, ec);
+    if (ec || !std::filesystem::exists(st) || std::filesystem::is_symlink(st) || !std::filesystem::is_regular_file(st)) {
+        deps.reply_json(res, 404, json{
+            {"ok", false},
+            {"error", "not_found"},
+            {"message", "file not found"}
+        }.dump());
+        return;
+    }
+
+    auto manifest = pqnas::read_zip_manifest_from_file(path_abs);
+
+    json out;
+    out["ok"] = manifest.ok;
+    out["scope_type"] = "workspace";
+    out["scope_id"] = workspace_id;
+    out["workspace_id"] = workspace_id;
+    out["path"] = rel_norm;
+
+    if (!manifest.ok) {
+        out["error"] = manifest.error.empty() ? "failed_to_read_zip_manifest" : manifest.error;
+        out["zip64"] = manifest.zip64;
+        deps.reply_json(res, 422, out.dump());
+        return;
+    }
+
+    out["entries"] = json::array();
+    for (const auto& e : manifest.entries) {
+        out["entries"].push_back(json{
+            {"path", e.path},
+            {"size", e.size},
+            {"compressed_size", e.compressed_size},
+            {"crc32", pqnas::zip_crc32_hex(e.crc32)}
+        });
+    }
+
+    deps.reply_json(res, 200, out.dump());
+});
+
+
+srv.Get("/api/v4/workspaces/files/versions/archive_manifest",
+        [&](const httplib::Request& req, httplib::Response& res) {
+    const std::string workspace_id =
+        req.has_param("workspace_id") ? trim_copy_safe(req.get_param_value("workspace_id")) : "";
+
+    if (workspace_id.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "missing workspace_id"}
+        }.dump());
+        return;
+    }
+
+    std::string actor_fp, actor_role;
+    bool actor_is_external = false;
+    if (!require_workspace_file_actor_for_workspace_local(
+            deps, req, res, workspace_id,
+            &actor_fp, &actor_role, &actor_is_external)) {
+        return;
+    }
+
+    (void)actor_role;
+    res.set_header("Cache-Control", "no-store");
+
+    auto* vix = deps.file_versions;
+    if (!vix) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "file versions index missing"}
+        }.dump());
+        return;
+    }
+
+    if (!deps.workspaces->load(deps.workspaces_path)) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "workspaces_reload_failed"},
+            {"message", "failed to reload workspaces"}
+        }.dump());
+        return;
+    }
+
+    auto wopt = deps.workspaces->get(workspace_id);
+    if (!wopt.has_value()) {
+        deps.reply_json(res, 404, json{
+            {"ok", false},
+            {"error", "not_found"},
+            {"message", "workspace not found"}
+        }.dump());
+        return;
+    }
+
+    const WorkspaceRec& w = *wopt;
+
+    if (w.status != "enabled") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace disabled"}
+        }.dump());
+        return;
+    }
+
+    auto mopt = enabled_member_for_actor(w, actor_fp);
+    if (!mopt.has_value()) {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace access denied"}
+        }.dump());
+        return;
+    }
+
+    if (actor_is_external && mopt->member_kind != "external") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "workspace external access denied"}
+        }.dump());
+        return;
+    }
+
+    if (w.storage_state != "allocated") {
+        deps.reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "storage_unallocated"},
+            {"message", "Workspace storage not allocated"}
+        }.dump());
+        return;
+    }
+
+    if (!w.storage_pool_id.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "pool_not_supported_yet"},
+            {"message", "workspace version archive manifest currently supports default pool only"}
+        }.dump());
+        return;
+    }
+
+    std::string path_rel;
+    if (req.has_param("path")) path_rel = req.get_param_value("path");
+    if (path_rel.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "missing path"}
+        }.dump());
+        return;
+    }
+
+    const std::string version_id =
+        req.has_param("version_id") ? trim_copy_safe(req.get_param_value("version_id")) : "";
+    if (version_id.empty()) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "missing version_id"}
+        }.dump());
+        return;
+    }
+
+    std::string rel_norm;
+    std::string nerr;
+    if (!pqnas::normalize_user_rel_path_strict(path_rel, &rel_norm, &nerr)) {
+        deps.reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "invalid path"},
+            {"detail", nerr}
+        }.dump());
+        return;
+    }
+
+    const std::filesystem::path ws_root =
+        workspace_dir_for_default_pool_only(deps.users_path, w);
+
+    auto rr = pqnas::resolve_version_blob_for_download(
+        vix,
+        "workspace",
+        workspace_id,
+        rel_norm,
+        version_id,
+        ws_root
+    );
+
+    if (!rr.ok) {
+        deps.reply_json(res, 404, json{
+            {"ok", false},
+            {"error", rr.error.empty() ? "version_blob_not_found" : rr.error},
+            {"message", rr.message.empty() ? "failed to resolve version blob" : rr.message},
+            {"detail", pqnas::shorten(rr.detail, 180)}
+        }.dump());
+        return;
+    }
+
+    auto manifest = pqnas::read_zip_manifest_from_file(rr.blob_abs_path);
+
+    json out;
+    out["ok"] = manifest.ok;
+    out["scope_type"] = "workspace";
+    out["scope_id"] = workspace_id;
+    out["workspace_id"] = workspace_id;
+    out["path"] = rel_norm;
+    out["version_id"] = version_id;
+
+    if (!manifest.ok) {
+        out["error"] = manifest.error.empty() ? "failed_to_read_zip_manifest" : manifest.error;
+        out["zip64"] = manifest.zip64;
+        deps.reply_json(res, 422, out.dump());
+        return;
+    }
+
+    out["entries"] = json::array();
+    for (const auto& e : manifest.entries) {
+        out["entries"].push_back(json{
+            {"path", e.path},
+            {"size", e.size},
+            {"compressed_size", e.compressed_size},
+            {"crc32", pqnas::zip_crc32_hex(e.crc32)}
+        });
+    }
+
+    deps.reply_json(res, 200, out.dump());
+});
+
 
 srv.Get("/api/v4/workspaces/files/versions/list",
         [&](const httplib::Request& req, httplib::Response& res) {

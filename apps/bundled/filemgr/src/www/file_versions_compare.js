@@ -25,6 +25,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"
     ]);
 
+    const ARCHIVE_EXTS = new Set([
+        "zip"
+    ]);
+
     const state = {
         item: null,
         relPath: "",
@@ -84,6 +88,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             typeof FM.versionImageCompare.open === "function"
         );
     }
+
+    function isArchiveName(name) {
+        return ARCHIVE_EXTS.has(extOf(name));
+    }
+
+    function canCompareArchive(item) {
+        if (!item || item.type !== "file") return false;
+
+        const rel = getCurrentRelPathFor(item);
+        if (!isArchiveName(rel || item.name || "")) return false;
+
+        return !!(
+            FM &&
+            FM.versionArchiveCompare &&
+            typeof FM.versionArchiveCompare.open === "function"
+        );
+    }
+
 
     function isWorkspaceScope() {
         return !!(FM && typeof FM.isWorkspaceScope === "function" && FM.isWorkspaceScope());
@@ -156,6 +178,61 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
         qs.set("inline", "1");
         return `/api/v4/files/versions/blob?${qs.toString()}`;
+    }
+
+
+    function apiCurrentArchiveManifestUrl(path) {
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            return `/api/v4/workspaces/files/archive_manifest?${qs.toString()}`;
+        }
+
+        return `/api/v4/files/archive_manifest?${qs.toString()}`;
+    }
+
+    function apiVersionArchiveManifestUrl(path, versionId) {
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+        qs.set("version_id", versionId || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            return `/api/v4/workspaces/files/versions/archive_manifest?${qs.toString()}`;
+        }
+
+        return `/api/v4/files/versions/archive_manifest?${qs.toString()}`;
+    }
+
+    function apiCurrentBinaryUrl(path) {
+        if (typeof apiCurrentImageUrl === "function") {
+            return apiCurrentImageUrl(path);
+        }
+
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            return `/api/v4/workspaces/files/get?${qs.toString()}`;
+        }
+
+        return `/api/v4/files/get?${qs.toString()}`;
+    }
+
+    function apiVersionBinaryUrl(path, versionId) {
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+        qs.set("version_id", versionId || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            return `/api/v4/workspaces/files/versions/download?${qs.toString()}`;
+        }
+
+        return `/api/v4/files/versions/download?${qs.toString()}`;
     }
 
     function injectCss() {
@@ -1129,9 +1206,10 @@ html[data-theme="win_classic"] .pqfvcLine.skip{
         if (!item || item.type !== "file" || !version || !version.version_id) return;
 
         const relPathForCompare = getCurrentRelPathFor(item);
+        const compareName = relPathForCompare || item.name || "";
 
         if (
-            isImageName(relPathForCompare || item.name || "") &&
+            isImageName(compareName) &&
             FM &&
             FM.versionImageCompare &&
             typeof FM.versionImageCompare.open === "function"
@@ -1142,6 +1220,26 @@ html[data-theme="win_classic"] .pqfvcLine.skip{
                 versionId: version.version_id,
                 leftUrl: apiCurrentImageUrl(relPathForCompare),
                 rightUrl: apiVersionImageUrl(relPathForCompare, version.version_id),
+                leftTitle: tr("filemgr.version_compare.current", null, "Current file"),
+                rightTitle: label
+                    ? tr("filemgr.version_compare.version_with_date", { date: label }, `Version ${label}`)
+                    : tr("filemgr.version_compare.version", null, "Selected version")
+            });
+            return;
+        }
+
+        if (
+            isArchiveName(compareName) &&
+            FM &&
+            FM.versionArchiveCompare &&
+            typeof FM.versionArchiveCompare.open === "function"
+        ) {
+            const label = version.created_at || version.version_id || "";
+            FM.versionArchiveCompare.open({
+                path: relPathForCompare,
+                versionId: version.version_id,
+                leftManifestUrl: apiCurrentArchiveManifestUrl(relPathForCompare),
+                rightManifestUrl: apiVersionArchiveManifestUrl(relPathForCompare, version.version_id),
                 leftTitle: tr("filemgr.version_compare.current", null, "Current file"),
                 rightTitle: label
                     ? tr("filemgr.version_compare.version_with_date", { date: label }, `Version ${label}`)
@@ -1224,7 +1322,7 @@ html[data-theme="win_classic"] .pqfvcLine.skip{
         canCompare(item) {
             if (!item || item.type !== "file") return false;
             const rel = getCurrentRelPathFor(item);
-            return isTextName(rel || item.name || "") || canCompareImage(item);
+            return isTextName(rel || item.name || "") || canCompareImage(item) || canCompareArchive(item);
         },
         open: openCompare,
         close

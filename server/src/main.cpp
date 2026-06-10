@@ -36,6 +36,7 @@ Code responsibilities (separation of concerns)
 All verification is fail-closed: any parse/verify/binding mismatch returns an error and logs the failure.
 */
 
+#include "archive_zip_manifest.h"
 #include "version.h"
 #include <iostream>
 #include <string>
@@ -41057,6 +41058,142 @@ srv.Put("/api/v4/files/put",
         return;
     }
 });
+
+
+
+    // File Manager: read ZIP central directory from current user file and return a small JSON manifest.
+    srv.Get("/api/v4/files/archive_manifest", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string fp_hex, role;
+        if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+
+        const std::string rel_raw = req.get_param_value("path");
+        std::string rel_norm, norm_err;
+        if (!pqnas::normalize_user_rel_path_strict(rel_raw, &rel_norm, &norm_err)) {
+            nlohmann::json out = {{"ok", false}, {"error", norm_err.empty() ? "invalid_path" : norm_err}};
+            res.status = 400;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        const auto user_root = user_dir_for_fp(users, fp_hex).lexically_normal();
+        const auto abs_path = (user_root / rel_norm).lexically_normal();
+
+        std::error_code ec;
+        const auto canon_root = std::filesystem::weakly_canonical(user_root, ec);
+        if (ec) {
+            nlohmann::json out = {{"ok", false}, {"error", "user_root_not_found"}};
+            res.status = 500;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        ec.clear();
+        const auto canon_file = std::filesystem::weakly_canonical(abs_path, ec);
+        if (ec || canon_file.string().rfind(canon_root.string(), 0) != 0) {
+            nlohmann::json out = {{"ok", false}, {"error", "not_found"}};
+            res.status = 404;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        ec.clear();
+        if (!std::filesystem::is_regular_file(canon_file, ec)) {
+            nlohmann::json out = {{"ok", false}, {"error", "not_a_file"}};
+            res.status = 404;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        auto manifest = pqnas::read_zip_manifest_from_file(canon_file);
+
+        nlohmann::json out;
+        out["ok"] = manifest.ok;
+        out["path"] = rel_norm;
+
+        if (!manifest.ok) {
+            out["error"] = manifest.error.empty() ? "failed_to_read_zip_manifest" : manifest.error;
+            out["zip64"] = manifest.zip64;
+            res.status = 422;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        out["entries"] = nlohmann::json::array();
+        for (const auto& e : manifest.entries) {
+            out["entries"].push_back({
+                {"path", e.path},
+                {"size", e.size},
+                {"compressed_size", e.compressed_size},
+                {"crc32", pqnas::zip_crc32_hex(e.crc32)}
+            });
+        }
+
+        res.set_header("Cache-Control", "no-store");
+        res.set_content(out.dump(), "application/json");
+    });
+
+    // File Manager: read ZIP central directory from a preserved user file version.
+    srv.Get("/api/v4/files/versions/archive_manifest", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string fp_hex, role;
+        if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+
+        const std::string rel_raw = req.get_param_value("path");
+        const std::string version_id = req.get_param_value("version_id");
+
+        std::string rel_norm, norm_err;
+        if (!pqnas::normalize_user_rel_path_strict(rel_raw, &rel_norm, &norm_err)) {
+            nlohmann::json out = {{"ok", false}, {"error", norm_err.empty() ? "invalid_path" : norm_err}};
+            res.status = 400;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        const auto scope_root = user_dir_for_fp(users, fp_hex).lexically_normal();
+
+        auto rr = pqnas::resolve_version_blob_for_download(
+            &file_versions_index,
+            "user",
+            fp_hex,
+            rel_norm,
+            version_id,
+            scope_root
+        );
+
+        if (!rr.ok) {
+            nlohmann::json out = {{"ok", false}, {"error", rr.error.empty() ? "version_blob_not_found" : rr.error}};
+            res.status = 404;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        auto manifest = pqnas::read_zip_manifest_from_file(rr.blob_abs_path);
+
+        nlohmann::json out;
+        out["ok"] = manifest.ok;
+        out["path"] = rel_norm;
+        out["version_id"] = version_id;
+
+        if (!manifest.ok) {
+            out["error"] = manifest.error.empty() ? "failed_to_read_zip_manifest" : manifest.error;
+            out["zip64"] = manifest.zip64;
+            res.status = 422;
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        out["entries"] = nlohmann::json::array();
+        for (const auto& e : manifest.entries) {
+            out["entries"].push_back({
+                {"path", e.path},
+                {"size", e.size},
+                {"compressed_size", e.compressed_size},
+                {"crc32", pqnas::zip_crc32_hex(e.crc32)}
+            });
+        }
+
+        res.set_header("Cache-Control", "no-store");
+        res.set_content(out.dump(), "application/json");
+    });
 
 
     // File Manager: stream a preserved version blob.
