@@ -28,42 +28,7 @@
             overflow: visible;
         }
 
-        .btn{
-            border: 1px solid rgba(var(--fg-rgb),0.28);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            padding: 10px 12px;
-            border-radius: 14px;
-            cursor:pointer;
-            font-weight: 900;
-            letter-spacing: 0.2px;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-            user-select:none;
-            text-decoration:none;
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            gap: 10px;
-        }
-
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
-
-        .btn:active{ transform: translateY(0px); }
-
-        .btn.primary{
-            border-color: rgba(var(--fg-rgb),0.45);
-            box-shadow: 0 0 0 1px rgba(var(--fg-rgb),0.08) inset;
-        }
-
-        .btn:disabled{
-            opacity: 0.65;
-            cursor: not-allowed;
-            transform: none;
-        }
+        /* Buttons: migrated to .pq-btn from components.css */
 
         .language-picker{
             display:grid;
@@ -783,7 +748,7 @@
                 <div class="sub" data-i18n="admin.settings.top.sub">Admin-only runtime controls</div>
             </div>
             <div class="actions">
-                <a class="btn" href="/admin" data-i18n="admin.settings.back">Back</a>
+                <a class="pq-btn" href="/admin" data-i18n="admin.settings.back">Back</a>
             </div>
         </div>
 
@@ -869,7 +834,7 @@
                     </div>
 
                     <div class="passwordSettingsActions" style="margin-top:12px;">
-                        <button id="btnAdminCreatePasswordUser" class="btn primary" type="button" data-i18n="admin.password_user_create.create_button">Create password user</button>
+                        <button id="btnAdminCreatePasswordUser" class="pq-btn primary" type="button" data-i18n="admin.password_user_create.create_button">Create password user</button>
                     </div>
 
                     <div class="passwordRecoveryBox" id="adminCreatePasswordUserResult">
@@ -957,7 +922,7 @@
                     </div>
 
                     <div class="passwordSettingsActions">
-                        <button id="btnAdminPasswordChange" class="btn primary" type="button" data-i18n="settings.password.change">Change password</button>
+                        <button id="btnAdminPasswordChange" class="pq-btn primary" type="button" data-i18n="settings.password.change">Change password</button>
                     </div>
                 </div>
             </div>
@@ -975,8 +940,8 @@
                     </div>
                     <div class="row">
                         <select id="levelSelect" aria-label="audit minimum level"></select>
-                        <button id="btnSave" class="btn primary" type="button"><span data-i18n="admin.common.save">Save</span></button>
-                        <button id="btnReload" class="btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
+                        <button id="btnSave" class="pq-btn primary" type="button"><span data-i18n="admin.common.save">Save</span></button>
+                        <button id="btnReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
                     </div>
                     <div class="note">
                         <b>Meaning:</b> DEBUG logs everything • INFO hides noisy lifecycle • ADMIN is default • SECURITY keeps only security-relevant events.
@@ -994,7 +959,7 @@
                 </div>
                 <div class="bd">
                     <div class="row">
-                        <button id="btnRotateNow" class="btn" type="button"><span data-i18n="admin.audit.rotate_now">Rotate now</span></button>
+                        <button id="btnRotateNow" class="pq-btn" type="button"><span data-i18n="admin.audit.rotate_now">Rotate now</span></button>
                     </div>
                     <div class="note">
                         <span data-i18n="admin.audit.rotation_note">Rotation renames the active Retention rules apply only to rotated archives.</span>
@@ -1025,7 +990,7 @@
                                max="1000000"
                                placeholder="rotate MB (e.g. 512)" data-i18n-placeholder="admin.audit.rotate_mb_placeholder" />
 
-                        <button id="btnRotatePolicySave" class="btn primary" type="button"><span data-i18n="admin.audit.save_policy">Save policy</span></button>
+                        <button id="btnRotatePolicySave" class="pq-btn primary" type="button"><span data-i18n="admin.audit.save_policy">Save policy</span></button>
                     </div>
 
                     <div class="note">
@@ -1062,9 +1027,9 @@
                     </div>
 
                     <div class="row">
-                        <button id="btnRetentionSave" class="btn primary" type="button"><span data-i18n="admin.audit.save_policy">Save policy</span></button>
-                        <button id="btnRetentionPreview" class="btn" type="button"><span data-i18n="admin.audit.preview_prune">Preview prune</span></button>
-                        <button id="btnRetentionPrune" class="btn" type="button"><span data-i18n="admin.audit.run_prune">Run prune now</span></button>
+                        <button id="btnRetentionSave" class="pq-btn primary" type="button"><span data-i18n="admin.audit.save_policy">Save policy</span></button>
+                        <button id="btnRetentionPreview" class="pq-btn" type="button"><span data-i18n="admin.audit.preview_prune">Preview prune</span></button>
+                        <button id="btnRetentionPrune" class="pq-btn" type="button"><span data-i18n="admin.audit.run_prune">Run prune now</span></button>
                         <span class="pill warn" id="retPreviewPill"><span class="k" data-i18n="admin.common.preview">Preview:</span> <span class="v">—</span></span>
                     </div>
 
@@ -1132,8 +1097,8 @@
                         <input id="snapJitter" class="input mono" style="min-width:180px" type="number" min="0" max="3600"
                                placeholder="jitter seconds (0..3600)" data-i18n-placeholder="admin.snap.jitter_placeholder" />
 
-                        <button id="btnSnapSave" class="btn primary" type="button"><span data-i18n="admin.snap.save">Save snapshots</span></button>
-                        <button id="btnSnapReload" class="btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
+                        <button id="btnSnapSave" class="pq-btn primary" type="button"><span data-i18n="admin.snap.save">Save snapshots</span></button>
+                        <button id="btnSnapReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
                     </div>
 
                     <div class="row">
@@ -1179,13 +1144,13 @@
 
                 <div class="bd">
                     <div class="row">
-                        <button id="btnSystemBackupNow" class="btn primary" type="button">
+                        <button id="btnSystemBackupNow" class="pq-btn primary" type="button">
                             <span data-i18n="admin.backups.backup_now">Backup now</span>
                         </button>
-                        <button id="btnSystemBackupReload" class="btn" type="button">
+                        <button id="btnSystemBackupReload" class="pq-btn" type="button">
                             <span data-i18n="admin.common.reload">Reload</span>
                         </button>
-                        <button id="btnSystemBackupPrune" class="btn" type="button">
+                        <button id="btnSystemBackupPrune" class="pq-btn" type="button">
                             <span data-i18n="admin.backups.prune">Prune old backups</span>
                         </button>
                     </div>
@@ -1245,7 +1210,7 @@
                 </div>
 
                 <div class="bd uploadsCardBody">
-                    <button id="btnUploadsHelp" class="btn uploadsHelpBtn" type="button">?</button>
+                    <button id="btnUploadsHelp" class="pq-btn uploadsHelpBtn" type="button">?</button>
                     <div class="row">
                         <div style="font-weight:950;"><span data-i18n="admin.uploads.tiering">Upload tiering</span></div>
                         <span class="pill info" id="tieringPill"><span class="k" data-i18n="admin.uploads.tiering_label">Tiering:</span> <span class="v">—</span></span>
@@ -1261,8 +1226,8 @@
                             <option value="" data-i18n="admin.uploads.no_pools">(no pools)</option>
                         </select>
 
-                        <button id="btnTieringSave" class="btn primary" type="button"><span data-i18n="admin.uploads.save_tiering">Save tiering</span></button>
-                        <button id="btnTieringReload" class="btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
+                        <button id="btnTieringSave" class="pq-btn primary" type="button"><span data-i18n="admin.uploads.save_tiering">Save tiering</span></button>
+                        <button id="btnTieringReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
                     </div>
 
                     <div class="row">
@@ -1338,8 +1303,8 @@
 
                 <div class="bd">
                     <div class="row">
-                        <button id="btnNodusRefresh" class="btn primary" type="button"><span data-i18n="admin.nodus.refresh">Refresh Nodus status</span></button>
-                        <button id="btnNodusCreateIdentity" class="btn" type="button"><span data-i18n="admin.nodus.generate_identity">Generate identity</span></button>
+                        <button id="btnNodusRefresh" class="pq-btn primary" type="button"><span data-i18n="admin.nodus.refresh">Refresh Nodus status</span></button>
+                        <button id="btnNodusCreateIdentity" class="pq-btn" type="button"><span data-i18n="admin.nodus.generate_identity">Generate identity</span></button>
                     </div>
 
                     <div class="statusGrid">
@@ -1399,15 +1364,15 @@
                             <option value="info" data-i18n="admin.dna.info">Info</option>
                         </select>
 
-                        <button id="btnDnaAlertsSave" class="btn primary" type="button"><span data-i18n="admin.dna.save">Save DNA alerts</span></button>
-                        <button id="btnDnaAlertsReload" class="btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
-                        <button id="btnDnaAlertsTest" class="btn" type="button"><span data-i18n="admin.dna.send_test">Send test alert</span></button>
+                        <button id="btnDnaAlertsSave" class="pq-btn primary" type="button"><span data-i18n="admin.dna.save">Save DNA alerts</span></button>
+                        <button id="btnDnaAlertsReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
+                        <button id="btnDnaAlertsTest" class="pq-btn" type="button"><span data-i18n="admin.dna.send_test">Send test alert</span></button>
                     </div>
 
                     <div class="row">
-                        <button id="btnDnaAlertsCreateId" class="btn" type="button"><span data-i18n="admin.dna.create_id">Create PQ-NAS ID</span></button>
-                        <button id="btnDnaAlertsShowId" class="btn" type="button"><span data-i18n="admin.dna.show_id">Show ID info</span></button>
-                        <button id="btnDnaAlertsSendRequest" class="btn" type="button"><span data-i18n="admin.dna.send_request">Send contact request</span></button>
+                        <button id="btnDnaAlertsCreateId" class="pq-btn" type="button"><span data-i18n="admin.dna.create_id">Create PQ-NAS ID</span></button>
+                        <button id="btnDnaAlertsShowId" class="pq-btn" type="button"><span data-i18n="admin.dna.show_id">Show ID info</span></button>
+                        <button id="btnDnaAlertsSendRequest" class="pq-btn" type="button"><span data-i18n="admin.dna.send_request">Send contact request</span></button>
 
                         <span class="pill info" id="dnaAlertsIdentityPill">
                             <span class="k" data-i18n="admin.dna.pqnas_id">PQ-NAS ID:</span>
@@ -1513,8 +1478,8 @@
                             <option value="win_classic" data-i18n="admin.theme.win_classic">win_classic</option>
                         </select>
 
-                        <button id="btnThemeSave" class="btn primary" type="button"><span data-i18n="admin.theme.save">Save theme</span></button>
-                        <button id="btnThemeApply" class="btn" type="button"><span data-i18n="admin.theme.apply">Apply now</span></button>
+                        <button id="btnThemeSave" class="pq-btn primary" type="button"><span data-i18n="admin.theme.save">Save theme</span></button>
+                        <button id="btnThemeApply" class="pq-btn" type="button"><span data-i18n="admin.theme.apply">Apply now</span></button>
                     </div>
 
                     <div class="note">
@@ -1535,7 +1500,7 @@
     <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="dnaIdentityModalTitle">
         <div class="modalHd">
             <div id="dnaIdentityModalTitle" style="font-weight:950;" data-i18n="admin.dna.identity_title">PQ-NAS DNA Identity</div>
-            <button id="btnDnaIdentityModalClose" class="btn" type="button"><span data-i18n="admin.common.close">Close</span></button>
+            <button id="btnDnaIdentityModalClose" class="pq-btn" type="button"><span data-i18n="admin.common.close">Close</span></button>
         </div>
         <div class="modalBd">
             <div class="note mono" id="dnaIdentityModalBody">—</div>
@@ -1547,7 +1512,7 @@
     <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
         <div class="modalHd">
             <div id="helpModalTitle" style="font-weight:950;" data-i18n="admin.uploads.help_title">Uploads &amp; Tiering Help</div>
-            <button id="btnHelpModalClose" class="btn" type="button"><span data-i18n="admin.common.close">Close</span></button>
+            <button id="btnHelpModalClose" class="pq-btn" type="button"><span data-i18n="admin.common.close">Close</span></button>
         </div>
 
         <div class="modalBd">
