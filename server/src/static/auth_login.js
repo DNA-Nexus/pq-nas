@@ -105,7 +105,7 @@
 
         card.innerHTML = `
             <div class="loginMark">
-                <div class="loginMarkBadge">DNA-Nexus</div>
+                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
             </div>
 
             <h1>Sign in</h1>

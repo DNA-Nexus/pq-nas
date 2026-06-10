@@ -113,15 +113,11 @@
         }
 
         .loginMarkBadge{
-            border: 1px solid rgba(var(--fg-rgb),0.18);
-            background: rgba(var(--fg-rgb),0.055);
-            color: rgba(var(--fg-rgb),0.72);
-            border-radius: 999px;
             padding: 8px 12px;
-            font-size: 12px;
             font-weight: 900;
             letter-spacing: 0.7px;
             text-transform: uppercase;
+            color: rgba(var(--fg-rgb),0.72);
         }
 
         h1{
@@ -339,7 +335,7 @@
     <section class="loginPane" aria-label="Sign in" data-i18n-aria-label="login.sign_in_aria">
         <div class="card">
             <div class="loginMark">
-                <div class="loginMarkBadge" data-i18n="login.badge">Post-Quantum NAS</div>
+                <div class="pq-badge loginMarkBadge" data-i18n="login.badge">Post-Quantum NAS</div>
             </div>
 
             <h1 data-i18n="login.title">Sign in with DNA</h1>
