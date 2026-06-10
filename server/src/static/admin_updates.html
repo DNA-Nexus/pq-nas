@@ -13,8 +13,6 @@
         .content{padding:14px 20px 20px;display:flex;flex-direction:column;gap:14px;overflow:auto;flex:1 1 auto;}
         .pane,.card{border:1px solid rgba(var(--fg-rgb),0.20);border-radius:var(--radius);background:rgba(0,0,0,0.18);padding:14px;}
         .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-        .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(var(--fg-rgb),0.38);background:rgba(0,0,0,0.26);color:var(--fg);font-weight:900;cursor:pointer;text-decoration:none;}
-        .btn:disabled{opacity:.55;cursor:not-allowed;}
         .mono{font-family:var(--mono);font-size:12.5px;}
         .muted{color:var(--fg-dim);}
         .releaseBody{margin-top:10px;max-height:260px;overflow:auto;white-space:pre-wrap;border:1px solid rgba(var(--fg-rgb),0.14);border-radius:14px;padding:10px 12px;background:rgba(0,0,0,0.18);}
@@ -275,7 +273,7 @@
                 <div class="sub" data-i18n="admin.updates.top.subtitle">Check GitHub releases and prepare update packages</div>
             </div>
             <div class="actions">
-                <button class="btn" id="checkBtn" type="button" data-i18n="admin.updates.action.check_now" data-i18n-title="admin.updates.action.check_now.tooltip" title="Check latest version from GitHub">Check now</button>
+                <button class="pq-btn" id="checkBtn" type="button" data-i18n="admin.updates.action.check_now" data-i18n-title="admin.updates.action.check_now.tooltip" title="Check latest version from GitHub">Check now</button>
             </div>
         </div>
 
@@ -294,8 +292,8 @@
                     <span class="mono muted" id="releaseLine" data-i18n="admin.updates.release.no_data">No release data loaded yet.</span>
                 </div>
                 <div class="row" style="margin-top:10px">
-                    <button class="btn" id="downloadBtn" type="button" disabled data-i18n="admin.updates.release.download_core">Download to server</button>
-                    <button class="btn" id="openReleaseBtn" type="button" disabled data-i18n="admin.updates.release.open">Open release</button>
+                    <button class="pq-btn" id="downloadBtn" type="button" disabled data-i18n="admin.updates.release.download_core">Download to server</button>
+                    <button class="pq-btn" id="openReleaseBtn" type="button" disabled data-i18n="admin.updates.release.open">Open release</button>
                 </div>
                 <div class="updateProgressWrap" id="githubProgressWrap" hidden>
                     <div class="updateProgressTop">
@@ -320,13 +318,13 @@
                     Choose a package already staged on this server, or add one from this computer.
                     Nothing is installed until you build, dry-run, and apply a plan.
                 </div>
-                <div class="row">                    <button class="btn" id="verifyPackageBtn" type="button" data-i18n="admin.updates.manual.verify">Verify staged package</button>
-                    <button class="btn" id="planPackageBtn" type="button" data-i18n="admin.updates.manual.plan">Build install plan</button>
-                    <button class="btn" id="installPlanBtn" type="button" data-i18n="admin.updates.manual.validate">Validate install plan</button>
-                    <button class="btn" id="dryRunPlanBtn" type="button" data-i18n="admin.updates.manual.dry_run">Dry run install</button>
-                    <button class="btn danger" id="applyPlanBtn" type="button" data-i18n="admin.updates.manual.apply">Apply update</button>
-                    <button class="btn" id="refreshUploadsBtn" type="button" data-i18n="admin.updates.manual.refresh">Refresh uploaded packages</button>
-                    <button class="btn danger" id="deletePackageBtn" type="button" data-i18n="admin.updates.manual.delete_selected">Delete selected package</button>
+                <div class="row">                    <button class="pq-btn" id="verifyPackageBtn" type="button" data-i18n="admin.updates.manual.verify">Verify staged package</button>
+                    <button class="pq-btn" id="planPackageBtn" type="button" data-i18n="admin.updates.manual.plan">Build install plan</button>
+                    <button class="pq-btn" id="installPlanBtn" type="button" data-i18n="admin.updates.manual.validate">Validate install plan</button>
+                    <button class="pq-btn" id="dryRunPlanBtn" type="button" data-i18n="admin.updates.manual.dry_run">Dry run install</button>
+                    <button class="pq-btn danger" id="applyPlanBtn" type="button" data-i18n="admin.updates.manual.apply">Apply update</button>
+                    <button class="pq-btn" id="refreshUploadsBtn" type="button" data-i18n="admin.updates.manual.refresh">Refresh uploaded packages</button>
+                    <button class="pq-btn danger" id="deletePackageBtn" type="button" data-i18n="admin.updates.manual.delete_selected">Delete selected package</button>
                 </div>
                 <details class="optionalUpdateUpload" id="optionalLocalUpload">
                     <summary data-i18n="admin.updates.manual.optional_upload.summary">Add package from this computer</summary>
@@ -338,9 +336,9 @@
                             <input class="hiddenNativeFileInput" id="manualPackageFile"
                                    type="file"
                                    accept=".tar.gz,.tgz,.zip,.dnxupd,application/gzip,application/zip,application/octet-stream">
-                            <button class="btn" id="manualChooseFileBtn" type="button" data-i18n="admin.updates.manual.choose_file">Choose package file</button>
+                            <button class="pq-btn" id="manualChooseFileBtn" type="button" data-i18n="admin.updates.manual.choose_file">Choose package file</button>
                             <span class="mono manualChosenFileName" id="manualChosenFileName" data-i18n="admin.updates.manual.no_file_chosen">No file selected</span>
-                            <button class="btn" id="manualUploadBtn" type="button" data-i18n="admin.updates.manual.upload">Upload to server</button>
+                            <button class="pq-btn" id="manualUploadBtn" type="button" data-i18n="admin.updates.manual.upload">Upload to server</button>
                         </div>
                 <div class="updateProgressWrap" id="manualProgressWrap" hidden>
                     <div class="updateProgressTop">

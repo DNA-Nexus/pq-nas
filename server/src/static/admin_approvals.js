@@ -389,10 +389,10 @@ function render() {
             <td class="mono">${esc(u.last_seen || "")}</td>
 
             <td class="row-actions">
-                <button class="btn secondary" data-act="enable" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.enable", null, "Enable"))}</button>
-                <button class="btn secondary" data-act="disable" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.disable", null, "Disable"))}</button>
-                <button class="btn secondary" data-act="revoke" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.revoke", null, "Revoke"))}</button>
-                <button class="btn danger" data-act="delete" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.delete", null, "Delete"))}</button>
+                <button class="pq-btn secondary" data-act="enable" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.enable", null, "Enable"))}</button>
+                <button class="pq-btn secondary" data-act="disable" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.disable", null, "Disable"))}</button>
+                <button class="pq-btn secondary" data-act="revoke" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.revoke", null, "Revoke"))}</button>
+                <button class="pq-btn danger" data-act="delete" data-fp="${esc(u.fingerprint)}" type="button">${esc(tr("admin.approvals.delete", null, "Delete"))}</button>
             </td>
         </tr>`;
     }).join("");

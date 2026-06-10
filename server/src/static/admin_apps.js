@@ -529,7 +529,7 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             actions.className = "row";
 
             const saveBtn = document.createElement("button");
-            saveBtn.className = "btn secondary";
+            saveBtn.className = "pq-btn secondary";
             saveBtn.type = "button";
             saveBtn.textContent = tr("admin.apps.save_launch_policy", null, "Save launch policy");
             saveBtn.addEventListener("click", async () => {
@@ -557,14 +557,14 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             });
 
             const openBtn = document.createElement("a");
-            openBtn.className = "btn secondary";
+            openBtn.className = "pq-btn secondary";
             openBtn.textContent = tr("admin.apps.open", null, "Open");
             openBtn.href = `/apps/${encodeURIComponent(it.id)}/${encodeURIComponent(it.version)}/www/index.html`;
             openBtn.target = "_blank";
             openBtn.rel = "noopener";
 
             const btn = document.createElement("button");
-            btn.className = "btn danger";
+            btn.className = "pq-btn danger";
             btn.type = "button";
             btn.textContent = tr("admin.apps.uninstall", null, "Uninstall");
             btn.addEventListener("click", async () => {
