@@ -197,7 +197,7 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
 
     function setBadge(el, kind, text) {
         if (!el) return;
-        el.className = `badge ${kind || ""}`.trim();
+        el.className = `pq-badge ${kind || ""}`.trim();
         el.textContent = text;
     }
 

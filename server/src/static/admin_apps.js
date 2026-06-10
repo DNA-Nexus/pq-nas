@@ -49,7 +49,7 @@
     let lastInstalledItems = [];
 
     function setBadge(kind, text){
-        stateBadge.className = `badge ${kind}`;
+        stateBadge.className = `pq-badge ${kind}`;
         stateBadge.textContent = text;
     }
 
@@ -472,7 +472,7 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             launchField.className = "policyField";
             launchField.innerHTML = `
     <label class="policyLbl">${esc(tr("admin.apps.default_launch", null, "Default launch"))}</label>
-    <select class="policySel">
+    <select class="pq-select policySel">
         <option value="auto">${esc(tr("admin.apps.auto", null, "Auto"))}</option>
         <option value="embedded">${esc(tr("admin.apps.embedded", null, "Embedded"))}</option>
         <option value="detached">${esc(tr("admin.apps.detached", null, "Detached"))}</option>
@@ -483,7 +483,7 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             windowField.className = "policyField";
             windowField.innerHTML = `
     <label class="policyLbl">${esc(tr("admin.apps.window_profile", null, "Window profile"))}</label>
-    <select class="policySel">
+    <select class="pq-select policySel">
         <option value="auto">${esc(tr("admin.apps.auto", null, "Auto"))}</option>
         <option value="small">${esc(tr("admin.apps.small", null, "Small"))}</option>
         <option value="normal">${esc(tr("admin.apps.normal", null, "Normal"))}</option>

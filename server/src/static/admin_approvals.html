@@ -110,32 +110,6 @@
         .muted{ color: rgba(var(--fg-rgb),0.62); }
         .row-actions{ display:flex; gap: 8px; flex-wrap: wrap; }
 
-        .pill{
-            display:inline-block;
-            padding: 2px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            border:1px solid rgba(var(--fg-rgb),0.14);
-            color: rgba(var(--fg-rgb),0.82);
-            background: rgba(0,0,0,0.18);
-        }
-
-        .pill.enabled{
-            border-color: rgba(var(--fg-rgb),0.30);
-            background: rgba(var(--fg-rgb),0.08);
-        }
-
-        .pill.disabled{
-            border-color: rgba(var(--fg-rgb),0.14);
-            background: rgba(255,255,255,0.03);
-            color: rgba(var(--fg-rgb),0.72);
-        }
-
-        .pill.revoked{
-            border-color: rgba(var(--fail-rgb),0.40);
-            background: rgba(var(--fail-rgb),0.10);
-            color: rgba(var(--fail-rgb),0.92);
-        }
 
         @media (max-width: 980px){
             .tableWrap{ overflow:auto; }
@@ -202,7 +176,7 @@
                 <h2 data-i18n="admin.approvals.title">Approvals</h2>
 
                 <div class="row" style="margin-bottom:10px;">
-                    <input id="filter" placeholder="Filter (fingerprint/name/notes/status)" data-i18n-placeholder="admin.approvals.filter_placeholder" style="min-width: 320px; flex:1;" />
+                    <input class="pq-input" id="filter" placeholder="Filter (fingerprint/name/notes/status)" data-i18n-placeholder="admin.approvals.filter_placeholder" style="min-width: 320px; flex:1;" />
                     <button class="pq-btn secondary" id="btnRefresh2" type="button" data-i18n="admin.approvals.refresh">Refresh</button>
                 </div>
 
