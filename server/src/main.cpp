@@ -41104,7 +41104,7 @@ srv.Put("/api/v4/files/put",
             return;
         }
 
-        auto manifest = pqnas::read_zip_manifest_from_file(canon_file);
+        auto manifest = pqnas::read_archive_manifest_from_file(canon_file);
 
         nlohmann::json out;
         out["ok"] = manifest.ok;
@@ -41166,7 +41166,7 @@ srv.Put("/api/v4/files/put",
             return;
         }
 
-        auto manifest = pqnas::read_zip_manifest_from_file(rr.blob_abs_path);
+        auto manifest = pqnas::read_archive_manifest_from_file(rr.blob_abs_path, rel_norm);
 
         nlohmann::json out;
         out["ok"] = manifest.ok;

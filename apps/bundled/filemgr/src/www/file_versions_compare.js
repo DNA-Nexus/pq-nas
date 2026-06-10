@@ -26,7 +26,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     ]);
 
     const ARCHIVE_EXTS = new Set([
-        "zip"
+        "zip", "tar"
     ]);
 
     const state = {

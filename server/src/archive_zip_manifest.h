@@ -26,6 +26,17 @@ ZipManifestResult read_zip_manifest_from_file(
     std::size_t max_entries = 20000
 );
 
+ZipManifestResult read_archive_manifest_from_file(
+    const std::filesystem::path& archive_path,
+    std::size_t max_entries = 20000
+);
+
+ZipManifestResult read_archive_manifest_from_file(
+    const std::filesystem::path& archive_path,
+    const std::string& logical_name,
+    std::size_t max_entries = 20000
+);
+
 std::string zip_crc32_hex(std::uint32_t crc);
 
 } // namespace pqnas
