@@ -435,12 +435,12 @@ html[data-theme="bright"] .externalDialogInput{
 
             const cancelBtn = document.createElement("button");
             cancelBtn.type = "button";
-            cancelBtn.className = "btn secondary";
+            cancelBtn.className = "pq-btn secondary";
             cancelBtn.textContent = options.cancelText || tr("external.modal.cancel", null, "Cancel");
 
             const okBtn = document.createElement("button");
             okBtn.type = "button";
-            okBtn.className = options.danger ? "btn danger" : "btn";
+            okBtn.className = options.danger ? "pq-btn danger" : "pq-btn primary";
             okBtn.textContent = options.confirmText || tr("external.modal.continue", null, "Continue");
 
             foot.appendChild(cancelBtn);
@@ -539,12 +539,12 @@ html[data-theme="bright"] .externalDialogInput{
 
             const cancelBtn = document.createElement("button");
             cancelBtn.type = "button";
-            cancelBtn.className = "btn secondary";
+            cancelBtn.className = "pq-btn secondary";
             cancelBtn.textContent = options.cancelText || tr("external.modal.cancel", null, "Cancel");
 
             const okBtn = document.createElement("button");
             okBtn.type = "button";
-            okBtn.className = "btn";
+            okBtn.className = "pq-btn primary";
             okBtn.textContent = options.confirmText || tr("external.modal.ok", null, "OK");
 
             foot.appendChild(cancelBtn);
@@ -5073,7 +5073,7 @@ resetMarqueeVisual();
         const headLeft = externalTrashMakeEl("div", "");
         const title = externalTrashMakeEl("div", "externalTrashDetachedTitle", tr("external.trash.detached.title", null, "Trash"));
         const sub = externalTrashMakeEl("div", "externalTrashDetachedSub mono", tr("external.trash.detached.subtitle", null, "Workspace trash"));
-        const closeBtn = externalTrashMakeEl("button", "btn secondary", tr("external.modal.close", null, "Close"));
+        const closeBtn = externalTrashMakeEl("button", "pq-btn secondary", tr("external.modal.close", null, "Close"));
         closeBtn.type = "button";
 
         headLeft.appendChild(title);
@@ -5085,7 +5085,7 @@ resetMarqueeVisual();
         const body = externalTrashMakeEl("div", "externalTrashDetachedBody");
 
         const foot = externalTrashMakeEl("div", "externalTrashDetachedFoot");
-        const refreshBtn = externalTrashMakeEl("button", "btn secondary", tr("common.refresh", null, "Refresh"));
+        const refreshBtn = externalTrashMakeEl("button", "pq-btn secondary", tr("common.refresh", null, "Refresh"));
         refreshBtn.type = "button";
         const count = externalTrashMakeEl("div", "externalTrashDetachedCount mono", "—");
         foot.appendChild(refreshBtn);
@@ -5356,10 +5356,10 @@ resetMarqueeVisual();
             main.appendChild(externalTrashMakeEl("div", "externalTrashDetachedRowPath mono", rel));
 
             const actions = externalTrashMakeEl("div", "externalTrashDetachedRowActions");
-            const restoreBtn = externalTrashMakeEl("button", "btn secondary", tr("external.trash.restore", null, "Restore"));
+            const restoreBtn = externalTrashMakeEl("button", "pq-btn secondary", tr("external.trash.restore", null, "Restore"));
             restoreBtn.type = "button";
 
-            const purgeBtn = externalTrashMakeEl("button", "btn secondary", tr("external.trash.delete_permanently", null, "Delete permanently"));
+            const purgeBtn = externalTrashMakeEl("button", "pq-btn secondary", tr("external.trash.delete_permanently", null, "Delete permanently"));
             purgeBtn.type = "button";
 
             restoreBtn.addEventListener("click", function () {

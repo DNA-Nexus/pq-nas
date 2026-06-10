@@ -235,7 +235,7 @@ html[data-theme="win_classic"] .externalPdfPreviewBody{
         document.head.appendChild(style);
     }
 
-    function makeButton(text, cls = "btn secondary") {
+    function makeButton(text, cls = "pq-btn secondary") {
         const b = document.createElement("button");
         b.type = "button";
         b.className = cls;

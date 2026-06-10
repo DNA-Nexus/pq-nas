@@ -41,8 +41,8 @@
             </div>
 
             <div class="row">
-                <button class="btn" id="btnNewQr" type="button">New sign-in</button>
-                <button class="btn secondary" id="btnRefreshFiles" type="button">Refresh</button>
+                <button class="pq-btn primary" id="btnNewQr" type="button">New sign-in</button>
+                <button class="pq-btn secondary" id="btnRefreshFiles" type="button">Refresh</button>
             </div>
 
             <div class="status" id="status" data-i18n="common.loading">Loading…</div>
@@ -67,10 +67,10 @@
             <div class="toolbar">
                 <div class="toolbarGroup fileToolbarMain">
                     <span class="toolbarBadge" id="topReadyBadge" data-i18n="external.status.ready">ready</span>
-                    <button class="btn secondary" id="btnUp" type="button" data-i18n="external.action.up">⬆ Up</button>
-                    <button class="btn secondary" id="btnViewMode" type="button" title="Toggle grid/list view" data-i18n="external.view.list" data-i18n-title="external.view.toggle">List</button>
-                    <button class="btn secondary" id="btnDirsFirst" type="button" title="Keep folders first" data-i18n="external.view.dirs" data-i18n-title="external.view.keep_folders_first">☷ Dirs</button>
-                    <select class="input toolbarSelect" id="sortMode" title="Sort files" data-i18n-title="external.sort.title">
+                    <button class="pq-btn secondary" id="btnUp" type="button" data-i18n="external.action.up">⬆ Up</button>
+                    <button class="pq-btn secondary" id="btnViewMode" type="button" title="Toggle grid/list view" data-i18n="external.view.list" data-i18n-title="external.view.toggle">List</button>
+                    <button class="pq-btn secondary" id="btnDirsFirst" type="button" title="Keep folders first" data-i18n="external.view.dirs" data-i18n-title="external.view.keep_folders_first">☷ Dirs</button>
+                    <select class="pq-select toolbarSelect" id="sortMode" title="Sort files" data-i18n-title="external.sort.title">
                         <option value="name-asc" data-i18n="external.sort.name_asc">Name ↑</option>
                         <option value="name-desc" data-i18n="external.sort.name_desc">Name ↓</option>
                         <option value="mtime-desc" data-i18n="external.sort.modified_desc">Modified ↓</option>
@@ -78,15 +78,15 @@
                         <option value="size-desc" data-i18n="external.sort.size_desc">Size ↓</option>
                         <option value="size-asc" data-i18n="external.sort.size_asc">Size ↑</option>
                     </select>
-                    <button class="btn secondary" id="btnReload" type="button" data-i18n="common.refresh">Refresh</button>
+                    <button class="pq-btn secondary" id="btnReload" type="button" data-i18n="common.refresh">Refresh</button>
                 </div>
 
                 <div class="toolbarGroup hidden" id="editorTools">
                     <!-- Kept in DOM for existing JS handlers, but hidden from the top bar.
                          Upload and New folder are available from the right-click menu. -->
-                    <button class="btn secondary hidden" id="btnToggleUpload" type="button" hidden data-i18n="external.upload.action">Upload</button>
-                    <input class="input hidden" id="newFolderName" placeholder="New folder name" data-i18n-placeholder="external.new_folder.placeholder" autocomplete="off" hidden>
-                    <button class="btn hidden" id="btnNewFolder" type="button" hidden data-i18n="external.menu.new_folder">New folder</button>
+                    <button class="pq-btn secondary hidden" id="btnToggleUpload" type="button" hidden data-i18n="external.upload.action">Upload</button>
+                    <input class="pq-input hidden" id="newFolderName" placeholder="New folder name" data-i18n-placeholder="external.new_folder.placeholder" autocomplete="off" hidden>
+                    <button class="pq-btn primary hidden" id="btnNewFolder" type="button" hidden data-i18n="external.menu.new_folder">New folder</button>
                 </div>
             </div>
 
@@ -97,7 +97,7 @@
                 <input type="file" id="uploadFile" multiple>
                 <input type="file" id="uploadFolderFile" multiple webkitdirectory directory hidden>
                 <div class="row">
-                    <button class="btn" id="btnUpload" type="button" data-i18n="external.upload.to_current_folder">Upload to current folder</button>
+                    <button class="pq-btn primary" id="btnUpload" type="button" data-i18n="external.upload.to_current_folder">Upload to current folder</button>
                 </div>
                 <div class="small">
                     <span data-i18n="external.upload.help">Select files or drag & drop files/folders into the file area. Upload and folder creation require editor access.</span>
@@ -124,7 +124,7 @@
                 <div id="propsTitle" class="propsTitle" data-i18n="external.menu.properties">Properties</div>
                 <div id="propsPath" class="propsPath mono">/</div>
             </div>
-            <button id="propsClose" class="btn secondary" type="button" data-i18n="external.modal.close">Close</button>
+            <button id="propsClose" class="pq-btn secondary" type="button" data-i18n="external.modal.close">Close</button>
         </div>
         <div id="propsBody" class="propsBody"></div>
     </div>
@@ -137,7 +137,7 @@
                 <div id="textPreviewTitle" class="textPreviewTitle" data-i18n="external.preview.title">Text preview</div>
                 <div id="textPreviewPath" class="textPreviewPath mono">/</div>
             </div>
-            <button id="textPreviewClose" class="btn secondary" type="button" data-i18n="external.modal.close">Close</button>
+            <button id="textPreviewClose" class="pq-btn secondary" type="button" data-i18n="external.modal.close">Close</button>
         </div>
         <div id="textPreviewMeta" class="textPreviewMeta" data-i18n="common.loading">Loading…</div>
         <pre id="textPreviewBody" class="textPreviewBody mono"></pre>
@@ -152,7 +152,7 @@
                 <div id="textEditTitle" class="textEditTitle" data-i18n="external.textedit.title">Edit text file</div>
                 <div id="textEditPath" class="textEditPath mono">/</div>
             </div>
-            <button id="textEditClose" class="btn secondary" type="button" aria-label="Close" data-i18n="external.modal.close" data-i18n-aria-label="external.modal.close">Close</button>
+            <button id="textEditClose" class="pq-btn secondary" type="button" aria-label="Close" data-i18n="external.modal.close" data-i18n-aria-label="external.modal.close">Close</button>
         </div>
 
         <div class="textEditInfoWrap">
@@ -165,20 +165,20 @@
         </div>
 
         <div class="textEditFoot">
-            <button id="textEditReloadBtn" class="btn secondary" type="button" data-i18n="external.textedit.reload">Reload</button>
-            <button id="textEditFindToggleBtn" class="btn secondary" type="button" data-i18n="external.textedit.find">Find</button>
+            <button id="textEditReloadBtn" class="pq-btn secondary" type="button" data-i18n="external.textedit.reload">Reload</button>
+            <button id="textEditFindToggleBtn" class="pq-btn secondary" type="button" data-i18n="external.textedit.find">Find</button>
 
             <div id="textEditFindBar" class="textEditFindBar hidden">
                 <input id="textEditFindInput" class="textEditFindInput mono" type="text" placeholder="Find…" aria-label="Find text">
-                <button id="textEditFindPrevBtn" class="btn secondary" type="button">Prev</button>
-                <button id="textEditFindNextBtn" class="btn secondary" type="button">Next</button>
-                <button id="textEditFindCaseBtn" class="btn secondary" type="button" title="Match case">Aa</button>
+                <button id="textEditFindPrevBtn" class="pq-btn secondary" type="button">Prev</button>
+                <button id="textEditFindNextBtn" class="pq-btn secondary" type="button">Next</button>
+                <button id="textEditFindCaseBtn" class="pq-btn secondary" type="button" title="Match case">Aa</button>
                 <div id="textEditFindStatus" class="textEditFindStatus mono"></div>
-                <button id="textEditFindCloseBtn" class="btn secondary" type="button">×</button>
+                <button id="textEditFindCloseBtn" class="pq-btn secondary" type="button">×</button>
             </div>
 
             <div class="textEditSpacer"></div>
-            <button id="textEditSaveBtn" class="btn" type="button" disabled>Save</button>
+            <button id="textEditSaveBtn" class="pq-btn primary" type="button" disabled>Save</button>
         </div>
     </div>
 </div>
@@ -201,10 +201,10 @@
         <div class="extPickerStatus" id="extPickerStatus"></div>
 
         <div class="extPickerActions">
-            <button class="btn secondary" id="extPickerNewFolder" type="button" data-i18n="external.picker.new_folder_here">New folder here...</button>
+            <button class="pq-btn secondary" id="extPickerNewFolder" type="button" data-i18n="external.picker.new_folder_here">New folder here...</button>
             <div class="extPickerActionGroup">
-                <button class="btn secondary" id="extPickerCancel" type="button" data-i18n="external.modal.cancel">Cancel</button>
-                <button class="btn" id="extPickerChoose" type="button" data-i18n="external.picker.move_here">Move here</button>
+                <button class="pq-btn secondary" id="extPickerCancel" type="button" data-i18n="external.modal.cancel">Cancel</button>
+                <button class="pq-btn primary" id="extPickerChoose" type="button" data-i18n="external.picker.move_here">Move here</button>
             </div>
         </div>
     </div>
