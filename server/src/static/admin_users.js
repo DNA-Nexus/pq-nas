@@ -225,7 +225,8 @@ async function prepareAdminAvatarUploadBlob(file) {
 
 function pill(status) {
     const cls = (status || "disabled");
-    return `<span class="pill ${cls}">${esc(statusLabel(cls))}</span>`;
+    const badge = cls === "enabled" ? "ok" : cls === "revoked" ? "err" : "";
+    return `<span class="pq-badge ${badge}">${esc(statusLabel(cls))}</span>`;
 }
 
 function esc(s) {
@@ -304,8 +305,8 @@ function closeAvatarModal() {
 
 function storagePill(state) {
     const s = (state || "unallocated");
-    const cls = (s === "allocated") ? "enabled" : "disabled"; // reuse pill CSS classes
-    return `<span class="pill ${cls}">${esc(storageStateLabel(s))}</span>`;
+    const badge = (s === "allocated") ? "ok" : "";
+    return `<span class="pq-badge ${badge}">${esc(storageStateLabel(s))}</span>`;
 }
 function storagePoolIdForUser(u) {
     const raw =
@@ -324,7 +325,7 @@ function storageCellHtml(u) {
     if (state !== "allocated") return main;
 
     const poolId = storagePoolIdForUser(u);
-    return `${main} <span class="pill poolpill">${esc(poolId)}</span>`;
+    return `${main} <span class="pq-badge">${esc(poolId)}</span>`;
 }
 function fmtBytes(n) {
     n = Number(n || 0);
@@ -1613,7 +1614,7 @@ function render() {
         const isSelf = actorFp && fp === actorFp;
 
         const selfTag = isSelf
-            ? `<span class="pill enabled" title="${esc(tr("admin.users.this_is_you", null, "This is you"))}" style="margin-left:8px;">${esc(tr("admin.users.you", null, "you"))}</span>`
+            ? `<span class="pq-badge ok" title="${esc(tr("admin.users.this_is_you", null, "This is you"))}" style="margin-left:8px;">${esc(tr("admin.users.you", null, "you"))}</span>`
             : "";
 
         // Disallow self-modification (Allocate is allowed for self)
@@ -1677,7 +1678,7 @@ function render() {
         `}
 
         <div class="detailActions">
-            <button class="btn secondary" data-edit="${esc(fp)}" type="button" title="${esc(tr("admin.users.load_edit_title", null, "Load this user into the edit form"))}" ${disEditAttr}${disEditClass}>${esc(tr("admin.users.edit", null, "Edit"))}</button>
+            <button class="pq-btn secondary" data-edit="${esc(fp)}" type="button" title="${esc(tr("admin.users.load_edit_title", null, "Load this user into the edit form"))}" ${disEditAttr}${disEditClass}>${esc(tr("admin.users.edit", null, "Edit"))}</button>
         </div>
 
         <div class="detailKV"><div class="k">${esc(tr("admin.users.fingerprint", null, "Fingerprint"))}</div><div class="v mono">${esc(fp)}</div></div>
@@ -1710,48 +1711,48 @@ function render() {
 <div class="detailBox">
   <h3>${esc(tr("admin.users.actions", null, "Actions"))}</h3>
   <div class="detailActions">
-    <button class="btn secondary"
+    <button class="pq-btn secondary"
             data-act="enable"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.enable_title", null, "Allow this fingerprint to log in again"))}"
             ${disDangerAttr}${disDangerClass}>${esc(tr("admin.users.enable", null, "Enable"))}</button>
 
-    <button class="btn secondary"
+    <button class="pq-btn secondary"
             data-act="disable"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.disable_title", null, "Disable login until an admin enables it again"))}"
             ${disDangerAttr}${disDangerClass}>${esc(tr("admin.users.disable", null, "Disable"))}</button>
 
-    <button class="btn secondary"
+    <button class="pq-btn secondary"
             data-act="revoke"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.revoke_title", null, "Hard-block this fingerprint from logging in"))}"
             ${disDangerAttr}${disDangerClass}>${esc(tr("admin.users.revoke", null, "Revoke"))}</button>
 
-    <button class="btn secondary"
+    <button class="pq-btn secondary"
             data-act="allocate"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.allocate_title", null, "Allocate storage and set quota for this user"))}">${esc(tr("admin.users.allocate", null, "Allocate"))}</button>
             
     ${String(u.storage_state || "").toLowerCase() === "allocated" ? `
-        <button class="btn secondary"
+        <button class="pq-btn secondary"
             data-act="migrate"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.migrate_title", null, "Move user storage to another pool with async copy and verify"))}">${esc(tr("admin.users.migrate", null, "Migrate"))}</button>
 
-        <button class="btn secondary"
+        <button class="pq-btn secondary"
             data-act="cleanup-old-copy"
             data-fp="${esc(fp)}"
             type="button"
             title="${esc(tr("admin.users.cleanup_title", null, "Delete the old inactive storage copy left behind after migration"))}">${esc(tr("admin.users.cleanup_old_copy", null, "Cleanup old copy"))}</button>
     ` : ``}
     
-    <button class="btn danger"
+    <button class="pq-btn danger"
             data-act="delete"
             data-fp="${esc(fp)}"
             type="button"
