@@ -21,6 +21,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         "ini", "conf", "csv", "xml", "sql", "toml"
     ]);
 
+    const IMAGE_EXTS = new Set([
+        "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"
+    ]);
+
     const state = {
         item: null,
         relPath: "",
@@ -62,6 +66,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     function isTextName(name) {
         return TEXT_EXTS.has(extOf(name));
+    }
+
+    function isImageName(name) {
+        return IMAGE_EXTS.has(extOf(name));
+    }
+
+    function canCompareImage(item) {
+        if (!item || item.type !== "file") return false;
+
+        const rel = getCurrentRelPathFor(item);
+        if (!isImageName(rel || item.name || "")) return false;
+
+        return !!(
+            FM &&
+            FM.versionImageCompare &&
+            typeof FM.versionImageCompare.open === "function"
+        );
     }
 
     function isWorkspaceScope() {
@@ -107,6 +128,34 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         }
 
         return `/api/v4/files/versions/read_text?${qs.toString()}`;
+    }
+
+    function apiCurrentImageUrl(path) {
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            return `/api/v4/workspaces/files/get?${qs.toString()}`;
+        }
+
+        return `/api/v4/files/get?${qs.toString()}`;
+    }
+
+    function apiVersionImageUrl(path, versionId) {
+        const qs = new URLSearchParams();
+        qs.set("path", path || "");
+        qs.set("version_id", versionId || "");
+
+        if (isWorkspaceScope()) {
+            qs.set("workspace_id", getWorkspaceId());
+            // Existing workspace-safe preserved-version endpoint.
+            // As an <img> subresource this should render when the response is an image.
+            return `/api/v4/workspaces/files/versions/download?${qs.toString()}`;
+        }
+
+        qs.set("inline", "1");
+        return `/api/v4/files/versions/blob?${qs.toString()}`;
     }
 
     function injectCss() {
@@ -1079,11 +1128,33 @@ html[data-theme="win_classic"] .pqfvcLine.skip{
     async function openCompare(item, version) {
         if (!item || item.type !== "file" || !version || !version.version_id) return;
 
+        const relPathForCompare = getCurrentRelPathFor(item);
+
+        if (
+            isImageName(relPathForCompare || item.name || "") &&
+            FM &&
+            FM.versionImageCompare &&
+            typeof FM.versionImageCompare.open === "function"
+        ) {
+            const label = version.created_at || version.version_id || "";
+            FM.versionImageCompare.open({
+                path: relPathForCompare,
+                versionId: version.version_id,
+                leftUrl: apiCurrentImageUrl(relPathForCompare),
+                rightUrl: apiVersionImageUrl(relPathForCompare, version.version_id),
+                leftTitle: tr("filemgr.version_compare.current", null, "Current file"),
+                rightTitle: label
+                    ? tr("filemgr.version_compare.version_with_date", { date: label }, `Version ${label}`)
+                    : tr("filemgr.version_compare.version", null, "Selected version")
+            });
+            return;
+        }
+
         ensureDom();
 
         state.item = item;
         state.version = version;
-        state.relPath = getCurrentRelPathFor(item);
+        state.relPath = relPathForCompare;
         state.loading = true;
 
         titleEl.textContent = tr("filemgr.compare.title", null, "Compare file version");
@@ -1153,7 +1224,7 @@ html[data-theme="win_classic"] .pqfvcLine.skip{
         canCompare(item) {
             if (!item || item.type !== "file") return false;
             const rel = getCurrentRelPathFor(item);
-            return isTextName(rel || item.name || "");
+            return isTextName(rel || item.name || "") || canCompareImage(item);
         },
         open: openCompare,
         close

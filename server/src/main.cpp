@@ -41059,6 +41059,98 @@ srv.Put("/api/v4/files/put",
 });
 
 
+    // File Manager: stream a preserved version blob.
+    //
+    // Used by image version compare. Text compare keeps using its text-safe reader.
+    srv.Get("/api/v4/files/versions/blob", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string fp_hex;
+        std::string role;
+        if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) {
+            return;
+        }
+
+        const std::string rel_raw = req.get_param_value("path");
+        const std::string version_id = req.get_param_value("version_id");
+        const bool inline_view = req.has_param("inline") && req.get_param_value("inline") == "1";
+
+        if (rel_raw.empty() || version_id.empty()) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_request","message":"missing path or version_id"})", "application/json");
+            return;
+        }
+
+        std::string rel_norm;
+        std::string norm_err;
+        if (!pqnas::normalize_user_rel_path_strict(rel_raw, &rel_norm, &norm_err)) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"bad_request","message":"invalid path"})", "application/json");
+            return;
+        }
+
+        std::filesystem::path scope_root = user_dir_for_fp(users, fp_hex).lexically_normal();
+
+        auto rr = pqnas::resolve_version_blob_for_download(
+            &file_versions_index,
+            "user",
+            fp_hex,
+            rel_norm,
+            version_id,
+            scope_root
+        );
+
+        if (!rr.ok) {
+            const int code =
+                rr.error == "bad_request" ? 400 :
+                rr.error == "not_found" ? 404 :
+                rr.error == "unsupported" ? 415 :
+                500;
+
+            res.status = code;
+            nlohmann::json out = {
+                {"ok", false},
+                {"error", rr.error.empty() ? "server_error" : rr.error},
+                {"message", rr.message.empty() ? "failed to read version" : rr.message}
+            };
+            res.set_content(out.dump(), "application/json");
+            return;
+        }
+
+        std::ifstream in(rr.blob_abs_path, std::ios::binary);
+        if (!in.good()) {
+            res.status = 404;
+            res.set_content(R"({"ok":false,"error":"not_found","message":"version blob not found"})", "application/json");
+            return;
+        }
+
+        std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+        const std::string lower = rel_norm;
+        std::string mime = "application/octet-stream";
+        auto ends_with = [&](const std::string& suffix) {
+            if (lower.size() < suffix.size()) return false;
+            return std::equal(suffix.rbegin(), suffix.rend(), lower.rbegin(),
+                [](char a, char b) {
+                    return std::tolower(static_cast<unsigned char>(a)) ==
+                           std::tolower(static_cast<unsigned char>(b));
+                });
+        };
+
+        if (ends_with(".png")) mime = "image/png";
+        else if (ends_with(".jpg") || ends_with(".jpeg")) mime = "image/jpeg";
+        else if (ends_with(".webp")) mime = "image/webp";
+        else if (ends_with(".gif")) mime = "image/gif";
+        else if (ends_with(".bmp")) mime = "image/bmp";
+        else if (ends_with(".svg")) mime = "image/svg+xml";
+
+        res.set_header("X-Content-Type-Options", "nosniff");
+        res.set_header("Cache-Control", "no-store");
+        res.set_header("Content-Disposition",
+            std::string(inline_view ? "inline" : "attachment") +
+            "; filename=\"version-" + version_id + "\"");
+
+        res.set_content(std::move(body), mime.c_str());
+    });
+
 srv.Get("/api/v4/files/versions/list", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
