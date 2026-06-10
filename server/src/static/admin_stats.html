@@ -7,49 +7,12 @@
 
 
     <style>
-        .btn{
-            border: 1px solid rgba(var(--fg-rgb),0.28);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            padding: 10px 12px;
-            border-radius: 14px;
-            cursor:pointer;
-            font-weight: 900;
-            letter-spacing: 0.2px;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-            user-select:none;
-        }
+        /* buttons: uses .pq-btn from components.css */
+        /* badges: uses .pq-badge from components.css */
 
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
+        .pq-badge .k{ color: rgba(var(--fg-rgb),0.62); }
 
-        .btn:active{ transform: translateY(0px); }
-
-        .btn.primary{
-            border-color: rgba(var(--fg-rgb),0.45);
-            box-shadow: 0 0 0 1px rgba(var(--fg-rgb),0.08) inset;
-        }
-
-        .pill{
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            border:1px solid rgba(var(--fg-rgb),0.16);
-            background:rgba(0,0,0,0.22);
-            padding:6px 10px;
-            border-radius:999px;
-            font-size:12px;
-            color: rgba(var(--fg-rgb),0.70);
-            white-space:nowrap;
-            max-width: 100%;
-        }
-
-        .pill .k{ color: rgba(var(--fg-rgb),0.62); }
-
-        .pill .v{
+        .pq-badge .v{
             color: rgba(var(--fg-rgb),0.92);
             font-weight: 900;
             max-width: 180px;
@@ -57,12 +20,6 @@
             text-overflow: ellipsis;
             display:inline-block;
             vertical-align: bottom;
-        }
-
-        .pill.info{
-            border-color: rgba(var(--info-rgb),0.38);
-            color: rgba(var(--fg-rgb),0.82);
-            background: rgba(var(--info-rgb),0.08);
         }
 
         html,
@@ -259,7 +216,7 @@
             flex-wrap:wrap;
         }
 
-        .exportActions .btn{
+        .exportActions .pq-btn{
             padding:8px 10px;
             border-radius:12px;
             font-size:12px;
@@ -530,17 +487,17 @@
             </div>
 
             <div class="actions">
-                <button id="refreshBtn" class="btn primary" type="button" data-i18n="admin.stats.refresh">Refresh statistics</button>
+                <button id="refreshBtn" class="pq-btn primary" type="button" data-i18n="admin.stats.refresh">Refresh statistics</button>
 
                 <div class="exportActions" role="group" aria-label="Export statistics data" data-i18n-aria-label="admin.stats.export_data_aria">
-                    <button id="exportStatsJsonBtn" class="btn" type="button" data-i18n="admin.stats.export_json">Export JSON</button>
-                    <button id="exportTrendsCsvBtn" class="btn" type="button" data-i18n="admin.stats.export_trends_csv">Export trends CSV</button>
+                    <button id="exportStatsJsonBtn" class="pq-btn" type="button" data-i18n="admin.stats.export_json">Export JSON</button>
+                    <button id="exportTrendsCsvBtn" class="pq-btn" type="button" data-i18n="admin.stats.export_trends_csv">Export trends CSV</button>
                 </div>
 
-                <span id="status" class="pill info">
+                <span id="status" class="pq-badge info">
                     <span class="k" data-i18n="admin.stats.updated">Updated</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.loading">Loading…</span>
                 </span>
-                <span id="exportStatus" class="pill">
+                <span id="exportStatus" class="pq-badge">
                     <span class="k" data-i18n="admin.stats.export">Export</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.export.ready">Ready</span>
                 </span>
                 <span id="roleBadge" class="badge admin">role: ?</span>
@@ -594,7 +551,7 @@
                     <button class="trendBtn" type="button" data-period="90d">90d</button>
                     <button class="trendBtn" type="button" data-period="all" data-i18n="admin.stats.all">All</button>
                 </div>
-                <span id="trendStatus" class="pill info">
+                <span id="trendStatus" class="pq-badge info">
                     <span class="k" data-i18n="admin.stats.trend">Trend</span><span class="k">:</span> <span class="v" data-i18n="admin.stats.loading">Loading…</span>
                 </span>
             </div>
@@ -722,7 +679,7 @@
         <section class="pane circleStatsSection" aria-label="Circle Stack statistics">
             <div class="trendToolbar">
                 <h2 style="margin:0;">Circle Stack</h2>
-                <span id="circleStatsStatus" class="pill info">
+                <span id="circleStatsStatus" class="pq-badge info">
                     <span class="k">Social</span><span class="k">:</span> <span class="v">Loading…</span>
                 </span>
             </div>

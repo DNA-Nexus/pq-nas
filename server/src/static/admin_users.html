@@ -13,13 +13,6 @@
 
     <style>
         :root{
-            --field-surface: rgba(255,255,255,0.14);
-            --field-surface2: rgba(255,255,255,0.18);
-            --field-border: rgba(255,255,255,0.18);
-            --field-border2: rgba(255,255,255,0.26);
-            --field-text: rgba(var(--fg-rgb),0.92);
-            --field-ph: rgba(var(--fg-rgb),0.48);
-
             /* solid modal surfaces */
             --admin-modal-bg: rgba(20,20,24,0.98);
             --admin-modal-bg2: rgba(255,255,255,0.04);
@@ -36,52 +29,7 @@
             --admin-modal-bg2: rgba(0,0,0,0.04);
             --admin-modal-border: rgba(0,0,0,0.20);
         }
-        .btn{
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: 14px;
-            border: 1px solid rgba(var(--fg-rgb),0.28);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            font-weight: 900;
-            cursor:pointer;
-            text-decoration:none;
-            user-select:none;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
-        }
-
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
-
-        .btn:active{ transform: translateY(0px); }
-
-        .btn.secondary{
-            border-color: rgba(255,255,255,0.12);
-            color: rgba(var(--fg-rgb),0.82);
-        }
-
-        .btn.secondary:hover{
-            border-color: rgba(255,255,255,0.22);
-            background: rgba(255,255,255,0.05);
-        }
-
-        .btn.danger{
-            border-color: rgba(var(--fail-rgb),0.45);
-            color: rgba(255,190,190,0.98);
-            background: rgba(var(--fail-rgb),0.10);
-        }
-
-        .btn.danger:hover{
-            border-color: rgba(var(--fail-rgb),0.65);
-            background: rgba(var(--fail-rgb),0.18);
-            box-shadow: 0 0 18px rgba(var(--fail-rgb),0.22);
-        }
+        /* buttons: uses .pq-btn from components.css */
 
         .content{
             display: grid;
@@ -122,49 +70,7 @@
             align-items: center;
         }
 
-        input, select, textarea{
-            border-radius: 14px;
-            border: 1px solid var(--field-border);
-            background: linear-gradient(180deg, var(--field-surface2), var(--field-surface));
-            color: var(--field-text);
-            padding: 10px 12px;
-            outline: none;
-            box-shadow:
-                    0 1px 0 rgba(255,255,255,0.10) inset,
-                    0 -1px 0 rgba(0,0,0,0.10) inset;
-        }
-
-        input::placeholder, textarea::placeholder{
-            color: var(--field-ph);
-        }
-
-        input:hover, select:hover, textarea:hover{
-            border-color: var(--field-border2);
-        }
-
-        input:focus, select:focus, textarea:focus{
-            border-color: rgba(var(--fg-rgb),0.30);
-            box-shadow:
-                    0 1px 0 rgba(255,255,255,0.12) inset,
-                    0 -1px 0 rgba(0,0,0,0.10) inset,
-                    0 0 0 3px rgba(var(--fg-rgb),0.10);
-        }
-
-        html[data-theme="win_classic"]{
-            --field-surface: rgba(255,255,255,0.86);
-            --field-surface2: rgba(255,255,255,0.96);
-            --field-border: rgba(0,0,0,0.20);
-            --field-border2: rgba(0,0,0,0.32);
-            --field-text: rgba(0,0,0,0.92);
-            --field-ph: rgba(0,0,0,0.55);
-        }
-
-        textarea{
-            min-height: 70px;
-            width: 520px;
-            max-width: 100%;
-            resize: vertical;
-        }
+        /* form controls: uses .pq-input / .pq-select / .pq-textarea from components.css */
 
         .mono{
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -218,38 +124,7 @@
         .muted{ color: rgba(var(--fg-rgb),0.62); }
         .row-actions{ display:flex; gap: 8px; flex-wrap: wrap; }
 
-        .pill{
-            display:inline-block;
-            padding: 2px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            border:1px solid rgba(var(--fg-rgb),0.14);
-            color: rgba(var(--fg-rgb),0.82);
-            background: rgba(0,0,0,0.18);
-        }
-
-        .pill.enabled{
-            border-color: rgba(var(--fg-rgb),0.30);
-            background: rgba(var(--fg-rgb),0.08);
-        }
-
-        .pill.disabled{
-            border-color: rgba(var(--fg-rgb),0.14);
-            background: rgba(255,255,255,0.03);
-            color: rgba(var(--fg-rgb),0.72);
-        }
-
-        .pill.revoked{
-            border-color: rgba(var(--fail-rgb),0.40);
-            background: rgba(var(--fail-rgb),0.10);
-            color: rgba(var(--fail-rgb),0.92);
-        }
-
-        .pill.poolpill{
-            border-color: rgba(var(--fg-rgb),0.18);
-            background: rgba(var(--fg-rgb),0.05);
-            color: rgba(var(--fg-rgb),0.78);
-        }
+        /* status pills: uses .pq-badge from components.css */
 
         @media (max-width: 980px){
             .tableWrap{ overflow:auto; }
@@ -647,7 +522,7 @@
             </div>
 
             <div class="actions">
-                <button class="btn secondary" id="btnRefresh" type="button" data-i18n="admin.users.refresh">Refresh</button>
+                <button class="pq-btn secondary" id="btnRefresh" type="button" data-i18n="admin.users.refresh">Refresh</button>
             </div>
         </div>
 
@@ -656,24 +531,24 @@
                 <h2 data-i18n="admin.users.edit_profile">Edit profile</h2>
 
                 <div class="row" style="margin-bottom:10px;">
-                    <input id="filter" placeholder="Filter (fingerprint/name/email/notes/role/status/group/storage/quota)" data-i18n-placeholder="admin.users.filter_placeholder" style="min-width: 320px; flex:1;" />
+                    <input class="pq-input" id="filter" placeholder="Filter (fingerprint/name/email/notes/role/status/group/storage/quota)" data-i18n-placeholder="admin.users.filter_placeholder" style="min-width: 320px; flex:1; width:auto;" />
                 </div>
 
                 <div class="row" style="margin-bottom:10px;">
-                    <input id="fp" class="mono" placeholder="fingerprint hex" data-i18n-placeholder="admin.users.fp_placeholder" style="min-width: 520px; flex:1;" />
-                    <input id="name" placeholder="name" data-i18n-placeholder="admin.users.name_placeholder" style="min-width: 180px;" />
-                    <input id="email" placeholder="email (optional)" data-i18n-placeholder="admin.users.email_placeholder" style="min-width:260px;" />
-                    <input id="avatar_url" placeholder="avatar (click to choose; image will be resized…)" data-i18n-placeholder="admin.users.avatar_placeholder" style="min-width:300px;" readonly />
+                    <input class="pq-input mono" id="fp" placeholder="fingerprint hex" data-i18n-placeholder="admin.users.fp_placeholder" style="min-width: 520px; flex:1; width:auto;" />
+                    <input class="pq-input" id="name" placeholder="name" data-i18n-placeholder="admin.users.name_placeholder" style="min-width: 180px; width:auto;" />
+                    <input class="pq-input" id="email" placeholder="email (optional)" data-i18n-placeholder="admin.users.email_placeholder" style="min-width:260px; width:auto;" />
+                    <input class="pq-input" id="avatar_url" placeholder="avatar (click to choose; image will be resized…)" data-i18n-placeholder="admin.users.avatar_placeholder" style="min-width:300px; width:auto;" readonly />
                     <input id="avatar_file" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;" />
-                    <select id="role">
+                    <select class="pq-select" id="role" style="width:auto;">
                         <option value="user" data-i18n="admin.users.role.user">user</option>
                         <option value="admin" data-i18n="admin.users.role.admin">admin</option>
                     </select>
-                    <button class="btn" id="btnAdd" type="button" data-i18n="admin.users.upsert">Upsert</button>
+                    <button class="pq-btn" id="btnAdd" type="button" data-i18n="admin.users.upsert">Upsert</button>
                 </div>
 
                 <div class="row">
-                    <textarea id="notes" placeholder="notes (optional)" data-i18n-placeholder="admin.users.notes_placeholder"></textarea>
+                    <textarea class="pq-textarea" id="notes" placeholder="notes (optional)" data-i18n-placeholder="admin.users.notes_placeholder" style="min-height:70px; width:520px; max-width:100%;"></textarea>
                     <div class="hint" style="max-width: 420px;" data-i18n="admin.users.help">Use Enable to allow logins, Disable to require approval again, and Revoke to hard-block that fingerprint. Delete removes the entry entirely (cleanup).</div>
                 </div>
             </section>
@@ -714,8 +589,8 @@
         <div class="allocTop">
             <div class="allocTitle" data-i18n="admin.users.alloc_title">Allocate storage</div>
             <div class="allocActions">
-                <button class="btn secondary" id="allocCancelBtn" type="button" data-i18n="admin.users.cancel">Cancel</button>
-                <button class="btn" id="allocSaveBtn" type="button" data-i18n="admin.users.allocate">Allocate</button>
+                <button class="pq-btn secondary" id="allocCancelBtn" type="button" data-i18n="admin.users.cancel">Cancel</button>
+                <button class="pq-btn" id="allocSaveBtn" type="button" data-i18n="admin.users.allocate">Allocate</button>
             </div>
         </div>
 
@@ -727,13 +602,13 @@
             <div class="allocGrid">
                 <div>
                     <div class="muted" style="font-size:12px; margin-bottom:6px;" data-i18n="admin.users.pool">Pool</div>
-                    <select id="allocPoolSel"></select>
+                    <select class="pq-select" id="allocPoolSel" style="width:auto;"></select>
                     <div class="muted" id="allocPoolHint" style="font-size:12px; margin-top:6px;">—</div>
                 </div>
 
                 <div>
                     <div class="muted" style="font-size:12px; margin-bottom:6px;" data-i18n="admin.users.amount_gb">Amount (GB)</div>
-                    <input id="allocGb" type="number" min="0" step="1" placeholder="e.g. 10" data-i18n-placeholder="admin.users.amount_placeholder" />
+                    <input class="pq-input" id="allocGb" type="number" min="0" step="1" placeholder="e.g. 10" data-i18n-placeholder="admin.users.amount_placeholder" style="width:auto;" />
                     <div class="muted" style="font-size:12px; margin-top:6px;" data-i18n="admin.users.amount_help">Set a positive quota to allow uploads.</div>
                 </div>
             </div>
@@ -752,8 +627,8 @@
         <div class="allocTop">
             <div class="allocTitle" data-i18n="admin.users.migrate_title_modal">Migrate storage</div>
             <div class="allocActions">
-                <button class="btn secondary" id="migrateCancelBtn" type="button" data-i18n="admin.users.cancel">Cancel</button>
-                <button class="btn" id="migrateSaveBtn" type="button" data-i18n="admin.users.migrate">Migrate</button>
+                <button class="pq-btn secondary" id="migrateCancelBtn" type="button" data-i18n="admin.users.cancel">Cancel</button>
+                <button class="pq-btn" id="migrateSaveBtn" type="button" data-i18n="admin.users.migrate">Migrate</button>
             </div>
         </div>
 
@@ -765,13 +640,13 @@
             <div class="allocGrid">
                 <div>
                     <div class="muted" style="font-size:12px; margin-bottom:6px;" data-i18n="admin.users.current_pool">Current pool</div>
-                    <input id="migrateCurPool" readonly />
+                    <input class="pq-input" id="migrateCurPool" style="width:auto;" readonly />
                     <div class="muted" id="migrateCurHint" style="font-size:12px; margin-top:6px;">—</div>
                 </div>
 
                 <div>
                     <div class="muted" style="font-size:12px; margin-bottom:6px;" data-i18n="admin.users.destination_pool">Destination pool</div>
-                    <select id="migratePoolSel"></select>
+                    <select class="pq-select" id="migratePoolSel" style="width:auto;"></select>
                     <div class="muted" id="migratePoolHint" style="font-size:12px; margin-top:6px;">—</div>
                 </div>
             </div>
@@ -790,8 +665,8 @@
         <div class="avatarModalTop">
             <div class="avatarModalTitle" data-i18n="admin.users.avatar_preview">Avatar preview</div>
             <div class="avatarModalActions">
-                <button class="btn danger" id="avatarRemoveBtn" type="button" data-i18n="admin.users.remove">Remove</button>
-                <button class="btn secondary" id="avatarCloseBtn" type="button" data-i18n="admin.common.close">Close</button>
+                <button class="pq-btn danger" id="avatarRemoveBtn" type="button" data-i18n="admin.users.remove">Remove</button>
+                <button class="pq-btn secondary" id="avatarCloseBtn" type="button" data-i18n="admin.common.close">Close</button>
             </div>
         </div>
         <div class="avatarModalBody">
