@@ -1,0 +1,246 @@
+/* PQ-NAS shared component classes
+   Additive foundation for future migration.
+   Loaded after theme.css -- uses only existing :root tokens.
+
+   These .pq-* classes do NOT replace existing app styles.
+   They provide canonical, theme-aware components that new features
+   and future migrations can adopt incrementally.
+
+   v1 -- 2026-06-10
+*/
+
+/* ==============================
+   Buttons
+   ============================== */
+
+.pq-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:10px 14px;
+    border-radius:12px;
+    border:1px solid var(--border);
+    background:rgba(255,255,255,0.04);
+    color:var(--fg);
+    font:inherit;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+    user-select:none;
+    transition:border-color .15s, background .15s;
+    text-decoration:none;
+    line-height:1.35;
+}
+
+.pq-btn:hover{
+    border-color:rgba(var(--fg-rgb),0.45);
+    background:rgba(255,255,255,0.07);
+}
+
+.pq-btn:active{
+    transform:translateY(1px);
+}
+
+.pq-btn:disabled,
+.pq-btn[aria-disabled="true"]{
+    opacity:0.45;
+    cursor:default;
+    pointer-events:none;
+}
+
+/* Primary: filled accent */
+.pq-btn.primary{
+    border-color:rgba(var(--fg-rgb),0.55);
+    background:rgba(var(--fg-rgb),0.14);
+    color:var(--fg);
+    font-weight:800;
+}
+
+.pq-btn.primary:hover{
+    border-color:rgba(var(--fg-rgb),0.70);
+    background:rgba(var(--fg-rgb),0.20);
+}
+
+/* Secondary: subtle outline */
+.pq-btn.secondary{
+    border-color:rgba(var(--fg-rgb),0.22);
+    background:transparent;
+}
+
+.pq-btn.secondary:hover{
+    border-color:rgba(var(--fg-rgb),0.40);
+    background:rgba(var(--fg-rgb),0.06);
+}
+
+/* Danger: red */
+.pq-btn.danger{
+    border-color:rgba(var(--fail-rgb),0.55);
+    background:rgba(var(--fail-rgb),0.10);
+    color:rgba(var(--fail-rgb),0.95);
+    font-weight:700;
+}
+
+.pq-btn.danger:hover{
+    border-color:rgba(var(--fail-rgb),0.80);
+    background:rgba(var(--fail-rgb),0.16);
+}
+
+/* ==============================
+   Cards
+   ============================== */
+
+.pq-card{
+    border-radius:var(--radius);
+    border:1px solid var(--border);
+    background:var(--panel);
+    box-shadow:var(--shadow);
+    color:var(--fg);
+    padding:18px;
+}
+
+/* ==============================
+   Form controls
+   ============================== */
+
+.pq-input,
+.pq-select,
+.pq-textarea{
+    display:block;
+    width:100%;
+    padding:10px 12px;
+    border-radius:12px;
+    border:1px solid var(--field-border);
+    background:var(--field-bg);
+    color:var(--field-fg);
+    font:inherit;
+    font-size:14px;
+    line-height:1.4;
+    transition:border-color .15s, box-shadow .15s;
+}
+
+.pq-input::placeholder,
+.pq-textarea::placeholder{
+    color:var(--field-ph);
+}
+
+.pq-input:focus,
+.pq-select:focus,
+.pq-textarea:focus{
+    outline:none;
+    border-color:var(--field-border2);
+    box-shadow:0 0 0 3px var(--field-focus-ring);
+}
+
+.pq-input:disabled,
+.pq-select:disabled,
+.pq-textarea:disabled{
+    opacity:0.45;
+    cursor:default;
+}
+
+.pq-select{
+    appearance:none;
+    cursor:pointer;
+    padding-right:32px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 12px center;
+    background-size:12px 8px;
+}
+
+.pq-textarea{
+    resize:vertical;
+    min-height:80px;
+}
+
+/* ==============================
+   Badge
+   ============================== */
+
+.pq-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+    border:1px solid var(--border2);
+    background:rgba(var(--fg-rgb),0.06);
+    color:var(--fg);
+    white-space:nowrap;
+    line-height:1.3;
+}
+
+.pq-badge.ok{
+    border-color:rgba(var(--fg-rgb),0.30);
+    background:rgba(var(--fg-rgb),0.08);
+}
+
+.pq-badge.warn{
+    border-color:rgba(var(--warn-rgb),0.25);
+    background:rgba(var(--warn-rgb),0.10);
+    color:rgba(var(--warn-rgb),0.92);
+}
+
+.pq-badge.err{
+    border-color:rgba(var(--fail-rgb),0.25);
+    background:rgba(var(--fail-rgb),0.10);
+    color:rgba(var(--fail-rgb),0.92);
+}
+
+.pq-badge.info{
+    border-color:rgba(var(--info-rgb),0.22);
+    background:rgba(var(--info-rgb),0.10);
+    color:rgba(var(--info-rgb),0.92);
+}
+
+/* ==============================
+   Toolbar
+   ============================== */
+
+.pq-toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 14px;
+    border-radius:var(--radius);
+    border:1px solid var(--border2);
+    background:var(--panel);
+    flex-wrap:wrap;
+}
+
+/* ==============================
+   Empty state
+   ============================== */
+
+.pq-empty-state{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+    padding:48px 24px;
+    text-align:center;
+    color:var(--fg-dim);
+    font-size:14px;
+    line-height:1.5;
+}
+
+.pq-empty-state .icon{
+    font-size:40px;
+    opacity:0.45;
+}
+
+.pq-empty-state .title{
+    font-size:17px;
+    font-weight:800;
+    color:var(--fg);
+}
+
+.pq-empty-state .description{
+    max-width:360px;
+    color:var(--fg-dim);
+}
