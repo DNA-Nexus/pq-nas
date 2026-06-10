@@ -135,18 +135,13 @@
             vertical-align: bottom;
         }
 
-        .input, select{
-            border:1px solid rgba(var(--fg-rgb),0.18);
-            background:rgba(0,0,0,0.24);
-            color:rgba(var(--fg-rgb),0.92);
-            padding:10px 12px;
-            border-radius:12px;
-            outline:none;
+        /* Form fields: migrated to .pq-input / .pq-select / .pq-textarea from components.css */
+        .pq-input,
+        .pq-select,
+        .pq-textarea{
+            width: auto;
             min-width: 220px;
-            font-family: var(--sans);
         }
-
-        select{ cursor:pointer; }
 
         /* Native select dropdown contrast override
            Browser/OS select popups vary; keep dark/cpunk option lists dark. */
@@ -174,12 +169,6 @@
             background-color: #4a2208 !important;
             color: #ffffff !important;
             box-shadow: 0 0 0 9999px #4a2208 inset !important;
-        }
-
-
-        .input:focus, select:focus{
-            border-color:rgba(var(--fg-rgb),0.38);
-            box-shadow:0 0 0 3px rgba(var(--fg-rgb),0.08);
         }
 
         .mono{ font-family: var(--mono); }
@@ -776,7 +765,7 @@
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.name">Name</span>
                             <input id="adminCreatePasswordUserName"
-                                   class="input"
+                                   class="pq-input"
                                    type="text"
                                    autocomplete="off"
                                    placeholder="User name"
@@ -786,7 +775,7 @@
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.login">Login / email</span>
                             <input id="adminCreatePasswordUserLogin"
-                                   class="input"
+                                   class="pq-input"
                                    type="email"
                                    autocomplete="off"
                                    placeholder="user@example.com" />
@@ -795,7 +784,7 @@
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.initial_password">Initial password</span>
                             <input id="adminCreatePasswordUserPassword"
-                                   class="input"
+                                   class="pq-input"
                                    type="password"
                                    autocomplete="new-password"
                                    minlength="12" />
@@ -803,7 +792,7 @@
 
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.role">Role</span>
-                            <select id="adminCreatePasswordUserRole" class="input">
+                            <select id="adminCreatePasswordUserRole" class="pq-select">
                                 <option value="user" selected data-i18n="admin.password_user_create.role_user">user</option>
                                 <option value="admin" data-i18n="admin.password_user_create.role_admin">admin</option>
                             </select>
@@ -811,7 +800,7 @@
 
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.status">Status</span>
-                            <select id="adminCreatePasswordUserStatus" class="input">
+                            <select id="adminCreatePasswordUserStatus" class="pq-select">
                                 <option value="disabled" selected data-i18n="admin.password_user_create.status_disabled">disabled — needs approval</option>
                                 <option value="enabled" data-i18n="admin.password_user_create.status_enabled">enabled — can sign in immediately</option>
                                 <option value="pending" data-i18n="admin.password_user_create.status_pending">pending</option>
@@ -821,7 +810,7 @@
                         <label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.quota_bytes">Quota bytes</span>
                             <input id="adminCreatePasswordUserQuota"
-                                   class="input"
+                                   class="pq-input"
                                    type="number"
                                    min="0"
                                    step="1"
@@ -844,7 +833,7 @@
                         </div>
 
                         <textarea id="adminCreatePasswordUserRecovery"
-                                  class="input passwordRecoveryWords"
+                                  class="pq-textarea passwordRecoveryWords"
                                   readonly></textarea>
 
                         <div class="note" style="margin-top:10px;">
@@ -884,7 +873,7 @@
                         <label class="passwordSettingsField">
                             <span class="label" data-i18n="settings.password.login">Login / email</span>
                             <input id="adminPasswordLogin"
-                                   class="input"
+                                   class="pq-input"
                                    type="text"
                                    autocomplete="username"
                                    placeholder="you@example.com" />
@@ -893,7 +882,7 @@
                         <label class="passwordSettingsField">
                             <span class="label" data-i18n="settings.password.current">Current password</span>
                             <input id="adminPasswordCurrent"
-                                   class="input"
+                                   class="pq-input"
                                    type="password"
                                    autocomplete="current-password" />
                         </label>
@@ -901,7 +890,7 @@
                         <label class="passwordSettingsField">
                             <span class="label" data-i18n="settings.password.new">New password</span>
                             <input id="adminPasswordNew"
-                                   class="input"
+                                   class="pq-input"
                                    type="password"
                                    autocomplete="new-password"
                                    minlength="12" />
@@ -910,7 +899,7 @@
                         <label class="passwordSettingsField">
                             <span class="label" data-i18n="settings.password.confirm">Confirm new password</span>
                             <input id="adminPasswordConfirm"
-                                   class="input"
+                                   class="pq-input"
                                    type="password"
                                    autocomplete="new-password"
                                    minlength="12" />
@@ -939,7 +928,7 @@
                         <span class="pill"><span class="k" data-i18n="admin.common.runtime">Runtime:</span> <span class="v mono" id="runtimeVal">—</span></span>
                     </div>
                     <div class="row">
-                        <select id="levelSelect" aria-label="audit minimum level"></select>
+                        <select id="levelSelect" class="pq-select" aria-label="audit minimum level"></select>
                         <button id="btnSave" class="pq-btn primary" type="button"><span data-i18n="admin.common.save">Save</span></button>
                         <button id="btnReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
                     </div>
@@ -975,7 +964,7 @@
                 </div>
                 <div class="bd">
                     <div class="row">
-                        <select id="rotMode" aria-label="Rotation mode">
+                        <select id="rotMode" class="pq-select" aria-label="Rotation mode">
                             <option value="manual" data-i18n="admin.audit.rot.manual">Manual</option>
                             <option value="daily" data-i18n="admin.audit.rot.daily">Daily (UTC)</option>
                             <option value="size_mb" data-i18n="admin.audit.rot.size_mb">When active log exceeds N MB</option>
@@ -983,7 +972,7 @@
                         </select>
 
                         <input id="rotMaxMB"
-                               class="input mono hidden"
+                               class="pq-input mono hidden"
                                style="min-width:180px"
                                type="number"
                                min="1"
@@ -1008,22 +997,22 @@
 
                 <div class="bd">
                     <div class="row">
-                        <select id="retMode" aria-label="Retention mode">
+                        <select id="retMode" class="pq-select" aria-label="Retention mode">
                             <option value="never" data-i18n="admin.audit.ret.never">Never delete automatically</option>
                             <option value="days" data-i18n="admin.audit.ret.days">Keep last N days (rotated files)</option>
                             <option value="files" data-i18n="admin.audit.ret.files">Keep last N rotated files</option>
                             <option value="size_mb" data-i18n="admin.audit.ret.size_mb">Keep up to N MB total (rotated files)</option>
                         </select>
 
-                        <select id="retDays" aria-label="Days to keep" class="hidden">
+                        <select id="retDays" aria-label="Days to keep" class="pq-select hidden">
                             <option value="30">30 days</option>
                             <option value="90">90 days</option>
                             <option value="180">180 days</option>
                             <option value="365">365 days</option>
                         </select>
 
-                        <input id="retMaxFiles" class="input mono hidden" style="min-width:180px" type="number" min="1" max="5000" placeholder="max files (e.g. 50)" data-i18n-placeholder="admin.audit.ret.max_files_placeholder" />
-                        <input id="retMaxMB" class="input mono hidden" style="min-width:180px" type="number" min="1" max="1000000" placeholder="max MB (e.g. 20480)" data-i18n-placeholder="admin.audit.ret.max_mb_placeholder" />
+                        <input id="retMaxFiles" class="pq-input mono hidden" style="min-width:180px" type="number" min="1" max="5000" placeholder="max files (e.g. 50)" data-i18n-placeholder="admin.audit.ret.max_files_placeholder" />
+                        <input id="retMaxMB" class="pq-input mono hidden" style="min-width:180px" type="number" min="1" max="1000000" placeholder="max MB (e.g. 20480)" data-i18n-placeholder="admin.audit.ret.max_mb_placeholder" />
                     </div>
 
                     <div class="row">
@@ -1085,7 +1074,7 @@
                             <input id="snapPerVolume" type="checkbox" />
                         </label>
 
-                        <select id="snapTimesPerDay" aria-label="Snapshots per day">
+                        <select id="snapTimesPerDay" class="pq-select" aria-label="Snapshots per day">
                             <option value="1" data-i18n="admin.snap.per_day" data-i18n-fallback="1 / day">1 / day</option>
                             <option value="2" data-i18n="admin.snap.per_day" data-i18n-fallback="2 / day">2 / day</option>
                             <option value="4" data-i18n="admin.snap.per_day" data-i18n-fallback="4 / day">4 / day</option>
@@ -1094,7 +1083,7 @@
                             <option value="24" data-i18n="admin.snap.per_day" data-i18n-fallback="24 / day">24 / day</option>
                         </select>
 
-                        <input id="snapJitter" class="input mono" style="min-width:180px" type="number" min="0" max="3600"
+                        <input id="snapJitter" class="pq-input mono" style="min-width:180px" type="number" min="0" max="3600"
                                placeholder="jitter seconds (0..3600)" data-i18n-placeholder="admin.snap.jitter_placeholder" />
 
                         <button id="btnSnapSave" class="pq-btn primary" type="button"><span data-i18n="admin.snap.save">Save snapshots</span></button>
@@ -1102,7 +1091,7 @@
                     </div>
 
                     <div class="row">
-                        <input id="snapRoot" class="input mono" style="min-width:520px; flex: 1 1 auto;" type="text"
+                        <input id="snapRoot" class="pq-input mono" style="min-width:520px; flex: 1 1 auto;" type="text"
                                placeholder="/srv/pqnas/.snapshots/data" />
                     </div>
 
@@ -1222,7 +1211,7 @@
                             <input id="tieringEnabled" type="checkbox" />
                         </label>
 
-                        <select id="tieringLandingPool" aria-label="Landing pool" style="min-width:320px;">
+                        <select id="tieringLandingPool" class="pq-select" aria-label="Landing pool" style="min-width:320px;">
                             <option value="" data-i18n="admin.uploads.no_pools">(no pools)</option>
                         </select>
 
@@ -1234,7 +1223,7 @@
                         <label class="tierField">
                             <span class="tierFieldLabel" data-i18n="admin.uploads.worker_interval">Worker interval (sec)</span>
                             <input id="tieringIntervalSec"
-                                   class="input mono"
+                                   class="pq-input mono"
                                    type="number"
                                    min="5"
                                    max="3600"
@@ -1244,7 +1233,7 @@
                         <label class="tierField">
                             <span class="tierFieldLabel" data-i18n="admin.uploads.min_age">Minimum landing age (sec)</span>
                             <input id="tieringMinAgeSec"
-                                   class="input mono"
+                                   class="pq-input mono"
                                    type="number"
                                    min="0"
                                    max="86400"
@@ -1254,7 +1243,7 @@
                         <label class="tierField">
                             <span class="tierFieldLabel" data-i18n="admin.uploads.max_pass">Max files per pass</span>
                             <input id="tieringMaxPass"
-                                   class="input mono"
+                                   class="pq-input mono"
                                    type="number"
                                    min="1"
                                    max="1000"
@@ -1357,7 +1346,7 @@
                             <input id="dnaAlertsEnabled" type="checkbox" />
                         </label>
 
-                        <select id="dnaAlertsMinLevel" aria-label="DNA alert minimum level">
+                        <select id="dnaAlertsMinLevel" class="pq-select" aria-label="DNA alert minimum level">
                             <option value="security" data-i18n="admin.dna.security">Security</option>
                             <option value="error" data-i18n="admin.dna.error">Error</option>
                             <option value="warning" data-i18n="admin.dna.warning">Warning</option>
@@ -1382,13 +1371,13 @@
 
                     <div class="row">
                         <input id="dnaAlertsRecipient"
-                               class="input mono"
+                               class="pq-input mono"
                                style="min-width:320px; flex:1 1 260px;"
                                type="text"
                                placeholder="recipient name or fingerprint" data-i18n-placeholder="admin.dna.recipient_placeholder" />
 
                         <input id="dnaAlertsCliPath"
-                               class="input mono"
+                               class="pq-input mono"
                                style="min-width:320px; flex:1 1 260px;"
                                type="text"
                                placeholder="/usr/local/bin/dna-connect-cli" data-i18n-placeholder="admin.dna.cli_placeholder" />
@@ -1396,7 +1385,7 @@
 
                     <div class="row">
                         <input id="dnaAlertsDataDir"
-                               class="input mono"
+                               class="pq-input mono"
                                style="min-width:520px; flex:1 1 auto;"
                                type="text"
                                placeholder="/var/lib/pqnas/dna-alerts" data-i18n-placeholder="admin.dna.data_dir_placeholder" />
@@ -1471,7 +1460,7 @@
 
                 <div class="bd">
                     <div class="row">
-                        <select id="themeSelect" aria-label="UI theme">
+                        <select id="themeSelect" class="pq-select" aria-label="UI theme">
                             <option value="dark" data-i18n="admin.theme.dark">Dark (default)</option>
                             <option value="bright" data-i18n="admin.theme.bright">Bright</option>
                             <option value="cpunk_orange" data-i18n="admin.theme.cpunk">CPUNK Orange</option>
