@@ -256,7 +256,7 @@ function renderTable() {
         tr.innerHTML = `
       <td class="col-idx mono" title="${escapeHtml(idxText)}">${escapeHtml(idxText)}</td>
       <td class="col-ts mono" title="${escapeHtml(ts)}">${escapeHtml(ts)}</td>
-      <td class="col-status"><span class="statusPill ${statusClass(st)}">${statusLabel(st)}</span></td>
+      <td class="col-status"><span class="pq-badge ${statusClass(st)}">${statusLabel(st)}</span></td>
       <td class="col-event" title="${escapeHtml(ev)}">${escapeHtml(ev)}</td>
       <td class="col-fp mono" title="${escapeHtml(fp)}">${escapeHtml(fp)}</td>
       <td class="col-sid mono" title="${escapeHtml(sid)}">${escapeHtml(sid)}</td>
@@ -290,7 +290,7 @@ function buildDetailRow(e, k) {
         <button class="pq-btn" data-act="copy" type="button">${escapeHtml(tr("admin.audit_ui.copy_json", null, "Copy JSON"))}</button>
         <button class="pq-btn" data-act="collapse" type="button">${escapeHtml(tr("admin.audit_ui.collapse", null, "Collapse"))}</button>
         <div class="small">${escapeHtml(tr("admin.audit_ui.row_key", null, "Row key"))}:</div>
-        <div class="pill"><span class="v mono" style="max-width:170px; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(k)}</span></div>
+        <div class="pq-badge"><span class="v mono" style="max-width:170px; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(k)}</span></div>
       </div>
     </div>
   `;
@@ -854,7 +854,7 @@ async function doRotateAudit() {
     rotateBtn.disabled = true;
     if (rotatePill) {
         rotatePill.style.display = "inline-flex";
-        rotatePill.className = "pill info";
+        rotatePill.className = "pq-badge info";
         rotatePill.querySelector(".v").textContent = tr("admin.audit_ui.rotating", null, "rotating…");
     }
 
@@ -864,7 +864,7 @@ async function doRotateAudit() {
         if (!j.ok) throw new Error(j.error || tr("admin.audit_ui.rotate_failed", null, "rotate failed"));
 
         if (rotatePill) {
-            rotatePill.className = "pill ok";
+            rotatePill.className = "pq-badge ok";
             rotatePill.querySelector(".v").textContent = tr("admin.audit_ui.ok", null, "OK");
             rotatePill.title = j.rotated_jsonl_path || tr("admin.audit_ui.ok", null, "OK");
         }
@@ -874,7 +874,7 @@ async function doRotateAudit() {
         await verifyChain();
     } catch (e) {
         if (rotatePill) {
-            rotatePill.className = "pill fail";
+            rotatePill.className = "pq-badge fail";
             rotatePill.querySelector(".v").textContent = tr("admin.audit_ui.error", null, "ERROR");
             rotatePill.title = String(e);
         }
