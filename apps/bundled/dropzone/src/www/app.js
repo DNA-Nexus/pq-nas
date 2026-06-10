@@ -183,7 +183,7 @@
   }
 
   function allBrandTemplates() {
-    const builtins = BUILTIN_BRAND_TEMPLATES.map((t) => ({ ...t, builtin: true }));
+    const builtins = BUILTIN_BRAND_TEMPLATES.map(localizedBuiltinBrandTemplate);
     const custom = loadCustomBrandTemplates().map((t) => ({ ...t, builtin: false }));
     return { builtins, custom, all: [...builtins, ...custom] };
   }
@@ -216,8 +216,8 @@
       brandTemplateSelect.appendChild(group);
     };
 
-    addGroup("Built-in", builtins);
-    addGroup("Saved", custom);
+    addGroup(tr("dropzone.template.group.builtin", null, "Built-in"), builtins);
+    addGroup(tr("dropzone.template.group.saved", null, "Saved"), custom);
 
     if (selectedId) {
       brandTemplateSelect.value = selectedId;
@@ -253,7 +253,10 @@
         branding.title ||
         "Branded upload page";
 
-    const name = dzString(window.prompt("Template name", currentCustom ? currentCustom.name : fallbackName));
+    const name = dzString(window.prompt(
+      tr("dropzone.template.prompt_name", null, "Template name"),
+      currentCustom ? currentCustom.name : fallbackName
+    ));
     if (!name) return;
 
     const custom = loadCustomBrandTemplates();
@@ -269,7 +272,7 @@
     });
 
     if (!saveCustomBrandTemplates(next)) {
-      window.alert("Could not save template. Browser storage may be full or disabled.");
+      window.alert(tr("dropzone.template.save_failed", null, "Could not save template. Browser storage may be full or disabled."));
       return;
     }
 
@@ -281,11 +284,11 @@
     if (!t) return;
 
     if (t.builtin) {
-      window.alert("Built-in templates cannot be deleted.");
+      window.alert(tr("dropzone.template.builtin_delete_denied", null, "Built-in templates cannot be deleted."));
       return;
     }
 
-    const ok = window.confirm(`Delete template "${t.name}"?`);
+    const ok = window.confirm(tr("dropzone.template.delete_confirm", { name: t.name }, `Delete template "${t.name}"?`));
     if (!ok) return;
 
     const next = loadCustomBrandTemplates().filter((row) => row.id !== t.id);
@@ -349,6 +352,67 @@
       }
     } catch (_) {}
     return fallback || key;
+  }
+
+  const DEFAULT_BRAND_TEXT_KEYS = {
+    "Send files securely": "dropzone.default_brand.title",
+    "Upload files directly to our secure DNA-Nexus server.": "dropzone.default_brand.description",
+    "Upload files": "dropzone.default_brand.button_text",
+    "Secured by DNA-Nexus": "dropzone.default_brand.footer_text",
+
+    "Send documents securely": "dropzone.template.secure_documents.title",
+    "Upload contracts, forms and other documents directly to our secure DNA-Nexus server.": "dropzone.template.secure_documents.description",
+    "Upload documents": "dropzone.template.secure_documents.button_text",
+
+    "Send receipts and payroll files": "dropzone.template.accounting_receipts.title",
+    "Upload receipts, invoices, payroll material and accounting documents securely.": "dropzone.template.accounting_receipts.description",
+    "Upload accounting files": "dropzone.template.accounting_receipts.button_text",
+
+    "Send photos and videos": "dropzone.template.media_delivery.title",
+    "Upload large media files directly to our secure storage. No email attachment limits.": "dropzone.template.media_delivery.description",
+    "Upload media files": "dropzone.template.media_delivery.button_text",
+
+    "Send support files": "dropzone.template.support_logs.title",
+    "Upload logs, screenshots and diagnostic files so our support team can help you faster.": "dropzone.template.support_logs.description",
+    "Upload support files": "dropzone.template.support_logs.button_text",
+
+    "Send your application securely": "dropzone.template.job_applications.title",
+    "Upload your CV, application letter and attachments through this secure upload page.": "dropzone.template.job_applications.description",
+    "Upload application": "dropzone.template.job_applications.button_text",
+
+    "Secure file intake powered by DNA-Nexus": "dropzone.template.accounting_receipts.footer_text",
+    "Large file delivery secured by DNA-Nexus": "dropzone.template.media_delivery.footer_text",
+    "Support file upload secured by DNA-Nexus": "dropzone.template.support_logs.footer_text",
+    "Recruitment file intake secured by DNA-Nexus": "dropzone.template.job_applications.footer_text"
+  };
+
+  function trKnownBrandText(value) {
+    const raw = String(value == null ? "" : value);
+    const key = DEFAULT_BRAND_TEXT_KEYS[raw];
+    return key ? tr(key, null, raw) : raw;
+  }
+
+  function localizedBuiltinBrandTemplate(row) {
+    const t = row && typeof row === "object" ? row : {};
+    const b = t.branding && typeof t.branding === "object" ? t.branding : {};
+    const id = String(t.id || "");
+
+    const keyBase = id.startsWith("builtin_")
+      ? "dropzone.template." + id.slice("builtin_".length)
+      : "";
+
+    return {
+      ...t,
+      name: keyBase ? tr(keyBase + ".name", null, t.name || "") : (t.name || ""),
+      branding: {
+        ...b,
+        title: trKnownBrandText(b.title),
+        description: trKnownBrandText(b.description),
+        button_text: trKnownBrandText(b.button_text),
+        footer_text: trKnownBrandText(b.footer_text)
+      },
+      builtin: true
+    };
   }
 
   function ensureDropZoneConfirmCss() {
@@ -728,8 +792,9 @@
     if (win) {
       try { win.opener = null; } catch (_) {}
       try {
-        win.document.title = "Opening File Manager…";
-        win.document.body.innerHTML = "<p style='font-family:sans-serif;padding:16px'>Opening File Manager…</p>";
+        const opening = tr("dropzone.opening_file_manager", null, "Opening File Manager…");
+        win.document.title = opening;
+        win.document.body.innerHTML = `<p style="font-family:sans-serif;padding:16px">${escapeHtml(opening)}</p>`;
       } catch (_) {}
     }
 
@@ -800,12 +865,12 @@
     if (brandLogoUrlInput) brandLogoUrlInput.value = "";
     clearBrandLogoPreviewStatus();
     updateBrandLogoPreview();
-    if (brandTitleInput) brandTitleInput.value = "Send files securely";
-    if (brandDescriptionInput) brandDescriptionInput.value = "Upload files directly to our secure DNA-Nexus server.";
+    if (brandTitleInput) brandTitleInput.value = tr("dropzone.default_brand.title", null, "Send files securely");
+    if (brandDescriptionInput) brandDescriptionInput.value = tr("dropzone.default_brand.description", null, "Upload files directly to our secure DNA-Nexus server.");
     if (brandPrimaryColorInput) brandPrimaryColorInput.value = "#ff9f1c";
     if (brandBackgroundColorInput) brandBackgroundColorInput.value = "#080a0f";
-    if (brandButtonTextInput) brandButtonTextInput.value = "Upload files";
-    if (brandFooterTextInput) brandFooterTextInput.value = "Secured by DNA-Nexus";
+    if (brandButtonTextInput) brandButtonTextInput.value = tr("dropzone.default_brand.button_text", null, "Upload files");
+    if (brandFooterTextInput) brandFooterTextInput.value = tr("dropzone.default_brand.footer_text", null, "Secured by DNA-Nexus");
 
     refreshBrandTemplateSelect();
 
@@ -1058,7 +1123,7 @@
       const maxTotal = fmtBytes(z.max_total_bytes || 0);
       const branding = z.branding && typeof z.branding === "object" ? z.branding : {};
       const branded = Object.keys(branding).length > 0;
-      const brandName = branding.company_name || branding.title || "";
+      const brandName = branding.company_name || trKnownBrandText(branding.title) || "";
       const status = dropZoneStatus(z);
       const publicUrl = dropZonePublicUrl(z);
 
@@ -1158,7 +1223,12 @@
         return acc;
       }, { active: 0, expired: 0, disabled: 0 });
 
-      setStatus(`${zones.length} Drop Zone${zones.length === 1 ? "" : "s"} · ${counts.active || 0} active · ${counts.expired || 0} expired · ${counts.disabled || 0} disabled`);
+      setStatus(tr("dropzone.status_summary", {
+        total: zones.length,
+        active: counts.active || 0,
+        expired: counts.expired || 0,
+        disabled: counts.disabled || 0
+      }, `${zones.length} Drop Zone${zones.length === 1 ? "" : "s"} · ${counts.active || 0} active · ${counts.expired || 0} expired · ${counts.disabled || 0} disabled`));
       renderZones(zones);
     } catch (e) {
       if (refreshSeq !== dropZoneListRefreshSeq) {
@@ -1540,7 +1610,7 @@
 
     const branding = collectCreateBrandingPreviewPayload();
     const enabled = !!(brandEnabledInput && brandEnabledInput.checked);
-    const fallbackName = formStringValue(zoneNameInput) || "Drop Zone";
+    const fallbackName = formStringValue(zoneNameInput) || tr("dropzone.default_name", null, "Drop Zone");
 
     renderCreateBrandPreviewCard(preview, branding, enabled, fallbackName);
   }
@@ -1734,7 +1804,7 @@
         })
       });
 
-      setStatus(`Drop Zone renewed for ${safeDays} day${safeDays === 1 ? "" : "s"}.`);
+      setStatus(tr("dropzone.renewed_status", { days: safeDays }, `Drop Zone renewed for ${safeDays} day${safeDays === 1 ? "" : "s"}.`));
       await loadZones();
     } catch (e) {
       setStatus(tr("dropzone.renew_failed", { error: String(e && e.message ? e.message : e) }, `Could not renew Drop Zone: ${e && e.message ? e.message : e}`));
