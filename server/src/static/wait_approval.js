@@ -151,24 +151,9 @@
     text-overflow: ellipsis;
 }
 
-    .pill{
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    border:1px solid rgba(var(--fg-rgb),0.16);
-    background:rgba(0,0,0,0.22);
-    padding:6px 10px;
-    border-radius:999px;
-    font-size:12px;
-    color: rgba(var(--fg-rgb),0.70);
-    white-space:nowrap;
-    max-width: 100%;
-}
-    .pill .k{ color: rgba(var(--fg-rgb),0.62); }
-    .pill .v{ color: rgba(var(--fg-rgb),0.92); font-weight: 900; }
-    .pill.ok{ border-color: rgba(var(--fg-rgb),0.38); background: rgba(var(--fg-rgb),0.08); }
-    .pill.warn{ border-color: rgba(var(--warn-rgb),0.38); background: rgba(var(--warn-rgb),0.10); color: rgba(var(--warn-rgb),0.92); }
-    .pill.fail{ border-color: rgba(var(--fail-rgb),0.42); background: rgba(var(--fail-rgb),0.10); color: rgba(var(--fail-rgb),0.92); }
+    /* pill children – layered on shared .pq-badge */
+    .pq-badge .k{ color: rgba(var(--fg-rgb),0.62); }
+    .pq-badge .v{ color: rgba(var(--fg-rgb),0.92); font-weight: 900; }
 
     .content{
     padding: 14px;
@@ -257,6 +242,7 @@
 </style>
 
 <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/components.css?v=20260610-components-v1">
     <script src="/static/theme.js"></script>
 </head>
 
@@ -275,7 +261,7 @@
             <div class="statusCard">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
                     <div style="font-weight:950;">Approval status</div>
-                    <span id="statusPill" class="pill warn"><span class="k">State:</span> <span class="v">checking…</span></span>
+                    <span id="statusPill" class="pq-badge warn"><span class="k">State:</span> <span class="v">checking…</span></span>
                 </div>
                 <div class="mini" id="statusText">Checking /api/v5/status…</div>
             </div>
@@ -294,14 +280,14 @@
                 <div class="title">PQ-NAS • Waiting for admin approval</div>
                 <div class="sub">Your DNA identity was received. An admin must enable you.</div>
             </div>
-            <span class="pill warn"><span class="k">Next:</span> <span class="v">/admin/users</span></span>
+            <span class="pq-badge warn"><span class="k">Next:</span> <span class="v">/admin/users</span></span>
         </div>
 
         <div class="content">
             <section class="card">
                 <div class="hd">
                     <div class="h">What this means</div>
-                    <span class="pill warn" id="mainPill"><span class="k">Access:</span> <span class="v">pending</span></span>
+                    <span class="pq-badge warn" id="mainPill"><span class="k">Access:</span> <span class="v">pending</span></span>
                 </div>
                 <div class="bd">
                     <p class="hint">
@@ -344,7 +330,8 @@
 
     function setPill(pill, kind, text) {
     if (!pill) return;
-    pill.className = "pill " + (kind || "");
+    var cls = kind === "fail" ? "err" : (kind || "");
+    pill.className = "pq-badge " + cls;
     const v = pill.querySelector(".v");
     if (v) v.textContent = text;
 }
