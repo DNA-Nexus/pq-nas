@@ -218,7 +218,7 @@ button:disabled {
 .dzModalBackdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,.62);
+  background: var(--overlay-bg, rgba(0,0,0,.62));
   backdrop-filter: blur(8px);
 }
 
@@ -231,7 +231,7 @@ button:disabled {
   border-radius: 24px;
   background: var(--dz-modal-bg);
   color: var(--dz-text);
-  box-shadow: 0 26px 90px rgba(0,0,0,.45);
+  box-shadow: var(--elevated-shadow, 0 26px 90px rgba(0,0,0,.45));
   padding: 22px;
 }
 
@@ -280,16 +280,24 @@ button:disabled {
 .dzForm input,
 .dzForm select {
   width: 100%;
-  border: 1px solid var(--dz-line);
+  border: 1px solid var(--dz-field-border);
   border-radius: 14px;
   background: var(--dz-field-bg);
   color: var(--dz-field-text);
   padding: 11px 12px;
   font: inherit;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 .dzForm input::placeholder {
   color: var(--dz-field-placeholder);
+}
+
+.dzForm input:focus,
+.dzForm select:focus {
+  outline: none;
+  border-color: var(--dz-field-focus);
+  box-shadow: 0 0 0 3px var(--field-focus-ring, rgba(0,240,248,.14));
 }
 
 .dzGrid2 {
@@ -567,18 +575,19 @@ button:disabled {
 
 .dzSearchInput {
   width: 100%;
-  border: 1px solid rgba(255,255,255,.16);
+  border: 1px solid var(--dz-field-border);
   border-radius: 14px;
-  background: rgba(255,255,255,.055);
-  color: var(--dz-text);
+  background: var(--dz-field-bg);
+  color: var(--dz-field-text);
   padding: 11px 13px;
   font: inherit;
   outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 .dzSearchInput:focus {
-  border-color: rgba(255,159,28,.55);
-  box-shadow: 0 0 0 3px rgba(255,159,28,.12);
+  border-color: var(--dz-field-focus);
+  box-shadow: 0 0 0 3px var(--field-focus-ring, rgba(0,240,248,.14));
 }
 
 .dzFilterChips {
@@ -589,9 +598,9 @@ button:disabled {
 }
 
 .dzFilterChip {
-  border: 1px solid rgba(255,255,255,.14);
+  border: 1px solid var(--dz-line2);
   border-radius: 999px;
-  background: rgba(255,255,255,.06);
+  background: var(--dz-soft-bg);
   color: var(--dz-muted);
   padding: 8px 10px;
   font-weight: 800;
@@ -911,7 +920,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: rgba(0,0,0,.56);
+  background: var(--overlay-bg, rgba(0,0,0,.56));
   backdrop-filter: blur(8px);
 }
 
@@ -923,9 +932,9 @@ button:disabled {
   overflow: hidden;
   border: 1px solid rgba(255,159,28,.28);
   border-radius: 24px;
-  background: rgba(19,22,32,.98);
+  background: var(--elevated-bg2, rgba(19,22,32,.98));
   color: var(--dz-text);
-  box-shadow: 0 28px 90px rgba(0,0,0,.58);
+  box-shadow: var(--elevated-shadow, 0 28px 90px rgba(0,0,0,.58));
 }
 
 .dzEditModalHead {
@@ -987,13 +996,14 @@ button:disabled {
 .dzEditInput {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(255,255,255,.16);
+  border: 1px solid var(--dz-field-border);
   border-radius: 14px;
-  background: rgba(255,255,255,.055);
-  color: var(--dz-text);
+  background: var(--dz-field-bg);
+  color: var(--dz-field-text);
   padding: 10px 12px;
   font: inherit;
   outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 textarea.dzEditInput {
@@ -1002,8 +1012,8 @@ textarea.dzEditInput {
 }
 
 .dzEditInput:focus {
-  border-color: rgba(255,159,28,.55);
-  box-shadow: 0 0 0 3px rgba(255,159,28,.12);
+  border-color: var(--dz-field-focus);
+  box-shadow: 0 0 0 3px var(--field-focus-ring, rgba(0,240,248,.14));
 }
 
 .dzEditToggle {
