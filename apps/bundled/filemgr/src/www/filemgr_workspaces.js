@@ -1987,6 +1987,12 @@
         if (workspaceMembersStatus) {
             workspaceMembersStatus.textContent = tr("filemgr.ws.loading_members", null, "Loading members…");
         }
+        // Rebuild these panels on each open so dynamically created text follows
+        // the current UI language instead of keeping the language from the first
+        // time the modal was opened.
+        document.getElementById("sharedSpaceInvitePanel")?.remove();
+        document.getElementById("sharedSpaceExternalAccessPanel")?.remove();
+
         ensureSharedSpaceInvitePanel();
         ensureExternalWorkspaceAccessPanel();
         scheduleExternalInviteBallButtonRemoval();
