@@ -12,6 +12,8 @@ struct PasswordCredentialRec {
     std::string fingerprint;    // internal PQ-NAS fingerprint hex
     std::string password_hash;  // libsodium crypto_pwhash string
     bool enabled = true;
+    bool temporary = false;       // true for generated external workspace invite credentials
+    long expires_at_epoch = 0;    // 0 = no credential-level expiry
     std::string created_at;
     std::string updated_at;
 };
@@ -24,6 +26,7 @@ public:
 
     std::optional<PasswordCredentialRec> get(const std::string& normalized_login) const;
     bool upsert(const PasswordCredentialRec& rec);
+    bool erase(const std::string& normalized_login);
 
     bool verify_password(const std::string& normalized_login,
                          const std::string& password,

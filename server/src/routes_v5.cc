@@ -1094,6 +1094,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
+        if (rec.temporary && rec.expires_at_epoch > 0 && now > rec.expires_at_epoch) {
+            routes_v5_audit_password(ctx, req, "password.login", "deny", login, rec.fingerprint, "temporary_credential_expired");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
         const auto user_opt = ctx.users->get(rec.fingerprint);
         if (!user_opt.has_value() || user_opt->status != "enabled") {
             routes_v5_audit_password(ctx, req, "password.login", "deny", login, rec.fingerprint, "user_disabled_or_missing");
@@ -1101,7 +1108,6 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
         const long sess_exp = now + (ctx.sess_ttl ? *ctx.sess_ttl : 3600);
 
         const std::string fp_b64 = routes_v5_b64std_from_string(rec.fingerprint);

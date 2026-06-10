@@ -1,45 +1,48 @@
 (function () {
     "use strict";
 
-    function escapeHtml(s) {
-        return String(s == null ? "" : s)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#39;");
-    }
-
     function fileExtLower(name) {
-        const base = String(name || "").split("/").pop().split("?")[0].split("#")[0];
-        const i = base.lastIndexOf(".");
-        if (i < 0 || i === base.length - 1) return "";
-        return base.slice(i + 1).toLowerCase();
+        const n = String(name || "").toLowerCase().trim();
+        const slash = Math.max(n.lastIndexOf("/"), n.lastIndexOf("\\"));
+        const base = slash >= 0 ? n.slice(slash + 1) : n;
+
+        if (base.startsWith(".") && base.indexOf(".", 1) === -1) return "";
+
+        if (base.endsWith(".tar.gz")) return "gz";
+        if (base.endsWith(".tar.bz2")) return "bz2";
+        if (base.endsWith(".tar.xz")) return "xz";
+
+        const dot = base.lastIndexOf(".");
+        if (dot <= 0 || dot === base.length - 1) return "";
+        return base.slice(dot + 1);
     }
 
     function normalizeIconExt(ext) {
         const e = String(ext || "").toLowerCase();
-        const aliases = {
+
+        const alias = {
             jpeg: "jpg",
-            jpe: "jpg",
             htm: "html",
-            xhtml: "html",
+            yml: "yaml",
+            cxx: "cpp",
+            hh: "hpp",
+            hxx: "hpp",
             markdown: "md",
             text: "txt",
-            yml: "yaml",
-            tgz: "gz",
-            cxx: "cpp",
-            cc: "cpp",
-            hpp: "h",
-            hxx: "h",
-            m4v: "mp4",
-            tif: "tiff"
+            cfg: "conf"
         };
-        return aliases[e] || e;
+
+        return alias[e] || e;
+    }
+
+    function iconMap() {
+        return (window.PQNAS_FILE_ICONS && typeof window.PQNAS_FILE_ICONS === "object")
+            ? window.PQNAS_FILE_ICONS
+            : {};
     }
 
     function iconMarkupFor(name, isDir) {
-        const icons = window.PQNAS_FILE_ICONS || {};
+        const icons = iconMap();
 
         if (isDir) {
             return icons.folder || icons.directory || icons.default || "";
@@ -49,48 +52,99 @@
         if (ext && icons[ext]) return icons[ext];
 
         const genericMap = {
-            zip: "generic_archive", "7z": "generic_archive", rar: "generic_archive",
-            tar: "generic_archive", gz: "generic_archive", bz2: "generic_archive",
-            xz: "generic_archive", deb: "generic_archive", rpm: "generic_archive",
-            dmg: "generic_archive", apk: "generic_archive",
+            mp4: "generic_video",
+            mov: "generic_video",
+            mkv: "generic_video",
+            avi: "generic_video",
+            webm: "generic_video",
 
-            mp3: "generic_audio", wav: "generic_audio", ogg: "generic_audio",
-            flac: "generic_audio", m4a: "generic_audio", aac: "generic_audio",
+            mp3: "generic_audio",
+            wav: "generic_audio",
+            flac: "generic_audio",
+            ogg: "generic_audio",
+            m4a: "generic_audio",
+            aac: "generic_audio",
 
-            mp4: "generic_video", mov: "generic_video", mkv: "generic_video",
-            avi: "generic_video", webm: "generic_video",
+            js: "generic_code",
+            jsx: "generic_code",
+            ts: "generic_code",
+            tsx: "generic_code",
+            py: "generic_code",
+            c: "generic_code",
+            cc: "generic_code",
+            cpp: "generic_code",
+            cxx: "generic_code",
+            h: "generic_code",
+            hh: "generic_code",
+            hpp: "generic_code",
+            hxx: "generic_code",
+            java: "generic_code",
+            php: "generic_code",
+            go: "generic_code",
+            rs: "generic_code",
+            rb: "generic_code",
+            lua: "generic_code",
+            swift: "generic_code",
+            kt: "generic_code",
+            sh: "generic_code",
+            bash: "generic_code",
+            ps1: "generic_code",
+            zsh: "generic_code",
+            css: "generic_code",
+            html: "generic_code",
+            htm: "generic_code",
+            json: "generic_code",
+            xml: "generic_code",
+            yaml: "generic_code",
+            yml: "generic_code",
+            toml: "generic_code",
+            sql: "generic_code",
 
-            png: "generic_image", jpg: "generic_image", gif: "generic_image",
-            bmp: "generic_image", svg: "generic_image", webp: "generic_image",
-            tiff: "generic_image", ico: "generic_image", heic: "generic_image",
+            zip: "generic_archive",
+            rar: "generic_archive",
+            gz: "generic_archive",
+            bz2: "generic_archive",
+            xz: "generic_archive",
+            tgz: "generic_archive",
+            tar: "generic_archive",
+            "7z": "generic_archive",
 
-            xls: "generic_spreadsheet", xlsx: "generic_spreadsheet",
-            csv: "generic_spreadsheet", ods: "generic_spreadsheet",
+            png: "generic_image",
+            jpg: "generic_image",
+            jpeg: "generic_image",
+            gif: "generic_image",
+            bmp: "generic_image",
+            tiff: "generic_image",
+            webp: "generic_image",
+            heic: "generic_image",
+            svg: "generic_image",
+            ico: "generic_image",
 
-            ppt: "generic_presentation", pptx: "generic_presentation",
-            odp: "generic_presentation", key: "generic_presentation",
+            pdf: "generic_document",
+            txt: "generic_document",
+            md: "generic_document",
+            doc: "generic_document",
+            docx: "generic_document",
+            odt: "generic_document",
+            rtf: "generic_document",
 
-            doc: "generic_document", docx: "generic_document", pdf: "generic_document",
-            txt: "generic_document", md: "generic_document", rtf: "generic_document",
-            odt: "generic_document", ini: "generic_document", cfg: "generic_document",
-            conf: "generic_document", log: "generic_document",
+            xls: "generic_spreadsheet",
+            xlsx: "generic_spreadsheet",
+            csv: "generic_spreadsheet",
+            tsv: "generic_spreadsheet",
+            ods: "generic_spreadsheet",
 
-            db: "generic_database", sqlite: "generic_database", sql: "generic_database",
+            ppt: "generic_presentation",
+            pptx: "generic_presentation",
+            odp: "generic_presentation",
 
-            c: "generic_code", cpp: "generic_code", h: "generic_code",
-            java: "generic_code", kt: "generic_code", ts: "generic_code",
-            tsx: "generic_code", js: "generic_code", jsx: "generic_code",
-            json: "generic_code", html: "generic_code", css: "generic_code",
-            scss: "generic_code", php: "generic_code", py: "generic_code",
-            rb: "generic_code", rs: "generic_code", go: "generic_code",
-            sh: "generic_code", bash: "generic_code", zsh: "generic_code",
-            lua: "generic_code", swift: "generic_code", xml: "generic_code",
-            yaml: "generic_code", toml: "generic_code", so: "generic_code",
-            dll: "generic_code", exe: "generic_code"
+            db: "generic_database",
+            sqlite: "generic_database"
         };
 
-        const generic = ext ? genericMap[ext] : "";
-        if (generic && icons[generic]) return icons[generic];
+        if (ext && genericMap[ext] && icons[genericMap[ext]]) {
+            return icons[genericMap[ext]];
+        }
 
         return icons.default || "";
     }

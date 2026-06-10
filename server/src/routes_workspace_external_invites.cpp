@@ -1,10 +1,16 @@
 #include "routes_workspace_external_invites.h"
 
+#include "dna_identity_generator.h"
+#include "password_credentials.h"
 #include "workspace_access_shared.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <filesystem>
+#include <exception>
 #include <limits>
+#include <map>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -554,6 +560,54 @@ bool actor_is_enabled_workspace_owner(const WorkspaceRec& w, const std::string& 
     return mopt->role == "owner";
 }
 
+std::string lower_ascii_copy_local(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return s;
+}
+
+bool workspace_external_password_auth_enabled_local() {
+    const char* login_raw = std::getenv("PQNAS_LOGIN_MODE");
+    const std::string login_mode =
+        lower_ascii_copy_local(trim_copy_safe(login_raw ? login_raw : ""));
+
+    if (login_mode == "password") return true;
+    if (login_mode == "qr") return false;
+
+    const char* auth_raw = std::getenv("PQNAS_AUTH_MODE");
+    const std::string auth_mode =
+        lower_ascii_copy_local(trim_copy_safe(auth_raw ? auth_raw : ""));
+
+    return auth_mode == "password";
+}
+
+std::string workspace_external_password_credentials_path_local(
+    const WorkspaceExternalInviteRouteDeps& deps) {
+    const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
+    const std::string env_path = trim_copy_safe(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    if (!deps.users_path.empty()) {
+        std::filesystem::path p(deps.users_path);
+        return (p.parent_path() / "password_credentials.json").string();
+    }
+
+    return "/var/lib/pqnas/password_credentials.json";
+}
+
+void clear_string_best_effort_local(std::string& s) {
+    std::fill(s.begin(), s.end(), '\0');
+    s.clear();
+}
+
+std::string make_external_workspace_temp_login_local(
+    const WorkspaceExternalInviteRouteDeps& deps) {
+    if (!deps.random_b64url) return {};
+    return pqnas::PasswordCredentials::normalize_login(
+        std::string("external-") + deps.random_b64url(14));
+}
+
 long json_long_default(const json& j, const char* key, long defv) {
     auto it = j.find(key);
     if (it == j.end()) return defv;
@@ -1049,14 +1103,33 @@ void register_workspace_external_invite_routes(
 
         if (!require_same_origin_for_cookie_mutation_local(req, res, deps)) return;
 
-        if (!deps.reply_json || !deps.workspaces || !deps.external_invites ||
-            !deps.origin || !deps.app ||
-            !deps.random_b64url || !deps.build_req_payload_canonical ||
-            !deps.sign_req_token || !deps.st_hash_b64_from_st) {
+        const bool password_mode = workspace_external_password_auth_enabled_local();
+
+        if (!deps.reply_json) {
+            res.status = 500;
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            res.set_header("Cache-Control", "no-store");
+            res.body = R"({"ok":false,"error":"server_error","message":"reply_json not configured"})";
+            return;
+        }
+
+        if (!deps.workspaces || !deps.origin || !deps.random_b64url || !deps.now_epoch_sec) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
                 {"error", "server_error"},
                 {"message", "external invite routes not fully configured"}
+            }.dump());
+            return;
+        }
+
+        if (!password_mode &&
+            (!deps.external_invites || !deps.app ||
+             !deps.build_req_payload_canonical ||
+             !deps.sign_req_token || !deps.st_hash_b64_from_st)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "external invite QR routes not fully configured"}
             }.dump());
             return;
         }
@@ -1090,10 +1163,11 @@ void register_workspace_external_invite_routes(
         if (ttl > 7 * 24 * 3600) ttl = 7 * 24 * 3600;
 
         if (!reload_workspaces_or_500(deps, res)) return;
-        if (!reload_invites_or_500(deps, res)) return;
+        if (!password_mode && !reload_invites_or_500(deps, res)) return;
 
-        const long now = deps.now_epoch_sec ? static_cast<long>(deps.now_epoch_sec()) : 0L;
-        if (!expire_pending_invites_if_needed(deps, res, now)) return;
+        const long now = static_cast<long>(deps.now_epoch_sec());
+        const long invite_expires_at = now + ttl;
+        if (!password_mode && !expire_pending_invites_if_needed(deps, res, now)) return;
 
         auto wopt = deps.workspaces->get(workspace_id);
         if (!wopt.has_value() || wopt->status != "enabled") {
@@ -1117,6 +1191,248 @@ void register_workspace_external_invite_routes(
                 {"error", "forbidden"},
                 {"message", "workspace owner required"}
             }.dump());
+            return;
+        }
+
+        if (password_mode) {
+            if (!deps.users || deps.users_path.empty() || !deps.now_iso_utc) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "password external invite routes not fully configured"}
+                }.dump());
+                return;
+            }
+
+            pqnas::PasswordCredentials creds;
+            const std::string creds_path =
+                workspace_external_password_credentials_path_local(deps);
+
+            if (!creds.load(creds_path)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "credentials_load_failed"},
+                    {"message", "failed to load password credentials"}
+                }.dump());
+                return;
+            }
+
+            std::string login =
+                pqnas::PasswordCredentials::normalize_login(j.value("login", ""));
+            if (login.empty()) {
+                for (int i = 0; i < 24; ++i) {
+                    login = make_external_workspace_temp_login_local(deps);
+                    if (!login.empty() && !creds.get(login).has_value()) break;
+                    login.clear();
+                }
+            } else if (creds.get(login).has_value()) {
+                deps.reply_json(res, 409, json{
+                    {"ok", false},
+                    {"error", "login_already_exists"},
+                    {"message", "login already exists"}
+                }.dump());
+                return;
+            }
+
+            if (login.empty() || login.size() > 254) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "failed to generate temporary login"}
+                }.dump());
+                return;
+            }
+
+            std::string temp_password = deps.random_b64url ? deps.random_b64url(28) : "";
+            if (temp_password.size() < 12) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "failed to generate temporary password"}
+                }.dump());
+                return;
+            }
+
+            pqnas::GeneratedDnaIdentity ident;
+            std::string gen_error;
+            if (!pqnas::generate_dna_identity(ident, gen_error)) {
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "identity_generation_failed"},
+                    {"message", gen_error}
+                }.dump());
+                return;
+            }
+
+            const std::string fp_hex = ident.fingerprint_hex;
+            clear_string_best_effort_local(ident.recovery_words);
+
+            std::string hash;
+            if (!pqnas::PasswordCredentials::hash_password(temp_password, hash)) {
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "password_hash_failed"}
+                }.dump());
+                return;
+            }
+
+            const std::string now_iso = deps.now_iso_utc();
+            const std::string display_name =
+                trim_copy_safe(j.value("display_name", std::string{}));
+
+            pqnas::UserRec u;
+            u.fingerprint = fp_hex;
+            u.name = display_name.empty() ? login : display_name;
+            u.role = "user";
+            u.status = "enabled";
+            u.added_at = now_iso;
+            u.last_seen = "";
+            u.notes = "Temporary external workspace password account for " + workspace_id;
+            u.group = "External";
+            u.email = login;
+            u.address = "";
+            u.avatar_url = "";
+            u.storage_state = "unallocated";
+            u.quota_bytes = 0;
+            u.root_rel = "";
+            u.storage_pool_id = "";
+            u.storage_set_at = "";
+            u.storage_set_by = "";
+
+            pqnas::PasswordCredentialRec cred;
+            cred.login = login;
+            cred.fingerprint = fp_hex;
+            cred.password_hash = hash;
+            cred.enabled = true;
+            cred.temporary = true;
+            cred.expires_at_epoch = invite_expires_at;
+            cred.created_at = now_iso;
+            cred.updated_at = now_iso;
+
+            pqnas::WorkspaceMemberRec member;
+            member.fingerprint = fp_hex;
+            member.role = role;
+            member.status = "enabled";
+            member.member_kind = "external";
+            member.display_name = u.name;
+            member.added_at = now_iso;
+            member.added_by = actor_fp;
+            member.responded_at = now_iso;
+            member.responded_by = actor_fp;
+            pqnas::normalize_workspace_member_v1(&member);
+
+            if (!deps.users->upsert(u)) {
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "user_create_failed"},
+                    {"message", "failed to create external user"}
+                }.dump());
+                return;
+            }
+
+            if (!creds.upsert(cred)) {
+                deps.users->erase(fp_hex);
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "credential_create_failed"},
+                    {"message", "failed to create temporary credential"}
+                }.dump());
+                return;
+            }
+
+            if (!deps.workspaces->add_or_update_member(workspace_id, member)) {
+                deps.users->erase(fp_hex);
+                creds.erase(login);
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "member_update_failed"},
+                    {"message", "failed to add external workspace member"}
+                }.dump());
+                return;
+            }
+
+            if (!deps.users->save(deps.users_path)) {
+                deps.workspaces->remove_member(workspace_id, fp_hex);
+                deps.users->erase(fp_hex);
+                creds.erase(login);
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "users_save_failed"},
+                    {"message", "failed to save external user"}
+                }.dump());
+                return;
+            }
+
+            if (!creds.save(creds_path)) {
+                deps.workspaces->remove_member(workspace_id, fp_hex);
+                deps.users->erase(fp_hex);
+                deps.users->save(deps.users_path);
+                clear_string_best_effort_local(temp_password);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "credentials_save_failed"},
+                    {"message", "failed to save temporary credentials"}
+                }.dump());
+                return;
+            }
+
+            if (!save_workspaces_or_500(deps, res)) {
+                deps.workspaces->remove_member(workspace_id, fp_hex);
+                deps.users->erase(fp_hex);
+                deps.users->save(deps.users_path);
+                creds.erase(login);
+                creds.save(creds_path);
+                clear_string_best_effort_local(temp_password);
+                return;
+            }
+
+            const std::string access_url =
+                (deps.origin ? *deps.origin : std::string{}) +
+                "/static/external_workspace.html?workspace_id=" +
+                (deps.url_encode ? deps.url_encode(workspace_id) : workspace_id);
+
+            audit_invite_event(deps, "workspace.external_password_invite_created", "ok", {
+                {"workspace_id", workspace_id},
+                {"role", role},
+                {"actor_fp", actor_fp},
+                {"external_fp", fp_hex},
+                {"login", login}
+            });
+
+            json invite_json = json::object();
+            invite_json["workspace_id"] = workspace_id;
+            invite_json["role"] = role;
+            invite_json["status"] = "accepted";
+            invite_json["accepted_fingerprint"] = fp_hex;
+            invite_json["expires_at_epoch"] = invite_expires_at;
+
+            json password_invite_json = json::object();
+            password_invite_json["login"] = login;
+            password_invite_json["password"] = temp_password;
+            password_invite_json["temporary"] = true;
+            password_invite_json["expires_at_epoch"] = invite_expires_at;
+            password_invite_json["fingerprint"] = fp_hex;
+            password_invite_json["member_access_url"] = access_url;
+
+            json response_json = json::object();
+            response_json["ok"] = true;
+            response_json["invite"] = invite_json;
+            response_json["member"] = workspace_member_public_json(member);
+            response_json["password_invite"] = password_invite_json;
+
+            std::string response_body = response_json.dump();
+
+            deps.reply_json(res, 200, response_body);
+            clear_string_best_effort_local(response_body);
+            clear_string_best_effort_local(temp_password);
+            clear_string_best_effort_local(hash);
             return;
         }
 

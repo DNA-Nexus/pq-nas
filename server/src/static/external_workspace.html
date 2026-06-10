@@ -8,8 +8,8 @@
 <script>document.documentElement.setAttribute("data-theme", "win_classic");</script>
     <script src="/static/i18n.js?v=20260519-external-workspace-i18n-1"></script>
     <link rel="stylesheet" href="/static/external_workspace.css?v=external-workspace-20260510-trash-detached2">
-    <script src="/static/filetype_icons.js?v=filetypes-20260510"></script>
-    <script defer src="/static/external_workspace_icons.js?v=external-icons-20260510"></script>
+    <script defer src="/static/filetype_icons.js?v=filemgr-icons-shared-20260608-3"></script>
+    <script defer src="/static/external_workspace_icons.js?v=filemgr-icons-shared-20260608-3"></script>
     <script defer src="/static/external_workspace_footer.js?v=external-footer-20260510"></script>
     <script defer src="/static/external_workspace_breadcrumbs.js?v=external-breadcrumbs-20260510"></script>
     <script defer src="/static/external_workspace_topbar.js?v=external-topbar-20260510-header-actions2"></script>
@@ -17,7 +17,7 @@
     <script defer src="/static/external_workspace_image_preview.js?v=external-image-preview-i18n-1"></script>
 
     <script defer src="/static/external_workspace_pdf_preview.js?v=external-pdf-preview-i18n-2"></script>
-    <script defer src="/static/external_workspace.js?v=external-main-final-false-positive-cleanup-1"></script>
+    <script defer src="/static/external_workspace.js?v=external-main-password-access-1"></script>
     <script defer src="/static/external_workspace_selection_properties.js?v=external-selection-properties-i18n-1"></script>
 </head>
 <body>
@@ -26,7 +26,7 @@
         <div class="cardHead">
             <h1>External workspace</h1>
             <p class="sub" id="accessSub">
-                Scan the QR code with DNA Connect to prove your identity and open this workspace.
+                Sign in with your temporary workspace credentials, or use DNA Connect QR when QR auth is enabled.
             </p>
             <div class="badges">
                 <div class="pill mono" id="workspacePill">workspace_id: —</div>
@@ -36,11 +36,11 @@
 
         <div class="cardBody">
             <div class="qrBox" id="qrBox">
-                <div class="hint">Preparing QR…</div>
+                <div class="hint">Preparing sign-in…</div>
             </div>
 
             <div class="row">
-                <button class="btn" id="btnNewQr" type="button">New sign-in QR</button>
+                <button class="btn" id="btnNewQr" type="button">New sign-in</button>
                 <button class="btn secondary" id="btnRefreshFiles" type="button">Refresh</button>
             </div>
 

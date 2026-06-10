@@ -1642,6 +1642,104 @@
 
             try {
                 const j = await apiCreateWorkspaceExternalInvite(workspaceId, role, expires);
+                const pw = j && j.password_invite ? j.password_invite : null;
+
+                if (pw && pw.login && pw.password) {
+                    const login = String(pw.login || "");
+                    const password = String(pw.password || "");
+                    const accessUrl = String(pw.member_access_url || externalWorkspaceAccessUrl(workspaceId));
+                    const expiresAt = Number(pw.expires_at_epoch || 0);
+                    const expiresText = expiresAt > 0
+                        ? new Date(expiresAt * 1000).toLocaleString()
+                        : tr("filemgr.ws.unknown", null, "unknown");
+
+                    const bundle =
+                        `${tr("filemgr.ws.external_login", null, "Username")}: ${login}\n` +
+                        `${tr("filemgr.ws.external_password", null, "Temporary password")}: ${password}\n` +
+                        `${tr("filemgr.ws.external_access_link", null, "Access link")}: ${accessUrl}`;
+
+                    if (result) {
+                        result.innerHTML = `
+                            <div class="hint" style="margin-bottom:8px;">
+                                ${tr("filemgr.ws.external_password_invite_created", null, "Temporary external login created. Copy these details now; the password is shown only once.")}
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:140px minmax(0,1fr); gap:8px; margin-bottom:10px;">
+                                <div class="k">${tr("filemgr.ws.external_login", null, "Username")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(login)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_password", null, "Temporary password")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(password)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_expires", null, "Expires")}</div>
+                                <div class="v">${escapeHtml(expiresText)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_access_link", null, "Access link")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(accessUrl)}</div>
+                            </div>
+
+                            <div class="row" style="margin-bottom:10px;">
+                                <button id="sharedSpaceCopyExternalPasswordBundleBtn"
+                                        class="btn secondary"
+                                        type="button">
+                                    ${tr("filemgr.ws.copy_external_credentials", null, "Copy login details")}
+                                </button>
+                                <button id="sharedSpaceCopyExternalPasswordOnlyBtn"
+                                        class="btn secondary"
+                                        type="button">
+                                    ${tr("filemgr.ws.copy_password", null, "Copy password")}
+                                </button>
+                            </div>
+
+                            <div class="hint">
+                                ${tr("filemgr.ws.external_password_send_hint", null, "Send the username, temporary password, and access link to the outsider. They can sign in with password auth and open the Shared Space.")}
+                            </div>
+                        `;
+
+                        const copyBundleBtn = result.querySelector("#sharedSpaceCopyExternalPasswordBundleBtn");
+                        copyBundleBtn?.addEventListener("click", async () => {
+                            const oldText = copyBundleBtn.textContent;
+                            copyBundleBtn.disabled = true;
+                            copyBundleBtn.textContent = tr("filemgr.ws.copying", null, "Copying…");
+                            try {
+                                await copyTextToClipboard(bundle);
+                                copyBundleBtn.textContent = tr("filemgr.ws.copied", null, "Copied");
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.external_credentials_copied", null, "External login details copied.");
+                            } catch (e) {
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.copy_failed", { error: String(e && e.message ? e.message : e) }, `Copy failed: ${String(e && e.message ? e.message : e)}`);
+                            } finally {
+                                setTimeout(() => {
+                                    copyBundleBtn.textContent = oldText;
+                                    copyBundleBtn.disabled = false;
+                                }, 1200);
+                            }
+                        });
+
+                        const copyPasswordBtn = result.querySelector("#sharedSpaceCopyExternalPasswordOnlyBtn");
+                        copyPasswordBtn?.addEventListener("click", async () => {
+                            const oldText = copyPasswordBtn.textContent;
+                            copyPasswordBtn.disabled = true;
+                            copyPasswordBtn.textContent = tr("filemgr.ws.copying", null, "Copying…");
+                            try {
+                                await copyTextToClipboard(password);
+                                copyPasswordBtn.textContent = tr("filemgr.ws.copied", null, "Copied");
+                            } catch (e) {
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.copy_failed", { error: String(e && e.message ? e.message : e) }, `Copy failed: ${String(e && e.message ? e.message : e)}`);
+                            } finally {
+                                setTimeout(() => {
+                                    copyPasswordBtn.textContent = oldText;
+                                    copyPasswordBtn.disabled = false;
+                                }, 1200);
+                            }
+                        });
+                    }
+
+                    if (workspaceMembersStatus) {
+                        workspaceMembersStatus.textContent = tr("filemgr.ws.external_password_invite_ok", { role: workspaceRoleLabel(role) }, `Temporary external login created for ${role}.`);
+                    }
+                    return;
+                }
+
                 const inviteId = String(j.invite && j.invite.invite_id || "");
                 const qrPath = String(j.qr_svg || "");
 

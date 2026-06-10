@@ -8,6 +8,7 @@
 #include <limits>
 #include <mutex>
 #include <system_error>
+#include <vector>
 #include <unistd.h>
 
 #include <nlohmann/json.hpp>
@@ -44,6 +45,26 @@ static bool json_bool_or_default(const json& j, const char* key, bool def) {
     if (!j.is_object() || !j.contains(key)) return def;
     const auto& v = j.at(key);
     if (v.is_boolean()) return v.get<bool>();
+    return def;
+}
+
+static long json_long_or_default(const json& j, const char* key, long def) {
+    if (!j.is_object() || !j.contains(key)) return def;
+
+    try {
+        const auto& v = j.at(key);
+        if (v.is_number_integer()) return v.get<long>();
+        if (v.is_number_unsigned()) {
+            const auto u = v.get<unsigned long long>();
+            if (u > static_cast<unsigned long long>(std::numeric_limits<long>::max())) {
+                return std::numeric_limits<long>::max();
+            }
+            return static_cast<long>(u);
+        }
+    } catch (...) {
+        return def;
+    }
+
     return def;
 }
 
@@ -125,10 +146,12 @@ bool PasswordCredentials::hash_password(const std::string& password, std::string
                               crypto_pwhash_OPSLIMIT_INTERACTIVE,
                               crypto_pwhash_MEMLIMIT_INTERACTIVE,
                               crypto_pwhash_ALG_ARGON2ID13) != 0) {
+        sodium_memzero(hash, sizeof(hash));
         return false;
     }
 
     out_hash = hash;
+    sodium_memzero(hash, sizeof(hash));
     return !out_hash.empty();
 }
 
@@ -162,6 +185,8 @@ bool PasswordCredentials::load(const std::string& path) {
         rec.fingerprint = it.value("fingerprint", "");
         rec.password_hash = it.value("password_hash", "");
         rec.enabled = json_bool_or_default(it, "enabled", true);
+        rec.temporary = json_bool_or_default(it, "temporary", false);
+        rec.expires_at_epoch = json_long_or_default(it, "expires_at_epoch", 0);
         rec.created_at = it.value("created_at", "");
         rec.updated_at = it.value("updated_at", "");
 
@@ -196,6 +221,8 @@ bool PasswordCredentials::save(const std::string& path) const {
             {"fingerprint", rec.fingerprint},
             {"password_hash", rec.password_hash},
             {"enabled", rec.enabled},
+            {"temporary", rec.temporary},
+            {"expires_at_epoch", rec.expires_at_epoch},
             {"created_at", rec.created_at},
             {"updated_at", rec.updated_at}
         });
@@ -241,8 +268,11 @@ bool PasswordCredentials::save(const std::string& path) const {
 }
 
 std::optional<PasswordCredentialRec> PasswordCredentials::get(const std::string& normalized_login) const {
+    const std::string login = normalize_login(normalized_login);
+    if (login.empty()) return std::nullopt;
+
     std::lock_guard<std::mutex> lk(mu_);
-    auto it = by_login_.find(normalized_login);
+    auto it = by_login_.find(login);
     if (it == by_login_.end()) return std::nullopt;
     return it->second;
 }
@@ -258,6 +288,14 @@ bool PasswordCredentials::upsert(const PasswordCredentialRec& in) {
     std::lock_guard<std::mutex> lk(mu_);
     by_login_[rec.login] = rec;
     return true;
+}
+
+bool PasswordCredentials::erase(const std::string& normalized_login) {
+    const std::string login = normalize_login(normalized_login);
+    if (login.empty()) return false;
+
+    std::lock_guard<std::mutex> lk(mu_);
+    return by_login_.erase(login) > 0;
 }
 
 bool PasswordCredentials::verify_password(const std::string& normalized_login,

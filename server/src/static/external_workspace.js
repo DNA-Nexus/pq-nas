@@ -87,6 +87,7 @@
     let currentPath = "";
     let canEdit = false;
     let currentRole = "";
+    let currentAuthMode = "";
     
     let trashMode = false;
 let signedIn = false;
@@ -645,6 +646,215 @@ html[data-theme="bright"] .externalDialogInput{
             throw new Error(msg);
         }
         return j;
+    }
+
+    async function detectExternalAuthMode() {
+        if (currentAuthMode) return currentAuthMode;
+
+        try {
+            const r = await fetch("/api/auth/config", {
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            });
+
+            const cfg = await r.json().catch(() => ({}));
+            currentAuthMode = String((cfg && cfg.mode) || "qr").trim().toLowerCase();
+        } catch (_) {
+            currentAuthMode = "qr";
+        }
+
+        if (currentAuthMode !== "password") currentAuthMode = "qr";
+        return currentAuthMode;
+    }
+
+    function ensureExternalPasswordAccessCss() {
+        if (document.getElementById("externalPasswordAccessCss")) return;
+
+        const style = document.createElement("style");
+        style.id = "externalPasswordAccessCss";
+        style.textContent = `
+.externalPasswordBox{
+    width:100%;
+    display:grid;
+    gap:12px;
+    text-align:left;
+}
+.externalPasswordTitle{
+    font-weight:950;
+    font-size:18px;
+}
+.externalPasswordHint{
+    color:var(--muted, rgba(0,0,0,.68));
+    line-height:1.35;
+}
+.externalPasswordForm{
+    display:grid;
+    gap:10px;
+}
+.externalPasswordForm label{
+    display:grid;
+    gap:5px;
+    font-weight:850;
+    font-size:12px;
+}
+.externalPasswordForm input{
+    width:100%;
+    box-sizing:border-box;
+    padding:10px 12px;
+    border-radius:12px;
+    border:1px solid rgba(0,0,0,.22);
+    background:rgba(255,255,255,.78);
+    color:#111;
+    font:inherit;
+}
+.externalPasswordForm button{
+    margin-top:4px;
+}
+.externalPasswordNote{
+    font-size:12px;
+    line-height:1.35;
+    color:var(--muted, rgba(0,0,0,.68));
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    function showExternalPasswordSignInState() {
+        ensureExternalPasswordAccessCss();
+
+        if (pollTimer) {
+            clearTimeout(pollTimer);
+            pollTimer = null;
+        }
+
+        signedIn = false;
+        canEdit = false;
+        currentRole = "";
+
+        if (accessSub) {
+            accessSub.textContent = tr(
+                "external.password_access.help",
+                null,
+                "Enter the temporary username and password you received from the Shared Space owner."
+            );
+        }
+
+        if (btnNewQr) {
+            btnNewQr.hidden = true;
+            btnNewQr.classList.add("hidden");
+        }
+
+        if (qrBox) {
+            qrBox.innerHTML = `
+                <div class="externalPasswordBox">
+                    <div class="externalPasswordTitle">${escapeHtml(tr("external.password_access.title", null, "Password access"))}</div>
+                    <div class="externalPasswordHint">${escapeHtml(tr("external.password_access.subtitle", null, "Use the temporary external workspace login details. The password is shown only once to the workspace owner."))}</div>
+                    <form id="externalPasswordAccessForm" class="externalPasswordForm" autocomplete="on">
+                        <label>
+                            ${escapeHtml(tr("external.password_access.username", null, "Username"))}
+                            <input id="externalPasswordAccessLogin"
+                                   name="username"
+                                   type="text"
+                                   autocomplete="username"
+                                   maxlength="254"
+                                   required>
+                        </label>
+                        <label>
+                            ${escapeHtml(tr("external.password_access.password", null, "Password"))}
+                            <input id="externalPasswordAccessPassword"
+                                   name="password"
+                                   type="password"
+                                   autocomplete="current-password"
+                                   maxlength="1024"
+                                   required>
+                        </label>
+                        <button class="btn" id="externalPasswordAccessSubmit" type="submit">${escapeHtml(tr("external.password_access.sign_in", null, "Sign in"))}</button>
+                    </form>
+                    <div class="externalPasswordNote">${escapeHtml(tr("external.password_access.note", null, "After sign-in, this page will open the files you can access."))}</div>
+                </div>
+            `;
+        }
+
+        setStatus(tr("external.password_access.ready", null, "Enter temporary username and password."));
+
+        const form = document.getElementById("externalPasswordAccessForm");
+        const loginInput = document.getElementById("externalPasswordAccessLogin");
+        const passwordInput = document.getElementById("externalPasswordAccessPassword");
+        const submitBtn = document.getElementById("externalPasswordAccessSubmit");
+
+        if (loginInput) {
+            try {
+                const saved = localStorage.getItem("pqnas_password_login") || "";
+                if (saved) loginInput.value = saved;
+            } catch (_) {}
+            loginInput.focus();
+            loginInput.select();
+        }
+
+        if (!form || !loginInput || !passwordInput) return;
+
+        form.addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+
+            const login = String(loginInput.value || "").trim();
+            const password = String(passwordInput.value || "");
+
+            if (!login || !password) {
+                setStatus(tr("external.password_access.missing", null, "Enter username and password."), "bad");
+                return;
+            }
+
+            if (submitBtn) submitBtn.disabled = true;
+            setStatus(tr("external.password_access.signing_in", null, "Signing in…"));
+
+            try {
+                const r = await fetch("/api/auth/password/login", {
+                    method: "POST",
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({ login, password })
+                });
+
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok || !j || j.ok === false) {
+                    throw new Error((j && (j.message || j.error)) || "invalid login or password");
+                }
+
+                try { localStorage.setItem("pqnas_password_login", login); } catch (_) {}
+
+                await loadFiles(currentPath);
+                showSignedInState();
+                setStatus(tr("external.password_access.signed_in", null, "Signed in. Workspace access is active."), "good");
+            } catch (e) {
+                setStatus(
+                    tr(
+                        "external.password_access.failed",
+                        { error: String(e && e.message ? e.message : e) },
+                        `Sign-in failed: ${String(e && e.message ? e.message : e)}`
+                    ),
+                    "bad"
+                );
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+                if (passwordInput) passwordInput.value = "";
+            }
+        });
+    }
+
+    async function startExternalAccessFlow() {
+        const mode = await detectExternalAuthMode();
+
+        if (mode === "password") {
+            showExternalPasswordSignInState();
+            return;
+        }
+
+        await startSession();
     }
 
 
@@ -5430,7 +5640,7 @@ resetMarqueeVisual();
     });
 
     btnNewQr?.addEventListener("click", () => {
-        startSession().catch((e) => setStatus(`Failed to start QR session: ${e.message || e}`, "bad"));
+        startExternalAccessFlow().catch((e) => setStatus(`Failed to start sign-in: ${e.message || e}`, "bad"));
     });
 
     function refreshCurrent() {
@@ -5472,13 +5682,19 @@ resetMarqueeVisual();
     workspacePill.textContent = `workspace_id: ${workspaceId || "missing"}`;
     renderBreadcrumbs();
 
-    // Try existing external cookie first. If it fails, show QR.
-    loadFiles()
-        .then(() => {
+    // Try existing cookie first. If it fails, use password form in password mode
+    // and QR session flow in QR mode.
+    (async () => {
+        await detectExternalAuthMode();
+
+        try {
+            await loadFiles();
             showSignedInState();
             setStatus(tr("external.access.existing_session_active", null, "Existing workspace session is active."), "good");
-        })
-        .catch(() => startSession().catch((e) => setStatus(`Failed to start QR session: ${e.message || e}`, "bad")));
+        } catch (_) {
+            startExternalAccessFlow().catch((e) => setStatus(`Failed to start sign-in: ${e.message || e}`, "bad"));
+        }
+    })();
 
     uploadFile?.addEventListener("change", () => {
         uploadSelectedFile().catch((e) => setStatus(`Upload failed: ${e.message || e}`, "bad"));
