@@ -12,34 +12,6 @@
     <script src="/static/i18n.js?v=20260518-system-i18n-1"></script>
 
     <style>
-        .btn{
-            border: 1px solid rgba(var(--fg-rgb),0.28);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            padding: 10px 12px;
-            border-radius: 14px;
-            cursor:pointer;
-            font-weight: 700;
-            letter-spacing: 0.2px;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-            user-select:none;
-            text-decoration:none;
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            gap: 10px;
-        }
-
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
-
-        .btn:active{
-            transform: translateY(0px);
-        }
-
         .pill{
             display:inline-flex;
             align-items:center;
@@ -587,7 +559,7 @@
             </div>
             <div class="actions">
                 <span class="pill" id="lastPill"><span class="k" data-i18n="system.updated">Updated:</span> <span class="v">—</span></span>
-                <button class="btn" id="btnRefresh" type="button" data-i18n="common.refresh">Refresh</button>
+                <button class="pq-btn" id="btnRefresh" type="button" data-i18n="common.refresh">Refresh</button>
             </div>
         </div>
 
@@ -685,7 +657,7 @@
                             <span data-i18n="system.idrac.title">Advanced • Dell iDRAC / RACADM Drive Locate</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                            <button class="btn"
+                            <button class="pq-btn"
                                     id="btnIdracLocateHelp"
                                     type="button"
                                     title="Dell iDRAC drive locate help"
@@ -705,34 +677,34 @@
                         <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
                             <label class="note" style="margin:0;">
                                 <span data-i18n="system.idrac.host_ip">iDRAC host/IP</span>
-                                <input id="idracLocateHost" class="mono" placeholder="192.168.1.103"
-                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                                <input id="idracLocateHost" class="pq-input mono" placeholder="192.168.1.103"
+                                       style="box-sizing:border-box; margin-top:4px;">
                             </label>
                             <label class="note" style="margin:0;">
                                 <span data-i18n="system.idrac.ssh_port">SSH port</span>
-                                <input id="idracLocatePort" class="mono" placeholder="22"
-                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                                <input id="idracLocatePort" class="pq-input mono" placeholder="22"
+                                       style="box-sizing:border-box; margin-top:4px;">
                             </label>
                             <label class="note" style="margin:0;">
                                 <span data-i18n="system.idrac.username">Username</span>
-                                <input id="idracLocateUser" class="mono" placeholder="pqnas-locate"
-                                       style="width:100%; box-sizing:border-box; margin-top:4px; padding:9px; border-radius:10px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);">
+                                <input id="idracLocateUser" class="pq-input mono" placeholder="pqnas-locate"
+                                       style="box-sizing:border-box; margin-top:4px;">
                             </label>
                         </div>
 
                         <div class="driveActions" style="display:flex; gap:8px; margin:12px 0 0 0; flex-wrap:wrap;">
-                            <button class="btn" id="btnIdracLocateSave" type="button" data-i18n="system.idrac.save_config">Save backend config</button>
-                            <button class="btn" id="btnIdracLocateRefresh" type="button" data-i18n="system.idrac.refresh_status">Refresh status</button>
-                            <button class="btn" id="btnIdracLocateGenerateKey" type="button" data-i18n="system.idrac.generate_ssh_key">Generate SSH key</button>
-                            <button class="btn" id="btnIdracLocateShowPublicKey" type="button" data-i18n="system.idrac.show_public_key">Show public key</button>
-                            <button class="btn" id="btnIdracLocateDownloadPublicKey" type="button" data-i18n="system.idrac.download_public_key">Download public key</button>
-                            <button class="btn" id="btnIdracLocateTestConnection" type="button" data-i18n="system.idrac.test_connection">Test connection</button>
-                            <button class="btn" id="btnIdracLocateTestInventory" type="button" data-i18n="system.idrac.test_inventory">Test inventory</button>
+                            <button class="pq-btn" id="btnIdracLocateSave" type="button" data-i18n="system.idrac.save_config">Save backend config</button>
+                            <button class="pq-btn" id="btnIdracLocateRefresh" type="button" data-i18n="system.idrac.refresh_status">Refresh status</button>
+                            <button class="pq-btn" id="btnIdracLocateGenerateKey" type="button" data-i18n="system.idrac.generate_ssh_key">Generate SSH key</button>
+                            <button class="pq-btn" id="btnIdracLocateShowPublicKey" type="button" data-i18n="system.idrac.show_public_key">Show public key</button>
+                            <button class="pq-btn" id="btnIdracLocateDownloadPublicKey" type="button" data-i18n="system.idrac.download_public_key">Download public key</button>
+                            <button class="pq-btn" id="btnIdracLocateTestConnection" type="button" data-i18n="system.idrac.test_connection">Test connection</button>
+                            <button class="pq-btn" id="btnIdracLocateTestInventory" type="button" data-i18n="system.idrac.test_inventory">Test inventory</button>
                         </div>
 
-                        <textarea id="idracLocatePublicKey" class="mono" readonly
+                        <textarea id="idracLocatePublicKey" class="pq-textarea mono" readonly
                                   placeholder="Public key will appear here. Upload/copy this to iDRAC → User Authentication → pqnas-locate → SSH Key Configurations." data-i18n-placeholder="system.idrac.public_key_placeholder"
-                                  style="display:none; width:100%; min-height:90px; box-sizing:border-box; margin-top:12px; padding:10px; border-radius:12px; border:1px solid rgba(var(--fg-rgb),0.18); background:rgba(0,0,0,0.18); color:var(--fg);"></textarea>
+                                  style="display:none; min-height:90px; box-sizing:border-box; margin-top:12px;"></textarea>
 
                         <pre id="idracLocateOutput" class="note mono"
                              style="white-space:pre-wrap; overflow:auto; max-height:260px; margin-top:12px; padding:10px; border-radius:12px; border:1px solid rgba(var(--fg-rgb),0.12); background:rgba(0,0,0,0.18);" data-i18n="system.not_checked_yet">Not checked yet.</pre>
