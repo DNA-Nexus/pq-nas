@@ -6,48 +6,6 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
 
     <style>
-        .btn{
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            gap: 10px;
-            padding:10px 12px;
-            border-radius: 14px;
-            border: 1px solid rgba(var(--fg-rgb),0.38);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            font-weight: 900;
-            cursor:pointer;
-            user-select:none;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
-        }
-
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
-
-        .btn.secondary{
-            border-color: rgba(var(--fg-rgb),0.24);
-            color: rgba(var(--fg-rgb),0.95);
-            background: rgba(255,255,255,0.04);
-        }
-
-        .btn.secondary:hover{
-            border-color: rgba(255,255,255,0.22);
-            background: rgba(255,255,255,0.05);
-        }
-
-        .btn.danger{
-            border-color: rgba(var(--fail-rgb),0.30);
-            color: rgba(255,200,200,0.95);
-        }
-
-        .btn.danger:hover{
-            border-color: rgba(var(--fail-rgb),0.55);
-            background: rgba(var(--fail-rgb),0.10);
-        }
 
         .content{
             padding: 14px 20px 20px 20px;
@@ -341,7 +299,7 @@
                 <div class="sub" data-i18n="admin.apps.top_sub">Upload app zip → validate → install. Manage installed apps.</div>
             </div>
             <div class="actions">
-                <button class="btn" id="refreshBtn" type="button" data-i18n="admin.apps.refresh">Refresh</button>
+                <button class="pq-btn" id="refreshBtn" type="button" data-i18n="admin.apps.refresh">Refresh</button>
             </div>
         </div>
 
@@ -364,7 +322,7 @@
 
                         <input id="zipFile" class="nativeFileInput" type="file" accept=".zip,application/zip" />
                         <div class="filePickRow">
-                            <button class="btn secondary" id="zipPickBtn" type="button" data-i18n="admin.apps.choose_zip_button">Choose zip file</button>
+                            <button class="pq-btn secondary" id="zipPickBtn" type="button" data-i18n="admin.apps.choose_zip_button">Choose zip file</button>
                             <span class="filePickName" id="zipPickName" data-i18n="admin.apps.no_file_selected">No file selected</span>
                         </div>
                         <label class="policyChk" style="margin-top:10px">
@@ -372,7 +330,7 @@
                             <span data-i18n="admin.apps.admin_only_install">Admin only — hide from normal users</span>
                         </label>
                         <div class="row" style="margin-top:10px">
-                            <button class="btn" id="installBtn" type="button" data-i18n="admin.apps.install">Install</button>
+                            <button class="pq-btn" id="installBtn" type="button" data-i18n="admin.apps.install">Install</button>
                         </div>
 
                         <div class="mono" id="installOut" style="margin-top:10px; white-space:pre-wrap;"></div>

@@ -6,33 +6,8 @@ and <!doctype html>
     <title data-i18n="admin.audit_ui.page_title">DNA-Nexus NAS • Admin Audit</title>
 
     <style>
-        .btn{
-            border: 1px solid rgba(var(--fg-rgb),0.28);
-            background: rgba(0,0,0,0.26);
-            color: var(--fg);
-            padding: 10px 12px;
-            border-radius: 14px;
-            cursor:pointer;
-            font-weight: 900;
-            letter-spacing: 0.2px;
-            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-            user-select:none;
-        }
-
-        .btn:hover{
-            transform: translateY(-1px);
-            border-color: rgba(var(--fg-rgb),0.42);
-            background: rgba(var(--fg-rgb),0.07);
-        }
-
-        .btn:active{ transform: translateY(0px); }
-
-        .btn.primary{
-            border-color: rgba(var(--fg-rgb),0.45);
-            box-shadow: 0 0 0 1px rgba(var(--fg-rgb),0.08) inset;
-        }
-
-        .btn.glow{
+        /* .glow addon for shared .pq-btn */
+        .pq-btn.glow{
             border-color: rgba(var(--fg-rgb),0.55);
             box-shadow: 0 0 0 1px rgba(var(--fg-rgb),0.12) inset, 0 0 18px rgba(var(--fg-rgb),0.12);
         }
@@ -589,8 +564,8 @@ and <!doctype html>
             </div>
 
             <div class="actions">
-                <button id="btnRefresh" class="btn primary" type="button" data-i18n="admin.audit_ui.refresh">Refresh</button>
-                <button id="btnVerify" class="btn" type="button" data-i18n="admin.audit_ui.verify_integrity">Verify integrity</button>
+                <button id="btnRefresh" class="pq-btn primary" type="button" data-i18n="admin.audit_ui.refresh">Refresh</button>
+                <button id="btnVerify" class="pq-btn" type="button" data-i18n="admin.audit_ui.verify_integrity">Verify integrity</button>
                 <label class="toggle" title="Auto-refresh tail">
                     <input id="autoToggle" type="checkbox" />
                     <span data-i18n="admin.audit_ui.auto">Auto</span>
@@ -613,7 +588,7 @@ and <!doctype html>
                             <input id="qIp" class="input mono" placeholder="ip…" data-i18n-placeholder="admin.audit_ui.ip_placeholder" />
                         </div>
                         <div class="row">
-                            <button id="btnClear" class="btn" type="button" data-i18n="admin.audit_ui.clear">Clear</button>
+                            <button id="btnClear" class="pq-btn" type="button" data-i18n="admin.audit_ui.clear">Clear</button>
 
                             <span class="pill" title="Filtered rows shown">
                                 <span class="k" data-i18n="admin.audit_ui.showing">Showing</span><span class="k">:</span> <span class="v" id="countText">0</span>
@@ -634,9 +609,9 @@ and <!doctype html>
                     </div>
                     <div class="bd">
                         <div class="row">
-                            <button id="btnExportJson" class="btn" type="button" data-i18n="admin.audit_ui.export_json">Export JSON</button>
-                            <button id="btnExportCsv" class="btn" type="button" data-i18n="admin.audit_ui.export_csv">Export CSV</button>
-                            <button id="btnRotateAudit" class="btn glow" type="button" data-i18n="admin.audit_ui.rotate_audit">Rotate audit</button>
+                            <button id="btnExportJson" class="pq-btn" type="button" data-i18n="admin.audit_ui.export_json">Export JSON</button>
+                            <button id="btnExportCsv" class="pq-btn" type="button" data-i18n="admin.audit_ui.export_csv">Export CSV</button>
+                            <button id="btnRotateAudit" class="pq-btn glow" type="button" data-i18n="admin.audit_ui.rotate_audit">Rotate audit</button>
 
                             <span id="rotateAuditStatus" class="pill info" style="display:none;" title="Rotate status">
                                 <span class="k" data-i18n="admin.audit_ui.rotate">Rotate</span><span class="k">:</span> <span class="v">—</span>

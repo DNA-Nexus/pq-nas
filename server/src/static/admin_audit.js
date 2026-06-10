@@ -287,8 +287,8 @@ function buildDetailRow(e, k) {
     <div class="detail">
       <pre class="mono">${escapeHtml(json)}</pre>
       <div class="detailActions">
-        <button class="btn" data-act="copy" type="button">${escapeHtml(tr("admin.audit_ui.copy_json", null, "Copy JSON"))}</button>
-        <button class="btn" data-act="collapse" type="button">${escapeHtml(tr("admin.audit_ui.collapse", null, "Collapse"))}</button>
+        <button class="pq-btn" data-act="copy" type="button">${escapeHtml(tr("admin.audit_ui.copy_json", null, "Copy JSON"))}</button>
+        <button class="pq-btn" data-act="collapse" type="button">${escapeHtml(tr("admin.audit_ui.collapse", null, "Collapse"))}</button>
         <div class="small">${escapeHtml(tr("admin.audit_ui.row_key", null, "Row key"))}:</div>
         <div class="pill"><span class="v mono" style="max-width:170px; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(k)}</span></div>
       </div>
