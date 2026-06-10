@@ -264,7 +264,7 @@ html[data-theme="win_classic"] .externalImagePreviewBody{
         document.head.appendChild(style);
     }
 
-    function makeButton(text, className = "btn secondary") {
+    function makeButton(text, className = "pq-btn secondary") {
         const b = document.createElement("button");
         b.type = "button";
         b.className = className;

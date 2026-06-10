@@ -184,12 +184,12 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
             const cancelBtn = document.createElement("button");
             cancelBtn.type = "button";
-            cancelBtn.className = "btn secondary";
+            cancelBtn.className = "pq-btn secondary";
             cancelBtn.textContent = options.cancelText || tr("external.modal.cancel", null, "Cancel");
 
             const okBtn = document.createElement("button");
             okBtn.type = "button";
-            okBtn.className = options.danger ? "btn danger" : "btn";
+            okBtn.className = options.danger ? "pq-btn danger" : "pq-btn primary";
             okBtn.textContent = options.confirmText || tr("external.modal.continue", null, "Continue");
 
             foot.appendChild(cancelBtn);
@@ -735,7 +735,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         refreshBtn = document.createElement("button");
         refreshBtn.type = "button";
-        refreshBtn.className = "btn secondary";
+        refreshBtn.className = "pq-btn secondary";
         refreshBtn.textContent = tr("common.refresh", null, "Refresh");
         refreshBtn.addEventListener("click", () => {
             loadVersions().catch((e) => {
@@ -745,7 +745,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         closeBtn = document.createElement("button");
         closeBtn.type = "button";
-        closeBtn.className = "btn secondary";
+        closeBtn.className = "pq-btn secondary";
         closeBtn.textContent = tr("external.modal.close", null, "Close");
         closeBtn.addEventListener("click", close);
 
@@ -1165,7 +1165,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const closeBtn2 = document.createElement("button");
         closeBtn2.type = "button";
-        closeBtn2.className = "btn secondary";
+        closeBtn2.className = "pq-btn secondary";
         closeBtn2.textContent = tr("external.modal.close", null, "Close");
         closeBtn2.addEventListener("click", () => root.remove());
 
@@ -1598,7 +1598,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const restoreBtn = document.createElement("button");
         restoreBtn.type = "button";
-        restoreBtn.className = "btn";
+        restoreBtn.className = "pq-btn primary";
         restoreBtn.textContent = state.restoringVersionId === row.version_id
             ? tr("external.versions.restoring", null, "Restoring…")
             : tr("external.versions.restore", null, "Restore");
@@ -1614,7 +1614,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const copyBtn = document.createElement("button");
         copyBtn.type = "button";
-        copyBtn.className = "btn secondary";
+        copyBtn.className = "pq-btn secondary";
         copyBtn.textContent = tr("external.versions.copy_sha", null, "Copy SHA");
         copyBtn.disabled = !(row && row.sha256_hex);
         copyBtn.addEventListener("click", async () => {
@@ -1626,7 +1626,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const compareBtn = document.createElement("button");
         compareBtn.type = "button";
-        compareBtn.className = "btn secondary";
+        compareBtn.className = "pq-btn secondary";
         compareBtn.textContent = tr("external.versions.compare", null, "Compare");
         compareBtn.disabled = !canComparePath(state.relPath);
         compareBtn.title = compareBtn.disabled
@@ -1640,7 +1640,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const downloadBtn = document.createElement("button");
         downloadBtn.type = "button";
-        downloadBtn.className = "btn secondary";
+        downloadBtn.className = "pq-btn secondary";
         downloadBtn.textContent = tr("external.versions.download", null, "Download");
         downloadBtn.title = tr("external.versions.download_title", null, "Download this preserved version without restoring it");
         downloadBtn.addEventListener("click", () => {
@@ -1655,7 +1655,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         const flagBtn = document.createElement("button");
         flagBtn.type = "button";
-        flagBtn.className = row.flagged_by_me ? "btn" : "btn secondary";
+        flagBtn.className = row.flagged_by_me ? "pq-btn primary" : "pq-btn secondary";
         flagBtn.textContent = row.flagged_by_me
             ? tr("external.versions.unflag", null, "⭐ Unflag")
             : tr("external.versions.flag", null, "☆ Flag");
@@ -1672,7 +1672,7 @@ window.ExternalWorkspaceVersions = window.ExternalWorkspaceVersions || {};
 
         deleteBtn.type = "button";
 
-        deleteBtn.className = "btn secondary";
+        deleteBtn.className = "pq-btn secondary";
 
         deleteBtn.textContent = state.deletingVersionId === row.version_id
             ? tr("external.versions.deleting", null, "Deleting…")

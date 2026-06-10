@@ -1579,7 +1579,8 @@ html[data-theme="win_classic"] .textEditFindInput{
     padding:8px 10px;
 }
 
-.btn.active{
+.btn.active,
+.pq-btn.active{
     border-color:rgba(255,138,28,.82);
     background:rgba(255,138,28,.20);
     color:var(--fg);
@@ -1654,7 +1655,8 @@ html[data-theme="win_classic"] .toolbarBadge.bad{
     color:#7b1111 !important;
 }
 
-html[data-theme="win_classic"] .btn.active{
+html[data-theme="win_classic"] .btn.active,
+html[data-theme="win_classic"] .pq-btn.active{
     background:#cfe3ff !important;
     border-color:rgba(11,78,162,.65) !important;
 }
