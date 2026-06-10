@@ -268,12 +268,12 @@
           <td class="mono" title="${escapeHtml(name)}">${escapeHtml(name)}</td>
           <td class="mono" title="${escapeHtml(src)}">${escapeHtml(src)}</td>
           <td>
-            <select class="snapVolTpd" data-i="${i}" ${perVol ? "" : "disabled"}>
+            <select class="pq-select snapVolTpd" data-i="${i}" ${perVol ? "" : "disabled"}>
               ${tpdOptionsHtml(Math.min(24, Math.max(1, tpd || 6)))}
             </select>
           </td>
           <td>
-            <input class="input mono snapVolJit"
+            <input class="pq-input mono snapVolJit"
                    style="min-width:120px"
                    type="number" min="0" max="3600"
                    data-i="${i}"
