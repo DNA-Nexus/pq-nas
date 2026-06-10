@@ -28,23 +28,17 @@
 
         .toggle input{ accent-color: var(--fg); }
 
-        .pill{
-            display:inline-flex;
-            align-items:center;
-            gap:8px;
-            border:1px solid rgba(var(--fg-rgb),0.16);
-            background:rgba(0,0,0,0.22);
-            padding:6px 10px;
-            border-radius:999px;
-            font-size:12px;
-            color: rgba(var(--fg-rgb),0.70);
-            white-space:nowrap;
-            max-width: 100%;
+        /* .pq-input: undo block/full-width for flex-row context */
+        .row .pq-input{
+            display:inline-block;
+            width:auto;
+            min-width:70px;
         }
 
-        .pill .k{ color: rgba(var(--fg-rgb),0.62); }
+        /* .pq-badge child slots: key-value pattern */
+        .pq-badge .k{ color: rgba(var(--fg-rgb),0.62); }
 
-        .pill .v{
+        .pq-badge .v{
             color: rgba(var(--fg-rgb),0.92);
             font-weight: 900;
             max-width: 180px;
@@ -54,50 +48,17 @@
             vertical-align: bottom;
         }
 
-        .pill.ok{
-            border-color: rgba(var(--ok-rgb),0.38);
-            color: rgba(var(--ok-rgb),0.95);
-            background: rgba(var(--ok-rgb),0.08);
-        }
-
-        .pill.fail{
+        /* .pq-badge.fail: maps to statusClass "fail" (shared uses .err) */
+        .pq-badge.fail{
             border-color: rgba(var(--fail-rgb),0.42);
             color: var(--fail);
             background: rgba(var(--fail-rgb),0.10);
         }
 
-        .pill.warn{
-            border-color: rgba(var(--warn-rgb),0.38);
-            color: rgba(255,225,170,0.95);
-            background: rgba(var(--warn-rgb),0.10);
-        }
-
-        .pill.info{
-            border-color: rgba(var(--info-rgb),0.38);
-            color: rgba(195,225,255,0.95);
-            background: rgba(var(--info-rgb),0.08);
-        }
-
-        .pill.on{
+        /* .pq-badge.on: glow state for auto-refresh pill */
+        .pq-badge.on{
             border-color: rgba(var(--fg-rgb),0.55);
             box-shadow: 0 0 0 1px rgba(var(--fg-rgb),0.10) inset, 0 0 16px rgba(var(--fg-rgb),0.10);
-        }
-
-        .input{
-            border:1px solid rgba(var(--fg-rgb),0.18);
-            background:rgba(0,0,0,0.24);
-            color:rgba(var(--fg-rgb),0.92);
-            padding:10px 12px;
-            border-radius:12px;
-            outline:none;
-            min-width: 70px;
-        }
-
-        .input::placeholder{ color:rgba(var(--fg-rgb),0.45); }
-
-        .input:focus{
-            border-color:rgba(var(--fg-rgb),0.38);
-            box-shadow:0 0 0 3px rgba(var(--fg-rgb),0.08);
         }
 
         .mono{ font-family:var(--mono); }
@@ -403,44 +364,6 @@
             background: rgba(var(--ok-rgb),0.11);
         }
 
-        .statusPill{
-            display:inline-flex;
-            align-items:center;
-            justify-content:center;
-            padding:5px 10px;
-            border-radius:999px;
-            font-weight:950;
-            font-size:12px;
-            letter-spacing:0.02em;
-            border:1px solid rgba(var(--fg-rgb),0.16);
-            background:rgba(0,0,0,0.22);
-            color: rgba(var(--fg-rgb),0.85);
-        }
-
-        .statusPill.ok{
-            border-color: rgba(var(--ok-rgb),0.38);
-            background: rgba(var(--ok-rgb),0.08);
-            color: rgba(var(--ok-rgb),0.95);
-        }
-
-        .statusPill.fail{
-            border-color: rgba(var(--fail-rgb),0.42);
-            background: rgba(var(--fail-rgb),0.10);
-            color: var(--fail);
-        }
-
-        .statusPill.warn{
-            border-color: rgba(var(--warn-rgb),0.40);
-            background: rgba(var(--warn-rgb),0.10);
-            color: rgba(255,225,170,0.95);
-        }
-
-        .statusPill.info{
-            border-color: rgba(var(--info-rgb),0.40);
-            background: rgba(var(--info-rgb),0.08);
-            color: rgba(195,225,255,0.95);
-        }
-
         .detailRow td{
             padding:0;
             overflow: hidden;
@@ -540,15 +463,15 @@
                 <div class="mini" data-i18n="admin.audit_ui.sidebar_note">This page only renders and verifies. It never modifies audit log contents.</div>
 
                 <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
-                    <span id="autoPill" class="pill info" title="Auto-refresh state">
+                    <span id="autoPill" class="pq-badge info" title="Auto-refresh state">
                         <span class="k" data-i18n="admin.audit_ui.auto">Auto</span><span class="k">:</span> <span class="v" data-i18n="admin.audit_ui.off">OFF</span>
                     </span>
 
-                    <span id="integrityPill" class="pill warn" title="Integrity verification status">
+                    <span id="integrityPill" class="pq-badge warn" title="Integrity verification status">
                         <span class="k" data-i18n="admin.audit_ui.integrity">Integrity</span><span class="k">:</span> <span class="v" data-i18n="admin.audit_ui.unknown">unknown</span>
                     </span>
 
-                    <span id="lastFetchPill" class="pill info" title="Last successful tail fetch">
+                    <span id="lastFetchPill" class="pq-badge info" title="Last successful tail fetch">
                         <span class="k" data-i18n="admin.audit_ui.tail">Tail</span><span class="k">:</span> <span class="v">—</span>
                     </span>
                 </div>
@@ -582,19 +505,19 @@
                     </div>
                     <div class="bd">
                         <div class="row">
-                            <input id="qEvent" class="input" placeholder="event (e.g. login / policy / verify)" data-i18n-placeholder="admin.audit_ui.event_placeholder" />
-                            <input id="qFp" class="input mono" placeholder="fingerprint…" data-i18n-placeholder="admin.audit_ui.fp_placeholder" />
-                            <input id="qSid" class="input mono" placeholder="sid…" data-i18n-placeholder="admin.audit_ui.sid_placeholder" />
-                            <input id="qIp" class="input mono" placeholder="ip…" data-i18n-placeholder="admin.audit_ui.ip_placeholder" />
+                            <input id="qEvent" class="pq-input" placeholder="event (e.g. login / policy / verify)" data-i18n-placeholder="admin.audit_ui.event_placeholder" />
+                            <input id="qFp" class="pq-input mono" placeholder="fingerprint…" data-i18n-placeholder="admin.audit_ui.fp_placeholder" />
+                            <input id="qSid" class="pq-input mono" placeholder="sid…" data-i18n-placeholder="admin.audit_ui.sid_placeholder" />
+                            <input id="qIp" class="pq-input mono" placeholder="ip…" data-i18n-placeholder="admin.audit_ui.ip_placeholder" />
                         </div>
                         <div class="row">
                             <button id="btnClear" class="pq-btn" type="button" data-i18n="admin.audit_ui.clear">Clear</button>
 
-                            <span class="pill" title="Filtered rows shown">
+                            <span class="pq-badge" title="Filtered rows shown">
                                 <span class="k" data-i18n="admin.audit_ui.showing">Showing</span><span class="k">:</span> <span class="v" id="countText">0</span>
                             </span>
 
-                            <span class="pill" title="Rows loaded from tail">
+                            <span class="pq-badge" title="Rows loaded from tail">
                                 <span class="k" data-i18n="admin.audit_ui.loaded">Loaded</span><span class="k">:</span> <span class="v" id="loadedText">0</span>
                             </span>
                         </div>
@@ -613,18 +536,18 @@
                             <button id="btnExportCsv" class="pq-btn" type="button" data-i18n="admin.audit_ui.export_csv">Export CSV</button>
                             <button id="btnRotateAudit" class="pq-btn glow" type="button" data-i18n="admin.audit_ui.rotate_audit">Rotate audit</button>
 
-                            <span id="rotateAuditStatus" class="pill info" style="display:none;" title="Rotate status">
+                            <span id="rotateAuditStatus" class="pq-badge info" style="display:none;" title="Rotate status">
                                 <span class="k" data-i18n="admin.audit_ui.rotate">Rotate</span><span class="k">:</span> <span class="v">—</span>
                             </span>
                         </div>
 
                         <div class="row">
-                            <span class="pill" title="Tail lines to fetch">
+                            <span class="pq-badge" title="Tail lines to fetch">
                                 <span class="k" data-i18n="admin.audit_ui.tail_n">Tail N</span><span class="k">:</span> <span class="v" id="tailNText">200</span>
                             </span>
-                            <input id="tailN" class="input mono" style="width:120px" value="200" />
+                            <input id="tailN" class="pq-input mono" style="width:120px" value="200" />
 
-                            <span class="pill" title="Auto refresh interval seconds">
+                            <span class="pq-badge" title="Auto refresh interval seconds">
                                 <span class="k" data-i18n="admin.audit_ui.every">Every</span><span class="k">:</span> <span class="v" id="intervalText">3s</span>
                             </span>
                             <input
@@ -633,7 +556,7 @@
                                     min="1"
                                     max="60"
                                     step="1"
-                                    class="input mono"
+                                    class="pq-input mono"
                                     style="width:52px"
                                     value="3"
                                     title="Auto-refresh interval in seconds (used when Auto is enabled)" data-i18n-title="admin.audit_ui.interval_title"
