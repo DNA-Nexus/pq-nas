@@ -63,15 +63,15 @@
             min-height:100%;
         }
 
-        #releaseBadge.badge.ok,
-        #releaseBadge.badge.success{
+        #releaseBadge.pq-badge.ok,
+        #releaseBadge.pq-badge.success{
             background:rgba(22,163,74,0.18);
             border-color:rgba(22,163,74,0.55);
             color:#166534;
         }
 
-        html[data-theme="dark"] #releaseBadge.badge.ok,
-        html[data-theme="dark"] #releaseBadge.badge.success{
+        html[data-theme="dark"] #releaseBadge.pq-badge.ok,
+        html[data-theme="dark"] #releaseBadge.pq-badge.success{
             background:rgba(34,197,94,0.18);
             border-color:rgba(34,197,94,0.55);
             color:#86efac;
@@ -280,7 +280,7 @@
         <div class="content">
             <section class="pane">
                 <div class="row">
-                    <span class="badge warn" id="stateBadge" data-i18n="common.loading">loading…</span>
+                    <span class="pq-badge warn" id="stateBadge" data-i18n="common.loading">loading…</span>
                     <span class="mono muted" id="statusLine" data-i18n="admin.updates.state.starting">Starting…</span>
                 </div>
             </section>
@@ -288,7 +288,7 @@
             <section class="card">
                 <h3 data-i18n="admin.updates.release.title">Latest GitHub release</h3>
                 <div class="row">
-                    <span class="badge warn" id="releaseBadge" data-i18n="admin.updates.release.not_checked">not checked</span>
+                    <span class="pq-badge warn" id="releaseBadge" data-i18n="admin.updates.release.not_checked">not checked</span>
                     <span class="mono muted" id="releaseLine" data-i18n="admin.updates.release.no_data">No release data loaded yet.</span>
                 </div>
                 <div class="row" style="margin-top:10px">

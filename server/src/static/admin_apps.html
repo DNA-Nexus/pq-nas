@@ -156,20 +156,6 @@
             color: var(--fg-dim);
         }
 
-        .policySel{
-            width:100%;
-            padding:10px 12px;
-            border-radius:12px;
-            border:1px solid rgba(var(--fg-rgb),0.18);
-            background: rgba(0,0,0,0.24);
-            color: rgba(var(--fg-rgb),0.92);
-            outline:none;
-        }
-
-        .policySel:focus{
-            border-color: rgba(var(--fg-rgb),0.34);
-            box-shadow: 0 0 0 3px rgba(var(--fg-rgb),0.10);
-        }
 
         /* Native policy select dropdown contrast override
            Browser/OS select popups vary; keep dark/cpunk option lists dark. */
@@ -307,7 +293,7 @@
             <section class="pane" aria-label="App status pane" data-i18n-aria-label="admin.apps.status">
                 <h2 data-i18n="admin.apps.status">Status</h2>
                 <div class="row">
-                    <span class="badge warn" id="stateBadge" data-i18n="admin.apps.loading">loading…</span>
+                    <span class="pq-badge warn" id="stateBadge" data-i18n="admin.apps.loading">loading…</span>
                     <span class="mono muted" id="statusLine" data-i18n="admin.apps.starting">Starting…</span>
                 </div>
             </section>

@@ -53,7 +53,8 @@ function $(id) { return document.getElementById(id); }
 
 function pill(status) {
     const cls = (status || "disabled");
-    return `<span class="pill ${cls}">${esc(statusLabel(cls))}</span>`;
+    const variant = cls === "enabled" ? " ok" : cls === "revoked" ? " err" : "";
+    return `<span class="pq-badge${variant}">${esc(statusLabel(cls))}</span>`;
 }
 
 function esc(s) {
