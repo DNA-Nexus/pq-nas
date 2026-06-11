@@ -1,6 +1,41 @@
+/* Circle Stack Memory Node semantic token layer.
+   Replaces hardcoded colors with swappable tokens.
+   Token names use --cs-mem-* prefix; values preserve current visual defaults. */
+:root{
+  /* Accent colour channels — use as rgba(var(--cs-mem-amber), <a>) */
+  --cs-mem-amber: 255,183,77;
+  --cs-mem-cyan: 0,240,248;
+  --cs-mem-danger: 255,96,96;
+
+  /* Solid popover / panel surface */
+  --cs-mem-popover-bg: #11131b;
+
+  /* Spotlight post base */
+  --cs-mem-spotlight-bg: rgba(18,18,28,0.92);
+
+  /* Structural border tiers */
+  --cs-mem-border-subtle: rgba(255,255,255,0.12);
+  --cs-mem-border: rgba(255,255,255,0.16);
+  --cs-mem-border-strong: rgba(255,255,255,0.22);
+
+  /* Surface tiers */
+  --cs-mem-surface: rgba(0,0,0,0.18);
+  --cs-mem-surface-deep: rgba(0,0,0,0.22);
+  --cs-mem-surface-inset: rgba(0,0,0,0.24);
+  --cs-mem-surface-well: rgba(0,0,0,0.28);
+
+  /* Common text shades */
+  --cs-mem-fg: rgba(255,255,255,0.78);
+  --cs-mem-fg-dim: rgba(255,255,255,0.64);
+  --cs-mem-fg-pill: rgba(255,255,255,0.76);
+
+  /* Lightbox overlay */
+  --cs-mem-lightbox-overlay: rgba(0,0,0,0.86);
+}
+
 .cs-memory-open-btn{
   border:1px solid rgba(255,255,255,.24);
-  background:linear-gradient(135deg, rgba(255,183,77,.20), rgba(0,240,248,.10));
+  background:linear-gradient(135deg, rgba(var(--cs-mem-amber),.20), rgba(var(--cs-mem-cyan),.10));
   color:inherit;
   border-radius:14px;
   padding:10px 14px;
@@ -17,12 +52,12 @@
 
 .cs-memory-node{
   margin:14px 0;
-  border:1px solid rgba(255,255,255,.16);
+  border:1px solid var(--cs-mem-border);
   border-radius:22px;
   background:
-    radial-gradient(circle at top left, rgba(255,183,77,.18), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(0,240,248,.12), transparent 34%),
-    rgba(0,0,0,.18);
+    radial-gradient(circle at top left, rgba(var(--cs-mem-amber),.18), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(var(--cs-mem-cyan),.12), transparent 34%),
+    var(--cs-mem-surface);
   overflow:hidden;
 }
 
@@ -50,17 +85,17 @@
 
 .cs-memory-stats{
   flex:0 0 auto;
-  border:1px solid rgba(255,255,255,.16);
+  border:1px solid var(--cs-mem-border);
   border-radius:999px;
   padding:6px 10px;
   font-size:12px;
   opacity:.78;
-  background:rgba(0,0,0,.22);
+  background:var(--cs-mem-surface-deep);
 }
 
 .cs-memory-body{
   padding:0 16px 12px;
-  color:rgba(255,255,255,.78);
+  color:var(--cs-mem-fg);
   white-space:pre-wrap;
 }
 
@@ -73,15 +108,15 @@
 
 .cs-memory-item{
   min-width:0;
-  border:1px solid rgba(255,255,255,.12);
+  border:1px solid var(--cs-mem-border-subtle);
   border-radius:16px;
   overflow:hidden;
-  background:rgba(0,0,0,.22);
+  background:var(--cs-mem-surface-deep);
 }
 
 .cs-memory-frame{
   aspect-ratio:4/3;
-  background:rgba(0,0,0,.28);
+  background:var(--cs-mem-surface-well);
   display:flex;
   align-items:center;
   justify-content:center;
@@ -122,8 +157,8 @@
 
 .cs-memory-delete{
   margin-top:8px;
-  border:1px solid rgba(255,96,96,.35);
-  background:rgba(255,96,96,.08);
+  border:1px solid rgba(var(--cs-mem-danger),.35);
+  background:rgba(var(--cs-mem-danger),.08);
   color:inherit;
   border-radius:999px;
   padding:5px 9px;
@@ -164,9 +199,9 @@
 .cs-memory-textarea{
   box-sizing:border-box;
   width:100%;
-  border:1px solid rgba(255,255,255,.16);
+  border:1px solid var(--cs-mem-border);
   border-radius:14px;
-  background:rgba(0,0,0,.24);
+  background:var(--cs-mem-surface-inset);
   color:inherit;
   padding:11px 12px;
   margin-top:10px;
@@ -186,10 +221,10 @@
 
 .cs-memory-picked{
   margin-top:10px;
-  border:1px solid rgba(255,255,255,.12);
+  border:1px solid var(--cs-mem-border-subtle);
   border-radius:14px;
   padding:10px;
-  background:rgba(0,0,0,.18);
+  background:var(--cs-mem-surface);
 }
 
 .cs-memory-picked-label{
@@ -230,7 +265,7 @@
   border:1px solid rgba(255,255,255,.18);
   border-radius:16px;
   padding:10px;
-  background:rgb(18,18,26);
+  background:var(--cs-mem-popover-bg);
   box-shadow:0 18px 42px rgba(0,0,0,.42);
   opacity:0;
   transform:translateY(-4px);
@@ -253,7 +288,7 @@
   top:-7px;
   width:12px;
   height:12px;
-  background:rgb(18,18,26);
+  background:var(--cs-mem-popover-bg);
   border-left:1px solid rgba(255,255,255,.18);
   border-top:1px solid rgba(255,255,255,.18);
   transform:rotate(45deg);
@@ -322,7 +357,7 @@
 }
 
 .cs-memory-frame.is-clickable:focus{
-  box-shadow:0 0 0 3px rgba(255,255,255,.22) inset;
+  box-shadow:0 0 0 3px var(--cs-mem-border-strong) inset;
 }
 
 .cs-memory-frame.is-clickable img{
@@ -343,7 +378,7 @@
   align-items:center;
   justify-content:center;
   padding:28px;
-  background:rgba(0,0,0,.86);
+  background:var(--cs-mem-lightbox-overlay);
   backdrop-filter:blur(8px);
 }
 
@@ -393,7 +428,7 @@
   padding:8px 12px;
   border-radius:14px;
   background:rgba(0,0,0,.38);
-  border:1px solid rgba(255,255,255,.12);
+  border:1px solid var(--cs-mem-border-subtle);
 }
 
 .cs-memory-lightbox-owner{
@@ -411,7 +446,7 @@
 
 .cs-memory-remove-detail{
   margin-top:12px;
-  border:1px solid rgba(255,255,255,.12);
+  border:1px solid var(--cs-mem-border-subtle);
   border-radius:14px;
   padding:12px;
   background:rgba(0,0,0,.20);
@@ -430,26 +465,26 @@
 }
 
 .cs-memory-remove-confirm{
-  border-color:rgba(255,96,96,.50);
-  background:rgba(255,96,96,.16);
+  border-color:rgba(var(--cs-mem-danger),.50);
+  background:rgba(var(--cs-mem-danger),.16);
 }
 
 .cs-memory-remove-confirm:hover{
-  background:rgba(255,96,96,.24);
+  background:rgba(var(--cs-mem-danger),.24);
 }
 
 /* Memory Node spotlight post treatment */
 .cs-post-memory-node{
   position:relative;
-  border-color:rgba(255,183,77,.26) !important;
+  border-color:rgba(var(--cs-mem-amber),.26) !important;
   background:
-    radial-gradient(circle at 12% 0%, rgba(255,183,77,.10), transparent 34%),
-    radial-gradient(circle at 88% 18%, rgba(0,240,248,.10), transparent 38%),
-    rgba(18,18,28,.92) !important;
+    radial-gradient(circle at 12% 0%, rgba(var(--cs-mem-amber),.10), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(var(--cs-mem-cyan),.10), transparent 38%),
+    var(--cs-mem-spotlight-bg) !important;
   box-shadow:
-    0 0 0 1px rgba(255,183,77,.08) inset,
+    0 0 0 1px rgba(var(--cs-mem-amber),.08) inset,
     0 18px 50px rgba(0,0,0,.22),
-    0 0 42px rgba(0,240,248,.055);
+    0 0 42px rgba(var(--cs-mem-cyan),.055);
 }
 
 .cs-post-memory-node::before{
@@ -458,7 +493,7 @@
   inset:0 auto 0 0;
   width:4px;
   border-radius:22px 0 0 22px;
-  background:linear-gradient(180deg, rgba(255,183,77,.92), rgba(0,240,248,.72));
+  background:linear-gradient(180deg, rgba(var(--cs-mem-amber),.92), rgba(var(--cs-mem-cyan),.72));
   opacity:.84;
 }
 
@@ -472,8 +507,8 @@
   border:1px solid rgba(255,255,255,.14);
   border-radius:18px;
   background:
-    linear-gradient(135deg, rgba(255,183,77,.15), rgba(0,240,248,.08)),
-    rgba(0,0,0,.18);
+    linear-gradient(135deg, rgba(var(--cs-mem-amber),.15), rgba(var(--cs-mem-cyan),.08)),
+    var(--cs-mem-surface);
 }
 
 .cs-memory-spotlight-left{
@@ -493,7 +528,7 @@
   flex:0 0 auto;
   background:rgba(255,255,255,.10);
   border:1px solid rgba(255,255,255,.14);
-  box-shadow:0 0 22px rgba(0,240,248,.12);
+  box-shadow:0 0 22px rgba(var(--cs-mem-cyan),.12);
 }
 
 .cs-memory-spotlight-text{
@@ -510,7 +545,7 @@
 .cs-memory-spotlight-sub{
   margin-top:2px;
   font-size:12px;
-  color:rgba(255,255,255,.64);
+  color:var(--cs-mem-fg-dim);
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
@@ -518,19 +553,19 @@
 
 .cs-memory-spotlight-pill{
   flex:0 0 auto;
-  border:1px solid rgba(255,255,255,.16);
-  background:rgba(0,0,0,.22);
+  border:1px solid var(--cs-mem-border);
+  background:var(--cs-mem-surface-deep);
   border-radius:999px;
   padding:6px 10px;
   font-size:12px;
   font-weight:850;
-  color:rgba(255,255,255,.76);
+  color:var(--cs-mem-fg-pill);
 }
 
 .cs-post-memory-node .cs-memory-node{
-  border-color:rgba(0,240,248,.22);
+  border-color:rgba(var(--cs-mem-cyan),.22);
   box-shadow:
-    0 0 0 1px rgba(255,183,77,.06) inset,
+    0 0 0 1px rgba(var(--cs-mem-amber),.06) inset,
     0 16px 44px rgba(0,0,0,.24);
 }
 
@@ -552,9 +587,9 @@
 
 /* Solid contributor popover override */
 .cs-memory-contributors-popover{
-  background:#11131b !important;
-  background-color:#11131b !important;
-  border:1px solid rgba(255,255,255,.22) !important;
+  background:var(--cs-mem-popover-bg) !important;
+  background-color:var(--cs-mem-popover-bg) !important;
+  border:1px solid var(--cs-mem-border-strong) !important;
   box-shadow:
     0 22px 54px rgba(0,0,0,.72),
     0 0 0 1px rgba(255,255,255,.04) inset !important;
@@ -572,10 +607,10 @@
 }
 
 .cs-memory-contributors-popover::before{
-  background:#11131b !important;
-  background-color:#11131b !important;
-  border-left:1px solid rgba(255,255,255,.22) !important;
-  border-top:1px solid rgba(255,255,255,.22) !important;
+  background:var(--cs-mem-popover-bg) !important;
+  background-color:var(--cs-mem-popover-bg) !important;
+  border-left:1px solid var(--cs-mem-border-strong) !important;
+  border-top:1px solid var(--cs-mem-border-strong) !important;
 }
 
 .cs-memory-contributor-row,
@@ -596,8 +631,8 @@
 
 .cs-memory-contributors-popover{
   opacity:0;
-  background:#11131b !important;
-  background-color:#11131b !important;
+  background:var(--cs-mem-popover-bg) !important;
+  background-color:var(--cs-mem-popover-bg) !important;
 }
 
 .cs-memory-stats:hover .cs-memory-contributors-popover,
@@ -617,20 +652,20 @@
 
 .cs-memory-ownership{
   position:relative;
-  border:1px solid rgba(255,255,255,.16);
-  background:rgba(0,0,0,.24);
+  border:1px solid var(--cs-mem-border);
+  background:var(--cs-mem-surface-inset);
   border-radius:999px;
   padding:6px 10px;
   font-size:12px;
   font-weight:850;
-  color:rgba(255,255,255,.76);
+  color:var(--cs-mem-fg-pill);
   cursor:default;
   outline:none;
 }
 
 .cs-memory-ownership:hover,
 .cs-memory-ownership:focus{
-  border-color:rgba(0,240,248,.34);
+  border-color:rgba(var(--cs-mem-cyan),.34);
   color:rgba(255,255,255,.94);
 }
 
@@ -641,10 +676,10 @@
   z-index:10000;
   width:320px;
   max-width:min(320px, calc(100vw - 36px));
-  border:1px solid rgba(255,255,255,.22);
+  border:1px solid var(--cs-mem-border-strong);
   border-radius:16px;
   padding:12px;
-  background:#11131b;
+  background:var(--cs-mem-popover-bg);
   color:rgba(255,255,255,.92);
   box-shadow:
     0 22px 54px rgba(0,0,0,.72),
@@ -670,9 +705,9 @@
   top:-7px;
   width:12px;
   height:12px;
-  background:#11131b;
-  border-left:1px solid rgba(255,255,255,.22);
-  border-top:1px solid rgba(255,255,255,.22);
+  background:var(--cs-mem-popover-bg);
+  border-left:1px solid var(--cs-mem-border-strong);
+  border-top:1px solid var(--cs-mem-border-strong);
   transform:rotate(45deg);
 }
 
@@ -715,19 +750,19 @@
 .cs-memory-ownership-total{
   margin-top:10px;
   padding-top:10px;
-  border-top:1px solid rgba(255,255,255,.12);
+  border-top:1px solid var(--cs-mem-border-subtle);
   font-weight:950;
 }
 
 .cs-memory-ownership-note{
   margin-top:7px;
-  color:rgba(255,255,255,.64);
+  color:var(--cs-mem-fg-dim);
   font-size:12px;
   line-height:1.35;
 }
 
 .cs-memory-ownership-empty{
-  color:rgba(255,255,255,.64);
+  color:var(--cs-mem-fg-dim);
   padding:4px;
 }
 
@@ -767,15 +802,15 @@
   height:5px;
   margin-right:5px;
   border-radius:999px;
-  background:rgba(0,240,248,.48);
+  background:rgba(var(--cs-mem-cyan),.48);
   vertical-align:middle;
 }
 
 .cs-memory-ownership:hover,
 .cs-memory-ownership:focus{
   color:rgba(255,255,255,.84) !important;
-  border-color:rgba(0,240,248,.24) !important;
-  background:rgba(0,0,0,.18) !important;
+  border-color:rgba(var(--cs-mem-cyan),.24) !important;
+  background:var(--cs-mem-surface) !important;
 }
 
 .cs-memory-ownership-label{
@@ -799,7 +834,7 @@
 
 .cs-memory-item-reaction-chip,
 .cs-memory-item-reaction-button{
-  border:1px solid rgba(255,255,255,.12);
+  border:1px solid var(--cs-mem-border-subtle);
   background:rgba(255,255,255,.045);
   color:inherit;
   border-radius:999px;
@@ -827,14 +862,14 @@
 
 .cs-memory-item-reaction-chip:hover,
 .cs-memory-item-reaction-button:hover{
-  border-color:rgba(0,240,248,.34);
-  background:rgba(0,240,248,.10);
+  border-color:rgba(var(--cs-mem-cyan),.34);
+  background:rgba(var(--cs-mem-cyan),.10);
 }
 
 .cs-memory-item-reaction-chip.is-active,
 .cs-memory-item-reaction-button.is-active{
-  border-color:rgba(255,183,77,.42);
-  background:rgba(255,183,77,.13);
+  border-color:rgba(var(--cs-mem-amber),.42);
+  background:rgba(var(--cs-mem-amber),.13);
   opacity:1;
 }
 
@@ -900,7 +935,7 @@
   border-radius:999px;
   background:rgba(255,255,255,.075);
   border:1px solid rgba(255,255,255,.14);
-  box-shadow:0 0 22px rgba(0,240,248,.12);
+  box-shadow:0 0 22px rgba(var(--cs-mem-cyan),.12);
   overflow:hidden;
 }
 
@@ -915,4 +950,3 @@
   width:30px;
   height:30px;
 }
-
