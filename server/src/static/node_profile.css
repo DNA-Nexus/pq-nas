@@ -388,26 +388,27 @@
 }
 
 /* Robust theme matching via overlay data-node-theme.
-   This avoids depending on where the global data-theme attribute is read from. */
+   These selectors have the same specificity as the :root[data-theme] rules above
+   and appear later in source order, so they win by cascade without !important. */
 .nodeProfileOverlay[data-node-theme="bright"] {
-  background: rgba(15,23,42,0.18) !important;
-  backdrop-filter: blur(2px) !important;
+  background: rgba(15,23,42,0.18);
+  backdrop-filter: blur(2px);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileWindow {
-  color: #111827 !important;
-  border-color: rgba(15,23,42,0.16) !important;
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
   background:
     radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
     radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
-    rgba(255,255,255,0.97) !important;
+    rgba(255,255,255,0.96);
   box-shadow:
     0 28px 90px rgba(15,23,42,0.24),
-    inset 0 1px 0 rgba(255,255,255,0.80) !important;
+    inset 0 1px 0 rgba(255,255,255,0.80);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileTitlebar {
-  border-bottom-color: rgba(15,23,42,0.10) !important;
+  border-bottom-color: rgba(15,23,42,0.10);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileHero h2,
@@ -415,57 +416,57 @@
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat strong,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTitle,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSectionTitle {
-  color: #111827 !important;
+  color: #111827;
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileSub,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileNodeId,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat span,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeDesc {
-  color: rgba(15,23,42,0.68) !important;
+  color: rgba(15,23,42,0.66);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileStat,
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge {
-  border-color: rgba(15,23,42,0.12) !important;
-  background: rgba(15,23,42,0.035) !important;
+  border-color: rgba(15,23,42,0.12);
+  background: rgba(15,23,42,0.035);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadge.unlocked {
-  border-color: rgba(13,148,136,0.46) !important;
+  border-color: rgba(13,148,136,0.46);
   background:
     radial-gradient(circle at 0% 0%, rgba(45,212,191,0.12), transparent 44%),
-    rgba(15,23,42,0.035) !important;
+    rgba(15,23,42,0.035);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileBadgeTier {
-  color: rgba(15,23,42,0.66) !important;
-  border-color: rgba(15,23,42,0.13) !important;
-  background: rgba(15,23,42,0.055) !important;
+  color: rgba(15,23,42,0.66);
+  border-color: rgba(15,23,42,0.13);
+  background: rgba(15,23,42,0.055);
 }
 
 .nodeProfileOverlay[data-node-theme="bright"] .nodeProfileClose {
-  color: #111827 !important;
-  border-color: rgba(15,23,42,0.16) !important;
-  background: rgba(15,23,42,0.07) !important;
+  color: #111827;
+  border-color: rgba(15,23,42,0.16);
+  background: rgba(15,23,42,0.07);
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] {
-  background: rgba(0,0,0,0.18) !important;
-  backdrop-filter: none !important;
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: none;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileWindow {
-  color: #000 !important;
-  border-radius: 0 !important;
-  border: 2px solid #808080 !important;
-  background: #ececec !important;
-  box-shadow: 8px 8px 0 rgba(0,0,0,0.28) !important;
+  color: #000;
+  border-radius: 0;
+  border: 2px solid #808080;
+  background: #ececec;
+  box-shadow: 8px 8px 0 rgba(0,0,0,0.28);
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileTitlebar {
-  border-bottom: 2px solid #b8b8b8 !important;
-  background: linear-gradient(90deg, #c7d8ff, #e8e8e8) !important;
+  border-bottom: 2px solid #b8b8b8;
+  background: linear-gradient(90deg, #c7d8ff, #e8e8e8);
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileHero h2,
@@ -473,43 +474,43 @@
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat strong,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTitle,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSectionTitle {
-  color: #000 !important;
+  color: #000;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileSub,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileNodeId,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat span,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeDesc {
-  color: #444 !important;
+  color: #444;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileStat,
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge {
-  border-radius: 0 !important;
-  border: 1px solid #9a9a9a !important;
-  background: #f7f7f7 !important;
+  border-radius: 0;
+  border: 1px solid #9a9a9a;
+  background: #f7f7f7;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.unlocked {
-  border-color: #008080 !important;
-  background: #f5ffff !important;
+  border-color: #008080;
+  background: #f5ffff;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadge.locked {
-  opacity: 0.72 !important;
+  opacity: 0.72;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileBadgeTier {
-  color: #222 !important;
-  border-color: #999 !important;
-  background: #e4e4e4 !important;
+  color: #222;
+  border-color: #999;
+  background: #e4e4e4;
 }
 
 .nodeProfileOverlay[data-node-theme="win_classic"] .nodeProfileClose {
-  color: #000 !important;
-  border-radius: 0 !important;
-  border: 1px solid #808080 !important;
-  background: #dcdcdc !important;
+  color: #000;
+  border-radius: 0;
+  border: 1px solid #808080;
+  background: #dcdcdc;
 }
 
 /* Node avatar and clickable node badges */
@@ -685,7 +686,7 @@ button.nodeProfileAvatarButton:focus-visible {
   background:
     radial-gradient(circle at 14% 0%, rgba(45,212,191,0.16), transparent 34%),
     radial-gradient(circle at 100% 12%, rgba(96,165,250,0.12), transparent 38%),
-    rgba(255,255,255,0.97);
+    rgba(255,255,255,0.96);
 }
 
 .nodeProfileMiniOverlay[data-node-theme="bright"] .nodeProfileReplayKicker,
