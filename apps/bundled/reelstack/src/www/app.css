@@ -1,5 +1,39 @@
 :root{
   color-scheme: dark;
+
+  /* Reel Stack semantic token layer.
+     Replaces hardcoded colors in component rules with swappable tokens.
+     Where safe, tokens reference PQ-NAS global theme variables.
+     Remaining tokens preserve current Reel Stack defaults and can be
+     mapped to global tokens in a future PR for full theme unification. */
+
+  /* ---- Brand accent (orange) ---- */
+  --rs-accent: #ff9f1c;
+  --rs-accent-rgb: 255,159,28;
+
+  /* ---- Surfaces ---- */
+  --rs-card-bg: rgba(0,0,0,.24);
+  --rs-card-border: rgba(var(--fg-rgb, 255,255,255),.14);
+  --rs-card-shadow: 0 16px 38px rgba(0,0,0,.20);
+  --rs-overlay-bg: var(--overlay-bg, rgba(0,0,0,.72));
+  --rs-elevated-bg: var(--elevated-bg, rgba(20,20,20,.96));
+  --rs-elevated-border: rgba(var(--fg-rgb, 255,255,255),.20);
+  --rs-elevated-shadow: var(--elevated-shadow, 0 24px 80px rgba(0,0,0,.45));
+  --rs-panel-soft: rgba(0,0,0,.18);
+
+  /* ---- Borders ---- */
+  --rs-border: rgba(var(--fg-rgb, 255,255,255),.22);
+  --rs-border-subtle: rgba(var(--fg-rgb, 255,255,255),.12);
+
+  /* ---- Buttons ---- */
+  --rs-btn-bg: rgba(255,255,255,.08);
+  --rs-btn-hover-bg: rgba(255,255,255,.13);
+  --rs-btn-border: rgba(var(--fg-rgb, 255,255,255),.24);
+
+  /* ---- Form fields ---- */
+  --rs-field-bg: rgba(0,0,0,.28);
+  --rs-field-fg: var(--fg, #fff);
+  --rs-field-border: rgba(var(--fg-rgb, 255,255,255),.22);
 }
 
 body{
@@ -7,7 +41,7 @@ body{
   min-height:100vh;
   color:var(--fg, #f5f5f5);
   background:
-    radial-gradient(circle at top left, rgba(255,159,28,.22), transparent 34rem),
+    radial-gradient(circle at top left, rgba(var(--rs-accent-rgb),.22), transparent 34rem),
     radial-gradient(circle at bottom right, rgba(255,80,20,.12), transparent 28rem),
     var(--bg, #080808);
   font-family:var(--sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
@@ -60,31 +94,31 @@ body{
 
 .rsInput{
   min-width:240px;
-  border:1px solid rgba(var(--fg-rgb,255,255,255),.22);
+  border:1px solid var(--rs-field-border);
   border-radius:14px;
   padding:11px 13px;
-  color:var(--fg,#fff);
-  background:rgba(0,0,0,.28);
+  color:var(--rs-field-fg);
+  background:var(--rs-field-bg);
   outline:none;
 }
 
 .rsBtn{
-  border:1px solid rgba(var(--fg-rgb,255,255,255),.24);
+  border:1px solid var(--rs-btn-border);
   border-radius:14px;
   padding:10px 13px;
   color:var(--fg,#fff);
-  background:rgba(255,255,255,.08);
+  background:var(--rs-btn-bg);
   cursor:pointer;
   font-weight:750;
 }
 
 .rsBtn:hover{
-  background:rgba(255,255,255,.13);
+  background:var(--rs-btn-hover-bg);
 }
 
 .rsBtn.primary{
-  border-color:rgba(255,159,28,.65);
-  background:linear-gradient(180deg, rgba(255,159,28,.28), rgba(255,100,0,.18));
+  border-color:rgba(var(--rs-accent-rgb),.65);
+  background:linear-gradient(180deg, rgba(var(--rs-accent-rgb),.28), rgba(255,100,0,.18));
 }
 
 .rsStatus{
@@ -102,11 +136,11 @@ body{
 }
 
 .rsCard{
-  border:1px solid rgba(var(--fg-rgb,255,255,255),.14);
+  border:1px solid var(--rs-card-border);
   border-radius:20px;
-  background:rgba(0,0,0,.24);
+  background:var(--rs-card-bg);
   overflow:hidden;
-  box-shadow:0 16px 38px rgba(0,0,0,.20);
+  box-shadow:var(--rs-card-shadow);
 }
 
 .rsThumb{
@@ -179,7 +213,7 @@ body{
   position:fixed;
   inset:0;
   z-index:10000;
-  background:rgba(0,0,0,.72);
+  background:var(--rs-overlay-bg);
   display:flex;
   align-items:center;
   justify-content:center;
@@ -193,11 +227,11 @@ body{
 .rsModalCard{
   width:min(1100px, 96vw);
   max-height:92vh;
-  border:1px solid rgba(var(--fg-rgb,255,255,255),.20);
+  border:1px solid var(--rs-elevated-border);
   border-radius:22px;
-  background:var(--modal-bg, rgba(20,20,20,.96));
+  background:var(--rs-elevated-bg);
   overflow:hidden;
-  box-shadow:0 24px 80px rgba(0,0,0,.45);
+  box-shadow:var(--rs-elevated-shadow);
 }
 
 .rsModalHead{
@@ -206,7 +240,7 @@ body{
   align-items:center;
   gap:14px;
   padding:12px 14px;
-  border-bottom:1px solid rgba(var(--fg-rgb,255,255,255),.12);
+  border-bottom:1px solid var(--rs-border-subtle);
 }
 
 .rsMuted{
@@ -240,7 +274,7 @@ html[data-theme="win_classic"] .rsInput{
   align-items:center;
   justify-content:center;
   background:
-    radial-gradient(circle at 50% 42%, rgba(255,159,28,.22), transparent 34%),
+    radial-gradient(circle at 50% 42%, rgba(var(--rs-accent-rgb),.22), transparent 34%),
     linear-gradient(135deg, rgba(0,0,0,.95), rgba(30,30,30,.98));
 }
 
@@ -251,8 +285,8 @@ html[data-theme="win_classic"] .rsInput{
   display:flex;
   align-items:center;
   justify-content:center;
-  border:1px solid rgba(255,159,28,.45);
-  color:rgba(255,159,28,.95);
+  border:1px solid rgba(var(--rs-accent-rgb),.45);
+  color:rgba(var(--rs-accent-rgb),.95);
   background:rgba(0,0,0,.42);
   box-shadow:0 18px 46px rgba(0,0,0,.35);
   font-weight:900;
@@ -503,10 +537,10 @@ html[data-theme="win_classic"] .rsDetails{
 }
 
 .rsMetaTechPanel{
-  border:1px solid rgba(var(--fg-rgb,255,255,255),.12);
+  border:1px solid var(--rs-border-subtle);
   border-radius:16px;
   padding:14px;
-  background:rgba(0,0,0,.18);
+  background:var(--rs-panel-soft);
 }
 
 .rsMetaTechTitle{
@@ -951,9 +985,9 @@ html[data-theme="win_classic"] .rsDetails{
   grid-column:1 / -1;
   margin:18px 0 2px;
   padding:10px 12px;
-  border:1px solid rgba(var(--fg-rgb),0.12);
+  border:1px solid var(--rs-border-subtle);
   border-radius:14px;
-  background:rgba(0,0,0,0.22);
+  background:var(--rs-card-bg);
   color:var(--fg);
   font-weight:800;
   letter-spacing:0.01em;
