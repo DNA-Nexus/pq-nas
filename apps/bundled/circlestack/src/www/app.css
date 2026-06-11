@@ -953,7 +953,7 @@ body {
   color: #eff6ff;
   font-weight: 900;
   font-size: 30px;
-  border: 1px solid rgba(255,255,255,0.18);
+  border: 1px solid var(--cs-border);
   flex: 0 0 auto;
 }
 
@@ -971,12 +971,12 @@ body {
   font-size: 21px;
   line-height: 1.15;
   font-weight: 900;
-  color: #f8fafc;
+  color: var(--cs-text);
 }
 
 .cs-profile-sub {
   margin-top: 4px;
-  color: #93c5fd;
+  color: var(--cs-profile-sub-fg);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
@@ -985,20 +985,20 @@ body {
   margin: 12px 0 18px;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.045);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--cs-profile-card-bg);
+  border: 1px solid var(--cs-profile-card-border);
 }
 
 .cs-profile-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.50);
+  color: var(--cs-faint);
   margin-bottom: 5px;
 }
 
 .cs-profile-fingerprint {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-  color: rgba(255,255,255,0.82);
+  color: var(--cs-text-soft);
   overflow-wrap: anywhere;
 }
 
@@ -2796,7 +2796,7 @@ html[data-theme="bright"] .cs-federated-local-reaction-label {
 .cs-profile-achievements {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--cs-profile-card-border);
 }
 
 .cs-profile-achievement-grid {
@@ -2810,8 +2810,8 @@ html[data-theme="bright"] .cs-federated-local-reaction-label {
   align-items: flex-start;
   padding: 9px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.09);
-  background: rgba(255,255,255,0.045);
+  border: 1px solid var(--cs-profile-card-border);
+  background: var(--cs-profile-card-bg);
 }
 
 .cs-profile-achievement-icon {
@@ -2828,12 +2828,12 @@ html[data-theme="bright"] .cs-federated-local-reaction-label {
 
 .cs-profile-achievement-title {
   font-weight: 850;
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 13px;
 }
 
 .cs-profile-achievement-desc {
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-faint);
   font-size: 12px;
   line-height: 1.3;
 }
@@ -2946,7 +2946,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-card {
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid var(--cs-border);
   border-radius: 22px;
   background:
     radial-gradient(circle at 12% 0%, rgba(45,212,191,0.12), transparent 30%),
@@ -2981,7 +2981,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-title {
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-faint);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.13em;
@@ -2989,14 +2989,14 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-name {
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 28px;
   line-height: 1.1;
   font-weight: 950;
 }
 
 .cs-my-profile-sub {
-  color: #93c5fd;
+  color: var(--cs-profile-sub-fg);
   font-size: 13px;
 }
 
@@ -3004,13 +3004,13 @@ img.cs-profile-achievement-icon {
   margin: 16px 0 18px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.09);
-  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--cs-profile-card-border);
+  background: var(--cs-profile-card-bg);
 }
 
 .cs-my-profile-section-title {
   margin: 18px 0 10px;
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 15px;
   font-weight: 900;
 }
@@ -3022,14 +3022,14 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-stat {
-  border: 1px solid rgba(255,255,255,0.09);
+  border: 1px solid var(--cs-profile-card-border);
   border-radius: 14px;
-  background: rgba(255,255,255,0.045);
+  background: var(--cs-profile-card-bg);
   padding: 12px;
 }
 
 .cs-my-profile-stat-value {
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 22px;
   font-weight: 950;
   line-height: 1.1;
@@ -3037,7 +3037,7 @@ img.cs-profile-achievement-icon {
 
 .cs-my-profile-stat-label {
   margin-top: 4px;
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-faint);
   font-size: 12px;
   line-height: 1.25;
 }
@@ -3110,9 +3110,9 @@ img.cs-profile-achievement-icon {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.07);
-  color: #f8fafc;
+  border: 1px solid var(--cs-border);
+  background: var(--cs-button);
+  color: var(--cs-text);
   font-size: 22px;
   font-weight: 850;
   line-height: 1;
@@ -3120,7 +3120,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-close:hover {
-  background: rgba(255,255,255,0.12);
+  background: var(--cs-button-hover);
 }
 
 .cs-my-profile-loading {
@@ -3148,7 +3148,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-title {
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-faint);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.13em;
@@ -3156,14 +3156,14 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-name {
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 28px;
   line-height: 1.1;
   font-weight: 950;
 }
 
 .cs-my-profile-sub {
-  color: #93c5fd;
+  color: var(--cs-profile-sub-fg);
   font-size: 13px;
 }
 
@@ -3171,13 +3171,13 @@ img.cs-profile-achievement-icon {
   margin: 16px 0 18px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.09);
-  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--cs-profile-card-border);
+  background: var(--cs-profile-card-bg);
 }
 
 .cs-my-profile-section-title {
   margin: 18px 0 10px;
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 15px;
   font-weight: 900;
 }
@@ -3189,14 +3189,14 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-stat {
-  border: 1px solid rgba(255,255,255,0.09);
+  border: 1px solid var(--cs-profile-card-border);
   border-radius: 14px;
-  background: rgba(255,255,255,0.045);
+  background: var(--cs-profile-card-bg);
   padding: 12px;
 }
 
 .cs-my-profile-stat-value {
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 22px;
   font-weight: 950;
   line-height: 1.1;
@@ -3204,7 +3204,7 @@ img.cs-profile-achievement-icon {
 
 .cs-my-profile-stat-label {
   margin-top: 4px;
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-faint);
   font-size: 12px;
   line-height: 1.25;
 }
@@ -3266,7 +3266,7 @@ img.cs-profile-achievement-icon {
   max-height: min(820px, calc(100vh - 32px));
   margin: auto;
   border-radius: 24px;
-  border: 1px solid rgba(255,255,255,0.16);
+  border: 1px solid var(--cs-border);
   background:
     linear-gradient(135deg, rgba(17,24,39,0.98), rgba(24,24,38,0.98));
   box-shadow:
@@ -3313,7 +3313,7 @@ img.cs-profile-achievement-icon {
 .cs-my-profile-fp-block,
 .cs-my-profile-stat,
 .cs-my-profile-detached-shell .cs-profile-achievement {
-  background: rgba(255,255,255,0.045);
+  background: var(--cs-profile-card-bg);
   backdrop-filter: blur(10px);
 }
 
@@ -3393,7 +3393,7 @@ img.cs-profile-achievement-icon {
   padding: 8px 10px 8px 14px;
   cursor: grab;
   user-select: none;
-  border-bottom: 1px solid rgba(255,255,255,0.10);
+  border-bottom: 1px solid var(--cs-profile-card-border);
   background:
     linear-gradient(90deg, rgba(45,212,191,0.16), rgba(168,85,247,0.14)),
     rgba(15,23,42,0.96);
@@ -3410,7 +3410,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-windowbar-title {
-  color: #f8fafc;
+  color: var(--cs-text);
   font-size: 13px;
   font-weight: 950;
   letter-spacing: 0.08em;
@@ -3418,7 +3418,7 @@ img.cs-profile-achievement-icon {
 }
 
 .cs-my-profile-windowbar-hint {
-  color: rgba(255,255,255,0.50);
+  color: var(--cs-faint);
   font-size: 11px;
   font-weight: 700;
 }
@@ -3604,7 +3604,7 @@ img.cs-profile-achievement-icon {
 
 .cs-locked-achievement-hint {
   margin: -2px 0 10px;
-  color: rgba(255,255,255,0.52);
+  color: var(--cs-faint);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -3804,6 +3804,10 @@ img.cs-profile-achievement-icon {
   --cs-input-bg: #181820;
   --cs-modal-bg: #181820;
   --cs-shadow: rgba(0,0,0,0.42);
+
+  --cs-profile-sub-fg: #93c5fd;
+  --cs-profile-card-bg: rgba(255,255,255,0.045);
+  --cs-profile-card-border: rgba(255,255,255,0.09);
 }
 
 :root[data-theme="cpunk_orange"] {
@@ -3828,6 +3832,10 @@ img.cs-profile-achievement-icon {
   --cs-input-bg: #1c120d;
   --cs-modal-bg: #1c120d;
   --cs-shadow: rgba(0,0,0,0.48);
+
+  --cs-profile-sub-fg: #fdba74;
+  --cs-profile-card-bg: rgba(251,146,60,0.06);
+  --cs-profile-card-border: rgba(251,146,60,0.12);
 }
 
 :root[data-theme="bright"] {
@@ -3852,6 +3860,10 @@ img.cs-profile-achievement-icon {
   --cs-input-bg: #ffffff;
   --cs-modal-bg: #ffffff;
   --cs-shadow: rgba(15,23,42,0.18);
+
+  --cs-profile-sub-fg: #2563eb;
+  --cs-profile-card-bg: rgba(15,23,42,0.04);
+  --cs-profile-card-border: rgba(15,23,42,0.10);
 }
 
 :root[data-theme="win_classic"] {
@@ -3876,6 +3888,10 @@ img.cs-profile-achievement-icon {
   --cs-input-bg: #ffffff;
   --cs-modal-bg: #f0f0f0;
   --cs-shadow: rgba(0,0,0,0.24);
+
+  --cs-profile-sub-fg: #000080;
+  --cs-profile-card-bg: #e6e6e6;
+  --cs-profile-card-border: #a0a0a0;
 }
 
 /* Base surfaces */
