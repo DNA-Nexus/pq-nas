@@ -31,10 +31,14 @@ body{
 
 /* Sidebar */
 .sidebar{
+    /* local sidebar surface tokens – dark overlays for depth hierarchy */
+    --_sidebar-surface: rgba(0,0,0,0.10);
+    --_sidebar-inset:   rgba(0,0,0,0.14);
+
     border: 0;
     border-radius: 0;
     box-shadow: none;
-    background: rgba(0,0,0,0.10);
+    background: var(--_sidebar-surface);
     padding: 0;
     display: flex;
     flex-direction: column;
@@ -120,7 +124,7 @@ body{
     border: 0;
     border-radius: 10px;
     padding: 2px 8px;
-    background: rgba(255,255,255,0.08);
+    background: rgba(var(--fg-rgb),0.08);
     display:inline-flex;
     align-items:center;
     justify-content:center;
@@ -138,7 +142,7 @@ body{
 .statusCard{
     border: 0;
     border-radius: 12px;
-    background: rgba(0,0,0,0.14);
+    background: var(--_sidebar-inset);
     padding: 10px 12px;
 }
 
@@ -268,7 +272,7 @@ body{
 
 .badge.unknown{
     border-color: rgba(var(--fg-rgb),0.14);
-    background: rgba(255,255,255,0.03);
+    background: rgba(var(--fg-rgb),0.03);
     color: rgba(var(--fg-rgb),0.80);
 }
 
@@ -415,7 +419,7 @@ a:hover{ text-shadow: 0 0 10px rgba(var(--fg-rgb),0.25); }
     padding:3px;
     border-radius:9px;
     border:1px solid rgba(var(--fg-rgb),0.16);
-    background: rgba(255,255,255,0.08);
+    background: rgba(var(--fg-rgb),0.08);
     overflow:hidden;
 }
 
