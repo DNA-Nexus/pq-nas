@@ -8,7 +8,7 @@
 .pgStatsCard{
     border:1px solid var(--border2);
     border-radius:16px;
-    background:rgba(0,0,0,0.18);
+    background:var(--pg_bar_bg);
     padding:14px;
     min-height:88px;
     display:flex;

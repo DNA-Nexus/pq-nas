@@ -30,7 +30,7 @@
 .mapSummary{
     border:1px solid var(--border2);
     border-radius:18px;
-    background: rgba(0,0,0,0.18);
+    background: var(--pg_bar_bg);
     padding:14px;
 }
 
@@ -52,7 +52,7 @@
     padding:12px 14px;
     border:1px solid var(--border2);
     border-radius:14px;
-    background: rgba(0,0,0,0.18);
+    background: var(--pg_bar_bg);
     color:var(--fg);
     text-align:left;
     cursor:pointer;
@@ -136,7 +136,7 @@ html[data-theme="bright"] .mapPhotoBtn{
 .mapSelectionCard{
     border:1px solid var(--border2);
     border-radius:18px;
-    background: rgba(0,0,0,0.18);
+    background: var(--pg_bar_bg);
     overflow:hidden;
 }
 

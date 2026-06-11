@@ -14,6 +14,8 @@
             --pg_surface: var(--panel);
             --pg_surface2: var(--panel2);
             --pg_overlay: rgba(0,0,0,0.56);
+            --pg_card_bg: rgba(0,0,0,0.22);
+            --pg_bar_bg: rgba(0,0,0,0.18);
             --pg_burst_chip_bg: linear-gradient(180deg, var(--pg_surface2), var(--pg_surface));
             --pg_burst_chip_border: var(--border);
             --pg_burst_chip_text: var(--fg);
@@ -82,7 +84,7 @@
             gap:14px;
             padding:12px 14px;
             border-bottom:1px solid var(--border2);
-            background: rgba(0,0,0,0.18);
+            background: var(--pg_bar_bg);
             flex-wrap:wrap;
         }
 
@@ -209,8 +211,8 @@
             white-space: nowrap;
         }
         .badge.ok{ border-color: rgba(var(--fg-rgb),0.30); background: rgba(var(--fg-rgb),0.08); }
-        .badge.warn{ border-color: rgba(255,190,0,0.25); background: rgba(255,190,0,0.10); color: rgba(255,225,170,0.95); }
-        .badge.err{ border-color: rgba(255,90,90,0.25); background: rgba(255,90,90,0.10); color: rgba(255,190,190,0.95); }
+        .badge.warn{ border-color: rgba(var(--warn-rgb),0.25); background: rgba(var(--warn-rgb),0.10); color: rgba(255,225,170,0.95); }
+        .badge.err{ border-color: rgba(var(--err-rgb),0.25); background: rgba(var(--err-rgb),0.10); color: rgba(255,190,190,0.95); }
 
         .gridWrap{
             flex:1 1 auto;
@@ -233,7 +235,7 @@
             position:relative;
             border:1px solid var(--border2);
             border-radius:18px;
-            background: rgba(0,0,0,0.22);
+            background: var(--pg_card_bg);
             overflow:hidden;
             transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
             cursor:pointer;
@@ -362,7 +364,7 @@
         .emptyState{
             border:1px solid var(--border2);
             border-radius:18px;
-            background: rgba(0,0,0,0.22);
+            background: var(--pg_card_bg);
             padding:16px;
             box-shadow: 0 0 18px rgba(var(--fg-rgb),0.06);
         }
@@ -436,7 +438,7 @@
             gap:12px;
             padding:12px 14px;
             border-bottom:1px solid var(--border2);
-            background: rgba(0,0,0,0.18);
+            background: var(--pg_bar_bg);
             flex:0 0 auto;
         }
 
@@ -760,8 +762,8 @@
         }
 
         .ctxItem.danger:hover{
-            background: rgba(255,90,90,0.14);
-            border-color: rgba(255,90,90,0.25);
+            background: rgba(var(--err-rgb),0.14);
+            border-color: rgba(var(--err-rgb),0.25);
         }
 
         .ctxSep{
@@ -858,20 +860,20 @@
 
         .dangerBtn{
             color: rgba(255,190,190,0.98);
-            border-color: rgba(255,90,90,0.24);
+            border-color: rgba(var(--err-rgb),0.24);
         }
 
         .dangerBtn:hover{
-            background: rgba(255,90,90,0.12);
-            border-color: rgba(255,90,90,0.34);
+            background: rgba(var(--err-rgb),0.12);
+            border-color: rgba(var(--err-rgb),0.34);
         }
         .tile:focus{
             outline: none;
         }
         .shareBadge.expired{
-            background: rgba(255,70,70,0.18);
-            border-color: rgba(255,70,70,0.55);
-            color: rgba(255,70,70,0.95);
+            background: rgba(var(--err-rgb),0.18);
+            border-color: rgba(var(--err-rgb),0.55);
+            color: rgba(var(--err-rgb),0.95);
         }
         @media (max-width: 640px){
             .embeddedKv{
@@ -1216,13 +1218,13 @@
         }
 
         .upPill.warn{
-            border-color:rgba(255,190,0,0.28);
-            background:rgba(255,190,0,0.10);
+            border-color:rgba(var(--warn-rgb),0.28);
+            background:rgba(var(--warn-rgb),0.10);
         }
 
         .upPill.err{
-            border-color:rgba(255,90,90,0.28);
-            background:rgba(255,90,90,0.10);
+            border-color:rgba(var(--err-rgb),0.28);
+            background:rgba(var(--err-rgb),0.10);
         }
         .footerStatsLine{
             opacity:.82;
