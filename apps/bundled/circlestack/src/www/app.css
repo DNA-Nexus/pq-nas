@@ -85,6 +85,34 @@
   --cs-reply-tag-fg: #dbeafe;
   --cs-reply-tag-hover-bg: rgba(147,197,253,0.18);
   --cs-reply-tag-hover-border: rgba(147,197,253,0.45);
+
+  /* ---- Reactions ---- */
+  --cs-reaction-bg: rgba(255,255,255,0.055);
+  --cs-reaction-border: rgba(255,255,255,0.10);
+  --cs-reaction-fg: #e5e7eb;
+  --cs-reaction-hover-bg: rgba(147,197,253,0.13);
+  --cs-reaction-hover-border: rgba(147,197,253,0.32);
+  --cs-reaction-active-bg: rgba(37,99,235,0.28);
+  --cs-reaction-active-border: rgba(147,197,253,0.72);
+  --cs-reaction-active-fg: #eff6ff;
+  --cs-reaction-people-fg: rgba(255,255,255,0.58);
+  --cs-reaction-person-fg: #93c5fd;
+  --cs-reaction-sep-fg: rgba(255,255,255,0.28);
+  --cs-reaction-more-fg: rgba(255,255,255,0.48);
+  --cs-reaction-chip-bg: rgba(147,197,253,0.10);
+  --cs-reaction-chip-border: rgba(147,197,253,0.26);
+  --cs-reaction-chip-fg: #dbeafe;
+  --cs-reaction-chip-hover-bg: rgba(147,197,253,0.18);
+  --cs-reaction-chip-hover-border: rgba(147,197,253,0.45);
+  --cs-reaction-chip-active-bg: rgba(37,99,235,0.34);
+  --cs-reaction-trigger-fg: rgba(255,255,255,0.72);
+  --cs-reaction-trigger-hover-bg: rgba(147,197,253,0.13);
+  --cs-reaction-trigger-hover-border: rgba(147,197,253,0.36);
+  --cs-reaction-trigger-hover-fg: #dbeafe;
+  --cs-reaction-menu-bg: rgba(24,24,32,0.96);
+  --cs-reaction-menu-shadow: 0 16px 50px rgba(0,0,0,0.45);
+  --cs-reaction-menu-hover-bg: rgba(147,197,253,0.14);
+  --cs-reaction-menu-active-bg: rgba(37,99,235,0.30);
 }
 
 body {
@@ -975,10 +1003,10 @@ body {
 }
 
 .cs-reaction-button {
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--cs-reaction-border);
   border-radius: 999px;
-  background: rgba(255,255,255,0.055);
-  color: #e5e7eb;
+  background: var(--cs-reaction-bg);
+  color: var(--cs-reaction-fg);
   padding: 5px 9px;
   font-size: 14px;
   line-height: 1;
@@ -987,15 +1015,15 @@ body {
 }
 
 .cs-reaction-button:hover {
-  background: rgba(147,197,253,0.13);
-  border-color: rgba(147,197,253,0.32);
+  background: var(--cs-reaction-hover-bg);
+  border-color: var(--cs-reaction-hover-border);
   transform: translateY(-1px);
 }
 
 .cs-reaction-button.is-active {
-  background: rgba(37,99,235,0.28);
-  border-color: rgba(147,197,253,0.72);
-  color: #eff6ff;
+  background: var(--cs-reaction-active-bg);
+  border-color: var(--cs-reaction-active-border);
+  color: var(--cs-reaction-active-fg);
 }
 
 .cs-reaction-people {
@@ -1003,21 +1031,21 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
-  color: rgba(255,255,255,0.58);
+  color: var(--cs-reaction-people-fg);
   font-size: 12px;
   line-height: 1.35;
 }
 
 .cs-reaction-person {
-  color: #93c5fd;
+  color: var(--cs-reaction-person-fg);
 }
 
 .cs-reaction-sep {
-  color: rgba(255,255,255,0.28);
+  color: var(--cs-reaction-sep-fg);
 }
 
 .cs-reaction-more {
-  color: rgba(255,255,255,0.48);
+  color: var(--cs-reaction-more-fg);
 }
 
 /* Compact hover reaction picker */
@@ -1037,10 +1065,10 @@ body {
 }
 
 .cs-reaction-chip {
-  border: 1px solid rgba(147,197,253,0.26);
+  border: 1px solid var(--cs-reaction-chip-border);
   border-radius: 999px;
-  background: rgba(147,197,253,0.10);
-  color: #dbeafe;
+  background: var(--cs-reaction-chip-bg);
+  color: var(--cs-reaction-chip-fg);
   padding: 5px 9px;
   font-size: 13px;
   line-height: 1;
@@ -1048,14 +1076,14 @@ body {
 }
 
 .cs-reaction-chip:hover {
-  background: rgba(147,197,253,0.18);
-  border-color: rgba(147,197,253,0.45);
+  background: var(--cs-reaction-chip-hover-bg);
+  border-color: var(--cs-reaction-chip-hover-border);
 }
 
 .cs-reaction-chip.is-active {
-  background: rgba(37,99,235,0.34);
-  border-color: rgba(147,197,253,0.72);
-  color: #eff6ff;
+  background: var(--cs-reaction-chip-active-bg);
+  border-color: var(--cs-reaction-active-border);
+  color: var(--cs-reaction-active-fg);
 }
 
 .cs-reaction-picker {
@@ -1074,10 +1102,10 @@ body {
 }
 
 .cs-reaction-trigger {
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--cs-reaction-border);
   border-radius: 999px;
-  background: rgba(255,255,255,0.055);
-  color: rgba(255,255,255,0.72);
+  background: var(--cs-reaction-bg);
+  color: var(--cs-reaction-trigger-fg);
   padding: 5px 10px;
   font-size: 13px;
   font-weight: 700;
@@ -1086,9 +1114,9 @@ body {
 
 .cs-reaction-trigger:hover,
 .cs-reaction-picker:focus-within .cs-reaction-trigger {
-  background: rgba(147,197,253,0.13);
-  border-color: rgba(147,197,253,0.36);
-  color: #dbeafe;
+  background: var(--cs-reaction-trigger-hover-bg);
+  border-color: var(--cs-reaction-trigger-hover-border);
+  color: var(--cs-reaction-trigger-hover-fg);
 }
 
 .cs-reaction-menu {
@@ -1099,9 +1127,9 @@ body {
   gap: 5px;
   padding: 7px;
   border-radius: 999px;
-  background: rgba(24,24,32,0.96);
-  border: 1px solid rgba(255,255,255,0.14);
-  box-shadow: 0 16px 50px rgba(0,0,0,0.45);
+  background: var(--cs-reaction-menu-bg);
+  border: 1px solid var(--cs-border);
+  box-shadow: var(--cs-reaction-menu-shadow);
   opacity: 0;
   pointer-events: none;
   transform: translateY(6px) scale(0.98);
@@ -1129,11 +1157,11 @@ body {
 
 .cs-reaction-menu-button:hover {
   transform: translateY(-3px) scale(1.14);
-  background: rgba(147,197,253,0.14);
+  background: var(--cs-reaction-menu-hover-bg);
 }
 
 .cs-reaction-menu-button.is-active {
-  background: rgba(37,99,235,0.30);
+  background: var(--cs-reaction-menu-active-bg);
 }
 
 .cs-replies {
