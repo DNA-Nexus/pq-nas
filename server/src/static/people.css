@@ -14,33 +14,33 @@
 }
 
 .peopleView .peopleHeroCard{
-    margin-top:12px !important;
-    border:1px solid rgba(var(--fg-rgb),0.14) !important;
-    border-radius:var(--radius) !important;
+    margin-top:12px;
+    border:1px solid rgba(var(--fg-rgb),0.14);
+    border-radius:var(--radius);
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035)) !important;
-    box-shadow:0 12px 34px rgba(0,0,0,0.10) !important;
+        linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035));
+    box-shadow:0 12px 34px rgba(0,0,0,0.10);
 }
 
 .peopleContactsList{
-    display:grid !important;
-    grid-template-columns:repeat(auto-fill, minmax(286px, 330px)) !important;
-    gap:14px !important;
-    margin-top:0 !important;
-    align-items:stretch !important;
-    justify-content:start !important;
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(286px, 330px));
+    gap:14px;
+    margin-top:0;
+    align-items:stretch;
+    justify-content:start;
 }
 
 .peopleView .peopleContactCard{
     position:relative;
     overflow:hidden;
     min-height:148px;
-    padding:14px 14px 13px 16px !important;
-    border:1px solid rgba(var(--fg-rgb),0.16) !important;
-    border-radius:var(--radius) !important;
+    padding:14px 14px 13px 16px;
+    border:1px solid rgba(var(--fg-rgb),0.16);
+    border-radius:var(--radius);
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.028)) !important;
-    box-shadow:0 10px 26px rgba(0,0,0,0.09) !important;
+        linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.028));
+    box-shadow:0 10px 26px rgba(0,0,0,0.09);
     cursor:default;
     user-select:none;
     transition:
@@ -62,17 +62,17 @@
 
 .peopleView .peopleContactCard:hover{
     transform:translateY(-2px);
-    border-color:rgba(var(--accent-rgb),0.42) !important;
-    box-shadow:0 16px 38px rgba(0,0,0,0.14) !important;
+    border-color:rgba(var(--accent-rgb),0.42);
+    box-shadow:0 16px 38px rgba(0,0,0,0.14);
 }
 
 .peopleView .peopleContactCard.selected{
-    border-color:rgba(var(--accent-rgb),0.82) !important;
+    border-color:rgba(var(--accent-rgb),0.82);
     background:
-        linear-gradient(180deg, rgba(var(--accent-rgb),0.10), rgba(255,255,255,0.035)) !important;
+        linear-gradient(180deg, rgba(var(--accent-rgb),0.10), rgba(255,255,255,0.035));
     box-shadow:
         0 0 0 2px rgba(var(--accent-rgb),0.26),
-        0 18px 44px rgba(0,0,0,0.18) !important;
+        0 18px 44px rgba(0,0,0,0.18);
 }
 
 .peopleView .peopleContactCard:focus{
@@ -153,12 +153,12 @@
     flex-direction:column;
     align-items:flex-start;
     gap:5px;
-    margin-top:7px !important;
+    margin-top:7px;
 }
 
 .peopleCardKind .mono{
     box-sizing:border-box;
-    margin-left:0 !important;
+    margin-left:0;
     margin-top:0;
     max-width:100%;
     overflow:hidden;
@@ -168,7 +168,7 @@
 }
 
 .peopleCardNickname{
-    margin-top:8px !important;
+    margin-top:8px;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
@@ -179,7 +179,7 @@
     -webkit-line-clamp:2;
     -webkit-box-orient:vertical;
     overflow:hidden;
-    margin-top:8px !important;
+    margin-top:8px;
 }
 
 .peopleView .peopleContactCard h3{
@@ -189,7 +189,7 @@
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
-    font-size:17px !important;
+    font-size:17px;
     line-height:1.22;
     letter-spacing:.01em;
 }
@@ -207,11 +207,11 @@
 }
 
 .peopleView .peopleFutureCard{
-    margin-top:0 !important;
-    padding:16px !important;
-    border:1px dashed rgba(var(--fg-rgb),0.18) !important;
-    border-radius:16px !important;
-    background:rgba(255,255,255,0.025) !important;
+    margin-top:0;
+    padding:16px;
+    border:1px dashed rgba(var(--fg-rgb),0.18);
+    border-radius:16px;
+    background:rgba(255,255,255,0.025);
 }
 
 /* Bright/light needs more visible separation than dark themes. */
@@ -219,9 +219,9 @@ html[data-theme="bright"] .peopleView .peopleHeroCard,
 html[data-theme="light"] .peopleView .peopleHeroCard,
 html[data-theme="bright"] .peopleView .peopleContactCard,
 html[data-theme="light"] .peopleView .peopleContactCard{
-    background:#ffffff !important;
-    border-color:rgba(var(--fg-rgb),0.18) !important;
-    box-shadow:0 12px 32px rgba(var(--fg-rgb),0.11) !important;
+    background:#ffffff;
+    border-color:rgba(var(--fg-rgb),0.18);
+    box-shadow:0 12px 32px rgba(var(--fg-rgb),0.11);
 }
 
 html[data-theme="bright"] .peopleView .peopleContactCard .mono,
@@ -235,9 +235,9 @@ html[data-theme="cpunk_orange"] .peopleView .peopleHeroCard,
 html[data-theme="orange"] .peopleView .peopleHeroCard,
 html[data-theme="cpunk_orange"] .peopleView .peopleContactCard,
 html[data-theme="orange"] .peopleView .peopleContactCard{
-    background:linear-gradient(180deg, rgba(var(--fg-rgb),0.055), rgba(0,0,0,0.18)) !important;
-    border-color:rgba(var(--fg-rgb),0.28) !important;
-    box-shadow:0 12px 34px rgba(var(--fg-rgb),0.08) !important;
+    background:linear-gradient(180deg, rgba(var(--fg-rgb),0.055), rgba(0,0,0,0.18));
+    border-color:rgba(var(--fg-rgb),0.28);
+    box-shadow:0 12px 34px rgba(var(--fg-rgb),0.08);
 }
 
 html[data-theme="cpunk_orange"] .peopleView .peopleContactCard::before,
@@ -253,10 +253,10 @@ html[data-theme="win_classic"] .peopleView{
 html[data-theme="win_classic"] .peopleView .peopleHeroCard,
 html[data-theme="win_classic"] .peopleView .peopleContactCard,
 html[data-theme="win_classic"] .peopleView .peopleFutureCard{
-    border-radius:0 !important;
-    border:1px solid var(--border) !important;
-    box-shadow:none !important;
-    background:var(--panel2) !important;
+    border-radius:0;
+    border:1px solid var(--border);
+    box-shadow:none;
+    background:var(--panel2);
 }
 
 html[data-theme="win_classic"] .peopleView .peopleContactCard::before{
@@ -266,8 +266,8 @@ html[data-theme="win_classic"] .peopleView .peopleContactCard::before{
 html[data-theme="win_classic"] .peopleView .peopleContactCard.selected{
     outline:2px solid #000080;
     outline-offset:-3px;
-    border-color:#000080 !important;
-    background:#f7f7ff !important;
+    border-color:#000080;
+    background:#f7f7ff;
 }
 
 html[data-theme="win_classic"] .peopleView .peopleContactCard:hover{
@@ -310,7 +310,7 @@ html[data-theme="orange"] .peopleNewPill{
 /* people-card-polish-v2 */
 @media (max-width: 720px){
     .peopleContactsList{
-        grid-template-columns:1fr !important;
+        grid-template-columns:1fr;
     }
 
     .peopleCardTop{
@@ -339,12 +339,12 @@ html:not([data-theme="win_classic"]) .peopleView .peopleContactCard.selected::af
 
 html[data-theme="bright"] .peopleView .peopleContactCard.selected,
 html[data-theme="light"] .peopleView .peopleContactCard.selected{
-    border-color:#2563eb !important;
-    background:linear-gradient(180deg, #eef5ff, #ffffff) !important;
+    border-color:#2563eb;
+    background:linear-gradient(180deg, #eef5ff, #ffffff);
     box-shadow:
         0 0 0 3px rgba(37,99,235,0.24),
         0 18px 44px rgba(37,99,235,0.18),
-        0 10px 28px rgba(15,23,42,0.12) !important;
+        0 10px 28px rgba(15,23,42,0.12);
 }
 
 html[data-theme="bright"] .peopleView .peopleContactCard.selected::after,
@@ -368,13 +368,13 @@ html[data-theme="light"] .peopleView .peopleContactCard.selected .peopleAvatar{
 
 html[data-theme="cpunk_orange"] .peopleView .peopleContactCard.selected,
 html[data-theme="orange"] .peopleView .peopleContactCard.selected{
-    border-color:#ff8a1f !important;
+    border-color:#ff8a1f;
     background:
-        linear-gradient(180deg, rgba(255,138,31,0.22), rgba(0,0,0,0.28)) !important;
+        linear-gradient(180deg, rgba(255,138,31,0.22), rgba(0,0,0,0.28));
     box-shadow:
         0 0 0 3px rgba(255,138,31,0.28),
         0 0 34px rgba(var(--fg-rgb),0.28),
-        0 18px 44px rgba(0,0,0,0.34) !important;
+        0 18px 44px rgba(0,0,0,0.34);
 }
 
 html[data-theme="cpunk_orange"] .peopleView .peopleContactCard.selected::after,
