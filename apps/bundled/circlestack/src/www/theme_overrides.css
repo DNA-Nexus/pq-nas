@@ -2,6 +2,30 @@
    Loaded after app.css/memory_nodes.css/brand_logo.css. */
 
 /* ============================================================
+   Bright theme semantic tokens
+   ============================================================ */
+:root[data-theme="bright"] {
+  --cs-bright-text: #111827;
+  --cs-bright-text-muted: rgba(15,23,42,0.66);
+  --cs-bright-border: rgba(15,23,42,0.18);
+  --cs-bright-border-subtle: rgba(15,23,42,0.13);
+  --cs-bright-btn-bg: rgba(15,23,42,0.055);
+}
+
+/* ============================================================
+   Win classic semantic tokens
+   ============================================================ */
+:root[data-theme="win_classic"] {
+  --cs-wc-text: #000;
+  --cs-wc-text-muted: #404040;
+  --cs-wc-surface: #f0f0f0;
+  --cs-wc-surface-row: #f7f7f7;
+  --cs-wc-btn-bg: #e8e8e8;
+  --cs-wc-border: #808080;
+  --cs-wc-shadow-drop: rgba(0,0,0,0.24);
+}
+
+/* ============================================================
    Light theme modal readability
    ============================================================ */
 
@@ -12,8 +36,8 @@
 :root[data-theme="bright"] .cs-circle-modal,
 :root[data-theme="bright"] .cs-intro-modal {
   background: rgba(255,255,255,0.985) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.18) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border) !important;
   box-shadow: 0 28px 90px rgba(15,23,42,0.24) !important;
 }
 
@@ -23,7 +47,7 @@
 :root[data-theme="bright"] .cs-my-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="bright"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="bright"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
-  color: #111827 !important;
+  color: var(--cs-bright-text) !important;
   text-shadow: none !important;
 }
 
@@ -34,7 +58,7 @@
 :root[data-theme="bright"] .cs-origin-row small,
 :root[data-theme="bright"] .cs-request-row small,
 :root[data-theme="bright"] .cs-circle-row small {
-  color: rgba(15,23,42,0.66) !important;
+  color: var(--cs-bright-text-muted) !important;
 }
 
 /* ============================================================
@@ -47,11 +71,11 @@
 :root[data-theme="win_classic"] .cs-my-circle-modal,
 :root[data-theme="win_classic"] .cs-circle-modal,
 :root[data-theme="win_classic"] .cs-intro-modal {
-  background: #f0f0f0 !important;
-  color: #000 !important;
-  border: 2px solid #808080 !important;
+  background: var(--cs-wc-surface) !important;
+  color: var(--cs-wc-text) !important;
+  border: 2px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
-  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+  box-shadow: 8px 8px 0 var(--cs-wc-shadow-drop) !important;
 }
 
 :root[data-theme="win_classic"] .cs-modal:not(.cs-achievement-unlock-modal) :not(img):not(svg):not(path):not(circle):not(rect),
@@ -60,7 +84,7 @@
 :root[data-theme="win_classic"] .cs-my-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="win_classic"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="win_classic"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
-  color: #000 !important;
+  color: var(--cs-wc-text) !important;
   text-shadow: none !important;
 }
 
@@ -71,7 +95,7 @@
 :root[data-theme="win_classic"] .cs-origin-row small,
 :root[data-theme="win_classic"] .cs-request-row small,
 :root[data-theme="win_classic"] .cs-circle-row small {
-  color: #404040 !important;
+  color: var(--cs-wc-text-muted) !important;
 }
 
 /* ============================================================
@@ -85,7 +109,7 @@
 :root[data-theme="bright"] .cs-person-row,
 :root[data-theme="bright"] .cs-find-row {
   background: rgba(248,250,252,0.92) !important;
-  color: #111827 !important;
+  color: var(--cs-bright-text) !important;
   border: 1px solid rgba(15,23,42,0.16) !important;
 }
 
@@ -95,9 +119,9 @@
 :root[data-theme="win_classic"] .cs-circle-row,
 :root[data-theme="win_classic"] .cs-person-row,
 :root[data-theme="win_classic"] .cs-find-row {
-  background: #f7f7f7 !important;
-  color: #000 !important;
-  border: 1px solid #808080 !important;
+  background: var(--cs-wc-surface-row) !important;
+  color: var(--cs-wc-text) !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
@@ -107,16 +131,16 @@
 :root[data-theme="bright"] .cs-modal textarea,
 :root[data-theme="bright"] .cs-modal select {
   background: #fff !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.18) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border) !important;
 }
 
 :root[data-theme="win_classic"] .cs-modal input,
 :root[data-theme="win_classic"] .cs-modal textarea,
 :root[data-theme="win_classic"] .cs-modal select {
   background: #fff !important;
-  color: #000 !important;
-  border: 1px solid #808080 !important;
+  color: var(--cs-wc-text) !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
 }
 
@@ -125,9 +149,9 @@
 :root[data-theme="bright"] .cs-find-people-modal button:not(.cs-modal-delete),
 :root[data-theme="bright"] .cs-known-origins-modal button:not(.cs-modal-delete),
 :root[data-theme="bright"] .cs-my-circle-modal button:not(.cs-modal-delete) {
-  background: rgba(15,23,42,0.055) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.18) !important;
+  background: var(--cs-bright-btn-bg) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border) !important;
 }
 
 :root[data-theme="bright"] .cs-modal button:not(.cs-modal-delete):hover,
@@ -142,9 +166,9 @@
 :root[data-theme="win_classic"] .cs-find-people-modal button:not(.cs-modal-delete),
 :root[data-theme="win_classic"] .cs-known-origins-modal button:not(.cs-modal-delete),
 :root[data-theme="win_classic"] .cs-my-circle-modal button:not(.cs-modal-delete) {
-  background: #e8e8e8 !important;
-  color: #000 !important;
-  border: 1px solid #808080 !important;
+  background: var(--cs-wc-btn-bg) !important;
+  color: var(--cs-wc-text) !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
@@ -163,17 +187,17 @@
 
 :root[data-theme="bright"] .cs-reaction-theme-menu {
   background: rgba(255,255,255,0.98) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.18) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border) !important;
   box-shadow:
     0 20px 45px rgba(15,23,42,0.22),
     inset 0 1px 0 rgba(255,255,255,0.90) !important;
 }
 
 :root[data-theme="bright"] .cs-reaction-theme-menu button {
-  background: rgba(15,23,42,0.055) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.13) !important;
+  background: var(--cs-bright-btn-bg) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border-subtle) !important;
   box-shadow: none !important;
 }
 
@@ -183,20 +207,20 @@
 }
 
 :root[data-theme="win_classic"] .cs-reaction-theme-menu {
-  background: #f0f0f0 !important;
-  color: #000 !important;
-  border: 2px solid #808080 !important;
+  background: var(--cs-wc-surface) !important;
+  color: var(--cs-wc-text) !important;
+  border: 2px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #9a9a9a,
-    8px 8px 0 rgba(0,0,0,0.24) !important;
+    8px 8px 0 var(--cs-wc-shadow-drop) !important;
 }
 
 :root[data-theme="win_classic"] .cs-reaction-theme-menu button {
-  background: #e8e8e8 !important;
-  color: #000 !important;
-  border: 1px solid #808080 !important;
+  background: var(--cs-wc-btn-bg) !important;
+  color: var(--cs-wc-text) !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
@@ -217,7 +241,7 @@
 :root[data-theme="bright"] .cs-my-profile-section-title,
 :root[data-theme="bright"] .cs-my-profile-stat-value,
 :root[data-theme="bright"] .cs-profile-achievement-title {
-  color: #111827 !important;
+  color: var(--cs-bright-text) !important;
   text-shadow: none !important;
 }
 
@@ -226,7 +250,7 @@
 :root[data-theme="bright"] .cs-profile-fingerprint,
 :root[data-theme="bright"] .cs-my-profile-stat-label,
 :root[data-theme="bright"] .cs-profile-achievement-desc {
-  color: rgba(15,23,42,0.66) !important;
+  color: var(--cs-bright-text-muted) !important;
   text-shadow: none !important;
 }
 
@@ -235,7 +259,7 @@
 :root[data-theme="win_classic"] .cs-my-profile-section-title,
 :root[data-theme="win_classic"] .cs-my-profile-stat-value,
 :root[data-theme="win_classic"] .cs-profile-achievement-title {
-  color: #000 !important;
+  color: var(--cs-wc-text) !important;
   text-shadow: none !important;
 }
 
@@ -244,7 +268,7 @@
 :root[data-theme="win_classic"] .cs-profile-fingerprint,
 :root[data-theme="win_classic"] .cs-my-profile-stat-label,
 :root[data-theme="win_classic"] .cs-profile-achievement-desc {
-  color: #404040 !important;
+  color: var(--cs-wc-text-muted) !important;
   text-shadow: none !important;
 }
 
@@ -348,7 +372,7 @@
 :root[data-theme="win_classic"] .cs-circle-row,
 :root[data-theme="win_classic"] .cs-person-row,
 :root[data-theme="win_classic"] .cs-find-row {
-  background: #f7f7f7 !important;
+  background: var(--cs-wc-surface-row) !important;
   border: 1px solid #8a8a8a !important;
   box-shadow:
     inset 1px 1px 0 #fff,
@@ -389,8 +413,8 @@
 :root[data-theme="bright"] [class*="emoji"][class*="menu"],
 :root[data-theme="bright"] [class*="emoji"][class*="popover"] {
   background: rgba(255,255,255,0.98) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.18) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border) !important;
   box-shadow:
     0 20px 45px rgba(15,23,42,0.22),
     inset 0 1px 0 rgba(255,255,255,0.90) !important;
@@ -401,14 +425,14 @@
 :root[data-theme="win_classic"] [class*="reaction"][class*="popover"],
 :root[data-theme="win_classic"] [class*="emoji"][class*="menu"],
 :root[data-theme="win_classic"] [class*="emoji"][class*="popover"] {
-  background: #f0f0f0 !important;
-  color: #000 !important;
-  border: 2px solid #808080 !important;
+  background: var(--cs-wc-surface) !important;
+  color: var(--cs-wc-text) !important;
+  border: 2px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #9a9a9a,
-    8px 8px 0 rgba(0,0,0,0.24) !important;
+    8px 8px 0 var(--cs-wc-shadow-drop) !important;
 }
 
 /* Reaction buttons themselves. */
@@ -417,9 +441,9 @@
 :root[data-theme="bright"] [class*="reaction"][class*="popover"] button,
 :root[data-theme="bright"] [class*="emoji"][class*="menu"] button,
 :root[data-theme="bright"] [class*="emoji"][class*="popover"] button {
-  background: rgba(15,23,42,0.055) !important;
-  color: #111827 !important;
-  border: 1px solid rgba(15,23,42,0.13) !important;
+  background: var(--cs-bright-btn-bg) !important;
+  color: var(--cs-bright-text) !important;
+  border: 1px solid var(--cs-bright-border-subtle) !important;
   box-shadow: none !important;
 }
 
@@ -428,9 +452,9 @@
 :root[data-theme="win_classic"] [class*="reaction"][class*="popover"] button,
 :root[data-theme="win_classic"] [class*="emoji"][class*="menu"] button,
 :root[data-theme="win_classic"] [class*="emoji"][class*="popover"] button {
-  background: #e8e8e8 !important;
-  color: #000 !important;
-  border: 1px solid #808080 !important;
+  background: var(--cs-wc-btn-bg) !important;
+  color: var(--cs-wc-text) !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
@@ -509,9 +533,9 @@
 }
 
 :root[data-theme="win_classic"] #csAddMentionBtn {
-  background: #e8e8e8 !important;
+  background: var(--cs-wc-btn-bg) !important;
   color: #000080 !important;
-  border: 1px solid #808080 !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   text-shadow: none !important;
   box-shadow:
@@ -522,7 +546,7 @@
 :root[data-theme="win_classic"] #csAddMentionBtn:hover,
 :root[data-theme="win_classic"] #csAddMentionBtn:focus-visible {
   background: #d8e8ff !important;
-  color: #000 !important;
+  color: var(--cs-wc-text) !important;
   border-color: #000080 !important;
 }
 
@@ -650,18 +674,18 @@
     radial-gradient(circle at 0% 0%, rgba(45,212,191,0.10), transparent 34%),
     radial-gradient(circle at 100% 0%, rgba(37,99,235,0.08), transparent 36%),
     rgba(255,255,255,0.985) !important;
-  color: #111827 !important;
+  color: var(--cs-bright-text) !important;
   border: 1px solid rgba(15,23,42,0.20) !important;
   border-radius: 18px !important;
   box-shadow: 0 28px 90px rgba(15,23,42,0.30) !important;
 }
 
 :root[data-theme="win_classic"] .cs-profile-modal {
-  background: #f0f0f0 !important;
-  color: #000 !important;
-  border: 2px solid #808080 !important;
+  background: var(--cs-wc-surface) !important;
+  color: var(--cs-wc-text) !important;
+  border: 2px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
-  box-shadow: 8px 8px 0 rgba(0,0,0,0.24) !important;
+  box-shadow: 8px 8px 0 var(--cs-wc-shadow-drop) !important;
 }
 
 /* Better contrast for achievement rows in profile modals.
@@ -689,7 +713,7 @@
 
 :root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement,
 :root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement {
-  background: #f7f7f7 !important;
+  background: var(--cs-wc-surface-row) !important;
   border: 1px solid #707070 !important;
   box-shadow:
     inset 3px 0 0 #008080,
@@ -699,7 +723,7 @@
 
 :root[data-theme="win_classic"] .cs-profile-modal .cs-profile-achievement-title,
 :root[data-theme="win_classic"] .cs-my-profile-detached-shell .cs-profile-achievement-title {
-  color: #000 !important;
+  color: var(--cs-wc-text) !important;
   font-weight: 900 !important;
 }
 
@@ -905,7 +929,7 @@ button[data-action="disable"] {
 }
 
 :root[data-theme="win_classic"] .cs-fed-subtitle-theme {
-  color: #404040 !important;
+  color: var(--cs-wc-text-muted) !important;
   text-shadow: none !important;
 }
 
@@ -922,15 +946,15 @@ button[data-action="disable"] {
 }
 
 :root[data-theme="bright"] .cs-fed-why-note-theme {
-  background: rgba(15,23,42,0.055) !important;
+  background: var(--cs-bright-btn-bg) !important;
   color: rgba(15,23,42,0.76) !important;
-  border: 1px solid rgba(15,23,42,0.13) !important;
+  border: 1px solid var(--cs-bright-border-subtle) !important;
 }
 
 :root[data-theme="win_classic"] .cs-fed-why-note-theme {
-  background: #e8e8e8 !important;
+  background: var(--cs-wc-btn-bg) !important;
   color: #202020 !important;
-  border: 1px solid #808080 !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   box-shadow:
     inset 1px 1px 0 #fff,
@@ -1038,7 +1062,7 @@ button[data-action="disable"] {
 
 :root[data-theme="win_classic"] .cs-fed-media-frame-theme {
   background: #e6e6e6 !important;
-  border: 1px solid #808080 !important;
+  border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
   overflow: hidden !important;
 }
@@ -1184,7 +1208,7 @@ button[data-action="disable"] {
 }
 
 :root[data-theme="bright"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
-  color: #111827 !important;
+  color: var(--cs-bright-text) !important;
   font-weight: 900 !important;
 }
 
@@ -1194,17 +1218,17 @@ button[data-action="disable"] {
 
 /* Win classic locked rows. */
 :root[data-theme="win_classic"] .cs-ach-locked-row-theme {
-  background: #f7f7f7 !important;
+  background: var(--cs-wc-surface-row) !important;
   border: 1px solid #707070 !important;
   border-radius: 0 !important;
   box-shadow:
-    inset 3px 0 0 #808080,
+    inset 3px 0 0 var(--cs-wc-border),
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #c0c0c0 !important;
 }
 
 :root[data-theme="win_classic"] .cs-ach-locked-row-theme .cs-profile-achievement-title {
-  color: #000 !important;
+  color: var(--cs-wc-text) !important;
   font-weight: 900 !important;
 }
 
