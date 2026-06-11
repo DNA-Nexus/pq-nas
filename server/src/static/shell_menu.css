@@ -520,25 +520,25 @@ body.shellSidebarCollapsed .sidebar .navbtn > .appNavIcon > .appNavIconGlyph,
 /* Sidebar app icons use a real <i class="appNavIconGlyph"> mask child injected by app.js. */
 /* FINAL SOURCE OF TRUTH: sidebar app icon glyphs */
 .sidebar .navbtn .appNavIcon > i.appNavIconGlyph{
-    display:block !important;
-    width:18px !important;
-    height:18px !important;
-    min-width:18px !important;
-    min-height:18px !important;
-    opacity:1 !important;
-    background-color:rgba(var(--fg-rgb),0.78) !important;
+    display:block;
+    width:18px;
+    height:18px;
+    min-width:18px;
+    min-height:18px;
+    opacity:1;
+    background-color:rgba(var(--fg-rgb),0.78);
 
-    -webkit-mask-repeat:no-repeat !important;
-    mask-repeat:no-repeat !important;
-    -webkit-mask-position:center !important;
-    mask-position:center !important;
-    -webkit-mask-size:contain !important;
-    mask-size:contain !important;
+    -webkit-mask-repeat:no-repeat;
+    mask-repeat:no-repeat;
+    -webkit-mask-position:center;
+    mask-position:center;
+    -webkit-mask-size:contain;
+    mask-size:contain;
 }
 
 .sidebar .navbtn:hover .appNavIcon > i.appNavIconGlyph,
 .sidebar .navbtn.active .appNavIcon > i.appNavIconGlyph{
-    background-color:rgba(var(--fg-rgb),0.96) !important;
+    background-color:rgba(var(--fg-rgb),0.96);
 }
 
 body.shellSidebarCollapsed #appsList .navbtn > .appNavIcon > i.appNavIconGlyph,
@@ -554,7 +554,7 @@ body.shellSidebarCollapsed #appsList .navbtn > .appNavIcon > i.appNavIconGlyph,
 
 /* FINAL SOURCE OF TRUTH: detached mini sidebar collapse tab */
 .sidebar{
-    position: relative !important;
+    position: relative;
     overflow: visible !important;
 }
 
