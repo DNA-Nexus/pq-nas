@@ -11,6 +11,16 @@
             --good:#57d68d;
             --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
             --sans:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+            --backdrop:rgba(0,0,0,.45);
+            --modal-bg:linear-gradient(180deg,rgba(32,32,32,.98),rgba(18,18,18,.98));
+            --modal-shadow:0 28px 110px rgba(0,0,0,.52);
+            --input-bg:rgba(0,0,0,.22);
+            --panel-head-bg:rgba(0,0,0,.18);
+            --surface-dimmer:rgba(255,255,255,.035);
+            --line-soft:rgba(255,255,255,.12);
+            --accent-hover:rgba(255,138,28,.12);
+            --good-border:rgba(87,214,141,.38);
+            --good-tint:rgba(87,214,141,.08);
         }
 
         *{ box-sizing:border-box; }
@@ -118,8 +128,8 @@
 
         .pill.good{
             color:var(--good);
-            border-color:rgba(87,214,141,.38);
-            background:rgba(87,214,141,.08);
+            border-color:var(--good-border);
+            background:var(--good-tint);
         }
 
         .pill.edit{
@@ -130,7 +140,7 @@
 
         .pill.readonly{
             color:var(--muted);
-            background:rgba(255,255,255,.045);
+            background:var(--card2);
         }
 
         .qrBox{
@@ -231,7 +241,7 @@
             width:210px;
             max-width:100%;
             border:1px solid var(--line);
-            background:rgba(0,0,0,.22);
+            background:var(--input-bg);
             color:var(--fg);
             border-radius:14px;
             padding:10px 12px;
@@ -271,7 +281,7 @@
         }
 
         .crumb:hover{
-            background:rgba(255,138,28,.12);
+            background:var(--accent-hover);
             color:var(--accent);
         }
 
@@ -394,13 +404,13 @@
         }
 
         .downloadLink:hover{
-            background:rgba(255,138,28,.12);
+            background:var(--accent-hover);
         }
 
         .empty{
             border:1px dashed var(--line);
             border-radius:18px;
-            background:rgba(255,255,255,.035);
+            background:var(--surface-dimmer);
             padding:24px;
             text-align:center;
             color:var(--muted);
@@ -468,7 +478,7 @@
         }
 
         .contextMenu button:hover{
-            background:rgba(255,138,28,.12);
+            background:var(--accent-hover);
         }
 
         .contextMenu button:disabled{
@@ -619,7 +629,7 @@
             align-items:flex-start;
             justify-content:center;
             padding-top:22px;
-            background:rgba(0,0,0,.45);
+            background:var(--backdrop);
         }
 
         .extPickerOverlay.show{
@@ -638,7 +648,7 @@
             background:rgba(18,18,18,.98);
             border:1px solid rgba(255,255,255,.16);
             border-radius:18px;
-            box-shadow:0 28px 110px rgba(0,0,0,.52);
+            box-shadow:var(--modal-shadow);
             overflow:hidden;
         }
 
@@ -656,7 +666,7 @@
             align-items:flex-start;
             gap:14px;
             padding:16px 18px 10px;
-            border-bottom:1px solid rgba(255,255,255,.12);
+            border-bottom:1px solid var(--line-soft);
         }
 
         html[data-theme="win_classic"] .extPickerHead{
@@ -712,7 +722,7 @@
         .extPickerSource{
             margin:12px 18px 10px;
             padding:10px 12px;
-            border:1px solid rgba(255,255,255,.14);
+            border:1px solid var(--line);
             border-radius:12px;
             background:rgba(255,255,255,.04);
             font-weight:900;
@@ -754,9 +764,9 @@
 
         .extPickerList{
             margin:0 18px 8px;
-            border:1px solid rgba(255,255,255,.14);
+            border:1px solid var(--line);
             border-radius:14px;
-            background:rgba(255,255,255,.035);
+            background:var(--surface-dimmer);
             overflow:auto;
             min-height:190px;
             max-height:min(430px, calc(100vh - 300px));
@@ -844,8 +854,8 @@
             justify-content:space-between;
             gap:12px;
             padding:13px 18px 16px;
-            border-top:1px solid rgba(255,255,255,.12);
-            background:rgba(255,255,255,.035);
+            border-top:1px solid var(--line-soft);
+            background:var(--surface-dimmer);
         }
 
         html[data-theme="win_classic"] .extPickerActions{
@@ -868,7 +878,7 @@
             align-items:center;
             justify-content:center;
             padding:18px;
-            background:rgba(0,0,0,.45);
+            background:var(--backdrop);
         }
 
         .propsModal.show{
@@ -887,8 +897,8 @@
             overflow:hidden;
             border:1px solid rgba(255,255,255,.16);
             border-radius:18px;
-            background:linear-gradient(180deg, rgba(32,32,32,.98), rgba(18,18,18,.98));
-            box-shadow:0 28px 110px rgba(0,0,0,.52);
+            background:var(--modal-bg);
+            box-shadow:var(--modal-shadow);
             color:var(--fg);
         }
 
@@ -906,8 +916,8 @@
             justify-content:space-between;
             gap:12px;
             padding:12px 14px;
-            border-bottom:1px solid rgba(255,255,255,.14);
-            background:rgba(0,0,0,.18);
+            border-bottom:1px solid var(--line);
+            background:var(--panel-head-bg);
             flex:0 0 auto;
         }
 
@@ -981,7 +991,7 @@
             max-height:240px;
             overflow:auto;
             padding:10px;
-            border:1px solid rgba(255,255,255,.14);
+            border:1px solid var(--line);
             border-radius:10px;
             background:rgba(0,0,0,.24);
         }
@@ -1197,7 +1207,7 @@
     align-items:center;
     justify-content:center;
     padding:18px;
-    background:rgba(0,0,0,.45);
+    background:var(--backdrop);
 }
 
 .textPreviewModal.show{
@@ -1216,8 +1226,8 @@ html[data-theme="win_classic"] .textPreviewModal{
     overflow:hidden;
     border:1px solid rgba(255,255,255,.16);
     border-radius:18px;
-    background:linear-gradient(180deg, rgba(32,32,32,.98), rgba(18,18,18,.98));
-    box-shadow:0 28px 110px rgba(0,0,0,.52);
+    background:var(--modal-bg);
+    box-shadow:var(--modal-shadow);
     color:var(--fg);
 }
 
@@ -1235,8 +1245,8 @@ html[data-theme="win_classic"] .textPreviewCard{
     justify-content:space-between;
     gap:12px;
     padding:12px 14px;
-    border-bottom:1px solid rgba(255,255,255,.14);
-    background:rgba(0,0,0,.18);
+    border-bottom:1px solid var(--line);
+    background:var(--panel-head-bg);
     flex:0 0 auto;
 }
 
@@ -1309,7 +1319,7 @@ html[data-theme="win_classic"] .textPreviewBody{
     align-items:flex-start;
     justify-content:center;
     padding:22px;
-    background:rgba(0,0,0,.45);
+    background:var(--backdrop);
 }
 
 .textEditModal.show{
@@ -1328,8 +1338,8 @@ html[data-theme="win_classic"] .textEditModal{
     overflow:hidden;
     border:1px solid rgba(255,255,255,.16);
     border-radius:18px;
-    background:linear-gradient(180deg, rgba(32,32,32,.98), rgba(18,18,18,.98));
-    box-shadow:0 28px 110px rgba(0,0,0,.52);
+    background:var(--modal-bg);
+    box-shadow:var(--modal-shadow);
     color:var(--fg);
 }
 
@@ -1347,8 +1357,8 @@ html[data-theme="win_classic"] .textEditCard{
     justify-content:space-between;
     gap:12px;
     padding:12px 14px;
-    border-bottom:1px solid rgba(255,255,255,.14);
-    background:rgba(0,0,0,.18);
+    border-bottom:1px solid var(--line);
+    background:var(--panel-head-bg);
     flex:0 0 auto;
     cursor:grab;
     user-select:none;
@@ -1417,10 +1427,10 @@ html[data-theme="win_classic"] .textEditFindStatus{
     width:100%;
     min-height:420px;
     resize:none;
-    border:1px solid rgba(255,255,255,.14);
+    border:1px solid var(--line);
     border-radius:12px;
     padding:12px;
-    background:rgba(0,0,0,.22);
+    background:var(--input-bg);
     color:var(--fg);
     outline:none;
     white-space:pre;
@@ -1446,7 +1456,7 @@ html[data-theme="win_classic"] .textEditArea{
     align-items:center;
     gap:10px;
     padding:12px 14px;
-    border-top:1px solid rgba(255,255,255,.14);
+    border-top:1px solid var(--line);
     background:rgba(0,0,0,.14);
     flex:0 0 auto;
     flex-wrap:wrap;
@@ -1471,7 +1481,7 @@ html[data-theme="win_classic"] .textEditArea{
     width:220px;
     max-width:calc(100vw - 80px);
     border:1px solid rgba(255,255,255,.16);
-    background:rgba(0,0,0,.22);
+    background:var(--input-bg);
     color:inherit;
     border-radius:10px;
     padding:9px 10px;
@@ -1568,8 +1578,8 @@ html[data-theme="win_classic"] .textEditFindInput{
 
 .toolbarBadge.good{
     color:var(--good);
-    border-color:rgba(87,214,141,.38);
-    background:rgba(87,214,141,.08);
+    border-color:var(--good-border);
+    background:var(--good-tint);
 }
 
 .toolbarSelect{
@@ -1745,7 +1755,7 @@ html[data-theme="win_classic"] .toolbarSelect{
     justify-content:space-between;
     gap:14px;
     padding:18px 20px 14px;
-    border-bottom:1px solid rgba(255,255,255,.12);
+    border-bottom:1px solid var(--line-soft);
 }
 
 .fmUploadProgressKicker{
@@ -1816,7 +1826,7 @@ html[data-theme="win_classic"] .toolbarSelect{
 .fmUploadProgressBar{
     height:12px;
     border-radius:999px;
-    border:1px solid rgba(255,255,255,.14);
+    border:1px solid var(--line);
     background:rgba(0,0,0,.30);
     overflow:hidden;
 }
@@ -2010,7 +2020,7 @@ html[data-theme="dark"] .externalUploadConflictCard{
 
 html[data-theme="dark"] .externalUploadConflictHead,
 html[data-theme="dark"] .externalUploadConflictActions{
-    border-color:rgba(255,255,255,.12);
+    border-color:var(--line-soft);
 }
 
 /* File Manager generated SVG file type icons */
@@ -2279,8 +2289,8 @@ body{
     overflow:hidden;
     border:1px solid rgba(255,255,255,.16);
     border-radius:18px;
-    background:linear-gradient(180deg, rgba(32,32,32,.98), rgba(18,18,18,.98));
-    box-shadow:0 28px 110px rgba(0,0,0,.52);
+    background:var(--modal-bg);
+    box-shadow:var(--modal-shadow);
     color:var(--fg);
 }
 
@@ -2290,7 +2300,7 @@ body{
     justify-content:space-between;
     gap:14px;
     padding:16px 18px 12px;
-    border-bottom:1px solid rgba(255,255,255,.12);
+    border-bottom:1px solid var(--line-soft);
 }
 
 .externalTrashTitle{
@@ -2332,9 +2342,9 @@ body{
     align-items:center;
     gap:10px;
     flex-wrap:wrap;
-    border:1px solid rgba(255,255,255,.12);
+    border:1px solid var(--line-soft);
     border-radius:14px;
-    background:rgba(255,255,255,.045);
+    background:var(--card2);
 }
 
 .externalTrashChip{
@@ -2342,7 +2352,7 @@ body{
     align-items:center;
     border-radius:999px;
     padding:7px 10px;
-    border:1px solid rgba(255,255,255,.14);
+    border:1px solid var(--line);
     background:rgba(255,255,255,.06);
     font-size:12px;
     font-weight:900;
@@ -2368,7 +2378,7 @@ body{
     border:1px dashed rgba(255,255,255,.16);
     border-radius:14px;
     color:var(--muted);
-    background:rgba(255,255,255,.035);
+    background:var(--surface-dimmer);
 }
 
 .externalTrashRow{
@@ -2377,9 +2387,9 @@ body{
     justify-content:space-between;
     gap:14px;
     padding:13px 14px;
-    border:1px solid rgba(255,255,255,.12);
+    border:1px solid var(--line-soft);
     border-radius:14px;
-    background:rgba(255,255,255,.045);
+    background:var(--card2);
 }
 
 .externalTrashRowMain{
@@ -2425,8 +2435,8 @@ body{
     justify-content:space-between;
     gap:12px;
     padding:12px 18px;
-    border-top:1px solid rgba(255,255,255,.12);
-    background:rgba(255,255,255,.035);
+    border-top:1px solid var(--line-soft);
+    background:var(--surface-dimmer);
 }
 
 .externalTrashFootCount{
@@ -2518,8 +2528,8 @@ html[data-theme="win_classic"] .externalTrashFootCount{
     overflow:hidden;
     border:1px solid rgba(255,255,255,.16);
     border-radius:18px;
-    background:linear-gradient(180deg, rgba(32,32,32,.98), rgba(18,18,18,.98));
-    box-shadow:0 28px 110px rgba(0,0,0,.52);
+    background:var(--modal-bg);
+    box-shadow:var(--modal-shadow);
     color:var(--fg);
 }
 
@@ -2529,8 +2539,8 @@ html[data-theme="win_classic"] .externalTrashFootCount{
     justify-content:space-between;
     gap:12px;
     padding:14px 16px 12px;
-    border-bottom:1px solid rgba(255,255,255,.14);
-    background:rgba(0,0,0,.18);
+    border-bottom:1px solid var(--line);
+    background:var(--panel-head-bg);
     cursor:grab;
     user-select:none;
     touch-action:none;
@@ -2617,7 +2627,7 @@ html[data-theme="win_classic"] .externalTrashFootCount{
     padding:13px 14px;
     border:1px solid rgba(255,255,255,.10);
     border-radius:14px;
-    background:rgba(255,255,255,.035);
+    background:var(--surface-dimmer);
 }
 
 .externalTrashDetachedRowMain{
@@ -2659,8 +2669,8 @@ html[data-theme="win_classic"] .externalTrashFootCount{
     justify-content:space-between;
     gap:12px;
     padding:12px 16px;
-    border-top:1px solid rgba(255,255,255,.12);
-    background:rgba(255,255,255,.035);
+    border-top:1px solid var(--line-soft);
+    background:var(--surface-dimmer);
 }
 
 .externalTrashDetachedCount{
