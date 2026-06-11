@@ -53,6 +53,15 @@
   --cs-chip-action-bg: rgba(37,99,235,0.18);
   --cs-chip-action-border: rgba(147,197,253,0.30);
   --cs-chip-action-fg: #bfdbfe;
+
+  /* ---- Post card ---- */
+  --cs-post-border: #2c2c35;
+  --cs-post-delete-fg: #9ca3af;
+  --cs-post-delete-danger-fg: #f87171;
+  --cs-post-author-hover-bg: rgba(147,197,253,0.12);
+  --cs-post-author-hover-fg: #93c5fd;
+  --cs-post-empty-fg: rgba(255,255,255,0.55);
+  --cs-post-mentions-label-fg: rgba(255,255,255,0.46);
 }
 
 body {
@@ -117,9 +126,9 @@ body {
 
 .cs-post,
 .cs-empty {
-  border: 1px solid #2c2c35;
+  border: 1px solid var(--cs-post-border);
   border-radius: 16px;
-  background: #181820;
+  background: var(--cs-surface);
   padding: 16px;
 }
 
@@ -173,7 +182,7 @@ body {
 }
 
 .cs-post-delete {
-  color: #f87171 !important;
+  color: var(--cs-post-delete-danger-fg) !important;
   font-size: 24px !important;
   line-height: 1;
   font-weight: 900;
@@ -234,7 +243,7 @@ body {
 }
 
 .cs-post-delete {
-  color: #9ca3af !important;
+  color: var(--cs-post-delete-fg) !important;
   opacity: 0;
   background: transparent !important;
 }
@@ -245,7 +254,7 @@ body {
 
 .cs-post-delete:hover {
   opacity: 1;
-  color: #f87171 !important;
+  color: var(--cs-post-delete-danger-fg) !important;
 }
 
 .cs-circle-users {
@@ -676,7 +685,7 @@ body {
 }
 
 .cs-empty {
-  color: rgba(255,255,255,0.55);
+  color: var(--cs-post-empty-fg);
   padding: 12px 0;
 }
 
@@ -845,7 +854,7 @@ body {
 .cs-post-author-button {
   border: 0;
   background: transparent;
-  color: #f4f4f5;
+  color: var(--cs-fg);
   padding: 3px 6px;
   margin-left: -6px;
   border-radius: 8px;
@@ -855,8 +864,8 @@ body {
 }
 
 .cs-post-author-button:hover {
-  background: rgba(147,197,253,0.12);
-  color: #93c5fd;
+  background: var(--cs-post-author-hover-bg);
+  color: var(--cs-post-author-hover-fg);
 }
 
 .cs-profile-modal {
@@ -1401,7 +1410,7 @@ body {
 }
 
 .cs-post-mentions-label {
-  color: rgba(255,255,255,0.46);
+  color: var(--cs-post-mentions-label-fg);
   font-size: 12px;
   font-weight: 800;
 }
