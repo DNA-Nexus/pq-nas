@@ -34,6 +34,9 @@
   --rs-field-bg: rgba(0,0,0,.28);
   --rs-field-fg: var(--fg, #fff);
   --rs-field-border: rgba(var(--fg-rgb, 255,255,255),.22);
+
+  /* ---- Overlay badges (play / duration / favorite / share) ---- */
+  --rs-badge-bg: rgba(0,0,0,.68);
 }
 
 body{
@@ -162,7 +165,7 @@ body{
   inset:auto 10px 10px auto;
   border-radius:999px;
   padding:9px 12px;
-  background:rgba(0,0,0,.68);
+  background:var(--rs-badge-bg);
   border:1px solid rgba(255,255,255,.24);
 }
 
@@ -337,7 +340,7 @@ html[data-theme="win_classic"] .rsInput{
   position:absolute;
   padding:4px 8px;
   border-radius:999px;
-  background:rgba(0,0,0,.68);
+  background:var(--rs-badge-bg);
   color:#fff;
   font-size:12px;
   font-weight:800;
@@ -371,7 +374,7 @@ html[data-theme="win_classic"] .rsDetails{
   align-items:center;
   justify-content:center;
   padding:24px;
-  background:rgba(0,0,0,.72);
+  background:var(--rs-overlay-bg);
   backdrop-filter:blur(8px);
 }
 
@@ -379,11 +382,11 @@ html[data-theme="win_classic"] .rsDetails{
   width:min(760px, calc(100vw - 48px));
   max-height:calc(100vh - 48px);
   overflow:auto;
-  border:1px solid rgba(0,220,220,.32);
+  border:1px solid rgba(var(--accent-rgb,0,220,220),.32);
   border-radius:24px;
   background:var(--panel-bg, rgba(3,8,14,.98));
   color:var(--fg, #eafcff);
-  box-shadow:0 24px 90px rgba(0,0,0,.62), 0 0 44px rgba(0,220,220,.08);
+  box-shadow:0 24px 90px rgba(0,0,0,.62), 0 0 44px rgba(var(--accent-rgb,0,220,220),.08);
 }
 
 .rsMetaEditorHead{
@@ -392,7 +395,7 @@ html[data-theme="win_classic"] .rsDetails{
   justify-content:space-between;
   gap:18px;
   padding:22px 22px 14px;
-  border-bottom:1px solid rgba(0,220,220,.16);
+  border-bottom:1px solid rgba(var(--accent-rgb,0,220,220),.16);
 }
 
 .rsMetaEditorHead h2{
@@ -452,7 +455,7 @@ html[data-theme="win_classic"] .rsDetails{
   gap:10px;
   min-height:44px;
   padding:10px 12px;
-  border:1px solid rgba(0,220,220,.18);
+  border:1px solid rgba(var(--accent-rgb,0,220,220),.18);
   border-radius:14px;
   background:rgba(255,255,255,.035);
 }
@@ -491,15 +494,15 @@ html[data-theme="win_classic"] .rsDetails{
 }
 
 .rsCard.rsSelected{
-  border-color:rgba(0,220,220,.78);
+  border-color:rgba(var(--accent-rgb,0,220,220),.78);
   box-shadow:
-    0 0 0 2px rgba(0,220,220,.24),
+    0 0 0 2px rgba(var(--accent-rgb,0,220,220),.24),
     0 18px 52px rgba(0,0,0,.42),
-    0 0 38px rgba(0,220,220,.16);
+    0 0 38px rgba(var(--accent-rgb,0,220,220),.16);
 }
 
 .rsCard:focus-visible{
-  outline:2px solid rgba(0,220,220,.86);
+  outline:2px solid rgba(var(--accent-rgb,0,220,220),.86);
   outline-offset:4px;
 }
 
@@ -522,7 +525,7 @@ html[data-theme="win_classic"] .rsDetails{
   padding:5px 9px;
   border-radius:999px;
   border:1px solid rgba(255,170,0,.72);
-  background:rgba(0,0,0,.68);
+  background:var(--rs-badge-bg);
   color:#ffb000;
   font-size:12px;
   font-weight:800;
@@ -921,7 +924,7 @@ html[data-theme="win_classic"] .rsShareInput{
   padding:4px 8px;
   border-radius:999px;
   border:1px solid rgba(var(--accent-rgb,0,220,220),.55);
-  background:rgba(0,0,0,.68);
+  background:var(--rs-badge-bg);
   color:var(--accent, #00dcdc);
   font-size:11px;
   font-weight:900;
