@@ -62,6 +62,29 @@
   --cs-post-author-hover-fg: #93c5fd;
   --cs-post-empty-fg: rgba(255,255,255,0.55);
   --cs-post-mentions-label-fg: rgba(255,255,255,0.46);
+
+  /* ---- Comment/reply ---- */
+  --cs-reply-bg: rgba(255,255,255,0.035);
+  --cs-reply-border: rgba(255,255,255,0.06);
+  --cs-reply-fg: rgba(255,255,255,0.86);
+  --cs-reply-meta-fg: rgba(255,255,255,0.38);
+  --cs-reply-input-border: rgba(255,255,255,0.13);
+  --cs-reply-subtle: rgba(255,255,255,0.10);
+  --cs-reply-composer-bg: rgba(255,255,255,0.04);
+  --cs-reply-composer-border: rgba(255,255,255,0.08);
+  --cs-reply-toggle-bg: rgba(255,255,255,0.055);
+  --cs-reply-toggle-fg: rgba(255,255,255,0.74);
+  --cs-reply-toggle-hover-bg: rgba(147,197,253,0.13);
+  --cs-reply-toggle-hover-border: rgba(147,197,253,0.36);
+  --cs-reply-toggle-hover-fg: #dbeafe;
+  --cs-reply-avatar-bg: rgba(37,99,235,0.28);
+  --cs-reply-avatar-border: rgba(147,197,253,0.35);
+  --cs-reply-avatar-fg: #eff6ff;
+  --cs-reply-tag-bg: rgba(147,197,253,0.10);
+  --cs-reply-tag-border: rgba(147,197,253,0.26);
+  --cs-reply-tag-fg: #dbeafe;
+  --cs-reply-tag-hover-bg: rgba(147,197,253,0.18);
+  --cs-reply-tag-hover-border: rgba(147,197,253,0.45);
 }
 
 body {
@@ -1130,19 +1153,19 @@ body {
   gap: 9px;
   padding: 9px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.035);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--cs-reply-bg);
+  border: 1px solid var(--cs-reply-border);
 }
 
 .cs-reply-avatar {
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(147,197,253,0.35);
+  border: 1px solid var(--cs-reply-avatar-border);
   border-radius: 999px;
   overflow: hidden;
   padding: 0;
-  background: rgba(37,99,235,0.28);
-  color: #eff6ff;
+  background: var(--cs-reply-avatar-bg);
+  color: var(--cs-reply-avatar-fg);
   display: grid;
   place-items: center;
   font-weight: 900;
@@ -1166,26 +1189,26 @@ body {
   border: 0;
   background: transparent;
   padding: 0;
-  color: #bfdbfe;
+  color: var(--cs-chip-action-fg);
   font: inherit;
   font-weight: 800;
   cursor: pointer;
 }
 
 .cs-reply-author:hover {
-  color: #93c5fd;
+  color: var(--cs-post-author-hover-fg);
   text-decoration: underline;
 }
 
 .cs-reply-time {
-  color: rgba(255,255,255,0.38);
+  color: var(--cs-reply-meta-fg);
   font-size: 11px;
 }
 
 .cs-reply-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: rgba(255,255,255,0.86);
+  color: var(--cs-reply-fg);
   line-height: 1.4;
 }
 
@@ -1196,7 +1219,7 @@ body {
   object-fit: cover;
   margin-top: 8px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--cs-reply-subtle);
   cursor: zoom-in;
 }
 
@@ -1209,19 +1232,19 @@ body {
 
 .cs-reply-toggle {
   justify-self: start;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--cs-reply-subtle);
   border-radius: 999px;
-  background: rgba(255,255,255,0.055);
-  color: rgba(255,255,255,0.74);
+  background: var(--cs-reply-toggle-bg);
+  color: var(--cs-reply-toggle-fg);
   padding: 6px 11px;
   font-weight: 800;
   cursor: pointer;
 }
 
 .cs-reply-toggle:hover {
-  background: rgba(147,197,253,0.13);
-  border-color: rgba(147,197,253,0.36);
-  color: #dbeafe;
+  background: var(--cs-reply-toggle-hover-bg);
+  border-color: var(--cs-reply-toggle-hover-border);
+  color: var(--cs-reply-toggle-hover-fg);
 }
 
 .cs-reply-composer {
@@ -1229,8 +1252,8 @@ body {
   gap: 8px;
   padding: 10px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--cs-reply-composer-bg);
+  border: 1px solid var(--cs-reply-composer-border);
 }
 
 .cs-reply-textarea {
@@ -1238,10 +1261,10 @@ body {
   min-height: 74px;
   box-sizing: border-box;
   resize: vertical;
-  border: 1px solid rgba(255,255,255,0.13);
+  border: 1px solid var(--cs-reply-input-border);
   border-radius: 10px;
-  background: #101014;
-  color: #f4f4f5;
+  background: var(--cs-bg);
+  color: var(--cs-fg);
   padding: 10px;
 }
 
@@ -1253,10 +1276,10 @@ body {
 .cs-reply-media-input {
   flex: 1;
   min-width: 0;
-  border: 1px solid rgba(255,255,255,0.13);
+  border: 1px solid var(--cs-reply-input-border);
   border-radius: 10px;
-  background: #101014;
-  color: #f4f4f5;
+  background: var(--cs-bg);
+  color: var(--cs-fg);
   padding: 9px 10px;
 }
 
@@ -1265,21 +1288,21 @@ body {
   border: 0;
   border-radius: 10px;
   padding: 9px 13px;
-  color: #f4f4f5;
+  color: var(--cs-fg);
   font-weight: 800;
   cursor: pointer;
 }
 
 .cs-reply-browse {
-  background: rgba(255,255,255,0.10);
+  background: var(--cs-reply-subtle);
 }
 
 .cs-reply-submit {
-  background: #2563eb;
+  background: var(--cs-action);
 }
 
 .cs-reply-submit:hover {
-  background: #1d4ed8;
+  background: var(--cs-action-hover);
 }
 
 .cs-reply-composer-bottom {
@@ -1304,21 +1327,21 @@ body {
   border: 0;
   border-radius: 999px;
   padding: 3px 8px;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.70);
+  background: var(--cs-icon-btn-bg);
+  color: var(--cs-icon-btn-fg);
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
 
 .cs-reply-tools button:hover {
-  background: rgba(147,197,253,0.14);
-  color: #bfdbfe;
+  background: var(--cs-post-author-hover-bg);
+  color: var(--cs-chip-action-fg);
 }
 
 .cs-reply-tools button:last-child:hover {
-  background: rgba(248,113,113,0.18);
-  color: #fecaca;
+  background: var(--cs-icon-btn-danger-bg);
+  color: var(--cs-icon-btn-danger-fg);
 }
 
 .cs-reply-content[hidden] {
@@ -1568,8 +1591,8 @@ body {
   height: 26px;
   border: 0;
   border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.68);
+  background: var(--cs-icon-btn-bg);
+  color: var(--cs-icon-btn-fg);
   font-size: 18px;
   line-height: 1;
   display: grid;
@@ -1579,8 +1602,8 @@ body {
 }
 
 .cs-reply-composer-close:hover {
-  background: rgba(248,113,113,0.18);
-  color: #fecaca;
+  background: var(--cs-icon-btn-danger-bg);
+  color: var(--cs-icon-btn-danger-fg);
 }
 
 .cs-reply-composer .cs-reply-textarea {
@@ -1607,10 +1630,10 @@ body {
 }
 
 .cs-reply-tag {
-  border: 1px solid rgba(147,197,253,0.26);
+  border: 1px solid var(--cs-reply-tag-border);
   border-radius: 999px;
-  background: rgba(147,197,253,0.10);
-  color: #dbeafe;
+  background: var(--cs-reply-tag-bg);
+  color: var(--cs-reply-tag-fg);
   padding: 7px 12px;
   font-weight: 800;
   cursor: pointer;
@@ -1618,8 +1641,8 @@ body {
 }
 
 .cs-reply-tag:hover {
-  background: rgba(147,197,253,0.18);
-  border-color: rgba(147,197,253,0.45);
+  background: var(--cs-reply-tag-hover-bg);
+  border-color: var(--cs-reply-tag-hover-border);
 }
 
 /* Link previews */
