@@ -42,6 +42,17 @@
   --cs-btn-bg: #272733;
   --cs-btn-hover: #30303d;
   --cs-btn-fg: #f4f4f5;
+
+  /* ---- Icon buttons (close/dismiss) ---- */
+  --cs-icon-btn-bg: rgba(255,255,255,0.08);
+  --cs-icon-btn-fg: rgba(255,255,255,0.72);
+  --cs-icon-btn-danger-bg: rgba(248,113,113,0.18);
+  --cs-icon-btn-danger-fg: #fecaca;
+
+  /* ---- Action chips (mentions) ---- */
+  --cs-chip-action-bg: rgba(37,99,235,0.18);
+  --cs-chip-action-border: rgba(147,197,253,0.30);
+  --cs-chip-action-fg: #bfdbfe;
 }
 
 body {
@@ -432,8 +443,8 @@ body {
   max-height: 360px;
   object-fit: cover;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #20202a;
+  border: 1px solid var(--cs-border);
+  background: var(--cs-surface-raised);
   transition: filter 180ms ease, opacity 180ms ease;
 }
 
@@ -1362,10 +1373,10 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid rgba(147,197,253,0.30);
+  border: 1px solid var(--cs-chip-action-border);
   border-radius: 999px;
-  background: rgba(37,99,235,0.18);
-  color: #bfdbfe;
+  background: var(--cs-chip-action-bg);
+  color: var(--cs-chip-action-fg);
   padding: 5px 9px;
   font-size: 13px;
   font-weight: 800;
@@ -1374,7 +1385,7 @@ body {
 .cs-compose-mention-chip button {
   border: 0;
   background: transparent;
-  color: #bfdbfe;
+  color: var(--cs-chip-action-fg);
   cursor: pointer;
   font-size: 15px;
   line-height: 1;
@@ -1517,8 +1528,8 @@ body {
   height: 30px;
   border: 0;
   border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.72);
+  background: var(--cs-icon-btn-bg);
+  color: var(--cs-icon-btn-fg);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -1528,8 +1539,8 @@ body {
 }
 
 #csComposeClose:hover {
-  background: rgba(248,113,113,0.18);
-  color: #fecaca;
+  background: var(--cs-icon-btn-danger-bg);
+  color: var(--cs-icon-btn-danger-fg);
 }
 
 .cs-compose.is-compact #csComposeClose {
