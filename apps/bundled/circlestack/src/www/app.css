@@ -1,8 +1,54 @@
+/* Circle Stack semantic token layer.
+   Replaces obvious hardcoded colors with swappable tokens.
+   Token names use --cs-* prefix; values preserve current defaults.
+   Can be mapped to global PQ-NAS theme variables in a future PR. */
+:root {
+  /* ---- Base palette ---- */
+  --cs-bg: #101014;
+  --cs-fg: #f4f4f5;
+  --cs-fg-dim: #b8b8c0;
+  --cs-fg-muted: #92929e;
+
+  /* ---- Surfaces ---- */
+  --cs-surface: #181820;
+  --cs-surface-raised: #20202a;
+  --cs-surface-hover: #30303d;
+
+  /* ---- Borders ---- */
+  --cs-border: rgba(255,255,255,0.14);
+  --cs-border-strong: #33333d;
+
+  /* ---- Accent (brand orange) ---- */
+  --cs-accent: #ff7a18;
+  --cs-accent-text: #111;
+
+  /* ---- Action blue ---- */
+  --cs-action: #2563eb;
+  --cs-action-hover: #1d4ed8;
+  --cs-action-text: #fff;
+
+  /* ---- Danger ---- */
+  --cs-danger: #dc2626;
+  --cs-danger-text: #fff;
+
+  /* ---- Success ---- */
+  --cs-success: #22c55e;
+  --cs-success-text: #052e16;
+
+  /* ---- Modal/overlay ---- */
+  --cs-overlay: rgba(0,0,0,0.65);
+
+  /* ---- Secondary button ---- */
+  --cs-btn-bg: #272733;
+  --cs-btn-hover: #30303d;
+  --cs-btn-fg: #f4f4f5;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
-  background: #101014;
-  color: #f4f4f5;
+  background: var(--cs-bg);
+  color: var(--cs-fg);
 }
 
 .cs-shell {
@@ -17,7 +63,7 @@ body {
 
 .cs-header p {
   margin: 0 0 24px;
-  color: #b8b8c0;
+  color: var(--cs-fg-dim);
 }
 
 .cs-compose {
@@ -30,10 +76,10 @@ body {
 .cs-compose input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #33333d;
+  border: 1px solid var(--cs-border-strong);
   border-radius: 10px;
-  background: #181820;
-  color: #f4f4f5;
+  background: var(--cs-surface);
+  color: var(--cs-fg);
   padding: 12px;
 }
 
@@ -47,8 +93,8 @@ body {
   border: 0;
   border-radius: 999px;
   padding: 10px 18px;
-  background: #ff7a18;
-  color: #111;
+  background: var(--cs-accent);
+  color: var(--cs-accent-text);
   font-weight: 700;
   cursor: pointer;
 }
@@ -87,7 +133,7 @@ body {
 
 .cs-post-meta {
   margin-top: 10px;
-  color: #92929e;
+  color: var(--cs-fg-muted);
   font-size: 12px;
 }
 
@@ -126,7 +172,7 @@ body {
 .cs-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.65);
+  background: var(--cs-overlay);
   display: grid;
   place-items: center;
   z-index: 9999;
@@ -134,8 +180,8 @@ body {
 
 .cs-modal {
   width: min(360px, calc(100vw - 32px));
-  background: #181820;
-  border: 1px solid rgba(255,255,255,0.14);
+  background: var(--cs-surface);
+  border: 1px solid var(--cs-border);
   border-radius: 14px;
   padding: 18px;
   color: #fff;
@@ -172,8 +218,8 @@ body {
 }
 
 .cs-modal-delete {
-  background: #dc2626;
-  color: #fff;
+  background: var(--cs-danger);
+  color: var(--cs-danger-text);
 }
 
 .cs-post-delete {
@@ -312,21 +358,21 @@ body {
   border: 0;
   border-radius: 10px;
   padding: 0 14px;
-  background: #272733;
-  color: #f4f4f5;
+  background: var(--cs-btn-bg);
+  color: var(--cs-btn-fg);
   font-weight: 700;
   cursor: pointer;
 }
 
 #csPickMedia:hover {
-  background: #30303d;
+  background: var(--cs-btn-hover);
 }
 
 .cs-media-modal {
   width: min(720px, calc(100vw - 32px));
   max-height: 80vh;
-  background: #181820;
-  border: 1px solid rgba(255,255,255,0.14);
+  background: var(--cs-surface);
+  border: 1px solid var(--cs-border);
   border-radius: 16px;
   color: #fff;
   display: flex;
@@ -343,7 +389,7 @@ body {
 }
 
 .cs-media-path {
-  color: #92929e;
+  color: var(--cs-fg-muted);
   font-size: 12px;
   margin-top: 4px;
 }
@@ -366,8 +412,8 @@ body {
 .cs-media-item {
   text-align: left;
   border: 1px solid rgba(255,255,255,0.10);
-  background: #20202a;
-  color: #f4f4f5;
+  background: var(--cs-surface-raised);
+  color: var(--cs-fg);
   border-radius: 10px;
   padding: 10px 12px;
   cursor: pointer;
@@ -473,8 +519,8 @@ body {
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  background: #2563eb;
-  color: #fff;
+  background: var(--cs-action);
+  color: var(--cs-action-text);
   font-weight: 700;
 }
 
@@ -484,7 +530,7 @@ body {
   border-radius: 10px;
   padding: 8px 12px;
   background: rgba(255,255,255,0.10);
-  color: #f4f4f5;
+  color: var(--cs-fg);
   cursor: pointer;
 }
 
@@ -501,14 +547,14 @@ body {
   border: 0;
   border-radius: 999px;
   padding: 10px 16px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--cs-action);
+  color: var(--cs-action-text);
   font-weight: 700;
   cursor: pointer;
 }
 
 #csIntroduceBtn:hover {
-  background: #1d4ed8;
+  background: var(--cs-action-hover);
 }
 
 .cs-intro-modal {
@@ -522,8 +568,8 @@ body {
   margin-top: 8px;
   border-radius: 10px;
   padding: 10px;
-  background: #101014;
-  color: #f4f4f5;
+  background: var(--cs-bg);
+  color: var(--cs-fg);
   border: 1px solid rgba(255,255,255,0.16);
 }
 
@@ -590,8 +636,8 @@ body {
 }
 
 .cs-intro-actions button:first-child {
-  background: #22c55e;
-  color: #052e16;
+  background: var(--cs-success);
+  color: var(--cs-success-text);
 }
 
 .cs-intro-actions button:last-child {
@@ -643,7 +689,7 @@ body {
   padding: 8px;
   border-radius: 8px;
   margin-top: 4px;
-  background: #101014;
+  background: var(--cs-bg);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.15);
 }
@@ -690,7 +736,7 @@ body {
   width: 100%;
   padding: 9px 10px;
   border-radius: 9px;
-  background: #101014;
+  background: var(--cs-bg);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.15);
   margin: 10px 0;
@@ -706,8 +752,8 @@ body {
   border: 0;
   border-radius: 8px;
   padding: 5px 10px;
-  background: #22c55e;
-  color: #052e16;
+  background: var(--cs-success);
+  color: var(--cs-success-text);
   font-weight: 700;
   cursor: pointer;
 }
@@ -764,8 +810,8 @@ body {
 }
 
 .cs-mini-action-primary {
-  background: #22c55e;
-  color: #052e16;
+  background: var(--cs-success);
+  color: var(--cs-success-text);
 }
 
 .cs-mini-action-primary:hover {
