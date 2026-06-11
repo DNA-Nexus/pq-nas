@@ -1970,7 +1970,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             <img
                 src="${currentPairing.qr_svg}"
                 alt="${tr("shell.trusted.qr_alt", null, "Pairing QR")}"
-                style="width:280px; height:280px; border-radius:16px; border:1px solid rgba(255,255,255,0.12); background:#fff; padding:12px;"
+                style="width:280px; height:280px; border-radius:16px; border:1px solid var(--border2); background:#fff; padding:12px;"
             />
             <div class="mini" id="pairStatusLine">${tr("shell.trusted.waiting_initial", null, "Waiting for phone to scan and confirm…")}</div>
             <div class="mini" style="word-break:break-all;">
@@ -1983,10 +1983,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const deviceRows = trustedDevices.map((d) => {
             const trustedUntil = d.refresh_expires_at ? fmtDateTime(d.refresh_expires_at) : "—";
             return `
-        <div class="card" style="padding:12px; margin-top:10px;">
+        <div class="card" style="padding:14px; margin-top:10px; border:1px solid var(--border2); border-radius:16px; background:var(--panel);">
             <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
                 <div>
-                    <div style="font-weight:600;">${d.device_name || tr("shell.trusted.unnamed_device", null, "Unnamed device")}</div>
+                    <div style="font-weight:700; color:var(--fg);">${d.device_name || tr("shell.trusted.unnamed_device", null, "Unnamed device")}</div>
                     <div class="mini">
     ${[
                 d.device_manufacturer,
@@ -1998,10 +1998,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     <div class="mini">${tr("shell.trusted.paired", { time: fmtDateTime(d.created_at) }, `Paired: ${fmtDateTime(d.created_at)}`)}</div>
                     <div class="mini">${tr("shell.trusted.last_seen", { time: fmtDateTime(d.last_seen_at) }, `Last seen: ${fmtDateTime(d.last_seen_at)}`)}</div>
                     <div class="mini">${tr("shell.trusted.trusted_until", { time: trustedUntil }, `Trusted until: ${trustedUntil}`)}</div>
-                    ${d.revoked ? `<div class="mini">${tr("shell.trusted.status_revoked", null, "Status: revoked")}</div>` : `<div class="mini">${tr("shell.trusted.status_active", null, "Status: active")}</div>`}
+                    ${d.revoked ? `<span class="pq-badge err" style="margin-top:6px;">${tr("shell.trusted.status_revoked", null, "Status: revoked")}</span>` : `<span class="pq-badge ok" style="margin-top:6px;">${tr("shell.trusted.status_active", null, "Status: active")}</span>`}
                 </div>
                 ${d.revoked ? "" : `
-                    <button class="btn secondary trustedRevokeBtn" type="button" data-device-id="${String(d.device_id || "")}">
+                    <button class="pq-btn danger trustedRevokeBtn" type="button" data-device-id="${String(d.device_id || "")}">
                         ${tr("shell.trusted.forget_pairing", null, "Forget pairing")}
                     </button>
                 `}
