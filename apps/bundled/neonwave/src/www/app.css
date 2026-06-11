@@ -18,25 +18,28 @@ html[data-theme="cpunk_orange"] {
 
 body {
     margin: 0;
-    background: var(--bg, #050711);
+    background: var(--bg, #050712);
     color: var(--fg, #e8f8ff);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .musicApp {
     --nw-accent: var(--info, #00e5ff);
-    --nw-bg: var(--bg, #050711);
+    --nw-bg: var(--bg, #050712);
     --nw-fg: var(--fg, #e8f8ff);
     --nw-dim: var(--fg-dim, #8aa);
     --nw-panel: var(--panel, #0b1020);
     --nw-panel2: var(--panel2, #111827);
-    --nw-border: var(--border, rgba(0, 229, 255, 0.35));
-    --nw-border2: var(--border2, rgba(0, 229, 255, 0.22));
+    --nw-border: var(--border, rgba(0, 240, 248, 0.35));
+    --nw-border2: var(--border2, rgba(0, 240, 248, 0.22));
     --nw-shadow: var(--shadow, 0 20px 50px rgba(0, 0, 0, 0.22));
     --nw-radius: var(--radius2, 18px);
 
     --nw-accent-bg: color-mix(in srgb, var(--nw-accent) 7%, transparent);
     --nw-accent-bg2: color-mix(in srgb, var(--nw-accent) 13%, transparent);
+    --nw-err: var(--err, rgba(255, 90, 90, 0.95));
+    --nw-warn: var(--warn, rgba(255, 190, 0, 0.95));
+
     --nw-accent-border: color-mix(in srgb, var(--nw-accent) 35%, var(--nw-border));
     --nw-accent-border-strong: color-mix(in srgb, var(--nw-accent) 70%, var(--nw-border));
 
@@ -555,9 +558,9 @@ audio {
 }
 
 .pillBtn.dangerSoft {
-    border-color: color-mix(in srgb, var(--err, #ff5c7a) 55%, var(--nw-border));
-    color: var(--err, #ff5c7a);
-    background: color-mix(in srgb, var(--err, #ff5c7a) 7%, transparent);
+    border-color: color-mix(in srgb, var(--nw-err) 55%, var(--nw-border));
+    color: var(--nw-err);
+    background: color-mix(in srgb, var(--nw-err) 7%, transparent);
 }
 
 /* NeonWave library search/filter */
