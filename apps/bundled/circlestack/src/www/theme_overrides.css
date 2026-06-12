@@ -48,7 +48,7 @@
 :root[data-theme="bright"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="bright"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
   color: var(--cs-bright-text) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-modal-text,
@@ -85,7 +85,7 @@
 :root[data-theme="win_classic"] .cs-circle-modal :not(img):not(svg):not(path):not(circle):not(rect),
 :root[data-theme="win_classic"] .cs-intro-modal :not(img):not(svg):not(path):not(circle):not(rect) {
   color: var(--cs-wc-text) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-modal-text,
@@ -242,7 +242,7 @@
 :root[data-theme="bright"] .cs-my-profile-stat-value,
 :root[data-theme="bright"] .cs-profile-achievement-title {
   color: var(--cs-bright-text) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-my-profile-sub,
@@ -251,7 +251,7 @@
 :root[data-theme="bright"] .cs-my-profile-stat-label,
 :root[data-theme="bright"] .cs-profile-achievement-desc {
   color: var(--cs-bright-text-muted) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-my-profile-title,
@@ -260,7 +260,7 @@
 :root[data-theme="win_classic"] .cs-my-profile-stat-value,
 :root[data-theme="win_classic"] .cs-profile-achievement-title {
   color: var(--cs-wc-text) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-my-profile-sub,
@@ -269,7 +269,7 @@
 :root[data-theme="win_classic"] .cs-my-profile-stat-label,
 :root[data-theme="win_classic"] .cs-profile-achievement-desc {
   color: var(--cs-wc-text-muted) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 /* Circle Stack final modal polish v2
@@ -470,7 +470,7 @@
   background: #dcfce7 !important;
   color: #14532d !important;
   border-color: #16a34a !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55) !important;
   font-weight: 900 !important;
 }
@@ -479,7 +479,7 @@
   background: #e6ffe6 !important;
   color: #003b12 !important;
   border: 1px solid #008000 !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-shadow:
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #9a9a9a !important;
@@ -521,7 +521,7 @@
   background: #eff6ff !important;
   color: #1e3a8a !important;
   border: 1px solid #2563eb !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.85) !important;
 }
 
@@ -537,7 +537,7 @@
   color: #000080 !important;
   border: 1px solid var(--cs-wc-border) !important;
   border-radius: 0 !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-shadow:
     inset 1px 1px 0 #fff,
     inset -1px -1px 0 #9a9a9a !important;
@@ -864,7 +864,7 @@ button[data-action="disable"] {
   padding: 4px 10px !important;
   font-weight: 850 !important;
   line-height: 1 !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-fed-origin-pill-theme {
@@ -899,7 +899,7 @@ button[data-action="disable"] {
   font-weight: 950 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-fed-status-pill-theme {
@@ -925,12 +925,12 @@ button[data-action="disable"] {
 /* Remote post / reaction subtitle */
 :root[data-theme="bright"] .cs-fed-subtitle-theme {
   color: rgba(15,23,42,0.62) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-fed-subtitle-theme {
   color: var(--cs-wc-text-muted) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 /* Why? explanation bubble */
@@ -942,7 +942,7 @@ button[data-action="disable"] {
   padding: 10px 12px !important;
   margin: 10px 0 !important;
   overflow-wrap: anywhere !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-fed-why-note-theme {
@@ -978,7 +978,7 @@ button[data-action="disable"] {
   padding: 9px 12px !important;
   margin: 8px 0 10px !important;
   overflow-wrap: anywhere !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="bright"] .cs-fed-media-note-theme {
@@ -1034,14 +1034,14 @@ button[data-action="disable"] {
 :root[data-theme="bright"] .cs-fed-reaction-line-theme,
 :root[data-theme="bright"] .cs-fed-reaction-line-theme * {
   color: rgba(15,23,42,0.72) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-fed-target-theme,
 :root[data-theme="win_classic"] .cs-fed-reaction-line-theme,
 :root[data-theme="win_classic"] .cs-fed-reaction-line-theme * {
   color: #303030 !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="dark"] .cs-fed-reaction-line-theme,
@@ -1089,26 +1089,26 @@ button[data-action="disable"] {
 :root[data-theme="bright"] .cs-fed-media-note-theme,
 :root[data-theme="bright"] .cs-fed-media-note-theme * {
   color: #0f766e !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-fed-media-note-theme,
 :root[data-theme="win_classic"] .cs-fed-media-note-theme * {
   color: #004040 !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 /* Why note children inherit readable color too. */
 :root[data-theme="bright"] .cs-fed-why-note-theme,
 :root[data-theme="bright"] .cs-fed-why-note-theme * {
   color: rgba(15,23,42,0.76) !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 :root[data-theme="win_classic"] .cs-fed-why-note-theme,
 :root[data-theme="win_classic"] .cs-fed-why-note-theme * {
   color: #202020 !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 /* Circle Stack locked achievement pill polish v8
@@ -1126,7 +1126,7 @@ button[data-action="disable"] {
   font-weight: 900 !important;
   letter-spacing: 0.04em !important;
   text-transform: uppercase !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-sizing: border-box !important;
 }
 
@@ -1160,7 +1160,7 @@ button[data-action="disable"] {
 /* If inner nested element carries its own color, inherit the pill color. */
 .cs-ach-locked-pill-theme * {
   color: inherit !important;
-  text-shadow: none !important;
+  text-shadow: none;
 }
 
 /* Circle Stack locked achievement recovery v11
@@ -1253,7 +1253,7 @@ button[data-action="disable"] {
   font-weight: 900 !important;
   letter-spacing: 0.03em !important;
   text-transform: uppercase !important;
-  text-shadow: none !important;
+  text-shadow: none;
   box-sizing: border-box !important;
   opacity: 1 !important;
   filter: none !important;
@@ -1320,7 +1320,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
   color: #10343a !important;
   background: #e7f6f4 !important;
   border-color: #7bc9c3 !important;
-  text-shadow: none !important;
+  text-shadow: none;
   opacity: 1 !important;
 }
 
@@ -1361,7 +1361,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
   color: #00343d !important;
   background: #e7f6f4 !important;
   border: 1px solid #62bdb6 !important;
-  text-shadow: none !important;
+  text-shadow: none;
   opacity: 1 !important;
   font-weight: 700 !important;
 }
@@ -1369,7 +1369,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
 :root[data-theme="bright"] .cs-federated-media-placeholder *,
 :root[data-theme="win_classic"] .cs-federated-media-placeholder * {
   color: #00343d !important;
-  text-shadow: none !important;
+  text-shadow: none;
   opacity: 1 !important;
 }
 
