@@ -34,11 +34,14 @@ Planned documents:
 
 Security documents describe trust boundaries, threat models, security assumptions, and known hardening work.
 
+Existing documents:
+
+- `security/file-access-security.md` — File access trust boundaries, path safety, quota, shares, versions, previews, and upload security.
+
 Planned documents:
 
 - `security/threat-model.md`
 - `security/authentication-and-sessions.md`
-- `security/file-access-security.md`
 - `security/drop-zone-security.md`
 
 ### ADR documents
