@@ -258,7 +258,6 @@ html[data-theme="win_classic"]{
     --radius2: 18px;
 
     /* status colors (muted) */
-    --ok:#0a6b2b;
     --ok: rgba(10,107,43,0.95);
 
     --warn:#9a6b00;
@@ -432,43 +431,6 @@ html[data-theme="win_classic"] tbody td{
 }
 
 
-/* ============================================
-   Danger button — must look red in ALL themes
-   ============================================ */
-
-.btn.danger{
-    color: #fff !important;
-
-    background: linear-gradient(
-            180deg,
-            rgba(var(--fail-rgb),0.95),
-            rgba(var(--fail-rgb),0.80)
-    ) !important;
-
-    border: 1px solid rgba(var(--fail-rgb),0.95) !important;
-
-    box-shadow:
-            0 0 0 1px rgba(var(--fail-rgb),0.35),
-            0 6px 18px rgba(var(--fail-rgb),0.25);
-}
-
-.btn.danger:hover{
-    background: linear-gradient(
-            180deg,
-            rgba(var(--fail-rgb),1.0),
-            rgba(var(--fail-rgb),0.90)
-    ) !important;
-
-    border-color: rgba(var(--fail-rgb),1.0) !important;
-}
-
-.btn.danger:active{
-    background: linear-gradient(
-            180deg,
-            rgba(var(--fail-rgb),0.85),
-            rgba(var(--fail-rgb),1.0)
-    ) !important;
-}
 /* --------------------------------------------------------------------------
    File Manager (filemgr) app: fix modal + context menu surfaces in win_classic
    These elements are app-local (IDs), so global .card rules don't catch them.
