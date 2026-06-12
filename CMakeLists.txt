@@ -461,6 +461,30 @@ add_custom_target(run_test_admin_cookie
 )
 
 # -----------------------------------------------------------------------------
+# Tool: pqnas_opaque_helper
+#
+# Phase 2 scaffold only:
+# - no production OPAQUE cryptography
+# - no users.json access
+# - no session minting
+# - future protocol operations fail closed
+# -----------------------------------------------------------------------------
+add_executable(pqnas_opaque_helper
+        tools/opaque_helper/pqnas_opaque_helper.cpp
+)
+
+set_target_properties(pqnas_opaque_helper PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_pqnas_opaque_helper_self_test
+        COMMAND "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper" self-test
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS pqnas_opaque_helper
+)
+
+
+# -----------------------------------------------------------------------------
 # Tool: pqnas_keygen
 # -----------------------------------------------------------------------------
 add_executable(pqnas_keygen
