@@ -37,12 +37,12 @@ Security documents describe trust boundaries, threat models, security assumption
 Existing documents:
 
 - `security/file-access-security.md` — File access trust boundaries, path safety, quota, shares, versions, previews, and upload security.
+- `security/drop-zone-security.md` — Drop Zone owner/public-token surfaces, upload safety, quota, expiry, branding, and abuse controls.
 
 Planned documents:
 
 - `security/threat-model.md`
 - `security/authentication-and-sessions.md`
-- `security/drop-zone-security.md`
 
 ### ADR documents
 
