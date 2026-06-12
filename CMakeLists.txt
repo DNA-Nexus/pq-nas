@@ -486,6 +486,29 @@ add_custom_target(run_pqnas_opaque_helper_self_test
 
 
 # -----------------------------------------------------------------------------
+# Test: test_opaque_runtime_paths
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_runtime_paths
+        tests/runtime_paths/test_opaque_runtime_paths.cpp
+        server/src/runtime_paths.cpp
+)
+
+target_include_directories(test_opaque_runtime_paths PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_opaque_runtime_paths PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_runtime_paths
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_opaque_credentials
 # -----------------------------------------------------------------------------
 add_executable(test_opaque_credentials
