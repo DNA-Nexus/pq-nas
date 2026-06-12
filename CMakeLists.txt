@@ -189,6 +189,7 @@ add_executable(pqnas_server
 
         server/src/routes_v5.cc
         server/src/password_credentials.cpp
+        server/src/opaque_credentials.cpp
         server/src/dna_identity_generator.cpp
         server/src/session_cookie.cc
         server/src/policy.cc
@@ -481,6 +482,30 @@ add_custom_target(run_pqnas_opaque_helper_self_test
         COMMAND "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper" self-test
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS pqnas_opaque_helper
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_opaque_credentials
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_credentials
+        tests/opaque_credentials/test_opaque_credentials.cpp
+        server/src/opaque_credentials.cpp
+)
+
+target_include_directories(test_opaque_credentials PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_opaque_credentials PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_credentials
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_credentials"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_credentials
 )
 
 
