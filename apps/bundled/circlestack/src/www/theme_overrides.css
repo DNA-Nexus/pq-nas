@@ -1006,16 +1006,16 @@ button[data-action="disable"] {
 :root[data-theme="bright"] .cs-post .cs-fed-status-pill-theme,
 :root[data-theme="bright"] .cs-post .cs-fed-why-note-theme,
 :root[data-theme="bright"] .cs-post .cs-fed-media-note-theme {
-  opacity: 1 !important;
-  filter: none !important;
+  opacity: 1;
+  filter: none;
 }
 
 :root[data-theme="win_classic"] .cs-post .cs-fed-origin-pill-theme,
 :root[data-theme="win_classic"] .cs-post .cs-fed-status-pill-theme,
 :root[data-theme="win_classic"] .cs-post .cs-fed-why-note-theme,
 :root[data-theme="win_classic"] .cs-post .cs-fed-media-note-theme {
-  opacity: 1 !important;
-  filter: none !important;
+  opacity: 1;
+  filter: none;
 }
 
 /* Circle Stack federated feed polish v7
@@ -1255,8 +1255,8 @@ button[data-action="disable"] {
   text-transform: uppercase !important;
   text-shadow: none;
   box-sizing: border-box !important;
-  opacity: 1 !important;
-  filter: none !important;
+  opacity: 1;
+  filter: none;
 }
 
 :root[data-theme="bright"] .cs-locked-achievement-lock {
@@ -1321,7 +1321,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
   background: #e7f6f4 !important;
   border-color: #7bc9c3 !important;
   text-shadow: none;
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 html[data-theme="bright"] .cs-feed .cs-post .cs-media-meta a,
@@ -1362,7 +1362,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
   background: #e7f6f4 !important;
   border: 1px solid #62bdb6 !important;
   text-shadow: none;
-  opacity: 1 !important;
+  opacity: 1;
   font-weight: 700 !important;
 }
 
@@ -1370,7 +1370,7 @@ html[data-theme="win_classic"] .cs-federated-feed .cs-post [class*="remote-media
 :root[data-theme="win_classic"] .cs-federated-media-placeholder * {
   color: #00343d !important;
   text-shadow: none;
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 :root[data-theme="win_classic"] .cs-federated-media-placeholder {
