@@ -1,0 +1,31 @@
+{
+  "id": "themedapp",
+  "name": "Themed App Template",
+  "version": "0.1.0",
+  "entry": "www/index.html",
+  "permissions": [],
+  "category": "utility",
+  "surfaces": {
+    "desktop": {
+      "enabled": true
+    },
+    "launcher": {
+      "enabled": true
+    },
+    "sidebar": {
+      "enabled": false,
+      "user_pinnable": true,
+      "section": "tools",
+      "label": "Themed App",
+      "order": 200
+    }
+  },
+  "icons": {
+    "win_classic": "www/icon.svg",
+    "cpunk_orange": "www/icon.svg",
+    "dark": "www/icon.svg",
+    "bright": "www/icon.svg",
+    "default": "www/icon.svg"
+  },
+  "min_server_version": "1.2.0"
+}
