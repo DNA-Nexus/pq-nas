@@ -338,7 +338,7 @@ button:disabled {
   padding: 4px;
   border-radius: 14px;
   border: 1px solid var(--dz-line);
-  background: rgba(255,255,255,.04);
+  background: var(--dz-soft-bg);
   cursor: pointer;
 }
 
@@ -392,7 +392,7 @@ button:disabled {
   height: 58px;
   border: 1px solid var(--dz-line);
   border-radius: 14px;
-  background: rgba(255,255,255,.045);
+  background: var(--dz-soft-bg);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -459,7 +459,7 @@ button:disabled {
   border: 1px solid var(--dz-line);
   border-radius: 16px;
   padding: 14px;
-  background: rgba(255,255,255,.06);
+  background: var(--dz-soft-bg);
 }
 
 .dzCreateResult.ok {
@@ -493,7 +493,7 @@ button:disabled {
   border: 1px solid var(--dz-line);
   border-radius: 14px;
   padding: 10px;
-  background: rgba(255,255,255,.045);
+  background: var(--dz-soft-bg);
 }
 
 .dzStats span {
@@ -756,7 +756,7 @@ button:disabled {
   border: 1px solid var(--dz-line);
   border-radius: 14px;
   padding: 10px;
-  background: rgba(255,255,255,.035);
+  background: var(--dz-soft-bg);
   min-width: 0;
 }
 
@@ -829,7 +829,7 @@ button:disabled {
   overflow: hidden;
   border: 1px solid rgba(255,159,28,.26);
   border-radius: 22px;
-  background: rgba(19,22,32,.98);
+  background: var(--elevated-bg2, rgba(19,22,32,.98));
   box-shadow: 0 24px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
   pointer-events: auto;
 }
@@ -844,7 +844,7 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
+  border-bottom: 1px solid var(--dz-line2);
   background: linear-gradient(135deg, rgba(255,159,28,.16), rgba(255,159,28,.04));
   cursor: move;
 }
@@ -943,7 +943,7 @@ button:disabled {
   justify-content: space-between;
   gap: 14px;
   padding: 16px 18px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
+  border-bottom: 1px solid var(--dz-line2);
   background: linear-gradient(135deg, rgba(255,159,28,.15), rgba(255,159,28,.04));
 }
 
@@ -1022,9 +1022,9 @@ textarea.dzEditInput {
   gap: 9px;
   margin-top: 14px;
   padding: 9px 11px;
-  border: 1px solid rgba(255,255,255,.13);
+  border: 1px solid var(--dz-line);
   border-radius: 14px;
-  background: rgba(255,255,255,.045);
+  background: var(--dz-soft-bg);
   font-weight: 850;
 }
 
@@ -1072,7 +1072,7 @@ textarea.dzEditInput {
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 14px;
   padding: 4px;
-  background: rgba(255,255,255,.06);
+  background: var(--dz-soft-bg);
   cursor: pointer;
 }
 
@@ -1236,7 +1236,7 @@ textarea.dzEditInput {
 .dzManageActions {
   margin-top: 14px;
   padding-top: 14px;
-  border-top: 1px solid rgba(255,255,255,.10);
+  border-top: 1px solid var(--dz-line2);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
