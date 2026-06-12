@@ -1,7 +1,7 @@
 # UI / Theme Unification — Progress Audit
 
 **Date:** 2026-06-10 (updated 2026-06-12)
-**Branch:** `ai/ui-theme-progress-audit-update-20260611`
+**Branch:** `ai/ui-theme-progress-audit-fix-next-prs-20260612`
 **Companion document:** `ui_theme_unification_audit_20260610.md` (full technical audit)
 
 ---
@@ -176,7 +176,57 @@ from 149 to 83 and hardcoded colours from 332 to 243. Added 7 tokenised
 `rgba(var(` patterns. Remaining overrides concentrated in permission-gated
 sections.
 
-**Total merged: 33 PRs (#8–#27, #29–#36, #38–#42)**
+### 1v. Dropzone colour token pass
+
+| PR | Area | Commit |
+|----|------|--------|
+| #44 | Dropzone colour tokens | `0697582` |
+
+Wired additional colour tokens into `dropzone/style.css` (1,597 lines).
+Hardcoded colour count reduced from 261 to 250. `--dz-*` token layer
+fully mapped to `:root` tokens.
+
+### 1w. EchoStack colour token pass
+
+| PR | Area | Commit |
+|----|------|--------|
+| #45 | EchoStack colour tokens | `d2a7c38` |
+
+Extended tokenised patterns in `echostack/style.css` (1,069 lines).
+Hardcoded colour count reduced from 90 to 84; 51 tokenised `rgba(var(`
+patterns now in place.
+
+### 1x. PhotoGallery colours & specificity pass
+
+| PR | Area | Commit |
+|----|------|--------|
+| #46 | PhotoGallery colours & specificity | `8e7d752` |
+
+Reduced non-vendored `!important` from 7 to 3 across PhotoGallery CSS
+files (2,449 lines total). Eliminated all 4 `!important` in
+`albums_view.css`.
+
+### 1y. ReelStack context menu specificity reduction
+
+| PR | Area | Commit |
+|----|------|--------|
+| #47 | ReelStack context menu specificity | `6bcfe60` |
+
+Reduced `!important` from 57 to 14 in `reelstack_context_menu.css` (821
+lines). Restructured selectors to leverage existing class specificity
+while preserving 63 tokenised `rgba(var(` patterns.
+
+### 1z. CircleStack memory_nodes specificity reduction
+
+| PR | Area | Commit |
+|----|------|--------|
+| #48 | CircleStack memory_nodes specificity | `77cad8b` |
+
+Reduced `!important` from 41 to 23 in `memory_nodes.css` (940 lines).
+Restructured selectors while preserving four-theme visual compatibility
+and 27 tokenised `rgba(var(` patterns.
+
+**Total merged: 38 PRs (#8–#27, #29–#36, #38–#48)**
 
 ---
 
@@ -187,21 +237,21 @@ sections.
 | File | Hex | RGB/RGBA | Total | Notes |
 |------|----:|--------:|------:|-------|
 | `circlestack/app.css` | 292 | 398 | 690 | Largest single source; unchanged |
-| `dropzone/style.css` | 139 | 122 | 261 | Has `--dz-*` tokens but still many literals |
+| `dropzone/style.css` | 139 | 111 | 250 | Colour token pass (#44) reduced from 261; `--dz-*` layer wired |
 | `external_workspace.css` | 53 | 190 | 243 | Deep pass (#42) reduced from 332; 7 tokenised |
 | `theme.css` | 47 | 193 | 240 | Expected — token definitions live here |
 | `circlestack/theme_overrides.css` | 130 | 92 | 222 | Overrides for bright + win_classic |
 | `reelstack/app.css` | 70 | 142 | 212 | Token pass (#40) added 47 tokenised patterns |
 | `node_profile.css` | 53 | 117 | 170 | Polish pass (#39) reduced !important to 1; colours unchanged |
 | `reelstack/reelstack_context_menu.css` | 38 | 84 | 122 | 63 tokenised patterns already adopted |
-| `echostack/style.css` | 14 | 76 | 90 | Foundation pass done; 52 tokenised patterns |
-| `circlestack/memory_nodes.css` | 2 | 83 | 85 | 30 tokenised patterns |
+| `circlestack/memory_nodes.css` | 2 | 83 | 85 | 27 tokenised patterns |
+| `echostack/style.css` | 13 | 71 | 84 | Colour token pass (#45) reduced from 90; 51 tokenised patterns |
 | `neonwave/app.css` | 8 | 8 | 16 | Foundation pass (#30) reduced from ~80 |
 
 Note: the RGB/RGBA column includes tokenised `rgba(var(--*-rgb), 0.xx)`
-calls. The true "unresolved" literals are lower; 551 tokenised patterns
+calls. The true "unresolved" literals are lower; 546 tokenised patterns
 exist across 25 files. The largest unresolved concentrations are in
-CircleStack (690) and Dropzone (261).
+CircleStack (690) and Dropzone (250).
 
 ### 2b. `!important` counts by major file
 
@@ -211,11 +261,10 @@ CircleStack (690) and Dropzone (261).
  151  theme.css                         ████████████
   83  external_workspace.css            ██████       (was 149)
   58  shell_menu.css                    ████         (was 73)
-  57  reelstack/reelstack_context_menu  ████
   44  reelstack/app.css                 ███
-  41  circlestack/memory_nodes.css      ███
+  23  circlestack/memory_nodes.css      ██           (was 41)
+  14  reelstack/reelstack_context_menu  █            (was 57)
    6  photogallery/leaflet.css          ▏  (vendored — ignore)
-   4  photogallery/albums_view.css      ▏
    4  onboarding.css                    ▏
    3  dropzone/style.css                ▏
    2  echostack/style.css               ▏
@@ -226,14 +275,17 @@ CircleStack (690) and Dropzone (261).
    1  reelstack/reelstack_search.css    ▏
    1  sharesmgr/app.css                 ▏
 ──────────────────────────────────────────
-1,386 total                               (was 1,559; −173)
+1,321 total                               (was 1,386; −65)
 ```
 
-Reductions from PRs #38–#42:
+Reductions from PRs #38–#48:
 - `people.css`: 50 → 0 (eliminated)
 - `node_profile.css`: 43 → 1 (−42)
 - `external_workspace.css`: 149 → 83 (−66)
 - `shell_menu.css`: 73 → 58 (−15)
+- `photogallery/albums_view.css`: 4 → 0 (eliminated)
+- `reelstack_context_menu.css`: 57 → 14 (−43)
+- `circlestack/memory_nodes.css`: 41 → 23 (−18)
 
 ### 2c. Override-heavy files (top 5)
 
@@ -283,79 +335,91 @@ None. All previously tracked branches have been merged.
 | NeonWave | 1 | Foundation pass (#30) wired `--nw-*` to shared tokens; colours reduced from ~80 to 16 |
 | Node profile | 1 | Polish pass (#39) reduced from 43; 19 tokenised rgba patterns |
 | SharesMgr | 1 | Foundation pass (#29) adopted pq-* classes; 407 lines, clean |
-| Dropzone | 3 | Own `--dz-*` layer maps to `:root` tokens |
-| EchoStack | 2 | Clean after foundation pass; 52 tokenised rgba patterns |
+| EchoStack | 2 | Colour token pass (#45) reduced colours from 90 to 84; 51 tokenised rgba patterns |
+| Dropzone | 3 | Colour token pass (#44) reduced colours from 261 to 250; `--dz-*` layer wired to `:root` tokens |
+| PhotoGallery | 3 | Colours & specificity pass (#46) reduced non-vendored `!important` from 7 to 3; 8 files, most use tokens |
 | Onboarding | 4 | Small, isolated |
 
 ### Partially tokenised (mix of tokens and hardcoded values)
 
 | App / Area | `!important` | Notes |
 |------------|-------------:|-------|
-| PhotoGallery | 14 | Foundation pass (#31) done; 8 CSS files, most use tokens but some hardcoded colours remain |
 | File Manager | 0 | Preview files use elevated tokens well; foundation pass done |
-| ReelStack | 102 | Foundation + context menu + token passes done (#17, #32, #40); context menu (57) still override-heavy |
+| ReelStack | 59 | Foundation + context menu + token + specificity passes (#17, #32, #40, #47); context menu reduced from 57 to 14 |
 | External workspace | 83 | Three passes done (#12, #33, #42); reduced from 149 `!important` and 332 to 243 colours |
-| Shell menu | 58 | Token + specificity passes (#36, #41); 56 tokenised rgba patterns; bright/win_classic overrides remain |
+| Shell menu | 58 | Token + specificity passes (#36, #41); 54 tokenised rgba patterns; bright/win_classic overrides remain |
 | Trusted Devices | — | Polish pass (#35) done; styles in shell HTML, no separate CSS file |
 
 ### Still override-heavy
 
 | App / Area | `!important` | Hardcoded colours | Notes |
 |------------|-------------:|------------------:|-------|
-| CircleStack | 967 | 997 | 10 polish passes done but core app.css (437) + theme_overrides.css (489) + memory_nodes (41) remain dense |
+| CircleStack | 949 | 997 | 11 passes done but core app.css (437) + theme_overrides.css (489) + memory_nodes (23) remain dense |
 | theme.css | 151 | 240 | Expected (token definitions) but includes fragile patterns: wildcard `*` rule, duplicate `.btn.danger` |
 
 ---
 
 ## 4. Recommended Next 5 PRs (smallest / safest first)
 
-All five previously recommended PRs have been completed (#38–#42).
+All five previously recommended PRs (#44–#48) have been completed.
 Updated recommendations follow, based on current codebase state.
 
-### PR 1 — Dropzone colour tokenisation
+### PR 1 — CircleStack app.css small specificity pass
 
-**Scope:** Replace 261 hardcoded colours in `dropzone/style.css` (1,597
-lines, only 3 `!important`). The `--dz-*` token layer already maps to
-`:root`; remaining hex/rgba literals can be wired to existing tokens.
-**Files:** `apps/bundled/dropzone/src/www/style.css`
-**Risk:** Low — isolated upload surface; token layer already proven.
+**Scope:** Target the most straightforward `!important` declarations in
+`circlestack/app.css` (5,011 lines, 437 `!important`). Focus on
+declarations where class specificity alone is sufficient — button states,
+card backgrounds, modal surfaces — without touching deeply coupled
+cascade paths.
+**Files:** `apps/bundled/circlestack/src/www/app.css`
+**Risk:** Medium — CircleStack is the largest CSS surface; changes must
+preserve four-theme visual compatibility. Keep scope small (target 30–50
+reductions).
 
-### PR 2 — EchoStack colour cleanup
+### PR 2 — CircleStack theme_overrides.css audit-only pass
 
-**Scope:** Replace remaining 38 non-tokenised colour values in
-`echostack/style.css` (1,054 lines, only 2 `!important`). 52 tokenised
-patterns are already in place — extend the same approach to the
-remaining hex (14) and non-tokenised rgba (24) values.
-**Files:** `apps/bundled/echostack/src/www/style.css`
-**Risk:** Low — foundation pass done; small, well-contained file.
+**Scope:** Document the 489 `!important` declarations in
+`theme_overrides.css` (1,380 lines) into categories: safe to remove,
+requires selector restructuring, and structurally necessary. This is a
+preparation pass — no runtime changes, only documentation and annotation
+for future targeted work.
+**Files:** `apps/bundled/circlestack/src/www/theme_overrides.css` (audit
+output to docs)
+**Risk:** None — documentation only. The file is in the
+Do-Not-Touch-Casually list; this PR maps the territory before making
+changes.
 
-### PR 3 — PhotoGallery colour & specificity pass
+### PR 3 — theme.css duplicate/fragile override cleanup
 
-**Scope:** Reduce 14 `!important` across 8 PhotoGallery CSS files (2,423
-lines total). Replace remaining hardcoded colours in `albums_view.css`
-(29 total), `stats.css` (40 total), and other gallery CSS files.
-**Files:** `apps/bundled/photogallery/src/www/*.css`
-**Risk:** Low — isolated app; 8 small files, each independently testable.
+**Scope:** Address known fragile patterns in `theme.css` (1,035 lines,
+151 `!important`): remove duplicate `.btn.danger` blocks, audit the `*`
+wildcard rule for win_classic, and consolidate redundant property
+declarations.
+**Files:** `server/src/static/theme.css`
+**Risk:** Medium — theme.css affects all pages. Changes are narrowly
+scoped to identified duplicates and the wildcard rule. Requires
+four-theme visual QA.
 
-### PR 4 — ReelStack context menu specificity reduction
+### PR 4 — ReelStack app.css remaining specificity cleanup
 
-**Scope:** Reduce 57 `!important` in `reelstack_context_menu.css` (821
-lines). Token pass (#32) already wired 63 tokenised rgba patterns;
-remaining `!important` declarations can be replaced by restructuring
-selectors to leverage existing class specificity.
-**Files:** `apps/bundled/reelstack/src/www/reelstack_context_menu.css`
-**Risk:** Medium — context menu overlays video player; z-index stacking
-and `pointer-events` toggling require visual testing.
+**Scope:** Reduce 44 `!important` in `reelstack/app.css` (1,230 lines).
+With the context menu already cleaned up (57 → 14 in PR #47), the main
+app stylesheet is the next target. 47 tokenised rgba patterns are
+already in place.
+**Files:** `apps/bundled/reelstack/src/www/app.css`
+**Risk:** Medium — video player controls and fullscreen overlay require
+careful z-index and pointer-events testing.
 
-### PR 5 — CircleStack memory_nodes specificity reduction
+### PR 5 — External workspace permission-gated override audit
 
-**Scope:** Reduce 41 `!important` and 85 hardcoded colours in
-`memory_nodes.css` (952 lines). 30 tokenised patterns already in place.
-This is the smallest CircleStack file and the safest entry point into
-the CircleStack specificity reduction effort.
-**Files:** `apps/bundled/circlestack/src/www/memory_nodes.css`
-**Risk:** Medium — memory node rendering interacts with CircleStack
-`app.css` cascade; changes require four-theme visual QA.
+**Scope:** Audit the remaining 83 `!important` in
+`external_workspace.css` (2,748 lines) after three prior passes (#12,
+#33, #42). Map which overrides are structurally required by
+permission-gated visibility logic vs. which can be safely removed or
+replaced with selector restructuring.
+**Files:** `server/src/static/external_workspace.css`
+**Risk:** Medium — external workspace is the public-facing share surface;
+visibility-class overrides control access-gated content display.
 
 ---
 
@@ -431,14 +495,14 @@ can expose restricted content or hide critical UI controls.
 
 | Metric | Value |
 |--------|-------|
-| PRs merged | 33 (#8–#27, #29–#36, #38–#42) |
+| PRs merged | 38 (#8–#27, #29–#36, #38–#48) |
 | Unmerged branches in progress | 0 |
 | Shared component classes shipped | 8 (`.pq-*` v1) |
 | Apps fully token-driven | 2 (RAIDMgr, SnapshotMgr) |
-| Apps theme-token ready | 7 (People, NeonWave, Node profile, SharesMgr, Dropzone, EchoStack, Onboarding) |
-| Apps partially tokenised | 6 (PhotoGallery, FileManager, ReelStack, External workspace, Shell menu, Trusted Devices) |
+| Apps theme-token ready | 8 (People, NeonWave, Node profile, SharesMgr, EchoStack, Dropzone, PhotoGallery, Onboarding) |
+| Apps partially tokenised | 5 (FileManager, ReelStack, External workspace, Shell menu, Trusted Devices) |
 | Areas still override-heavy | 2 (CircleStack, theme.css) |
-| Total `!important` remaining | 1,386 (was 1,559; −173) |
-| Total hardcoded colour instances | ~2,351 (top-11 files; includes tokenised rgba patterns) |
-| Tokenised `rgba(var(` patterns | 551 across 25 files |
+| Total `!important` remaining | 1,321 (was 1,386; −65) |
+| Total hardcoded colour instances | ~2,334 (top-11 files; includes tokenised rgba patterns) |
+| Tokenised `rgba(var(` patterns | 546 across 25 files |
 | Recommended next PRs | 5 (see Section 4) |
