@@ -13,6 +13,7 @@ Current implementation status:
 - `pqnas_opaque_helper` exists as a helper-binary scaffold.
 - `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test` work.
 - Future helper protocol operations such as `login-start` are recognized but fail closed with `opaque_backend_not_implemented`.
+- `OpaqueCredentials` exists as a C++ storage/parsing scaffold for future `opaque_credentials.json` records.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
@@ -750,9 +751,31 @@ No production OPAQUE yet.
 
 ### Phase 3: credential store
 
-Add C++ storage for `opaque_credentials.json`.
+Partially done in `feature/opaque-login-method`.
 
-No login success yet.
+Added C++ storage/parsing scaffold for future `opaque_credentials.json` records:
+
+```text
+server/src/opaque_credentials.h
+server/src/opaque_credentials.cpp
+tests/opaque_credentials/test_opaque_credentials.cpp
+```
+
+Current behavior:
+
+- missing credential file loads as an empty store
+- records are keyed by normalized login
+- records preserve `fingerprint`, `opaque_password_file_b64`, and `opaque_suite`
+- save writes owner-only file permissions where supported
+- classic password fallback fields such as `password_hash` fail closed during load
+
+Still not implemented:
+
+- no OPAQUE cryptography
+- no helper call from server routes
+- no registration/enrollment flow
+- no login success
+- no `pqnas_session` minting from OPAQUE
 
 ### Phase 4: enrollment flow
 
