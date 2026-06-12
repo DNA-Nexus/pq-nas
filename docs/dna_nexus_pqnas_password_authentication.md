@@ -2,6 +2,8 @@
 
 Password Authentication is an optional DNA-Nexus / PQ-NAS browser login mode where users sign in with a normal username/email and password while the server still keeps the internal DNA-Nexus identity model based on fingerprints.
 
+This document covers the classic Argon2id password flow and the planned OPAQUE zero-knowledge password flow. The core rule is the same for both: browser login authenticates access to an existing fingerprint; it does not replace the fingerprint identity model.
+
 It is designed for customer installations where QR / DNA Connect login would be a sales or adoption barrier.
 
 Password Authentication does **not** replace the internal fingerprint identity model:
@@ -40,6 +42,12 @@ or:
 PQNAS_LOGIN_MODE=password
 ```
 
+or:
+
+```text
+PQNAS_LOGIN_MODE=opaque
+```
+
 ### QR mode
 
 When `PQNAS_LOGIN_MODE=qr`:
@@ -56,6 +64,27 @@ When `PQNAS_LOGIN_MODE=password`:
 - QR login should be disabled for browser login
 - `/api/auth/config` should report password login as enabled and QR login as disabled
 - password endpoints are used for login, password change, recovery, and admin provisioning
+
+### OPAQUE mode
+
+When `PQNAS_LOGIN_MODE=opaque`:
+
+- browser login uses username/email + OPAQUE zero-knowledge password authentication
+- the browser must not send the plaintext password to the server
+- QR login should be disabled for browser login
+- classic `/api/auth/password/login` must not be used as a silent fallback
+- `/api/auth/config` should report OPAQUE login as enabled
+- successful OPAQUE authentication must still resolve to the existing `fingerprint`
+- successful OPAQUE authentication must mint the same `pqnas_session` browser cookie model used by QR and classic password login
+
+Current scaffold endpoints:
+
+```http
+POST /api/auth/opaque/login/start
+POST /api/auth/opaque/login/finish
+```
+
+The scaffold endpoints are intentionally fail-closed until a reviewed OPAQUE backend and browser-side OPAQUE client are wired in.
 
 ---
 
@@ -86,6 +115,19 @@ Example QR-mode response:
   "mode": "qr",
   "password_enabled": false,
   "qr_enabled": true
+}
+```
+
+Example OPAQUE-mode response:
+
+```json
+{
+  "ok": true,
+  "mode": "opaque",
+  "password_enabled": false,
+  "opaque_enabled": true,
+  "qr_enabled": false,
+  "password_scheme": "opaque"
 }
 ```
 
@@ -780,6 +822,14 @@ Admin-only endpoints may return more specific errors when the caller is already 
 - Recovery can reset a password but must not approve or enable an account.
 - Bootstrap tokens must be temporary and removed after first admin setup.
 - Password-created users should receive real CPUNK/DNA-style identities.
+
+### OPAQUE-specific notes
+
+- OPAQUE must never degrade into sending the plaintext password to `/api/auth/password/login`.
+- OPAQUE login success must resolve to the existing credential fingerprint.
+- OPAQUE login success must create the same `pqnas_session` cookie type as QR/password login.
+- OPAQUE does not replace `users.json`, quotas, roles, app tokens, trusted devices, or fingerprint-based authorization.
+- OPAQUE registration/change/reset must be designed separately from classic Argon2id password hashing.
 
 ---
 

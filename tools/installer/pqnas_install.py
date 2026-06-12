@@ -1183,7 +1183,10 @@ def write_env_file(
         lines += [f"PQNAS_RP_ID={rp_id}"]
 
     # Internal verifier/session mode.
-    # Keep this separate from QR-vs-password browser login selection.
+    # Keep this separate from browser login selection:
+    # - qr       = DNA Connect / QR auth
+    # - password = classic Argon2id password auth
+    # - opaque   = zero-knowledge password auth scaffold / future backend
     if auth_mode or login_mode:
         lines += [""]
 
@@ -1192,7 +1195,7 @@ def write_env_file(
 
     if login_mode:
         lm = login_mode.strip().lower()
-        if lm not in ("qr", "password"):
+        if lm not in ("qr", "password", "opaque"):
             raise ValueError(f"invalid login_mode: {login_mode}")
         lines += [f"PQNAS_LOGIN_MODE={lm}"]
 

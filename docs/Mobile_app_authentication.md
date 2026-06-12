@@ -20,6 +20,8 @@ PQ-NAS currently supports two related mobile/app authentication flows:
 
 The new pairing flow is the preferred model for PQ-NAS mobile app onboarding because it is more explicit, safer, and fits the trusted-device concept better.
 
+OPAQUE browser login does not replace this mobile trusted-device/token model. If OPAQUE is enabled as a browser login method, the result must still be a normal fingerprint-backed web session. Mobile app pairing must continue to mint and verify bearer tokens through the existing `AppTokenStore` model.
+
 ---
 
 ## Core identity model

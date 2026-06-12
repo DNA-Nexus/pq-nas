@@ -64,15 +64,21 @@ These routes may be reachable without an authenticated user session, but they mu
 Examples:
 
 ```text
-POST /api/v5/verify
-GET  /api/public/auth_mode
+GET  /api/auth/config
+POST /api/v5/session
+POST /api/v5/status
+POST /api/v5/consume
+POST /api/auth/password/login
+POST /api/auth/opaque/login/start
+POST /api/auth/opaque/login/finish
 ```
 
 Purpose:
 
-- support browser login
+- support browser login through QR, classic password, or OPAQUE modes
 - support DNA identity / device-mediated verification
 - expose safe public authentication mode information
+- keep all successful browser login methods mapped to the same internal fingerprint/session model
 
 Auth model:
 
