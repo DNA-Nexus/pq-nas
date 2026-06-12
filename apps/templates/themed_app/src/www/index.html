@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DNA-Nexus • Themed App</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/components.css">
+  <link rel="stylesheet" href="./app.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <main class="ta-shell" data-app="themedapp">
+    <header class="ta-hero pq-card">
+      <div>
+        <p class="ta-eyebrow">DNA-Nexus</p>
+        <h1>Themed App Template</h1>
+        <p class="ta-subtitle">
+          A small starter app that follows the shared token and component system.
+        </p>
+      </div>
+
+      <div class="ta-heroActions">
+        <span id="themeBadge" class="pq-badge info">theme: auto</span>
+        <button id="refreshBtn" class="pq-btn secondary" type="button">Refresh</button>
+        <button id="primaryBtn" class="pq-btn primary" type="button">Primary action</button>
+      </div>
+    </header>
+
+    <section class="ta-toolbar pq-toolbar" aria-label="Template controls">
+      <label class="ta-field">
+        <span>Search</span>
+        <input id="searchInput" class="pq-input" type="search" placeholder="Search placeholder">
+      </label>
+
+      <label class="ta-field">
+        <span>Status</span>
+        <select id="statusSelect" class="pq-select">
+          <option value="ready">Ready</option>
+          <option value="working">Working</option>
+          <option value="error">Error</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="ta-grid" aria-label="Template content">
+      <article class="ta-card pq-card">
+        <div class="ta-cardTop">
+          <h2>Token bridge</h2>
+          <span class="pq-badge ok">Ready</span>
+        </div>
+        <p>This card uses app-local CSS variables that map back to global theme tokens.</p>
+      </article>
+
+      <article class="ta-card pq-card">
+        <div class="ta-cardTop">
+          <h2>Shared components</h2>
+          <span class="pq-badge muted">.pq-*</span>
+        </div>
+        <p>Buttons, inputs, cards, badges, and toolbars should use shared classes first.</p>
+      </article>
+
+      <article class="ta-card pq-card">
+        <div class="ta-cardTop">
+          <h2>No theme debt</h2>
+          <span class="pq-badge warn">Checklist</span>
+        </div>
+        <p>Avoid hardcoded colours and avoid <code>!important</code> unless it protects functional state.</p>
+      </article>
+    </section>
+
+    <section id="emptyState" class="ta-empty pq-empty-state">No app data yet.</section>
+  </main>
+</body>
+</html>

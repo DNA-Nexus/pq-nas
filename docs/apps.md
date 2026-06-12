@@ -10,6 +10,7 @@ This document is for **PQ-NAS developers** and **app authors**. It describes:
 - how app icons work, including the new monochrome sidebar icons
 - how launch policy works
 - the main PQ-NAS APIs apps use today
+- how new apps should use the shared theme system; see `docs/development/app_theme_guide.md`
 
 > Status: current model is still **static web apps** served by PQ-NAS.  
 > Apps run in the browser and use PQ-NAS HTTP APIs with cookie-based auth.  
