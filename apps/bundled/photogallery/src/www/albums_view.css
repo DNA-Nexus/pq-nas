@@ -413,10 +413,6 @@
     border-color:rgba(var(--fg-rgb),0.28);
     background:rgba(var(--fg-rgb),0.10);
 }
-.pgAlbumCard{
-    position: relative;
-}
-
 .pgAlbumSharedBadge{
     position: absolute;
     z-index: 5;
@@ -466,14 +462,14 @@
     padding:7px 10px;
     font-size:12px;
 }
-.pgAlbumDangerBtn{
-    border-color: rgba(var(--err-rgb),0.28) !important;
-    color: rgba(255,190,190,0.96) !important;
+.btn.pgAlbumDangerBtn{
+    border-color: rgba(var(--err-rgb),0.28);
+    color: rgba(255,190,190,0.96);
 }
 
-.pgAlbumDangerBtn:hover{
-    background: rgba(var(--err-rgb),0.12) !important;
-    border-color: rgba(var(--err-rgb),0.42) !important;
+.btn.pgAlbumDangerBtn:hover{
+    background: rgba(var(--err-rgb),0.12);
+    border-color: rgba(var(--err-rgb),0.42);
 }
 .pgAlbumCtxMenu{
     position:fixed;
@@ -488,10 +484,6 @@
     padding:6px;
     display:none;
     backdrop-filter:blur(8px);
-}
-
-.pgAlbumCtxMenu{
-    z-index:12050;
 }
 
 .pgAlbumCtxItem.disabled,
