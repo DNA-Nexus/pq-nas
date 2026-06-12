@@ -22,9 +22,15 @@ Architecture documents describe how the main system parts fit together.
 
 Technical documents describe implementation-level details such as APIs, database tables, storage behavior, deployment steps, and coding contracts.
 
+Existing documents:
+
+- `technical/api-overview.md` — High-level API layout, route groups, and trust levels.
+- `technical/api-main-routes.md` — Generated route inventory from `server/src/main.cpp`.
+- `technical/file-api.md` — Human-written documentation for the `/api/v4/files/*` route group.
+- `technical/upload-api.md` — Chunked upload API flow, staging, finalization, quota, and cleanup behavior.
+
 Planned documents:
 
-- `technical/api-overview.md`
 - `technical/database-schema.md`
 - `technical/app-manifest-model.md`
 - `technical/build-and-deploy.md`
