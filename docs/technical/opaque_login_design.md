@@ -10,6 +10,9 @@ Current implementation status:
 - `/api/auth/config` can report OPAQUE mode.
 - `/api/auth/opaque/login/start` and `/api/auth/opaque/login/finish` exist as fail-closed scaffold endpoints.
 - The login UI shows an OPAQUE-not-configured message instead of silently falling back to classic password login.
+- `pqnas_opaque_helper` exists as a helper-binary scaffold.
+- `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test` work.
+- Future helper protocol operations such as `login-start` are recognized but fail closed with `opaque_backend_not_implemented`.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
@@ -717,16 +720,33 @@ No new runtime behavior.
 
 ### Phase 2: helper skeleton
 
-Add helper project skeleton.
+Done in `feature/opaque-login-method`.
 
-No production OPAQUE yet.
+Added helper project skeleton:
 
-Expected output:
+```text
+tools/opaque_helper/pqnas_opaque_helper.cpp
+build/bin/pqnas_opaque_helper
+```
+
+Supported scaffold commands:
 
 ```text
 pqnas_opaque_helper --version
 pqnas_opaque_helper self-test
 ```
+
+Future helper protocol operations are intentionally fail-closed:
+
+```text
+server-setup-create
+register-start
+register-finish
+login-start
+login-finish
+```
+
+No production OPAQUE yet.
 
 ### Phase 3: credential store
 
