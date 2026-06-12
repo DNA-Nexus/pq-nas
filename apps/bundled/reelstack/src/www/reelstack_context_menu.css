@@ -199,7 +199,7 @@ html[data-theme="win_classic"] [data-rs-context-menu] button:hover{
 
 html[data-theme="bright"] .rsContextMenuSep,
 html[data-theme="win_classic"] .rsContextMenuSep{
-  background:rgba(var(--rs-ctx-lt-shade-rgb),.14) !important;
+  background:rgba(var(--rs-ctx-lt-shade-rgb),.14);
 }
 
 
@@ -385,43 +385,43 @@ html[data-theme="win_classic"] .rsUploadDestBackdrop{
 
 html[data-theme="bright"] .rsUploadDestCard,
 html[data-theme="win_classic"] .rsUploadDestCard{
-  background:var(--rs-ctx-lt-surface) !important;
-  color:var(--rs-ctx-lt-fg) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.16) !important;
-  box-shadow:0 26px 90px rgba(var(--rs-ctx-lt-shade-rgb),.24) !important;
+  background:var(--rs-ctx-lt-surface);
+  color:var(--rs-ctx-lt-fg);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.16);
+  box-shadow:0 26px 90px rgba(var(--rs-ctx-lt-shade-rgb),.24);
 }
 
 html[data-theme="bright"] .rsUploadDestHead,
 html[data-theme="bright"] .rsUploadDestFoot,
 html[data-theme="win_classic"] .rsUploadDestHead,
 html[data-theme="win_classic"] .rsUploadDestFoot{
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12) !important;
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12);
 }
 
 html[data-theme="bright"] .rsUploadDestKicker,
 html[data-theme="win_classic"] .rsUploadDestKicker{
-  color:var(--rs-ctx-lt-accent) !important;
+  color:var(--rs-ctx-lt-accent);
 }
 
 html[data-theme="bright"] .rsUploadDestHead p,
 html[data-theme="bright"] .rsUploadDestHint,
 html[data-theme="win_classic"] .rsUploadDestHead p,
 html[data-theme="win_classic"] .rsUploadDestHint{
-  color:var(--rs-ctx-lt-muted) !important;
+  color:var(--rs-ctx-lt-muted);
 }
 
 html[data-theme="bright"] .rsUploadDestField span,
 html[data-theme="bright"] .rsUploadDestQuickTitle,
 html[data-theme="win_classic"] .rsUploadDestField span,
 html[data-theme="win_classic"] .rsUploadDestQuickTitle{
-  color:var(--rs-ctx-lt-label) !important;
+  color:var(--rs-ctx-lt-label);
 }
 
 html[data-theme="bright"] .rsUploadDestField input,
 html[data-theme="win_classic"] .rsUploadDestField input{
-  background:var(--rs-ctx-lt-input) !important;
-  color:var(--rs-ctx-lt-fg) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.20) !important;
+  background:var(--rs-ctx-lt-input);
+  color:var(--rs-ctx-lt-fg);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.20);
 }
 
 html[data-theme="bright"] .rsUploadDestClose,
@@ -430,24 +430,24 @@ html[data-theme="bright"] .rsUploadDestQuick button,
 html[data-theme="win_classic"] .rsUploadDestClose,
 html[data-theme="win_classic"] .rsUploadDestBtn.secondary,
 html[data-theme="win_classic"] .rsUploadDestQuick button{
-  background:var(--rs-ctx-lt-input) !important;
-  color:var(--rs-ctx-lt-fg) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.18) !important;
+  background:var(--rs-ctx-lt-input);
+  color:var(--rs-ctx-lt-fg);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.18);
 }
 
 html[data-theme="bright"] .rsUploadDestQuick button:hover,
 html[data-theme="bright"] .rsUploadDestQuick button:focus,
 html[data-theme="win_classic"] .rsUploadDestQuick button:hover,
 html[data-theme="win_classic"] .rsUploadDestQuick button:focus{
-  background:var(--rs-ctx-lt-hover) !important;
-  color:#003d4a !important;
+  background:var(--rs-ctx-lt-hover);
+  color:#003d4a;
 }
 
 html[data-theme="bright"] .rsUploadDestBtn.primary,
 html[data-theme="win_classic"] .rsUploadDestBtn.primary{
-  background:#ff8a1c !important;
-  color:#111827 !important;
-  border-color:rgba(180,94,0,.38) !important;
+  background:#ff8a1c;
+  color:#111827;
+  border-color:rgba(180,94,0,.38);
 }
 
 
@@ -581,49 +581,49 @@ html[data-theme="win_classic"] .rsUploadDestBtn.primary{
 
 html[data-theme="bright"] .rsUploadBrowserBox,
 html[data-theme="win_classic"] .rsUploadBrowserBox{
-  background:var(--rs-ctx-lt-input) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.14) !important;
+  background:var(--rs-ctx-lt-input);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.14);
 }
 
 html[data-theme="bright"] .rsUploadBrowserTop,
 html[data-theme="win_classic"] .rsUploadBrowserTop{
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12) !important;
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12);
 }
 
 html[data-theme="bright"] .rsUploadBrowserLabel,
 html[data-theme="win_classic"] .rsUploadBrowserLabel{
-  color:var(--rs-ctx-lt-label) !important;
+  color:var(--rs-ctx-lt-label);
 }
 
 html[data-theme="bright"] .rsUploadBrowserCrumb,
 html[data-theme="win_classic"] .rsUploadBrowserCrumb{
-  color:var(--rs-ctx-lt-accent) !important;
+  color:var(--rs-ctx-lt-accent);
 }
 
 html[data-theme="bright"] .rsUploadBrowserActions button,
 html[data-theme="win_classic"] .rsUploadBrowserActions button{
-  background:var(--rs-ctx-lt-surface) !important;
-  color:var(--rs-ctx-lt-fg) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.18) !important;
+  background:var(--rs-ctx-lt-surface);
+  color:var(--rs-ctx-lt-fg);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.18);
 }
 
 html[data-theme="bright"] .rsUploadBrowserRow,
 html[data-theme="win_classic"] .rsUploadBrowserRow{
-  color:var(--rs-ctx-lt-fg) !important;
+  color:var(--rs-ctx-lt-fg);
 }
 
 html[data-theme="bright"] .rsUploadBrowserRow:hover,
 html[data-theme="bright"] .rsUploadBrowserRow:focus,
 html[data-theme="win_classic"] .rsUploadBrowserRow:hover,
 html[data-theme="win_classic"] .rsUploadBrowserRow:focus{
-  background:var(--rs-ctx-lt-hover) !important;
+  background:var(--rs-ctx-lt-hover);
 }
 
 html[data-theme="bright"] .rsUploadBrowserText small,
 html[data-theme="win_classic"] .rsUploadBrowserText small,
 html[data-theme="bright"] .rsUploadBrowserEmpty,
 html[data-theme="win_classic"] .rsUploadBrowserEmpty{
-  color:var(--rs-ctx-lt-muted-2) !important;
+  color:var(--rs-ctx-lt-muted-2);
 }
 
 @media (max-width:760px){
@@ -770,17 +770,17 @@ html[data-theme="win_classic"] .rsUploadProgressBackdrop{
 
 html[data-theme="bright"] .rsUploadProgressCard,
 html[data-theme="win_classic"] .rsUploadProgressCard{
-  background:var(--rs-ctx-lt-surface) !important;
-  color:var(--rs-ctx-lt-fg) !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.16) !important;
-  box-shadow:0 26px 90px rgba(var(--rs-ctx-lt-shade-rgb),.24) !important;
+  background:var(--rs-ctx-lt-surface);
+  color:var(--rs-ctx-lt-fg);
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.16);
+  box-shadow:0 26px 90px rgba(var(--rs-ctx-lt-shade-rgb),.24);
 }
 
 html[data-theme="bright"] .rsUploadProgressHead,
 html[data-theme="bright"] .rsUploadProgressFoot,
 html[data-theme="win_classic"] .rsUploadProgressHead,
 html[data-theme="win_classic"] .rsUploadProgressFoot{
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12) !important;
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.12);
 }
 
 html[data-theme="bright"] .rsUploadProgressHead p,
@@ -791,31 +791,31 @@ html[data-theme="win_classic"] .rsUploadProgressHead p,
 html[data-theme="win_classic"] .rsUploadProgressText,
 html[data-theme="win_classic"] .rsUploadProgressPct,
 html[data-theme="win_classic"] .rsUploadProgressMeta{
-  color:var(--rs-ctx-lt-muted) !important;
+  color:var(--rs-ctx-lt-muted);
 }
 
 html[data-theme="bright"] .rsUploadProgressFile,
 html[data-theme="win_classic"] .rsUploadProgressFile{
-  color:var(--rs-ctx-lt-fg) !important;
+  color:var(--rs-ctx-lt-fg);
 }
 
 html[data-theme="bright"] .rsUploadProgressOk,
 html[data-theme="win_classic"] .rsUploadProgressOk{
-  color:var(--rs-ctx-lt-ok) !important;
+  color:var(--rs-ctx-lt-ok);
 }
 
 html[data-theme="bright"] .rsUploadProgressFail,
 html[data-theme="win_classic"] .rsUploadProgressFail{
-  color:var(--rs-ctx-lt-danger) !important;
+  color:var(--rs-ctx-lt-danger);
 }
 
 html[data-theme="bright"] .rsUploadProgressBar,
 html[data-theme="win_classic"] .rsUploadProgressBar{
-  background:#e5eaf2 !important;
-  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.14) !important;
+  background:#e5eaf2;
+  border-color:rgba(var(--rs-ctx-lt-shade-rgb),.14);
 }
 
 html[data-theme="bright"] .rsUploadProgressFill,
 html[data-theme="win_classic"] .rsUploadProgressFill{
-  background:linear-gradient(90deg, #00a6b2, #ff8a1c) !important;
+  background:linear-gradient(90deg, #00a6b2, #ff8a1c);
 }
