@@ -258,11 +258,6 @@ body{
   background:#000;
 }
 
-html[data-theme="bright"] body,
-html[data-theme="win_classic"] body{
-  background:var(--bg,#f4f4f4);
-}
-
 html[data-theme="bright"] .rsCard,
 html[data-theme="bright"] .rsInput,
 html[data-theme="win_classic"] .rsCard,
@@ -297,10 +292,6 @@ html[data-theme="win_classic"] .rsInput{
 
 
 /* Reel Stack generated video thumbnails */
-.rsThumb{
-  position:relative;
-}
-
 .rsThumb img{
   position:absolute;
   inset:0;
@@ -319,10 +310,6 @@ html[data-theme="win_classic"] .rsInput{
 }
 
 /* Reel Stack metadata v1 */
-.rsThumb{
-  position:relative;
-}
-
 .rsDetails{
   margin-top:8px;
   color:rgba(var(--fg-rgb),0.78);
@@ -512,10 +499,6 @@ html[data-theme="win_classic"] .rsDetails{
 
 
 /* Reel Stack favorite badge */
-.rsThumb{
-  position:relative;
-}
-
 .rsFavoriteBadge{
   position:absolute;
   top:10px;
@@ -676,16 +659,6 @@ html[data-theme="win_classic"] .rsMetaTechPanel{
 }
 
 /* Win Classic / Bright: fix Reel Stack top header/status text contrast */
-html[data-theme="win_classic"] body,
-html[data-theme="bright"] body{
-  color:#111;
-}
-
-html[data-theme="win_classic"] .rsApp,
-html[data-theme="bright"] .rsApp{
-  color:#111;
-}
-
 html[data-theme="win_classic"] h1,
 html[data-theme="bright"] h1{
   color:#111 !important;
@@ -1132,15 +1105,11 @@ body[data-theme="light"] .rsModalHead .rsBtn:hover,
 /* Reel Stack bright/win_classic contrast fixes v2 */
 html[data-theme="bright"] body,
 html[data-theme="win_classic"] body{
-  background:#eef1f7 !important;
   color:#10131a !important;
 }
 
 html[data-theme="bright"] .rsApp,
 html[data-theme="win_classic"] .rsApp{
-  background:
-    radial-gradient(circle at 18% 0%, rgba(255,132,0,0.10), transparent 30%),
-    linear-gradient(180deg, #f8fafc 0%, #eef1f7 42%, #e1e5ee 100%) !important;
   color:#10131a !important;
 }
 
