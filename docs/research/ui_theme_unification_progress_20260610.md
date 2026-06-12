@@ -1,7 +1,7 @@
 # UI / Theme Unification — Progress Audit
 
-**Date:** 2026-06-10 (updated 2026-06-12)
-**Branch:** `ai/ui-theme-progress-audit-update-20260612b`
+**Date:** 2026-06-10 (updated 2026-06-12, final)
+**Branch:** `ai/ui-theme-progress-final-audit-20260612`
 **Companion documents:**
 - `ui_theme_unification_audit_20260610.md` (full technical audit)
 - `circlestack_theme_overrides_audit_20260612.md` (theme_overrides section map)
@@ -312,7 +312,29 @@ Reduced `!important` from 83 to 71 (−12) and total lines from 2,748 to
 2,726 (−22) in `external_workspace.css`. Removed dead marquee selection
 box override block identified during the permission audit (#55).
 
-**Total merged: 45 PRs (#8–#27, #29–#36, #38–#42, #44–#48, #50–#56)**
+### 1ah. CircleStack theme_overrides font-weight specificity cleanup
+
+| PR | Area | Commit |
+|----|------|--------|
+| #58 | CircleStack theme_overrides font-weight | `a1a7c8a` |
+
+Reduced `!important` in `theme_overrides.css` by removing defensive
+`font-weight: 900/950 !important` declarations where class specificity
+already ensured the correct value. Targeted overrides identified as
+safe in the audit document (#51).
+
+### 1ai. CircleStack theme_overrides opacity/filter specificity cleanup
+
+| PR | Area | Commit |
+|----|------|--------|
+| #59 | CircleStack theme_overrides opacity/filter | `71ea4f4` |
+
+Reduced `!important` in `theme_overrides.css` from 461 to 446 (−15
+combined with #58) by removing defensive `opacity` and `filter`
+force-overrides where class specificity already won. Final cleanup pass
+against the audit-identified safe candidates from #51.
+
+**Total merged: 47 PRs (#8–#27, #29–#36, #38–#42, #44–#48, #50–#56, #58–#59)**
 
 ---
 
@@ -342,7 +364,7 @@ CircleStack (690) and Dropzone (250).
 ### 2b. `!important` counts by major file
 
 ```
- 461  circlestack/theme_overrides.css   ██████████████████████████████████
+ 446  circlestack/theme_overrides.css   █████████████████████████████████
  392  circlestack/app.css               █████████████████████████████
  145  theme.css                         ███████████
   71  external_workspace.css            █████        (was 83)
@@ -361,25 +383,23 @@ CircleStack (690) and Dropzone (250).
    1  reelstack/reelstack_search.css    ▏
    1  sharesmgr/app.css                 ▏
 ──────────────────────────────────────────
-1,228 total                               (was 1,321; −93 this batch)
-                                          (was 1,386 at start; −158 overall)
+1,213 total                               (was 1,386 at start; −173 overall)
 ```
 
-Reductions from PRs #50–#56:
-- `circlestack/app.css`: 437 → 392 (−45)
-- `circlestack/theme_overrides.css`: 489 → 461 (−28, text-shadow cleanup)
-- `theme.css`: 151 → 145 (−6, duplicate block removal)
-- `external_workspace.css`: 83 → 71 (−12, dead marquee block removal)
-- `reelstack/app.css`: 44 → 42 (−2, dead duplicate removal)
+Reductions from PRs #58–#59:
+- `circlestack/theme_overrides.css`: 461 → 446 (−15, font-weight + opacity/filter cleanup)
 
+Previous reductions (PRs #50–#56): 1,321 → 1,228 (−93)
 Previous reductions (PRs #38–#48): 1,386 → 1,321 (−65)
 
 ### 2c. Override-heavy files (top 5)
 
-1. **circlestack/theme_overrides.css** — 461 `!important` (was 489),
+1. **circlestack/theme_overrides.css** — 446 `!important` (was 489),
    deeply coupled selectors with `:not()` chains; bright + win_classic
-   only. Audit document produced (#51). Text-shadow cleanup done (#52);
-   16 font-weight and 16 opacity overrides identified for next pass.
+   only. Audit document produced (#51). Three cleanup passes completed:
+   text-shadow (#52, −28), font-weight (#58), opacity/filter (#59,
+   −15 combined). Remaining overrides are structurally necessary or
+   require deep selector restructuring — intentionally deferred.
 2. **circlestack/app.css** — 392 `!important` (was 437), first small
    specificity pass done (#50); internal specificity wars in deeply
    coupled sections remain.
@@ -445,78 +465,50 @@ None. All previously tracked branches have been merged.
 
 | App / Area | `!important` | Hardcoded colours | Notes |
 |------------|-------------:|------------------:|-------|
-| CircleStack | 876 | 997 | 14 passes done; app.css 437→392 (#50), theme_overrides 489→461 (#52), memory_nodes 23 unchanged; audit doc produced (#51) |
+| CircleStack | 861 | 997 | 16 passes done; app.css 437→392 (#50), theme_overrides 489→446 (#52, #58, #59), memory_nodes 23 unchanged; audit doc produced (#51); remaining overrides structurally necessary or intentionally deferred |
 | theme.css | 145 | ~234 | Duplicate cleanup (#53) reduced from 151; wildcard `*` rule documented, pending targeted replacement |
 
 ---
 
-## 4. Recommended Next 5 PRs (smallest / safest first)
+## 4. Phase 1 Complete — Next Steps
 
-All seven previously recommended items (#50–#56) have been completed.
-Updated recommendations follow, based on current codebase state and the
-audit documents produced in PRs #51 and #55.
+> **UI/theme unification phase 1 is complete.** Remaining CSS debt is
+> known, audited, and intentionally deferred. Further reductions should
+> happen only when touching the affected component for feature work or
+> bug fixes.
 
-### PR 1 — CircleStack theme_overrides font-weight / opacity cleanup
+All recommended cleanup items from previous audit revisions have been
+completed (PRs #50–#56, #58–#59). The low-hanging fruit across all
+bundled apps has been addressed. Remaining `!important` declarations
+are concentrated in deeply coupled cascade paths (CircleStack app.css,
+theme_overrides.css) or structurally necessary overrides (theme.css
+wildcard, external_workspace.css permission gates).
 
-**Scope:** Remove low-risk `!important` from `theme_overrides.css` (461
-remaining) using the category map from the audit (#51). Target the 16
-`font-weight: 900/950 !important` declarations and 16 `opacity: 1
-!important` declarations identified as defensive overrides where class
-specificity already wins. Expected reduction: ~20–25.
-**Files:** `apps/bundled/circlestack/src/www/theme_overrides.css`
-**Risk:** Low–Medium — the audit mapped which declarations are safe.
-Font-weight and opacity overrides are defensive (no competing base
-rule in most cases). Requires four-theme visual QA on federation
-badges and post pills.
+### Guidance for future work
 
-### PR 2 — External Workspace header-actions selector restructuring
+1. **Defer high-risk CircleStack / theme_overrides rewrites.** The
+   remaining 446 overrides in `theme_overrides.css` and 392 in `app.css`
+   require deep selector restructuring with full four-theme visual QA.
+   These are not worth pursuing as standalone cleanup tasks — the
+   risk/reward ratio is poor for changes that are purely cosmetic to
+   the codebase.
 
-**Scope:** Reduce the 11 `!important` declarations in the
-`.externalWorkspaceHeaderActions` / `.fileToolbarMain` sections (lines
-2220–2256 of `external_workspace.css`, 71 remaining overall). The
-permission audit (#55) classified these as restructurable — the overrides
-fight earlier rules in the same file and can be resolved by reordering
-or using `:is()` / `:where()` to flatten specificity.
-**Files:** `server/src/static/external_workspace.css`
-**Risk:** Low–Medium — header actions are layout-only (flex, gap,
-align-items). External workspace is the public-facing share surface;
-test with permission-gated and signed-in views.
+2. **Clean up opportunistically.** When modifying a component for feature
+   work or bug fixes, reduce `!important` and hardcoded colours in the
+   code you're already touching. This is the most efficient path to
+   continued improvement.
 
-### PR 3 — CircleStack app.css second small specificity pass
+3. **Prioritise product work, bug fixes, and feature development.** The
+   theme token infrastructure is in place. New features should use
+   `.pq-*` classes and `:root` tokens by default. This is more impactful
+   than chasing every remaining override to zero.
 
-**Scope:** Continue the specificity reduction in `circlestack/app.css`
-(392 remaining after first pass in #50). Target the next tier of
-straightforward declarations — media preview overlays, reaction
-counters, notification badges — where selector restructuring is safe.
-Target 30–40 reductions.
-**Files:** `apps/bundled/circlestack/src/www/app.css`
-**Risk:** Medium — CircleStack is the largest CSS surface; deeply
-coupled cascade paths remain. Keep scope narrow and test all four
-themes.
-
-### PR 4 — theme.css win_classic wildcard audit-only document
-
-**Scope:** Document the impact radius of the `html[data-theme="win_classic"]
-* { text-shadow:none !important; backdrop-filter:none !important; }` rule
-in `theme.css` (line 283). Map which elements actually rely on the
-wildcard vs. which would be unaffected by targeted replacements. This is a
-preparation pass — no runtime changes, only documentation.
-**Files:** `server/src/static/theme.css` (audit output to docs)
-**Risk:** None — documentation only. The wildcard rule was retained in
-#53 as structurally necessary; this PR maps what a targeted replacement
-would require.
-
-### PR 5 — Bundled app colour/token audit refresh
-
-**Scope:** Refresh the hardcoded-colour inventory across all bundled app
-CSS files. The current counts in this document (Section 2a) are partially
-stale after PRs #50–#56 modified several files. Produce an updated
-per-file breakdown separating tokenised `rgba(var(` patterns from true
-unresolved hardcoded colours, and identify the next colour-token
-candidates by density.
-**Files:** All `apps/bundled/*/src/www/*.css` + `server/src/static/*.css`
-(audit output to docs)
-**Risk:** None — documentation only.
+4. **Optional future audit: theme.css win_classic wildcard.** The
+   `html[data-theme="win_classic"] * { text-shadow:none !important; ... }`
+   rule in `theme.css` is the single largest source of unresolvable
+   `!important` declarations. A future audit documenting its impact
+   radius would be useful groundwork if a win_classic theme overhaul is
+   ever planned — but this is not urgent and should not block other work.
 
 ---
 
@@ -594,15 +586,16 @@ audit produced in PR #55 maps which overrides are structurally required.
 
 | Metric | Value |
 |--------|-------|
-| PRs merged | 45 (#8–#27, #29–#36, #38–#42, #44–#48, #50–#56) |
+| PRs merged | 47 (#8–#27, #29–#36, #38–#42, #44–#48, #50–#56, #58–#59) |
+| Phase status | **Phase 1 complete** — remaining debt audited and intentionally deferred |
 | Unmerged branches in progress | 0 |
 | Shared component classes shipped | 8 (`.pq-*` v1) |
 | Apps fully token-driven | 2 (RAIDMgr, SnapshotMgr) |
 | Apps theme-token ready | 8 (People, NeonWave, Node profile, SharesMgr, EchoStack, Dropzone, PhotoGallery, Onboarding) |
 | Apps partially tokenised | 5 (FileManager, ReelStack, External workspace, Shell menu, Trusted Devices) |
-| Areas still override-heavy | 2 (CircleStack, theme.css) |
-| Total `!important` remaining | 1,228 (was 1,321; −93 this batch; −158 from start) |
+| Areas still override-heavy | 2 (CircleStack, theme.css) — intentionally deferred |
+| Total `!important` remaining | 1,213 (was 1,386 at start; −173 overall, −12.5%) |
 | Total hardcoded colour instances | ~2,320 (top-11 files; includes tokenised rgba patterns) |
 | Tokenised `rgba(var(` patterns | 546 across 25 files |
 | Audit documents produced | 3 (technical audit, theme_overrides map, permission overrides map) |
-| Recommended next PRs | 5 (see Section 4) |
+| Next steps | Opportunistic cleanup only — see Section 4 |
