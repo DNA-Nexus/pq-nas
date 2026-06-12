@@ -1146,30 +1146,8 @@
             .btn{ width:100%; }
             .downloadLink{ width:max-content; }
         }
-    
-        /* External workspace marquee selection: viewport-wide, File Manager style */
-        .selectionBox{
-            position:fixed !important;
-            z-index:99999 !important;
-            pointer-events:none !important;
-            box-sizing:border-box !important;
-            border:1px solid rgba(0,96,192,.90) !important;
-            background:rgba(0,96,192,.12) !important;
-            box-shadow:none !important;
-        }
 
-        html[data-theme="cpunk_orange"] .selectionBox{
-            border-color:rgba(255,138,28,.95) !important;
-            background:rgba(255,138,28,.12) !important;
-        }
 
-        html[data-theme="win_classic"] .selectionBox{
-            border:1px dotted #005bbb !important;
-            background:rgba(0,91,187,.10) !important;
-            box-shadow:none !important;
-        }
-
-    
         /* Marquee selection should look like a Windows selection box, not an orange/red app border. */
         .marqueeBox,
         .selectionBox,
