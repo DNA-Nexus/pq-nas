@@ -622,23 +622,11 @@
 
 /* Fix contributor popover transparency caused by parent opacity */
 .cs-memory-stats{
-  opacity:1 !important;
+  opacity:1;
 }
 
 .cs-memory-stats-label{
   opacity:.78;
-}
-
-.cs-memory-contributors-popover{
-  opacity:0;
-  background:var(--cs-mem-popover-bg) !important;
-  background-color:var(--cs-mem-popover-bg) !important;
-}
-
-.cs-memory-stats:hover .cs-memory-contributors-popover,
-.cs-memory-stats:focus .cs-memory-contributors-popover,
-.cs-memory-stats:focus-within .cs-memory-contributors-popover{
-  opacity:1 !important;
 }
 
 /* Memory Node data ownership hover */
@@ -784,15 +772,15 @@
 
 /* Make data ownership pill subtle; it is secondary trust info */
 .cs-memory-ownership{
-  padding:3px 7px !important;
-  font-size:10px !important;
-  line-height:1.15 !important;
-  font-weight:650 !important;
+  padding:3px 7px;
+  font-size:10px;
+  line-height:1.15;
+  font-weight:650;
   letter-spacing:.02em;
-  color:rgba(255,255,255,.48) !important;
-  background:rgba(0,0,0,.10) !important;
-  border-color:rgba(255,255,255,.10) !important;
-  box-shadow:none !important;
+  color:rgba(255,255,255,.48);
+  background:rgba(0,0,0,.10);
+  border-color:rgba(255,255,255,.10);
+  box-shadow:none;
 }
 
 .cs-memory-ownership::before{
@@ -808,13 +796,13 @@
 
 .cs-memory-ownership:hover,
 .cs-memory-ownership:focus{
-  color:rgba(255,255,255,.84) !important;
-  border-color:rgba(var(--cs-mem-cyan),.24) !important;
-  background:var(--cs-mem-surface) !important;
+  color:rgba(255,255,255,.84);
+  border-color:rgba(var(--cs-mem-cyan),.24);
+  background:var(--cs-mem-surface);
 }
 
 .cs-memory-ownership-label{
-  font-weight:650 !important;
+  font-weight:650;
 }
 
 /* Memory Node item reactions */
@@ -906,12 +894,12 @@
 
 /* If item has no visible reaction summary yet, avoid reserving extra space until hover. */
 .cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)){
-  margin-top:0 !important;
+  margin-top:0;
 }
 
 .cs-memory-item:hover .cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)),
 .cs-memory-item:focus-within .cs-memory-item-reactions:not(:has(.cs-memory-item-reaction-summary)){
-  margin-top:8px !important;
+  margin-top:8px;
 }
 
 /* Custom Memory Node SVG icon */
