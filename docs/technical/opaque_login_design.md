@@ -874,6 +874,41 @@ migration rules
 
 Do not proceed to production OPAQUE login until these are written down and reviewed.
 
+## Admin enrollment storage scaffold
+
+`POST /api/admin/auth/opaque/enrollment/upsert` is an admin-only storage
+scaffold for future OPAQUE enrollment.
+
+It stores a serialized OPAQUE server-side password file for an existing
+PQ-NAS user and login. It does not perform the OPAQUE registration
+protocol itself, does not enable public self-registration, does not verify
+login-finish transcripts, and does not mint `pqnas_session`.
+
+Required body fields:
+
+- `login`
+- `fingerprint`
+- `opaque_password_file_b64`
+
+Optional body fields:
+
+- `opaque_suite`
+- `enabled`
+- `temporary`
+
+The endpoint requires:
+
+- authenticated admin session
+- existing user fingerprint
+- login matching the user's email
+- readable and valid OPAQUE credentials store
+- readable and valid OPAQUE server setup
+- working OPAQUE helper preflight
+
+Even after an enrollment record is stored, `ready_for_login` remains
+`false` until real OPAQUE login verification and session minting are
+implemented.
+
 ## Backup and restore notes
 
 OPAQUE authentication depends on two runtime files:
