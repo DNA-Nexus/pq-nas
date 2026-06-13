@@ -516,6 +516,7 @@ add_custom_target(run_test_opaque_helper_client
 add_executable(test_opaque_backend_status
         tests/opaque_backend_status/test_opaque_backend_status.cpp
         server/src/opaque_backend_status.cpp
+        server/src/opaque_helper_client.cpp
         server/src/runtime_paths.cpp
 )
 

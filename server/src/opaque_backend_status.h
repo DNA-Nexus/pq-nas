@@ -19,6 +19,11 @@ struct OpaqueBackendStatus {
 
     bool helper_exists = false;
     bool helper_executable = false;
+    bool helper_version_ok = false;
+    bool helper_self_test_ok = false;
+    std::string helper_version_output;
+    std::string helper_self_test_output;
+    std::string helper_probe_error;
 
     // This remains false until real OPAQUE crypto, server setup, credential
     // enrollment, and route integration are intentionally implemented.

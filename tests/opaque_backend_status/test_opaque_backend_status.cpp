@@ -85,7 +85,17 @@ int main() {
 
     write_file(credentials, "{ \"version\": 1, \"accounts\": [] }\n");
     write_file(setup, "fake-server-setup-placeholder\n");
-    write_file(helper, "#!/bin/sh\nexit 0\n");
+    write_file(helper,
+               "#!/bin/sh\n"
+               "if [ \"$1\" = \"--version\" ]; then\n"
+               "  echo \"pqnas_opaque_helper test-scaffold\"\n"
+               "  exit 0\n"
+               "fi\n"
+               "if [ \"$1\" = \"self-test\" ]; then\n"
+               "  echo \"ok: pqnas_opaque_helper scaffold self-test passed\"\n"
+               "  exit 0\n"
+               "fi\n"
+               "exit 9\n");
     require_true(::chmod(helper.string().c_str(), 0700) == 0,
                  "chmod helper executable should succeed");
 
@@ -96,6 +106,12 @@ int main() {
     require_true(present.server_setup_file_readable, "server setup file should be readable");
     require_true(present.helper_exists, "helper should exist");
     require_true(present.helper_executable, "helper should be executable");
+    require_true(present.helper_version_ok, "helper --version preflight should pass");
+    require_true(present.helper_self_test_ok, "helper self-test preflight should pass");
+    require_true(!contains_reason(present.missing_or_not_ready, "opaque_helper_version_failed"),
+                 "successful helper should not report version failure");
+    require_true(!contains_reason(present.missing_or_not_ready, "opaque_helper_self_test_failed"),
+                 "successful helper should not report self-test failure");
 
     require_true(!present.ready_for_login,
                  "backend must still fail closed until real OPAQUE login is implemented");
@@ -103,6 +119,32 @@ int main() {
                  "real-login-not-implemented reason should be reported internally");
     require_true(pqnas::opaque_backend_public_error(present) == "opaque_backend_not_configured",
                  "public error should remain generic even when files exist");
+
+    write_file(helper,
+               "#!/bin/sh\n"
+               "if [ \"$1\" = \"--version\" ]; then\n"
+               "  echo \"pqnas_opaque_helper test-scaffold\"\n"
+               "  exit 0\n"
+               "fi\n"
+               "if [ \"$1\" = \"self-test\" ]; then\n"
+               "  echo \"self-test deliberately failed\"\n"
+               "  exit 42\n"
+               "fi\n"
+               "exit 9\n");
+    require_true(::chmod(helper.string().c_str(), 0700) == 0,
+                 "chmod failing helper executable should succeed");
+
+    auto broken_helper = pqnas::check_opaque_backend_status();
+    require_true(broken_helper.helper_exists, "failing helper should still exist");
+    require_true(broken_helper.helper_executable, "failing helper should still be executable");
+    require_true(broken_helper.helper_version_ok, "failing helper version preflight should still pass");
+    require_true(!broken_helper.helper_self_test_ok, "failing helper self-test preflight should fail");
+    require_true(contains_reason(broken_helper.missing_or_not_ready, "opaque_helper_self_test_failed"),
+                 "failing helper self-test reason should be reported internally");
+    require_true(!broken_helper.ready_for_login,
+                 "backend must remain fail-closed when helper self-test fails");
+    require_true(pqnas::opaque_backend_public_error(broken_helper) == "opaque_backend_not_configured",
+                 "public error should remain generic when helper self-test fails");
 
     fs::remove_all(root, ec);
     unset_opaque_env();
