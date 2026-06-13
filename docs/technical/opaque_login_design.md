@@ -15,6 +15,7 @@ Current implementation status:
 - Future helper protocol operations such as `login-start` are recognized but fail closed with `opaque_backend_not_implemented`.
 - `OpaqueCredentials` exists as a C++ storage/parsing scaffold for future `opaque_credentials.json` records.
 - OPAQUE runtime path helpers exist for credentials, server setup, and helper binary paths.
+- `OpaqueBackendStatus` exists as a fail-closed backend readiness/preflight scaffold.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
@@ -774,7 +775,9 @@ Still not implemented:
 
 - no OPAQUE cryptography
 - runtime path helpers exist for OPAQUE credential, server setup, and helper binary locations
+- backend status/preflight scaffold checks credential path, server setup path, and helper path without enabling login
 - no helper call from server routes
+- no public backend readiness endpoint
 - no registration/enrollment flow
 - no login success
 - no `pqnas_session` minting from OPAQUE
