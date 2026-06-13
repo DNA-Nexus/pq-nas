@@ -916,58 +916,6 @@
                 </div>
             </div>
 
-            <div class="card accordion" data-acc="settings">
-                <div class="hd" role="button" tabindex="0" aria-expanded="false">
-                    <div class="h">Security • OPAQUE Status</div>
-                    <div class="pill warn" id="opaqueStatusPill">
-                        <span class="k">Status:</span> <span class="v">loading…</span>
-                    </div>
-                    <span class="chev" aria-hidden="true">▸</span>
-                </div>
-
-                <div class="bd">
-                    <div class="row">
-                        <button id="btnOpaqueStatusReload" class="pq-btn primary" type="button">Refresh OPAQUE status</button>
-                    </div>
-
-                    <div class="note">
-                        Admin-only diagnostics for the OPAQUE login backend. This does not enable OPAQUE login; public OPAQUE endpoints remain fail-closed until real OPAQUE crypto and session integration are implemented.
-                    </div>
-
-                    <div class="statusGrid">
-                        <div class="statusTile">
-                            <div class="label"><span id="opaqueReadyLight" class="lightDot warn"></span><span>Login readiness</span></div>
-                            <div id="opaqueReadyValue" class="value">—</div>
-                        </div>
-
-                        <div class="statusTile">
-                            <div class="label"><span id="opaqueHelperLight" class="lightDot warn"></span><span>Helper preflight</span></div>
-                            <div id="opaqueHelperValue" class="value">—</div>
-                        </div>
-
-                        <div class="statusTile">
-                            <div class="label"><span id="opaqueCredentialsLight" class="lightDot warn"></span><span>Credentials file</span></div>
-                            <div id="opaqueCredentialsValue" class="value">—</div>
-                        </div>
-
-                        <div class="statusTile">
-                            <div class="label"><span id="opaqueServerSetupLight" class="lightDot warn"></span><span>Server setup file</span></div>
-                            <div id="opaqueServerSetupValue" class="value">—</div>
-                        </div>
-
-                        <div class="statusTile">
-                            <div class="label"><span class="lightDot info"></span><span>Resolved paths</span></div>
-                            <div id="opaquePathsValue" class="value">—</div>
-                        </div>
-
-                        <div class="statusTile">
-                            <div class="label"><span class="lightDot warn"></span><span>Missing / not ready</span></div>
-                            <div id="opaqueMissingValue" class="value">—</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="card accordion open" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="true">
                     <div class="h"><span data-i18n="admin.audit.verbosity">Audit verbosity</span></div>
@@ -1604,7 +1552,7 @@ New uploads land in a fast internal pool first and later migrate to capacity sto
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260613-opaque-status-1"></script>
+<script src="/static/admin_settings.js?v=20260613-remove-opaque-status-card-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
