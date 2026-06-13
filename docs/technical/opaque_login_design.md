@@ -25,7 +25,8 @@ Current implementation status:
 - Admin Settings UI includes an OPAQUE Status card that displays the admin-only backend diagnostics without enabling public OPAQUE login.
 - Selected server-side implementation direction: Rust helper binary using `opaque-ke`.
 - Experimental Rust helper scaffold exists under `tools/opaque_helper_rust/`; it currently supports only `--version` and `self-test`, while future OPAQUE operations fail closed.
-- Rust helper pins `opaque-ke` as a build dependency, but does not execute production OPAQUE protocol operations yet.
+- Rust helper pins `opaque-ke` as a build dependency.
+- Rust helper implements `server-setup-create <output-path>` for generating a serialized OPAQUE `ServerSetup`; registration and login remain fail-closed.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
