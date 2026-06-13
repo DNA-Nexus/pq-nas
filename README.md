@@ -2,7 +2,9 @@
 
 **DNA-Nexus Server** is a lightweight, identity-first personal storage and collaboration server built around **device-mediated authentication**, **DNA identity**, and a minimal self-hosted NAS architecture.
 
-Instead of relying on usernames, passwords, browser-stored credentials, or VPN-only access, DNA-Nexus Server uses **QR-based login approval through DNA-Messenger**. The phone acts as the trust anchor, and the server does not trust the browser alone.
+DNA-Nexus Server keeps authorization anchored to a DNA fingerprint while supporting multiple browser login methods. QR-based DNA Connect login remains the flagship identity-first flow, classic password login can be used when configured, and OPAQUE provides a zero-knowledge password login path where the plaintext password is processed locally in the browser and is not sent to the server.
+
+The browser is treated as an interface into the fingerprint-backed session model, not as the identity itself.
 
 DNA-Nexus Server is part of the broader **CPUNK / DNA-Nexus ecosystem**, alongside:
 
@@ -12,7 +14,7 @@ DNA-Nexus Server is part of the broader **CPUNK / DNA-Nexus ecosystem**, alongsi
 
 > The core idea is simple:
 >
-> **The phone proves identity, not the browser.**
+> **Identity is the anchor. The login method is only the entry path.**
 
 ---
 
@@ -42,18 +44,20 @@ Some internal paths, service names, package names, or source identifiers may sti
 
 DNA-Nexus Server is designed around a few strong principles:
 
-- no traditional password login
-- no browser-only trust
+- one internal identity model based on DNA fingerprints
+- multiple login methods converging to the same fingerprint-backed session
+- QR / DNA Connect login for device-mediated identity approval
+- OPAQUE login for zero-knowledge password authentication
+- optional classic password login when explicitly configured
+- no silent fallback from one login method to another
 - no unnecessary heavyweight services
 - no forced cloud dependency
 - no complex enterprise stack for simple personal storage
 - identity belongs to the user, not the server
 - access decisions are tied to DNA fingerprints
-- the user’s trusted device is part of authentication
+- authentication and recovery flows fail closed when incomplete or misconfigured
 
-The goal is to keep the system **small, transparent, understandable, and secure by design**.
-
----
+The goal is to keep the system small, transparent, understandable, and secure by design.
 
 # Core Features
 
@@ -113,29 +117,37 @@ Apps are served through the DNA-Nexus app system and can define where they appea
 
 # Authentication Model
 
-DNA-Nexus Server login works through a device-mediated challenge.
+DNA-Nexus Server keeps one internal identity and authorization model.
 
-Typical flow:
+The internal identity anchor is the DNA fingerprint. Browser login methods are entry paths into that same fingerprint-backed session model.
 
-1. Browser requests access
-2. DNA-Nexus Server displays a QR code
-3. DNA-Messenger scans the QR code
-4. User approves the login on their phone
-5. DNA-Messenger signs a challenge using the user’s DNA identity
-6. DNA-Nexus Server verifies the signature
-7. Access is granted
+Current browser login modes include:
 
-This means:
+- QR / DNA Connect login - the browser shows a QR code, a trusted mobile device approves the challenge, and the server mints pqnas_session.
+- Classic password login - the browser sends username/email and password to the password endpoint, the server verifies the configured password credential, resolves it to a fingerprint, and mints pqnas_session.
+- OPAQUE zero-knowledge password login - the browser performs OPAQUE client cryptographic steps locally, the plaintext password is not sent to the server, the server verifies the OPAQUE transcript, resolves the account to a fingerprint, and mints pqnas_session.
 
-- passwords do not exist in the login flow
-- the browser cannot authenticate alone
-- stolen browser state is not enough
-- the phone remains part of the trust model
-- access can be tied directly to a DNA fingerprint
+All successful browser login methods converge to:
 
-The browser is treated as a user interface, not as the root of trust.
+- fingerprint
+- pqnas_session
+- the same authorization checks
+- the same File Manager, app, workspace, quota, role, and sharing model
 
----
+This means the rest of the server should not need to care whether the session came from QR login, password login, or OPAQUE login.
+
+Mobile trusted devices use their own bearer-token and refresh-token model. Mobile pairing and app tokens are separate from browser login mode and are not replaced by OPAQUE browser login.
+
+Important authentication rules:
+
+- login attempts must never create users
+- disabled or pending users must not be enabled by login or recovery
+- OPAQUE mode must not silently fall back to classic password login
+- password mode must not accidentally expose QR login if QR login is disabled
+- QR mode must not accidentally expose password endpoints as unintended login paths
+- the login UI must fail closed when the selected login method is not available
+
+The browser is treated as a user interface. The server still resolves access to the internal fingerprint identity.
 
 # Storage Model
 
@@ -367,6 +379,24 @@ The project avoids unnecessary runtime complexity. The goal is that the server r
 
 ---
 
+# Documentation Map
+
+The repository documentation is organized by topic under docs/.
+
+Useful entry points:
+
+- docs/README.md - documentation index
+- docs/auth/ - login modes, QR authentication, password authentication, mobile authentication, and browser auth notes
+- docs/security/ - secure coding baseline, red-team notes, and security guidance
+- docs/technical/ - implementation design notes and deep technical documents
+- docs/architecture/ - architecture and storage design
+- docs/operations/ - operations, troubleshooting, maintenance, and deployment notes
+- docs/product/ - product and app-level documentation
+- docs/user-guides/ - user-facing guides
+- docs/research/ - research notes and exploratory design work
+
+Root-level documentation should stay minimal. New long-form documents should normally go into the most relevant docs/ subdirectory.
+
 # Why Not a Traditional NAS?
 
 Traditional NAS systems often rely on:
@@ -423,35 +453,34 @@ Not primary goals:
 - becoming a Kubernetes platform
 - becoming a heavy virtualization system
 - replacing large enterprise storage clusters
-- adding traditional password login as the main model
+- making traditional password login the only or primary identity model
 - depending on a large container stack for normal operation
 - hiding the system behind unnecessary complexity
 
 The project may integrate with other tools where useful, but the core server should remain small, direct, and identity-first.
 
----
-
 # Security Philosophy
 
-DNA-Nexus Server is built around the idea that the browser should not be the root of trust.
+DNA-Nexus Server is built around the idea that identity should not be reduced to a browser session alone.
 
 Important principles:
 
 - identity should belong to the user
-- authentication should involve the user’s trusted device
-- the server should not depend on browser-stored secrets alone
 - access should be tied to cryptographic identity
+- browser login methods should resolve to the same internal fingerprint model
+- QR login should use a trusted device as the approval anchor
+- OPAQUE login should avoid sending plaintext passwords to the server
+- classic password login should be explicit, configured, rate-limited, and fail closed
 - compromised browser state should not automatically mean full account compromise
 - sharing should be explicit and controlled
 - external access should be role-based and limited
+- admin, recovery, and onboarding flows should avoid partial unsafe state
 
-> If the browser is compromised, the attacker should still not automatically get access.
+> Identity is the anchor.
 >
-> The phone is the trust anchor.
+> The browser is only the interface.
 >
-> The server verifies identity instead of merely trusting a session.
-
----
+> The server verifies access instead of blindly trusting UI state.
 
 # Naming Notes
 
@@ -491,6 +520,8 @@ Apache License 2.0
 >
 > The browser is only the interface.
 >
-> The phone proves identity.
+> Identity is the anchor.
+>
+> The login method is only the entry path.
 >
 > DNA-Nexus Server should stay lightweight, transparent, and understandable.

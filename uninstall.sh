@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PQ-NAS Safe Uninstaller
-# - Removes: systemd unit, binaries, /opt/pqnas assets (static + bundled dna lib)
-# - Optionally removes: nginx PQ-NAS site config if it looks like ours
-# - Keeps: /srv/pqnas (DATA), /etc/pqnas (CONFIG)
+# DNA-Nexus Server / PQ-NAS Safe Uninstaller
+#
+# Removes:
+# - systemd unit
+# - installed binaries
+# - shipped /opt/pqnas static/runtime assets
+# - installer-generated nginx site config, only if it contains our marker
+#
+# Keeps:
+# - /srv/pqnas or configured PQNAS_ROOT data
+# - /etc/pqnas configuration
+# - users, shares, workspaces, storage pools, and user files
 #
 # Usage:
 #   sudo ./uninstall.sh
 #
-# Notes:
-# - This is intentionally conservative.
-# - It will NOT delete user data in the NAS storage root.
+# This is intentionally conservative. It will not delete NAS data.
 
 say() { echo "[*] $*"; }
 warn() { echo "[!] $*" >&2; }
@@ -23,54 +29,119 @@ need_root() {
   fi
 }
 
-have_cmd() { command -v "$1" >/dev/null 2>&1; }
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+trim_copy() {
+  local s="${1:-}"
+
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+
+  printf '%s\n' "$s"
+}
+
+strip_matching_quotes() {
+  local s="${1:-}"
+
+  if [[ "$s" == \"*\" && "$s" == *\" ]]; then
+    s="${s#\"}"
+    s="${s%\"}"
+  elif [[ "$s" == \'*\' && "$s" == *\' ]]; then
+    s="${s#\'}"
+    s="${s%\'}"
+  fi
+
+  printf '%s\n' "$s"
+}
 
 read_pqnas_root_from_env() {
   local env="/etc/pqnas/pqnas.env"
-  if [[ -f "$env" ]]; then
-    # shellcheck disable=SC1090
-    source "$env" || true
-    if [[ -n "${PQNAS_ROOT:-}" ]]; then
-      echo "$PQNAS_ROOT"
-      return 0
-    fi
+  local line=""
+  local value=""
+
+  if [[ ! -f "$env" ]]; then
+    echo ""
+    return 0
   fi
-  echo ""
+
+  line="$(grep -E '^[[:space:]]*PQNAS_ROOT[[:space:]]*=' "$env" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    echo ""
+    return 0
+  fi
+
+  value="${line#*=}"
+  value="$(trim_copy "$value")"
+  value="$(strip_matching_quotes "$value")"
+
+  echo "$value"
+}
+
+service_exists() {
+  if ! have_cmd systemctl; then
+    return 1
+  fi
+
+  systemctl cat pqnas.service >/dev/null 2>&1 && return 0
+
+  systemctl list-unit-files pqnas.service --no-legend --no-pager 2>/dev/null \
+    | grep -q '^pqnas\.service' && return 0
+
+  return 1
 }
 
 stop_disable_service() {
-  if have_cmd systemctl; then
-    if systemctl list-unit-files | rg -q '^pqnas\.service'; then
-      say "Stopping pqnas.service (if running)…"
-      systemctl stop pqnas.service >/dev/null 2>&1 || true
+  if ! have_cmd systemctl; then
+    say "systemctl not found; skipping service stop/disable."
+    return 0
+  fi
 
-      say "Disabling pqnas.service…"
-      systemctl disable --now pqnas.service >/dev/null 2>&1 || true
-    fi
+  if service_exists; then
+    say "Stopping pqnas.service if running..."
+    systemctl stop pqnas.service >/dev/null 2>&1 || true
+
+    say "Disabling pqnas.service..."
+    systemctl disable --now pqnas.service >/dev/null 2>&1 || true
+  else
+    say "pqnas.service not registered with systemd; skipping service stop/disable."
   fi
 }
 
 kill_leftover_processes() {
-  # best-effort; don't fail if pkill missing or nothing matches
-  if have_cmd pkill; then
-    say "Killing leftover pqnas_server processes (best effort)…"
-    pkill -f '^/usr/local/bin/pqnas_server$' >/dev/null 2>&1 || true
-    pkill -f 'pqnas_server' >/dev/null 2>&1 || true
+  if ! have_cmd pgrep || ! have_cmd pkill; then
+    say "pgrep/pkill not found; skipping process cleanup."
+    return 0
+  fi
+
+  if pgrep -f '^/usr/local/bin/pqnas_server([[:space:]]|$)' >/dev/null 2>&1; then
+    say "Killing installed pqnas_server process from /usr/local/bin..."
+    pkill -f '^/usr/local/bin/pqnas_server([[:space:]]|$)' >/dev/null 2>&1 || true
+  fi
+
+  local leftovers=""
+  leftovers="$(pgrep -af 'pqnas_server' || true)"
+  if [[ -n "$leftovers" ]]; then
+    warn "Other pqnas_server-looking processes are still running. Leaving them untouched:"
+    echo "$leftovers" >&2
   fi
 }
 
 remove_systemd_unit() {
   local unit="/etc/systemd/system/pqnas.service"
+
   if [[ -f "$unit" ]]; then
     say "Removing systemd unit: $unit"
     rm -f "$unit"
+
     if have_cmd systemctl; then
-      say "systemd daemon-reload…"
+      say "Reloading systemd..."
       systemctl daemon-reload >/dev/null 2>&1 || true
       systemctl reset-failed >/dev/null 2>&1 || true
     fi
   else
-    say "systemd unit not found (ok): $unit"
+    say "systemd unit not found: $unit"
   fi
 }
 
@@ -85,9 +156,9 @@ remove_binaries() {
     "$bin_dir/pqnas_keygen.new"
   )
 
-  say "Removing binaries from $bin_dir (if present)…"
+  say "Removing installed binaries from $bin_dir if present..."
   for f in "${files[@]}"; do
-    if [[ -e "$f" ]]; then
+    if [[ -e "$f" || -L "$f" ]]; then
       rm -f "$f"
       say "  removed: $f"
     fi
@@ -95,80 +166,80 @@ remove_binaries() {
 }
 
 remove_opt_assets() {
-  # These are shipped assets; safe to remove.
   local static="/opt/pqnas/static"
   local dnalib="/opt/pqnas/lib/dna/libdna_lib.so"
   local dnadir="/opt/pqnas/lib/dna"
   local libroot="/opt/pqnas/lib"
+  local optroot="/opt/pqnas"
 
   if [[ -d "$static" ]]; then
     say "Removing shipped static assets: $static"
     rm -rf "$static"
   else
-    say "Static assets not found (ok): $static"
+    say "Static assets not found: $static"
   fi
 
-  if [[ -f "$dnalib" ]]; then
-    say "Removing shipped DNA engine lib: $dnalib"
+  if [[ -f "$dnalib" || -L "$dnalib" ]]; then
+    say "Removing shipped DNA engine library: $dnalib"
     rm -f "$dnalib"
   else
-    say "DNA engine lib not found (ok): $dnalib"
+    say "DNA engine library not found: $dnalib"
   fi
 
-  # clean empty directories (only if empty)
   if [[ -d "$dnadir" ]] && rmdir "$dnadir" 2>/dev/null; then
-    say "Removed empty dir: $dnadir"
+    say "Removed empty directory: $dnadir"
   fi
+
   if [[ -d "$libroot" ]] && rmdir "$libroot" 2>/dev/null; then
-    say "Removed empty dir: $libroot"
+    say "Removed empty directory: $libroot"
+  fi
+
+  if [[ -d "$optroot" ]] && rmdir "$optroot" 2>/dev/null; then
+    say "Removed empty directory: $optroot"
   fi
 }
 
 nginx_remove_site_if_ours() {
-  # ONLY remove nginx config if it looks generated by our installer.
-  # We do NOT uninstall nginx itself.
   if ! have_cmd nginx || ! have_cmd systemctl; then
-    say "nginx not installed (or systemctl missing) — skipping nginx cleanup."
+    say "nginx or systemctl not found; skipping nginx cleanup."
     return 0
   fi
 
   local candidates=(
     "/etc/nginx/sites-available/pqnas"
     "/etc/nginx/conf.d/pqnas.conf"
+    "/etc/nginx/sites-enabled/pqnas"
   )
 
   local found=""
   for c in "${candidates[@]}"; do
-    if [[ -f "$c" ]]; then
+    if [[ -f "$c" || -L "$c" ]]; then
       found="$c"
       break
     fi
   done
 
   if [[ -z "$found" ]]; then
-    say "No pqnas nginx config found (ok)."
+    say "No pqnas nginx config found."
     return 0
   fi
 
-  # Check for our marker line used in installer:
-  # "# PQ-NAS nginx reverse proxy (HTTP-only)"
-  if ! rg -q 'PQ-NAS nginx reverse proxy' "$found"; then
-    warn "Found nginx config $found but it does not look like PQ-NAS installer-generated. Leaving it untouched."
+  if ! grep -q 'PQ-NAS nginx reverse proxy' "$found" 2>/dev/null; then
+    warn "Found nginx config $found, but it does not look installer-generated. Leaving it untouched."
     return 0
   fi
 
   say "Removing nginx config: $found"
   rm -f "$found"
 
-  # sites-enabled symlink cleanup
   if [[ -L "/etc/nginx/sites-enabled/pqnas" || -e "/etc/nginx/sites-enabled/pqnas" ]]; then
     say "Removing nginx enabled link: /etc/nginx/sites-enabled/pqnas"
     rm -f "/etc/nginx/sites-enabled/pqnas"
   fi
 
-  say "nginx -t …"
+  say "Testing nginx configuration..."
   if nginx -t >/dev/null 2>&1; then
-    say "Reloading nginx…"
+    say "Reloading nginx..."
     systemctl reload nginx >/dev/null 2>&1 || true
   else
     warn "nginx -t failed after removal; not reloading. Please check nginx config."
@@ -176,33 +247,34 @@ nginx_remove_site_if_ours() {
 }
 
 print_keep_notes() {
-  local root
+  local root=""
   root="$(read_pqnas_root_from_env)"
+
+  echo
   if [[ -n "$root" ]]; then
-    echo
-    say "Kept DATA (unchanged): $root"
+    say "Kept DATA unchanged: $root"
   else
-    echo
-    say "Kept DATA (unchanged): /srv/pqnas  (default; mountpoint depends on your install)"
+    say "Kept DATA unchanged: /srv/pqnas"
   fi
 
   echo
-  say "Kept CONFIG (unchanged): /etc/pqnas/"
-  say "  - If you reinstall later, your config and users/shares will still be there."
+  say "Kept CONFIG unchanged: /etc/pqnas/"
+  say "If you reinstall later, existing config, users, shares, and data may still be present."
 }
 
 confirm() {
   echo
-  echo "This will perform a SAFE uninstall of PQ-NAS:"
-  echo "  - stop/disable pqnas.service"
+  echo "This will perform a SAFE uninstall of DNA-Nexus Server / PQ-NAS:"
+  echo "  - stop and disable pqnas.service"
   echo "  - remove /etc/systemd/system/pqnas.service"
-  echo "  - remove /usr/local/bin/pqnas_server + pqnas_keygen"
-  echo "  - remove /opt/pqnas/static + /opt/pqnas/lib/dna/libdna_lib.so"
+  echo "  - remove /usr/local/bin/pqnas_server and pqnas_keygen"
+  echo "  - remove shipped assets under /opt/pqnas"
   echo "  - optionally remove installer-generated nginx pqnas site config"
   echo
   echo "It will NOT delete:"
-  echo "  - /srv/pqnas (your NAS data)"
-  echo "  - /etc/pqnas (your config)"
+  echo "  - /srv/pqnas or your configured PQNAS_ROOT data"
+  echo "  - /etc/pqnas configuration"
+  echo "  - users, shares, workspaces, storage pools, or uploaded files"
   echo
   read -r -p "Type exactly: UNINSTALL  > " ans
   [[ "$ans" == "UNINSTALL" ]] || die "Confirmation did not match. Nothing done."
@@ -220,7 +292,7 @@ main() {
   nginx_remove_site_if_ours
 
   echo
-  say "✅ Safe uninstall complete."
+  say "Safe uninstall complete."
   print_keep_notes
 }
 

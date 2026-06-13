@@ -1,188 +1,436 @@
-# Security Model – PQ-NAS
+# Security Model - DNA-Nexus Server / PQ-NAS
 
 This document describes the security model, trust boundaries, and design
-decisions of **PQ-NAS v0**.
+decisions of DNA-Nexus Server / PQ-NAS.
 
-PQ-NAS currently has **two distinct security contexts**:
+DNA-Nexus Server is an identity-first storage and collaboration server. The
+internal security anchor is the DNA fingerprint. Login methods are entry paths
+into the same fingerprint-backed session and authorization model.
 
-1. **Authentication and session establishment**
-2. **Post-quantum share protection and browser-side file opening**
+The project was originally called PQ-NAS. Some service names, paths, binaries,
+and source identifiers may still use `pqnas` during the transition to the public
+DNA-Nexus Server name.
+
+---
+
+## Current Security Contexts
+
+DNA-Nexus Server currently has several distinct security contexts:
+
+1. Browser login and session establishment
+2. Mobile trusted-device authentication
+3. Authorization and access control
+4. Public sharing and Drop Zone upload flows
+5. Workspace and external-member access
+6. Post-quantum share protection and browser-side file opening
+7. Admin, onboarding, reset, and recovery flows
+8. Audit logging and security event history
 
 These contexts have different trust assumptions and must not be conflated.
 
-PQ-NAS remains an **identity-first access system**, not a traditional NAS
-security stack. Its primary goal is to demonstrate a **device-mediated,
-post-quantum–capable authentication model** with explicit server-side
-verification, while also experimenting with **post-quantum protected file
-sharing**.
+The browser may be an interface, a local OPAQUE client, or a local share
+decryption endpoint depending on the feature. It is not automatically a trust
+anchor for the whole system.
 
 ---
 
 ## Threat Model
 
-PQ-NAS is designed under the following assumptions.
-
-### Assumed Adversaries
+DNA-Nexus Server is designed under the following assumptions.
 
 An attacker may:
 
-- Control or compromise the browser
-- Steal browser cookies or local storage
-- Observe or manipulate network traffic
-- Attempt replay or token substitution attacks
-- Attempt to authenticate without owning a valid identity key
-- Attempt to misuse a PQ share link or wrapped key material
-- Attempt ciphertext tampering during PQ share delivery
+- control or compromise the browser
+- steal browser cookies or local storage
+- observe or manipulate network traffic
+- attempt replay or token substitution attacks
+- attempt to authenticate without owning valid credentials or identity keys
+- attempt account enumeration through login or recovery flows
+- attempt to misuse setup, enrollment, invite, reset, or bootstrap tokens
+- attempt to exploit partial multi-file state updates
+- attempt to misuse public shares, workspace invites, or Drop Zone links
+- attempt to access private files through stale preview or cache state
+- attempt to tamper with PQ share ciphertext or wrapped key material
+- attempt to exhaust CPU, disk, network, or external process resources
+- attempt to abuse federation or remote NAS input
 
-### Trusted Components
+The server must assume that all external input is hostile.
 
-For **authentication**:
+---
 
-- The **PQ-NAS server** process
-- The **user’s mobile device** running DNA-Messenger
-- The **DNA identity private key** stored on the device
+## Trusted Components
 
-For **PQ share opening**:
+For QR / DNA Connect browser login:
 
-- The **PQ-NAS server** process
-- The **recipient browser runtime** performing local unwrap/decrypt
-- The **recipient browser-side share identity key material** used for share opening
+- the DNA-Nexus Server process
+- the user's trusted mobile device
+- DNA-Messenger or compatible approval client
+- the DNA identity private key stored on the trusted device
 
-This distinction matters: the browser is **not trusted as an authentication
-authority**, but it **is** currently used as the local decryption endpoint for
-PQ share opening.
+For classic password browser login:
+
+- the DNA-Nexus Server process
+- the configured password credential store
+- the password hashing and verification implementation
+- the user's ability to keep their password secret
+
+For OPAQUE browser login:
+
+- the DNA-Nexus Server process
+- the server-side OPAQUE helper boundary
+- the configured OPAQUE server setup and credential store
+- the browser-side OPAQUE client module for local protocol steps
+- the user's ability to keep their password secret
+
+For mobile trusted-device access:
+
+- the DNA-Nexus Server process
+- the mobile app token store
+- issued access and refresh tokens
+- trusted device records
+
+For PQ share opening:
+
+- the DNA-Nexus Server process
+- the recipient browser runtime performing local unwrap/decrypt
+- the recipient browser-side share identity key material used for share opening
+
+This distinction matters. The browser is not a general authentication authority,
+but some features intentionally use the browser as a local cryptographic
+endpoint.
 
 ---
 
 ## Core Security Principles
 
-### 1. Authentication does not depend on browser-held identity secrets
+### 1. One internal identity model
 
-For login/session authentication:
+The internal identity anchor is the DNA fingerprint.
 
-- The browser does not store passwords or the user’s DNA identity private key.
-- A compromised browser alone is insufficient to authenticate as the user.
+All successful browser login methods resolve to:
 
-### 2. Device-mediated authentication
+    fingerprint -> pqnas_session
 
-- All authentication approvals originate from the user’s mobile device.
-- The user explicitly confirms login on the phone.
-- The phone produces a cryptographic proof using the user’s DNA identity key.
+The rest of the server should enforce authorization based on the resolved
+fingerprint, role, status, workspace membership, share policy, and app
+permissions.
 
-### 3. Cryptographic proof, not assertions
+### 2. Login methods are entry paths
 
-PQ-NAS does not trust:
+Supported browser login methods may include:
 
-- Browser claims
-- Client-side state
-- JavaScript-only validation
+- QR / DNA Connect login
+- classic password login
+- OPAQUE zero-knowledge password login
 
-All authentication access decisions are based on **server-side cryptographic verification**.
+These methods differ in how the user proves access, but they converge to the
+same session and authorization model.
 
-### 4. PQ share opening is local-decrypt by design
+### 3. No silent fallback
 
-For PQ share opening:
+A configured login mode must fail closed if it is unavailable.
 
-- The file content encryption key is unwrapped in the browser.
-- File decryption happens locally in the browser before download.
-- Share confidentiality therefore depends on the browser/device used to open the share.
+Examples:
 
-This is a different trust model from the login flow and is documented separately below.
+- OPAQUE mode must not silently fall back to classic password login.
+- password mode must not accidentally expose QR login if QR is disabled.
+- QR mode must not accidentally expose password endpoints as unintended browser
+  login paths.
 
----
+### 4. Authentication does not create users
 
-## Authentication Flow (v4)
+Login, recovery, or OPAQUE enrollment attempts must never create users.
 
-1. The browser requests access from PQ-NAS.
-2. PQ-NAS issues a short-lived, server-signed request token (`req`).
-3. The browser displays a QR code containing the request token.
-4. DNA-Messenger scans the QR code.
-5. The user approves the request on the phone.
-6. DNA-Messenger produces a cryptographic proof bound to the request.
-7. PQ-NAS verifies the proof and issues a short-lived browser session cookie.
+User creation must be explicit, auditable, and tied to provisioning such as
+admin user creation, bootstrap, invitation, approved onboarding, or another
+reviewed flow.
 
-At no point does the browser authenticate itself.
+### 5. Authorization is explicit
 
----
+Authentication proves who is trying to access the system.
 
-## Cryptographic Verification (v4)
+Authorization decides whether that identity may perform the action.
 
-Verification is **fail-closed** and performed conceptually in the following order:
+Every route must define who can call it and must enforce the required role,
+status, session, token, workspace membership, or share policy server-side.
 
-- **Server authenticity**
-  - The request token is verified using **Ed25519** (server key).
-- **Request binding**
-  - The proof is bound to the *exact* request token issued by the server.
-- **Canonical payload verification**
-  - Signatures are verified over canonical, byte-stable payloads.
-- **Identity proof**
-  - User approval is verified using **post-quantum–capable signatures**
-    (ML-DSA-87 / Dilithium-class via PQClean).
-- **Fingerprint binding**
-  - The identity fingerprint is cryptographically bound to the public key.
-- **Origin / relying party binding**
-  - Prevents cross-site or cross-service replay.
-- **Policy enforcement**
-  - The fingerprint identity is checked against the allowlist.
+### 6. Sensitive state changes must fail closed
 
-Only if **all** checks succeed is access granted.
+Partial state must not grant access.
 
----
+Security-sensitive multi-step operations should be owned by one backend endpoint
+when partial frontend success could leave an unsafe state.
 
-## Identity Representation
+Examples:
 
-After successful verification, the server extracts a canonical identity string
-(`fingerprint_b64`).
+- user onboarding
+- OPAQUE enrollment
+- force reset
+- password reset
+- invite acceptance
+- bootstrap first-admin setup
+- workspace external access
+- share creation or revocation
 
-- This value uniquely represents the user’s DNA identity.
-- It is treated as an **opaque identifier** outside the verifier.
-- Policy checks, session cookies, and audit logs use this value directly.
+### 7. One-time secrets have the shortest practical lifetime
+
+Setup links, enrollment tokens, reset links, bootstrap tokens, invite tokens,
+and recovery material are sensitive credentials.
+
+They must be short-lived, purpose-bound, and invalidated when account state
+changes.
 
 ---
 
-## Authorization Model
+## Browser Login Security Model
 
-PQ-NAS separates **authentication** from **authorization**:
+### QR / DNA Connect login
 
-- Authentication proves *who* approved the request.
-- Authorization decides *whether* that identity is allowed.
+QR login is the device-mediated login model.
 
-Authorization is enforced via:
+Typical flow:
 
-- A fingerprint-based allowlist
-- Explicit user/admin roles
-- Fail-closed policy checks
+1. Browser requests access.
+2. Server displays a QR challenge.
+3. DNA-Messenger or compatible trusted device scans the challenge.
+4. User approves the login on the trusted device.
+5. The trusted device signs or proves the challenge using the user's identity.
+6. The server verifies the proof and policy.
+7. The server mints `pqnas_session`.
 
-A cryptographically valid identity may still be denied access.
+The browser is treated as an interface. It does not prove identity by itself.
+
+### Classic password login
+
+Classic password login is a configured browser login mode.
+
+Rules:
+
+- password login must be explicitly configured
+- login/email maps to an internal fingerprint
+- passwords are stored only as password hashes
+- plaintext passwords must not be logged
+- missing-user and wrong-password paths should avoid obvious enumeration
+- disabled or pending users must not authenticate
+- login must never create a user
+- password mode must not expose another browser login method accidentally
+
+### OPAQUE zero-knowledge password login
+
+OPAQUE login is a configured browser login mode where the plaintext password is
+processed locally by the browser-side OPAQUE client and is not sent to the
+server.
+
+Current model:
+
+- browser loads the local OPAQUE client module
+- browser performs OPAQUE client protocol steps locally
+- server performs helper-backed OPAQUE transcript handling
+- server verifies the OPAQUE flow
+- server checks user status and policy
+- server mints `pqnas_session` after successful verification
+- browser verifies the session with the normal user/session endpoint before
+  redirecting to the app
+
+Rules:
+
+- do not load authentication crypto from a CDN
+- serve browser crypto as local versioned static assets
+- fail closed if the browser OPAQUE module is missing or incompatible
+- never send plaintext passwords to OPAQUE endpoints
+- never silently call the classic password endpoint from OPAQUE mode
+- keep helper version, browser client, protocol suite, serialization format, and
+  stored credential format tested together
+- clear password/client state as soon as practical
+- do not store OPAQUE client state in localStorage, sessionStorage, IndexedDB,
+  URLs, logs, or DOM attributes
+
+---
+
+## Mobile Trusted-Device Model
+
+DNA-Nexus Mobile uses the trusted-device / bearer-token model.
+
+Mobile pairing and app tokens are separate from browser login mode.
+
+Typical model:
+
+    trusted mobile device -> access token / refresh token -> fingerprint + role + device_id
+
+OPAQUE browser login must not replace:
+
+- AppTokenStore
+- trusted device records
+- refresh tokens
+- mobile bearer-token verification
+- mobile pairing policy
 
 ---
 
 ## Session Security
 
-- Browser sessions are represented by **short-lived, signed cookies**.
-- Cookies are issued only after successful verification and authorization.
-- Cookie properties:
-  - `HttpOnly`
-  - `Secure`
-  - `SameSite=Lax`
-- Session expiry is enforced server-side.
+Browser sessions are represented by signed cookies.
 
-Session cookies are **bearer tokens** and are intentionally short-lived.
+Cookies should default to:
+
+- HttpOnly
+- Secure
+- SameSite=Strict where practical
+
+Use SameSite=Lax only when a specific browser flow requires it.
+
+Session rules:
+
+- mint sessions only after authentication and authorization succeed
+- use short or reasonable lifetimes
+- verify cookie parsing strictly
+- do not build cookie claims with unsafe string concatenation
+- validate claim fields before minting and after parsing
+- fail closed on malformed or unexpected claims
+- do not log session IDs or cookie values
+
+Session cookies are bearer tokens. A stolen valid session cookie is security
+sensitive even if the original login method was strong.
 
 ---
 
-## Stateless Verification
+## Authorization Model
 
-- Cryptographic verification does **not** rely on server-side authentication
-  session state.
-- Request tokens and proofs are self-contained and signed.
-- Verification can be performed without shared state between requests.
+DNA-Nexus Server separates authentication from authorization.
 
-Note:
+Authorization is enforced through:
 
-- PQ-NAS intentionally maintains **audit logs** and **one-time consume
-  semantics** to prevent replay and to support accountability.
-- The system is *verification-stateless*, not globally stateless.
+- fingerprint identity
+- user status
+- user role
+- admin role
+- workspace membership
+- workspace role
+- share policy
+- Drop Zone policy
+- app permissions
+- storage quota and pool assignment
+- explicit route-specific checks
+
+A cryptographically valid identity may still be denied access.
+
+Disabled, pending, or revoked users must fail closed.
+
+---
+
+## Onboarding, Enrollment, Reset, and Recovery
+
+Onboarding and recovery flows are security-sensitive.
+
+Rules:
+
+- setup and enrollment tokens must be short-lived
+- token hashes should be stored instead of plaintext tokens when practical
+- new replacement tokens should invalidate older active tokens for the same
+  purpose and user
+- revoking a user must invalidate active setup/enrollment/reset tokens for that
+  user
+- tokens should be purpose-bound and user-bound
+- plaintext one-time tokens must not be logged
+- plaintext one-time tokens must not be returned after partial failure
+- backend endpoints should own multi-step reset/enrollment flows
+- rollback or repair must be possible after partial state failure
+- recovery must not create users
+- recovery must not enable disabled or pending users unless a separate explicit
+  admin-approved transition is performed
+
+One-time recovery phrases or equivalent secrets should be shown once and should
+not be stored server-side.
+
+---
+
+## Shared State and Locking
+
+Security-sensitive JSON state files must use safe read-modify-write behavior.
+
+Rules:
+
+- use atomic temp-file and rename saves
+- use unique temporary filenames
+- keep lock coverage across load, validate, mutate, and save
+- use shared locking when more than one module can write the same file
+- do not rely only on a file-scope static mutex if another source file or process
+  can update the same persistent file
+- document lock ordering when mixing in-process mutexes and file locks
+- use rollback or repair for multi-file updates
+
+Examples of security-sensitive state:
+
+- users.json
+- password credentials
+- OPAQUE credentials
+- OPAQUE enrollment tokens
+- app tokens
+- invite tokens
+- bootstrap state
+- workspace metadata
+- share metadata
+- update state
+
+---
+
+## Path, File, and Storage Safety
+
+All paths are dangerous input, even when they appear to come from local state.
+
+Rules:
+
+- normalize paths before use
+- enforce allowed roots
+- reject path traversal
+- reject unexpected absolute paths
+- reject or explicitly handle symlinks
+- avoid TOCTOU check-then-use sequences
+- avoid shell command strings for path-sensitive work
+- verify authorization immediately before serving, deleting, moving, restoring,
+  previewing, or exporting files
+- do not trust cached visibility for later media/file serving
+
+Storage operations must fail closed when ownership, pool, quota, or path policy
+cannot be verified.
+
+---
+
+## Public Sharing and Drop Zone
+
+Share links and Drop Zone links are intentional public access paths.
+
+Rules:
+
+- use high-entropy tokens
+- store token hashes when practical
+- apply expiry, password, destination, role, and size limits
+- rate-limit public upload and download endpoints
+- validate current share or Drop Zone policy before every access
+- do not expose private filesystem paths
+- prevent stale preview/cache access after visibility changes
+- audit creation, use, revocation, and failure events
+- fail closed when link metadata is missing or inconsistent
+
+Drop Zone must remain one-way unless explicitly designed otherwise. Uploaders
+must not gain directory browsing access merely because they have an upload link.
+
+---
+
+## Workspaces and External Access
+
+Workspace access must be role-based and explicit.
+
+Rules:
+
+- verify workspace membership on every workspace operation
+- verify external member role and status
+- never rely on UI hiding for workspace security
+- external invites must be high entropy, time-limited where appropriate, and
+  bound to the intended workspace
+- role changes must take effect immediately
+- stale cached media or previews must not bypass current workspace visibility
+- audit sensitive workspace membership and external-access changes
 
 ---
 
@@ -190,66 +438,24 @@ Note:
 
 PQ share opening is a separate security path from login.
 
-### PQ share goals
+For PQ share opening:
 
-The PQ share flow is designed so that:
-
-- a file content encryption key (CEK) is wrapped for the intended recipient
+- a file content encryption key is wrapped for the intended recipient
 - CEK unwrap and file decryption occur locally in the browser
-- the server can deliver encrypted payloads without directly exposing plaintext in transit
+- the server can deliver encrypted payloads without directly exposing plaintext
+  in transit
 
-### Current PQ share browser role
+The browser is therefore an active security endpoint for share decryption.
 
-For PQ share opening, the browser is **not merely transport**. It is currently:
+This means:
 
-- the CEK unwrap endpoint
-- the payload decrypt endpoint
-- the holder of browser-side share identity material used for opening protected shares
-
-This means the browser remains untrusted for **authentication**, but is an active security endpoint for **share decryption**.
-
-### Browser-resident share secrets
-
-PQ share opening may require browser-resident private key material associated
-with share-opening identity records.
-
-That means the broad statement “the browser stores no private keys” is true for
-**authentication**, but **not universally true** for the PQ share subsystem.
-
-The current design should therefore be understood as:
-
-- **No browser-resident authentication identity secrets**
-- **Browser-resident share-opening private key material may exist**
-
-### PQ share cryptographic model
-
-At a high level, PQ share opening uses:
-
-- **ML-KEM-768** for recipient-oriented key encapsulation / key wrapping
-- **AES-256-GCM** for payload encryption
-- local browser unwrap/decrypt before download
-- integrity verification of decrypted payload metadata such as size and digest
-
-### PQ share ciphertext tampering behavior
-
-Correctly sized but tampered PQ KEM ciphertext is handled via implicit rejection behavior in the ML-KEM provider path.
-
-In practice this means:
-
-- malformed lengths are treated as API failures
-- correctly sized but invalid ciphertext does not become an API failure
-- decapsulation still returns a shared secret
-- the resulting secret differs from the valid untampered case
-
-This is intentional and aligns with the ML-KEM boundary contract used by PQ-NAS.
-
-### PQ share trust implications
-
-If the browser used to open a PQ share is compromised, then:
-
-- locally unwrapped CEK material may be exposed
-- plaintext file content may be exposed after decryption
-- integrity verification may still detect tampering, but confidentiality at the endpoint is lost
+- no browser-resident authentication identity secret is required for login
+- browser-resident share-opening private key material may still exist for PQ
+  share opening
+- if the browser used to open a PQ share is compromised, locally unwrapped CEK
+  material and plaintext may be exposed
+- integrity verification may detect tampering, but endpoint compromise still
+  compromises confidentiality
 
 This is an accepted limitation of the current local-browser-decrypt share model.
 
@@ -257,88 +463,143 @@ This is an accepted limitation of the current local-browser-decrypt share model.
 
 ## ML-KEM Provider Model
 
-PQ-NAS now routes its ML-KEM operations through a **DNA-owned wrapper boundary**
-rather than having share code depend directly on vendored ML-KEM symbols.
+ML-KEM operations should be routed through a DNA-owned wrapper boundary rather
+than having application code depend directly on vendored ML-KEM symbols.
 
-### Current provider state
+Security goals:
 
-In the current lab/dev path:
+- keep a stable internal provider API
+- isolate provider choice behind a selector seam
+- keep native fallback tested while replacement work continues
+- exercise default, forced-DNA, and forced-native lanes when relevant
+- document whether vendored native code is still part of the effective security
+  path
 
-- the default selected ML-KEM provider is the **DNA provider**
-- the vendored native provider remains available as a tested fallback
-
-### Security significance
-
-This means:
-
-- PQ share server code depends on the stable DNA wrapper API
-- provider choice is isolated behind an internal selector seam
-- native fallback remains available if needed
-- provider behavior is exercised through:
-  - default lane
-  - forced-DNA lane
-  - forced-native lane
-
-### Important current limitation
-
-The current DNA ML-KEM provider still uses a **native-backed validation bridge**
-for boundary-compatible structural validation of some key material.
-
-Therefore, vendored native code is still part of the effective security story and
-must not yet be considered fully removable.
+Vendored native code must not be considered removable until the validation and
+provider boundary no longer require it.
 
 ---
 
-## Audit & Accountability
+## Audit and Accountability
 
-All security-relevant events are recorded in an append-only audit log:
+Security-relevant events should be recorded in audit logs.
 
-- Request token issuance
-- Verification attempts (success/failure)
-- Authorization decisions
-- Session minting and consumption
-- PQ share operations where audit instrumentation is present
+Examples:
 
-Audit logs are:
+- authentication attempts
+- session minting
+- authorization failures
+- admin actions
+- onboarding/enrollment/reset token lifecycle events
+- workspace membership and external-access changes
+- public share and Drop Zone events
+- update/install events
+- PQ share operations where instrumentation is present
+- rollback failures or repair-required states
 
-- Hash-chained
-- Append-only
-- Verifiable for tampering
+Audit logs are for incident analysis, forensics, and security review.
 
-Audit data is intended for:
-
-- Incident analysis
-- Forensics
-- Security review
-
----
-
-## Non-Goals (v0)
-
-The following are explicitly **out of scope** for PQ-NAS v0:
-
-- Password-based authentication
-- WebAuthn / passkeys
-- Multi-factor authentication beyond device mediation
-- Enterprise identity federation
-- Hardware-backed key storage guarantees
-- Resistance against a fully compromised server
-- A claim that browser-side PQ share decryption is safe under full browser compromise
-- A claim that vendored ML-KEM code has already been completely removed from the security path
-
-These may be explored in future versions.
+User-facing activity is different from audit logging and must not expose raw
+security internals.
 
 ---
 
-## Security Philosophy
+## Logging Rules
 
-> Identity should belong to the user, not the server.
->
-> The browser is not trusted as an authentication authority.
->
-> For PQ share opening, the browser currently acts as the local decryption endpoint.
->
-> If a user’s phone is not involved, authentication should not be possible.
+Do not log sensitive values.
+
+Avoid logging:
+
+- raw passwords
+- OPAQUE secrets or client state
+- session IDs
+- cookie values
+- Authorization headers
+- private keys
+- recovery phrases
+- bootstrap tokens
+- invite tokens
+- reset tokens
+- plaintext one-time setup links
+- raw external command output
+- full private file paths
+- full private fingerprints unless required
+
+User-facing errors should stay generic for authentication and recovery failures.
+Audit logs may contain structured internal reason codes, but must not contain
+secrets.
+
+---
+
+## Rate Limiting and Resource Bounds
+
+Sensitive and expensive endpoints must be rate-limited.
+
+Examples:
+
+- QR verification
+- password login
+- OPAQUE login start and finish
+- token creation and consumption
+- bootstrap and first-admin setup
+- invite acceptance
+- recovery flows
+- public upload/download
+- media preview generation
+- federation ingest
+- update/install
+- external process execution
+
+Rate limits should normally include both per-IP and account/token-bound limits
+where applicable.
+
+In-memory rate-limit maps must have cleanup behavior or bounded size.
+
+External process output must be bounded, truncated safely, and never returned
+raw to normal users.
+
+---
+
+## Federation Safety
+
+Federation data is untrusted remote input.
+
+Required controls:
+
+- pre-parse size limits
+- strict JSON parsing
+- canonical JSON for signatures
+- cryptographic signatures for events
+- public key and origin identity binding
+- verification before storing or applying
+- rejection of unsigned or invalid events
+- pruning or caps for unbounded tables
+- safe media reference handling
+- no direct trust in remote-provided paths
+
+Invalid federation data should be rejected and audit logged.
+
+---
+
+## Update Center Safety
+
+Update/install features must fail closed.
+
+Rules:
+
+- verify package hash
+- verify plan hash
+- use canonical JSON consistently
+- validate install plan before apply
+- separate dry-run from apply
+- keep apply helper tightly scoped
+- log install state transitions
+- avoid printing secrets or raw helper output to user-facing activity
+- require admin authorization
+- rate-limit sensitive endpoints
+
+Installer changes are part of security fixes. A runtime security fix is
+incomplete if a fresh install still produces unsafe defaults.
 
 ---
 
@@ -346,15 +607,41 @@ These may be explored in future versions.
 
 At this checkpoint:
 
-- Authentication remains device-mediated and server-verified.
-- The browser is not a trust anchor for login.
-- PQ share opening uses local browser unwrap/decrypt and therefore has a distinct endpoint trust model.
-- ML-KEM operations are routed through a DNA-owned wrapper boundary.
-- The DNA provider is the default lab/dev path.
-- Native remains as a tested fallback.
-- Vendored native code is still present in the effective security path due to the current validation bridge.
+- DNA-Nexus Server uses one internal fingerprint-backed identity model.
+- QR, password, and OPAQUE browser login modes converge to the same
+  `pqnas_session` model.
+- QR login remains device-mediated.
+- OPAQUE login avoids sending plaintext passwords to the server.
+- Classic password login is explicit and configured, not the only identity model.
+- Mobile trusted-device bearer tokens remain separate from browser login mode.
+- PQ share opening uses local browser unwrap/decrypt and has a distinct endpoint
+  trust model.
+- ML-KEM operations should remain behind the DNA wrapper/provider boundary.
+- Security-sensitive state changes must use atomic write, shared locking,
+  rollback, repair, or fail-closed behavior.
+- Public sharing, Drop Zone, and workspace external access are intentional but
+  tightly scoped public/external access paths.
 
-This is a stronger and cleaner architecture than the earlier direct-vendored integration, but it is **not yet the final de-vendored state**.
+The architecture is stronger than the early QR-only v0 model, but it should
+continue to be reviewed as new login, sharing, federation, and app features are
+added.
+
+---
+
+## Non-Goals
+
+The following are not current security claims:
+
+- resistance against a fully compromised server
+- a claim that browser-side PQ share decryption is safe under full browser
+  compromise
+- a claim that browser sessions are harmless if stolen
+- a claim that classic password login is equivalent to device-mediated QR login
+- a claim that OPAQUE removes the need for rate limits or secure onboarding
+- a claim that vendored ML-KEM code has already been completely removed from the
+  effective security path
+- a claim that UI hiding is a security boundary
+- a claim that public share links or Drop Zone links are private once disclosed
 
 ---
 
@@ -362,12 +649,23 @@ This is a stronger and cleaner architecture than the earlier direct-vendored int
 
 If you discover a security issue:
 
-- Do **not** open a public issue.
-- Contact the project maintainers privately.
-- Provide a minimal reproduction and impact assessment.
+- do not open a public issue
+- contact the project maintainers privately
+- provide a minimal reproduction and impact assessment
+- avoid sharing exploit details publicly until a fix or mitigation exists
 
 Security issues will be acknowledged and addressed responsibly.
 
 ---
 
-*PQ-NAS v0 — security-first by design, staged by intent.*
+## Security Philosophy
+
+> Identity should belong to the user, not the server.
+>
+> The browser is only the interface.
+>
+> Login methods are entry paths into a fingerprint-backed authorization model.
+>
+> Public access must be explicit, scoped, and revocable.
+>
+> Security-sensitive flows must fail closed.
