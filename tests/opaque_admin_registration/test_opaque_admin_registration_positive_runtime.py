@@ -275,6 +275,8 @@ def main():
 
     if status_code == 404 and login_start.get("error") == "opaque_auth_disabled":
         require(no_session_cookie(headers), "disabled public OPAQUE login start must not set session cookie")
+    elif created_user and status_code == 401:
+        require(no_session_cookie(headers), "disabled test user OPAQUE login start must not set session cookie")
     else:
         require(status_code == 200, f"public OPAQUE login start must return 200, got {status_code}: {login_start}")
         require(login_start.get("ok") is True, f"public OPAQUE login start failed: {login_start}")
@@ -311,13 +313,9 @@ def main():
         require(login_finish.get("authenticated") is True, f"public OPAQUE login finish did not authenticate: {login_finish}")
         require(login_finish.get("login") == login, f"public OPAQUE login finish login mismatch: {login_finish}")
         require(login_finish.get("fingerprint") == fingerprint, f"public OPAQUE login finish fingerprint mismatch: {login_finish}")
-        require(login_finish.get("ready_for_session") is False, "login finish must not be ready for session")
-        require(login_finish.get("session_minting") is False, "login finish must keep session minting disabled")
-        require(no_session_cookie(headers), "public OPAQUE login finish must not set session cookie")
-
-        if created_user:
-            require(login_finish.get("account_status") == "disabled", f"created test user should remain disabled: {login_finish}")
-            require(login_finish.get("login_allowed") is False, f"disabled test user must not be login_allowed: {login_finish}")
+        require(login_finish.get("ready_for_session") is True, "login finish must be ready for session")
+        require(login_finish.get("session_minting") is True, "login finish must mint session")
+        require(not no_session_cookie(headers), "public OPAQUE login finish must set pqnas_session cookie")
 
     print(
         "PASS: OPAQUE admin positive registration runtime test "

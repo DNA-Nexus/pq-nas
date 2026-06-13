@@ -1587,6 +1587,18 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        const auto user_opt = ctx.users->get(rec->fingerprint);
+        if (!user_opt.has_value() || user_opt->status != "enabled") {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, rec->fingerprint, "user_disabled_or_missing");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
         pqnas::OpaqueHelperClient helper(status.helper_path);
         const auto helper_result = helper.login_start(
             status.server_setup_path,
@@ -1649,17 +1661,16 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"expires_at", now + 120},
             {"ready_for_session", false},
             {"session_minting", false},
-            {"warning", "OPAQUE transcript start completed, but session minting is still intentionally disabled."}
+            {"warning", "OPAQUE transcript start completed. Session minting happens only after login/finish."}
         }.dump());
     });
 
     // ---- POST /api/auth/opaque/login/finish ----
     //
-    // Public OPAQUE login finish scaffold.
+    // Public OPAQUE login finish.
     //
-    // This proves the OPAQUE transcript using the helper and returns
-    // authenticated:true only for a valid transcript. It still never mints
-    // pqnas_session and never sets Set-Cookie.
+    // This proves the OPAQUE transcript using the helper and mints pqnas_session
+    // only after successful transcript verification and enabled-user check.
     srv.Post("/api/auth/opaque/login/finish", [&](const httplib::Request& req, httplib::Response& res) {
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
@@ -1744,29 +1755,61 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        std::string account_status = "unknown";
-        bool login_allowed = false;
-
-        if (ctx.users) {
-            const auto user = ctx.users->get(pending.fingerprint);
-            if (user.has_value()) {
-                account_status = user->status;
-                login_allowed = (user->status == "enabled");
-            }
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty() ||
+            !ctx.cookie_key || !ctx.session_cookie_mint) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_session_mint_not_configured"}}.dump());
+            return;
         }
 
-        routes_v5_audit_password(ctx, req, "opaque.login_finish", "ok", pending.login, pending.fingerprint, "session_minting_disabled");
+        const auto user = ctx.users->get(pending.fingerprint);
+        if (!user.has_value() || user->status != "enabled") {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", pending.login, pending.fingerprint, "user_disabled_or_missing");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const long sess_iat = now;
+        const long sess_exp = sess_iat + (ctx.sess_ttl ? *ctx.sess_ttl : 3600);
+
+        const std::string fp_b64 = routes_v5_b64std_from_string(pending.fingerprint);
+        if (fp_b64.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "fingerprint_b64_failed"}}.dump());
+            return;
+        }
+
+        std::string cookie_val;
+        if (!ctx.session_cookie_mint(ctx.cookie_key, fp_b64, sess_iat, sess_exp, cookie_val) ||
+            cookie_val.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "cookie_mint_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+        if (!now_iso.empty()) {
+            ctx.users->touch_last_seen(pending.fingerprint, now_iso);
+            ctx.users->save(*ctx.users_path);
+        }
+
+        const std::string set_cookie =
+            std::string("pqnas_session=") + cookie_val +
+            "; Path=/" +
+            "; HttpOnly" +
+            "; SameSite=Strict" +
+            "; Secure";
+
+        res.set_header("Set-Cookie", set_cookie);
+
+        routes_v5_audit_password(ctx, req, "opaque.login_finish", "ok", pending.login, pending.fingerprint, "");
 
         reply_json(res, 200, json{
             {"ok", true},
             {"authenticated", true},
             {"login", pending.login},
             {"fingerprint", pending.fingerprint},
-            {"account_status", account_status},
-            {"login_allowed", login_allowed},
-            {"ready_for_session", false},
-            {"session_minting", false},
-            {"warning", "OPAQUE transcript verified, but pqnas_session minting is still intentionally disabled."}
+            {"role", user->role},
+            {"expires_at", sess_exp},
+            {"ready_for_session", true},
+            {"session_minting", true}
         }.dump());
     });
 

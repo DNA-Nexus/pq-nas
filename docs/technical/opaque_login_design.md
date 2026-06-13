@@ -908,6 +908,28 @@ This is still not login enablement:
 - no `pqnas_session` can be minted here
 - login helper operations still fail closed
 
+## Public OPAQUE session minting
+
+`POST /api/auth/opaque/login/finish` now mints the standard `pqnas_session`
+cookie after all of these conditions are true:
+
+1. the OPAQUE helper verifies the login transcript
+2. the pending `opaque_login_id` exists and is unexpired
+3. the mapped user exists in UsersRegistry
+4. the user status is `enabled`
+5. cookie minting callbacks are configured
+
+The session cookie uses the same `session_cookie_mint` callback and Set-Cookie
+attributes as password login:
+
+- `HttpOnly`
+- `SameSite=Strict`
+- `Secure`
+- `Path=/`
+
+Disabled or missing users receive the same generic `invalid_login_or_password`
+response and never get a session cookie.
+
 ## Public OPAQUE login scaffold
 
 The public HTTP routes now perform the OPAQUE transcript through the helper when
