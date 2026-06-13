@@ -874,6 +874,22 @@ migration rules
 
 Do not proceed to production OPAQUE login until these are written down and reviewed.
 
+## C++ to Rust registration roundtrip test
+
+The integration test `run_test_opaque_helper_client_rust_roundtrip`
+verifies the full registration message flow across the process boundary:
+
+1. a test-only Rust client fixture creates a client registration request
+2. C++ `OpaqueHelperClient::register_start` calls the Rust helper
+3. the test-only Rust client fixture finishes the client registration
+4. C++ `OpaqueHelperClient::register_finish` calls the Rust helper
+5. the helper returns an `opaque_password_file_b64`
+
+The test fixture uses a fixed local test password and is not used by the
+production server binary. The production boundary remains unchanged:
+`OpaqueHelperClient` does not read users, does not write credentials, and
+does not mint sessions.
+
 ## C++ helper client registration wrappers
 
 `OpaqueHelperClient` exposes safe wrappers for the Rust helper registration

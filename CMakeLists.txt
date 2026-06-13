@@ -554,6 +554,35 @@ add_custom_target(run_test_opaque_helper_client
 
 
 # -----------------------------------------------------------------------------
+# Integration test: C++ OpaqueHelperClient -> Rust OPAQUE helper registration
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_helper_client_rust_roundtrip
+        tests/opaque_helper_client_rust_roundtrip/test_opaque_helper_client_rust_roundtrip.cpp
+        server/src/opaque_helper_client.cpp
+)
+
+target_include_directories(test_opaque_helper_client_rust_roundtrip PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_opaque_helper_client_rust_roundtrip PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+if (PQNAS_CARGO)
+    add_custom_target(run_test_opaque_helper_client_rust_roundtrip
+            COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/opaque_helper_client_rust_roundtrip/test_opaque_helper_client_rust_roundtrip.py"
+                "${CMAKE_BINARY_DIR}/bin/test_opaque_helper_client_rust_roundtrip"
+                "${PQNAS_OPAQUE_RUST_BIN}"
+                "${PQNAS_OPAQUE_RUST_DIR}/Cargo.toml"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            DEPENDS test_opaque_helper_client_rust_roundtrip pqnas_opaque_helper_rust
+    )
+endif()
+
+
+# -----------------------------------------------------------------------------
 # Test: test_opaque_backend_status
 # -----------------------------------------------------------------------------
 add_executable(test_opaque_backend_status
