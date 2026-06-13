@@ -863,6 +863,127 @@ static bool routes_v5_helper_result_json(
 }
 
 
+struct RoutesV5OpaqueLoginPending {
+    std::string login;
+    std::string fingerprint;
+    std::string server_login_state_b64;
+    long expires_at = 0;
+};
+
+static std::mutex& routes_v5_opaque_login_pending_mu() {
+    static std::mutex mu;
+    return mu;
+}
+
+static std::unordered_map<std::string, RoutesV5OpaqueLoginPending>&
+routes_v5_opaque_login_pending_map() {
+    static std::unordered_map<std::string, RoutesV5OpaqueLoginPending> m;
+    return m;
+}
+
+static long routes_v5_now_epoch_safe(const RoutesV5Context& ctx) {
+    if (ctx.now_epoch) {
+        return ctx.now_epoch();
+    }
+
+    return static_cast<long>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count()
+    );
+}
+
+static void routes_v5_opaque_login_pending_prune(long now) {
+    std::lock_guard<std::mutex> lock(routes_v5_opaque_login_pending_mu());
+    auto& m = routes_v5_opaque_login_pending_map();
+
+    for (auto it = m.begin(); it != m.end();) {
+        if (it->second.expires_at <= now) {
+            it = m.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+static std::string routes_v5_random_hex_id_128() {
+    if (sodium_init() < 0) return {};
+
+    unsigned char buf[16];
+    randombytes_buf(buf, sizeof(buf));
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (unsigned char b : buf) {
+        oss << std::setw(2) << static_cast<unsigned int>(b);
+    }
+    return oss.str();
+}
+
+static bool routes_v5_is_safe_hex_id_128(const std::string& s) {
+    if (s.size() != 32) return false;
+
+    for (char ch : s) {
+        const bool ok =
+            (ch >= '0' && ch <= '9') ||
+            (ch >= 'a' && ch <= 'f') ||
+            (ch >= 'A' && ch <= 'F');
+
+        if (!ok) return false;
+    }
+
+    return true;
+}
+
+static bool routes_v5_opaque_login_pending_put(
+    const std::string& opaque_login_id,
+    const RoutesV5OpaqueLoginPending& pending) {
+    if (!routes_v5_is_safe_hex_id_128(opaque_login_id) ||
+        pending.login.empty() ||
+        pending.fingerprint.empty() ||
+        pending.server_login_state_b64.empty()) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(routes_v5_opaque_login_pending_mu());
+    auto& m = routes_v5_opaque_login_pending_map();
+
+    if (m.size() > 4096) {
+        return false;
+    }
+
+    m[opaque_login_id] = pending;
+    return true;
+}
+
+static bool routes_v5_opaque_login_pending_pop(
+    const std::string& opaque_login_id,
+    long now,
+    RoutesV5OpaqueLoginPending& out) {
+    if (!routes_v5_is_safe_hex_id_128(opaque_login_id)) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(routes_v5_opaque_login_pending_mu());
+    auto& m = routes_v5_opaque_login_pending_map();
+
+    auto it = m.find(opaque_login_id);
+    if (it == m.end()) {
+        return false;
+    }
+
+    out = it->second;
+    m.erase(it);
+
+    if (out.expires_at <= now) {
+        return false;
+    }
+
+    return true;
+}
+
+
+
 void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
     // ---- GET /api/auth/config ----
@@ -1388,11 +1509,11 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
     // ---- POST /api/auth/opaque/login/start ----
     //
-    // OPAQUE scaffold endpoint.
+    // Public OPAQUE login start.
     //
-    // This route intentionally does NOT accept or verify a plaintext password.
-    // Real OPAQUE support must be wired through a reviewed OPAQUE backend and a
-    // browser-side OPAQUE client before this endpoint can mint pqnas_session.
+    // This verifies only the OPAQUE transcript start and returns the server
+    // credential response plus an opaque in-memory login id. It never accepts
+    // plaintext passwords and never mints pqnas_session.
     srv.Post("/api/auth/opaque/login/start", [&](const httplib::Request& req, httplib::Response& res) {
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
@@ -1406,27 +1527,139 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", "", "", "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string login =
+            pqnas::OpaqueCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string credential_request_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "credential_request_b64"));
+
         if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
             routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "invalid_login");
             reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
             return;
         }
 
-        routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "opaque_backend_not_configured");
-        reply_json(res, 501, json{
-            {"ok", false},
-            {"error", "opaque_backend_not_configured"},
-            {"message", "OPAQUE login mode is selected, but the OPAQUE crypto backend is not wired in this build."}
+        if (!routes_v5_is_safe_b64ish(credential_request_b64, 8192)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "invalid_credential_request");
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_credential_request_b64"}}.dump());
+            return;
+        }
+
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("opaque.login_start.") + login,
+                ip_for_rate_limit,
+                12,
+                std::chrono::seconds(60))) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "rate_limited");
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_opaque_login_attempts"}}.dump());
+            return;
+        }
+
+        const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
+        if (!routes_v5_opaque_backend_ready_for_registration(status)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "opaque_backend_not_ready");
+            reply_json(res, 503, json{{"ok", false}, {"error", "opaque_backend_not_ready"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueCredentials creds;
+        const std::string creds_path = routes_v5_opaque_credentials_path();
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_load_failed"}}.dump());
+            return;
+        }
+
+        const auto rec = creds.get(login);
+        if (!rec.has_value() ||
+            !rec->enabled ||
+            rec->opaque_password_file_b64.empty() ||
+            !routes_v5_is_safe_b64ish(rec->opaque_password_file_b64, 262144)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "login_missing_or_disabled");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueHelperClient helper(status.helper_path);
+        const auto helper_result = helper.login_start(
+            status.server_setup_path,
+            rec->opaque_password_file_b64,
+            login,
+            credential_request_b64);
+
+        json helper_json;
+        std::string helper_err;
+        if (!routes_v5_helper_result_json(helper_result, helper_json, helper_err)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, rec->fingerprint, helper_err);
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const std::string credential_response_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(helper_json, "credential_response_b64"));
+        const std::string server_login_state_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(helper_json, "server_login_state_b64"));
+
+        if (!routes_v5_is_safe_b64ish(credential_response_b64, 8192) ||
+            !routes_v5_is_safe_b64ish(server_login_state_b64, 16384)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, rec->fingerprint, "invalid_helper_login_start_response");
+            reply_json(res, 502, json{{"ok", false}, {"error", "opaque_helper_invalid_login_start_response"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        routes_v5_opaque_login_pending_prune(now);
+
+        std::string opaque_login_id;
+        for (int i = 0; i < 8 && opaque_login_id.empty(); ++i) {
+            const std::string candidate = routes_v5_random_hex_id_128();
+            if (candidate.empty()) continue;
+
+            RoutesV5OpaqueLoginPending pending;
+            pending.login = login;
+            pending.fingerprint = rec->fingerprint;
+            pending.server_login_state_b64 = server_login_state_b64;
+            pending.expires_at = now + 120;
+
+            if (routes_v5_opaque_login_pending_put(candidate, pending)) {
+                opaque_login_id = candidate;
+            }
+        }
+
+        if (opaque_login_id.empty()) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, rec->fingerprint, "opaque_login_state_store_failed");
+            reply_json(res, 503, json{{"ok", false}, {"error", "opaque_login_state_store_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.login_start", "ok", login, rec->fingerprint, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"opaque_login_id", opaque_login_id},
+            {"credential_response_b64", credential_response_b64},
+            {"expires_at", now + 120},
+            {"ready_for_session", false},
+            {"session_minting", false},
+            {"warning", "OPAQUE transcript start completed, but session minting is still intentionally disabled."}
         }.dump());
     });
 
     // ---- POST /api/auth/opaque/login/finish ----
     //
-    // OPAQUE scaffold endpoint.
+    // Public OPAQUE login finish scaffold.
     //
-    // A future implementation should verify the OPAQUE protocol transcript and
-    // then mint the same pqnas_session cookie currently used by QR/password auth.
+    // This proves the OPAQUE transcript using the helper and returns
+    // authenticated:true only for a valid transcript. It still never mints
+    // pqnas_session and never sets Set-Cookie.
     srv.Post("/api/auth/opaque/login/finish", [&](const httplib::Request& req, httplib::Response& res) {
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
@@ -1440,11 +1673,100 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "opaque_backend_not_configured");
-        reply_json(res, 501, json{
-            {"ok", false},
-            {"error", "opaque_backend_not_configured"},
-            {"message", "OPAQUE login finish is reserved for the real OPAQUE backend. No plaintext-password fallback is allowed."}
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string opaque_login_id =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "opaque_login_id"));
+        const std::string credential_finalization_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "credential_finalization_b64"));
+
+        if (!routes_v5_is_safe_hex_id_128(opaque_login_id)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "invalid_opaque_login_id");
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_opaque_login_id"}}.dump());
+            return;
+        }
+
+        if (!routes_v5_is_safe_b64ish(credential_finalization_b64, 8192)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "invalid_credential_finalization");
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_credential_finalization_b64"}}.dump());
+            return;
+        }
+
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("opaque.login_finish.") + opaque_login_id,
+                ip_for_rate_limit,
+                12,
+                std::chrono::seconds(60))) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "rate_limited");
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_opaque_login_attempts"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        routes_v5_opaque_login_pending_prune(now);
+
+        RoutesV5OpaqueLoginPending pending;
+        if (!routes_v5_opaque_login_pending_pop(opaque_login_id, now, pending)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "opaque_login_state_missing");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
+        if (!routes_v5_opaque_backend_ready_for_registration(status)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", pending.login, pending.fingerprint, "opaque_backend_not_ready");
+            reply_json(res, 503, json{{"ok", false}, {"error", "opaque_backend_not_ready"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueHelperClient helper(status.helper_path);
+        const auto helper_result = helper.login_finish(
+            pending.server_login_state_b64,
+            credential_finalization_b64);
+
+        json helper_json;
+        std::string helper_err;
+        if (!routes_v5_helper_result_json(helper_result, helper_json, helper_err)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", pending.login, pending.fingerprint, helper_err);
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        if (!helper_json.value("authenticated", false)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", pending.login, pending.fingerprint, "not_authenticated");
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_login_or_password"}}.dump());
+            return;
+        }
+
+        std::string account_status = "unknown";
+        bool login_allowed = false;
+
+        if (ctx.users) {
+            const auto user = ctx.users->get(pending.fingerprint);
+            if (user.has_value()) {
+                account_status = user->status;
+                login_allowed = (user->status == "enabled");
+            }
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.login_finish", "ok", pending.login, pending.fingerprint, "session_minting_disabled");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"authenticated", true},
+            {"login", pending.login},
+            {"fingerprint", pending.fingerprint},
+            {"account_status", account_status},
+            {"login_allowed", login_allowed},
+            {"ready_for_session", false},
+            {"session_minting", false},
+            {"warning", "OPAQUE transcript verified, but pqnas_session minting is still intentionally disabled."}
         }.dump());
     });
 

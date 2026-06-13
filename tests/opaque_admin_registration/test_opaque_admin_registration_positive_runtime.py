@@ -258,20 +258,66 @@ def main():
             f"credential count unexpectedly decreased, before={before_count}, after={after_count}",
         )
 
+    client_login_start = cargo_fixture(cargo_manifest, "login-start-fixture")
+    client_login_state_b64 = client_login_start.get("client_login_state_b64", "")
+    credential_request_b64 = client_login_start.get("credential_request_b64", "")
+    require(client_login_state_b64, f"client login start missing state: {client_login_start}")
+    require(credential_request_b64, f"client login start missing request: {client_login_start}")
+
     status_code, headers, login_start = request_json(
         "POST",
         "/api/auth/opaque/login/start",
         {
             "login": login,
-            "client_login_start_b64": "QUJD",
+            "credential_request_b64": credential_request_b64,
         },
     )
 
-    require(
-        status_code in (404, 501),
-        f"public OPAQUE login start must remain disabled/fail-closed, got {status_code}: {login_start}",
-    )
-    require(no_session_cookie(headers), "public OPAQUE login start must not set session cookie")
+    if status_code == 404 and login_start.get("error") == "opaque_auth_disabled":
+        require(no_session_cookie(headers), "disabled public OPAQUE login start must not set session cookie")
+    else:
+        require(status_code == 200, f"public OPAQUE login start must return 200, got {status_code}: {login_start}")
+        require(login_start.get("ok") is True, f"public OPAQUE login start failed: {login_start}")
+        require(login_start.get("login") == login, f"public OPAQUE login start login mismatch: {login_start}")
+        require(login_start.get("ready_for_session") is False, "login start must not be ready for session")
+        require(login_start.get("session_minting") is False, "login start must keep session minting disabled")
+        require(no_session_cookie(headers), "public OPAQUE login start must not set session cookie")
+
+        opaque_login_id = login_start.get("opaque_login_id", "")
+        credential_response_b64 = login_start.get("credential_response_b64", "")
+        require(opaque_login_id, f"public OPAQUE login start missing id: {login_start}")
+        require(credential_response_b64, f"public OPAQUE login start missing response: {login_start}")
+
+        client_login_finish = cargo_fixture(
+            cargo_manifest,
+            "login-finish-fixture",
+            client_login_state_b64,
+            credential_response_b64,
+        )
+        credential_finalization_b64 = client_login_finish.get("credential_finalization_b64", "")
+        require(credential_finalization_b64, f"client login finish missing finalization: {client_login_finish}")
+
+        status_code, headers, login_finish = request_json(
+            "POST",
+            "/api/auth/opaque/login/finish",
+            {
+                "opaque_login_id": opaque_login_id,
+                "credential_finalization_b64": credential_finalization_b64,
+            },
+        )
+
+        require(status_code == 200, f"public OPAQUE login finish must return 200, got {status_code}: {login_finish}")
+        require(login_finish.get("ok") is True, f"public OPAQUE login finish failed: {login_finish}")
+        require(login_finish.get("authenticated") is True, f"public OPAQUE login finish did not authenticate: {login_finish}")
+        require(login_finish.get("login") == login, f"public OPAQUE login finish login mismatch: {login_finish}")
+        require(login_finish.get("fingerprint") == fingerprint, f"public OPAQUE login finish fingerprint mismatch: {login_finish}")
+        require(login_finish.get("ready_for_session") is False, "login finish must not be ready for session")
+        require(login_finish.get("session_minting") is False, "login finish must keep session minting disabled")
+        require(no_session_cookie(headers), "public OPAQUE login finish must not set session cookie")
+
+        if created_user:
+            require(login_finish.get("account_status") == "disabled", f"created test user should remain disabled: {login_finish}")
+            require(login_finish.get("login_allowed") is False, f"disabled test user must not be login_allowed: {login_finish}")
 
     print(
         "PASS: OPAQUE admin positive registration runtime test "

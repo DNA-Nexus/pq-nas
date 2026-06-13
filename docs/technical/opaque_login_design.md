@@ -908,6 +908,30 @@ This is still not login enablement:
 - no `pqnas_session` can be minted here
 - login helper operations still fail closed
 
+## Public OPAQUE login scaffold
+
+The public HTTP routes now perform the OPAQUE transcript through the helper when
+`PQNAS_LOGIN_MODE=opaque`:
+
+- `POST /api/auth/opaque/login/start`
+  - input: `login`, `credential_request_b64`
+  - output: `opaque_login_id`, `credential_response_b64`
+  - stores serialized server login state only in a short-lived in-memory map
+
+- `POST /api/auth/opaque/login/finish`
+  - input: `opaque_login_id`, `credential_finalization_b64`
+  - output: `authenticated: true` only after helper verification
+
+Security boundary:
+
+- no plaintext password field is accepted
+- forbidden fallback password/hash fields are rejected
+- server login state is not returned to the browser
+- `opaque_login_id` is one-time-use and short-lived
+- no `pqnas_session` cookie is minted
+- `ready_for_session` remains `false`
+- session minting will be reviewed in a separate commit
+
 ## C++ helper client login wrappers
 
 `OpaqueHelperClient` exposes typed wrappers for the Rust helper login operations:
