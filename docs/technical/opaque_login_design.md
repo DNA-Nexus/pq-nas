@@ -873,3 +873,62 @@ migration rules
 ```
 
 Do not proceed to production OPAQUE login until these are written down and reviewed.
+
+## Backup and restore notes
+
+OPAQUE authentication depends on two runtime files:
+
+- `opaque_credentials.json`
+- `opaque_server_setup.bin`
+
+Treat these files as one logical auth state.
+
+Once real OPAQUE user enrollment exists, do not restore only one of
+these files from an older backup. Restoring them out of sync can make
+existing OPAQUE logins unusable.
+
+Current dev/runtime defaults:
+
+- `/srv/pqnas/config/opaque_credentials.json`
+- `/srv/pqnas/config/opaque_server_setup.bin`
+
+Required runtime permissions:
+
+- owner: `pqnas:pqnas`
+- mode: `0600`
+
+The System Backups feature includes both files in the `users_auth`
+backup set:
+
+- `users/opaque_credentials.json`
+- `users/opaque_server_setup.bin`
+
+Restore checklist:
+
+1. Create the config directory:
+   `sudo install -d -m 0750 -o pqnas -g pqnas /srv/pqnas/config`
+
+2. Restore `opaque_credentials.json` with owner `pqnas:pqnas`
+   and mode `0600`.
+
+3. Restore `opaque_server_setup.bin` with owner `pqnas:pqnas`
+   and mode `0600`.
+
+4. Validate server setup:
+   `sudo -u pqnas /usr/local/libexec/pqnas/pqnas_opaque_helper server-setup-check /srv/pqnas/config/opaque_server_setup.bin`
+
+5. Restart service:
+   `sudo systemctl restart pqnas.service`
+
+After restore, admin status should show:
+
+- `credentials_file_exists=true`
+- `credentials_file_readable=true`
+- `credentials_store_valid=true`
+- `server_setup_file_exists=true`
+- `server_setup_file_readable=true`
+- `server_setup_valid=true`
+
+`ready_for_login` must remain `false` until real OPAQUE registration,
+login-finish verification, and session minting are intentionally
+implemented.
