@@ -61,6 +61,20 @@ int main(int argc, char** argv) {
     require_true(!malformed_register_finish.ok,
                  "malformed register-finish payload must fail closed");
 
+    const auto empty_login_start = client.login_start(
+        std::filesystem::temp_directory_path() / "opaque_server_setup.bin",
+        "",
+        "user@example.invalid",
+        "QUJD");
+    require_true(!empty_login_start.ok, "empty login-start password file must fail closed");
+    require_true(empty_login_start.error == "opaque_helper_command_not_allowed",
+                 "empty login-start password file should be rejected before exec");
+
+    const auto empty_login_finish = client.login_finish("", "QUJD");
+    require_true(!empty_login_finish.ok, "empty login-finish state must fail closed");
+    require_true(empty_login_finish.error == "opaque_helper_command_not_allowed",
+                 "empty login-finish state should be rejected before exec");
+
     pqnas::OpaqueHelperClient missing(std::filesystem::temp_directory_path() /
                                       "pqnas_missing_opaque_helper_for_client_test");
     const auto missing_result = missing.version();
@@ -68,6 +82,6 @@ int main(int argc, char** argv) {
     require_true(missing_result.error == "opaque_helper_not_executable",
                  "missing helper should report not executable");
 
-    std::cout << "ok: OPAQUE helper client scaffold tests passed\n";
+    std::cout << "ok: OPAQUE helper client wrapper tests passed\n";
     return 0;
 }

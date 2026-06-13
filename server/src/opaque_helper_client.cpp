@@ -49,10 +49,22 @@ bool is_allowed_helper_args(const std::vector<std::string>& args) {
         }
     }
 
+    if (args.size() == 3 && args[0] == "login-finish") {
+        return is_safe_helper_arg(args[1], 16384) &&
+               is_safe_helper_arg(args[2], 8192);
+    }
+
     if (args.size() == 4 && args[0] == "register-start") {
         return is_safe_helper_arg(args[1], 4096) &&
                is_safe_helper_arg(args[2], 512) &&
                is_safe_helper_arg(args[3], 8192);
+    }
+
+    if (args.size() == 5 && args[0] == "login-start") {
+        return is_safe_helper_arg(args[1], 4096) &&
+               is_safe_helper_arg(args[2], 262144) &&
+               is_safe_helper_arg(args[3], 512) &&
+               is_safe_helper_arg(args[4], 8192);
     }
 
     return false;
@@ -156,6 +168,30 @@ OpaqueHelperClientResult OpaqueHelperClient::register_start(
 
 OpaqueHelperClientResult OpaqueHelperClient::register_finish(const std::string& registration_upload_b64) const {
     return run_allowed_command({"register-finish", registration_upload_b64});
+}
+
+OpaqueHelperClientResult OpaqueHelperClient::login_start(
+    const std::filesystem::path& setup_path,
+    const std::string& opaque_password_file_b64,
+    const std::string& credential_id,
+    const std::string& credential_request_b64) const {
+    return run_allowed_command({
+        "login-start",
+        setup_path.string(),
+        opaque_password_file_b64,
+        credential_id,
+        credential_request_b64
+    });
+}
+
+OpaqueHelperClientResult OpaqueHelperClient::login_finish(
+    const std::string& server_login_state_b64,
+    const std::string& credential_finalization_b64) const {
+    return run_allowed_command({
+        "login-finish",
+        server_login_state_b64,
+        credential_finalization_b64
+    });
 }
 
 OpaqueHelperClientResult OpaqueHelperClient::run_allowed_command(const std::vector<std::string>& args) const {

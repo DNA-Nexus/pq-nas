@@ -908,6 +908,21 @@ This is still not login enablement:
 - no `pqnas_session` can be minted here
 - login helper operations still fail closed
 
+## C++ helper client login wrappers
+
+`OpaqueHelperClient` exposes typed wrappers for the Rust helper login operations:
+
+- `login_start(setup_path, opaque_password_file_b64, credential_id, credential_request_b64)`
+- `login_finish(server_login_state_b64, credential_finalization_b64)`
+
+The client wrapper keeps the same fail-closed command allowlist model as the
+registration wrappers. Invalid empty, oversized, or control-character arguments
+are rejected before `execv()`.
+
+The C++ -> Rust roundtrip test now covers both registration and login at helper
+level. Public HTTP OPAQUE login routes are still intentionally disabled until
+route integration and session minting are reviewed separately.
+
 ## Rust helper login operations
 
 The Rust helper now implements server-side OPAQUE login operations:

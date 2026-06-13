@@ -127,7 +127,57 @@ def main():
         if not isinstance(password_file_bytes, int) or password_file_bytes <= 0:
             fail(f"register-finish reported invalid byte count: {server_finish_json}")
 
-    print("ok: C++ OpaqueHelperClient to Rust helper registration roundtrip passed")
+        client_login_start = cargo_fixture(cargo_manifest, "login-start-fixture")
+        client_login_start_json = parse_json(client_login_start.stdout, "client login start fixture")
+        client_login_state_b64 = client_login_start_json.get("client_login_state_b64", "")
+        credential_request_b64 = client_login_start_json.get("credential_request_b64", "")
+        if not client_login_state_b64 or not credential_request_b64:
+            fail(f"client login start fixture missing fields: {client_login_start_json}")
+
+        server_login_start = run(
+            [
+                cpp_runner,
+                rust_helper,
+                "login-start",
+                setup_path,
+                password_file_b64,
+                "roundtrip@example.invalid",
+                credential_request_b64,
+            ],
+            expect_rc=0,
+        )
+        server_login_start_json = parse_json(server_login_start.stdout, "C++ wrapper login-start")
+        credential_response_b64 = server_login_start_json.get("credential_response_b64", "")
+        server_login_state_b64 = server_login_start_json.get("server_login_state_b64", "")
+        if not credential_response_b64 or not server_login_state_b64:
+            fail(f"login-start missing expected fields: {server_login_start_json}")
+
+        client_login_finish = cargo_fixture(
+            cargo_manifest,
+            "login-finish-fixture",
+            client_login_state_b64,
+            credential_response_b64,
+        )
+        client_login_finish_json = parse_json(client_login_finish.stdout, "client login finish fixture")
+        credential_finalization_b64 = client_login_finish_json.get("credential_finalization_b64", "")
+        if not credential_finalization_b64:
+            fail(f"client login finish fixture missing finalization: {client_login_finish_json}")
+
+        server_login_finish = run(
+            [
+                cpp_runner,
+                rust_helper,
+                "login-finish",
+                server_login_state_b64,
+                credential_finalization_b64,
+            ],
+            expect_rc=0,
+        )
+        server_login_finish_json = parse_json(server_login_finish.stdout, "C++ wrapper login-finish")
+        if server_login_finish_json.get("authenticated") is not True:
+            fail(f"login-finish did not authenticate: {server_login_finish_json}")
+
+    print("ok: C++ OpaqueHelperClient to Rust helper registration+login roundtrip passed")
 
 if __name__ == "__main__":
     main()
