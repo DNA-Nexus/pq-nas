@@ -931,6 +931,32 @@ Security boundary:
 - login protocol operations still fail closed
 - `ready_for_login` remains `false`
 
+## Admin registration endpoints
+
+The server exposes admin-only OPAQUE registration endpoints:
+
+- `POST /api/admin/auth/opaque/registration/start`
+- `POST /api/admin/auth/opaque/registration/finish`
+
+The start endpoint accepts an existing user's `login`, `fingerprint`, and a
+client-produced `registration_request_b64`. It calls `OpaqueHelperClient`
+against the configured helper and returns `registration_response_b64`.
+
+The finish endpoint accepts the same `login` and `fingerprint` plus
+`registration_upload_b64`. It calls the helper, receives
+`opaque_password_file_b64`, and stores the result in
+`opaque_credentials.json`.
+
+Security boundary:
+
+- both endpoints are admin-only
+- login and fingerprint must match an existing user
+- plaintext password and classic password-hash fallback fields are rejected
+- helper output is parsed and validated before storage
+- `ready_for_login` remains `false`
+- public OPAQUE login endpoints still fail closed
+- no `pqnas_session` is minted by registration
+
 ## Admin enrollment storage scaffold
 
 `POST /api/admin/auth/opaque/enrollment/upsert` is an admin-only storage
