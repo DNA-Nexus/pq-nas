@@ -22,6 +22,7 @@ Current implementation status:
 - `GET /api/admin/auth/opaque/status` exposes OPAQUE backend diagnostics to admins only; public OPAQUE login endpoints remain generic and fail-closed.
 - OPAQUE config paths use `PQNAS_CONFIG_ROOT` when set, otherwise the existing deployment `PQNAS_CONFIG`, otherwise `/etc/pqnas`.
 - Admin-only OPAQUE diagnostics include resolved credentials/setup/helper paths for troubleshooting.
+- Admin Settings UI includes an OPAQUE Status card that displays the admin-only backend diagnostics without enabling public OPAQUE login.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.

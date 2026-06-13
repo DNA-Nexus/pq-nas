@@ -165,6 +165,20 @@
     const nodusWorkerLight = $("nodusWorkerLight");
     const nodusWorkerValue = $("nodusWorkerValue");
 
+    // --- OPAQUE status ---
+    const opaqueStatusPill = $("opaqueStatusPill");
+    const btnOpaqueStatusReload = $("btnOpaqueStatusReload");
+    const opaqueReadyLight = $("opaqueReadyLight");
+    const opaqueReadyValue = $("opaqueReadyValue");
+    const opaqueHelperLight = $("opaqueHelperLight");
+    const opaqueHelperValue = $("opaqueHelperValue");
+    const opaqueCredentialsLight = $("opaqueCredentialsLight");
+    const opaqueCredentialsValue = $("opaqueCredentialsValue");
+    const opaqueServerSetupLight = $("opaqueServerSetupLight");
+    const opaqueServerSetupValue = $("opaqueServerSetupValue");
+    const opaquePathsValue = $("opaquePathsValue");
+    const opaqueMissingValue = $("opaqueMissingValue");
+
     // --- System Backups ---
     const systemBackupPill = $("systemBackupPill");
     const systemBackupStoragePill = $("systemBackupStoragePill");
@@ -1809,6 +1823,115 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
 
     // ---------------------------
+    // OPAQUE backend status
+    // ---------------------------
+    async function apiOpaqueStatus() {
+        return await fetchJsonOrThrow("/api/admin/auth/opaque/status", {
+            credentials: "include",
+            cache: "no-store"
+        });
+    }
+
+    function setOpaqueStatusPill(kind, text) {
+        if (!opaqueStatusPill) return;
+        opaqueStatusPill.className = "pill " + (kind || "");
+        opaqueStatusPill.innerHTML = `<span class="k">${escapeHtml(adminLabel("status"))}:</span> <span class="v">${escapeHtml(text || "—")}</span>`;
+    }
+
+    function setOpaqueLight(el, kind) {
+        if (!el) return;
+        el.className = "lightDot " + (kind || "warn");
+    }
+
+    function yesNo(v) {
+        return v ? "yes" : "no";
+    }
+
+    function pathLine(label, value) {
+        return `${label}: ${value || "—"}`;
+    }
+
+    function renderOpaqueStatus(j) {
+        if (!j || j.ok !== true) {
+            setOpaqueStatusPill("fail", "error");
+            return;
+        }
+
+        const ready = !!j.ready_for_login;
+
+        const helperOk =
+            !!j.helper_exists &&
+            !!j.helper_executable &&
+            !!j.helper_version_ok &&
+            !!j.helper_self_test_ok;
+
+        const credsOk = !!j.credentials_file_exists && !!j.credentials_file_readable;
+        const setupOk = !!j.server_setup_file_exists && !!j.server_setup_file_readable;
+
+        setOpaqueStatusPill(
+            ready ? "ok" : (helperOk ? "warn" : "fail"),
+            ready ? "ready" : (helperOk ? "helper ok • login disabled" : "needs attention")
+        );
+
+        setOpaqueLight(opaqueReadyLight, ready ? "ok" : "warn");
+        if (opaqueReadyValue) {
+            opaqueReadyValue.textContent = ready
+                ? "ready_for_login=true"
+                : "ready_for_login=false • fail-closed";
+        }
+
+        setOpaqueLight(opaqueHelperLight, helperOk ? "ok" : "fail");
+        if (opaqueHelperValue) {
+            const probe = String(j.helper_probe_error || "").trim();
+            opaqueHelperValue.textContent =
+                `exists=${yesNo(j.helper_exists)} • executable=${yesNo(j.helper_executable)} • version=${yesNo(j.helper_version_ok)} • self-test=${yesNo(j.helper_self_test_ok)}${probe ? " • " + probe : ""}`;
+        }
+
+        setOpaqueLight(opaqueCredentialsLight, credsOk ? "ok" : "warn");
+        if (opaqueCredentialsValue) {
+            opaqueCredentialsValue.textContent =
+                `exists=${yesNo(j.credentials_file_exists)} • readable=${yesNo(j.credentials_file_readable)}`;
+        }
+
+        setOpaqueLight(opaqueServerSetupLight, setupOk ? "ok" : "warn");
+        if (opaqueServerSetupValue) {
+            opaqueServerSetupValue.textContent =
+                `exists=${yesNo(j.server_setup_file_exists)} • readable=${yesNo(j.server_setup_file_readable)}`;
+        }
+
+        if (opaquePathsValue) {
+            opaquePathsValue.textContent = [
+                pathLine("credentials", j.credentials_path),
+                pathLine("server_setup", j.server_setup_path),
+                pathLine("helper", j.helper_path)
+            ].join("\n");
+        }
+
+        if (opaqueMissingValue) {
+            const missing = Array.isArray(j.missing_or_not_ready) ? j.missing_or_not_ready : [];
+            opaqueMissingValue.textContent = missing.length ? missing.join("\n") : "—";
+        }
+    }
+
+    async function refreshOpaqueStatus() {
+        setOpaqueStatusPill("warn", "loading…");
+
+        try {
+            const j = await apiOpaqueStatus();
+            renderOpaqueStatus(j);
+        } catch (e) {
+            console.error(e);
+            setOpaqueStatusPill("fail", "error");
+            setOpaqueLight(opaqueReadyLight, "fail");
+            setOpaqueLight(opaqueHelperLight, "fail");
+            setOpaqueLight(opaqueCredentialsLight, "fail");
+            setOpaqueLight(opaqueServerSetupLight, "fail");
+            if (opaqueReadyValue) opaqueReadyValue.textContent = String(e.message || e);
+            showToast("fail", "OPAQUE status failed", String(e.message || e));
+        }
+    }
+
+    // ---------------------------
     // System Backups
     // ---------------------------
     async function apiSystemBackupStatus() {
@@ -2151,6 +2274,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             // Nodus federation
             await refreshNodusStatus();
 
+            // OPAQUE backend status
+            await refreshOpaqueStatus();
+
             // System Backups
             await refreshSystemBackups();
 
@@ -2297,6 +2423,14 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     });
 
     loadAdminPasswordUserCreateAuthConfig();
+
+    // ---------------------------
+    // Wire OPAQUE status
+    // ---------------------------
+    btnOpaqueStatusReload?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshOpaqueStatus();
+    });
 
     // ---------------------------
     // Wire System Backups
