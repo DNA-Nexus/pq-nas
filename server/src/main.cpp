@@ -138,6 +138,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 
 //favorites
 #include "file_favorites.h"
+#include <sys/file.h>
 
 // Reel Stack user metadata is path-keyed in /config/reelstack_meta.sqlite3.
 // These helpers are intentionally best-effort hooks for File Manager move/delete
@@ -23182,6 +23183,64 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
         return "/var/lib/pqnas/opaque_enrollments.json";
     };
 
+    class AdminStatusOpaqueEnrollmentsFileLock {
+    public:
+        AdminStatusOpaqueEnrollmentsFileLock(const std::string& enrollments_path, std::string* err) {
+            if (err) err->clear();
+
+            std::error_code ec;
+            const std::filesystem::path target(enrollments_path);
+            const std::filesystem::path parent = target.parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent, ec);
+                if (ec) {
+                    if (err) *err = "create_lock_parent_failed: " + ec.message();
+                    return;
+                }
+            }
+
+            const std::filesystem::path lock_path = target.string() + ".lock";
+
+#ifdef O_CLOEXEC
+            const int flags = O_CREAT | O_RDWR | O_CLOEXEC;
+#else
+            const int flags = O_CREAT | O_RDWR;
+#endif
+
+            fd_ = ::open(lock_path.c_str(), flags, 0600);
+            if (fd_ < 0) {
+                if (err) *err = std::string("open_lock_failed: ") + std::strerror(errno);
+                return;
+            }
+
+            if (::flock(fd_, LOCK_EX) != 0) {
+                if (err) *err = std::string("flock_failed: ") + std::strerror(errno);
+                ::close(fd_);
+                fd_ = -1;
+                return;
+            }
+
+            ok_ = true;
+        }
+
+        AdminStatusOpaqueEnrollmentsFileLock(const AdminStatusOpaqueEnrollmentsFileLock&) = delete;
+        AdminStatusOpaqueEnrollmentsFileLock& operator=(const AdminStatusOpaqueEnrollmentsFileLock&) = delete;
+
+        ~AdminStatusOpaqueEnrollmentsFileLock() {
+            if (fd_ >= 0) {
+                (void)::flock(fd_, LOCK_UN);
+                (void)::close(fd_);
+            }
+        }
+
+        bool ok() const { return ok_; }
+
+    private:
+        int fd_ = -1;
+        bool ok_ = false;
+    };
+
+
     auto load_opaque_enrollments_for_admin_status = [](const std::string& path, std::string* err) -> json {
         if (err) err->clear();
 
@@ -23226,7 +23285,13 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
             return false;
         }
 
-        const std::filesystem::path tmp = target.string() + ".tmp";
+        const std::filesystem::path tmp =
+            target.string() +
+            ".tmp." +
+            std::to_string(static_cast<long long>(::getpid())) +
+            "." +
+            std::to_string(static_cast<long long>(
+                std::chrono::steady_clock::now().time_since_epoch().count()));
 
         {
             std::ofstream out(tmp, std::ios::trunc);
@@ -23269,6 +23334,16 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
             }
 
             const std::string path = opaque_enrollments_path_for_admin_status();
+
+            std::string opaque_enrollments_file_lock_err;
+            AdminStatusOpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                path,
+                &opaque_enrollments_file_lock_err);
+            if (!opaque_enrollments_file_lock.ok()) {
+                if (err) *err = "opaque_enrollments_lock_failed: " + opaque_enrollments_file_lock_err;
+                return false;
+            }
+
             const long now = static_cast<long>(std::time(nullptr));
 
             std::string lerr;

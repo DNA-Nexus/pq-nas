@@ -55,6 +55,11 @@
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 using nlohmann::json;
 
@@ -872,6 +877,64 @@ static std::mutex& routes_v5_opaque_enrollments_file_mu() {
     return mu;
 }
 
+class RoutesV5OpaqueEnrollmentsFileLock {
+public:
+    RoutesV5OpaqueEnrollmentsFileLock(const std::string& enrollments_path, std::string* err) {
+        if (err) err->clear();
+
+        std::error_code ec;
+        const std::filesystem::path target(enrollments_path);
+        const std::filesystem::path parent = target.parent_path();
+        if (!parent.empty()) {
+            std::filesystem::create_directories(parent, ec);
+            if (ec) {
+                if (err) *err = "create_lock_parent_failed: " + ec.message();
+                return;
+            }
+        }
+
+        const std::filesystem::path lock_path = target.string() + ".lock";
+
+#ifdef O_CLOEXEC
+        const int flags = O_CREAT | O_RDWR | O_CLOEXEC;
+#else
+        const int flags = O_CREAT | O_RDWR;
+#endif
+
+        fd_ = ::open(lock_path.c_str(), flags, 0600);
+        if (fd_ < 0) {
+            if (err) *err = std::string("open_lock_failed: ") + std::strerror(errno);
+            return;
+        }
+
+        if (::flock(fd_, LOCK_EX) != 0) {
+            if (err) *err = std::string("flock_failed: ") + std::strerror(errno);
+            ::close(fd_);
+            fd_ = -1;
+            return;
+        }
+
+        ok_ = true;
+    }
+
+    RoutesV5OpaqueEnrollmentsFileLock(const RoutesV5OpaqueEnrollmentsFileLock&) = delete;
+    RoutesV5OpaqueEnrollmentsFileLock& operator=(const RoutesV5OpaqueEnrollmentsFileLock&) = delete;
+
+    ~RoutesV5OpaqueEnrollmentsFileLock() {
+        if (fd_ >= 0) {
+            (void)::flock(fd_, LOCK_UN);
+            (void)::close(fd_);
+        }
+    }
+
+    bool ok() const { return ok_; }
+
+private:
+    int fd_ = -1;
+    bool ok_ = false;
+};
+
+
 static std::string routes_v5_opaque_enrollments_path(const RoutesV5Context& ctx) {
     const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
     std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
@@ -950,7 +1013,13 @@ static bool routes_v5_save_opaque_enrollments_no_lock(const std::string& path,
         return false;
     }
 
-    const std::filesystem::path tmp = target.string() + ".tmp";
+    const std::filesystem::path tmp =
+        target.string() +
+        ".tmp." +
+        std::to_string(static_cast<long long>(::getpid())) +
+        "." +
+        std::to_string(static_cast<long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
 
     {
         std::ofstream out(tmp, std::ios::trunc);
@@ -1845,6 +1914,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         {
             std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
 
+            std::string opaque_enrollments_file_lock_err;
+            RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                routes_v5_opaque_enrollments_path(ctx),
+                &opaque_enrollments_file_lock_err);
+            if (!opaque_enrollments_file_lock.ok()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_lock_failed"}, {"detail", opaque_enrollments_file_lock_err}}.dump());
+                return;
+            }
+
             std::string lerr;
             json doc = routes_v5_load_opaque_enrollments_no_lock(path, &lerr);
             if (!lerr.empty()) {
@@ -1967,6 +2045,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         {
             std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+            std::string opaque_enrollments_file_lock_err;
+            RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                routes_v5_opaque_enrollments_path(ctx),
+                &opaque_enrollments_file_lock_err);
+            if (!opaque_enrollments_file_lock.ok()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_lock_failed"}, {"detail", opaque_enrollments_file_lock_err}}.dump());
+                return;
+            }
 
             std::string lerr;
             json doc = routes_v5_load_opaque_enrollments_no_lock(path, &lerr);
@@ -2117,6 +2204,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         const std::string enrollments_path = routes_v5_opaque_enrollments_path(ctx);
 
         std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+        std::string opaque_enrollments_file_lock_err;
+        RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+            routes_v5_opaque_enrollments_path(ctx),
+            &opaque_enrollments_file_lock_err);
+        if (!opaque_enrollments_file_lock.ok()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_lock_failed"}, {"detail", opaque_enrollments_file_lock_err}}.dump());
+            return;
+        }
 
         std::string lerr;
         json doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
@@ -2537,6 +2633,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         {
             std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
 
+            std::string opaque_enrollments_file_lock_err;
+            RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                routes_v5_opaque_enrollments_path(ctx),
+                &opaque_enrollments_file_lock_err);
+            if (!opaque_enrollments_file_lock.ok()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_lock_failed"}, {"detail", opaque_enrollments_file_lock_err}}.dump());
+                return;
+            }
+
             std::string lerr;
             json doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
             if (!lerr.empty()) {
@@ -2581,12 +2686,67 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         rec.updated_at = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
 
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
-            routes_v5_audit_password(ctx, req, "opaque.force_reset", "deny", login, actor_fp, "opaque_credentials_save_failed_after_token_create");
+            bool reset_token_rollback_ok = false;
+            std::string reset_token_rollback_err;
+
+            {
+                std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+                std::string opaque_enrollments_file_lock_err;
+                RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                    routes_v5_opaque_enrollments_path(ctx),
+                    &opaque_enrollments_file_lock_err);
+                if (!opaque_enrollments_file_lock.ok()) {
+                    reset_token_rollback_err = "opaque_enrollments_lock_failed: " + opaque_enrollments_file_lock_err;
+                } else {
+                    std::string lerr;
+                    json rollback_doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
+                    if (!lerr.empty()) {
+                        reset_token_rollback_err = "opaque_enrollments_load_failed: " + lerr;
+                    } else {
+                        bool changed = false;
+                        for (auto& rollback_rec : rollback_doc["tokens"]) {
+                            if (!rollback_rec.is_object()) continue;
+                            if (rollback_rec.value("token_hash", "") != token_hash) continue;
+
+                            rollback_rec["used_at"] = now;
+                            rollback_rec["invalidated_at"] = now;
+                            rollback_rec["invalidated_reason"] = "force_reset_credential_disable_failed";
+                            changed = true;
+                            break;
+                        }
+
+                        if (changed) {
+                            std::string serr;
+                            if (!routes_v5_save_opaque_enrollments_no_lock(enrollments_path, rollback_doc, &serr)) {
+                                reset_token_rollback_err = "opaque_enrollments_save_failed: " + serr;
+                            } else {
+                                reset_token_rollback_ok = true;
+                            }
+                        } else {
+                            reset_token_rollback_err = "force_reset_token_not_found_for_rollback";
+                        }
+                    }
+                }
+            }
+
+            routes_v5_audit_password(
+                ctx,
+                req,
+                "opaque.force_reset",
+                "deny",
+                login,
+                actor_fp,
+                reset_token_rollback_ok
+                    ? "opaque_credentials_save_failed_after_token_rollback"
+                    : "opaque_credentials_save_failed_after_token_rollback_failed");
+
             reply_json(res, 500, json{
                 {"ok", false},
                 {"error", "server_error"},
                 {"message", "opaque_credentials_save_failed_after_token_create"},
-                {"note", "reset_token_was_created_but_old_credential_may_still_be_enabled"}
+                {"reset_token_invalidated", reset_token_rollback_ok},
+                {"rollback_error", reset_token_rollback_err}
             }.dump());
             return;
         }
@@ -2681,6 +2841,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         json enroll_doc;
         {
             std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+            std::string opaque_enrollments_file_lock_err;
+            RoutesV5OpaqueEnrollmentsFileLock opaque_enrollments_file_lock(
+                routes_v5_opaque_enrollments_path(ctx),
+                &opaque_enrollments_file_lock_err);
+            if (!opaque_enrollments_file_lock.ok()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_lock_failed"}, {"detail", opaque_enrollments_file_lock_err}}.dump());
+                return;
+            }
 
             std::string lerr;
             enroll_doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
