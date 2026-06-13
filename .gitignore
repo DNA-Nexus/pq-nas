@@ -38,3 +38,5 @@ apps/bundled/**/*.zip
 apps/bundled/*/*.zip
 
 build-mlkem/
+
+.dart_tool/
