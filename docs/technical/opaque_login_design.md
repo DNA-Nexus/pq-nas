@@ -908,6 +908,29 @@ This is still not login enablement:
 - no `pqnas_session` can be minted here
 - login helper operations still fail closed
 
+## Rust helper login operations
+
+The Rust helper now implements server-side OPAQUE login operations:
+
+- `login-start <server-setup-path> <opaque-password-file-b64> <credential-id> <credential-request-b64>`
+- `login-finish <server-login-state-b64> <credential-finalization-b64>`
+
+`login-start` deserializes the server setup, the stored OPAQUE password file,
+and the client credential request. It returns a credential response plus an
+opaque serialized server login state.
+
+`login-finish` deserializes the server login state and the client's credential
+finalization. It returns `authenticated: true` only if the OPAQUE transcript is
+valid.
+
+Security boundary:
+
+- the helper never reads users.json
+- the helper never reads or writes opaque_credentials.json
+- the helper never mints `pqnas_session`
+- public OPAQUE HTTP login remains disabled until reviewed route integration
+- successful helper login proves only the OPAQUE transcript
+
 ## Rust helper registration operations
 
 The experimental Rust OPAQUE helper now implements the server-side

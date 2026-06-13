@@ -40,6 +40,27 @@ def parse_json_stdout(result, context: str):
         fail(f"{context}: stdout was not valid JSON: {exc}\nstdout:\n{result.stdout}")
 
 
+def cargo_fixture(*fixture_args):
+    repo_root = Path(__file__).resolve().parents[2]
+    manifest = repo_root / "tools" / "opaque_helper_rust" / "Cargo.toml"
+
+    result = run(
+        [
+            "cargo",
+            "run",
+            "--quiet",
+            "--manifest-path",
+            str(manifest),
+            "--bin",
+            "opaque_client_fixture",
+            "--",
+            *fixture_args,
+        ],
+        expect_rc=0,
+    )
+    return parse_json_stdout(result, "opaque_client_fixture " + " ".join(fixture_args[:1]))
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         fail("usage: test_opaque_helper_rust.py <pqnas_opaque_helper_rust_binary>")
@@ -147,12 +168,112 @@ def main() -> int:
         if bad_register_finish_json.get("error") != "opaque_registration_upload_b64_invalid":
             fail(f"bad register-finish returned wrong error: {bad_register_finish_json}")
 
-    login = run([str(helper), "login-start"], expect_rc=1)
-    login_json = parse_json_stdout(login, "login-start")
-    if login_json.get("ok") is not False:
-        fail(f"login-start should fail closed: {login_json}")
-    if login_json.get("error") != "opaque_backend_not_implemented":
-        fail(f"login-start returned wrong error: {login_json}")
+        client_reg_start = cargo_fixture("registration-start-fixture")
+        client_reg_state_b64 = client_reg_start.get("client_state_b64", "")
+        registration_request_b64 = client_reg_start.get("registration_request_b64", "")
+        if not client_reg_state_b64 or not registration_request_b64:
+            fail(f"registration fixture missing fields: {client_reg_start}")
+
+        server_reg_start = run(
+            [
+                str(helper),
+                "register-start",
+                str(setup_path),
+                "user@example.invalid",
+                registration_request_b64,
+            ],
+            expect_rc=0,
+        )
+        server_reg_start_json = parse_json_stdout(server_reg_start, "register-start roundtrip")
+        registration_response_b64 = server_reg_start_json.get("registration_response_b64", "")
+        if not registration_response_b64:
+            fail(f"register-start missing registration_response_b64: {server_reg_start_json}")
+
+        client_reg_finish = cargo_fixture(
+            "registration-finish-fixture",
+            client_reg_state_b64,
+            registration_response_b64,
+        )
+        registration_upload_b64 = client_reg_finish.get("registration_upload_b64", "")
+        if not registration_upload_b64:
+            fail(f"registration finish fixture missing upload: {client_reg_finish}")
+
+        server_reg_finish = run(
+            [str(helper), "register-finish", registration_upload_b64],
+            expect_rc=0,
+        )
+        server_reg_finish_json = parse_json_stdout(server_reg_finish, "register-finish roundtrip")
+        opaque_password_file_b64 = server_reg_finish_json.get("opaque_password_file_b64", "")
+        if not opaque_password_file_b64:
+            fail(f"register-finish missing password file: {server_reg_finish_json}")
+
+        client_login_start = cargo_fixture("login-start-fixture")
+        client_login_state_b64 = client_login_start.get("client_login_state_b64", "")
+        credential_request_b64 = client_login_start.get("credential_request_b64", "")
+        if not client_login_state_b64 or not credential_request_b64:
+            fail(f"login start fixture missing fields: {client_login_start}")
+
+        server_login_start = run(
+            [
+                str(helper),
+                "login-start",
+                str(setup_path),
+                opaque_password_file_b64,
+                "user@example.invalid",
+                credential_request_b64,
+            ],
+            expect_rc=0,
+        )
+        server_login_start_json = parse_json_stdout(server_login_start, "login-start roundtrip")
+        credential_response_b64 = server_login_start_json.get("credential_response_b64", "")
+        server_login_state_b64 = server_login_start_json.get("server_login_state_b64", "")
+        if not credential_response_b64 or not server_login_state_b64:
+            fail(f"login-start missing expected fields: {server_login_start_json}")
+
+        client_login_finish = cargo_fixture(
+            "login-finish-fixture",
+            client_login_state_b64,
+            credential_response_b64,
+        )
+        credential_finalization_b64 = client_login_finish.get("credential_finalization_b64", "")
+        if not credential_finalization_b64:
+            fail(f"login finish fixture missing finalization: {client_login_finish}")
+
+        server_login_finish = run(
+            [
+                str(helper),
+                "login-finish",
+                server_login_state_b64,
+                credential_finalization_b64,
+            ],
+            expect_rc=0,
+        )
+        server_login_finish_json = parse_json_stdout(server_login_finish, "login-finish roundtrip")
+        if server_login_finish_json.get("authenticated") is not True:
+            fail(f"login-finish did not authenticate: {server_login_finish_json}")
+
+        bad_login_start = run(
+            [
+                str(helper),
+                "login-start",
+                str(setup_path),
+                opaque_password_file_b64,
+                "user@example.invalid",
+                "not-base64",
+            ],
+            expect_rc=1,
+        )
+        bad_login_start_json = parse_json_stdout(bad_login_start, "bad login-start")
+        if bad_login_start_json.get("error") != "opaque_credential_request_b64_invalid":
+            fail(f"bad login-start returned wrong error: {bad_login_start_json}")
+
+        bad_login_finish = run(
+            [str(helper), "login-finish", "not-base64", "QUJD"],
+            expect_rc=1,
+        )
+        bad_login_finish_json = parse_json_stdout(bad_login_finish, "bad login-finish")
+        if bad_login_finish_json.get("error") != "opaque_server_login_state_b64_invalid":
+            fail(f"bad login-finish returned wrong error: {bad_login_finish_json}")
 
     print("ok: Rust OPAQUE helper regression tests passed")
     return 0

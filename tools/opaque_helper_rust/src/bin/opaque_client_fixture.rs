@@ -5,8 +5,11 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use opaque_ke::argon2::Argon2;
 use opaque_ke::ciphersuite::CipherSuite;
 use opaque_ke::{
+    ClientLogin,
+    ClientLoginFinishParameters,
     ClientRegistration,
     ClientRegistrationFinishParameters,
+    CredentialResponse,
     RegistrationResponse,
     Ristretto255,
     TripleDh,
@@ -79,6 +82,88 @@ fn registration_start_fixture() -> i32 {
     0
 }
 
+fn login_start_fixture() -> i32 {
+    let mut rng = OsRng;
+
+    let result = match ClientLogin::<PqnasOpaqueCipherSuite>::start(&mut rng, PASSWORD) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("client login start failed: {err:?}");
+            return json_error("login-start-fixture", "client_login_start_failed", &message);
+        }
+    };
+
+    let state_b64 = B64.encode(result.state.serialize().as_slice());
+    let credential_request_b64 = B64.encode(result.message.serialize().as_slice());
+
+    println!(
+        r#"{{"ok":true,"op":"login-start-fixture","client_login_state_b64":"{}","credential_request_b64":"{}"}}"#,
+        json_escape(&state_b64),
+        json_escape(&credential_request_b64),
+    );
+
+    0
+}
+
+fn login_finish_fixture(state_b64: &str, credential_response_b64: &str) -> i32 {
+    let state_bytes = match B64.decode(state_b64.trim().as_bytes()) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("client login state base64 decode failed: {err}");
+            return json_error("login-finish-fixture", "client_login_state_invalid", &message);
+        }
+    };
+
+    let response_bytes = match B64.decode(credential_response_b64.trim().as_bytes()) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("credential response base64 decode failed: {err}");
+            return json_error("login-finish-fixture", "credential_response_invalid", &message);
+        }
+    };
+
+    let state = match ClientLogin::<PqnasOpaqueCipherSuite>::deserialize(state_bytes.as_slice()) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("client login state deserialize failed: {err:?}");
+            return json_error("login-finish-fixture", "client_login_state_invalid", &message);
+        }
+    };
+
+    let response =
+        match CredentialResponse::<PqnasOpaqueCipherSuite>::deserialize(response_bytes.as_slice()) {
+            Ok(v) => v,
+            Err(err) => {
+                let message = format!("credential response deserialize failed: {err:?}");
+                return json_error("login-finish-fixture", "credential_response_invalid", &message);
+            }
+        };
+
+    let mut rng = OsRng;
+    let result = match state.finish(
+        &mut rng,
+        PASSWORD,
+        response,
+        ClientLoginFinishParameters::default(),
+    ) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("client login finish failed: {err:?}");
+            return json_error("login-finish-fixture", "client_login_finish_failed", &message);
+        }
+    };
+
+    let finalization_b64 = B64.encode(result.message.serialize().as_slice());
+
+    println!(
+        r#"{{"ok":true,"op":"login-finish-fixture","credential_finalization_b64":"{}","client_session_key_bytes":{}}}"#,
+        json_escape(&finalization_b64),
+        result.session_key.as_slice().len(),
+    );
+
+    0
+}
+
 fn registration_finish_fixture(state_b64: &str, response_b64: &str) -> i32 {
     let state_bytes = match B64.decode(state_b64.trim().as_bytes()) {
         Ok(v) => v,
@@ -140,7 +225,7 @@ fn registration_finish_fixture(state_b64: &str, response_b64: &str) -> i32 {
 
 fn usage() -> i32 {
     eprintln!(
-        "Usage:\n  opaque_client_fixture registration-start-fixture\n  opaque_client_fixture registration-finish-fixture <client-state-b64> <registration-response-b64>"
+        "Usage:\n  opaque_client_fixture registration-start-fixture\n  opaque_client_fixture registration-finish-fixture <client-state-b64> <registration-response-b64>\n  opaque_client_fixture login-start-fixture\n  opaque_client_fixture login-finish-fixture <client-login-state-b64> <credential-response-b64>"
     );
     2
 }
@@ -173,6 +258,27 @@ fn main() {
                 usage()
             } else {
                 registration_finish_fixture(&state_b64, &response_b64)
+            }
+        }
+        "login-start-fixture" => {
+            if args.next().is_some() {
+                usage()
+            } else {
+                login_start_fixture()
+            }
+        }
+        "login-finish-fixture" => {
+            let Some(state_b64) = args.next() else {
+                process::exit(usage());
+            };
+            let Some(response_b64) = args.next() else {
+                process::exit(usage());
+            };
+
+            if args.next().is_some() {
+                usage()
+            } else {
+                login_finish_fixture(&state_b64, &response_b64)
             }
         }
         _ => usage(),

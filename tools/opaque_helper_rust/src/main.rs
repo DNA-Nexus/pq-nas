@@ -9,11 +9,17 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use opaque_ke::argon2::Argon2;
 use opaque_ke::ciphersuite::CipherSuite;
 use opaque_ke::{
+    ClientLogin,
+    ClientLoginFinishParameters,
     ClientRegistration,
     ClientRegistrationFinishParameters,
+    CredentialFinalization,
+    CredentialRequest,
     RegistrationRequest,
     RegistrationUpload,
     Ristretto255,
+    ServerLogin,
+    ServerLoginParameters,
     ServerRegistration,
     ServerSetup,
     TripleDh,
@@ -32,9 +38,6 @@ impl CipherSuite for PqnasOpaqueCipherSuite {
     type Ksf = Argon2<'static>;
 }
 
-fn is_future_opaque_op(op: &str) -> bool {
-    matches!(op, "login-start" | "login-finish")
-}
 
 fn print_version() -> i32 {
     println!("{PROGRAM_NAME} {VERSION}");
@@ -45,7 +48,7 @@ fn run_self_test() -> i32 {
     // Security boundary:
     // - OPAQUE ServerSetup generation is available
     // - server-side registration start/finish is available
-    // - no login is implemented yet
+    // - server-side login start/finish is available
     // - no users.json access is performed
     // - no PQ-NAS session can be minted by this helper
     let mut rng = OsRng;
@@ -92,15 +95,73 @@ fn run_self_test() -> i32 {
         ServerRegistration::<PqnasOpaqueCipherSuite>::finish(client_finish.message);
     let serialized = password_file.serialize();
 
-    if let Err(err) =
-        ServerRegistration::<PqnasOpaqueCipherSuite>::deserialize(serialized.as_slice())
-    {
-        let message = format!("server registration deserialize failed: {err:?}");
-        return print_json_error("self-test", "opaque_self_test_failed", &message);
+    let login_password_file =
+        match ServerRegistration::<PqnasOpaqueCipherSuite>::deserialize(serialized.as_slice()) {
+            Ok(password_file) => password_file,
+            Err(err) => {
+                let message = format!("server registration deserialize failed: {err:?}");
+                return print_json_error("self-test", "opaque_self_test_failed", &message);
+            }
+        };
+
+    let client_login_start =
+        match ClientLogin::<PqnasOpaqueCipherSuite>::start(&mut rng, password) {
+            Ok(v) => v,
+            Err(err) => {
+                let message = format!("client login start failed: {err:?}");
+                return print_json_error("self-test", "opaque_self_test_failed", &message);
+            }
+        };
+
+    let server_login_start = match ServerLogin::<PqnasOpaqueCipherSuite>::start(
+        &mut rng,
+        &server_setup,
+        Some(login_password_file),
+        client_login_start.message,
+        credential_identifier,
+        ServerLoginParameters::default(),
+    ) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("server login start failed: {err:?}");
+            return print_json_error("self-test", "opaque_self_test_failed", &message);
+        }
+    };
+
+    let client_login_finish = match client_login_start.state.finish(
+        &mut rng,
+        password,
+        server_login_start.message,
+        ClientLoginFinishParameters::default(),
+    ) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("client login finish failed: {err:?}");
+            return print_json_error("self-test", "opaque_self_test_failed", &message);
+        }
+    };
+
+    let server_login_finish = match server_login_start.state.finish(
+        client_login_finish.message,
+        ServerLoginParameters::default(),
+    ) {
+        Ok(v) => v,
+        Err(err) => {
+            let message = format!("server login finish failed: {err:?}");
+            return print_json_error("self-test", "opaque_self_test_failed", &message);
+        }
+    };
+
+    if client_login_finish.session_key != server_login_finish.session_key {
+        return print_json_error(
+            "self-test",
+            "opaque_self_test_failed",
+            "client/server login session keys did not match",
+        );
     }
 
     println!(
-        "ok: {PROGRAM_NAME} rust scaffold self-test passed; registration_roundtrip=true; password_file_bytes={}",
+        "ok: {PROGRAM_NAME} rust scaffold self-test passed; registration_roundtrip=true; login_roundtrip=true; password_file_bytes={}",
         serialized.len()
     );
     0
@@ -137,13 +198,6 @@ fn print_json_error(op: &str, error: &str, message: &str) -> i32 {
     1
 }
 
-fn fail_closed_not_implemented(op: &str) -> i32 {
-    print_json_error(
-        op,
-        "opaque_backend_not_implemented",
-        "OPAQUE Rust helper scaffold only; this protocol operation is not implemented yet",
-    )
-}
 
 fn create_server_setup(path: &str) -> i32 {
     if path.trim().is_empty() {
@@ -381,9 +435,160 @@ fn register_finish(upload_b64: &str) -> i32 {
     0
 }
 
+fn login_start(
+    setup_path: &str,
+    password_file_b64: &str,
+    credential_identifier: &str,
+    credential_request_b64: &str,
+) -> i32 {
+    const OP: &str = "login-start";
+
+    if setup_path.trim().is_empty() {
+        return print_json_error(OP, "opaque_invalid_setup_path", "server setup path is empty");
+    }
+
+    if credential_identifier.trim().is_empty() ||
+        credential_identifier.len() > 512 ||
+        has_control_chars(credential_identifier) {
+        return print_json_error(
+            OP,
+            "opaque_invalid_credential_identifier",
+            "credential identifier is empty or invalid",
+        );
+    }
+
+    let setup_bytes = match fs::read(setup_path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            let message = format!("failed to read server setup file: {err}");
+            return print_json_error(OP, "opaque_server_setup_read_failed", &message);
+        }
+    };
+
+    let server_setup: ServerSetup<PqnasOpaqueCipherSuite> =
+        match ServerSetup::<PqnasOpaqueCipherSuite>::deserialize(setup_bytes.as_slice()) {
+            Ok(setup) => setup,
+            Err(err) => {
+                let message = format!("failed to deserialize server setup file: {err:?}");
+                return print_json_error(OP, "opaque_server_setup_invalid", &message);
+            }
+        };
+
+    let password_file_bytes =
+        match decode_b64_arg(OP, "opaque_password_file_b64", password_file_b64, 262144) {
+            Ok(bytes) => bytes,
+            Err(rc) => return rc,
+        };
+
+    let password_file =
+        match ServerRegistration::<PqnasOpaqueCipherSuite>::deserialize(password_file_bytes.as_slice()) {
+            Ok(password_file) => password_file,
+            Err(err) => {
+                let message = format!("failed to deserialize OPAQUE password file: {err:?}");
+                return print_json_error(OP, "opaque_password_file_invalid", &message);
+            }
+        };
+
+    let credential_request_bytes =
+        match decode_b64_arg(OP, "credential_request_b64", credential_request_b64, 8192) {
+            Ok(bytes) => bytes,
+            Err(rc) => return rc,
+        };
+
+    let credential_request =
+        match CredentialRequest::<PqnasOpaqueCipherSuite>::deserialize(credential_request_bytes.as_slice()) {
+            Ok(request) => request,
+            Err(err) => {
+                let message = format!("failed to deserialize credential request: {err:?}");
+                return print_json_error(OP, "opaque_credential_request_invalid", &message);
+            }
+        };
+
+    let mut rng = OsRng;
+    let result = match ServerLogin::<PqnasOpaqueCipherSuite>::start(
+        &mut rng,
+        &server_setup,
+        Some(password_file),
+        credential_request,
+        credential_identifier.as_bytes(),
+        ServerLoginParameters::default(),
+    ) {
+        Ok(result) => result,
+        Err(err) => {
+            let message = format!("server login start failed: {err:?}");
+            return print_json_error(OP, "opaque_login_start_failed", &message);
+        }
+    };
+
+    let credential_response_bytes = result.message.serialize();
+    let server_login_state_bytes = result.state.serialize();
+
+    let credential_response_b64 = B64.encode(credential_response_bytes.as_slice());
+    let server_login_state_b64 = B64.encode(server_login_state_bytes.as_slice());
+
+    println!(
+        r#"{{"ok":true,"op":"login-start","credential_response_b64":"{}","credential_response_bytes":{},"server_login_state_b64":"{}","server_login_state_bytes":{}}}"#,
+        json_escape(&credential_response_b64),
+        credential_response_bytes.len(),
+        json_escape(&server_login_state_b64),
+        server_login_state_bytes.len()
+    );
+
+    0
+}
+
+fn login_finish(server_login_state_b64: &str, credential_finalization_b64: &str) -> i32 {
+    const OP: &str = "login-finish";
+
+    let server_login_state_bytes =
+        match decode_b64_arg(OP, "server_login_state_b64", server_login_state_b64, 16384) {
+            Ok(bytes) => bytes,
+            Err(rc) => return rc,
+        };
+
+    let server_login =
+        match ServerLogin::<PqnasOpaqueCipherSuite>::deserialize(server_login_state_bytes.as_slice()) {
+            Ok(state) => state,
+            Err(err) => {
+                let message = format!("failed to deserialize server login state: {err:?}");
+                return print_json_error(OP, "opaque_server_login_state_invalid", &message);
+            }
+        };
+
+    let finalization_bytes =
+        match decode_b64_arg(OP, "credential_finalization_b64", credential_finalization_b64, 8192) {
+            Ok(bytes) => bytes,
+            Err(rc) => return rc,
+        };
+
+    let finalization =
+        match CredentialFinalization::<PqnasOpaqueCipherSuite>::deserialize(finalization_bytes.as_slice()) {
+            Ok(finalization) => finalization,
+            Err(err) => {
+                let message = format!("failed to deserialize credential finalization: {err:?}");
+                return print_json_error(OP, "opaque_credential_finalization_invalid", &message);
+            }
+        };
+
+    let finish_result = match server_login.finish(finalization, ServerLoginParameters::default()) {
+        Ok(result) => result,
+        Err(err) => {
+            let message = format!("server login finish failed: {err:?}");
+            return print_json_error(OP, "opaque_login_finish_failed", &message);
+        }
+    };
+
+    println!(
+        r#"{{"ok":true,"op":"login-finish","authenticated":true,"server_session_key_bytes":{}}}"#,
+        finish_result.session_key.as_slice().len()
+    );
+
+    0
+}
+
 fn print_usage() -> i32 {
     eprintln!(
-        "Usage:\n  {PROGRAM_NAME} --version\n  {PROGRAM_NAME} self-test\n  {PROGRAM_NAME} server-setup-create <output-path>\n  {PROGRAM_NAME} server-setup-check <input-path>\n  {PROGRAM_NAME} register-start <server-setup-path> <credential-id> <registration-request-b64>\n  {PROGRAM_NAME} register-finish <registration-upload-b64>\n\nLogin protocol operations are recognized but fail closed:\n  login-start\n  login-finish"
+        "Usage:\n  {PROGRAM_NAME} --version\n  {PROGRAM_NAME} self-test\n  {PROGRAM_NAME} server-setup-create <output-path>\n  {PROGRAM_NAME} server-setup-check <input-path>\n  {PROGRAM_NAME} register-start <server-setup-path> <credential-id> <registration-request-b64>\n  {PROGRAM_NAME} register-finish <registration-upload-b64>\n  {PROGRAM_NAME} login-start <server-setup-path> <opaque-password-file-b64> <credential-id> <credential-request-b64>\n  {PROGRAM_NAME} login-finish <server-login-state-b64> <credential-finalization-b64>\n\nLogin helper operations prove the OPAQUE transcript only; this helper never mints PQ-NAS sessions."
     );
     2
 }
@@ -461,11 +666,43 @@ fn main() {
                 register_finish(&upload_b64)
             }
         }
-        op if is_future_opaque_op(op) => {
+        "login-start" => {
+            let Some(setup_path) = args.next() else {
+                process::exit(print_usage());
+            };
+            let Some(password_file_b64) = args.next() else {
+                process::exit(print_usage());
+            };
+            let Some(credential_identifier) = args.next() else {
+                process::exit(print_usage());
+            };
+            let Some(credential_request_b64) = args.next() else {
+                process::exit(print_usage());
+            };
+
             if args.next().is_some() {
                 print_usage()
             } else {
-                fail_closed_not_implemented(op)
+                login_start(
+                    &setup_path,
+                    &password_file_b64,
+                    &credential_identifier,
+                    &credential_request_b64,
+                )
+            }
+        }
+        "login-finish" => {
+            let Some(server_login_state_b64) = args.next() else {
+                process::exit(print_usage());
+            };
+            let Some(credential_finalization_b64) = args.next() else {
+                process::exit(print_usage());
+            };
+
+            if args.next().is_some() {
+                print_usage()
+            } else {
+                login_finish(&server_login_state_b64, &credential_finalization_b64)
             }
         }
         _ => {
