@@ -119,6 +119,16 @@ static bool remove_path_recursive_local(const std::filesystem::path& p, std::str
 
     auto st = std::filesystem::symlink_status(p, ec);
     if (ec) {
+        // Idempotent purge behavior:
+        //
+        // Snapshot rollback, manual operator cleanup, or a previous partial purge can
+        // leave a trash metadata row pointing at a payload path that no longer exists.
+        // In purge mode that is not a filesystem failure; the payload is already gone,
+        // so the caller should be allowed to mark the trash row as purged.
+        if (ec == std::errc::no_such_file_or_directory) {
+            return true;
+        }
+
         if (err) *err = "symlink_status failed: " + ec.message();
         return false;
     }
