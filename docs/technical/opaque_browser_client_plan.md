@@ -45,7 +45,7 @@ This is intentional until a real browser client is added.
 
 ## Secrets and memory handling
 
-The plaintext password exists only inside the browser during the login operation.
+The plaintext password exists only inside the browser during the login operation. The OPAQUE finish step also needs the password, so the UI may keep it in memory for one login attempt only.
 
 The UI must clear the password input as soon as possible after finalization or failure.
 
@@ -119,7 +119,7 @@ Required exported functions:
 | Function | Input | Output |
 | --- | --- | --- |
 | opaqueLoginStart | user password | client_login_state_b64 and credential_request_b64 |
-| opaqueLoginFinish | client_login_state_b64 and credential_response_b64 | credential_finalization_b64 |
+| opaqueLoginFinish | password, client_login_state_b64 and credential_response_b64 | credential_finalization_b64 |
 
 The API should not expose unrelated helper operations.
 

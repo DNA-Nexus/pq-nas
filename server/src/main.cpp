@@ -2700,6 +2700,7 @@ static std::string mime_for_ext(std::string ext) {
     // ext must be lowercase and include dot (".png")
     if (ext == ".html")  return "text/html; charset=utf-8";
     if (ext == ".js")    return "application/javascript; charset=utf-8";
+    if (ext == ".wasm")  return "application/wasm";
     if (ext == ".css")   return "text/css; charset=utf-8";
     if (ext == ".json")  return "application/json; charset=utf-8";
     if (ext == ".svg")   return "image/svg+xml; charset=utf-8";

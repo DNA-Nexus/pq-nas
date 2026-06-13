@@ -397,6 +397,152 @@ def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = Non
 
     return helper_dst, wrapper_dst
 
+
+def find_opaque_helper_source(asset_root: str) -> str:
+    """
+    Locate OPAQUE helper binary in package or repo/dev layout.
+
+    Package candidates:
+      <asset_root>/libexec/pqnas/pqnas_opaque_helper
+      <asset_root>/pqnas_opaque_helper
+
+    Repo/dev candidates:
+      <asset_root>/build/bin/pqnas_opaque_helper
+      <asset_root>/build/bin/pqnas_opaque_helper_rust
+    """
+    candidates = [
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas_opaque_helper"),
+        os.path.join(asset_root, "pqnas_opaque_helper"),
+        os.path.join(asset_root, "build", "bin", "pqnas_opaque_helper_rust"),
+        os.path.join(asset_root, "build", "bin", "pqnas_opaque_helper"),
+    ]
+
+    for c in candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+
+    raise RuntimeError(
+        "OPAQUE helper not found in package/repo assets. Tried:\n"
+        + "\n".join(f"  - {c}" for c in candidates)
+        + "\nBuild it or include it in the release package."
+    )
+
+
+def install_opaque_helper_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    helper_src = find_opaque_helper_source(asset_root)
+    helper_dst = "/usr/local/libexec/pqnas/pqnas_opaque_helper"
+
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    if log:
+        log.write(f"[*] Installed OPAQUE helper: {helper_dst} (from {helper_src})")
+
+    version = subprocess.run(
+        [helper_dst, "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if version.returncode != 0:
+        raise RuntimeError("OPAQUE helper --version failed:\n" + (version.stdout or "").strip())
+
+    self_test = subprocess.run(
+        [helper_dst, "self-test"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if self_test.returncode != 0:
+        raise RuntimeError("OPAQUE helper self-test failed:\n" + (self_test.stdout or "").strip())
+
+    if log:
+        log.write("[*] OPAQUE helper version/self-test OK.")
+
+    return helper_dst
+
+
+def ensure_opaque_runtime_config(
+        config_dir: str = "/etc/pqnas",
+        helper_path: str = "/usr/local/libexec/pqnas/pqnas_opaque_helper",
+        log: Optional[Log] = None,
+) -> Tuple[str, str]:
+    """
+    Prepare OPAQUE runtime config:
+      /etc/pqnas/opaque_credentials.json
+      /etc/pqnas/opaque_server_setup.bin
+
+    The files are readable by pqnas only. The server setup is created by
+    pqnas user so the daemon can validate and use it without root.
+    """
+    ensure_service_user("pqnas", log=log)
+
+    os.makedirs(config_dir, exist_ok=True)
+    subprocess.run(["chown", "pqnas:pqnas", config_dir], check=False)
+    os.chmod(config_dir, 0o750)
+
+    credentials_path = os.path.join(config_dir, "opaque_credentials.json")
+    setup_path = os.path.join(config_dir, "opaque_server_setup.bin")
+
+    if not os.path.exists(credentials_path):
+        tmp = credentials_path + ".new"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write('{\n  "version": 1,\n  "accounts": []\n}\n')
+        os.chmod(tmp, 0o600)
+        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
+        os.replace(tmp, credentials_path)
+        if log:
+            log.write(f"[*] Created OPAQUE credentials store: {credentials_path}")
+    else:
+        subprocess.run(["chown", "pqnas:pqnas", credentials_path], check=False)
+        os.chmod(credentials_path, 0o600)
+        if log:
+            log.write(f"[*] OPAQUE credentials store exists: {credentials_path}")
+
+    if not os.path.exists(setup_path):
+        if log:
+            log.write(f"[*] Creating OPAQUE server setup: {setup_path}")
+
+        create = subprocess.run(
+            ["sudo", "-u", "pqnas", helper_path, "server-setup-create", setup_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+        if create.returncode != 0:
+            raise RuntimeError("OPAQUE server setup create failed:\n" + (create.stdout or "").strip())
+    else:
+        if log:
+            log.write(f"[*] OPAQUE server setup exists: {setup_path}")
+
+    subprocess.run(["chown", "pqnas:pqnas", setup_path], check=False)
+    os.chmod(setup_path, 0o600)
+
+    check = subprocess.run(
+        ["sudo", "-u", "pqnas", helper_path, "server-setup-check", setup_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        raise RuntimeError("OPAQUE server setup check failed:\n" + (check.stdout or "").strip())
+
+    if log:
+        log.write("[*] OPAQUE runtime config validated.")
+
+    return credentials_path, setup_path
+
+
 def run_cmd_capture(argv: List[str]) -> str:
     p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     return (p.stdout or "").strip()
@@ -642,6 +788,15 @@ class Disk:
     is_system: bool  # heuristic: contains "/" mountpoint
 
 
+def login_mode_label(login_mode: str) -> str:
+    lm = (login_mode or "").strip().lower()
+    if lm == "password":
+        return "Username/password"
+    if lm == "opaque":
+        return "OPAQUE zero-knowledge password"
+    return "QR / DNA Connect"
+
+
 @dataclass
 class InstallState:
     disk: Optional[Disk] = None
@@ -658,6 +813,7 @@ class InstallState:
     # Browser login method selected by installer:
     #   qr       = DNA Connect / QR login
     #   password = username/email + password login
+    #   opaque   = OPAQUE zero-knowledge password login
     login_mode: str = "qr"
 
     # Temporary first-admin bootstrap token for password-mode installs.
@@ -1201,6 +1357,15 @@ def write_env_file(
 
         if lm == "password" and password_bootstrap_token:
             lines += [f"PQNAS_PASSWORD_BOOTSTRAP_TOKEN={password_bootstrap_token}"]
+
+        if lm == "opaque":
+            lines += [
+                "PQNAS_OPAQUE_HELPER=/usr/local/libexec/pqnas/pqnas_opaque_helper",
+                "PQNAS_OPAQUE_CREDENTIALS_PATH=/etc/pqnas/opaque_credentials.json",
+                "PQNAS_OPAQUE_SERVER_SETUP_PATH=/etc/pqnas/opaque_server_setup.bin",
+            ]
+            if password_bootstrap_token:
+                lines += [f"PQNAS_OPAQUE_BOOTSTRAP_TOKEN={password_bootstrap_token}"]
 
     # Android app pairing requires this when QR pairing is used.
     # It is not secret; it pins the expected HTTPS certificate public key.
@@ -2452,7 +2617,7 @@ class PlanScreen(Screen):
         text.append(f"[b]Disk:[/b] {d.name} ({d.size})  {d.model}  serial={d.serial}")
         text.append(f"[b]Mode:[/b] {app.state.install_mode}")
         text.append(f"[b]Backend:[/b] {app.state.backend}")
-        text.append(f"[b]Login:[/b] {'Username/password' if app.state.login_mode == 'password' else 'QR / DNA Connect'}")
+        text.append(f"[b]Login:[/b] {login_mode_label(app.state.login_mode)}")
         text.append(f"[b]Mountpoint:[/b] {app.state.mountpoint}\n")
         text.append("[b]Notes:[/b]")
         for n in (app.state.plan_notes or []):
@@ -2507,6 +2672,7 @@ class ReverseProxyScreen(Screen):
             self.login_mode = RadioSet(
                 RadioButton("QR / DNA Connect", id="qr"),
                 RadioButton("Username/password", id="password"),
+                RadioButton("OPAQUE zero-knowledge password", id="opaque"),
             )
             yield self.login_mode
 
@@ -2656,8 +2822,8 @@ class ReverseProxyScreen(Screen):
                 login_mode = btn.id
                 break
 
-        if login_mode not in ("qr", "password"):
-            self.err.update("Choose QR login or username/password login.")
+        if login_mode not in ("qr", "password", "opaque"):
+            self.err.update("Choose QR, username/password, or OPAQUE login.")
             return
 
         st.auth_mode = "v5"
@@ -2934,7 +3100,7 @@ class HealthScreen(Screen):
             f"[b]Mode:[/b] {self.mode}",
             f"[b]Backend:[/b] {self.backend}",
             f"[b]Auth mode:[/b] v5 (forced by installer)",
-            f"[b]Login mode:[/b] {'Username/password' if self.login_mode == 'password' else 'QR / DNA Connect'}",
+            f"[b]Login mode:[/b] {login_mode_label(self.login_mode)}",
             "",
             f"[b]Access URL:[/b] {url}",
         ]
@@ -2951,6 +3117,20 @@ class HealthScreen(Screen):
                 "",
                 "The response shows 24 recovery words once.",
                 "After bootstrap, remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
+            ]
+        elif self.login_mode == "opaque":
+            lines += [
+                "",
+                "[b]OPAQUE auth[/b]",
+                "OPAQUE helper and server setup were initialized:",
+                "  /usr/local/libexec/pqnas/pqnas_opaque_helper",
+                "  /etc/pqnas/opaque_server_setup.bin",
+                "  /etc/pqnas/opaque_credentials.json",
+                "",
+                "Create the first admin through the OPAQUE bootstrap flow using:",
+                f"  X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}",
+                "",
+                "After bootstrap, remove PQNAS_OPAQUE_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
             ]
 
 
@@ -3046,10 +3226,13 @@ class ExecuteScreen(Screen):
         log_line(self.logw, "Installing... please wait.")
         log_line(self.logw, f"Mode: {mode}")
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
-        log_line(self.logw, f"Login mode: {'username/password' if st.login_mode == 'password' else 'QR / DNA Connect'}")
+        log_line(self.logw, f"Login mode: {login_mode_label(st.login_mode)}")
         if st.login_mode == "password":
             log_line(self.logw, "First password admin bootstrap token will be written to /etc/pqnas/pqnas.env.")
             log_line(self.logw, "After the service starts, create the first admin with /api/auth/password/bootstrap-admin.")
+        elif st.login_mode == "opaque":
+            log_line(self.logw, "OPAQUE helper, credentials store, and server setup will be installed.")
+            log_line(self.logw, "OPAQUE first-admin enrollment UI/API is a follow-up milestone.")
         log_line(self.logw, "")
         log_line(
             self.logw,
@@ -3282,6 +3465,12 @@ class ExecuteScreen(Screen):
 
             server_exec, keygen_exec, nodus_exec, was_upgrade = install_binaries(asset_root, "/usr/local/bin")
 
+            opaque_helper_path: Optional[str] = None
+            if st.login_mode == "opaque":
+                self.logw.write("Installing OPAQUE helper and runtime config …")
+                opaque_helper_path = install_opaque_helper_assets(asset_root, log=self.logw)
+                ensure_opaque_runtime_config("/etc/pqnas", opaque_helper_path, log=self.logw)
+
             if was_upgrade:
                 self.logw.write("Upgrade detected: previous binaries saved as /usr/local/bin/*.bak")
             else:
@@ -3298,6 +3487,8 @@ class ExecuteScreen(Screen):
             extra_runtime_paths = ["/opt/pqnas/lib/dna/libdna_lib.so"]
             if nodus_exec:
                 extra_runtime_paths.append(nodus_exec)
+            if opaque_helper_path:
+                extra_runtime_paths.append(opaque_helper_path)
 
             ensure_runtime_deps_for_server(
                 server_exec,

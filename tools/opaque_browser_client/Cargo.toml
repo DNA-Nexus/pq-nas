@@ -1,0 +1,17 @@
+[package]
+name = "pqnas_opaque_browser_client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+opaque-ke = { version = "=4.1.0-pre.0", features = ["argon2", "ristretto255"] }
+rand = { version = "=0.8.6", features = ["getrandom"] }
+sha2 = "=0.10.9"
+base64 = "=0.22.1"
+wasm-bindgen = "0.2"
+getrandom = { version = "0.2", features = ["js"] }

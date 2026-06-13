@@ -1,0 +1,1 @@
+/home/timo/CLionProjects/pq-nas/tools/opaque_browser_client/target/wasm32-unknown-unknown/release/pqnas_opaque_browser_client.wasm: /home/timo/CLionProjects/pq-nas/tools/opaque_browser_client/src/lib.rs

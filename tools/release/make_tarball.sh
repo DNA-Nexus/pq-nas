@@ -32,6 +32,7 @@ shift
 ARCH="x86_64"
 SKIP_SERVER_BUILD="${PQNAS_RELEASE_SKIP_SERVER_BUILD:-0}"
 SKIP_ALL_BUILD="${PQNAS_RELEASE_SKIP_BUILD:-0}"
+SKIP_WASM_BUILD="${PQNAS_RELEASE_SKIP_WASM_BUILD:-0}"
 ALLOW_STALE_SERVER="${PQNAS_RELEASE_ALLOW_STALE_SERVER:-0}"
 
 while [[ $# -gt 0 ]]; do
@@ -111,16 +112,17 @@ if is_truthy "$SKIP_ALL_BUILD"; then
   echo "[*] Using existing binaries from: $REPO_ROOT/build/bin"
 elif is_truthy "$SKIP_SERVER_BUILD"; then
   echo "[*] Skipping pqnas_server build (--skip-server-build)."
-  echo "[*] Building helper tools only: pqnas_keygen + nodus-cli..."
-  cmake --build "$REPO_ROOT/build" --target pqnas_keygen nodus-cli
+  echo "[*] Building helper tools only: pqnas_keygen + nodus-cli + pqnas_opaque_helper..."
+  cmake --build "$REPO_ROOT/build" --target pqnas_keygen nodus-cli pqnas_opaque_helper_rust
 else
-  echo "[*] Building pqnas_server + pqnas_keygen + nodus-cli..."
-  cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen nodus-cli
+  echo "[*] Building pqnas_server + pqnas_keygen + nodus-cli + pqnas_opaque_helper..."
+  cmake --build "$REPO_ROOT/build" --target pqnas_server pqnas_keygen nodus-cli pqnas_opaque_helper_rust
 fi
 
 test -x "$REPO_ROOT/build/bin/pqnas_server"
 test -x "$REPO_ROOT/build/bin/pqnas_keygen"
 test -x "$REPO_ROOT/build/bin/nodus-cli"
+test -x "$REPO_ROOT/build/bin/pqnas_opaque_helper_rust"
 
 # If the server build was skipped, protect against accidentally packaging an
 # old server binary after server/src/version.h was bumped.
@@ -199,6 +201,14 @@ install -m 0755 "$REPO_ROOT/build/bin/pqnas_server" "$STAGE/pqnas_server"
 install -m 0755 "$REPO_ROOT/build/bin/pqnas_keygen" "$STAGE/pqnas_keygen"
 install -m 0755 "$REPO_ROOT/build/bin/nodus-cli" "$STAGE/nodus-cli"
 
+install -d "$STAGE/libexec/pqnas"
+install -m 0755 "$REPO_ROOT/build/bin/pqnas_opaque_helper_rust" "$STAGE/libexec/pqnas/pqnas_opaque_helper"
+
+test -x "$STAGE/libexec/pqnas/pqnas_opaque_helper" || {
+  echo "ERROR: OPAQUE helper did not stage"
+  false
+}
+
 # DNA engine shared library (needed by /api/v4/verify)
 DNA_SRC="$REPO_ROOT/server/third_party/dna/lib/linux/x64/libdna_lib.so"
 if [[ -f "$DNA_SRC" ]]; then
@@ -256,6 +266,37 @@ if [[ -f "$RESTORE_JOB_SRC" ]]; then
 else
   echo "[!] Snapshot restore job not found: $RESTORE_JOB_SRC"
   echo "[!] This is OK only if you intentionally ship without snapshot-restore support."
+fi
+
+OPAQUE_BROWSER_DIR="$REPO_ROOT/tools/opaque_browser_client"
+OPAQUE_STATIC_DIR="$REPO_ROOT/server/src/static/opaque-test"
+
+if [[ -f "$OPAQUE_BROWSER_DIR/Cargo.toml" ]]; then
+  if is_truthy "$SKIP_WASM_BUILD"; then
+    echo "[*] Skipping OPAQUE WASM build via PQNAS_RELEASE_SKIP_WASM_BUILD=1."
+  else
+    if ! command -v wasm-pack >/dev/null 2>&1; then
+      echo "ERROR: wasm-pack not found. Install: cargo install wasm-pack --locked"
+      false
+    fi
+
+    echo "[*] Building OPAQUE browser WASM client..."
+    wasm-pack build "$OPAQUE_BROWSER_DIR" --target web --out-dir pkg
+
+    install -d "$OPAQUE_STATIC_DIR"
+    install -m 0644 "$OPAQUE_BROWSER_DIR/pkg/pqnas_opaque_browser_client.js" "$OPAQUE_STATIC_DIR/pqnas_opaque_browser_client.js"
+    install -m 0644 "$OPAQUE_BROWSER_DIR/pkg/pqnas_opaque_browser_client_bg.wasm" "$OPAQUE_STATIC_DIR/pqnas_opaque_browser_client_bg.wasm"
+  fi
+
+  test -f "$OPAQUE_STATIC_DIR/pqnas_opaque_browser_client.js" || {
+    echo "ERROR: OPAQUE browser JS missing"
+    false
+  }
+
+  test -f "$OPAQUE_STATIC_DIR/pqnas_opaque_browser_client_bg.wasm" || {
+    echo "ERROR: OPAQUE browser WASM missing"
+    false
+  }
 fi
 
 # Static web assets (package-mode)
