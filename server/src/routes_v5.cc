@@ -1,19 +1,19 @@
 // server/src/routes_v5.cc
 // routes_v5.cc
 //
-// v5 Stateless Login ("2A" flow) HTTP routes.
+// Authentication, onboarding, and v5 QR-login HTTP routes.
 //
-// Design goals
-// - Stateless-ready correlation: clients can use `k = H(st)` (st_hash_b64) as the
-//   primary lookup key. This avoids reliance on `sid` for v5.
-// - Separation of concerns: this file is *transport + orchestration only*.
-//   All crypto, token signing, storage, and auditing are delegated to callbacks
-//   in RoutesV5Context (dependency injection).
-// - Short-lived server-side state: the server keeps only minimal "pending" +
-//   "approval" entries for UX and single-use consumption. These are pruned
-//   aggressively by TTL to keep memory bounded.
+// This file started as the v5 stateless QR-login route module. It now also
+// contains password-login helpers, OPAQUE onboarding/reset orchestration,
+// admin auth diagnostics, and compatibility/admin provisioning endpoints.
 //
-// Flow summary
+// Long-term cleanup target:
+// - keep route handlers here
+// - move OPAQUE enrollment-token storage into a dedicated module, e.g.
+//   opaque_enrollments_store.{h,cpp}
+// - keep this file as transport/orchestration, not storage/business logic
+//
+// v5 Stateless Login ("2A" flow) summary
 //   1) /api/v5/session
 //      - Mint request token `st` (signed), return {sid, st, k, iat, exp, qr_svg}
 //      - Insert PendingEntry keyed by `k` so status can immediately report "pending"
@@ -27,11 +27,21 @@
 //      - If approved, issue Set-Cookie(pqnas_session=...) and atomically consume
 //        approval + pending entries (one-time use).
 //
+// OPAQUE onboarding summary
+// - Admin creates a setup/reset token.
+// - Browser runs OPAQUE registration using the token.
+// - Server stores only the OPAQUE server-side password file.
+// - Plaintext passwords, password hashes, and fallback password fields must never
+//   be accepted by OPAQUE endpoints.
+// - Setup/reset tokens are single-use and are invalidated on replacement/revoke.
+//
 // Security notes
 // - `st` is a signed request token. `k` is derived from st and is safe to expose.
 // - `/consume` is intentionally strict: if approval exists but cookie is missing,
 //   we fail loudly (500) because a partially-approved login is a server bug.
 // - All JSON responses are no-store to avoid caching sensitive flow state.
+// - Every read-modify-write of opaque_enrollments.json must hold the documented
+//   lock discipline near RoutesV5OpaqueEnrollmentsFileLock.
 
 #include "routes_v5.h"
 #include "users_registry.h"
@@ -673,6 +683,11 @@ static std::string routes_v5_lower_ascii_copy(std::string s) {
     return s;
 }
 
+// Resolve the active browser login mode.
+//
+// Note:
+// PQNAS_AUTH_MODE=v5 is the older server auth-stack selector and must keep
+// meaning QR/v5. New login UI selection should use PQNAS_LOGIN_MODE.
 static std::string routes_v5_auth_mode() {
     // Login UI/auth selection is separate from the older PQNAS_AUTH_MODE=v5
     // server auth-stack selector. Keep PQNAS_AUTH_MODE=v5 intact and use
@@ -818,6 +833,11 @@ static void routes_v5_audit_password(const RoutesV5Context& ctx,
     });
 }
 
+// Registration readiness gate for OPAQUE setup/reset flows.
+    //
+    // This checks helper/server-setup/credential-store health before running
+    // OPAQUE registration. It is intentionally stricter than a generic
+    // "feature enabled" check.
 static bool routes_v5_opaque_backend_ready_for_registration(
     const pqnas::OpaqueBackendStatus& status) {
     return status.credentials_file_exists &&
@@ -832,6 +852,9 @@ static bool routes_v5_opaque_backend_ready_for_registration(
            status.helper_self_test_ok;
 }
 
+// OPAQUE endpoints must never accept plaintext passwords or classic fallback
+// password-hash fields. The browser performs OPAQUE registration; the server
+// stores only the resulting OPAQUE server-side password file.
 static bool routes_v5_has_forbidden_password_fallback_field(const nlohmann::json& j) {
     return j.contains("password") ||
            j.contains("plaintext_password") ||
@@ -877,6 +900,18 @@ static std::mutex& routes_v5_opaque_enrollments_file_mu() {
     return mu;
 }
 
+// Security invariant:
+//
+// opaque_enrollments.json is modified from both routes_v5.cc and main.cpp.
+// The in-process mutex below serializes routes_v5.cc threads, but it does not
+// protect main.cpp. This file-level flock coordinates all writers that use the
+// same opaque_enrollments.json.lock file.
+//
+// Lock ordering rule in routes_v5.cc:
+//   1) routes_v5_opaque_enrollments_file_mu()
+//   2) RoutesV5OpaqueEnrollmentsFileLock
+//
+// main.cpp uses only the file-level flock for the same enrollment file.
 class RoutesV5OpaqueEnrollmentsFileLock {
 public:
     RoutesV5OpaqueEnrollmentsFileLock(const std::string& enrollments_path, std::string* err) {
@@ -935,6 +970,10 @@ private:
 };
 
 
+// Resolve the shared OPAQUE enrollment-token store path.
+    //
+    // main.cpp must use the same path derivation for user revoke invalidation,
+    // otherwise revoke and onboarding would update different files.
 static std::string routes_v5_opaque_enrollments_path(const RoutesV5Context& ctx) {
     const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
     std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
@@ -1000,6 +1039,12 @@ static json routes_v5_load_opaque_enrollments_no_lock(const std::string& path, s
     }
 }
 
+// Save opaque_enrollments.json using a temp-file + rename pattern.
+//
+// Important:
+// - caller must already hold the enrollment mutex/file lock
+// - temp filenames must be unique to avoid concurrent writer collisions
+// - rename on the same filesystem prevents readers from seeing a half-written file
 static bool routes_v5_save_opaque_enrollments_no_lock(const std::string& path,
                                                       const json& doc,
                                                       std::string* err) {
@@ -1075,6 +1120,13 @@ static void routes_v5_prune_opaque_enrollments_doc(json& doc, long now) {
 }
 
 
+// Mark active setup/reset tokens as used/invalidated.
+    //
+    // Empty login or fingerprint means wildcard for that field. This is used for:
+    // - replacement: login + fingerprint
+    // - user revoke from main.cpp: fingerprint-only equivalent
+    //
+    // Only active tokens are touched: used_at == 0 and expires_at > now.
 static std::size_t routes_v5_invalidate_active_opaque_enrollment_tokens(json& doc,
                                                                         const std::string& login,
                                                                         const std::string& fingerprint,
@@ -1199,6 +1251,10 @@ static bool routes_v5_is_safe_hex_id_128(const std::string& s) {
     return true;
 }
 
+// Store short-lived OPAQUE login-start state.
+    //
+    // This is intentionally memory-only and TTL-bounded. The corresponding pop()
+    // below consumes the entry once so login state cannot be replayed.
 static bool routes_v5_opaque_login_pending_put(
     const std::string& opaque_login_id,
     const RoutesV5OpaqueLoginPending& pending) {
@@ -2303,8 +2359,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        // Security invariant:
         // Consume the setup/reset token before storing the OPAQUE credential.
-        // This makes retry/replay fail closed if any later save returns an error.
+        // This prevents replay if credential save succeeds but the response is lost.
+        // Trade-off: if credential save fails later, the admin must issue a new link.
         (*token_rec)["used_at"] = now;
 
         std::string serr;
@@ -2502,7 +2560,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
     // ---- POST /api/admin/auth/opaque/force-reset ----
     //
-    // Admin-only atomic-ish force reset.
+    // Admin-only force reset.
+    //
+    // Security invariant:
+    // This endpoint replaces the old two-request frontend flow. The server
+    // creates the reset token before disabling the credential, then rolls the
+    // token back if credential disable/save fails. The plaintext token is only
+    // returned on full success.
     //
     // This replaces the old frontend two-step flow:
     //   1) disable credential

@@ -2,7 +2,7 @@
 
 Status: design plan  
 Scope: browser-side OPAQUE login for DNA-Nexus / PQ-NAS  
-Current backend status: OPAQUE registration, helper login transcript, and session minting are implemented server-side.
+Current backend status: server-side OPAQUE registration/enrollment, helper login transcript handling, and `pqnas_session` minting paths exist. Production browser OPAQUE login is not enabled until a compatible browser-side OPAQUE client is implemented and tested.
 
 ## Goal
 
@@ -66,6 +66,25 @@ Allowed to exist temporarily in memory:
 
 The client login state must be scoped to one login attempt and discarded after success or failure.
 
+## Client flow hardening
+
+The browser must allow only one active OPAQUE login attempt at a time.
+
+Rules:
+
+- disable the submit button while an OPAQUE login attempt is active
+- discard any previous client login state before starting a new attempt
+- never reuse `client_login_state_b64`
+- never reuse `opaque_login_id`
+- clear the password input after success or failure
+- clear in-memory client state after success, failure, timeout, or page navigation
+- use `fetch(..., { credentials: "same-origin", cache: "no-store" })`
+- redirect to `/app` only after `/api/v4/me` confirms the session cookie works
+
+JavaScript memory clearing is best-effort. The hard security rule is that password material and client state must never be written to storage, logs, URL parameters, or DOM attributes.
+
+All OPAQUE failures shown to the user should use a generic login-failed message.
+
 ## Implementation options
 
 ### Option A: Rust/WASM client from our existing helper code
@@ -122,6 +141,39 @@ Required exported functions:
 | opaqueLoginFinish | password, client_login_state_b64 and credential_response_b64 | credential_finalization_b64 |
 
 The API should not expose unrelated helper operations.
+
+## Required protocol compatibility decisions
+
+Before enabling browser OPAQUE login, the browser client and server helper must explicitly agree on:
+
+- exact OPAQUE library family and version
+- exact OPAQUE ciphersuite
+- exact serialized message formats
+- exact base64 variant
+- exact credential identifier format
+- exact login normalization rule
+- exact server setup format
+- exact stored credential format
+- exact test vector set used by both browser and server helper
+
+The browser client must fail closed if the server reports an unsupported suite, helper version, or protocol format.
+
+No production OPAQUE mode is allowed until a browser-generated login transcript has been tested end-to-end against the same helper/version/suite used by the server.
+
+## Browser module loading policy
+
+The OPAQUE browser module must be served as a local versioned static asset.
+
+Rules:
+
+- do not load OPAQUE crypto from a CDN
+- do not dynamically select an unpinned external package at runtime
+- fail closed if the WASM module or JS wrapper is missing
+- fail closed if the browser module version is incompatible with the server-supported OPAQUE suite
+- show a safe unavailable state instead of falling back to password login
+- never call `/api/auth/password/login` while `mode=opaque`
+
+The UI should treat module initialization failure as an authentication-method-unavailable state, not as a password-login opportunity.
 
 ## UI requirements
 
@@ -210,6 +262,8 @@ The UI should not distinguish between:
 - invalid transcript
 
 This avoids account enumeration.
+
+This rule applies to both `login/start` and `login/finish`. When practical, `login/start` should use a dummy/missing-user flow or otherwise preserve a response shape that does not reveal whether the login exists.
 
 ## Required tests before enabling production OPAQUE browser login
 

@@ -8,28 +8,23 @@ Current implementation status:
 
 - `PQNAS_LOGIN_MODE=opaque` is recognized as a third browser login mode.
 - `/api/auth/config` can report OPAQUE mode.
-- `/api/auth/opaque/login/start` and `/api/auth/opaque/login/finish` exist as fail-closed scaffold endpoints.
-- The login UI shows an OPAQUE-not-configured message instead of silently falling back to classic password login.
-- `pqnas_opaque_helper` exists as a helper-binary scaffold.
-- `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test` work.
-- Future helper protocol operations such as `login-start` are recognized but fail closed with `opaque_backend_not_implemented`.
-- `OpaqueCredentials` exists as a C++ storage/parsing scaffold for future `opaque_credentials.json` records.
-- OPAQUE runtime path helpers exist for credentials, server setup, and helper binary paths.
-- `OpaqueBackendStatus` exists as a fail-closed backend readiness/preflight scaffold.
-- `OpaqueHelperClient` exists as a C++ helper-client scaffold that can call only `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test`.
-- `OpaqueBackendStatus` uses `OpaqueHelperClient` for helper `--version`/`self-test` preflight, but still keeps OPAQUE login fail-closed.
-- `OpaqueBackendStatus` has an internal/admin-only diagnostic JSON helper; public OPAQUE login errors remain generic.
-- `GET /api/admin/auth/opaque/status` exposes OPAQUE backend diagnostics to admins only; public OPAQUE login endpoints remain generic and fail-closed.
-- OPAQUE config paths use `PQNAS_CONFIG_ROOT` when set, otherwise the existing deployment `PQNAS_CONFIG`, otherwise `/etc/pqnas`.
-- Admin-only OPAQUE diagnostics include resolved credentials/setup/helper paths for troubleshooting.
-- Admin Settings UI includes an OPAQUE Status card that displays the admin-only backend diagnostics without enabling public OPAQUE login.
-- Selected server-side implementation direction: Rust helper binary using `opaque-ke`.
-- Experimental Rust helper scaffold exists under `tools/opaque_helper_rust/`; it currently supports only `--version` and `self-test`, while future OPAQUE operations fail closed.
-- Rust helper pins `opaque-ke` as a build dependency.
-- Rust helper implements `server-setup-create <output-path>` for generating a serialized OPAQUE `ServerSetup` and `server-setup-check <input-path>` for validating that the file deserializes; registration and login remain fail-closed.
+- The login UI must not silently fall back to classic password login in OPAQUE mode.
+- `pqnas_opaque_helper` exists as the Rust helper boundary using `opaque-ke`.
+- The helper supports server setup validation, registration operations, and login transcript operations.
+- `OpaqueCredentials` exists as the C++ storage/parsing layer for `opaque_credentials.json`.
+- OPAQUE runtime path helpers exist for credentials, server setup, helper binary, and enrollment-token storage.
+- `OpaqueBackendStatus` exposes admin-only diagnostics; public OPAQUE login errors remain generic.
+- Admin-side OPAQUE registration/enrollment and reset-token flows exist.
+- Public OPAQUE login start/finish routes exist server-side.
+- `POST /api/auth/opaque/login/finish` can mint the standard `pqnas_session` after a valid OPAQUE transcript, a valid pending login state, and an enabled user check.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
+- Browser-side OPAQUE login is still not production-ready until a compatible browser/WASM client is implemented and tested against the same helper version, suite, and serialization.
 
-The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
+Document maintenance note:
+
+This document contains both the current design and historical phase notes written while OPAQUE support was being built. The `Current implementation status` section above is the authoritative current-state summary. Older sections that say public OPAQUE login was still fail-closed or did not mint sessions are historical notes unless explicitly repeated in the current-status section.
+
+Browser-side OPAQUE login must still be completed before OPAQUE can be treated as a normal production browser login method.
 
 ## Core rule
 
@@ -1151,6 +1146,7 @@ After restore, admin status should show:
 - `server_setup_file_readable=true`
 - `server_setup_valid=true`
 
-`ready_for_login` must remain `false` until real OPAQUE registration,
-login-finish verification, and session minting are intentionally
-implemented.
+`ready_for_login` must reflect the current deployment state. Server-side
+registration, login-finish verification, and session minting may exist, but
+production browser OPAQUE login still depends on the compatible browser client
+being implemented and tested.
