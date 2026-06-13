@@ -43,6 +43,8 @@
 #include <openssl/sha.h>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <system_error>
 #include <iomanip>
 #include <sstream>
 #include <sodium.h>
@@ -863,6 +865,148 @@ static bool routes_v5_helper_result_json(
 }
 
 
+
+
+static std::mutex& routes_v5_opaque_enrollments_file_mu() {
+    static std::mutex mu;
+    return mu;
+}
+
+static std::string routes_v5_opaque_enrollments_path(const RoutesV5Context& ctx) {
+    const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
+    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    if (ctx.users_path && !ctx.users_path->empty()) {
+        std::filesystem::path p(*ctx.users_path);
+        return (p.parent_path() / "opaque_enrollments.json").string();
+    }
+
+    return "/var/lib/pqnas/opaque_enrollments.json";
+}
+
+static bool routes_v5_is_safe_enrollment_token(const std::string& s) {
+    if (s.size() < 32 || s.size() > 256) return false;
+
+    for (unsigned char c : s) {
+        const bool ok =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (!ok) return false;
+    }
+
+    return true;
+}
+
+static json routes_v5_empty_opaque_enrollments_doc() {
+    return json{{"version", 1}, {"tokens", json::array()}};
+}
+
+static json routes_v5_load_opaque_enrollments_no_lock(const std::string& path, std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return routes_v5_empty_opaque_enrollments_doc();
+    }
+
+    std::ifstream in(path);
+    if (!in) {
+        if (err) *err = "open_failed";
+        return json{};
+    }
+
+    try {
+        json doc = json::parse(in);
+        if (!doc.is_object()) {
+            if (err) *err = "json_not_object";
+            return json{};
+        }
+        if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+            doc["tokens"] = json::array();
+        }
+        if (!doc.contains("version")) {
+            doc["version"] = 1;
+        }
+        return doc;
+    } catch (const std::exception& e) {
+        if (err) *err = std::string("json_parse_failed: ") + e.what();
+        return json{};
+    }
+}
+
+static bool routes_v5_save_opaque_enrollments_no_lock(const std::string& path,
+                                                      const json& doc,
+                                                      std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    if (ec) {
+        if (err) *err = "create_directories_failed: " + ec.message();
+        return false;
+    }
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        if (err) *err = "open_for_write_failed";
+        return false;
+    }
+
+    out << doc.dump(2) << "\n";
+    if (!out) {
+        if (err) *err = "write_failed";
+        return false;
+    }
+
+    return true;
+}
+
+static void routes_v5_prune_opaque_enrollments_doc(json& doc, long now) {
+    if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+        doc["tokens"] = json::array();
+        return;
+    }
+
+    json kept = json::array();
+
+    for (const auto& rec : doc["tokens"]) {
+        if (!rec.is_object()) continue;
+
+        const long expires_at = rec.value("expires_at", 0L);
+        const long used_at = rec.value("used_at", 0L);
+
+        if (expires_at > 0 && expires_at + 86400 < now) continue;
+        if (used_at > 0 && used_at + 86400 < now) continue;
+
+        kept.push_back(rec);
+    }
+
+    doc["tokens"] = kept;
+}
+
+static std::optional<pqnas::UserRec> routes_v5_find_user_by_login_local(const RoutesV5Context& ctx,
+                                                                 const std::string& login,
+                                                                 std::string* out_fp = nullptr) {
+    if (out_fp) out_fp->clear();
+    if (!ctx.users || login.empty()) return std::nullopt;
+
+    const auto snap = ctx.users->snapshot();
+    for (const auto& kv : snap) {
+        const auto& u = kv.second;
+        if (!u.email.empty() &&
+            pqnas::OpaqueCredentials::normalize_login(u.email) == login) {
+            if (out_fp) *out_fp = u.fingerprint;
+            return u;
+        }
+    }
+
+    return std::nullopt;
+}
+
+
 struct RoutesV5OpaqueLoginPending {
     std::string login;
     std::string fingerprint;
@@ -1335,6 +1479,30 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        std::string final_user_status = user->status;
+        bool user_enabled_by_enrollment = false;
+        const bool enable_user = j.value("enable_user", false);
+
+        if (enable_user) {
+            if (!ctx.users_path || ctx.users_path->empty()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_path_not_configured"}}.dump());
+                return;
+            }
+
+            pqnas::UserRec updated_user = *user;
+            updated_user.status = "enabled";
+            final_user_status = updated_user.status;
+            user_enabled_by_enrollment = (user->status != "enabled");
+
+            if (!ctx.users->upsert(updated_user) || !ctx.users->save(*ctx.users_path)) {
+                routes_v5_audit_password(ctx, req, "opaque.registration_finish", "deny", login, actor_fp, "user_enable_failed");
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_enable_failed"}}.dump());
+                return;
+            }
+        }
+
+        const bool ready_for_login = rec.enabled && final_user_status == "enabled";
+
         routes_v5_audit_password(ctx, req, "opaque.registration_finish", "ok", login, actor_fp, fingerprint);
 
         reply_json(res, 200, json{
@@ -1344,8 +1512,9 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"opaque_suite", opaque_suite},
             {"enabled", rec.enabled},
             {"temporary", rec.temporary},
-            {"ready_for_login", false},
-            {"warning", "OPAQUE enrollment was completed and stored, but OPAQUE login/session minting is still intentionally disabled."}
+            {"user_status", final_user_status},
+            {"user_enabled_by_enrollment", user_enabled_by_enrollment},
+            {"ready_for_login", ready_for_login}
         }.dump());
     });
 
@@ -1506,6 +1675,860 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"warning", "OPAQUE enrollment was stored, but OPAQUE login/session minting is still intentionally disabled."}
         }.dump());
     });
+
+
+    // ---- POST /api/admin/auth/opaque/enrollment-token/create ----
+    //
+    // Admin-only OPAQUE setup/reset token creation.
+    //
+    // The returned token is shown once and only its SHA-256 hash is stored.
+    // The setup page uses the token to run browser-side OPAQUE registration
+    // without sending the plaintext password to the server.
+    srv.Post("/api/admin/auth/opaque/enrollment-token/create", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}, {"mode", routes_v5_auth_mode()}}.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "auth_cookie_checker_not_configured"}}.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", "", actor_fp, "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string login =
+            pqnas::OpaqueCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        std::string fingerprint =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "fingerprint"));
+
+        std::string purpose =
+            routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "purpose")));
+        if (purpose.empty()) purpose = "new_user";
+
+        if (purpose != "new_user" && purpose != "reset_password") {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_purpose"}}.dump());
+            return;
+        }
+
+        long ttl = 86400;
+        if (j.contains("expires_in_seconds") && j["expires_in_seconds"].is_number_integer()) {
+            ttl = j["expires_in_seconds"].get<long>();
+        }
+        if (ttl < 300) ttl = 300;
+        if (ttl > 604800) ttl = 604800;
+
+        const bool enable_user_on_finish = j.value("enable_user_on_finish", true);
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        std::optional<pqnas::UserRec> user;
+        if (!fingerprint.empty()) {
+            user = ctx.users->get(fingerprint);
+        } else {
+            user = routes_v5_find_user_by_login_local(ctx, login, &fingerprint);
+        }
+
+        if (!user.has_value()) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", login, actor_fp, "user_missing");
+            reply_json(res, 404, json{{"ok", false}, {"error", "user_not_found"}}.dump());
+            return;
+        }
+
+        if (user->email.empty() || pqnas::OpaqueCredentials::normalize_login(user->email) != login) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", login, actor_fp, "login_fingerprint_mismatch");
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_fingerprint_mismatch"}}.dump());
+            return;
+        }
+
+        if (user->status == "revoked") {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", login, actor_fp, "user_revoked");
+            reply_json(res, 409, json{{"ok", false}, {"error", "user_revoked"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        std::string token = ctx.random_b64url ? ctx.random_b64url(32) : std::string{};
+        if (!routes_v5_is_safe_enrollment_token(token)) {
+            token = routes_v5_random_hex_id_128() + routes_v5_random_hex_id_128();
+        }
+        if (!routes_v5_is_safe_enrollment_token(token)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "token_rng_failed"}}.dump());
+            return;
+        }
+
+        const std::string token_hash = sha256_hex(token);
+        const std::string path = routes_v5_opaque_enrollments_path(ctx);
+
+        {
+            std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+            std::string lerr;
+            json doc = routes_v5_load_opaque_enrollments_no_lock(path, &lerr);
+            if (!lerr.empty()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_load_failed"}, {"detail", lerr}}.dump());
+                return;
+            }
+
+            routes_v5_prune_opaque_enrollments_doc(doc, now);
+
+            doc["tokens"].push_back(json{
+                {"token_hash", token_hash},
+                {"login", login},
+                {"fingerprint", fingerprint},
+                {"purpose", purpose},
+                {"created_by_fp", actor_fp},
+                {"user_status_at_issue", user->status},
+                {"created_at", now},
+                {"expires_at", now + ttl},
+                {"used_at", 0},
+                {"enable_user_on_finish", enable_user_on_finish}
+            });
+
+            std::string serr;
+            if (!routes_v5_save_opaque_enrollments_no_lock(path, doc, &serr)) {
+                routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "deny", login, actor_fp, "enrollment_save_failed");
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_save_failed"}, {"detail", serr}}.dump());
+                return;
+            }
+        }
+
+        const std::string setup_path = std::string("/static/opaque-enroll.html?token=") + token;
+
+        std::string origin = req_header_or_empty(req, "Origin");
+        if (origin.empty()) {
+            const std::string host = req_header_or_empty(req, "Host");
+            std::string proto = req_header_or_empty(req, "X-Forwarded-Proto");
+            if (proto.empty()) proto = "https";
+            if (!host.empty()) origin = proto + "://" + host;
+        }
+
+        const std::string setup_url = origin.empty() ? setup_path : (origin + setup_path);
+
+        routes_v5_audit_password(ctx, req, "opaque.enrollment_token_create", "ok", login, actor_fp, fingerprint);
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", fingerprint},
+            {"purpose", purpose},
+            {"expires_at", now + ttl},
+            {"enable_user_on_finish", enable_user_on_finish},
+            {"token_shown_once", true},
+            {"token", token},
+            {"setup_path", setup_path},
+            {"setup_url", setup_url}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/opaque/enrollment/start ----
+    //
+    // Public token-protected OPAQUE registration start.
+    srv.Post("/api/auth/opaque/enrollment/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_start", "deny", "", "", "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string token = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "token"));
+        const std::string registration_request_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "registration_request_b64"));
+
+        if (!routes_v5_is_safe_enrollment_token(token)) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (!routes_v5_is_safe_b64ish(registration_request_b64, 8192)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_registration_request_b64"}}.dump());
+            return;
+        }
+
+        const std::string token_hash = sha256_hex(token);
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("opaque.enrollment_start.") + token_hash,
+                ip_for_rate_limit,
+                20,
+                std::chrono::seconds(60))) {
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_enrollment_attempts"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        const std::string path = routes_v5_opaque_enrollments_path(ctx);
+
+        std::string login;
+        std::string fingerprint;
+        long expires_at = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+            std::string lerr;
+            json doc = routes_v5_load_opaque_enrollments_no_lock(path, &lerr);
+            if (!lerr.empty()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_load_failed"}}.dump());
+                return;
+            }
+
+            routes_v5_prune_opaque_enrollments_doc(doc, now);
+
+            for (const auto& rec : doc["tokens"]) {
+                if (!rec.is_object()) continue;
+                if (rec.value("token_hash", "") != token_hash) continue;
+                if (rec.value("used_at", 0L) > 0) break;
+                if (rec.value("expires_at", 0L) <= now) break;
+
+                login = rec.value("login", "");
+                fingerprint = rec.value("fingerprint", "");
+                expires_at = rec.value("expires_at", 0L);
+                break;
+            }
+        }
+
+        if (login.empty() || fingerprint.empty()) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        const auto user = ctx.users->get(fingerprint);
+        if (!user.has_value() ||
+            user->email.empty() ||
+            pqnas::OpaqueCredentials::normalize_login(user->email) != login) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (user->status == "revoked") {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_start", "deny", login, fingerprint, "user_revoked");
+            reply_json(res, 403, json{{"ok", false}, {"error", "user_revoked"}}.dump());
+            return;
+        }
+
+        const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
+        if (!routes_v5_opaque_backend_ready_for_registration(status)) {
+            reply_json(res, 409, json{{"ok", false}, {"error", "opaque_backend_not_ready"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueHelperClient helper(status.helper_path);
+        const auto helper_result =
+            helper.register_start(status.server_setup_path, login, registration_request_b64);
+
+        json helper_json;
+        std::string helper_err;
+        if (!routes_v5_helper_result_json(helper_result, helper_json, helper_err)) {
+            reply_json(res, 502, json{
+                {"ok", false},
+                {"error", "opaque_helper_register_start_failed"},
+                {"message", helper_err}
+            }.dump());
+            return;
+        }
+
+        const std::string registration_response_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(helper_json, "registration_response_b64"));
+
+        if (!routes_v5_is_safe_b64ish(registration_response_b64, 8192)) {
+            reply_json(res, 502, json{{"ok", false}, {"error", "opaque_helper_invalid_registration_response"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.enrollment_start", "ok", login, fingerprint, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", fingerprint},
+            {"registration_response_b64", registration_response_b64},
+            {"expires_at", expires_at}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/opaque/enrollment/finish ----
+    //
+    // Public token-protected OPAQUE registration finish.
+    srv.Post("/api/auth/opaque/enrollment/finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", "", "", "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string token = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "token"));
+        const std::string registration_upload_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "registration_upload_b64"));
+        std::string opaque_suite =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "opaque_suite"));
+
+        if (opaque_suite.empty()) {
+            opaque_suite = "opaque-ke-4.1.0-pre.0:ristretto255:triple-dh:sha512:argon2";
+        }
+
+        if (!routes_v5_is_safe_enrollment_token(token)) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (!routes_v5_is_safe_b64ish(registration_upload_b64, 262144)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_registration_upload_b64"}}.dump());
+            return;
+        }
+
+        if (opaque_suite.size() > 128 || routes_v5_has_control_chars(opaque_suite)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_opaque_suite"}}.dump());
+            return;
+        }
+
+        const std::string token_hash = sha256_hex(token);
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("opaque.enrollment_finish.") + token_hash,
+                ip_for_rate_limit,
+                20,
+                std::chrono::seconds(60))) {
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_enrollment_attempts"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        const std::string enrollments_path = routes_v5_opaque_enrollments_path(ctx);
+
+        std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+        std::string lerr;
+        json doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
+        if (!lerr.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_enrollments_load_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_prune_opaque_enrollments_doc(doc, now);
+
+        json* token_rec = nullptr;
+        for (auto& rec : doc["tokens"]) {
+            if (!rec.is_object()) continue;
+            if (rec.value("token_hash", "") != token_hash) continue;
+            token_rec = &rec;
+            break;
+        }
+
+        if (!token_rec ||
+            token_rec->value("used_at", 0L) > 0 ||
+            token_rec->value("expires_at", 0L) <= now) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        const std::string login = token_rec->value("login", "");
+        const std::string fingerprint = token_rec->value("fingerprint", "");
+        const std::string user_status_at_issue = token_rec->value("user_status_at_issue", "");
+        const bool enable_user_on_finish = token_rec->value("enable_user_on_finish", true);
+
+        if (login.empty() || fingerprint.empty()) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        const auto user = ctx.users->get(fingerprint);
+        if (!user.has_value() ||
+            user->email.empty() ||
+            pqnas::OpaqueCredentials::normalize_login(user->email) != login) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (user->status == "revoked") {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "user_revoked");
+            reply_json(res, 403, json{{"ok", false}, {"error", "user_revoked"}}.dump());
+            return;
+        }
+
+        if (!user_status_at_issue.empty() &&
+            user->status != user_status_at_issue &&
+            user->status != "enabled") {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "user_status_changed");
+            reply_json(res, 409, json{{"ok", false}, {"error", "user_status_changed"}}.dump());
+            return;
+        }
+
+        const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
+        if (!routes_v5_opaque_backend_ready_for_registration(status)) {
+            reply_json(res, 409, json{{"ok", false}, {"error", "opaque_backend_not_ready"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueHelperClient helper(status.helper_path);
+        const auto helper_result = helper.register_finish(registration_upload_b64);
+
+        json helper_json;
+        std::string helper_err;
+        if (!routes_v5_helper_result_json(helper_result, helper_json, helper_err)) {
+            reply_json(res, 502, json{
+                {"ok", false},
+                {"error", "opaque_helper_register_finish_failed"},
+                {"message", helper_err}
+            }.dump());
+            return;
+        }
+
+        const std::string opaque_password_file_b64 =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(helper_json, "opaque_password_file_b64"));
+
+        if (!routes_v5_is_safe_b64ish(opaque_password_file_b64, 262144)) {
+            reply_json(res, 502, json{{"ok", false}, {"error", "opaque_helper_invalid_password_file"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueCredentials creds;
+        const std::string creds_path = routes_v5_opaque_credentials_path();
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_load_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::OpaqueCredentialRec cred;
+        cred.login = login;
+        cred.fingerprint = fingerprint;
+        cred.opaque_password_file_b64 = opaque_password_file_b64;
+        cred.opaque_suite = opaque_suite;
+        cred.enabled = true;
+        cred.temporary = false;
+
+        const auto existing = creds.get(login);
+        cred.created_at = existing.has_value() ? existing->created_at : now_iso;
+        cred.updated_at = now_iso;
+
+        if (!creds.upsert(cred) || !creds.save(creds_path)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "opaque_credentials_save_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_save_failed"}}.dump());
+            return;
+        }
+
+        std::string final_user_status = user->status;
+        bool user_enabled_by_enrollment = false;
+
+        if (enable_user_on_finish) {
+            if (!ctx.users_path || ctx.users_path->empty()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_path_not_configured"}}.dump());
+                return;
+            }
+
+            pqnas::UserRec updated_user = *user;
+            updated_user.status = "enabled";
+            final_user_status = updated_user.status;
+            user_enabled_by_enrollment = (user->status != "enabled");
+
+            if (!ctx.users->upsert(updated_user) || !ctx.users->save(*ctx.users_path)) {
+                routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "user_enable_failed");
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_enable_failed"}}.dump());
+                return;
+            }
+        }
+
+        (*token_rec)["used_at"] = now;
+
+        std::string serr;
+        if (!routes_v5_save_opaque_enrollments_no_lock(enrollments_path, doc, &serr)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "enrollment_token_mark_used_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "enrollment_token_mark_used_failed"}}.dump());
+            return;
+        }
+
+        const bool ready_for_login = cred.enabled && final_user_status == "enabled";
+
+        routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "ok", login, fingerprint, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", fingerprint},
+            {"opaque_suite", opaque_suite},
+            {"enabled", cred.enabled},
+            {"user_status", final_user_status},
+            {"user_enabled_by_enrollment", user_enabled_by_enrollment},
+            {"ready_for_login", ready_for_login}
+        }.dump());
+    });
+
+
+
+
+    // ---- POST /api/admin/auth/opaque/credential/disable ----
+    //
+    // Admin-only immediate credential disable.
+    //
+    // Use this for "force reset": the old OPAQUE password stops working
+    // immediately, before the user opens the reset link.
+    srv.Post("/api/admin/auth/opaque/credential/disable", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}, {"mode", routes_v5_auth_mode()}}.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "auth_cookie_checker_not_configured"}}.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", "", actor_fp, "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        std::string login =
+            pqnas::OpaqueCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        std::string fingerprint =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "fingerprint"));
+
+        if (login.empty() && fingerprint.empty()) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "missing_login_or_fingerprint"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        std::optional<pqnas::UserRec> user;
+        if (!fingerprint.empty()) {
+            user = ctx.users->get(fingerprint);
+            if (user.has_value() && login.empty()) {
+                login = pqnas::OpaqueCredentials::normalize_login(user->email);
+            }
+        } else {
+            user = routes_v5_find_user_by_login_local(ctx, login, &fingerprint);
+        }
+
+        if (!user.has_value() || login.empty() || fingerprint.empty()) {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", login, actor_fp, "user_missing");
+            reply_json(res, 404, json{{"ok", false}, {"error", "user_not_found"}}.dump());
+            return;
+        }
+
+        if (user->email.empty() || pqnas::OpaqueCredentials::normalize_login(user->email) != login) {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", login, actor_fp, "login_fingerprint_mismatch");
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_fingerprint_mismatch"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueCredentials creds;
+        const std::string creds_path = routes_v5_opaque_credentials_path();
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_load_failed"}}.dump());
+            return;
+        }
+
+        const auto existing = creds.get(login);
+        if (!existing.has_value() || existing->fingerprint != fingerprint) {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", login, actor_fp, "opaque_credential_missing");
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_credential_missing"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueCredentialRec rec = *existing;
+        rec.enabled = false;
+        rec.updated_at = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            routes_v5_audit_password(ctx, req, "opaque.credential_disable", "deny", login, actor_fp, "opaque_credentials_save_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.credential_disable", "ok", login, actor_fp, fingerprint);
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", fingerprint},
+            {"credential_enabled", false},
+            {"user_status", user->status},
+            {"ready_for_login", false}
+        }.dump());
+    });
+
+
+    // ---- GET /api/admin/auth/opaque/onboarding/status ----
+    //
+    // Admin-only OPAQUE onboarding state view.
+    //
+    // This does not introduce new users.json statuses. It derives the OPAQUE
+    // setup state from:
+    // - users.json status: enabled / disabled / revoked
+    // - opaque_credentials.json: credential exists/enabled
+    // - opaque_enrollments.json: active/used/expired setup token
+    srv.Get("/api/admin/auth/opaque/onboarding/status", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "opaque_auth_disabled"},
+                {"mode", routes_v5_auth_mode()}
+            }.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "auth_cookie_checker_not_configured"}
+            }.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "opaque.onboarding_status", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        if (!ctx.users) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        pqnas::OpaqueCredentials creds;
+        const std::string creds_path = routes_v5_opaque_credentials_path();
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "opaque_credentials_load_failed"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_now_epoch_safe(ctx);
+        const std::string enrollments_path = routes_v5_opaque_enrollments_path(ctx);
+
+        json enroll_doc;
+        {
+            std::lock_guard<std::mutex> lock(routes_v5_opaque_enrollments_file_mu());
+
+            std::string lerr;
+            enroll_doc = routes_v5_load_opaque_enrollments_no_lock(enrollments_path, &lerr);
+            if (!lerr.empty()) {
+                reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "opaque_enrollments_load_failed"},
+                    {"detail", lerr}
+                }.dump());
+                return;
+            }
+
+            routes_v5_prune_opaque_enrollments_doc(enroll_doc, now);
+        }
+
+        json entries = json::array();
+        const auto snap = ctx.users->snapshot();
+
+        for (const auto& kv : snap) {
+            const pqnas::UserRec& u = kv.second;
+
+            const std::string login =
+                pqnas::OpaqueCredentials::normalize_login(u.email);
+
+            if (login.empty()) {
+                continue;
+            }
+
+            const auto cred = creds.get(login);
+            const bool credential_exists =
+                cred.has_value() &&
+                cred->fingerprint == u.fingerprint &&
+                !cred->opaque_password_file_b64.empty();
+
+            const bool credential_enabled =
+                credential_exists && cred->enabled;
+
+            std::string token_state = "none";
+            long token_expires_at = 0;
+            long token_used_at = 0;
+            std::string token_purpose;
+
+            if (enroll_doc.contains("tokens") && enroll_doc["tokens"].is_array()) {
+                for (const auto& token : enroll_doc["tokens"]) {
+                    if (!token.is_object()) continue;
+                    if (token.value("login", "") != login) continue;
+                    if (token.value("fingerprint", "") != u.fingerprint) continue;
+
+                    const long expires_at = token.value("expires_at", 0L);
+                    const long used_at = token.value("used_at", 0L);
+
+                    if (used_at <= 0 && expires_at > now) {
+                        token_state = "active";
+                        token_expires_at = expires_at;
+                        token_used_at = 0;
+                        token_purpose = token.value("purpose", "");
+                        break;
+                    }
+
+                    if (token_state != "used" && used_at > 0) {
+                        token_state = "used";
+                        token_expires_at = expires_at;
+                        token_used_at = used_at;
+                        token_purpose = token.value("purpose", "");
+                        continue;
+                    }
+
+                    if (token_state == "none" && expires_at > 0 && expires_at <= now) {
+                        token_state = "expired";
+                        token_expires_at = expires_at;
+                        token_used_at = used_at;
+                        token_purpose = token.value("purpose", "");
+                    }
+                }
+            }
+
+            const bool opaque_provisioned =
+                u.notes.find("OPAQUE provisioning") != std::string::npos;
+
+            if (!opaque_provisioned && !credential_exists && token_state == "none") {
+                continue;
+            }
+
+            std::string onboarding_state;
+            if (u.status == "revoked") {
+                onboarding_state = "revoked";
+            } else if (credential_exists && credential_enabled && u.status == "enabled") {
+                onboarding_state = "setup_done";
+            } else if (token_state == "active") {
+                onboarding_state = "setup_link_created";
+            } else if (token_state == "expired") {
+                onboarding_state = "setup_link_expired";
+            } else if (credential_exists && !credential_enabled) {
+                onboarding_state = "reset_required";
+            } else {
+                onboarding_state = "waiting_password";
+            }
+
+            entries.push_back(json{
+                {"login", login},
+                {"fingerprint", u.fingerprint},
+                {"name", u.name},
+                {"notes", u.notes},
+                {"role", u.role},
+                {"user_status", u.status},
+                {"added_at", u.added_at},
+                {"last_seen", u.last_seen},
+                {"credential_exists", credential_exists},
+                {"credential_enabled", credential_enabled},
+                {"credential_updated_at", cred.has_value() ? cred->updated_at : std::string{}},
+                {"token_state", token_state},
+                {"token_purpose", token_purpose},
+                {"token_expires_at", token_expires_at},
+                {"token_used_at", token_used_at},
+                {"onboarding_state", onboarding_state}
+            });
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.onboarding_status", "ok", "", actor_fp, "");
+
+        reply_json(res, 200, json{
+            {"ok", true},
+            {"mode", routes_v5_auth_mode()},
+            {"entries", entries}
+        }.dump());
+    });
+
 
     // ---- POST /api/auth/opaque/login/start ----
     //
@@ -2979,7 +4002,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        if (status != "enabled" && status != "disabled" && status != "pending") {
+        if (status != "enabled" && status != "disabled" && status != "revoked") {
             reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_status"}}.dump());
             return;
         }
@@ -3117,6 +4140,212 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         reply_json(res, 200, response_body);
         routes_v5_secure_clear_string(response_body);
     });
+
+
+    // ---- POST /api/admin/users/opaque-create ----
+    //
+    // Admin-only OPAQUE user provisioning.
+    //
+    // This creates the DNA-Nexus / PQ-NAS user identity and returns recovery
+    // words once, but it deliberately does NOT accept or store a plaintext
+    // password. OPAQUE credential enrollment must be completed through the
+    // OPAQUE registration endpoints so the browser never sends the password
+    // to the server.
+    srv.Post("/api/admin/users/opaque-create", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "opaque_auth_disabled"},
+                {"mode", routes_v5_auth_mode()}
+            }.dump());
+            return;
+        }
+
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "auth_cookie_checker_not_configured"}
+            }.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        if (routes_v5_has_forbidden_password_fallback_field(j)) {
+            routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", "", actor_fp, "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
+        const std::string login =
+            pqnas::OpaqueCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        const std::string name =
+            routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "name"));
+        const bool include_public_key = j.value("include_public_key", false);
+
+        std::uint64_t requested_quota_bytes = 0;
+        if (j.contains("quota_bytes") && !j["quota_bytes"].is_null()) {
+            if (!j["quota_bytes"].is_number_unsigned()) {
+                reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_quota_bytes"}}.dump());
+                return;
+            }
+            requested_quota_bytes = j["quota_bytes"].get<std::uint64_t>();
+        }
+
+        std::string role =
+            routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "role")));
+        if (role.empty()) role = "user";
+
+        // Default to disabled because the user cannot log in until an OPAQUE
+        // credential has been enrolled. UsersRegistry currently supports the
+        // existing enabled/disabled/revoked status model; OPAQUE enrollment
+        // finish can promote the user to enabled after the credential is stored.
+        std::string status =
+            routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "status")));
+        if (status.empty()) status = "disabled";
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        if (role != "user" && role != "admin") {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_role"}}.dump());
+            return;
+        }
+
+        if (status != "enabled" && status != "disabled" && status != "pending") {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_status"}}.dump());
+            return;
+        }
+
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        {
+            const auto snap = ctx.users->snapshot();
+            for (const auto& kv : snap) {
+                const pqnas::UserRec& existing = kv.second;
+                if (!existing.email.empty() &&
+                    pqnas::OpaqueCredentials::normalize_login(existing.email) == login) {
+                    routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", login, existing.fingerprint, "login_already_exists");
+                    reply_json(res, 409, json{
+                        {"ok", false},
+                        {"error", "login_already_exists"},
+                        {"fingerprint", existing.fingerprint}
+                    }.dump());
+                    return;
+                }
+            }
+        }
+
+        pqnas::GeneratedDnaIdentity ident;
+        std::string gen_error;
+        if (!pqnas::generate_dna_identity(ident, gen_error)) {
+            routes_v5_secure_clear_string(ident.recovery_words);
+            routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", login, "", "identity_generation_failed");
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "identity_generation_failed"},
+                {"message", gen_error}
+            }.dump());
+            return;
+        }
+
+        if (ctx.users->get(ident.fingerprint_hex).has_value()) {
+            routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", login, ident.fingerprint_hex, "fingerprint_collision");
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 409, json{{"ok", false}, {"error", "fingerprint_already_exists"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::UserRec u;
+        u.fingerprint = ident.fingerprint_hex;
+        u.name = name.empty() ? login : name;
+        u.role = role;
+        u.status = status;
+        u.added_at = now_iso;
+        u.last_seen = "";
+        u.notes = "Created by OPAQUE provisioning; awaiting OPAQUE credential enrollment";
+        u.group = "";
+        u.email = login;
+        u.address = "";
+        u.avatar_url = "";
+        u.storage_state = "unallocated";
+        u.quota_bytes = requested_quota_bytes;
+        u.root_rel = "";
+        u.storage_pool_id = "";
+        u.storage_set_at = "";
+        u.storage_set_by = "";
+
+        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+            routes_v5_audit_password(ctx, req, "opaque.user_create", "deny", login, ident.fingerprint_hex, "users_save_failed");
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.user_create", "ok", login, ident.fingerprint_hex, "");
+
+        json out = {
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", ident.fingerprint_hex},
+            {"role", role},
+            {"status", status},
+            {"quota_bytes", requested_quota_bytes},
+            {"opaque_enrollment_required", true},
+            {"ready_for_login", false},
+            {"setup_state", status == "enabled" ? "credential_required_enabled_user" : "credential_required_disabled_user"},
+            {"recovery_words_shown_once", true},
+            {"warning", "Recovery words are shown once and are not stored by the server. OPAQUE credential enrollment is still required before login works. Keep the user disabled until enrollment finish enables it."}
+        };
+
+        if (include_public_key) {
+            out["public_key_b64"] = ident.public_key_b64;
+        }
+
+        std::string response_body = out.dump();
+        std::string recovery_words_json = json(ident.recovery_words).dump();
+
+        if (!routes_v5_append_json_member_to_object(
+                response_body,
+                std::string("\"recovery_words\":") + recovery_words_json)) {
+            routes_v5_secure_clear_string(recovery_words_json);
+            routes_v5_secure_clear_string(ident.recovery_words);
+            routes_v5_secure_clear_string(response_body);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "response_build_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_secure_clear_string(recovery_words_json);
+        routes_v5_secure_clear_string(ident.recovery_words);
+        reply_json(res, 200, response_body);
+        routes_v5_secure_clear_string(response_body);
+    });
+
 
     // ---- POST/GET /api/v5/session ----
 	// Route group: /api/v5/session

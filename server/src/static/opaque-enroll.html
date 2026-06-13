@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DNA-Nexus OPAQUE setup</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #172554, #020617 65%);
+      color: #e5e7eb;
+    }
+    .card {
+      width: min(92vw, 480px);
+      border: 1px solid rgba(148,163,184,.35);
+      border-radius: 22px;
+      padding: 28px;
+      background: rgba(15,23,42,.88);
+      box-shadow: 0 24px 80px rgba(0,0,0,.42);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.55rem; }
+    p { color: #cbd5e1; line-height: 1.5; }
+    label { display:block; margin: 18px 0 8px; font-weight: 650; }
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 13px 14px;
+      border: 1px solid rgba(148,163,184,.45);
+      border-radius: 12px;
+      background: rgba(15,23,42,.7);
+      color: #f8fafc;
+      font: inherit;
+    }
+    button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 13px 14px;
+      border: 0;
+      border-radius: 12px;
+      background: #38bdf8;
+      color: #082f49;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .status {
+      min-height: 1.5em;
+      margin-top: 16px;
+      color: #bfdbfe;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .error { color: #fecaca; }
+    .ok { color: #bbf7d0; }
+    .small { font-size: .9rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Set your DNA-Nexus password</h1>
+    <p>This page uses OPAQUE zero-knowledge password setup. Your password is processed in this browser and is not sent to the server.</p>
+
+    <form id="form">
+      <label for="password">New password</label>
+      <input id="password" type="password" autocomplete="new-password" minlength="12" required>
+
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" type="password" autocomplete="new-password" minlength="12" required>
+
+      <button id="submit" type="submit">Set password</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <p class="small">The setup link is single-use. If it has expired, ask an administrator for a new link.</p>
+  </main>
+
+  <script type="module">
+    const OPAQUE_CLIENT_MODULE_URL = "/static/opaque/pqnas_opaque_browser_client.js?v=20260613-opaque-enroll-1";
+    const OPAQUE_CLIENT_WASM_URL = "/static/opaque/pqnas_opaque_browser_client_bg.wasm?v=20260613-opaque-enroll-1";
+
+    const params = new URLSearchParams(location.search);
+    const token = (params.get("token") || "").trim();
+
+    const form = document.getElementById("form");
+    const submit = document.getElementById("submit");
+    const statusEl = document.getElementById("status");
+    const passwordEl = document.getElementById("password");
+    const confirmEl = document.getElementById("confirm");
+
+    function setStatus(message, cls = "") {
+      statusEl.className = "status " + cls;
+      statusEl.textContent = message;
+    }
+
+    function parseOpaqueResult(value) {
+      if (typeof value === "string") return JSON.parse(value);
+      if (value && typeof value === "object") return value;
+      throw new Error("Unexpected OPAQUE client result");
+    }
+
+    async function loadOpaqueClient() {
+      const mod = await import(OPAQUE_CLIENT_MODULE_URL);
+      if (typeof mod.default === "function") {
+        await mod.default(OPAQUE_CLIENT_WASM_URL);
+      }
+      if (typeof mod.opaqueRegistrationStart !== "function" ||
+          typeof mod.opaqueRegistrationFinish !== "function") {
+        throw new Error("OPAQUE registration functions missing");
+      }
+      return mod;
+    }
+
+    async function postJson(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(body)
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = data && (data.message || data.error) ? (data.message || data.error) : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    if (!token) {
+      submit.disabled = true;
+      setStatus("Missing setup token.", "error");
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+
+      const password = passwordEl.value;
+      const confirm = confirmEl.value;
+
+      if (password.length < 12) {
+        setStatus("Password must be at least 12 characters.", "error");
+        return;
+      }
+      if (password !== confirm) {
+        setStatus("Passwords do not match.", "error");
+        return;
+      }
+
+      submit.disabled = true;
+
+      try {
+        setStatus("Loading OPAQUE client...");
+        const opaque = await loadOpaqueClient();
+
+        setStatus("Creating registration request in browser...");
+        const regStart = parseOpaqueResult(await opaque.opaqueRegistrationStart(password));
+        if (!regStart.ok || !regStart.client_registration_state_b64 || !regStart.registration_request_b64) {
+          throw new Error("OPAQUE registration start failed");
+        }
+
+        setStatus("Contacting server...");
+        const serverStart = await postJson("/api/auth/opaque/enrollment/start", {
+          token,
+          registration_request_b64: regStart.registration_request_b64
+        });
+
+        setStatus("Finalizing registration in browser...");
+        const regFinish = parseOpaqueResult(await opaque.opaqueRegistrationFinish(
+          password,
+          regStart.client_registration_state_b64,
+          serverStart.registration_response_b64
+        ));
+
+        if (!regFinish.ok || !regFinish.registration_upload_b64) {
+          throw new Error("OPAQUE registration finish failed");
+        }
+
+        setStatus("Saving credential...");
+        const done = await postJson("/api/auth/opaque/enrollment/finish", {
+          token,
+          registration_upload_b64: regFinish.registration_upload_b64
+        });
+
+        passwordEl.value = "";
+        confirmEl.value = "";
+
+        if (done.ready_for_login) {
+          setStatus(`Password set. You can now sign in as ${done.login}.`, "ok");
+        } else {
+          setStatus("Password set, but the account is not enabled yet. Ask an administrator to enable it.", "ok");
+        }
+      } catch (err) {
+        setStatus(`Setup failed: ${err && err.message ? err.message : String(err)}`, "error");
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

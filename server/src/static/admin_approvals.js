@@ -31,7 +31,7 @@ function roleLabel(role) {
 }
 
 async function apiGet(path) {
-    const r = await fetch(path, { headers: { "Accept": "application/json" }, cache: "no-store" });
+    const r = await fetch(path, { credentials: "same-origin", headers: { "Accept": "application/json" }, cache: "no-store" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.message || j.error || ("HTTP " + r.status));
     return j;
@@ -40,6 +40,7 @@ async function apiGet(path) {
 async function apiPost(path, body) {
     const r = await fetch(path, {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify(body),
         cache: "no-store",
@@ -62,10 +63,289 @@ function esc(s) {
 }
 
 let allUsers = [];
+let authConfig = null;
+let opaqueOnboarding = [];
 
 function setMsg(text) {
     const el = $("msg");
     if (el) el.textContent = text || "";
+}
+
+
+function currentAuthMode() {
+    return String((authConfig && authConfig.mode) || "qr").toLowerCase();
+}
+
+function onboardingStateLabel(state) {
+    const s = String(state || "").toLowerCase();
+    if (s === "waiting_password") return tr("admin.approvals.opaque.state.waiting_password", null, "Odottaa salasanan asetusta");
+    if (s === "setup_link_created") return tr("admin.approvals.opaque.state.setup_link_created", null, "Setup-linkki luotu");
+    if (s === "setup_link_expired") return tr("admin.approvals.opaque.state.setup_link_expired", null, "Setup-linkki vanhentunut");
+    if (s === "setup_done") return tr("admin.approvals.opaque.state.setup_done", null, "Setup valmis");
+    if (s === "revoked") return tr("admin.approvals.opaque.state.revoked", null, "Revoked / peruttu");
+    if (s === "reset_required") return tr("admin.approvals.opaque.state.reset_required", null, "Reset vaaditaan");
+    return s || tr("admin.approvals.opaque.state.unknown", null, "Tuntematon");
+}
+
+function onboardingBadge(state) {
+    const s = String(state || "").toLowerCase();
+    const variant =
+        s === "setup_done" ? " ok" :
+        s === "revoked" || s === "setup_link_expired" ? " err" :
+        "";
+    return `<span class="pq-badge${variant}">${esc(onboardingStateLabel(s))}</span>`;
+}
+
+function epochLabel(epoch) {
+    const n = Number(epoch || 0);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    try {
+        return new Date(n * 1000).toLocaleString();
+    } catch (_) {
+        return String(n);
+    }
+}
+
+async function showSetupLinkModal(row, tokenResponse) {
+    const setupUrl = String(tokenResponse.setup_url || tokenResponse.setup_path || "");
+    const ok = await openApprovalsConfirmModal({
+        title: tr("admin.approvals.opaque.setup_link_created_title", null, "Setup-linkki luotu"),
+        subtitle: row.login || "",
+        rows: [
+            { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: row.name || row.login || "" },
+            { label: "Login", value: row.login || "", mono: true },
+            { label: tr("admin.approvals.opaque.expires", null, "Vanhenee"), value: epochLabel(tokenResponse.expires_at) || String(tokenResponse.expires_at || "") },
+            { label: tr("admin.approvals.opaque.setup_url", null, "Setup URL"), value: setupUrl, mono: true },
+        ],
+        note: tr("admin.approvals.opaque.copy_note", null, "Kopioi tämä linkki käyttäjälle. Linkki näytetään tässä muodossa vain kerran."),
+        confirmText: tr("admin.approvals.opaque.copy_link", null, "Kopioi linkki"),
+        cancelText: tr("admin.approvals.opaque.close", null, "Sulje"),
+    });
+
+    if (ok && setupUrl && navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(setupUrl);
+            setMsg(tr("admin.approvals.opaque.copied", null, "Setup-linkki kopioitu leikepöydälle"));
+        } catch (_) {
+            setMsg(setupUrl);
+        }
+    } else if (setupUrl) {
+        setMsg(setupUrl);
+    }
+}
+
+async function createOpaqueSetupLink(row) {
+    const j = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
+        login: row.login,
+        fingerprint: row.fingerprint,
+        purpose: row.credential_exists ? "reset_password" : "new_user",
+        enable_user_on_finish: true,
+        expires_in_seconds: 86400
+    });
+
+    await showSetupLinkModal(row, j);
+    await refresh();
+}
+
+
+async function forceOpaqueReset(row) {
+    const ok = await openApprovalsConfirmModal({
+        title: tr("admin.approvals.opaque.force_reset_title", null, "Pakota salasanan reset"),
+        subtitle: row.login || "",
+        rows: [
+            { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: row.name || row.login || "" },
+            { label: "Login", value: row.login || "", mono: true },
+            { label: tr("admin.approvals.fingerprint", null, "Fingerprint"), value: row.fingerprint || "", mono: true },
+        ],
+        note: tr("admin.approvals.opaque.force_reset_note", null, "Vanha OPAQUE-salasana lakkaa toimimasta heti. Käyttäjä pääsee sisään vasta uuden reset-linkin suorittamisen jälkeen."),
+        confirmText: tr("admin.approvals.opaque.force_reset_confirm", null, "Pakota reset"),
+        cancelText: tr("admin.approvals.cancel", null, "Cancel"),
+        danger: true,
+    });
+    if (!ok) return;
+
+    setMsg(tr("admin.approvals.opaque.force_resetting", null, "Pakotetaan reset…"));
+
+    await apiPost("/api/admin/auth/opaque/credential/disable", {
+        login: row.login,
+        fingerprint: row.fingerprint
+    });
+
+    const token = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
+        login: row.login,
+        fingerprint: row.fingerprint,
+        purpose: "reset_password",
+        enable_user_on_finish: true,
+        expires_in_seconds: 86400
+    });
+
+    await showSetupLinkModal(row, token);
+    await refresh();
+}
+
+function renderOpaqueApprovals() {
+    const f = ($("filter")?.value || "").toLowerCase().trim();
+
+    const rows = opaqueOnboarding.filter(row => {
+        const state = String(row.onboarding_state || "").toLowerCase();
+
+        // Approvals/onboarding view should focus on users needing action.
+        // Completed OPAQUE users belong in the normal user list. Keep them
+        // searchable with the filter for troubleshooting/history.
+        if (!f && state === "setup_done") {
+            return false;
+        }
+
+        const hay = [
+            row.fingerprint,
+            row.login,
+            row.name,
+            row.notes,
+            row.role,
+            row.user_status,
+            row.onboarding_state,
+            onboardingStateLabel(row.onboarding_state)
+        ].join(" ").toLowerCase();
+
+        return !f || hay.includes(f);
+    });
+
+    const tb = $("tbody");
+    if (!tb) return;
+
+    if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="muted">${esc(tr("admin.approvals.opaque.no_rows", null, "Ei OPAQUE onboarding -rivejä."))}</td></tr>`;
+        return;
+    }
+
+    tb.innerHTML = rows.map(row => {
+        const canCreateLink = row.onboarding_state !== "revoked";
+        const linkText = row.credential_exists ? tr("admin.approvals.opaque.create_reset_link", null, "Luo reset-linkki") : tr("admin.approvals.opaque.create_setup_link", null, "Luo setup-linkki");
+        const tokenInfo =
+            row.token_state === "active" ? `${tr("admin.approvals.opaque.active_link_expires", null, "Aktiivinen linkki, vanhenee:")} ${epochLabel(row.token_expires_at)}` :
+            row.token_state === "used" ? `${tr("admin.approvals.opaque.link_used", null, "Linkki käytetty:")} ${epochLabel(row.token_used_at)}` :
+            row.token_state === "expired" ? `${tr("admin.approvals.opaque.link_expired", null, "Linkki vanhentui:")} ${epochLabel(row.token_expires_at)}` :
+            tr("admin.approvals.opaque.no_active_link", null, "Ei aktiivista linkkiä");
+
+        const credInfo = row.credential_exists
+            ? `${tr("admin.approvals.opaque.credential", null, "Credential")}: ${row.credential_enabled ? tr("admin.approvals.opaque.credential_enabled", null, "enabled") : tr("admin.approvals.opaque.credential_disabled", null, "disabled")} ${row.credential_updated_at || ""}`
+            : tr("admin.approvals.opaque.credential_missing", null, "Credential puuttuu");
+
+        return `<tr>
+            <td class="mono">${esc(row.fingerprint || "")}</td>
+
+            <td>
+                <div><b>${esc(row.name || row.login || "")}</b></div>
+                <div class="muted mono">${esc(row.login || "")}</div>
+                <div class="muted" style="white-space:pre-wrap;">${esc(row.notes || "")}</div>
+            </td>
+
+            <td>${esc(roleLabel(row.role || ""))}</td>
+
+            <td>
+                ${onboardingBadge(row.onboarding_state)}
+                <div class="muted" style="margin-top:6px;">User: ${esc(statusLabel(row.user_status || ""))}</div>
+            </td>
+
+            <td>
+                <div class="mono">${esc(row.added_at || "")}</div>
+                <div class="muted">${esc(tokenInfo)}</div>
+            </td>
+
+            <td>
+                <div class="mono">${esc(row.last_seen || "")}</div>
+                <div class="muted">${esc(credInfo)}</div>
+            </td>
+
+            <td class="row-actions">
+                ${canCreateLink ? `<button class="pq-btn secondary" data-act="opaque-setup" data-fp="${esc(row.fingerprint)}" type="button">${esc(linkText)}</button>` : ""}
+                ${row.credential_exists && row.credential_enabled && row.onboarding_state !== "revoked" ? `<button class="pq-btn danger" data-act="opaque-force-reset" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.force_reset", null, "Pakota reset"))}</button>` : ""}
+                <button class="pq-btn secondary" data-act="opaque-revoke" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.revoke_cancel", null, "Peru / revoke"))}</button>
+                <button class="pq-btn danger" data-act="opaque-delete" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.delete", null, "Delete"))}</button>
+            </td>
+        </tr>`;
+    }).join("");
+
+    tb.querySelectorAll("button").forEach(b => {
+        b.addEventListener("click", async () => {
+            const fp = b.getAttribute("data-fp");
+            const act = b.getAttribute("data-act");
+            const row = opaqueOnboarding.find(x => x.fingerprint === fp);
+            if (!fp || !act || !row) return;
+
+            if (act === "opaque-setup") {
+                try {
+                    setMsg(tr("admin.approvals.opaque.creating_setup", null, "Luodaan OPAQUE setup-linkkiä…"));
+                    await createOpaqueSetupLink(row);
+                } catch (e) {
+                    setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Virhe: " + e.message));
+                }
+                return;
+            }
+
+            if (act === "opaque-force-reset") {
+                try {
+                    await forceOpaqueReset(row);
+                } catch (e) {
+                    setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Virhe: " + e.message));
+                }
+                return;
+            }
+
+            if (act === "opaque-revoke") {
+                const ok = await openApprovalsConfirmModal({
+                    title: tr("admin.approvals.opaque.revoke_title", null, "Peru OPAQUE onboarding?"),
+                    subtitle: row.login || "",
+                    rows: [
+                        { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: row.name || row.login || "" },
+                        { label: "Login", value: row.login || "", mono: true },
+                        { label: "Fingerprint", value: fp, mono: true },
+                    ],
+                    note: tr("admin.approvals.opaque.revoke_note", null, "Tämä asettaa käyttäjän revoked-tilaan. Olemassa oleva setup-linkki ei saa enää herättää käyttäjää takaisin."),
+                    confirmText: tr("admin.approvals.opaque.revoke_cancel", null, "Peru / revoke"),
+                    cancelText: tr("admin.approvals.cancel", null, "Cancel"),
+                    danger: true,
+                });
+                if (!ok) return;
+
+                try {
+                    setMsg(tr("admin.approvals.opaque.revoking", null, "Perutaan…"));
+                    await apiPost("/api/v4/admin/users/status", { fingerprint: fp, status: "revoked" });
+                    await refresh();
+                    setMsg(tr("admin.approvals.opaque.revoked_msg", null, "Peruttu / revoked"));
+                } catch (e) {
+                    setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Virhe: " + e.message));
+                }
+                return;
+            }
+
+            if (act === "opaque-delete") {
+                const ok = await openApprovalsConfirmModal({
+                    title: tr("admin.approvals.delete_title", null, "Delete user entry?"),
+                    subtitle: row.login || "",
+                    rows: [
+                        { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: row.name || row.login || "" },
+                        { label: "Login", value: row.login || "", mono: true },
+                        { label: "Fingerprint", value: fp, mono: true },
+                    ],
+                    note: tr("admin.approvals.opaque.delete_note", null, "Poistaa users.json-rivin. Käytä vain testidatan siivoukseen."),
+                    confirmText: tr("admin.approvals.delete", null, "Delete"),
+                    cancelText: tr("admin.approvals.cancel", null, "Cancel"),
+                    danger: true,
+                });
+                if (!ok) return;
+
+                try {
+                    setMsg(tr("admin.approvals.deleting", null, "Deleting…"));
+                    await apiPost("/api/v4/admin/users/delete", { fingerprint: fp });
+                    await refresh();
+                    setMsg(tr("admin.approvals.delete_ok", null, "Delete OK"));
+                } catch (e) {
+                    setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Virhe: " + e.message));
+                }
+            }
+        });
+    });
 }
 
 
@@ -355,6 +635,11 @@ function openApprovalsConfirmModal(opts = {}) {
 
 
 function render() {
+    if (currentAuthMode() === "opaque") {
+        renderOpaqueApprovals();
+        return;
+    }
+
     const f = ($("filter")?.value || "").toLowerCase().trim();
 
     // Approvals view behavior:
@@ -476,6 +761,28 @@ function render() {
 }
 
 async function refresh() {
+    setMsg(tr("admin.approvals.opaque.loading_auth", null, "Loading auth mode…"));
+    try {
+        authConfig = await apiGet("/api/auth/config");
+    } catch (_) {
+        authConfig = { mode: "qr" };
+    }
+
+    if (currentAuthMode() === "opaque") {
+        setMsg(tr("admin.approvals.opaque.loading_onboarding", null, "Ladataan OPAQUE onboarding…"));
+        const j = await apiGet("/api/admin/auth/opaque/onboarding/status");
+        opaqueOnboarding = (j.entries || []).sort((a,b) => {
+            const an = (a.name || a.login || a.fingerprint || "");
+            const bn = (b.name || b.login || b.fingerprint || "");
+            return an.localeCompare(bn);
+        });
+        allUsers = [];
+        render();
+        setMsg(tr("admin.approvals.opaque.loaded_count", { count: opaqueOnboarding.length }, `Ladattu ${opaqueOnboarding.length} OPAQUE onboarding -riviä`));
+        return;
+    }
+
+    opaqueOnboarding = [];
     setMsg(tr("admin.approvals.loading_users", null, "Loading users…"));
     const j = await apiGet("/api/v4/admin/users");
     allUsers = (j.users || []).sort((a,b) => (a.fingerprint||"").localeCompare(b.fingerprint||""));
