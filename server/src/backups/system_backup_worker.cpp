@@ -424,10 +424,22 @@ std::vector<SystemBackupSource> default_sources() {
     const std::filesystem::path password_credentials_path =
         password_credentials_path_for_backup_local(users_path);
 
+    const std::filesystem::path opaque_credentials_path = configured_path_local(
+        "PQNAS_OPAQUE_CREDENTIALS_PATH",
+        {"/etc/pqnas/opaque_credentials.json", "/srv/pqnas/config/opaque_credentials.json"}
+    );
+
+    const std::filesystem::path opaque_server_setup_path = configured_path_local(
+        "PQNAS_OPAQUE_SERVER_SETUP_PATH",
+        {"/etc/pqnas/opaque_server_setup.bin", "/srv/pqnas/config/opaque_server_setup.bin"}
+    );
+
     add_regular("config", "Admin settings", admin_settings_path, "config/admin_settings.json");
     add_regular("config", "Policy", policy_path, "config/policy.json");
     add_regular("users_auth", "Users registry", users_path, "users/users.json");
     add_regular("users_auth", "Password credentials", password_credentials_path, "users/password_credentials.json");
+    add_regular("users_auth", "OPAQUE credentials store", opaque_credentials_path, "users/opaque_credentials.json");
+    add_regular("users_auth", "OPAQUE server setup", opaque_server_setup_path, "users/opaque_server_setup.bin");
     add_regular("shares", "Share registry", shares_path, "shares/shares.json");
     add_regular("storage", "Storage pools", pools_path, "storage/pools.json");
     add_regular("auth", "App auth store", app_auth_path, "auth/app_auth.json");
