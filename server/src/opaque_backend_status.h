@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -13,6 +14,8 @@ struct OpaqueBackendStatus {
 
     bool credentials_file_exists = false;
     bool credentials_file_readable = false;
+    bool credentials_store_valid = false;
+    std::size_t credentials_account_count = 0;
 
     bool server_setup_file_exists = false;
     bool server_setup_file_readable = false;

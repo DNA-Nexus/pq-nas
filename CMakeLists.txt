@@ -560,11 +560,13 @@ add_executable(test_opaque_backend_status
         tests/opaque_backend_status/test_opaque_backend_status.cpp
         server/src/opaque_backend_status.cpp
         server/src/opaque_helper_client.cpp
+        server/src/opaque_credentials.cpp
         server/src/runtime_paths.cpp
 )
 
 target_include_directories(test_opaque_backend_status PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
 )
 
 set_target_properties(test_opaque_backend_status PROPERTIES

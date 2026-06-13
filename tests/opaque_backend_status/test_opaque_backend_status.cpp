@@ -100,6 +100,27 @@ int main() {
 
     write_file(credentials, "{ \"version\": 1, \"accounts\": [] }\n");
     write_file(setup, "fake-server-setup-placeholder\n");
+    write_file(credentials,
+               "{\n"
+               "  \"version\": 1,\n"
+               "  \"accounts\": [\n"
+               "    {\n"
+               "      \"login\": \"user@example.com\",\n"
+               "      \"fingerprint\": \"abcdef123456\",\n"
+               "      \"opaque_password_file_b64\": \"abc\",\n"
+               "      \"opaque_suite\": \"suite\",\n"
+               "      \"password_hash\": \"$argon2id$must-not-exist-here\"\n"
+               "    }\n"
+               "  ]\n"
+               "}\n");
+    auto invalid_credentials = pqnas::check_opaque_backend_status();
+    require_true(!invalid_credentials.credentials_store_valid,
+                 "credentials store with password_hash fallback must fail closed");
+    require_true(contains_reason(invalid_credentials.missing_or_not_ready, "opaque_credentials_invalid"),
+                 "invalid credentials reason should be reported internally");
+
+    write_file(credentials, "{ \"version\": 1, \"accounts\": [] }\n");
+
     write_file(helper,
                "#!/bin/sh\n"
                "if [ \"$1\" = \"--version\" ]; then\n"
@@ -121,6 +142,8 @@ int main() {
     auto present = pqnas::check_opaque_backend_status();
     require_true(present.credentials_file_exists, "credentials file should exist");
     require_true(present.credentials_file_readable, "credentials file should be readable");
+    require_true(present.credentials_store_valid, "credentials store should parse as valid");
+    require_true(present.credentials_account_count == 0, "empty credentials store should report zero accounts");
     require_true(present.server_setup_file_exists, "server setup file should exist");
     require_true(present.server_setup_file_readable, "server setup file should be readable");
     require_true(present.server_setup_valid, "server setup should pass helper validation");
@@ -140,6 +163,10 @@ int main() {
     require_true(pqnas::opaque_backend_public_error(present) == "opaque_backend_not_configured",
                  "public error should remain generic even when files exist");
     const std::string present_diag = pqnas::opaque_backend_internal_diagnostic_json(present);
+    require_true(contains_text(present_diag, "\"credentials_store_valid\":true"),
+                 "internal diagnostic should report credentials store parse success");
+    require_true(contains_text(present_diag, "\"credentials_account_count\":0"),
+                 "internal diagnostic should report empty credentials account count");
     require_true(contains_text(present_diag, "\"helper_version_ok\":true"),
                  "internal diagnostic should report helper version success");
     require_true(contains_text(present_diag, "\"helper_self_test_ok\":true"),

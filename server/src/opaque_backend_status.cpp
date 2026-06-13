@@ -1,5 +1,6 @@
 #include "opaque_backend_status.h"
 
+#include "opaque_credentials.h"
 #include "opaque_helper_client.h"
 #include "runtime_paths.h"
 
@@ -81,6 +82,14 @@ OpaqueBackendStatus check_opaque_backend_status() {
     st.credentials_file_exists = file_exists_regular(st.credentials_path);
     st.credentials_file_readable = st.credentials_file_exists && file_readable(st.credentials_path);
 
+    if (st.credentials_file_readable) {
+        OpaqueCredentials credentials;
+        st.credentials_store_valid = credentials.load(st.credentials_path.string());
+        if (st.credentials_store_valid) {
+            st.credentials_account_count = credentials.size();
+        }
+    }
+
     st.server_setup_file_exists = file_exists_regular(st.server_setup_path);
     st.server_setup_file_readable = st.server_setup_file_exists && file_readable(st.server_setup_path);
 
@@ -124,6 +133,8 @@ OpaqueBackendStatus check_opaque_backend_status() {
         add_missing(st.missing_or_not_ready, "opaque_credentials_missing");
     } else if (!st.credentials_file_readable) {
         add_missing(st.missing_or_not_ready, "opaque_credentials_not_readable");
+    } else if (!st.credentials_store_valid) {
+        add_missing(st.missing_or_not_ready, "opaque_credentials_invalid");
     }
 
     if (!st.server_setup_file_exists) {
@@ -180,6 +191,8 @@ std::string opaque_backend_internal_diagnostic_json(const OpaqueBackendStatus& s
         << "\"helper_path\":" << json_escape(status.helper_path.string()) << ','
         << "\"credentials_file_exists\":" << json_bool(status.credentials_file_exists) << ','
         << "\"credentials_file_readable\":" << json_bool(status.credentials_file_readable) << ','
+        << "\"credentials_store_valid\":" << json_bool(status.credentials_store_valid) << ','
+        << "\"credentials_account_count\":" << status.credentials_account_count << ','
         << "\"server_setup_file_exists\":" << json_bool(status.server_setup_file_exists) << ','
         << "\"server_setup_file_readable\":" << json_bool(status.server_setup_file_readable) << ','
         << "\"server_setup_valid\":" << json_bool(status.server_setup_valid) << ','
