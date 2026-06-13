@@ -259,16 +259,9 @@ async function forceOpaqueReset(row) {
 
     setMsg(tr("admin.approvals.opaque.force_resetting", null, "Pakotetaan reset…"));
 
-    await apiPost("/api/admin/auth/opaque/credential/disable", {
-        login: row.login,
-        fingerprint: row.fingerprint
-    });
-
-    const token = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
+    const token = await apiPost("/api/admin/auth/opaque/force-reset", {
         login: row.login,
         fingerprint: row.fingerprint,
-        purpose: "reset_password",
-        enable_user_on_finish: true,
         expires_in_seconds: 86400
     });
 
