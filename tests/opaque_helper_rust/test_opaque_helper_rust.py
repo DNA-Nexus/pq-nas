@@ -85,6 +85,30 @@ def main() -> int:
         if mode != 0o600:
             fail(f"server setup file mode was {oct(mode)}, expected 0o600")
 
+        check = run([str(helper), "server-setup-check", str(setup_path)], expect_rc=0)
+        check_json = parse_json_stdout(check, "server-setup-check")
+        if check_json.get("ok") is not True:
+            fail(f"server-setup-check did not return ok:true: {check_json}")
+        if check_json.get("op") != "server-setup-check":
+            fail(f"server-setup-check returned wrong op: {check_json}")
+        if check_json.get("path") != str(setup_path):
+            fail(f"server-setup-check returned wrong path: {check_json}")
+        if check_json.get("bytes_read") != actual_size:
+            fail(f"server-setup-check bytes_read mismatch: {check_json}")
+
+        invalid_path = Path(tmp) / "invalid_server_setup.bin"
+        invalid_path.write_bytes(b"not a valid opaque server setup")
+        invalid = run([str(helper), "server-setup-check", str(invalid_path)], expect_rc=1)
+        invalid_json = parse_json_stdout(invalid, "invalid server-setup-check")
+        if invalid_json.get("error") != "opaque_server_setup_invalid":
+            fail(f"invalid server-setup-check returned wrong error: {invalid_json}")
+
+        missing_path = Path(tmp) / "missing_server_setup.bin"
+        missing = run([str(helper), "server-setup-check", str(missing_path)], expect_rc=1)
+        missing_json = parse_json_stdout(missing, "missing server-setup-check")
+        if missing_json.get("error") != "opaque_server_setup_read_failed":
+            fail(f"missing server-setup-check returned wrong error: {missing_json}")
+
         second = run([str(helper), "server-setup-create", str(setup_path)], expect_rc=1)
         second_json = parse_json_stdout(second, "second server-setup-create")
         if second_json.get("ok") is not False:

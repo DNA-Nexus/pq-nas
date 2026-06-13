@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -147,9 +147,52 @@ fn create_server_setup(path: &str) -> i32 {
     0
 }
 
+fn check_server_setup(path: &str) -> i32 {
+    if path.trim().is_empty() {
+        return print_json_error(
+            "server-setup-check",
+            "opaque_invalid_setup_path",
+            "server setup input path is empty",
+        );
+    }
+
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            let message = format!("failed to read server setup file: {err}");
+            return print_json_error(
+                "server-setup-check",
+                "opaque_server_setup_read_failed",
+                &message,
+            );
+        }
+    };
+
+    let _setup: ServerSetup<PqnasOpaqueCipherSuite> =
+        match ServerSetup::<PqnasOpaqueCipherSuite>::deserialize(bytes.as_slice()) {
+            Ok(setup) => setup,
+            Err(err) => {
+                let message = format!("failed to deserialize server setup file: {err:?}");
+                return print_json_error(
+                    "server-setup-check",
+                    "opaque_server_setup_invalid",
+                    &message,
+                );
+            }
+        };
+
+    println!(
+        "{{\"ok\":true,\"op\":\"server-setup-check\",\"path\":\"{}\",\"bytes_read\":{}}}",
+        json_escape(path),
+        bytes.len()
+    );
+
+    0
+}
+
 fn print_usage() -> i32 {
     eprintln!(
-        "Usage:\n  {PROGRAM_NAME} --version\n  {PROGRAM_NAME} self-test\n  {PROGRAM_NAME} server-setup-create <output-path>\n\nFuture protocol operations are recognized but fail closed:\n  register-start\n  register-finish\n  login-start\n  login-finish"
+        "Usage:\n  {PROGRAM_NAME} --version\n  {PROGRAM_NAME} self-test\n  {PROGRAM_NAME} server-setup-create <output-path>\n  {PROGRAM_NAME} server-setup-check <input-path>\n\nFuture protocol operations are recognized but fail closed:\n  register-start\n  register-finish\n  login-start\n  login-finish"
     );
     2
 }
@@ -186,6 +229,17 @@ fn main() {
                 print_usage()
             } else {
                 create_server_setup(&path)
+            }
+        }
+        "server-setup-check" => {
+            let Some(path) = args.next() else {
+                process::exit(print_usage());
+            };
+
+            if args.next().is_some() {
+                print_usage()
+            } else {
+                check_server_setup(&path)
             }
         }
         op if is_future_opaque_op(op) => {
