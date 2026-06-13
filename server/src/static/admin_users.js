@@ -1582,6 +1582,18 @@ async function submitAllocationFromModal() {
 
 let allUsers = [];
 let actorFp = "";
+
+const ADMIN_USERS_SORT_STORAGE_KEY = "pqnas_admin_users_sort_v1";
+let adminUsersSort = (() => {
+    try {
+        const raw = JSON.parse(localStorage.getItem(ADMIN_USERS_SORT_STORAGE_KEY) || "{}");
+        const key = String(raw.key || "fingerprint");
+        const dir = String(raw.dir || "asc") === "desc" ? "desc" : "asc";
+        return { key, dir };
+    } catch (_) {
+        return { key: "fingerprint", dir: "asc" };
+    }
+})();
 // ----- pools + allocation modal state -----
 let gPools = null; // array of { id, name, hint }
 let gAllocFp = "";
@@ -1593,9 +1605,140 @@ function setMsg(text) {
     if (el) el.textContent = text || "";
 }
 
+
+function isProfileEditorOpen() {
+    const body = $("profileEditorBody");
+    return !!body && !body.classList.contains("collapsed");
+}
+
+function setProfileEditorOpen(open) {
+    const body = $("profileEditorBody");
+    const btn = $("profileEditorToggle");
+    if (!body || !btn) return;
+
+    body.classList.toggle("collapsed", !open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.textContent = open
+        ? tr("admin.users.hide_editor", null, "Hide editor")
+        : tr("admin.users.show_editor", null, "Show editor");
+}
+
+function adminUsersSortValue(u, key) {
+    switch (String(key || "")) {
+        case "name":
+            return String(`${u.name || ""} ${u.email || ""} ${u.notes || ""}`).toLowerCase();
+        case "role":
+            return String(u.role || "").toLowerCase();
+        case "status":
+            return String(u.status || "").toLowerCase();
+        case "group":
+            return String(u.group || "").toLowerCase();
+        case "storage":
+            return String(`${u.storage_state || ""} ${storagePoolIdForUser(u)}`).toLowerCase();
+        case "quota":
+            return Number(u.quota_bytes || 0);
+        case "added": {
+            const t = Date.parse(String(u.added_at || ""));
+            return Number.isFinite(t) ? t : 0;
+        }
+        case "fingerprint":
+        default:
+            return String(u.fingerprint || "").toLowerCase();
+    }
+}
+
+function compareAdminUserValues(a, b) {
+    if (typeof a === "number" || typeof b === "number") {
+        const an = Number(a || 0);
+        const bn = Number(b || 0);
+        return an === bn ? 0 : (an < bn ? -1 : 1);
+    }
+
+    return String(a || "").localeCompare(String(b || ""), undefined, {
+        numeric: true,
+        sensitivity: "base"
+    });
+}
+
+function sortAdminUserRows(rows) {
+    const key = adminUsersSort.key || "fingerprint";
+    const dir = adminUsersSort.dir === "desc" ? -1 : 1;
+
+    return [...rows].sort((a, b) => {
+        const primary = compareAdminUserValues(
+            adminUsersSortValue(a, key),
+            adminUsersSortValue(b, key)
+        );
+
+        if (primary !== 0) return primary * dir;
+
+        const tieName = compareAdminUserValues(
+            adminUsersSortValue(a, "name"),
+            adminUsersSortValue(b, "name")
+        );
+        if (tieName !== 0) return tieName;
+
+        return compareAdminUserValues(
+            adminUsersSortValue(a, "fingerprint"),
+            adminUsersSortValue(b, "fingerprint")
+        );
+    });
+}
+
+function saveAdminUsersSort() {
+    try {
+        localStorage.setItem(ADMIN_USERS_SORT_STORAGE_KEY, JSON.stringify(adminUsersSort));
+    } catch (_) {}
+}
+
+function updateAdminUsersSortIndicators() {
+    document.querySelectorAll("button.sortTh[data-sort]").forEach(btn => {
+        const key = btn.getAttribute("data-sort") || "";
+        const active = key === adminUsersSort.key;
+        btn.classList.toggle("active", active);
+
+        const icon = btn.querySelector(".sortIcon");
+        if (icon) {
+            icon.textContent = active
+                ? (adminUsersSort.dir === "desc" ? "▼" : "▲")
+                : "↕";
+        }
+
+        const th = btn.closest("th");
+        if (th) {
+            th.setAttribute(
+                "aria-sort",
+                active
+                    ? (adminUsersSort.dir === "desc" ? "descending" : "ascending")
+                    : "none"
+            );
+        }
+    });
+}
+
+function bindAdminUsersSortHeaders() {
+    document.querySelectorAll("button.sortTh[data-sort]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const key = btn.getAttribute("data-sort") || "fingerprint";
+
+            if (adminUsersSort.key === key) {
+                adminUsersSort.dir = adminUsersSort.dir === "asc" ? "desc" : "asc";
+            } else {
+                adminUsersSort.key = key;
+                adminUsersSort.dir = key === "added" || key === "quota" ? "desc" : "asc";
+            }
+
+            saveAdminUsersSort();
+            render();
+        });
+    });
+
+    updateAdminUsersSortIndicators();
+}
+
 function render() {
     const f = ($("filter")?.value || "").toLowerCase().trim();
-    const rows = allUsers.filter(u => {
+    let rows = allUsers.filter(u => {
         const hay = [
             u.fingerprint, u.name, u.notes, u.role, u.status,
             u.group, u.email, u.storage_state,
@@ -1603,6 +1746,8 @@ function render() {
         ].join(" ").toLowerCase();
         return !f || hay.includes(f);
     });
+
+    rows = sortAdminUserRows(rows);
 
     const tb = $("tbody");
     if (!tb) return;
@@ -1805,6 +1950,8 @@ ${detailRow}
 
     }).join("");
 
+    updateAdminUsersSortIndicators();
+
     // ✅ Attach avatar modal click via delegation (works across rerenders)
     tb.onclick = (ev) => {
         const img = ev.target?.closest?.('img[data-avatar-open="1"]');
@@ -1827,6 +1974,8 @@ ${detailRow}
 
             const u = allUsers.find(x => String(x.fingerprint || "") === fp);
             if (!u) return;
+
+            setProfileEditorOpen(true);
 
             // Fill the edit form
             $("fp").value = fp;
@@ -2022,6 +2171,12 @@ window.addEventListener("load", async () => {
     $("btnRefresh")?.addEventListener("click", refresh);
     $("filter")?.addEventListener("input", render);
 
+    setProfileEditorOpen(false);
+    $("profileEditorToggle")?.addEventListener("click", () => {
+        setProfileEditorOpen(!isProfileEditorOpen());
+    });
+    bindAdminUsersSortHeaders();
+
     $("btnAdd")?.addEventListener("click", async () => {
         setMsg("");
         try { await upsertFromForm(); }
@@ -2148,5 +2303,8 @@ window.addEventListener("load", async () => {
 
 window.addEventListener("pqnas-language-changed", () => {
     applyStaticI18n();
-    try { render(); } catch (_) {}
+    try {
+        setProfileEditorOpen(isProfileEditorOpen());
+        render();
+    } catch (_) {}
 });

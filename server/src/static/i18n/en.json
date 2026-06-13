@@ -4617,5 +4617,7 @@
   "admin.approvals.opaque.delete_note": "Removes the users.json row. Use only for cleaning test data.",
   "admin.approvals.opaque.loading_auth": "Loading auth mode…",
   "admin.approvals.opaque.loading_onboarding": "Loading OPAQUE onboarding…",
-  "admin.approvals.opaque.loaded_count": "Loaded {count} OPAQUE onboarding rows"
+  "admin.approvals.opaque.loaded_count": "Loaded {count} OPAQUE onboarding rows",
+  "admin.users.show_editor": "Show editor",
+  "admin.users.hide_editor": "Hide editor"
 }

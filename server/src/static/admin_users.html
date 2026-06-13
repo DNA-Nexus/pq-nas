@@ -476,6 +476,73 @@
             white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
+
+        .profileEditorHead{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            margin-bottom:10px;
+        }
+
+        .profileEditorHead h2{
+            margin-bottom:0;
+        }
+
+        .profileEditorToggle{
+            border:1px solid rgba(var(--fg-rgb),0.18);
+            border-radius:12px;
+            padding:8px 12px;
+            background:rgba(0,0,0,0.12);
+            color:rgba(var(--fg-rgb),0.92);
+            font-weight:850;
+            cursor:pointer;
+        }
+
+        .profileEditorToggle:hover{
+            background:rgba(var(--fg-rgb),0.06);
+        }
+
+        .profileEditorBody.collapsed{
+            display:none;
+        }
+
+        .sortTh{
+            width:100%;
+            display:inline-flex;
+            align-items:center;
+            justify-content:flex-start;
+            gap:6px;
+            border:0;
+            padding:0;
+            margin:0;
+            background:transparent;
+            color:inherit;
+            font:inherit;
+            font-weight:900;
+            letter-spacing:inherit;
+            text-transform:inherit;
+            text-align:left;
+            cursor:pointer;
+        }
+
+        .sortTh:hover{
+            color:rgba(var(--fg-rgb),0.95);
+            text-decoration:underline;
+            text-underline-offset:3px;
+        }
+
+        .sortTh .sortIcon{
+            min-width:1.1em;
+            opacity:.55;
+            font-size:10px;
+            line-height:1;
+        }
+
+        .sortTh.active .sortIcon{
+            opacity:1;
+        }
+
     </style>
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
@@ -527,10 +594,13 @@
         </div>
 
         <div class="content">
-            <section class="pane" aria-label="Controls" data-i18n-aria-label="admin.users.controls">
-                <h2 data-i18n="admin.users.edit_profile">Edit profile</h2>
+            <section class="pane profileEditorPane" id="profileEditorPane" aria-label="Controls" data-i18n-aria-label="admin.users.controls">
+                <div class="profileEditorHead">
+                    <h2 data-i18n="admin.users.edit_profile">Edit profile</h2>
+                    <button class="profileEditorToggle" id="profileEditorToggle" type="button" aria-expanded="false" data-i18n="admin.users.show_editor">Show editor</button>
+                </div>
 
-                <div class="row" style="margin-bottom:10px;">
+                <div class="profileEditorBody collapsed" id="profileEditorBody"><div class="row" style="margin-bottom:10px;">
                     <input class="pq-input" id="filter" placeholder="Filter (fingerprint/name/email/notes/role/status/group/storage/quota)" data-i18n-placeholder="admin.users.filter_placeholder" style="min-width: 320px; flex:1; width:auto;" />
                 </div>
 
@@ -551,6 +621,7 @@
                     <textarea class="pq-textarea" id="notes" placeholder="notes (optional)" data-i18n-placeholder="admin.users.notes_placeholder" style="min-height:70px; width:520px; max-width:100%;"></textarea>
                     <div class="hint" style="max-width: 420px;" data-i18n="admin.users.help">Use Enable to allow logins, Disable to require approval again, and Revoke to hard-block that fingerprint. Delete removes the entry entirely (cleanup).</div>
                 </div>
+                </div>
             </section>
 
             <section class="pane" aria-label="Users table" data-i18n-aria-label="admin.users.users_table" style="min-height:0;">
@@ -562,14 +633,14 @@
                             <thead>
                             <tr>
                                 <th style="width:6%;" data-i18n="admin.users.avatar">Avatar</th>
-                                <th style="width:28%;" data-i18n="admin.users.fingerprint">Fingerprint</th>
-                                <th style="width:22%;" data-i18n="admin.users.name_notes">Name / Notes</th>
-                                <th style="width:6%;" data-i18n="admin.users.role">Role</th>
-                                <th style="width:7%;" data-i18n="admin.users.status">Status</th>
-                                <th style="width:8%;" data-i18n="admin.users.group">Group</th>
-                                <th style="width:7%;" data-i18n="admin.users.storage">Storage</th>
-                                <th style="width:6%;" data-i18n="admin.users.quota">Quota</th>
-                                <th style="width:12%;" data-i18n="admin.users.added">Added</th>
+                                <th style="width:28%;"><button class="sortTh" type="button" data-sort="fingerprint" aria-label="Sort by Fingerprint"><span data-i18n="admin.users.fingerprint">Fingerprint</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:22%;"><button class="sortTh" type="button" data-sort="name" aria-label="Sort by Name / Notes"><span data-i18n="admin.users.name_notes">Name / Notes</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:6%;"><button class="sortTh" type="button" data-sort="role" aria-label="Sort by Role"><span data-i18n="admin.users.role">Role</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:7%;"><button class="sortTh" type="button" data-sort="status" aria-label="Sort by Status"><span data-i18n="admin.users.status">Status</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:8%;"><button class="sortTh" type="button" data-sort="group" aria-label="Sort by Group"><span data-i18n="admin.users.group">Group</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:7%;"><button class="sortTh" type="button" data-sort="storage" aria-label="Sort by Storage"><span data-i18n="admin.users.storage">Storage</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:6%;"><button class="sortTh" type="button" data-sort="quota" aria-label="Sort by Quota"><span data-i18n="admin.users.quota">Quota</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:12%;"><button class="sortTh" type="button" data-sort="added" aria-label="Sort by Added"><span data-i18n="admin.users.added">Added</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:20%;" data-i18n="admin.users.actions">Actions</th>
                             </tr>
                             </thead>
@@ -676,7 +747,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_users.js?v=20260520-admin-users-leftovers-1"></script>
+<script src="/static/admin_users.js?v=20260613-collapsible-sort-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

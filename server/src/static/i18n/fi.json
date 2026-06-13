@@ -4617,5 +4617,7 @@
   "admin.approvals.opaque.delete_note": "Poistaa users.json-rivin. Käytä vain testidatan siivoukseen.",
   "admin.approvals.opaque.loading_auth": "Ladataan auth-tila…",
   "admin.approvals.opaque.loading_onboarding": "Ladataan OPAQUE onboarding…",
-  "admin.approvals.opaque.loaded_count": "Ladattu {count} OPAQUE onboarding -riviä"
+  "admin.approvals.opaque.loaded_count": "Ladattu {count} OPAQUE onboarding -riviä",
+  "admin.users.show_editor": "Näytä muokkaus",
+  "admin.users.hide_editor": "Piilota muokkaus"
 }
