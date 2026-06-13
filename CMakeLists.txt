@@ -664,6 +664,16 @@ add_custom_target(run_test_opaque_admin_enrollment_runtime
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
+if (PQNAS_CARGO)
+    add_custom_target(run_test_opaque_admin_registration_positive_runtime
+        COMMAND python3
+            "${CMAKE_SOURCE_DIR}/tests/opaque_admin_registration/test_opaque_admin_registration_positive_runtime.py"
+            "${PQNAS_OPAQUE_RUST_DIR}/Cargo.toml"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS pqnas_opaque_helper_rust
+    )
+endif()
+
 
 # -----------------------------------------------------------------------------
 # Tool: pqnas_keygen

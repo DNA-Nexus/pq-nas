@@ -931,6 +931,25 @@ Security boundary:
 - login protocol operations still fail closed
 - `ready_for_login` remains `false`
 
+## Positive admin registration runtime test
+
+`run_test_opaque_admin_registration_positive_runtime` verifies the admin-only
+OPAQUE registration path against a running server:
+
+1. fetch admin OPAQUE status and confirm `ready_for_login == false`
+2. create a disabled throwaway test user with password provisioning, unless
+   `PQNAS_OPAQUE_TEST_LOGIN` and `PQNAS_OPAQUE_TEST_FINGERPRINT` point to an
+   existing test user
+3. create a client registration request with the test-only Rust fixture
+4. call `/api/admin/auth/opaque/registration/start`
+5. finish the client registration with the fixture
+6. call `/api/admin/auth/opaque/registration/finish`
+7. confirm credential count changes as expected
+8. confirm public OPAQUE login still fails closed and does not mint a session
+
+The generated test user is intentionally created with user status `disabled`.
+The test verifies enrollment storage only; it does not make OPAQUE login usable.
+
 ## Admin registration endpoints
 
 The server exposes admin-only OPAQUE registration endpoints:
