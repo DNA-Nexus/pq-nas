@@ -23,6 +23,7 @@ Current implementation status:
 - OPAQUE config paths use `PQNAS_CONFIG_ROOT` when set, otherwise the existing deployment `PQNAS_CONFIG`, otherwise `/etc/pqnas`.
 - Admin-only OPAQUE diagnostics include resolved credentials/setup/helper paths for troubleshooting.
 - Admin Settings UI includes an OPAQUE Status card that displays the admin-only backend diagnostics without enabling public OPAQUE login.
+- Selected server-side implementation direction: Rust helper binary using `opaque-ke`.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
@@ -85,14 +86,18 @@ Non-goals for phase 1:
 
 Do not implement OPAQUE cryptography directly inside the large C++ server codebase.
 
-Preferred strategy:
+Selected strategy:
 
 ```text
 pqnas_server C++ routes
   -> small OPAQUE integration wrapper
-  -> isolated Rust helper or C ABI library
-  -> reviewed OPAQUE implementation
+  -> local Rust helper binary
+  -> opaque-ke
 ```
+
+The helper boundary remains process-based for the first implementation. The C++
+server must not link directly to OPAQUE crypto until the helper protocol,
+serialization, and test vectors are stable.
 
 The first safe integration model is a local helper binary:
 
@@ -116,9 +121,9 @@ Later, if needed, the helper can be replaced with:
 - a small local Unix-socket service
 - another reviewed implementation with the same wrapper contract
 
-## Candidate library direction
+## Selected library direction
 
-Primary candidate:
+Selected server-side library family:
 
 ```text
 Rust opaque-ke
@@ -126,16 +131,31 @@ Rust opaque-ke
 
 Reasons:
 
-- implements the RFC 9807 OPAQUE protocol
-- supports OPAQUE registration and login flows
-- has existing Rust ecosystem support
-- can be wrapped behind a helper binary or C ABI
-- has WASM-related ecosystem options for browser/mobile experiments
+- implements OPAQUE using a maintained Rust library instead of custom C++ crypto
+- is based on the RFC 9807 OPAQUE specification
+- can be isolated behind the existing `pqnas_opaque_helper` process boundary
+- keeps `pqnas_server` responsible for HTTP, users, audit, storage, and session minting only
+- keeps the OPAQUE library replaceable behind a stable helper JSON contract
+
+Version policy:
+
+```text
+Pin the exact opaque-ke crate version in the Rust helper Cargo.toml.
+Do not float the dependency in production builds.
+Do not switch OPAQUE ciphersuite/serialization without a migration plan.
+```
+
+Browser-client policy:
+
+```text
+The browser OPAQUE client implementation is not selected yet.
+The server helper may use opaque-ke first, while the browser side can later use a compatible WASM/JS OPAQUE package.
+```
 
 Important rule:
 
 ```text
-No production OPAQUE mode until the chosen library, suite, serialization format, and browser-client story are explicitly documented.
+No production OPAQUE mode until the selected crate version, OPAQUE suite, serialized message formats, server setup format, credential format, and browser-client implementation are explicitly documented and tested together.
 ```
 
 ## High-level architecture
@@ -183,10 +203,16 @@ Responsibilities:
 
 ### OPAQUE credential store
 
-Recommended new file:
+Resolved runtime file:
 
 ```text
-/etc/pqnas/opaque_credentials.json
+${PQNAS_CONFIG_ROOT or PQNAS_CONFIG or /etc/pqnas}/opaque_credentials.json
+```
+
+On the current dev deployment this resolves to:
+
+```text
+/srv/pqnas/config/opaque_credentials.json
 ```
 
 Example structure:
@@ -221,10 +247,16 @@ Rules:
 
 ### OPAQUE server setup
 
-Recommended file:
+Resolved runtime file:
 
 ```text
-/etc/pqnas/opaque_server_setup.bin
+${PQNAS_CONFIG_ROOT or PQNAS_CONFIG or /etc/pqnas}/opaque_server_setup.bin
+```
+
+On the current dev deployment this resolves to:
+
+```text
+/srv/pqnas/config/opaque_server_setup.bin
 ```
 
 Rules:
