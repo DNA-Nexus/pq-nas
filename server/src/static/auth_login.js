@@ -31,6 +31,10 @@
         if (status) status.textContent = msg;
     }
 
+    function setStatusKey(key, fallback, vars) {
+        setStatus(tr(key, vars || null, fallback));
+    }
+
     function injectPasswordCss() {
         if (document.getElementById("passwordLoginStyle")) return;
 
@@ -100,7 +104,7 @@
 
         const card = document.querySelector(".card");
         if (!card) {
-            setStatus("Login UI missing");
+            setStatusKey("auth.login.ui_missing", "Login UI missing");
             return;
         }
 
@@ -109,9 +113,9 @@
                 <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
             </div>
 
-            <h1>Sign in</h1>
+            <h1 data-i18n="auth.login.title">Sign in</h1>
 
-            <div class="hint">
+            <div class="hint" data-i18n="auth.login.password_hint">
                 Use your DNA-Nexus username or email address.
             </div>
 
@@ -119,42 +123,49 @@
                 <a class="presentationLink"
                    href="/static/nexus-presentation/index.html"
                    target="_blank"
-                   rel="noopener">What is DNA-Nexus?</a>
+                   rel="noopener"
+                   data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
             </div>
 
             <form id="passwordLoginForm" class="passwordForm" autocomplete="on">
                 <label>
-                    Email / username
+                    <span data-i18n="auth.login.username_label">Email / username</span>
                     <input id="passwordLoginName"
                            name="username"
                            type="text"
                            inputmode="email"
                            autocomplete="username"
                            maxlength="254"
+                           data-i18n-aria-label="auth.login.username_label"
+                           aria-label="Email / username"
                            required>
                 </label>
 
                 <label>
-                    Password
+                    <span data-i18n="auth.login.password_label">Password</span>
                     <input id="passwordLoginPassword"
                            name="password"
                            type="password"
                            autocomplete="current-password"
                            maxlength="1024"
+                           data-i18n-aria-label="auth.login.password_label"
+                           aria-label="Password"
                            required>
                 </label>
 
-                <button id="passwordLoginButton" type="submit">Sign in</button>
+                <button id="passwordLoginButton" type="submit" data-i18n="auth.login.sign_in_button">Sign in</button>
             </form>
 
-            <div id="status" class="status">Ready.</div>
+            <div id="status" class="status" data-i18n="auth.login.ready">Ready.</div>
 
-            <div class="footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
         `;
 
         const form = el("passwordLoginForm");
         const loginInput = el("passwordLoginName");
         const passwordInput = el("passwordLoginPassword");
+
+        applyStaticI18n();
 
         if (loginInput) loginInput.focus();
 
@@ -165,12 +176,12 @@
             const password = String(passwordInput.value || "");
 
             if (!login || !password) {
-                setStatus("Enter username/email and password.");
+                setStatusKey("auth.login.enter_login_password", "Enter username/email and password.");
                 return;
             }
 
             setBusy(true);
-            setStatus("Signing in…");
+            setStatusKey("auth.login.signing_in", "Signing in…");
 
             try {
                 const res = await fetch("/api/auth/password/login", {
@@ -185,7 +196,7 @@
 
                 if (!res.ok || !data || data.ok === false) {
                     setBusy(false);
-                    setStatus("Invalid login or password.");
+                    setStatusKey("auth.login.invalid_login_password", "Invalid login or password.");
                     return;
                 }
 
@@ -200,7 +211,7 @@
 
                 if (!ping.ok) {
                     setBusy(false);
-                    setStatus("Login OK, but session cookie did not stick.");
+                    setStatusKey("auth.login.cookie_failed", "Login OK, but session cookie did not stick.");
                     return;
                 }
 
@@ -208,7 +219,7 @@
             } catch (e) {
                 console.error(e);
                 setBusy(false);
-                setStatus("Network error during login.");
+                setStatusKey("auth.login.network_error", "Network error during login.");
             }
         });
     }
@@ -227,20 +238,22 @@
                 <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
             </div>
 
-            <h1>Zero-knowledge sign in</h1>
+            <h1 data-i18n="auth.opaque.title">Zero-knowledge sign in</h1>
 
-            <div class="hint">
+            <div class="hint" data-i18n="auth.opaque.client_missing_hint">
                 OPAQUE login is selected for this server, but the browser-side OPAQUE crypto module is not installed in this build yet.
             </div>
 
-            <div class="hint">
+            <div class="hint" data-i18n="auth.opaque.no_password_fallback_hint">
                 For safety, this page will not send your password to the server as a fallback.
             </div>
 
-            <div id="status" class="status">OPAQUE backend not configured.</div>
+            <div id="status" class="status" data-i18n="auth.opaque.client_missing_status">OPAQUE client module not available.</div>
 
-            <div class="footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
         `;
+
+        applyStaticI18n();
     }
 
     async function start() {
