@@ -4,6 +4,7 @@
 #include "runtime_paths.h"
 
 #include <filesystem>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -25,6 +26,48 @@ static bool file_executable(const std::filesystem::path& p) {
 
 static void add_missing(std::vector<std::string>& out, const std::string& item) {
     out.push_back(item);
+}
+
+static const char* json_bool(bool v) {
+    return v ? "true" : "false";
+}
+
+static std::string json_escape(const std::string& s) {
+    std::ostringstream out;
+    out << '"';
+
+    for (const unsigned char ch : s) {
+        switch (ch) {
+            case '"': out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b"; break;
+            case '\f': out << "\\f"; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    static constexpr char hex[] = "0123456789abcdef";
+                    out << "\\u00" << hex[(ch >> 4) & 0x0f] << hex[ch & 0x0f];
+                } else {
+                    out << static_cast<char>(ch);
+                }
+                break;
+        }
+    }
+
+    out << '"';
+    return out.str();
+}
+
+static void append_json_string_array(std::ostringstream& out,
+                                     const std::vector<std::string>& values) {
+    out << '[';
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) out << ',';
+        out << json_escape(values[i]);
+    }
+    out << ']';
 }
 
 } // namespace
@@ -111,6 +154,29 @@ std::string opaque_backend_public_error(const OpaqueBackendStatus& status) {
     // Public callers should not learn whether a specific login exists or which
     // exact backend component is missing. Keep detailed reasons internal.
     return "opaque_backend_not_configured";
+}
+
+std::string opaque_backend_internal_diagnostic_json(const OpaqueBackendStatus& status) {
+    std::ostringstream out;
+
+    out << '{'
+        << "\"ready_for_login\":" << json_bool(status.ready_for_login) << ','
+        << "\"credentials_file_exists\":" << json_bool(status.credentials_file_exists) << ','
+        << "\"credentials_file_readable\":" << json_bool(status.credentials_file_readable) << ','
+        << "\"server_setup_file_exists\":" << json_bool(status.server_setup_file_exists) << ','
+        << "\"server_setup_file_readable\":" << json_bool(status.server_setup_file_readable) << ','
+        << "\"helper_exists\":" << json_bool(status.helper_exists) << ','
+        << "\"helper_executable\":" << json_bool(status.helper_executable) << ','
+        << "\"helper_version_ok\":" << json_bool(status.helper_version_ok) << ','
+        << "\"helper_self_test_ok\":" << json_bool(status.helper_self_test_ok) << ','
+        << "\"helper_probe_error\":" << json_escape(status.helper_probe_error) << ','
+        << "\"missing_or_not_ready\":";
+
+    append_json_string_array(out, status.missing_or_not_ready);
+
+    out << '}';
+
+    return out.str();
 }
 
 } // namespace pqnas

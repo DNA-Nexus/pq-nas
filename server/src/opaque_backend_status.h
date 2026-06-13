@@ -36,4 +36,8 @@ OpaqueBackendStatus check_opaque_backend_status();
 
 std::string opaque_backend_public_error(const OpaqueBackendStatus& status);
 
+// Internal/admin-only diagnostic JSON. Do not return this from public login
+// endpoints because it intentionally includes backend readiness details.
+std::string opaque_backend_internal_diagnostic_json(const OpaqueBackendStatus& status);
+
 } // namespace pqnas

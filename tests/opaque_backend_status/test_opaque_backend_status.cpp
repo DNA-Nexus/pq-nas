@@ -26,6 +26,10 @@ bool contains_reason(const std::vector<std::string>& reasons, const std::string&
     return false;
 }
 
+bool contains_text(const std::string& haystack, const std::string& needle) {
+    return haystack.find(needle) != std::string::npos;
+}
+
 std::filesystem::path temp_root() {
     return std::filesystem::temp_directory_path() /
            ("pqnas_opaque_backend_status_" + std::to_string(static_cast<long long>(::getpid())));
@@ -82,6 +86,11 @@ int main() {
                  "missing helper reason should be reported internally");
     require_true(pqnas::opaque_backend_public_error(missing) == "opaque_backend_not_configured",
                  "public error should be generic");
+    const std::string missing_diag = pqnas::opaque_backend_internal_diagnostic_json(missing);
+    require_true(contains_text(missing_diag, "\"ready_for_login\":false"),
+                 "internal diagnostic should report fail-closed readiness");
+    require_true(contains_text(missing_diag, "opaque_credentials_missing"),
+                 "internal diagnostic should include missing credential reason");
 
     write_file(credentials, "{ \"version\": 1, \"accounts\": [] }\n");
     write_file(setup, "fake-server-setup-placeholder\n");
@@ -119,6 +128,13 @@ int main() {
                  "real-login-not-implemented reason should be reported internally");
     require_true(pqnas::opaque_backend_public_error(present) == "opaque_backend_not_configured",
                  "public error should remain generic even when files exist");
+    const std::string present_diag = pqnas::opaque_backend_internal_diagnostic_json(present);
+    require_true(contains_text(present_diag, "\"helper_version_ok\":true"),
+                 "internal diagnostic should report helper version success");
+    require_true(contains_text(present_diag, "\"helper_self_test_ok\":true"),
+                 "internal diagnostic should report helper self-test success");
+    require_true(contains_text(present_diag, "opaque_real_login_not_implemented"),
+                 "internal diagnostic should still report real login not implemented");
 
     write_file(helper,
                "#!/bin/sh\n"
@@ -145,6 +161,11 @@ int main() {
                  "backend must remain fail-closed when helper self-test fails");
     require_true(pqnas::opaque_backend_public_error(broken_helper) == "opaque_backend_not_configured",
                  "public error should remain generic when helper self-test fails");
+    const std::string broken_diag = pqnas::opaque_backend_internal_diagnostic_json(broken_helper);
+    require_true(contains_text(broken_diag, "\"helper_self_test_ok\":false"),
+                 "internal diagnostic should report helper self-test failure");
+    require_true(contains_text(broken_diag, "opaque_helper_self_test_failed"),
+                 "internal diagnostic should include helper self-test failure reason");
 
     fs::remove_all(root, ec);
     unset_opaque_env();
