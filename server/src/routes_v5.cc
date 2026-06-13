@@ -943,21 +943,39 @@ static bool routes_v5_save_opaque_enrollments_no_lock(const std::string& path,
     if (err) err->clear();
 
     std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    const std::filesystem::path target(path);
+    std::filesystem::create_directories(target.parent_path(), ec);
     if (ec) {
         if (err) *err = "create_directories_failed: " + ec.message();
         return false;
     }
 
-    std::ofstream out(path, std::ios::trunc);
-    if (!out) {
-        if (err) *err = "open_for_write_failed";
-        return false;
+    const std::filesystem::path tmp = target.string() + ".tmp";
+
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
+            if (err) *err = "open_tmp_for_write_failed";
+            return false;
+        }
+
+        out << doc.dump(2) << "\n";
+        out.flush();
+        out.close();
+
+        if (!out) {
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp, rm_ec);
+            if (err) *err = "write_tmp_failed";
+            return false;
+        }
     }
 
-    out << doc.dump(2) << "\n";
-    if (!out) {
-        if (err) *err = "write_failed";
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        if (err) *err = "atomic_rename_failed: " + ec.message();
         return false;
     }
 
@@ -985,6 +1003,39 @@ static void routes_v5_prune_opaque_enrollments_doc(json& doc, long now) {
     }
 
     doc["tokens"] = kept;
+}
+
+
+static std::size_t routes_v5_invalidate_active_opaque_enrollment_tokens(json& doc,
+                                                                        const std::string& login,
+                                                                        const std::string& fingerprint,
+                                                                        long now,
+                                                                        const std::string& reason) {
+    if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+        doc["tokens"] = json::array();
+        return 0;
+    }
+
+    std::size_t changed = 0;
+
+    for (auto& rec : doc["tokens"]) {
+        if (!rec.is_object()) continue;
+
+        const bool login_match = login.empty() || rec.value("login", "") == login;
+        const bool fingerprint_match = fingerprint.empty() || rec.value("fingerprint", "") == fingerprint;
+        if (!login_match || !fingerprint_match) continue;
+
+        const long used_at = rec.value("used_at", 0L);
+        const long expires_at = rec.value("expires_at", 0L);
+        if (used_at > 0 || expires_at <= now) continue;
+
+        rec["used_at"] = now;
+        rec["invalidated_at"] = now;
+        rec["invalidated_reason"] = reason.empty() ? "invalidated" : reason;
+        ++changed;
+    }
+
+    return changed;
 }
 
 static std::optional<pqnas::UserRec> routes_v5_find_user_by_login_local(const RoutesV5Context& ctx,
@@ -1803,6 +1854,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
             routes_v5_prune_opaque_enrollments_doc(doc, now);
 
+            routes_v5_invalidate_active_opaque_enrollment_tokens(
+                doc,
+                login,
+                fingerprint,
+                now,
+                "replaced_by_new_token");
+
             doc["tokens"].push_back(json{
                 {"token_hash", token_hash},
                 {"login", login},
@@ -2149,6 +2207,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        // Consume the setup/reset token before storing the OPAQUE credential.
+        // This makes retry/replay fail closed if any later save returns an error.
+        (*token_rec)["used_at"] = now;
+
+        std::string serr;
+        if (!routes_v5_save_opaque_enrollments_no_lock(enrollments_path, doc, &serr)) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "enrollment_token_mark_used_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "enrollment_token_mark_used_failed"}}.dump());
+            return;
+        }
+
         pqnas::OpaqueCredentials creds;
         const std::string creds_path = routes_v5_opaque_credentials_path();
 
@@ -2196,15 +2265,6 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
                 reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_enable_failed"}}.dump());
                 return;
             }
-        }
-
-        (*token_rec)["used_at"] = now;
-
-        std::string serr;
-        if (!routes_v5_save_opaque_enrollments_no_lock(enrollments_path, doc, &serr)) {
-            routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, fingerprint, "enrollment_token_mark_used_failed");
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "enrollment_token_mark_used_failed"}}.dump());
-            return;
         }
 
         const bool ready_for_login = cred.enabled && final_user_status == "enabled";
@@ -4214,13 +4274,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "role")));
         if (role.empty()) role = "user";
 
-        // Default to disabled because the user cannot log in until an OPAQUE
-        // credential has been enrolled. UsersRegistry currently supports the
-        // existing enabled/disabled/revoked status model; OPAQUE enrollment
-        // finish can promote the user to enabled after the credential is stored.
-        std::string status =
-            routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "status")));
-        if (status.empty()) status = "disabled";
+        // OPAQUE-created users must always start disabled. The enrollment
+        // finish flow is the only path that may promote the user to enabled
+        // after a real OPAQUE credential has been stored.
+        const std::string status = "disabled";
 
         if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
             reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
@@ -4229,11 +4286,6 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         if (role != "user" && role != "admin") {
             reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_role"}}.dump());
-            return;
-        }
-
-        if (status != "enabled" && status != "disabled" && status != "pending") {
-            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_status"}}.dump());
             return;
         }
 
