@@ -1,6 +1,13 @@
 use std::env;
 use std::process;
 
+// Build-time dependency check only.
+//
+// The helper intentionally does not execute real OPAQUE protocol operations yet.
+// This import makes the selected crate part of the Rust helper build while all
+// protocol commands still fail closed.
+use opaque_ke as _;
+
 const PROGRAM_NAME: &str = "pqnas_opaque_helper";
 const VERSION: &str = "0.1.0-rust-scaffold";
 

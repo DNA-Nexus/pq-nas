@@ -6,3 +6,5 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
+# Exact pin by policy: do not float OPAQUE crypto dependency versions.
+opaque-ke = "=4.1.0-pre.0"
