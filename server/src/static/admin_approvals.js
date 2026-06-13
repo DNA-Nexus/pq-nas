@@ -72,6 +72,99 @@ function setMsg(text) {
 }
 
 
+function syncOpaqueCreateBox() {
+    const box = $("opaqueCreateBox");
+    if (!box) return;
+    box.classList.toggle("hidden", currentAuthMode() !== "opaque");
+}
+
+function opaqueCreateQuotaBytes() {
+    const raw = String($("opaqueCreateQuota")?.value || "").trim();
+    if (!raw) return 0;
+
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || Math.floor(n) !== n) {
+        throw new Error(tr("admin.approvals.opaque.create_user_invalid_quota", null, "Quota must be a non-negative integer."));
+    }
+
+    return n;
+}
+
+function clearOpaqueCreateForm() {
+    if ($("opaqueCreateName")) $("opaqueCreateName").value = "";
+    if ($("opaqueCreateLogin")) $("opaqueCreateLogin").value = "";
+    if ($("opaqueCreateRole")) $("opaqueCreateRole").value = "user";
+    if ($("opaqueCreateQuota")) $("opaqueCreateQuota").value = "";
+}
+
+async function showOpaqueCreatedModal(created, tokenResponse) {
+    const setupUrl = String(tokenResponse.setup_url || tokenResponse.setup_path || "");
+    const recoveryWords = String(created.recovery_words || "");
+
+    const ok = await openApprovalsConfirmModal({
+        title: tr("admin.approvals.opaque.create_user_created_title", null, "OPAQUE user created"),
+        subtitle: created.login || "",
+        rows: [
+            { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: created.name || created.login || "" },
+            { label: "Login", value: created.login || "", mono: true },
+            { label: tr("admin.approvals.fingerprint", null, "Fingerprint"), value: created.fingerprint || "", mono: true },
+            { label: tr("admin.approvals.opaque.recovery_words", null, "Recovery words"), value: recoveryWords, mono: true },
+            { label: tr("admin.approvals.opaque.expires", null, "Vanhenee"), value: epochLabel(tokenResponse.expires_at) || String(tokenResponse.expires_at || "") },
+            { label: tr("admin.approvals.opaque.setup_url", null, "Setup URL"), value: setupUrl, mono: true },
+        ],
+        note: tr("admin.approvals.opaque.create_user_created_note", null, "Copy the recovery words and setup link now. Recovery words are shown only once."),
+        confirmText: tr("admin.approvals.opaque.copy_link", null, "Kopioi linkki"),
+        cancelText: tr("admin.approvals.opaque.close", null, "Sulje"),
+    });
+
+    if (ok && setupUrl && navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(setupUrl);
+            setMsg(tr("admin.approvals.opaque.copied", null, "Setup-linkki kopioitu leikepöydälle"));
+        } catch (_) {
+            setMsg(setupUrl);
+        }
+    } else if (setupUrl) {
+        setMsg(setupUrl);
+    }
+}
+
+async function createOpaqueUserAndSetupLink() {
+    const name = String($("opaqueCreateName")?.value || "").trim();
+    const login = String($("opaqueCreateLogin")?.value || "").trim().toLowerCase();
+    const role = String($("opaqueCreateRole")?.value || "user").trim().toLowerCase();
+    const quota_bytes = opaqueCreateQuotaBytes();
+
+    if (!name || !login) {
+        throw new Error(tr("admin.approvals.opaque.create_user_required", null, "Name and login are required."));
+    }
+
+    if (role !== "user" && role !== "admin") {
+        throw new Error(tr("admin.approvals.opaque.create_user_invalid_role", null, "Invalid role."));
+    }
+
+    const created = await apiPost("/api/admin/users/opaque-create", {
+        login,
+        name,
+        role,
+        quota_bytes,
+        include_public_key: false
+    });
+
+    const token = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
+        login: created.login,
+        fingerprint: created.fingerprint,
+        purpose: "new_user",
+        enable_user_on_finish: true,
+        expires_in_seconds: 86400
+    });
+
+    await showOpaqueCreatedModal(created, token);
+    clearOpaqueCreateForm();
+    await refresh();
+}
+
+
 function currentAuthMode() {
     return String((authConfig && authConfig.mode) || "qr").toLowerCase();
 }
@@ -635,6 +728,8 @@ function openApprovalsConfirmModal(opts = {}) {
 
 
 function render() {
+    syncOpaqueCreateBox();
+
     if (currentAuthMode() === "opaque") {
         renderOpaqueApprovals();
         return;
@@ -795,6 +890,27 @@ window.addEventListener("load", async () => {
     $("btnRefresh2")?.addEventListener("click", refresh);
     $("filter")?.addEventListener("input", render);
 
+    $("btnOpaqueCreateUser")?.addEventListener("click", async () => {
+        const btn = $("btnOpaqueCreateUser");
+        const oldText = btn ? btn.textContent : "";
+        try {
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = tr("admin.approvals.opaque.creating_user", null, "Creating…");
+            }
+            setMsg(tr("admin.approvals.opaque.creating_user", null, "Creating…"));
+            await createOpaqueUserAndSetupLink();
+        } catch (e) {
+            setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Virhe: " + e.message));
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = oldText || tr("admin.approvals.opaque.create_user_button", null, "Create user and setup link");
+            }
+        }
+    });
+
+
     try { await refresh(); }
     catch (e) { setMsg(tr("admin.approvals.failed_load", { error: e.message }, "Failed to load users: " + e.message)); }
 });
@@ -802,5 +918,6 @@ window.addEventListener("load", async () => {
 
 window.addEventListener("pqnas-language-changed", () => {
     applyStaticI18n();
+    syncOpaqueCreateBox();
     try { render(); } catch (_) {}
 });

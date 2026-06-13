@@ -4619,5 +4619,22 @@
   "admin.approvals.opaque.loading_onboarding": "Ladataan OPAQUE onboarding…",
   "admin.approvals.opaque.loaded_count": "Ladattu {count} OPAQUE onboarding -riviä",
   "admin.users.show_editor": "Näytä muokkaus",
-  "admin.users.hide_editor": "Piilota muokkaus"
+  "admin.users.hide_editor": "Piilota muokkaus",
+  "admin.approvals.opaque.create_user_title": "Luo OPAQUE-käyttäjä",
+  "admin.approvals.opaque.create_user_name": "Nimi",
+  "admin.approvals.opaque.create_user_name_placeholder": "Jussi Virtanen",
+  "admin.approvals.opaque.create_user_login": "Login / sähköposti",
+  "admin.approvals.opaque.create_user_login_placeholder": "jussi.virtanen@example.invalid",
+  "admin.approvals.opaque.create_user_role": "Rooli",
+  "admin.approvals.opaque.create_user_quota": "Kiintiö tavuina",
+  "admin.approvals.opaque.create_user_quota_placeholder": "0",
+  "admin.approvals.opaque.create_user_button": "Luo käyttäjä ja setup-linkki",
+  "admin.approvals.opaque.create_user_help": "Luo DNA-identiteetin ja näyttää recovery wordsit kerran. Setup-linkillä käyttäjä valitsee OPAQUE-salasanansa ilman että salasana lähetetään serverille.",
+  "admin.approvals.opaque.creating_user": "Luodaan…",
+  "admin.approvals.opaque.create_user_required": "Nimi ja login ovat pakollisia.",
+  "admin.approvals.opaque.create_user_invalid_role": "Virheellinen rooli.",
+  "admin.approvals.opaque.create_user_invalid_quota": "Kiintiön pitää olla nolla tai positiivinen kokonaisluku.",
+  "admin.approvals.opaque.create_user_created_title": "OPAQUE-käyttäjä luotu",
+  "admin.approvals.opaque.create_user_created_note": "Kopioi recovery wordsit ja setup-linkki nyt. Recovery wordsit näytetään vain kerran.",
+  "admin.approvals.opaque.recovery_words": "Recovery words"
 }

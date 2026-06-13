@@ -4619,5 +4619,22 @@
   "admin.approvals.opaque.loading_onboarding": "Loading OPAQUE onboarding…",
   "admin.approvals.opaque.loaded_count": "Loaded {count} OPAQUE onboarding rows",
   "admin.users.show_editor": "Düzenleyiciyi göster",
-  "admin.users.hide_editor": "Düzenleyiciyi gizle"
+  "admin.users.hide_editor": "Düzenleyiciyi gizle",
+  "admin.approvals.opaque.create_user_title": "OPAQUE kullanıcısı oluştur",
+  "admin.approvals.opaque.create_user_name": "Name",
+  "admin.approvals.opaque.create_user_name_placeholder": "Jussi Virtanen",
+  "admin.approvals.opaque.create_user_login": "Login / email",
+  "admin.approvals.opaque.create_user_login_placeholder": "jussi.virtanen@example.invalid",
+  "admin.approvals.opaque.create_user_role": "Role",
+  "admin.approvals.opaque.create_user_quota": "Quota bytes",
+  "admin.approvals.opaque.create_user_quota_placeholder": "0",
+  "admin.approvals.opaque.create_user_button": "Kullanıcı ve kurulum bağlantısı oluştur",
+  "admin.approvals.opaque.create_user_help": "Creates a DNA identity and shows recovery words once. The setup link lets the user choose their OPAQUE password without sending it to the server.",
+  "admin.approvals.opaque.creating_user": "Creating…",
+  "admin.approvals.opaque.create_user_required": "Name and login are required.",
+  "admin.approvals.opaque.create_user_invalid_role": "Invalid role.",
+  "admin.approvals.opaque.create_user_invalid_quota": "Quota must be a non-negative integer.",
+  "admin.approvals.opaque.create_user_created_title": "OPAQUE user created",
+  "admin.approvals.opaque.create_user_created_note": "Copy the recovery words and setup link now. Recovery words are shown only once.",
+  "admin.approvals.opaque.recovery_words": "Recovery words"
 }

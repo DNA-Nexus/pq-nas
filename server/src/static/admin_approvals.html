@@ -115,6 +115,65 @@
             .tableWrap{ overflow:auto; }
             table{ min-width: 980px; }
         }
+
+        .hidden{ display:none !important; }
+
+        .opaqueCreateBox{
+            margin: 0 0 12px 0;
+            padding: 12px;
+            border: 1px solid rgba(var(--info-rgb),0.30);
+            border-radius: 16px;
+            background: rgba(var(--info-rgb),0.08);
+        }
+
+        .opaqueCreateHead{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            margin-bottom:10px;
+        }
+
+        .opaqueCreateTitle{
+            font-weight:950;
+            letter-spacing:.03em;
+            text-transform:uppercase;
+            font-size:12px;
+            color:rgba(var(--fg-rgb),0.78);
+        }
+
+        .opaqueCreateGrid{
+            display:grid;
+            grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) 130px 160px auto;
+            gap:10px;
+            align-items:end;
+        }
+
+        .opaqueCreateField{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:0;
+        }
+
+        .opaqueCreateField .label{
+            font-size:12px;
+            font-weight:900;
+            color:rgba(var(--fg-rgb),0.70);
+        }
+
+        @media (max-width: 1100px){
+            .opaqueCreateGrid{
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 700px){
+            .opaqueCreateGrid{
+                grid-template-columns: 1fr;
+            }
+        }
+
     </style>
 
     <link rel="stylesheet" href="/static/theme.css">
@@ -175,6 +234,43 @@
             <section class="pane" aria-label="Controls" data-i18n-aria-label="admin.users.controls">
                 <h2 data-i18n="admin.approvals.title">Approvals</h2>
 
+                <div class="opaqueCreateBox hidden" id="opaqueCreateBox">
+                    <div class="opaqueCreateHead">
+                        <div class="opaqueCreateTitle" data-i18n="admin.approvals.opaque.create_user_title">Create OPAQUE user</div>
+                    </div>
+
+                    <div class="opaqueCreateGrid">
+                        <label class="opaqueCreateField">
+                            <span class="label" data-i18n="admin.approvals.opaque.create_user_name">Name</span>
+                            <input class="pq-input" id="opaqueCreateName" type="text" autocomplete="off" placeholder="Jussi Virtanen" data-i18n-placeholder="admin.approvals.opaque.create_user_name_placeholder" />
+                        </label>
+
+                        <label class="opaqueCreateField">
+                            <span class="label" data-i18n="admin.approvals.opaque.create_user_login">Login / email</span>
+                            <input class="pq-input" id="opaqueCreateLogin" type="email" autocomplete="off" placeholder="jussi.virtanen@example.invalid" data-i18n-placeholder="admin.approvals.opaque.create_user_login_placeholder" />
+                        </label>
+
+                        <label class="opaqueCreateField">
+                            <span class="label" data-i18n="admin.approvals.opaque.create_user_role">Role</span>
+                            <select class="pq-select" id="opaqueCreateRole">
+                                <option value="user" selected data-i18n="admin.approvals.role.user">user</option>
+                                <option value="admin" data-i18n="admin.approvals.role.admin">admin</option>
+                            </select>
+                        </label>
+
+                        <label class="opaqueCreateField">
+                            <span class="label" data-i18n="admin.approvals.opaque.create_user_quota">Quota bytes</span>
+                            <input class="pq-input mono" id="opaqueCreateQuota" type="number" min="0" step="1" placeholder="0" data-i18n-placeholder="admin.approvals.opaque.create_user_quota_placeholder" />
+                        </label>
+
+                        <button class="pq-btn primary" id="btnOpaqueCreateUser" type="button" data-i18n="admin.approvals.opaque.create_user_button">Create user and setup link</button>
+                    </div>
+
+                    <div class="hint" style="margin-top:10px;" data-i18n="admin.approvals.opaque.create_user_help">
+                        Creates a DNA identity and shows recovery words once. The setup link lets the user choose their OPAQUE password without sending it to the server.
+                    </div>
+                </div>
+
                 <div class="row" style="margin-bottom:10px;">
                     <input class="pq-input" id="filter" placeholder="Filter (fingerprint/name/notes/status)" data-i18n-placeholder="admin.approvals.filter_placeholder" style="min-width: 320px; flex:1;" />
                     <button class="pq-btn secondary" id="btnRefresh2" type="button" data-i18n="admin.approvals.refresh">Refresh</button>
@@ -212,7 +308,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_approvals.js?v=20260613-opaque-force-reset-i18n-1"></script>
+<script src="/static/admin_approvals.js?v=20260613-opaque-create-user-ui-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
