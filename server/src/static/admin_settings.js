@@ -1865,12 +1865,21 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             !!j.helper_version_ok &&
             !!j.helper_self_test_ok;
 
-        const credsOk = !!j.credentials_file_exists && !!j.credentials_file_readable;
-        const setupOk = !!j.server_setup_file_exists && !!j.server_setup_file_readable;
+        const credsOk =
+            !!j.credentials_file_exists &&
+            !!j.credentials_file_readable &&
+            !!j.credentials_store_valid;
+
+        const setupOk =
+            !!j.server_setup_file_exists &&
+            !!j.server_setup_file_readable &&
+            !!j.server_setup_valid;
+
+        const infraOk = helperOk && credsOk && setupOk;
 
         setOpaqueStatusPill(
-            ready ? "ok" : (helperOk ? "warn" : "fail"),
-            ready ? "ready" : (helperOk ? "helper ok • login disabled" : "needs attention")
+            ready ? "ok" : (infraOk ? "warn" : "fail"),
+            ready ? "ready" : (infraOk ? "backend ok • login disabled" : "needs attention")
         );
 
         setOpaqueLight(opaqueReadyLight, ready ? "ok" : "warn");
@@ -1889,14 +1898,18 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         setOpaqueLight(opaqueCredentialsLight, credsOk ? "ok" : "warn");
         if (opaqueCredentialsValue) {
+            const accountCount = Number.isFinite(Number(j.credentials_account_count))
+                ? Number(j.credentials_account_count)
+                : 0;
+
             opaqueCredentialsValue.textContent =
-                `exists=${yesNo(j.credentials_file_exists)} • readable=${yesNo(j.credentials_file_readable)}`;
+                `exists=${yesNo(j.credentials_file_exists)} • readable=${yesNo(j.credentials_file_readable)} • valid=${yesNo(j.credentials_store_valid)} • accounts=${accountCount}`;
         }
 
         setOpaqueLight(opaqueServerSetupLight, setupOk ? "ok" : "warn");
         if (opaqueServerSetupValue) {
             opaqueServerSetupValue.textContent =
-                `exists=${yesNo(j.server_setup_file_exists)} • readable=${yesNo(j.server_setup_file_readable)}`;
+                `exists=${yesNo(j.server_setup_file_exists)} • readable=${yesNo(j.server_setup_file_readable)} • valid=${yesNo(j.server_setup_valid)}`;
         }
 
         if (opaquePathsValue) {
