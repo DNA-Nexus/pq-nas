@@ -55,8 +55,14 @@ namespace pqnas {
     }
 
     std::string config_root_dir() {
-        const std::string env = getenv_str_local("PQNAS_CONFIG_ROOT");
-        if (!env.empty()) return env;
+        const std::string explicit_root = getenv_str_local("PQNAS_CONFIG_ROOT");
+        if (!explicit_root.empty()) return explicit_root;
+
+        // Existing deployments use PQNAS_CONFIG for the runtime config
+        // directory. Keep PQNAS_CONFIG_ROOT as the clearer new name, but honor
+        // PQNAS_CONFIG so OPAQUE files land beside the rest of PQ-NAS config.
+        const std::string legacy_config = getenv_str_local("PQNAS_CONFIG");
+        if (!legacy_config.empty()) return legacy_config;
 
         return "/etc/pqnas";
     }

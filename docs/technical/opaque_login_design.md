@@ -20,6 +20,7 @@ Current implementation status:
 - `OpaqueBackendStatus` uses `OpaqueHelperClient` for helper `--version`/`self-test` preflight, but still keeps OPAQUE login fail-closed.
 - `OpaqueBackendStatus` has an internal/admin-only diagnostic JSON helper; public OPAQUE login errors remain generic.
 - `GET /api/admin/auth/opaque/status` exposes OPAQUE backend diagnostics to admins only; public OPAQUE login endpoints remain generic and fail-closed.
+- OPAQUE config paths use `PQNAS_CONFIG_ROOT` when set, otherwise the existing deployment `PQNAS_CONFIG`, otherwise `/etc/pqnas`.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.

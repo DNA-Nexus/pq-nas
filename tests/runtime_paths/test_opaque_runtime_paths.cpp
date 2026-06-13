@@ -24,6 +24,7 @@ std::filesystem::path temp_root() {
 
 void unset_opaque_env() {
     ::unsetenv("PQNAS_CONFIG_ROOT");
+    ::unsetenv("PQNAS_CONFIG");
     ::unsetenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
     ::unsetenv("PQNAS_OPAQUE_SERVER_SETUP_PATH");
     ::unsetenv("PQNAS_OPAQUE_HELPER");
@@ -46,11 +47,22 @@ int main() {
                  "default OPAQUE helper path should be libexec path");
 
     const fs::path root = temp_root();
+    const fs::path legacy_root = root / "legacy_pqnas_config";
+    require_true(::setenv("PQNAS_CONFIG", legacy_root.string().c_str(), 1) == 0,
+                 "setenv PQNAS_CONFIG should succeed");
+
+    require_true(pqnas::config_root_path() == legacy_root,
+                 "PQNAS_CONFIG should override config root when PQNAS_CONFIG_ROOT is unset");
+    require_true(pqnas::opaque_credentials_path() == legacy_root / "opaque_credentials.json",
+                 "PQNAS_CONFIG fallback should affect credentials path");
+    require_true(pqnas::opaque_server_setup_path() == legacy_root / "opaque_server_setup.bin",
+                 "PQNAS_CONFIG fallback should affect server setup path");
+
     require_true(::setenv("PQNAS_CONFIG_ROOT", root.string().c_str(), 1) == 0,
                  "setenv PQNAS_CONFIG_ROOT should succeed");
 
     require_true(pqnas::config_root_path() == root,
-                 "PQNAS_CONFIG_ROOT should override config root");
+                 "PQNAS_CONFIG_ROOT should override PQNAS_CONFIG");
     require_true(pqnas::opaque_credentials_path() == root / "opaque_credentials.json",
                  "config root override should affect credentials path");
     require_true(pqnas::opaque_server_setup_path() == root / "opaque_server_setup.bin",
