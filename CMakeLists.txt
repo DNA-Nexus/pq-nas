@@ -488,6 +488,43 @@ add_custom_target(run_pqnas_opaque_helper_self_test
 
 
 # -----------------------------------------------------------------------------
+# Tool: pqnas_opaque_helper_rust
+#
+# Experimental Rust helper scaffold only:
+# - not part of the default ALL build
+# - does not replace the current C++ pqnas_opaque_helper yet
+# - no production OPAQUE cryptography yet
+# - future protocol operations fail closed
+# -----------------------------------------------------------------------------
+find_program(PQNAS_CARGO cargo)
+
+if (PQNAS_CARGO)
+    set(PQNAS_OPAQUE_RUST_DIR "${CMAKE_SOURCE_DIR}/tools/opaque_helper_rust")
+    set(PQNAS_OPAQUE_RUST_BIN "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper_rust")
+
+    add_custom_target(pqnas_opaque_helper_rust
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+        COMMAND ${PQNAS_CARGO} build --manifest-path "${PQNAS_OPAQUE_RUST_DIR}/Cargo.toml"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PQNAS_OPAQUE_RUST_DIR}/target/debug/pqnas_opaque_helper"
+            "${PQNAS_OPAQUE_RUST_BIN}"
+        BYPRODUCTS "${PQNAS_OPAQUE_RUST_BIN}"
+        WORKING_DIRECTORY "${PQNAS_OPAQUE_RUST_DIR}"
+        COMMENT "Building experimental Rust OPAQUE helper scaffold"
+        VERBATIM
+    )
+
+    add_custom_target(run_pqnas_opaque_helper_rust_self_test
+        COMMAND "${PQNAS_OPAQUE_RUST_BIN}" self-test
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS pqnas_opaque_helper_rust
+    )
+else()
+    message(WARNING "cargo not found; pqnas_opaque_helper_rust target will not be available")
+endif()
+
+
+# -----------------------------------------------------------------------------
 # Test: test_opaque_helper_client
 # -----------------------------------------------------------------------------
 add_executable(test_opaque_helper_client
