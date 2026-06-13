@@ -20,13 +20,39 @@ namespace {
 constexpr std::size_t kMaxHelperOutputBytes = 64 * 1024;
 constexpr auto kHelperTimeout = std::chrono::seconds(5);
 
+bool is_safe_helper_arg(const std::string& s, std::size_t max_len) {
+    if (s.empty() || s.size() > max_len) {
+        return false;
+    }
+
+    for (unsigned char ch : s) {
+        if (ch < 0x20 || ch == 0x7f) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool is_allowed_helper_args(const std::vector<std::string>& args) {
     if (args.size() == 1) {
         return args[0] == "--version" || args[0] == "self-test";
     }
 
     if (args.size() == 2) {
-        return args[0] == "server-setup-check" && !args[1].empty();
+        if (args[0] == "server-setup-check") {
+            return is_safe_helper_arg(args[1], 4096);
+        }
+
+        if (args[0] == "register-finish") {
+            return is_safe_helper_arg(args[1], 262144);
+        }
+    }
+
+    if (args.size() == 4 && args[0] == "register-start") {
+        return is_safe_helper_arg(args[1], 4096) &&
+               is_safe_helper_arg(args[2], 512) &&
+               is_safe_helper_arg(args[3], 8192);
     }
 
     return false;
@@ -119,6 +145,17 @@ OpaqueHelperClientResult OpaqueHelperClient::self_test() const {
 
 OpaqueHelperClientResult OpaqueHelperClient::server_setup_check(const std::filesystem::path& setup_path) const {
     return run_allowed_command({"server-setup-check", setup_path.string()});
+}
+
+OpaqueHelperClientResult OpaqueHelperClient::register_start(
+    const std::filesystem::path& setup_path,
+    const std::string& credential_id,
+    const std::string& registration_request_b64) const {
+    return run_allowed_command({"register-start", setup_path.string(), credential_id, registration_request_b64});
+}
+
+OpaqueHelperClientResult OpaqueHelperClient::register_finish(const std::string& registration_upload_b64) const {
+    return run_allowed_command({"register-finish", registration_upload_b64});
 }
 
 OpaqueHelperClientResult OpaqueHelperClient::run_allowed_command(const std::vector<std::string>& args) const {

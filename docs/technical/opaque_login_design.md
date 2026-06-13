@@ -874,6 +874,24 @@ migration rules
 
 Do not proceed to production OPAQUE login until these are written down and reviewed.
 
+## C++ helper client registration wrappers
+
+`OpaqueHelperClient` exposes safe wrappers for the Rust helper registration
+operations:
+
+- `register_start(setup_path, credential_id, registration_request_b64)`
+- `register_finish(registration_upload_b64)`
+
+The wrapper keeps an explicit allowlist for helper commands and rejects empty,
+oversized, or control-character-containing arguments before `execv`.
+
+This is still not login enablement:
+
+- no public registration endpoint is enabled by this wrapper alone
+- no credential store write happens in `OpaqueHelperClient`
+- no `pqnas_session` can be minted here
+- login helper operations still fail closed
+
 ## Rust helper registration operations
 
 The experimental Rust OPAQUE helper now implements the server-side

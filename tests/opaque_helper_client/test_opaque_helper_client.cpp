@@ -46,6 +46,21 @@ int main(int argc, char** argv) {
     require_true(contains(self_test.output, "scaffold self-test passed"),
                  "helper self-test output should remain scaffold-only");
 
+    const auto empty_register_start =
+        client.register_start(std::filesystem::temp_directory_path() / "opaque_server_setup.bin", "", "QUJD");
+    require_true(!empty_register_start.ok, "empty register-start credential id must fail closed");
+    require_true(empty_register_start.error == "opaque_helper_command_not_allowed",
+                 "empty register-start credential id should be rejected before exec");
+
+    const auto empty_register_finish = client.register_finish("");
+    require_true(!empty_register_finish.ok, "empty register-finish upload must fail closed");
+    require_true(empty_register_finish.error == "opaque_helper_command_not_allowed",
+                 "empty register-finish upload should be rejected before exec");
+
+    const auto malformed_register_finish = client.register_finish("QUJD");
+    require_true(!malformed_register_finish.ok,
+                 "malformed register-finish payload must fail closed");
+
     pqnas::OpaqueHelperClient missing(std::filesystem::temp_directory_path() /
                                       "pqnas_missing_opaque_helper_for_client_test");
     const auto missing_result = missing.version();
