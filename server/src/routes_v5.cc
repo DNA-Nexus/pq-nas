@@ -3098,6 +3098,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("opaque.login_start.global.") + login,
+                "global",
+                30,
+                std::chrono::seconds(300))) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "global_rate_limited");
+            res.set_header("Retry-After", "300");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_opaque_login_attempts"}}.dump());
+            return;
+        }
+
         const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
         if (!routes_v5_opaque_backend_ready_for_registration(status)) {
             routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "opaque_backend_not_ready");
