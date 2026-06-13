@@ -3,6 +3,7 @@
 
     const QR_SCRIPT = "/static/pqnas_v5.js?v=20260518-login-i18n-1";
     const PASSWORD_MODE = "password";
+    const OPAQUE_MODE = "opaque";
 
     const el = (id) => document.getElementById(id);
 
@@ -212,6 +213,36 @@
         });
     }
 
+    function renderOpaqueLogin() {
+        injectPasswordCss();
+
+        const card = document.querySelector(".card");
+        if (!card) {
+            setStatus("Login UI missing");
+            return;
+        }
+
+        card.innerHTML = `
+            <div class="loginMark">
+                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
+            </div>
+
+            <h1>Zero-knowledge sign in</h1>
+
+            <div class="hint">
+                OPAQUE login is selected for this server, but the browser-side OPAQUE crypto module is not installed in this build yet.
+            </div>
+
+            <div class="hint">
+                For safety, this page will not send your password to the server as a fallback.
+            </div>
+
+            <div id="status" class="status">OPAQUE backend not configured.</div>
+
+            <div class="footer">© CPUNK 2026 · DNA-Nexus</div>
+        `;
+    }
+
     async function start() {
         let cfg = {};
         try {
@@ -228,6 +259,8 @@
 
         if (mode === PASSWORD_MODE) {
             renderPasswordLogin();
+        } else if (mode === OPAQUE_MODE) {
+            renderOpaqueLogin();
         } else {
             loadQrLogin();
         }

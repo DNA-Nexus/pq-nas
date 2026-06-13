@@ -626,6 +626,7 @@ static std::string routes_v5_auth_mode() {
     std::string login_mode = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(login_raw ? login_raw : ""));
 
     if (login_mode == "password") return "password";
+    if (login_mode == "opaque") return "opaque";
     if (login_mode == "qr") return "qr";
 
     // Backward-compatible emergency override only. Existing deployments often
@@ -634,6 +635,7 @@ static std::string routes_v5_auth_mode() {
     std::string mode = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(raw ? raw : ""));
 
     if (mode == "password") return "password";
+    if (mode == "opaque") return "opaque";
     return "qr";
 }
 
@@ -680,6 +682,10 @@ static std::string routes_v5_normalize_recovery_words(std::string s) {
 
 static bool routes_v5_password_auth_enabled() {
     return routes_v5_auth_mode() == "password";
+}
+
+static bool routes_v5_opaque_auth_enabled() {
+    return routes_v5_auth_mode() == "opaque";
 }
 
 static bool routes_v5_has_control_chars(const std::string& s) {
@@ -766,7 +772,71 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"ok", true},
             {"mode", mode},
             {"qr_enabled", mode == "qr"},
-            {"password_enabled", mode == "password"}
+            {"password_enabled", mode == "password"},
+            {"opaque_enabled", mode == "opaque"},
+            {"password_scheme", mode == "opaque" ? "opaque" : (mode == "password" ? "argon2id" : "")}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/opaque/login/start ----
+    //
+    // OPAQUE scaffold endpoint.
+    //
+    // This route intentionally does NOT accept or verify a plaintext password.
+    // Real OPAQUE support must be wired through a reviewed OPAQUE backend and a
+    // browser-side OPAQUE client before this endpoint can mint pqnas_session.
+    srv.Post("/api/auth/opaque/login/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "invalid_login");
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.login_start", "deny", login, "", "opaque_backend_not_configured");
+        reply_json(res, 501, json{
+            {"ok", false},
+            {"error", "opaque_backend_not_configured"},
+            {"message", "OPAQUE login mode is selected, but the OPAQUE crypto backend is not wired in this build."}
+        }.dump());
+    });
+
+    // ---- POST /api/auth/opaque/login/finish ----
+    //
+    // OPAQUE scaffold endpoint.
+    //
+    // A future implementation should verify the OPAQUE protocol transcript and
+    // then mint the same pqnas_session cookie currently used by QR/password auth.
+    srv.Post("/api/auth/opaque/login/finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_opaque_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.login_finish", "deny", "", "", "opaque_backend_not_configured");
+        reply_json(res, 501, json{
+            {"ok", false},
+            {"error", "opaque_backend_not_configured"},
+            {"message", "OPAQUE login finish is reserved for the real OPAQUE backend. No plaintext-password fallback is allowed."}
         }.dump());
     });
 

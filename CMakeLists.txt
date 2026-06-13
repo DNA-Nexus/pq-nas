@@ -189,6 +189,8 @@ add_executable(pqnas_server
 
         server/src/routes_v5.cc
         server/src/password_credentials.cpp
+        server/src/opaque_credentials.cpp
+        server/src/opaque_backend_status.cpp
         server/src/dna_identity_generator.cpp
         server/src/session_cookie.cc
         server/src/policy.cc
@@ -459,6 +461,101 @@ add_custom_target(run_test_admin_cookie
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_admin_cookie
 )
+
+# -----------------------------------------------------------------------------
+# Tool: pqnas_opaque_helper
+#
+# Phase 2 scaffold only:
+# - no production OPAQUE cryptography
+# - no users.json access
+# - no session minting
+# - future protocol operations fail closed
+# -----------------------------------------------------------------------------
+add_executable(pqnas_opaque_helper
+        tools/opaque_helper/pqnas_opaque_helper.cpp
+)
+
+set_target_properties(pqnas_opaque_helper PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_pqnas_opaque_helper_self_test
+        COMMAND "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper" self-test
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS pqnas_opaque_helper
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_opaque_backend_status
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_backend_status
+        tests/opaque_backend_status/test_opaque_backend_status.cpp
+        server/src/opaque_backend_status.cpp
+        server/src/runtime_paths.cpp
+)
+
+target_include_directories(test_opaque_backend_status PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_opaque_backend_status PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_backend_status
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_backend_status"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_backend_status
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_opaque_runtime_paths
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_runtime_paths
+        tests/runtime_paths/test_opaque_runtime_paths.cpp
+        server/src/runtime_paths.cpp
+)
+
+target_include_directories(test_opaque_runtime_paths PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_opaque_runtime_paths PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_runtime_paths
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_opaque_credentials
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_credentials
+        tests/opaque_credentials/test_opaque_credentials.cpp
+        server/src/opaque_credentials.cpp
+)
+
+target_include_directories(test_opaque_credentials PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_opaque_credentials PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_credentials
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_credentials"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_credentials
+)
+
 
 # -----------------------------------------------------------------------------
 # Tool: pqnas_keygen

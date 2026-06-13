@@ -54,6 +54,38 @@ namespace pqnas {
         return std::filesystem::path(data_root_dir());
     }
 
+    std::string config_root_dir() {
+        const std::string env = getenv_str_local("PQNAS_CONFIG_ROOT");
+        if (!env.empty()) return env;
+
+        return "/etc/pqnas";
+    }
+
+    std::filesystem::path config_root_path() {
+        return std::filesystem::path(config_root_dir());
+    }
+
+    std::filesystem::path opaque_credentials_path() {
+        const std::string env = getenv_str_local("PQNAS_OPAQUE_CREDENTIALS_PATH");
+        if (!env.empty()) return std::filesystem::path(env);
+
+        return config_root_path() / "opaque_credentials.json";
+    }
+
+    std::filesystem::path opaque_server_setup_path() {
+        const std::string env = getenv_str_local("PQNAS_OPAQUE_SERVER_SETUP_PATH");
+        if (!env.empty()) return std::filesystem::path(env);
+
+        return config_root_path() / "opaque_server_setup.bin";
+    }
+
+    std::filesystem::path opaque_helper_path() {
+        const std::string env = getenv_str_local("PQNAS_OPAQUE_HELPER");
+        if (!env.empty()) return std::filesystem::path(env);
+
+        return std::filesystem::path("/usr/local/libexec/pqnas/pqnas_opaque_helper");
+    }
+
     std::filesystem::path pqnas_hidden_root_for_storage_root(const std::filesystem::path& storage_root) {
         return storage_root.lexically_normal() / ".pqnas";
     }
