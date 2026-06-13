@@ -191,6 +191,7 @@ add_executable(pqnas_server
         server/src/password_credentials.cpp
         server/src/opaque_credentials.cpp
         server/src/opaque_backend_status.cpp
+        server/src/opaque_helper_client.cpp
         server/src/dna_identity_generator.cpp
         server/src/session_cookie.cc
         server/src/policy.cc
@@ -483,6 +484,29 @@ add_custom_target(run_pqnas_opaque_helper_self_test
         COMMAND "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper" self-test
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS pqnas_opaque_helper
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_opaque_helper_client
+# -----------------------------------------------------------------------------
+add_executable(test_opaque_helper_client
+        tests/opaque_helper_client/test_opaque_helper_client.cpp
+        server/src/opaque_helper_client.cpp
+)
+
+target_include_directories(test_opaque_helper_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_opaque_helper_client PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_opaque_helper_client
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_helper_client" "${CMAKE_BINARY_DIR}/bin/pqnas_opaque_helper"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_opaque_helper_client pqnas_opaque_helper
 )
 
 
