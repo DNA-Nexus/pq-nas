@@ -91,6 +91,12 @@ int main() {
                  "internal diagnostic should report fail-closed readiness");
     require_true(contains_text(missing_diag, "opaque_credentials_missing"),
                  "internal diagnostic should include missing credential reason");
+    require_true(contains_text(missing_diag, "\"credentials_path\":"),
+                 "internal diagnostic should include resolved credentials path");
+    require_true(contains_text(missing_diag, "\"server_setup_path\":"),
+                 "internal diagnostic should include resolved server setup path");
+    require_true(contains_text(missing_diag, "\"helper_path\":"),
+                 "internal diagnostic should include resolved helper path");
 
     write_file(credentials, "{ \"version\": 1, \"accounts\": [] }\n");
     write_file(setup, "fake-server-setup-placeholder\n");

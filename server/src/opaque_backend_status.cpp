@@ -161,6 +161,9 @@ std::string opaque_backend_internal_diagnostic_json(const OpaqueBackendStatus& s
 
     out << '{'
         << "\"ready_for_login\":" << json_bool(status.ready_for_login) << ','
+        << "\"credentials_path\":" << json_escape(status.credentials_path.string()) << ','
+        << "\"server_setup_path\":" << json_escape(status.server_setup_path.string()) << ','
+        << "\"helper_path\":" << json_escape(status.helper_path.string()) << ','
         << "\"credentials_file_exists\":" << json_bool(status.credentials_file_exists) << ','
         << "\"credentials_file_readable\":" << json_bool(status.credentials_file_readable) << ','
         << "\"server_setup_file_exists\":" << json_bool(status.server_setup_file_exists) << ','
