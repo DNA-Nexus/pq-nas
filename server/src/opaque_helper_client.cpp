@@ -6,6 +6,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -19,8 +20,16 @@ namespace {
 constexpr std::size_t kMaxHelperOutputBytes = 64 * 1024;
 constexpr auto kHelperTimeout = std::chrono::seconds(5);
 
-bool is_allowed_helper_arg(const std::string& arg) {
-    return arg == "--version" || arg == "self-test";
+bool is_allowed_helper_args(const std::vector<std::string>& args) {
+    if (args.size() == 1) {
+        return args[0] == "--version" || args[0] == "self-test";
+    }
+
+    if (args.size() == 2) {
+        return args[0] == "server-setup-check" && !args[1].empty();
+    }
+
+    return false;
 }
 
 std::string errno_string(const std::string& prefix) {
@@ -101,17 +110,21 @@ const std::filesystem::path& OpaqueHelperClient::helper_path() const {
 }
 
 OpaqueHelperClientResult OpaqueHelperClient::version() const {
-    return run_allowed_command("--version");
+    return run_allowed_command({"--version"});
 }
 
 OpaqueHelperClientResult OpaqueHelperClient::self_test() const {
-    return run_allowed_command("self-test");
+    return run_allowed_command({"self-test"});
 }
 
-OpaqueHelperClientResult OpaqueHelperClient::run_allowed_command(const std::string& arg) const {
+OpaqueHelperClientResult OpaqueHelperClient::server_setup_check(const std::filesystem::path& setup_path) const {
+    return run_allowed_command({"server-setup-check", setup_path.string()});
+}
+
+OpaqueHelperClientResult OpaqueHelperClient::run_allowed_command(const std::vector<std::string>& args) const {
     OpaqueHelperClientResult result;
 
-    if (!is_allowed_helper_arg(arg)) {
+    if (!is_allowed_helper_args(args)) {
         result.error = "opaque_helper_command_not_allowed";
         return result;
     }
@@ -155,15 +168,16 @@ OpaqueHelperClientResult OpaqueHelperClient::run_allowed_command(const std::stri
         ::close(pipefd[1]);
 
         std::string child_helper = helper;
-        std::string child_arg = arg;
+        std::vector<std::string> child_args = args;
+        std::vector<char*> argv;
+        argv.reserve(child_args.size() + 2);
+        argv.push_back(const_cast<char*>(child_helper.c_str()));
+        for (auto& child_arg : child_args) {
+            argv.push_back(const_cast<char*>(child_arg.c_str()));
+        }
+        argv.push_back(nullptr);
 
-        char* const argv[] = {
-            const_cast<char*>(child_helper.c_str()),
-            const_cast<char*>(child_arg.c_str()),
-            nullptr
-        };
-
-        ::execv(child_helper.c_str(), argv);
+        ::execv(child_helper.c_str(), argv.data());
 
         const std::string msg = errno_string("execv pqnas_opaque_helper failed") + "\n";
         const ssize_t write_rc = ::write(STDERR_FILENO, msg.data(), msg.size());

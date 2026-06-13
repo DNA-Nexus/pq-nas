@@ -110,6 +110,10 @@ int main() {
                "  echo \"ok: pqnas_opaque_helper scaffold self-test passed\"\n"
                "  exit 0\n"
                "fi\n"
+               "if [ \"$1\" = \"server-setup-check\" ]; then\n"
+               "  echo '{\"ok\":true,\"op\":\"server-setup-check\",\"bytes_read\":27}'\n"
+               "  exit 0\n"
+               "fi\n"
                "exit 9\n");
     require_true(::chmod(helper.string().c_str(), 0700) == 0,
                  "chmod helper executable should succeed");
@@ -119,6 +123,7 @@ int main() {
     require_true(present.credentials_file_readable, "credentials file should be readable");
     require_true(present.server_setup_file_exists, "server setup file should exist");
     require_true(present.server_setup_file_readable, "server setup file should be readable");
+    require_true(present.server_setup_valid, "server setup should pass helper validation");
     require_true(present.helper_exists, "helper should exist");
     require_true(present.helper_executable, "helper should be executable");
     require_true(present.helper_version_ok, "helper --version preflight should pass");
@@ -139,6 +144,8 @@ int main() {
                  "internal diagnostic should report helper version success");
     require_true(contains_text(present_diag, "\"helper_self_test_ok\":true"),
                  "internal diagnostic should report helper self-test success");
+    require_true(contains_text(present_diag, "\"server_setup_valid\":true"),
+                 "internal diagnostic should report server setup validation success");
     require_true(contains_text(present_diag, "opaque_real_login_not_implemented"),
                  "internal diagnostic should still report real login not implemented");
 
@@ -151,6 +158,10 @@ int main() {
                "if [ \"$1\" = \"self-test\" ]; then\n"
                "  echo \"self-test deliberately failed\"\n"
                "  exit 42\n"
+               "fi\n"
+               "if [ \"$1\" = \"server-setup-check\" ]; then\n"
+               "  echo '{\"ok\":true,\"op\":\"server-setup-check\",\"bytes_read\":27}'\n"
+               "  exit 0\n"
                "fi\n"
                "exit 9\n");
     require_true(::chmod(helper.string().c_str(), 0700) == 0,

@@ -106,6 +106,18 @@ OpaqueBackendStatus check_opaque_backend_status() {
             }
             st.helper_probe_error += self_test.error;
         }
+
+        if (st.server_setup_file_readable) {
+            const auto setup_check = client.server_setup_check(st.server_setup_path);
+            st.server_setup_valid = setup_check.ok;
+            st.server_setup_check_output = setup_check.output;
+            if (!setup_check.ok) {
+                if (!st.helper_probe_error.empty()) {
+                    st.helper_probe_error += ";";
+                }
+                st.helper_probe_error += setup_check.error;
+            }
+        }
     }
 
     if (!st.credentials_file_exists) {
@@ -118,6 +130,8 @@ OpaqueBackendStatus check_opaque_backend_status() {
         add_missing(st.missing_or_not_ready, "opaque_server_setup_missing");
     } else if (!st.server_setup_file_readable) {
         add_missing(st.missing_or_not_ready, "opaque_server_setup_not_readable");
+    } else if (!st.server_setup_valid) {
+        add_missing(st.missing_or_not_ready, "opaque_server_setup_invalid");
     }
 
     if (!st.helper_exists) {
@@ -168,6 +182,7 @@ std::string opaque_backend_internal_diagnostic_json(const OpaqueBackendStatus& s
         << "\"credentials_file_readable\":" << json_bool(status.credentials_file_readable) << ','
         << "\"server_setup_file_exists\":" << json_bool(status.server_setup_file_exists) << ','
         << "\"server_setup_file_readable\":" << json_bool(status.server_setup_file_readable) << ','
+        << "\"server_setup_valid\":" << json_bool(status.server_setup_valid) << ','
         << "\"helper_exists\":" << json_bool(status.helper_exists) << ','
         << "\"helper_executable\":" << json_bool(status.helper_executable) << ','
         << "\"helper_version_ok\":" << json_bool(status.helper_version_ok) << ','

@@ -16,6 +16,8 @@ struct OpaqueBackendStatus {
 
     bool server_setup_file_exists = false;
     bool server_setup_file_readable = false;
+    bool server_setup_valid = false;
+    std::string server_setup_check_output;
 
     bool helper_exists = false;
     bool helper_executable = false;

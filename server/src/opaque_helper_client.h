@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace pqnas {
 
@@ -20,9 +21,10 @@ public:
 
     OpaqueHelperClientResult version() const;
     OpaqueHelperClientResult self_test() const;
+    OpaqueHelperClientResult server_setup_check(const std::filesystem::path& setup_path) const;
 
 private:
-    OpaqueHelperClientResult run_allowed_command(const std::string& arg) const;
+    OpaqueHelperClientResult run_allowed_command(const std::vector<std::string>& args) const;
 
     std::filesystem::path helper_path_;
 };
