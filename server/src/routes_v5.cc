@@ -37,6 +37,7 @@
 #include "users_registry.h"
 #include "password_credentials.h"
 #include "dna_identity_generator.h"
+#include "opaque_backend_status.h"
 #include <openssl/sha.h>
 #include <cstdlib>
 #include <filesystem>
@@ -776,6 +777,51 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"opaque_enabled", mode == "opaque"},
             {"password_scheme", mode == "opaque" ? "opaque" : (mode == "password" ? "argon2id" : "")}
         }.dump());
+    });
+
+    // ---- GET /api/admin/auth/opaque/status ----
+    //
+    // Admin-only internal diagnostic endpoint.
+    //
+    // This intentionally exposes backend readiness details only to admins.
+    // Public OPAQUE login endpoints must continue returning generic fail-closed
+    // errors so callers cannot enumerate backend state or user existence.
+    srv.Get("/api/admin/auth/opaque/status", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!ctx.require_user_cookie) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "auth_cookie_checker_not_configured"}
+            }.dump());
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+        if (!ctx.require_user_cookie(req, res, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (actor_role != "admin") {
+            routes_v5_audit_password(ctx, req, "opaque.admin_status", "deny", "", actor_fp, "not_admin");
+            reply_json(res, 403, json{{"ok", false}, {"error", "admin_required"}}.dump());
+            return;
+        }
+
+        const pqnas::OpaqueBackendStatus status = pqnas::check_opaque_backend_status();
+        std::string body = pqnas::opaque_backend_internal_diagnostic_json(status);
+
+        if (!routes_v5_append_json_member_to_object(body, "\"ok\":true")) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "opaque_status_response_build_failed"}
+            }.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "opaque.admin_status", "ok", "", actor_fp, "");
+        reply_json(res, 200, body);
     });
 
     // ---- POST /api/auth/opaque/login/start ----
