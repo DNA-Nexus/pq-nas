@@ -65,11 +65,21 @@ Purpose:
 
 Current status:
 
-```text
-scaffold only
-```
+    server-side OPAQUE login and browser-side OPAQUE client integration are implemented
 
-The routes exist as fail-closed placeholders until the reviewed OPAQUE crypto backend and browser-side client are integrated.
+The current implementation includes:
+
+- server-side OPAQUE registration/enrollment handling
+- helper-backed OPAQUE login transcript handling
+- browser-side OPAQUE client module integration
+- OPAQUE login UI in browser login mode
+- pqnas_session minting after successful OPAQUE transcript verification
+- enabled-user check before session minting
+- /api/v4/me verification before redirecting to /app
+
+Production readiness depends on keeping the selected helper version, browser client, protocol suite, serialization format, and stored credential format tested together.
+
+The login UI must continue to fail closed if the browser OPAQUE module is missing, incompatible, or not loaded.
 
 ## Shared success result
 
@@ -102,9 +112,24 @@ trusted mobile device -> access_token / refresh_token -> fingerprint_hex + role 
 
 OPAQUE browser login must not replace `AppTokenStore`, trusted device records, refresh tokens, or mobile bearer-token verification.
 
+## Browser OPAQUE client rule
+
+OPAQUE mode uses a browser-side OPAQUE client.
+
+Rules:
+
+- the browser performs OPAQUE client cryptographic steps locally
+- the browser must never send plaintext password fields to OPAQUE endpoints
+- the OPAQUE browser module must fail closed if missing or incompatible
+- OPAQUE mode must not silently call /api/auth/password/login
+- the browser may redirect to /app only after /api/v4/me confirms that the standard pqnas_session works
+
+Server-side OPAQUE readiness and browser-side OPAQUE client compatibility must be tested together before treating a build as production-ready.
+
+
 ## Fail-closed rule
 
-If `PQNAS_LOGIN_MODE=opaque` is selected but the OPAQUE backend is not fully wired:
+If `PQNAS_LOGIN_MODE=opaque` is selected but the OPAQUE backend or browser-side OPAQUE client is not fully wired:
 
 - do not show the classic password form as fallback
 - do not send plaintext password to the server
