@@ -906,6 +906,16 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        if (j.contains("password") ||
+            j.contains("plaintext_password") ||
+            j.contains("password_hash") ||
+            j.contains("classic_password_hash") ||
+            j.contains("argon2id_hash")) {
+            routes_v5_audit_password(ctx, req, "opaque.enrollment_upsert", "deny", "", actor_fp, "forbidden_password_fallback_field");
+            reply_json(res, 400, json{{"ok", false}, {"error", "forbidden_password_fallback_field"}}.dump());
+            return;
+        }
+
         const std::string login =
             pqnas::OpaqueCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
         const std::string fingerprint =

@@ -899,6 +899,7 @@ Optional body fields:
 The endpoint requires:
 
 - authenticated admin session
+- no plaintext password or classic password-hash fallback fields
 - existing user fingerprint
 - login matching the user's email
 - readable and valid OPAQUE credentials store

@@ -628,6 +628,15 @@ add_custom_target(run_test_opaque_credentials
 
 
 # -----------------------------------------------------------------------------
+# Runtime test: OPAQUE admin enrollment endpoint
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_opaque_admin_enrollment_runtime
+        COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/opaque_admin_enrollment/test_opaque_admin_enrollment_runtime.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Tool: pqnas_keygen
 # -----------------------------------------------------------------------------
 add_executable(pqnas_keygen
