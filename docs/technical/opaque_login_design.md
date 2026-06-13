@@ -16,6 +16,7 @@ Current implementation status:
 - `OpaqueCredentials` exists as a C++ storage/parsing scaffold for future `opaque_credentials.json` records.
 - OPAQUE runtime path helpers exist for credentials, server setup, and helper binary paths.
 - `OpaqueBackendStatus` exists as a fail-closed backend readiness/preflight scaffold.
+- `OpaqueHelperClient` exists as a C++ helper-client scaffold that can call only `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test`.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
