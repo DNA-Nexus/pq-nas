@@ -14,6 +14,7 @@ Current implementation status:
 - `pqnas_opaque_helper --version` and `pqnas_opaque_helper self-test` work.
 - Future helper protocol operations such as `login-start` are recognized but fail closed with `opaque_backend_not_implemented`.
 - `OpaqueCredentials` exists as a C++ storage/parsing scaffold for future `opaque_credentials.json` records.
+- OPAQUE runtime path helpers exist for credentials, server setup, and helper binary paths.
 - Existing QR login, classic password login, mobile pairing, and app token logic are intentionally unchanged.
 
 The current OPAQUE scaffold must not be considered a working OPAQUE login implementation.
@@ -772,6 +773,7 @@ Current behavior:
 Still not implemented:
 
 - no OPAQUE cryptography
+- runtime path helpers exist for OPAQUE credential, server setup, and helper binary locations
 - no helper call from server routes
 - no registration/enrollment flow
 - no login success
