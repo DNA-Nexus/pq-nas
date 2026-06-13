@@ -1,5 +1,6 @@
 #include "opaque_backend_status.h"
 
+#include "opaque_helper_client.h"
 #include "runtime_paths.h"
 
 #include <filesystem>
@@ -43,6 +44,27 @@ OpaqueBackendStatus check_opaque_backend_status() {
     st.helper_exists = file_exists_regular(st.helper_path);
     st.helper_executable = st.helper_exists && file_executable(st.helper_path);
 
+    if (st.helper_executable) {
+        OpaqueHelperClient client(st.helper_path);
+
+        const auto version = client.version();
+        st.helper_version_ok = version.ok;
+        st.helper_version_output = version.output;
+        if (!version.ok) {
+            st.helper_probe_error = version.error;
+        }
+
+        const auto self_test = client.self_test();
+        st.helper_self_test_ok = self_test.ok;
+        st.helper_self_test_output = self_test.output;
+        if (!self_test.ok) {
+            if (!st.helper_probe_error.empty()) {
+                st.helper_probe_error += ";";
+            }
+            st.helper_probe_error += self_test.error;
+        }
+    }
+
     if (!st.credentials_file_exists) {
         add_missing(st.missing_or_not_ready, "opaque_credentials_missing");
     } else if (!st.credentials_file_readable) {
@@ -59,6 +81,13 @@ OpaqueBackendStatus check_opaque_backend_status() {
         add_missing(st.missing_or_not_ready, "opaque_helper_missing");
     } else if (!st.helper_executable) {
         add_missing(st.missing_or_not_ready, "opaque_helper_not_executable");
+    } else {
+        if (!st.helper_version_ok) {
+            add_missing(st.missing_or_not_ready, "opaque_helper_version_failed");
+        }
+        if (!st.helper_self_test_ok) {
+            add_missing(st.missing_or_not_ready, "opaque_helper_self_test_failed");
+        }
     }
 
     // Deliberately fail closed for now.
