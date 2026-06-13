@@ -4568,5 +4568,12 @@
   "wait.waiting_ellipsis": "Ootamine…",
   "wait.what_this_means": "Mida see tähendab",
   "wait.when_approved": "Mis juhtub pärast kinnitamist",
-  "wait.where_approves": "Kus admin kinnitab"
+  "wait.where_approves": "Kus admin kinnitab",
+  "auth.opaque.signin_hint": "Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.",
+  "auth.opaque.ready": "OPAQUE login ready.",
+  "auth.opaque.loading_client": "Loading OPAQUE client…",
+  "auth.opaque.creating_request": "Creating OPAQUE login request…",
+  "auth.opaque.contacting_server": "Contacting server…",
+  "auth.opaque.finalizing": "Finalizing OPAQUE login…",
+  "auth.opaque.verifying_cookie": "Verifying session cookie…"
 }

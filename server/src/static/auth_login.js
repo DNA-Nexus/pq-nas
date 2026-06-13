@@ -4,6 +4,9 @@
     const QR_SCRIPT = "/static/pqnas_v5.js?v=20260518-login-i18n-1";
     const PASSWORD_MODE = "password";
     const OPAQUE_MODE = "opaque";
+    const OPAQUE_CLIENT_MODULE_URL = "/static/opaque/pqnas_opaque_browser_client.js?v=20260613-opaque-prod-ui-1";
+    const OPAQUE_CLIENT_WASM_URL = "/static/opaque/pqnas_opaque_browser_client_bg.wasm?v=20260613-opaque-prod-ui-1";
+    let opaqueClientModulePromise = null;
 
     const el = (id) => document.getElementById(id);
 
@@ -224,12 +227,80 @@
         });
     }
 
+
+    function opaqueObjectResult(value) {
+        if (!value) return {};
+
+        if (typeof value === "string") {
+            try {
+                return JSON.parse(value);
+            } catch {
+                return {};
+            }
+        }
+
+        if (typeof value === "object") return value;
+        return {};
+    }
+
+    function opaquePick(obj, names) {
+        for (const name of names) {
+            if (obj && Object.prototype.hasOwnProperty.call(obj, name)) {
+                const value = obj[name];
+                if (typeof value === "string" && value.trim()) return value.trim();
+            }
+        }
+        return "";
+    }
+
+    async function loadOpaqueBrowserClient() {
+        if (!opaqueClientModulePromise) {
+            opaqueClientModulePromise = (async () => {
+                const mod = await import(OPAQUE_CLIENT_MODULE_URL);
+
+                if (typeof mod.default === "function") {
+                    await mod.default(OPAQUE_CLIENT_WASM_URL);
+                }
+
+                const opaqueLoginStart =
+                    mod.opaqueLoginStart ||
+                    mod.opaque_login_start;
+
+                const opaqueLoginFinish =
+                    mod.opaqueLoginFinish ||
+                    mod.opaque_login_finish;
+
+                if (typeof opaqueLoginStart !== "function" ||
+                    typeof opaqueLoginFinish !== "function") {
+                    throw new Error("OPAQUE browser client exports are missing.");
+                }
+
+                return { opaqueLoginStart, opaqueLoginFinish };
+            })();
+        }
+
+        return opaqueClientModulePromise;
+    }
+
+    async function postOpaqueJson(path, body) {
+        const res = await fetch(path, {
+            method: "POST",
+            cache: "no-store",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+    }
+
     function renderOpaqueLogin() {
         injectPasswordCss();
 
         const card = document.querySelector(".card");
         if (!card) {
-            setStatus("Login UI missing");
+            setStatusKey("auth.login.ui_missing", "Login UI missing");
             return;
         }
 
@@ -240,20 +311,191 @@
 
             <h1 data-i18n="auth.opaque.title">Zero-knowledge sign in</h1>
 
-            <div class="hint" data-i18n="auth.opaque.client_missing_hint">
-                OPAQUE login is selected for this server, but the browser-side OPAQUE crypto module is not installed in this build yet.
+            <div class="hint" data-i18n="auth.opaque.signin_hint">
+                Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.
             </div>
+
+            <div class="presentationLinkWrap">
+                <a class="presentationLink"
+                   href="/static/nexus-presentation/index.html"
+                   target="_blank"
+                   rel="noopener"
+                   data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
+            </div>
+
+            <form id="opaqueLoginForm" class="passwordForm" autocomplete="on">
+                <label>
+                    <span data-i18n="auth.login.username_label">Email / username</span>
+                    <input id="opaqueLoginName"
+                           name="username"
+                           type="text"
+                           inputmode="email"
+                           autocomplete="username"
+                           maxlength="254"
+                           data-i18n-aria-label="auth.login.username_label"
+                           aria-label="Email / username"
+                           required>
+                </label>
+
+                <label>
+                    <span data-i18n="auth.login.password_label">Password</span>
+                    <input id="opaqueLoginPassword"
+                           name="password"
+                           type="password"
+                           autocomplete="current-password"
+                           maxlength="1024"
+                           data-i18n-aria-label="auth.login.password_label"
+                           aria-label="Password"
+                           required>
+                </label>
+
+                <button id="opaqueLoginButton" type="submit" data-i18n="auth.login.sign_in_button">Sign in</button>
+            </form>
 
             <div class="hint" data-i18n="auth.opaque.no_password_fallback_hint">
-                For safety, this page will not send your password to the server as a fallback.
+                This page never falls back to sending your password to the server.
             </div>
 
-            <div id="status" class="status" data-i18n="auth.opaque.client_missing_status">OPAQUE client module not available.</div>
+            <div id="status" class="status" data-i18n="auth.opaque.ready">OPAQUE login ready.</div>
 
             <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
         `;
 
+        const form = el("opaqueLoginForm");
+        const loginInput = el("opaqueLoginName");
+        const passwordInput = el("opaqueLoginPassword");
+        const button = el("opaqueLoginButton");
+
         applyStaticI18n();
+
+        try {
+            const saved =
+                localStorage.getItem("pqnas_opaque_login") ||
+                localStorage.getItem("pqnas_password_login") ||
+                "";
+            if (saved && loginInput) loginInput.value = saved;
+        } catch {}
+
+        if (loginInput && loginInput.value && passwordInput) {
+            passwordInput.focus();
+        } else if (loginInput) {
+            loginInput.focus();
+        }
+
+        form.addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+
+            const login = String(loginInput.value || "").trim();
+            let password = String(passwordInput.value || "");
+
+            if (!login || !password) {
+                setStatusKey("auth.login.enter_login_password", "Enter username/email and password.");
+                return;
+            }
+
+            setBusy(true);
+            if (button) button.disabled = true;
+            setStatusKey("auth.opaque.loading_client", "Loading OPAQUE client…");
+
+            try {
+                const client = await loadOpaqueBrowserClient();
+
+                setStatusKey("auth.opaque.creating_request", "Creating OPAQUE login request…");
+                const startResult = opaqueObjectResult(await client.opaqueLoginStart(password));
+
+                const client_state =
+                    opaquePick(startResult, [
+                        "client_state",
+                        "client_state_b64",
+                        "client_login_state_b64",
+                        "clientLoginStateB64"
+                    ]);
+
+                const credential_request_b64 =
+                    opaquePick(startResult, [
+                        "credential_request_b64",
+                        "credentialRequestB64",
+                        "request_b64"
+                    ]);
+
+                if (!client_state || !credential_request_b64) {
+                    throw new Error("OPAQUE login start did not produce required client values.");
+                }
+
+                setStatusKey("auth.opaque.contacting_server", "Contacting server…");
+                const startHttp = await postOpaqueJson("/api/auth/opaque/login/start", {
+                    login,
+                    credential_request_b64
+                });
+
+                if (!startHttp.res.ok || !startHttp.data || startHttp.data.ok === false) {
+                    throw new Error("invalid_login_or_password");
+                }
+
+                const opaque_login_id = String(startHttp.data.opaque_login_id || "").trim();
+                const credential_response_b64 = String(startHttp.data.credential_response_b64 || "").trim();
+
+                if (!opaque_login_id || !credential_response_b64) {
+                    throw new Error("OPAQUE server response was incomplete.");
+                }
+
+                setStatusKey("auth.opaque.finalizing", "Finalizing OPAQUE login…");
+                const finishResult = opaqueObjectResult(
+                    await client.opaqueLoginFinish(password, client_state, credential_response_b64)
+                );
+
+                const credential_finalization_b64 =
+                    opaquePick(finishResult, [
+                        "credential_finalization_b64",
+                        "credentialFinalizationB64",
+                        "finalization_b64"
+                    ]);
+
+                password = "";
+                if (passwordInput) passwordInput.value = "";
+
+                if (!credential_finalization_b64) {
+                    throw new Error("OPAQUE login finish did not produce finalization.");
+                }
+
+                const finishHttp = await postOpaqueJson("/api/auth/opaque/login/finish", {
+                    opaque_login_id,
+                    credential_finalization_b64
+                });
+
+                if (!finishHttp.res.ok ||
+                    !finishHttp.data ||
+                    finishHttp.data.ok === false ||
+                    finishHttp.data.authenticated !== true ||
+                    finishHttp.data.session_minting !== true) {
+                    throw new Error("invalid_login_or_password");
+                }
+
+                try {
+                    localStorage.setItem("pqnas_opaque_login", login);
+                } catch {}
+
+                setStatusKey("auth.opaque.verifying_cookie", "Verifying session cookie…");
+                const ping = await fetch("/api/v4/me", {
+                    cache: "no-store",
+                    credentials: "include"
+                });
+
+                if (!ping.ok) {
+                    throw new Error("Login OK, but session cookie did not stick.");
+                }
+
+                window.location.href = "/app";
+            } catch (e) {
+                console.error(e);
+                setStatusKey("auth.login.invalid_login_password", "Invalid login or password.");
+                setBusy(false);
+                if (button) button.disabled = false;
+            } finally {
+                password = "";
+                if (passwordInput) passwordInput.value = "";
+            }
+        });
     }
 
     async function start() {

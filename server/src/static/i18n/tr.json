@@ -4568,5 +4568,12 @@
   "wait.waiting_ellipsis": "Bekleniyor…",
   "wait.what_this_means": "Bu ne anlama gelir",
   "wait.when_approved": "Onaylanınca ne olur",
-  "wait.where_approves": "Yönetici nerede onaylar"
+  "wait.where_approves": "Yönetici nerede onaylar",
+  "auth.opaque.signin_hint": "Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.",
+  "auth.opaque.ready": "OPAQUE login ready.",
+  "auth.opaque.loading_client": "Loading OPAQUE client…",
+  "auth.opaque.creating_request": "Creating OPAQUE login request…",
+  "auth.opaque.contacting_server": "Contacting server…",
+  "auth.opaque.finalizing": "Finalizing OPAQUE login…",
+  "auth.opaque.verifying_cookie": "Verifying session cookie…"
 }

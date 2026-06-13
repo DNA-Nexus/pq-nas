@@ -4568,5 +4568,12 @@
   "wait.waiting_ellipsis": "Oczekiwanie…",
   "wait.what_this_means": "Co to oznacza",
   "wait.when_approved": "Co się stanie po zatwierdzeniu",
-  "wait.where_approves": "Gdzie admin zatwierdza"
+  "wait.where_approves": "Gdzie admin zatwierdza",
+  "auth.opaque.signin_hint": "Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.",
+  "auth.opaque.ready": "OPAQUE login ready.",
+  "auth.opaque.loading_client": "Loading OPAQUE client…",
+  "auth.opaque.creating_request": "Creating OPAQUE login request…",
+  "auth.opaque.contacting_server": "Contacting server…",
+  "auth.opaque.finalizing": "Finalizing OPAQUE login…",
+  "auth.opaque.verifying_cookie": "Verifying session cookie…"
 }
