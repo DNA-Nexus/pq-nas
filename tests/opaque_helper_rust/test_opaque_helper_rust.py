@@ -119,6 +119,34 @@ def main() -> int:
         if setup_path.stat().st_size != actual_size:
             fail("server setup file size changed after rejected overwrite attempt")
 
+        bad_register_start = run(
+            [
+                str(helper),
+                "register-start",
+                str(setup_path),
+                "user@example.invalid",
+                "not-base64",
+            ],
+            expect_rc=1,
+        )
+        bad_register_start_json = parse_json_stdout(
+            bad_register_start,
+            "bad register-start",
+        )
+        if bad_register_start_json.get("error") != "opaque_registration_request_b64_invalid":
+            fail(f"bad register-start returned wrong error: {bad_register_start_json}")
+
+        bad_register_finish = run(
+            [str(helper), "register-finish", "not-base64"],
+            expect_rc=1,
+        )
+        bad_register_finish_json = parse_json_stdout(
+            bad_register_finish,
+            "bad register-finish",
+        )
+        if bad_register_finish_json.get("error") != "opaque_registration_upload_b64_invalid":
+            fail(f"bad register-finish returned wrong error: {bad_register_finish_json}")
+
     login = run([str(helper), "login-start"], expect_rc=1)
     login_json = parse_json_stdout(login, "login-start")
     if login_json.get("ok") is not False:

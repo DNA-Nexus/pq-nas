@@ -10,3 +10,4 @@ publish = false
 opaque-ke = { version = "=4.1.0-pre.0", features = ["argon2", "ristretto255"] }
 rand = { version = "=0.8.6", features = ["getrandom"] }
 sha2 = "=0.10.9"
+base64 = "=0.22.1"

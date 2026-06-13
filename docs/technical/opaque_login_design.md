@@ -874,6 +874,29 @@ migration rules
 
 Do not proceed to production OPAQUE login until these are written down and reviewed.
 
+## Rust helper registration operations
+
+The experimental Rust OPAQUE helper now implements the server-side
+registration protocol operations:
+
+- `register-start <server-setup-path> <credential-id> <registration-request-b64>`
+- `register-finish <registration-upload-b64>`
+
+`register-start` reads and validates the OPAQUE server setup, decodes a
+client registration request, and returns `registration_response_b64`.
+
+`register-finish` decodes a client registration upload and returns
+`opaque_password_file_b64`, which can later be stored through the
+admin-only enrollment storage scaffold.
+
+Security boundary:
+
+- the helper does not read `users.json`
+- the helper does not write `opaque_credentials.json`
+- the helper does not mint `pqnas_session`
+- login protocol operations still fail closed
+- `ready_for_login` remains `false`
+
 ## Admin enrollment storage scaffold
 
 `POST /api/admin/auth/opaque/enrollment/upsert` is an admin-only storage
