@@ -519,6 +519,12 @@ if (PQNAS_CARGO)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS pqnas_opaque_helper_rust
     )
+
+    add_custom_target(run_test_opaque_helper_rust
+        COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/opaque_helper_rust/test_opaque_helper_rust.py" "${PQNAS_OPAQUE_RUST_BIN}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS pqnas_opaque_helper_rust
+    )
 else()
     message(WARNING "cargo not found; pqnas_opaque_helper_rust target will not be available")
 endif()
