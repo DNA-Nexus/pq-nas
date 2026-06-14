@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Server installation · DNA-Nexus Wiki</title>
+  <link rel="stylesheet" href="../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Administrator guide</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Start here</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wiki home</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" class="active">Server installation</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >First login</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Administration</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html" >Creating users</a></li>
+        <li><a href="../../pages/administration/user-approval.html" >User approval</a></li>
+        <li><a href="../../pages/administration/settings.html" >Server settings</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Storage Manager</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Snapshots</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Apps</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >File Manager</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Help</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Common issues</a></li>
+        <li><a href="../../pages/page-template.html" >Page template</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+      
+<article class="article">
+  <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Getting started</div>
+  <h1>Server installation</h1>
+  <div class="meta">
+    <span>Status: Draft</span>
+    <span>Audience: Administrator</span>
+    <span>Last updated: 2026-06-14</span>
+  </div>
+
+  <p class="lead">
+    This page explains how to install a new DNA-Nexus server from the beginning.
+    The exact screenshots and commands should be updated while the real installation is performed.
+  </p>
+
+  <div class="toc">
+    <strong>On this page</strong>
+    <ol>
+      <li><a href="#before-you-begin">Before you begin</a></li>
+      <li><a href="#installation-steps">Installation steps</a></li>
+      <li><a href="#verify-installation">Verify the installation</a></li>
+      <li><a href="#next-steps">Next steps</a></li>
+    </ol>
+  </div>
+
+  <h2 id="before-you-begin">Before you begin</h2>
+  <p>Prepare the target machine and decide the initial storage layout before installing DNA-Nexus.</p>
+
+  <ul>
+    <li>A server or virtual machine reserved for DNA-Nexus.</li>
+    <li>Ubuntu Server or another supported Linux distribution.</li>
+    <li>Network access from the administrator workstation to the server.</li>
+    <li>Disk layout plan for system disk, data disks and future storage expansion.</li>
+    <li>Administrator account with sudo access.</li>
+  </ul>
+
+  <div class="callout warning">
+    <strong>Production note:</strong> Do not use experimental disks or unknown storage settings
+    for production users. Verify SMART status and backup strategy before onboarding customers.
+  </div>
+
+  <h2 id="installation-steps">Installation steps</h2>
+  <ol class="steps">
+    <li>
+      <h3>Download the latest DNA-Nexus release</h3>
+      <p>
+        Start by downloading the DNA-Nexus server release package from GitHub.
+        The example below downloads version <code>1.2.0</code> for Linux x86_64.
+      </p>
+      <pre><code>wget https://github.com/DNA-Nexus/pq-nas/releases/download/v1.2.0/pqnas-1.2.0-linux-x86_64.tar.gz</code></pre>
+    </li>
+
+    <li>
+      <h3>Extract the release package</h3>
+      <p>
+        Extract the downloaded tarball package with <code>tar</code>.
+      </p>
+      <pre><code>tar -xzf pqnas-1.2.0-linux-x86_64.tar.gz</code></pre>
+    </li>
+
+    <li>
+      <h3>Enter the extracted directory</h3>
+      <p>
+        Change into the extracted DNA-Nexus installation directory.
+      </p>
+      <pre><code>cd pqnas</code></pre>
+    </li>
+
+    <li>
+      <h3>Run the installer</h3>
+      <p>
+        Start the DNA-Nexus installer with administrator privileges.
+      </p>
+      <pre><code>sudo ./install.sh</code></pre>
+
+      <div class="callout">
+        <strong>Tip:</strong> Enlarge the terminal window before running the installer.
+        The installation process prints a lot of information and may show interactive choices,
+        so a larger terminal makes the installation easier to follow.
+      </div>
+
+      <div class="screenshot-placeholder">
+        <strong>Screenshot placeholder:</strong> Add a screenshot of the installer running in the terminal.<br>
+        Suggested filename: <code>assets/images/installation/01-installer-terminal.png</code>
+      </div>
+    </li>
+
+    <li>
+      <h3>Select the target disk and install mode</h3>
+      <p>
+        The first installer screen lists the disks that are available for the installation.
+        Select the correct disk carefully before continuing.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/01-installer_screen01.png" alt="DNA-Nexus installer target disk selection screen">
+
+      <p>
+        Use <strong>Tab</strong> and the arrow keys to move between the disk list,
+        install mode options and navigation buttons. Use <strong>Space</strong> to select an option.
+        Press <strong>N</strong> or choose <strong>Next</strong> to continue.
+      </p>
+
+      <div class="callout warning">
+        <strong>Important:</strong> The dedicated disk install mode may wipe and format the selected disk.
+        Only choose a wipe/format option when you are sure the selected disk does not contain data you need.
+      </div>
+
+      <p>
+        For a demo or small installation on an existing system, choose
+        <strong>Use existing filesystem (NO wipe) – demo/small install</strong>.
+        This mode installs DNA-Nexus without wiping the selected disk.
+      </p>
+    </li>
+
+    <li>
+      <h3>Select the storage backend</h3>
+      <p>
+        On the storage backend screen, choose which filesystem DNA-Nexus should use
+        for its server data directory.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/02-installer_screen02.png" alt="DNA-Nexus installer storage backend selection screen">
+
+      <p>
+        Choose <strong>Btrfs</strong> for most installations. Btrfs is the recommended
+        backend because it enables snapshot support. Choose <strong>Ext4</strong> only
+        when you want a simpler setup and do not need DNA-Nexus snapshot features on
+        this backend.
+      </p>
+
+      <div class="callout warning">
+        <strong>Snapshot note:</strong> DNA-Nexus snapshots are not available when the
+        selected storage backend is Ext4. If snapshot support is required, use Btrfs
+        for the storage backend that will hold snapshot-managed data.
+      </div>
+
+      <p>
+        The <strong>Mountpoint</strong> field defines where DNA-Nexus server data will
+        be stored. The default location is <code>/srv/pqnas</code>.
+      </p>
+
+      <p>
+        It is possible to install the server software on an Ext4 system disk and use
+        separate Btrfs disks later for actual user data. This screen only selects the
+        backend for the installer-managed DNA-Nexus data location shown in the
+        mountpoint field.
+      </p>
+
+      <p>
+        Use the keyboard to select the backend, then choose <strong>Next</strong> or
+        press <strong>N</strong> to continue.
+      </p>
+    </li>
+
+    <li>
+      <h3>Review the installation plan</h3>
+      <p>
+        Before the installer makes changes, it shows a plan review screen.
+        Review this screen carefully before continuing.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/03_installer_screen03.png" alt="DNA-Nexus installer installation plan review screen">
+
+      <p>
+        Check that the selected disk, install mode, storage backend and mountpoint
+        are correct. If anything looks wrong, choose <strong>Back</strong> and correct
+        the previous selections before continuing.
+      </p>
+
+      <div class="callout warning">
+        <strong>Review before continuing:</strong> In existing filesystem mode, the installer
+        does not show destructive disk commands. In wipe/format mode, review the command
+        list especially carefully before continuing.
+      </div>
+
+      <p>
+        Choose <strong>Next</strong> or press <strong>N</strong> only when the plan matches
+        the intended installation.
+      </p>
+    </li>
+
+    <li>
+      <h3>Configure reverse proxy, hostname and browser login</h3>
+      <p>
+        The optional reverse proxy screen defines how DNA-Nexus will be reached
+        from a browser. It also includes the browser login method selection.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/04_installer_screen04.png" alt="DNA-Nexus installer optional reverse proxy screen without local nginx">
+
+      <h4>Cloudflare Tunnel or external HTTPS proxy</h4>
+      <p>
+        If DNA-Nexus is placed behind Cloudflare Tunnel or another external HTTPS
+        proxy, keep <strong>No reverse proxy</strong> selected. In this setup, the
+        external tunnel or proxy handles the public HTTPS endpoint, while the local
+        DNA-Nexus service remains available on its internal port.
+      </p>
+
+      <p>
+        Even when local nginx is not enabled, enter the public hostname in the
+        <strong>Public hostname or IP</strong> field when browser login origin
+        verification needs to use the public address.
+      </p>
+
+      <div class="callout">
+        <strong>Cloudflare Tunnel note:</strong> For a Cloudflare Tunnel setup without
+        local nginx, keep local HTTPS disabled. HTTPS is handled by Cloudflare, not
+        by the DNA-Nexus installer.
+      </div>
+
+      <h4>Local nginx reverse proxy</h4>
+      <p>
+        If the server should configure a local nginx reverse proxy, select
+        <strong>Enable nginx reverse proxy</strong> and enter the public hostname
+        that resolves to this server.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/04_installer_screen05.png" alt="DNA-Nexus installer optional reverse proxy screen with nginx and HTTPS enabled">
+
+      <p>
+        If the installer should also configure HTTPS with Let&apos;s Encrypt, select
+        <strong>Enable HTTPS (Let&apos;s Encrypt)</strong> and enter a valid email
+        address. The email address is used for Let&apos;s Encrypt certificate
+        registration and expiry notifications.
+      </p>
+
+      <p>
+        When HTTPS is enabled locally, choose whether HTTP requests should stay on
+        HTTP or be redirected to HTTPS. For a normal public HTTPS installation,
+        <strong>Redirect HTTP → HTTPS</strong> is usually the expected choice.
+      </p>
+
+      <h4>Browser login method</h4>
+      <p>
+        Select the browser login method that matches the intended authentication
+        model for this installation. The available options may include
+        <strong>QR / DNA Connect</strong>, <strong>Username/password</strong> and
+        <strong>OPAQUE zero-knowledge password</strong>.
+      </p>
+
+      <p>
+        After the reverse proxy, hostname, HTTPS and login method settings are
+        correct, choose <strong>Next</strong> to continue.
+      </p>
+    </li>
+
+    <li>
+      <h3>Confirm the installation</h3>
+      <p>
+        Before the installer starts, it shows a final confirmation screen.
+        This is the last checkpoint before the installation begins.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/05_installer_screen05.png" alt="DNA-Nexus installer destructive confirmation screen">
+
+      <p>
+        Read the confirmation text carefully. The installer shows the target path
+        and explains what kind of installation will be performed.
+      </p>
+
+      <p>
+        To continue, type the exact confirmation string shown by the installer.
+        In this example, the required confirmation text is:
+      </p>
+
+      <pre><code>INSTALL /srv/pqnas</code></pre>
+
+      <p>
+        After the correct confirmation text has been entered, the
+        <strong>Start</strong> button becomes available. Select
+        <strong>Start</strong> to begin the installation.
+      </p>
+
+      <div class="callout warning">
+        <strong>Important:</strong> Do not continue unless the target path and
+        installation summary are correct. This screen is intended to prevent
+        accidental installations to the wrong location.
+      </div>
+    </li>
+
+    <li>
+      <h3>Wait while the installer runs</h3>
+      <p>
+        After the final confirmation, the installer starts executing the installation
+        plan and shows a live log.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/06_installer_screen06.png" alt="DNA-Nexus installer live installation log">
+
+      <p>
+        This phase may take several minutes. On a clean server or VPS, the installer
+        may need to install packages, prepare paths, configure services and start
+        the DNA-Nexus server.
+      </p>
+
+      <div class="callout">
+        <strong>Installation time:</strong> A clean installation can take approximately
+        5–10 minutes depending on server speed, package downloads and disk performance.
+      </div>
+    </li>
+
+    <li>
+      <h3>Review the install health screen</h3>
+      <p>
+        When the installation has completed, the installer shows an install health
+        screen. Review the summary before leaving the installer.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/installation/06_installer_screen07.png" alt="DNA-Nexus installer install health summary screen">
+
+      <p>
+        Check the storage path, selected install mode, storage backend, authentication
+        mode, login mode and access URL. The health screen also provides quick checks
+        for service status, logs, nginx configuration and network addresses.
+      </p>
+
+      <p>
+        Useful checks available from this screen may include:
+      </p>
+
+      <ul>
+        <li><strong>Refresh checks</strong> — refresh the displayed installation health information.</li>
+        <li><strong>systemctl status pqnas</strong> — check whether the DNA-Nexus service is running.</li>
+        <li><strong>journalctl pqnas</strong> — inspect recent DNA-Nexus service logs.</li>
+        <li><strong>nginx -t</strong> — test nginx configuration if nginx is used.</li>
+        <li><strong>ip addr</strong> — show the server network addresses.</li>
+      </ul>
+
+      <p>
+        Press <strong>Ctrl+Q</strong> to exit the installer when the installation is complete.
+      </p>
+    </li>
+
+    <li>
+      <h3>Follow the installer prompts</h3>
+      <p>
+        Continue through the installer prompts. Read each question carefully before confirming.
+        The installer prepares the DNA-Nexus server files, service configuration and required runtime paths.
+      </p>
+      <div class="screenshot-placeholder">
+        <strong>Screenshot placeholder:</strong> Add a screenshot of the installer choices if needed.<br>
+        Suggested filename: <code>assets/images/installation/02-installer-prompts.png</code>
+      </div>
+    </li>
+
+    <li>
+      <h3>Open the DNA-Nexus web interface</h3>
+      <p>
+        After the installer has completed, open the DNA-Nexus web interface in a browser
+        and verify that the login page appears.
+      </p>
+      <div class="screenshot-placeholder">
+        <strong>Screenshot placeholder:</strong> Add the DNA-Nexus login screen here.<br>
+        Suggested filename: <code>assets/images/installation/03-login-page.png</code>
+      </div>
+    </li>
+  </ol>
+
+  <h2 id="verify-installation">Verify the installation</h2>
+  <p>
+    After leaving the installer, run a few basic checks before giving the server to users.
+    These checks confirm that the DNA-Nexus service is running, the local web interface
+    responds and the selected storage path is mounted as expected.
+  </p>
+
+  <h3>Check the DNA-Nexus service</h3>
+  <p>
+    Confirm that the systemd service is active.
+  </p>
+
+  <pre><code>systemctl status pqnas --no-pager</code></pre>
+
+  <p>
+    If the service is not running, inspect the latest service logs.
+  </p>
+
+  <pre><code>sudo journalctl -u pqnas -n 80 --no-pager</code></pre>
+
+  <h3>Check the local web port</h3>
+  <p>
+    DNA-Nexus normally listens on its internal web port. Confirm that something is
+    listening on port <code>8081</code>.
+  </p>
+
+  <pre><code>ss -tulpn | grep ':8081'</code></pre>
+
+  <p>
+    Then test the local HTTP response.
+  </p>
+
+  <pre><code>curl -I http://127.0.0.1:8081/</code></pre>
+
+  <h3>Check nginx, if enabled</h3>
+  <p>
+    If local nginx reverse proxy was enabled during installation, test the nginx
+    configuration.
+  </p>
+
+  <pre><code>sudo nginx -t</code></pre>
+
+  <h3>Check the public hostname, if configured</h3>
+  <p>
+    If the server has a public hostname, test the public URL from the server or from
+    an administrator workstation.
+  </p>
+
+  <pre><code>curl -I https://your-public-hostname.example/</code></pre>
+
+  <p>
+    Replace <code>your-public-hostname.example</code> with the hostname configured
+    during installation.
+  </p>
+
+  <h3>Check storage</h3>
+  <p>
+    Confirm that the DNA-Nexus data path exists and has enough free space.
+  </p>
+
+  <pre><code>df -h /srv/pqnas
+findmnt /srv/pqnas</code></pre>
+
+  <p>
+    If the selected backend is Btrfs, you can also check Btrfs filesystem usage.
+  </p>
+
+  <pre><code>sudo btrfs filesystem usage /srv/pqnas</code></pre>
+
+  <div class="callout success">
+    <strong>Success check:</strong> The service is running, the local web interface
+    responds, the configured public URL opens if used, and the storage path has the
+    expected filesystem and free space.
+  </div>
+
+  <h2 id="next-steps">Next steps</h2>
+  <p>After the server has been installed, continue with the first login and initial administration pages.</p>
+
+  <div class="footer-nav">
+    <span></span>
+    <a href="first-login.html">Next: First login →</a>
+  </div>
+</article>
+
+    </main>
+  </div>
+  <script src="../../assets/js/wiki.js"></script>
+</body>
+</html>

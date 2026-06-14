@@ -540,6 +540,8 @@ Examples:
 - QR verification
 - password login
 - OPAQUE login start and finish
+  - login/start must have both per-IP+login and global per-login limits
+  - login/finish must be limited by pending login id and request source
 - token creation and consumption
 - bootstrap and first-admin setup
 - invite acceptance
