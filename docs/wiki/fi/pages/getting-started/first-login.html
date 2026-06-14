@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ensimmäinen kirjautuminen · DNA-Nexus Wiki</title>
+  <link rel="stylesheet" href="../../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Ylläpitäjän opas</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Aloita tästä</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wikin etusivu</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Palvelimen asennus</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" class="active">Ensimmäinen kirjautuminen</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ylläpito</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html" >Käyttäjien luominen</a></li>
+        <li><a href="../../pages/administration/user-approval.html" >Käyttäjien hyväksyntä</a></li>
+        <li><a href="../../pages/administration/settings.html" >Palvelimen asetukset</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Tallennuksen hallinta</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Tilannekuvat</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Sovellukset</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >Tiedostonhallinta</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ohjeet</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Yleiset ongelmat</a></li>
+        <li><a href="../../pages/page-template.html" >Sivupohja</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+      
+<article class="article">
+  <div class="breadcrumbs"><a href="../../index.html">Wikin etusivu</a> / Getting started</div>
+  <h1>Ensimmäinen kirjautuminen</h1>
+  <div class="meta">
+    <span>Status: Draft</span>
+    <span>Audience: Administrator</span>
+  </div>
+
+  <p class="lead">
+    Use this page after the server installation is complete and the DNA-Nexus web interface is reachable.
+    The first successful login on a fresh installation becomes the initial administrator account.
+  </p>
+
+  <div class="toc">
+    <strong>On this page</strong>
+    <ol>
+      <li><a href="#open-login-page">Open the login page</a></li>
+      <li><a href="#choose-login-method">Choose the login method</a></li>
+      <li><a href="#first-admin">First administrator bootstrap</a></li>
+      <li><a href="#after-login">After login</a></li>
+    </ol>
+  </div>
+
+  <h2 id="open-login-page">Open the login page</h2>
+  <p>
+    Open the DNA-Nexus server address in a browser. The address depends on the installation choices:
+    it may be the local server address, a public hostname, a reverse proxy address or a Cloudflare Tunnel hostname.
+  </p>
+
+  <div class="callout">
+    <strong>Example:</strong> If the installer showed an access URL at the end of installation,
+    use that URL to open the DNA-Nexus login page.
+  </div>
+
+  <h2 id="choose-login-method">Choose the login method</h2>
+  <p>
+    DNA-Nexus can show different login screens depending on the authentication method selected during installation.
+    The examples below show the English login screens.
+  </p>
+
+  <div class="grid cards">
+    <article class="card">
+      <h3>Username and password</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for traditional username and password login.
+      </p>
+      <img class="wiki-img" src="../../../assets/images/login/login_EN.png" alt="DNA-Nexus username and password login screen">
+    </article>
+
+    <article class="card">
+      <h3>QR / DNA Connect</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for QR-based DNA Connect login.
+        The user scans the QR code with a trusted DNA-Nexus compatible device.
+      </p>
+      <img class="wiki-img" src="../../../assets/images/login/QR_login_EN.png" alt="DNA-Nexus QR and DNA Connect login screen">
+    </article>
+
+    <article class="card">
+      <h3>OPAQUE zero-knowledge password</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for OPAQUE zero-knowledge password login.
+      </p>
+      <img class="wiki-img" src="../../../assets/images/login/ZK_login_EN.png" alt="DNA-Nexus OPAQUE zero-knowledge password login screen">
+    </article>
+  </div>
+
+  <h2 id="first-admin">First administrator bootstrap</h2>
+  <p>
+    On a fresh installation, DNA-Nexus needs one initial administrator account.
+    If there are no enabled admin users yet, the first successful login is used to create or enable
+    the initial administrator.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Only a trusted person should perform the first login on a new server.
+    The first successful login may become the initial administrator for that DNA-Nexus installation.
+  </div>
+
+  <p>
+    After the first administrator exists, later users are not automatically promoted to administrator.
+    New users may need to wait for administrator approval depending on the selected login method and server settings.
+  </p>
+
+  <h2 id="after-login">After login</h2>
+  <ol class="steps">
+    <li>
+      <h3>Confirm that the dashboard opens</h3>
+      <p>
+        After login, confirm that the DNA-Nexus dashboard or main application view opens normally.
+      </p>
+    </li>
+
+    <li>
+      <h3>Open the administration area</h3>
+      <p>
+        After the first administrator login, the DNA-Nexus workspace may still look empty.
+        This is expected on a new installation.
+      </p>
+
+      <img class="wiki-img" src="../../../assets/images/admin_setup/admin_EN.png" alt="DNA-Nexus first administrator view with Admin menu in the sidebar">
+
+      <p>
+        Before creating normal users or uploading content, open the <strong>Admin</strong>
+        area from the left sidebar. The Admin area is used for the initial server setup,
+        user management, approvals, storage settings and other administrator tasks.
+      </p>
+    </li>
+
+    <li>
+      <h3>Check users and approvals</h3>
+      <p>
+        Open the user administration or approvals page and confirm whether any new identities are waiting for approval.
+      </p>
+    </li>
+
+    <li>
+      <h3>Continue initial setup</h3>
+      <p>
+        After the first login works, continue with <a href="../administration/settings.html">server settings</a>,
+        user creation and storage allocation.
+      </p>
+    </li>
+  </ol>
+
+  <div class="footer-nav">
+    <a href="server-installation.html">← Previous: Palvelimen asennus</a>
+    <a href="../administration/create-users.html">Next: Käyttäjien luominen →</a>
+  </div>
+</article>
+
+    </main>
+  </div>
+  <script src="../../../assets/js/wiki.js"></script>
+</body>
+</html>

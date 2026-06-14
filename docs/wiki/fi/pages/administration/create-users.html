@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Käyttäjien luominen · DNA-Nexus Wiki</title>
+  <link rel="stylesheet" href="../../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Ylläpitäjän opas</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Aloita tästä</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wikin etusivu</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Palvelimen asennus</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >Ensimmäinen kirjautuminen</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ylläpito</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html" class="active">Käyttäjien luominen</a></li>
+        <li><a href="../../pages/administration/user-approval.html" >Käyttäjien hyväksyntä</a></li>
+        <li><a href="../../pages/administration/settings.html" >Palvelimen asetukset</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Tallennuksen hallinta</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Tilannekuvat</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Sovellukset</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >Tiedostonhallinta</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ohjeet</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Yleiset ongelmat</a></li>
+        <li><a href="../../pages/page-template.html" >Sivupohja</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+      
+<article class="article">
+  <div class="breadcrumbs"><a href="../../index.html">Wikin etusivu</a> / Ylläpito</div>
+  <h1>Käyttäjien luominen</h1>
+  <div class="meta">
+    <span>Status: Draft</span>
+    <span>Audience: Administrator / Support</span>
+  </div>
+
+  <p class="lead">
+    This page explains how an administrator creates or approves DNA-Nexus user accounts.
+  </p>
+
+  <h2>Recommended user lifecycle</h2>
+  <ol class="steps">
+    <li>
+      <h3>Create or receive a user registration</h3>
+      <p>The user account may be created by an administrator or requested by the user from the login page.</p>
+    </li>
+    <li>
+      <h3>Review user details</h3>
+      <p>Check the username, display name, role and intended storage quota.</p>
+    </li>
+    <li>
+      <h3>Approve the user</h3>
+      <p>Approve the user when the account is ready to access the server.</p>
+      <div class="screenshot-placeholder">
+        <strong>Screenshot placeholder:</strong> Admin approval view.
+      </div>
+    </li>
+    <li>
+      <h3>Tell the user to sign in</h3>
+      <p>After approval, the user can sign in and start using DNA-Nexus apps.</p>
+    </li>
+  </ol>
+
+  <h2>Fields to document</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Meaning</th>
+          <th>Example</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Username</td>
+          <td>Unique login name.</td>
+          <td>alice</td>
+        </tr>
+        <tr>
+          <td>Display name</td>
+          <td>Name shown in the user interface.</td>
+          <td>Alice Example</td>
+        </tr>
+        <tr>
+          <td>Role</td>
+          <td>User permission level.</td>
+          <td>User / Admin</td>
+        </tr>
+        <tr>
+          <td>Storage quota</td>
+          <td>Maximum storage assigned to the user.</td>
+          <td>100 GB</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer-nav">
+    <a href="../getting-started/first-login.html">← Previous: Ensimmäinen kirjautuminen</a>
+    <a href="user-approval.html">Next: Käyttäjien hyväksyntä →</a>
+  </div>
+</article>
+
+    </main>
+  </div>
+  <script src="../../../assets/js/wiki.js"></script>
+</body>
+</html>

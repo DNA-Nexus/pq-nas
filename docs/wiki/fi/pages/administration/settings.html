@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Palvelimen asetukset – DNA-Nexus Wiki</title>
+  <link rel="stylesheet" href="../../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Ylläpitäjän opas</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Aloita tästä</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wikin etusivu</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Palvelimen asennus</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >Ensimmäinen kirjautuminen</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ylläpito</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html" >Käyttäjien luominen</a></li>
+        <li><a href="../../pages/administration/user-approval.html" >Käyttäjien hyväksyntä</a></li>
+        <li><a href="../../pages/administration/settings.html" class="active">Palvelimen asetukset</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Tallennuksen hallinta</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Tilannekuvat</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Sovellukset</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >Tiedostonhallinta</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ohjeet</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Yleiset ongelmat</a></li>
+        <li><a href="../../pages/page-template.html" >Sivupohja</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+      
+<article class="article">
+  <div class="breadcrumbs"><a href="../../index.html">Wikin etusivu</a> / Ylläpito</div>
+  <h1>Palvelimen asetukset</h1>
+  <div class="meta">
+    <span>Tila: Luonnos</span>
+    <span>Kohderyhmä: Ylläpitäjä</span>
+  </div>
+
+  <p class="lead">
+    Palvelimen asetukset ohjaavat DNA-Nexus-asennuksen perustoimintaa.
+    Ensimmäisen ylläpitäjän kirjautumisen jälkeen nämä asetukset kannattaa tarkistaa
+    ennen tavallisten käyttäjien luomista tai tuotantodatan tallentamista.
+  </p>
+
+  <div class="toc">
+    <strong>Tällä sivulla</strong>
+    <ol>
+      <li><a href="#initial-setup">Ensimmäiset ylläpitäjän asetukset</a></li>
+      <li><a href="#audit-verbosity">Audit-lokin tarkkuus</a></li>
+      <li><a href="#audit-log-rotation-retention">Audit-lokin kierto ja säilytys</a></li>
+      <li><a href="#snapshots-btrfs">Tilannekuvat (Btrfs)</a></li>
+      <li><a href="#system-backups">Järjestelmän varmuuskopiot</a></li>
+      <li><a href="#uploads-tiering">Lähetykset</a></li>
+      <li><a href="#language-and-theme">Kieli ja teema</a></li>
+      <li><a href="#verify">Ensiasetusten tarkistus</a></li>
+    </ol>
+  </div>
+
+  <h2 id="initial-setup">Ensimmäiset ylläpitäjän asetukset</h2>
+  <p>
+    Kun ensimmäinen ylläpitäjä kirjautuu DNA-Nexukseen ensimmäistä kertaa, työtila voi olla vielä tyhjä.
+    Tämä on uudessa asennuksessa normaalia. Ennen käyttäjien luomista tai sisällön lataamista
+    avaa vasemman reunan <strong>Admin</strong>-alue ja tarkista palvelimen perusasetukset.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/01setup_FI.png" alt="DNA-Nexuksen ylläpitäjän asetussivu audit-lokin tarkkuudella">
+
+  <h2 id="audit-verbosity">Audit-lokin tarkkuus</h2>
+  <p>
+    Ensimmäinen ylläpitäjän tarkistettava asetus on <strong>audit-lokin tarkkuus</strong>.
+    Tämä määrittää, kuinka yksityiskohtaisesti audit-loki tallentaa järjestelmän tapahtumia.
+  </p>
+
+  <p>
+    Audit-lokia käytetään myöhemmin tärkeiden järjestelmätapahtumien tarkasteluun.
+    Tällaisia tapahtumia ovat esimerkiksi kirjautumiset, ylläpitotoimet, käyttäjähallinnan muutokset
+    ja turvallisuuden kannalta merkittävät palvelintapahtumat. Tarkempi lokitus voi auttaa testauksessa
+    ja vianetsinnässä, mutta normaalikäytössä se voi tuottaa turhan paljon kohinaa.
+  </p>
+
+  <div class="callout">
+    <strong>Suositus:</strong> Tavallisessa asennuksessa <strong>SECURITY</strong> on hyvä oletustaso.
+    Nosta tarkkuutta vain vianetsinnän ajaksi tai jos tarvitset tarkoituksella yksityiskohtaisemman audit-jäljen.
+  </div>
+
+  <h2 id="audit-log-rotation-retention">Audit-lokin kierto ja säilytys</h2>
+  <p>
+    Audit-lokin kierto määrittää, milloin aktiivinen audit-loki arkistoidaan kierrätetyksi lokitiedostoksi.
+    Audit-lokin säilytys määrittää, kuinka pitkään kierrätettyjä audit-lokeja säilytetään.
+  </p>
+
+  <div class="callout">
+    <strong>Turvahuomio:</strong> Säilytyskäytäntö ei poista aktiivista audit-lokia.
+    Säilytyskäytäntö koskee vain kierrätettyjä arkistotiedostoja.
+  </div>
+
+  <h3>Kiertokäytäntö</h3>
+  <p>
+    DNA-Nexus tukee useita audit-lokin kiertokäytäntöjä. Valitse käytäntö sen mukaan,
+    kuinka paljon audit-tapahtumia palvelimella oletetaan syntyvän.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Kiertokäytäntö</th>
+          <th>Merkitys</th>
+          <th>Tyypillinen käyttö</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Manuaalinen</td>
+          <td>Ylläpitäjä kierrättää audit-lokin käsin audit-lokin kierto -osiosta.</td>
+          <td>Pienet testiympäristöt tai asennukset, joissa ylläpitäjä haluaa täyden manuaalisen hallinnan.</td>
+        </tr>
+        <tr>
+          <td>Päivittäin (UTC)</td>
+          <td>Aktiivinen audit-loki kierrätetään kerran päivässä UTC-ajan mukaan.</td>
+          <td>Normaalit asennukset, joissa päivittäisiä audit-arkistoja on helppo tarkastella.</td>
+        </tr>
+        <tr>
+          <td>Kun aktiivinen loki ylittää N Mt</td>
+          <td>Aktiivinen audit-loki kierrätetään, kun se kasvaa määritettyä kokoa suuremmaksi.</td>
+          <td>Vilkas palvelin, jossa lokin koko on tärkeämpi kuin kalenteripäivä.</td>
+        </tr>
+        <tr>
+          <td>Koko tai päivä, kumpi tulee ensin</td>
+          <td>Audit-loki kierrätetään, kun joko kokoraja täyttyy tai päivittäinen UTC-kierto käynnistyy.</td>
+          <td>Tuotantoympäristöt, joissa sekä ennustettava päivärytmi että kokoraja ovat hyödyllisiä.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Säilytyskäytäntö</h3>
+  <p>
+    Audit-lokin säilytys määrittää, mitkä kierrätetyt audit-lokiarkistot säilytetään.
+    Tämä estää vanhoja audit-arkistoja käyttämästä rajattomasti levytilaa.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Säilytyskäytäntö</th>
+          <th>Merkitys</th>
+          <th>Esimerkki</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Älä poista automaattisesti</td>
+          <td>DNA-Nexus säilyttää kierrätetyt audit-lokit, kunnes ylläpitäjä poistaa ne käsin.</td>
+          <td>Hyödyllinen, jos erillinen varmuuskopiointi- tai compliance-prosessi hallitsee lokien säilytystä.</td>
+        </tr>
+        <tr>
+          <td>Säilytä viimeiset N päivää</td>
+          <td>Määritettyä päivämäärää vanhemmat kierrätetyt audit-lokit voidaan siivota.</td>
+          <td>Säilytä viimeiset 90 päivää.</td>
+        </tr>
+        <tr>
+          <td>Säilytä viimeiset N kierrätettyä tiedostoa</td>
+          <td>Vain uusin määritetty määrä kierrätettyjä audit-lokitiedostoja säilytetään.</td>
+          <td>Säilytä viimeiset 30 kierrätettyä tiedostoa.</td>
+        </tr>
+        <tr>
+          <td>Säilytä enintään N Mt yhteensä</td>
+          <td>Kierrätettyjä audit-arkistoja poistetaan, kunnes kokonaiskoko jää määritetyn rajan alle.</td>
+          <td>Säilytä enintään 1024 Mt kierrätettyjä audit-lokeja.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Siivouksen esikatselu ja suoritus</h3>
+  <p>
+    Käytä <strong>Esikatsele siivous</strong> -toimintoa ennen kierrätettyjen audit-lokien poistamista.
+    Esikatselu on kuivaharjoitus: se näyttää poistettavat tiedostot ja arvioi, kuinka paljon levytilaa vapautuisi.
+  </p>
+
+  <p>
+    Käytä <strong>Suorita siivous nyt</strong> vasta esikatselun tarkistamisen jälkeen.
+    Tämä tekee varsinaisen siivouksen valitun säilytyskäytännön mukaan.
+  </p>
+
+  <div class="callout warning">
+    <strong>Tärkeää:</strong> Audit-lokeja voidaan tarvita vianetsintään, tietoturvatarkasteluun
+    tai compliance-tarpeisiin. Valitse säilytyskäytäntö tarkoituksella ja varmista,
+    että se sopii palvelimen varmuuskopiointi- ja tukikäytäntöihin.
+  </div>
+
+  <h2 id="snapshots-btrfs">Tilannekuvat (Btrfs)</h2>
+  <p>
+    Jos DNA-Nexuksen datatallennus käyttää <strong>Btrfs</strong>-tiedostojärjestelmää,
+    palvelin voi luoda automaattisia tilannekuvia. Tilannekuvat ovat tietystä ajanhetkestä
+    otettuja näkymiä dataan, ja niitä voidaan myöhemmin käyttää palautukseen Snapshot Manager -sovelluksessa.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/snapFI.png" alt="DNA-Nexuksen Btrfs-tilannekuva-asetukset">
+
+  <div class="callout warning">
+    <strong>Btrfs vaaditaan:</strong> DNA-Nexuksen tilannekuvatuki perustuu Btrfs:ään.
+    Jos tallennustausta on Ext4, tilannekuvaominaisuudet eivät ole käytettävissä kyseisellä taustalla.
+  </div>
+
+  <h3>Tilannekuva-asetukset</h3>
+  <p>
+    Ylläpitäjä voi ottaa tilannekuvat käyttöön tai poistaa ne käytöstä, valita luodaanko
+    tilannekuvia automaattisesti ja määrittää kuinka usein niitä otetaan.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Asetus</th>
+          <th>Merkitys</th>
+          <th>Tyypillinen käyttö</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Käytössä</td>
+          <td>Ottaa tilannekuvatuen käyttöön tai poistaa sen käytöstä määritetyssä Btrfs-tilannekuvapolussa.</td>
+          <td>Ota käyttöön, kun palvelimen tulee säilyttää palautettavia ajanhetkikopioita.</td>
+        </tr>
+        <tr>
+          <td>Automaattinen ajastus</td>
+          <td>Sallii DNA-Nexuksen luoda tilannekuvia automaattisesti aikataulun mukaan.</td>
+          <td>Käytä normaalissa asennuksessa, jossa tilannekuvien halutaan syntyvän ilman käsityötä.</td>
+        </tr>
+        <tr>
+          <td>Taltiokohtainen ajastus</td>
+          <td>Sallii jokaisen taltion ohittaa globaalin tilannekuva-aikataulun.</td>
+          <td>Käytä, jos jotkut taltiot tarvitsevat tilannekuvia useammin tai harvemmin kuin muut.</td>
+        </tr>
+        <tr>
+          <td>Kertaa päivässä</td>
+          <td>Määrittää, kuinka monta automaattista tilannekuvaa otetaan päivässä.</td>
+          <td>Esimerkiksi 1 tilannekuva päivässä vähäisen käytön järjestelmässä.</td>
+        </tr>
+        <tr>
+          <td>Jitter (s)</td>
+          <td>Lisää pienen satunnaisen viiveen sekunteina ennen ajastettujen tilannekuvatöiden käynnistymistä.</td>
+          <td>Käytä jitteriä, jotta kaikki tilannekuvatyöt eivät käynnisty täsmälleen samalla sekunnilla.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Manuaaliset tilannekuvat</h3>
+  <p>
+    Jos automaattinen ajastus poistetaan käytöstä mutta tilannekuvat ovat edelleen käytössä,
+    tilannekuvat ovat vain manuaalisia. Tällöin käyttäjät tai ylläpitäjät voivat edelleen
+    käynnistää tilannekuvan luonnin, mutta ajastin ei tee sitä automaattisesti.
+  </p>
+
+  <h3>Snapshot Manager -sovellus</h3>
+  <p>
+    Asetussivu määrittää, ovatko tilannekuvat käytössä ja miten automaattinen ajastus toimii.
+    Varsinainen tilannekuvien hallinta tehdään erillisessä <strong>Snapshot Manager</strong> -sovelluksessa.
+    Snapshot Managerissa ylläpitäjät voivat tarkastella tilannekuvia ja tehdä esimerkiksi palautuksia.
+  </p>
+
+  <div class="callout">
+    <strong>Huomio:</strong> Snapshot Manager asennetaan erikseen. Asennus- ja palautusprosessi
+    dokumentoidaan erillisellä <a href="../storage/snapshots.html">Tilannekuvat</a>-sivulla.
+  </div>
+
+  <h2 id="system-backups">Järjestelmän varmuuskopiot</h2>
+  <p>
+    <strong>Järjestelmän varmuuskopiot</strong> suojaavat DNA-Nexuksen kriittisiä palvelinasetuksia
+    ja sisäistä järjestelmätilaa. Ne ovat pieniä varmuuskopioita, jotka järjestelmän backup worker luo.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/backupFI.png" alt="DNA-Nexuksen järjestelmän varmuuskopiot ylläpitäjän asetuksissa">
+
+  <div class="callout warning">
+    <strong>Ei käyttäjädatan varmuuskopio:</strong> Järjestelmän varmuuskopiot eivät korvaa käyttäjädatan
+    varmuuskopiointia. Ne eivät sisällä käyttäjien tiedostoja, mediakirjastoja, arkistoja,
+    Drop Zone -dataa, Echo Stack -dataa tai tiedostometadataa. Suojaa käyttäjädata erikseen
+    tallennuksen tilannekuvilla, RAIDilla ja/tai ulkoisilla varmuuskopioilla.
+  </div>
+
+  <h3>Mitä sisältyy</h3>
+  <p>
+    Järjestelmän varmuuskopiot sisältävät tärkeitä palvelinpuolen asetuksia ja sisäistä tilaa,
+    kuten DNA-Nexuksen ympäristötiedoston, ylläpitoasetukset, policy-asetukset, käyttäjä- ja kirjautumisdataa,
+    app auth -dataa, jakorekisterin, tallennuspoolien asetukset ja Circle Stack -tietokantoja.
+  </p>
+
+  <p>
+    Arkaluonteiset ympäristöarvot redaktoidaan ennen kuin ympäristötiedosto kopioidaan varmuuskopioarkistoon.
+  </p>
+
+  <h3>Varmuuskopiotasot</h3>
+  <p>
+    Ajastin luo useita varmuuskopiotasoja. Varmuuskopiolistasta näkee, mihin tasoon kukin varmuuskopio kuuluu.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Taso</th>
+          <th>Milloin se ajetaan</th>
+          <th>Oletussäilytys</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>quarter-hourly</td>
+          <td>15 minuutin välein</td>
+          <td>24 tuntia</td>
+        </tr>
+        <tr>
+          <td>hourly</td>
+          <td>Tasatunnein</td>
+          <td>7 päivää</td>
+        </tr>
+        <tr>
+          <td>daily</td>
+          <td>Klo 03:00</td>
+          <td>30 päivää</td>
+        </tr>
+        <tr>
+          <td>weekly</td>
+          <td>Sunnuntaisin klo 03:00</td>
+          <td>12 viikkoa</td>
+        </tr>
+        <tr>
+          <td>manual</td>
+          <td>Kun ylläpitäjä painaa <strong>Tee varmuuskopio nyt</strong></td>
+          <td>Säilytetään, kunnes ylläpitäjä poistaa sen</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Hallintapainikkeet</h3>
+  <p>
+    <strong>Tee varmuuskopio nyt</strong> luo manuaalisen järjestelmävarmuuskopion heti.
+    <strong>Lataa uudelleen</strong> päivittää varmuuskopion tilan ja listan.
+    <strong>Siivoa vanhat varmuuskopiot</strong> poistaa ajastettuja varmuuskopioita,
+    jotka ovat säilytyskäytäntöä vanhempia. Manuaalisia varmuuskopioita ei poisteta automaattisella säilytyksellä.
+  </p>
+
+  <h3>Tilatiedot</h3>
+  <ul>
+    <li><strong>Käytetty tila</strong> näyttää, kuinka paljon levytilaa järjestelmän varmuuskopiot käyttävät.</li>
+    <li><strong>Seuraava ajo</strong> näyttää, milloin ajastin ajaa seuraavan kerran.</li>
+    <li><strong>Viimeisin ajo</strong> näyttää viimeisimmän ajastimen tuloksen tai virheen.</li>
+    <li><strong>Ryhmä</strong> näyttää jokaisen suojatun varmuuskopioryhmän.</li>
+    <li><strong>Löytyi</strong> ja <strong>Puuttuu</strong> näyttävät, löytyivätkö odotetut lähteet.</li>
+    <li><strong>Lähteet</strong> listaa kuhunkin ryhmään kuuluvat tiedostot tai tietokannat.</li>
+  </ul>
+
+  <h2 id="uploads-tiering">Lähetykset</h2>
+  <p>
+    Jos palvelimessa on nopea SSD tai muu nopea sisäinen tallennuspooli, sitä voidaan käyttää
+    lähetysten <strong>vastaanottotallennuksena</strong>. Tässä mallissa uudet lähetykset laskeutuvat
+    ensin nopeaan pooliin, ja palvelin siirtää ne myöhemmin lopullisiin tallennuspaikkoihin
+    lähetysten tasotuskäytännön mukaan.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/uploadsFI.png" alt="DNA-Nexuksen lähetysten tasotusasetukset">
+
+  <div class="callout">
+    <strong>Lähetysten tasotus:</strong> Tämä voi tehdä lähetyksistä käyttäjälle nopeamman tuntuisia,
+    erityisesti jos lopullinen kapasiteettitallennus on hitaampi kuin alkuperäinen vastaanottotallennus.
+  </div>
+
+  <h3>Miten lähetysten tasotus toimii</h3>
+  <p>
+    Kun lähetysten tasotus on käytössä, valittu vastaanottopooli ottaa uudet ladatut tiedostot ensin vastaan.
+    Taustalla toimiva siirtotyöntekijä siirtää tiedostot myöhemmin vastaanottotallennuksesta
+    kapasiteettitallennukseen määritetyn käytännön mukaan.
+  </p>
+
+  <p>
+    Vastaanottotallennuksena tulee käyttää vain sisäisiä pooleja. USB- ja irrotettavat poolit
+    estetään automaattisesti turvallisuussyistä.
+  </p>
+
+  <h3>Työntekijäarvojen valinta</h3>
+  <p>
+    Työntekijäasetukset määrittävät, kuinka usein siirtotyöntekijä suoritetaan ja kuinka aggressiivisesti
+    se tyhjentää vastaanottotallennusta. Pienemmät arvot tekevät siirrosta reagoivamman,
+    suuremmat arvot vähentävät taustatoimintaa.
+  </p>
+
+  <p>
+    Pienelle tai keskikokoiselle asennukselle esimerkkiarvot voivat olla työntekijän aikaväli
+    <code>60</code> sekuntia, vastaanottotallennuksen vähimmäisikä <code>60</code> sekuntia
+    ja enintään <code>8</code> tiedostoa kierroksella. Vilkkaammat palvelimet voivat tarvita
+    eri arvoja levyn nopeuden, lähetysmäärän ja kapasiteettitallennuksen rakenteen mukaan.
+  </p>
+
+  <h3>Lähetysten tasotusasetukset</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Asetus</th>
+          <th>Merkitys</th>
+          <th>Tyypillinen käyttö</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Käytössä</td>
+          <td>Ottaa lähetysten tasotuksen käyttöön tai poistaa sen käytöstä.</td>
+          <td>Ota käyttöön, jos palvelimella on nopea vastaanottopooli.</td>
+        </tr>
+        <tr>
+          <td>Vastaanottopooli</td>
+          <td>Sisäinen tallennuspooli, johon uudet lähetykset saapuvat ensin.</td>
+          <td>Valitse nopea SSD-pohjainen pooli, jos mahdollista.</td>
+        </tr>
+        <tr>
+          <td>Työntekijän aikaväli (s)</td>
+          <td>Kuinka usein siirtotyöntekijä herää ja tarkistaa siirrettävät tiedostot.</td>
+          <td>Käytä lyhyttä aikaväliä, jos haluat siirtojen reagoivan nopeasti.</td>
+        </tr>
+        <tr>
+          <td>Vähimmäisikä vastaanottoalueella (s)</td>
+          <td>Vähimmäisaika, jonka tiedosto pysyy vastaanottotallennuksessa ennen kuin sitä voidaan siirtää.</td>
+          <td>Käytä pientä puskuria, jotta tiedostoa ei siirretä heti kun sitä vielä kirjoitetaan.</td>
+        </tr>
+        <tr>
+          <td>Tiedostoja per kierros</td>
+          <td>Enimmäismäärä tiedostoja, jotka siirtotyöntekijä siirtää yhdellä kierroksella.</td>
+          <td>Käytä tätä säätämään, kuinka aggressiivisesti vastaanottotallennusta tyhjennetään.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Tilatiedot</h3>
+  <p>
+    Lähetysten tasotusosio näyttää myös hyödyllisiä ajonaikaisia tilatietoja:
+  </p>
+
+  <ul>
+    <li><strong>Liitos</strong> näyttää valitun vastaanottopolun tai liitospisteen.</li>
+    <li><strong>Tila</strong> näyttää vastaanottopoolin vapaan ja kokonaiskapasiteetin.</li>
+    <li><strong>Kelpoisuus</strong> näyttää, voiko valittua poolia käyttää lähetysten vastaanottoon.</li>
+    <li><strong>Varoitukset</strong> näyttää, onko palvelin havainnut ongelman nykyisessä asetuksessa.</li>
+  </ul>
+
+  <h3>Milloin sitä kannattaa käyttää</h3>
+  <p>
+    Lähetysten tasotus on hyödyllisimmillään, kun palvelimessa on pieni nopea SSD sisääntuleville kirjoituksille
+    ja suurempi hitaampi kapasiteettipooli lopulliseen tallennukseen. Se voi parantaa käyttökokemusta,
+    koska lähetykset valmistuvat nopeasti ja palvelin hoitaa siirron taustalla.
+  </p>
+
+  <div class="callout warning">
+    <strong>Tärkeää:</strong> Lähetysten tasotus ei ole varmuuskopiointiominaisuus.
+    Se määrittää vain, minne ladatut tiedostot ensin laskeutuvat ja miten ne myöhemmin siirretään.
+  </div>
+
+  <h2 id="language-and-theme">Kieli ja teema</h2>
+  <p>
+    Ensimmäisten ylläpitoasetusten lopuksi ylläpitäjä voi valita käyttöliittymän kielen
+    ja ulkoasun teeman.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/languageEN.png" alt="DNA-Nexuksen kieli- ja teema-asetukset">
+
+  <h3>Käyttöliittymän kieli</h3>
+  <p>
+    Kielivalinta määrittää nykyisen ylläpitäjän käyttämän kielen tässä selaimessa.
+    Se auttaa myös määrittämään muiden käyttäjien oletuskielikokemusta, mutta jokainen käyttäjä
+    voi valita oman kielensä erikseen.
+  </p>
+
+  <div class="callout">
+    <strong>Käyttäjäkohtainen valinta:</strong> Ylläpitäjän kielen vaihtaminen ei pakota
+    kaikkia käyttäjiä samaan kieleen. Käyttäjät voivat valita oman kielensä itsenäisesti.
+  </div>
+
+  <h3>Käyttöliittymän teema</h3>
+  <p>
+    Teema-asetus määrittää DNA-Nexuksen käyttöliittymän ulkoasun.
+    Saatavilla olevat teemat voivat muuttua ajan myötä, joten tässä ohjeessa ei luetella
+    kaikkia teemoja nimeltä.
+  </p>
+
+  <p>
+    Kun teema on valittu, tallenna se. Osa sivuista voi käyttää teemaa heti,
+    mutta osa voi vaatia sivun päivittämisen.
+  </p>
+
+  <h2 id="verify">Ensiasetusten tarkistus</h2>
+  <p>
+    Kun ylläpitäjän asetukset on käyty läpi, varmista että tärkeimmät ensimmäisen käyttökerran
+    valinnat on tallennettu tarkoituksella.
+  </p>
+
+  <ol class="steps">
+    <li>
+      <h3>Audit-asetukset on valittu</h3>
+      <p>
+        Varmista, että audit-lokin tarkkuus on halutulla tasolla.
+        Useimmissa asennuksissa <strong>SECURITY</strong> on hyvä oletus.
+        Varmista myös, että audit-lokin kierto ja säilytys sopivat tuki- tai compliance-käytäntöihin.
+      </p>
+    </li>
+
+    <li>
+      <h3>Tilannekuvakäytäntö on ymmärretty</h3>
+      <p>
+        Jos käytössä on Btrfs-tallennus, varmista ovatko tilannekuvat käytössä ja ajetaanko niitä
+        automaattisesti vai vain manuaalisesti.
+      </p>
+    </li>
+
+    <li>
+      <h3>Järjestelmän varmuuskopiot ovat käynnissä</h3>
+      <p>
+        Varmista, että järjestelmän varmuuskopiot näyttävät terveen tilan, seuraavan ajon
+        ja ettei kriittisiä lähteitä puutu odottamattomasti.
+      </p>
+    </li>
+
+    <li>
+      <h3>Lähetysten tasotus on tarkoituksellinen</h3>
+      <p>
+        Jos lähetysten tasotus on käytössä, varmista että valittu vastaanottopooli on sisäinen,
+        kelvollinen ja siinä on riittävästi vapaata tilaa.
+      </p>
+    </li>
+
+    <li>
+      <h3>Kieli ja teema on asetettu</h3>
+      <p>
+        Varmista, että ylläpitäjän käyttöliittymän kieli ja ulkoasun teema ovat miellyttävät käyttää.
+        Muut käyttäjät voivat silti valita oman kielensä erikseen.
+      </p>
+    </li>
+  </ol>
+
+  <div class="callout success">
+    <strong>Onnistumisen tarkistus:</strong> Ylläpitäjän asetukset on käyty läpi,
+    tallennettu ja tarkistettu ennen tavallisten käyttäjien tai tuotantodatan lisäämistä.
+  </div>
+
+</article>
+
+    </main>
+  </div>
+  <script src="../../../assets/js/wiki.js"></script>
+</body>
+</html>
