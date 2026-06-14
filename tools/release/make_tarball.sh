@@ -369,6 +369,27 @@ rsync -a --delete \
   --exclude '*.pyc' \
   "$REPO_ROOT/server/src/static/" "$STAGE/static/"
 
+# Wiki documentation exposed through the product UI:
+#   /static/wiki/index.html
+# Source of truth remains docs/wiki/.
+WIKI_SRC="$REPO_ROOT/docs/wiki"
+if [[ -d "$WIKI_SRC" ]]; then
+  echo "[*] Staging wiki documentation to static/wiki..."
+  install -d "$STAGE/static/wiki"
+  rsync -a --delete \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    "$WIKI_SRC/" "$STAGE/static/wiki/"
+
+  test -f "$STAGE/static/wiki/index.html" || {
+    echo "ERROR: wiki did not stage to $STAGE/static/wiki (missing index.html)"
+    exit 91
+  }
+else
+  echo "[!] Wiki docs not found: $WIKI_SRC"
+  echo "[!] Release will ship without /static/wiki/."
+fi
+
 # HARD GUARD: fail release if static didn't stage
 test -f "$STAGE/static/app.js" || {
   echo "ERROR: static assets did not stage to $STAGE/static (missing app.js)"
