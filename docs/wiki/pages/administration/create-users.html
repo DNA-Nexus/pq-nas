@@ -62,7 +62,20 @@
   </nav>
 </aside>
     <main class="content">
-      
+<!-- wiki-language-topbar:start -->
+      <div class="wiki-topbar" data-wiki-topbar>
+        <details class="wiki-language-switcher">
+          <summary aria-label="Select language" title="Select language">
+            <img class="wiki-language-current-flag" src="../../assets/images/flags/en.svg" alt="">
+            <span class="wiki-language-caret">▾</span>
+          </summary>
+          <div class="wiki-language-menu" role="menu">
+        <a class="wiki-language-option active" href="create-users.html" aria-current="page"><img src="../../assets/images/flags/en.svg" alt=""> <span>English</span></a>
+        <a class="wiki-language-option" href="../../fi/pages/administration/create-users.html"><img src="../../assets/images/flags/fi.svg" alt=""> <span>Suomi</span></a>
+          </div>
+        </details>
+      </div>
+<!-- wiki-language-topbar:end -->
 <article class="article">
   <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Administration</div>
   <h1>Creating users</h1>
@@ -75,10 +88,49 @@
     This page explains how an administrator creates or approves DNA-Nexus user accounts.
   </p>
 
-  <h2>Recommended user lifecycle</h2>
-  <ol class="steps">
-    <li>
-      <h3>Create or receive a user registration</h3>
+<!-- user-creation-auth-methods:start -->
+<section id="user-creation-auth-methods" class="auth-flow-overview">
+  <h2>Choose the correct user creation flow</h2>
+
+  <p>
+    DNA-Nexus can create users in different ways depending on which authentication method is enabled.
+    These flows are intentionally separate because the administrator steps are different for each login mode.
+  </p>
+
+  <div class="auth-flow-grid">
+    <a class="auth-flow-card" href="#users-qr-dna-connect">
+      <span class="auth-flow-kicker">Flow 1</span>
+      <strong>QR / DNA Connect</strong>
+      <span>
+        The user scans the login QR code with DNA Connect. The account is created automatically
+        as pending, then the administrator enables it and allocates storage.
+      </span>
+    </a>
+
+    <a class="auth-flow-card" href="#users-opaque-auth">
+      <span class="auth-flow-kicker">Flow 2</span>
+      <strong>OPAQUE / zero-knowledge password</strong>
+      <span>
+        The user signs in with the OPAQUE password flow. The administrator workflow is different
+        because the server does not handle the password like a traditional login secret.
+      </span>
+    </a>
+
+    <a class="auth-flow-card" href="#users-password-auth">
+      <span class="auth-flow-kicker">Flow 3</span>
+      <strong>Username/password</strong>
+      <span>
+        The administrator or login flow creates a conventional account record. Username, role,
+        approval and storage allocation are documented separately for this mode.
+      </span>
+    </a>
+  </div>
+</section>
+<!-- user-creation-auth-methods:end -->
+
+
+
+<h3>Create or receive a user registration</h3>
       <p>The user account may be created by an administrator or requested by the user from the login page.</p>
     </li>
     <li>
@@ -98,45 +150,142 @@
     </li>
   </ol>
 
-  <h2>Fields to document</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Meaning</th>
-          <th>Example</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Username</td>
-          <td>Unique login name.</td>
-          <td>alice</td>
-        </tr>
-        <tr>
-          <td>Display name</td>
-          <td>Name shown in the user interface.</td>
-          <td>Alice Example</td>
-        </tr>
-        <tr>
-          <td>Role</td>
-          <td>User permission level.</td>
-          <td>User / Admin</td>
-        </tr>
-        <tr>
-          <td>Storage quota</td>
-          <td>Maximum storage assigned to the user.</td>
-          <td>100 GB</td>
-        </tr>
-      </tbody>
-    </table>
+<!-- users-qr-dna-connect:start -->
+<section id="users-qr-dna-connect">
+  <h2>Flow 1: Adding users with QR / DNA Connect</h2>
+
+  <p>
+    When <strong>QR / DNA Connect authentication</strong> is enabled, new users are created from
+    the login page. The user scans the QR code with the <strong>DNA Connect</strong> mobile app,
+    completes the login flow, and then waits for administrator approval.
+  </p>
+
+  <p>
+    In this mode, the administrator does not create the first account record manually. The server
+    receives the user identity from the QR login flow and places the account into a pending state.
+  </p>
+
+  <h3>1. User scans the QR code</h3>
+
+  <p>
+    The user opens the login page and scans the displayed QR code with DNA Connect. After the scan
+    succeeds, the browser shows a message telling the user to wait for administrator approval.
+  </p>
+
+  <figure>
+    <a class="clickable-image" href="../../assets/images/users/wait_EN.png">
+      <img src="../../assets/images/users/wait_EN.png" alt="Waiting for administrator approval after QR login">
+    </a>
+    <figcaption>
+      After the QR login, the user waits until an administrator approves the account.
+    </figcaption>
+  </figure>
+
+  <div class="callout">
+    <strong>Note:</strong> The user identity now exists on the server, but the user cannot continue
+    into the workspace until an administrator enables the account.
   </div>
 
-  <div class="footer-nav">
-    <a href="../getting-started/first-login.html">← Previous: First login</a>
-    <a href="user-approval.html">Next: User approval →</a>
+  <h3>2. Administrator approves the user</h3>
+
+  <p>
+    When a new pending user is waiting, the administrator sees a notification in the sidebar.
+    Open the <strong>Approvals</strong> section to review the pending account.
+  </p>
+
+  <p>
+    Click <strong>Enable</strong> to activate the account. After this, the user disappears from the
+    approvals page and becomes available on the <strong>User profiles</strong> page.
+  </p>
+
+  <figure>
+    <a class="clickable-image" href="../../assets/images/users/enable_EN.png">
+      <img src="../../assets/images/users/enable_EN.png" alt="Enable pending user from approvals">
+    </a>
+    <figcaption>
+      Click <strong>Enable</strong> to approve the pending user.
+    </figcaption>
+  </figure>
+
+  <h3>3. Complete the user profile</h3>
+
+  <p>
+    After approval, open the user on the <strong>User profiles</strong> page. The administrator can
+    edit the user’s display name, email address, role, notes and avatar.
+  </p>
+
+  <figure>
+    <a class="clickable-image" href="../../assets/images/users/done_EN.png">
+      <img src="../../assets/images/users/done_EN.png" alt="Enabled user on the user profiles page">
+    </a>
+    <figcaption>
+      Enabled users are managed from the normal user profiles page.
+    </figcaption>
+  </figure>
+
+  <h3>4. Allocate storage</h3>
+
+  <p>
+    The most important follow-up task is usually storage allocation. A user may be enabled, but
+    still needs a storage quota before normal uploads are possible.
+  </p>
+
+  <p>
+    Click <strong>Allocate</strong> on the user profile. The allocation dialog lets the administrator
+    choose a storage pool and assign a quota in gigabytes.
+  </p>
+
+  <figure>
+    <a class="clickable-image" href="../../assets/images/users/allocate_EN.png">
+      <img src="../../assets/images/users/allocate_EN.png" alt="Allocate storage dialog">
+    </a>
+    <figcaption>
+      Use the storage allocation dialog to select a pool and assign a quota for the user.
+    </figcaption>
+  </figure>
+
+  <p>
+    The dialog shows both the requested quota and current pool capacity information. This helps the
+    administrator avoid assigning more storage than the pool should safely reserve.
+  </p>
+
+  <ul>
+    <li><strong>User currently uses</strong> shows the user’s current storage usage.</li>
+    <li><strong>Current quota</strong> shows the existing quota, if one has already been assigned.</li>
+    <li><strong>Pool total size</strong> shows the total size of the selected storage pool.</li>
+    <li><strong>Pool free space</strong> shows the current free filesystem space.</li>
+    <li><strong>Reserved for others</strong> shows quota already assigned to other users.</li>
+    <li><strong>Remaining reservable</strong> shows how much quota can still be assigned safely.</li>
+    <li><strong>Requested quota</strong> shows the quota currently being assigned.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Important:</strong> Set a positive quota if the user should be allowed to upload files.
+    Enabling the account and allocating storage are separate administrator actions.
   </div>
+</section>
+<!-- users-qr-dna-connect:end -->
+
+<!-- user-creation-future-auth-flows:start -->
+<section id="users-opaque-auth">
+  <h2>Flow 2: Adding users with OPAQUE / zero-knowledge password</h2>
+
+  <div class="callout">
+    <strong>Coming next:</strong> This flow will document how user creation works when
+    OPAQUE password authentication is enabled.
+  </div>
+</section>
+
+<section id="users-password-auth">
+  <h2>Flow 3: Adding users with username/password authentication</h2>
+
+  <div class="callout">
+    <strong>Coming next:</strong> This flow will document the traditional username/password
+    user creation and approval process.
+  </div>
+</section>
+<!-- user-creation-future-auth-flows:end -->
+
 </article>
 
     </main>
