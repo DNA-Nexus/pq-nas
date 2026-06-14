@@ -84,6 +84,7 @@
       <li><a href="#audit-verbosity">Audit verbosity</a></li>
       <li><a href="#audit-log-rotation-retention">Audit log rotation and retention</a></li>
       <li><a href="#snapshots-btrfs">Snapshots (Btrfs)</a></li>
+      <li><a href="#system-backups">System Backups</a></li>
       <li><a href="#recommended-setting">Recommended setting</a></li>
       <li><a href="#verify">Verify the setting</a></li>
     </ol>
@@ -298,6 +299,97 @@
     recovery workflow on the dedicated <a href="../storage/snapshots.html">Snapshots</a> page.
   </div>
 
+  <h2 id="system-backups">System Backups</h2>
+  <p>
+    <strong>System Backups</strong> protect the critical DNA-Nexus server configuration
+    and internal system state. They are small backups created by the system backup worker.
+  </p>
+
+  <img class="wiki-img" src="../../assets/images/admin_setup/backupEN.png" alt="DNA-Nexus system backups section in admin settings">
+
+  <div class="callout warning">
+    <strong>Not user data backup:</strong> System Backups are not a replacement for
+    user data backups. They do not include user files, media libraries, archives,
+    Drop Zone data, Echo Stack data or file metadata. Protect user data separately
+    with storage snapshots, RAID and/or external backups.
+  </div>
+
+  <h3>What is included</h3>
+  <p>
+    System Backups include important server-side configuration and internal state,
+    such as the DNA-Nexus environment file, admin settings, policy configuration,
+    users/auth data, app auth data, share registry, storage pool configuration and
+    Circle Stack databases.
+  </p>
+
+  <p>
+    Sensitive environment values are redacted before the environment file is copied
+    into the backup archive.
+  </p>
+
+  <h3>Backup tiers</h3>
+  <p>
+    The scheduler creates several backup tiers. The backup list shows which tier
+    each backup belongs to.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tier</th>
+          <th>When it runs</th>
+          <th>Default retention</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>quarter-hourly</td>
+          <td>Every 15 minutes</td>
+          <td>24 hours</td>
+        </tr>
+        <tr>
+          <td>hourly</td>
+          <td>On the hour</td>
+          <td>7 days</td>
+        </tr>
+        <tr>
+          <td>daily</td>
+          <td>At 03:00</td>
+          <td>30 days</td>
+        </tr>
+        <tr>
+          <td>weekly</td>
+          <td>Sunday at 03:00</td>
+          <td>12 weeks</td>
+        </tr>
+        <tr>
+          <td>manual</td>
+          <td>When an administrator clicks <strong>Backup now</strong></td>
+          <td>Kept until an administrator removes it</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Controls</h3>
+  <p>
+    Use <strong>Backup now</strong> to create a manual system backup immediately.
+    Use <strong>Reload</strong> to refresh the backup status and list. Use
+    <strong>Prune old backups</strong> to remove scheduled backups that are older
+    than the retention policy. Manual backups are not removed by automatic retention.
+  </p>
+
+  <h3>Status fields</h3>
+  <ul>
+    <li><strong>Storage used</strong> shows how much disk space the system backups currently use.</li>
+    <li><strong>Next run</strong> shows when the scheduler will run next.</li>
+    <li><strong>Last run</strong> shows the most recent scheduler result or error.</li>
+    <li><strong>Set</strong> shows each protected backup group.</li>
+    <li><strong>Present</strong> and <strong>Missing</strong> show whether expected sources were found.</li>
+    <li><strong>Sources</strong> lists the files or databases included in each group.</li>
+  </ul>
+
   <h2 id="recommended-setting">Recommended setting</h2>
   <p>
     For a normal installation, <strong>SECURITY</strong> is a good default audit verbosity level.
@@ -307,6 +399,11 @@
   <p>
     If Btrfs is used for DNA-Nexus data storage, enable snapshots and use an automatic schedule
     unless the server has a separate backup or recovery policy that intentionally disables them.
+  </p>
+
+  <p>
+    Keep System Backups enabled for normal installations. They provide a lightweight recovery
+    point for important DNA-Nexus configuration and internal system state.
   </p>
 
   <div class="callout">
