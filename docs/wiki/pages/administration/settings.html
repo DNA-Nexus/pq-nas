@@ -71,54 +71,288 @@
     <span>Audience: Administrator</span>
   </div>
 
-  <p class="lead">Document server name, language, security settings, app settings and administrative options.</p>
+  <p class="lead">
+    Server settings control the basic behavior of the DNA-Nexus installation.
+    After the first administrator login, review these settings before creating normal users
+    or storing production data.
+  </p>
 
-  <div class="callout">
-    <strong>Draft note:</strong> This page is a placeholder. Replace this text with real steps,
-    screenshots and verification checks when the feature is documented.
+  <div class="toc">
+    <strong>On this page</strong>
+    <ol>
+      <li><a href="#initial-setup">Initial administrator setup</a></li>
+      <li><a href="#audit-verbosity">Audit verbosity</a></li>
+      <li><a href="#audit-log-rotation-retention">Audit log rotation and retention</a></li>
+      <li><a href="#snapshots-btrfs">Snapshots (Btrfs)</a></li>
+      <li><a href="#recommended-setting">Recommended setting</a></li>
+      <li><a href="#verify">Verify the setting</a></li>
+    </ol>
   </div>
 
-  <h2>Overview</h2>
-  <p>Write a short explanation of what this feature does and when an administrator should use it.</p>
+  <h2 id="initial-setup">Initial administrator setup</h2>
+  <p>
+    When the first administrator opens DNA-Nexus for the first time, the workspace may still be empty.
+    Before creating normal users or uploading content, open the <strong>Admin</strong> area and review
+    the basic server settings.
+  </p>
 
-  <h2>Steps</h2>
-  <ol class="steps">
-    <li>
-      <h3>Open the correct page</h3>
-      <p>Describe where the administrator should click in the DNA-Nexus interface.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Add the first screenshot for this page.
-      </div>
-    </li>
-    <li>
-      <h3>Configure the feature</h3>
-      <p>Describe the fields, choices and safe defaults.</p>
-    </li>
-    <li>
-      <h3>Verify the result</h3>
-      <p>Explain how the administrator knows that the operation succeeded.</p>
-    </li>
-  </ol>
+  <img class="wiki-img" src="../../assets/images/admin_setup/01setup_EN.png" alt="DNA-Nexus admin settings page with audit verbosity setting">
 
-  <h2>Troubleshooting</h2>
+  <h2 id="audit-verbosity">Audit verbosity</h2>
+  <p>
+    The first setting an administrator should review is <strong>audit verbosity</strong>.
+    This setting controls how detailed the audit log should be.
+  </p>
+
+  <p>
+    The audit log is used for later review of important system activity, such as login events,
+    administration actions, user management changes and security-relevant server events.
+    More verbose logging can be useful during testing or troubleshooting, but it can also create
+    unnecessary noise in normal use.
+  </p>
+
+  <h2 id="audit-log-rotation-retention">Audit log rotation and retention</h2>
+  <p>
+    Audit log rotation controls when the active audit log is archived into a rotated
+    audit log file. Audit log retention controls how long rotated audit log files are kept.
+  </p>
+
+  <div class="callout">
+    <strong>Safety note:</strong> The active audit log is not deleted by the retention policy.
+    Retention only applies to rotated archive files.
+  </div>
+
+  <h3>Rotation policy</h3>
+  <p>
+    DNA-Nexus supports several audit log rotation policies. Choose the policy that matches
+    the expected amount of audit activity on the server.
+  </p>
+
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Symptom</th>
-          <th>Possible cause</th>
-          <th>Fix</th>
+          <th>Rotation policy</th>
+          <th>Meaning</th>
+          <th>Typical use</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>Example problem</td>
-          <td>Example cause</td>
-          <td>Example solution</td>
+          <td>Manual</td>
+          <td>The administrator rotates the audit log manually from the audit log rotation section.</td>
+          <td>Small demo systems or installations where the administrator wants full manual control.</td>
+        </tr>
+        <tr>
+          <td>Daily (UTC)</td>
+          <td>The active audit log is rotated once per day using UTC time.</td>
+          <td>Normal installations where daily audit archives are easier to review.</td>
+        </tr>
+        <tr>
+          <td>When active log exceeds N MB</td>
+          <td>The active audit log is rotated when it grows above the configured size, for example 256 MB.</td>
+          <td>Busy servers where log size matters more than calendar days.</td>
+        </tr>
+        <tr>
+          <td>Size or daily, whichever comes first</td>
+          <td>The audit log is rotated when either the configured size limit is reached or the daily UTC rotation time arrives.</td>
+          <td>Production systems where both predictable daily archives and size limits are useful.</td>
         </tr>
       </tbody>
     </table>
   </div>
+
+  <h3>Retention policy</h3>
+  <p>
+    Audit log retention defines which rotated audit log archive files should be kept.
+    This helps prevent old audit archives from using unlimited disk space.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Retention policy</th>
+          <th>Meaning</th>
+          <th>Example</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Do not delete automatically</td>
+          <td>DNA-Nexus keeps rotated audit log files until an administrator removes them manually.</td>
+          <td>Useful when an external backup or compliance process manages log retention.</td>
+        </tr>
+        <tr>
+          <td>Keep last N days</td>
+          <td>Rotated audit log files older than the configured number of days can be pruned.</td>
+          <td>Keep the last 90 days.</td>
+        </tr>
+        <tr>
+          <td>Keep last N rotated files</td>
+          <td>Only the newest configured number of rotated audit log files are kept.</td>
+          <td>Keep the last 30 rotated files.</td>
+        </tr>
+        <tr>
+          <td>Keep at most N MB total</td>
+          <td>Rotated audit log archives are pruned until the total archive size is below the configured limit.</td>
+          <td>Keep at most 1024 MB of rotated audit logs.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Preview and run pruning</h3>
+  <p>
+    Use <strong>Preview prune</strong> before deleting rotated audit logs. The preview is a dry run:
+    it lists the files that would be deleted and estimates how much disk space would be freed.
+  </p>
+
+  <p>
+    Use <strong>Run prune now</strong> only after reviewing the preview result.
+    This performs the actual cleanup according to the selected retention policy.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Audit logs may be needed for troubleshooting, security review
+    or compliance. Choose the retention policy intentionally and make sure it matches the
+    backup and support policy for the server.
+  </div>
+
+  <h2 id="snapshots-btrfs">Snapshots (Btrfs)</h2>
+  <p>
+    If the DNA-Nexus data storage uses <strong>Btrfs</strong>, the server can create
+    automatic snapshots. Snapshots are point-in-time views of the data and can later
+    be used for recovery through the Snapshot Manager app.
+  </p>
+
+  <img class="wiki-img" src="../../assets/images/admin_setup/snapEN.png" alt="DNA-Nexus admin settings page with Btrfs snapshot settings">
+
+  <div class="callout warning">
+    <strong>Btrfs required:</strong> DNA-Nexus snapshot support depends on Btrfs.
+    If the selected storage backend is Ext4, snapshot features are not available on that backend.
+  </div>
+
+  <h3>Snapshot settings</h3>
+  <p>
+    The administrator can enable or disable snapshots, choose whether snapshots are created
+    automatically, and define how often snapshots should be taken.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Meaning</th>
+          <th>Typical use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Enabled</td>
+          <td>Turns snapshot support on or off for the configured Btrfs snapshot path.</td>
+          <td>Enable this when the server should keep recoverable point-in-time copies.</td>
+        </tr>
+        <tr>
+          <td>Automatic schedule</td>
+          <td>Allows DNA-Nexus to create snapshots automatically according to the schedule.</td>
+          <td>Use this for normal installations where snapshots should be created without manual action.</td>
+        </tr>
+        <tr>
+          <td>Per-volume schedule</td>
+          <td>Allows each volume to override the global snapshot schedule.</td>
+          <td>Use this when some volumes need snapshots more or less often than others.</td>
+        </tr>
+        <tr>
+          <td>Times/day</td>
+          <td>Defines how many automatic snapshots should be taken per day.</td>
+          <td>For example, 1 snapshot per day for low-activity systems.</td>
+        </tr>
+        <tr>
+          <td>Jitter (s)</td>
+          <td>Adds a small randomized delay in seconds before scheduled snapshot jobs run.</td>
+          <td>Use jitter to avoid all snapshot jobs starting at exactly the same second.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Manual snapshots</h3>
+  <p>
+    If automatic scheduling is disabled while snapshots remain enabled, snapshots are manual only.
+    In that mode, users or administrators can still trigger snapshot creation, but the scheduler
+    does not run automatically.
+  </p>
+
+  <h3>Snapshot Manager app</h3>
+  <p>
+    The settings page controls whether snapshots are enabled and how the automatic schedule works.
+    Actual snapshot management is done in the separate <strong>Snapshot Manager</strong> app.
+    From Snapshot Manager, administrators can review available snapshots and perform operations
+    such as restoring data from a snapshot.
+  </p>
+
+  <div class="callout">
+    <strong>Note:</strong> Snapshot Manager is installed separately. Document the installation and
+    recovery workflow on the dedicated <a href="../storage/snapshots.html">Snapshots</a> page.
+  </div>
+
+  <h2 id="recommended-setting">Recommended setting</h2>
+  <p>
+    For a normal installation, <strong>SECURITY</strong> is a good default audit verbosity level.
+    It records important security and administration events without logging every possible detail.
+  </p>
+
+  <p>
+    If Btrfs is used for DNA-Nexus data storage, enable snapshots and use an automatic schedule
+    unless the server has a separate backup or recovery policy that intentionally disables them.
+  </p>
+
+  <div class="callout">
+    <strong>Recommendation:</strong> Use <strong>SECURITY</strong> for normal installations.
+    Increase verbosity only when troubleshooting or when a more detailed audit trail is required.
+  </div>
+
+  <h2 id="verify">Verify the setting</h2>
+  <ol class="steps">
+    <li>
+      <h3>Open Admin settings</h3>
+      <p>
+        Open the <strong>Admin</strong> area from the left sidebar and go to the settings page.
+      </p>
+    </li>
+
+    <li>
+      <h3>Select audit verbosity</h3>
+      <p>
+        Find the audit verbosity setting and select the desired level.
+        For most installations, choose <strong>SECURITY</strong>.
+      </p>
+    </li>
+
+    <li>
+      <h3>Save the setting</h3>
+      <p>
+        Save or apply the settings. The selected audit verbosity and audit log rotation
+        policy will be used for future audit log entries.
+      </p>
+    </li>
+
+    <li>
+      <h3>Review the audit log later</h3>
+      <p>
+        After using the system, open the audit log page to confirm that important administration
+        and security events are being recorded.
+      </p>
+    </li>
+  </ol>
+
+  <div class="callout success">
+    <strong>Success check:</strong> Audit verbosity is set to <strong>SECURITY</strong>
+    or another level intentionally selected by the administrator.
+  </div>
+
 </article>
 
     </main>

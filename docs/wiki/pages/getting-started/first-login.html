@@ -73,30 +73,118 @@
 
   <p class="lead">
     Use this page after the server installation is complete and the DNA-Nexus web interface is reachable.
+    The first successful login on a fresh installation becomes the initial administrator account.
   </p>
 
+  <div class="toc">
+    <strong>On this page</strong>
+    <ol>
+      <li><a href="#open-login-page">Open the login page</a></li>
+      <li><a href="#choose-login-method">Choose the login method</a></li>
+      <li><a href="#first-admin">First administrator bootstrap</a></li>
+      <li><a href="#after-login">After login</a></li>
+    </ol>
+  </div>
+
+  <h2 id="open-login-page">Open the login page</h2>
+  <p>
+    Open the DNA-Nexus server address in a browser. The address depends on the installation choices:
+    it may be the local server address, a public hostname, a reverse proxy address or a Cloudflare Tunnel hostname.
+  </p>
+
+  <div class="callout">
+    <strong>Example:</strong> If the installer showed an access URL at the end of installation,
+    use that URL to open the DNA-Nexus login page.
+  </div>
+
+  <h2 id="choose-login-method">Choose the login method</h2>
+  <p>
+    DNA-Nexus can show different login screens depending on the authentication method selected during installation.
+    The examples below show the English login screens.
+  </p>
+
+  <div class="grid cards">
+    <article class="card">
+      <h3>Username and password</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for traditional username and password login.
+      </p>
+      <img class="wiki-img" src="../../assets/images/login/login_EN.png" alt="DNA-Nexus username and password login screen">
+    </article>
+
+    <article class="card">
+      <h3>QR / DNA Connect</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for QR-based DNA Connect login.
+        The user scans the QR code with a trusted DNA-Nexus compatible device.
+      </p>
+      <img class="wiki-img" src="../../assets/images/login/QR_login_EN.png" alt="DNA-Nexus QR and DNA Connect login screen">
+    </article>
+
+    <article class="card">
+      <h3>OPAQUE zero-knowledge password</h3>
+      <p>
+        Use this login screen when DNA-Nexus is configured for OPAQUE zero-knowledge password login.
+      </p>
+      <img class="wiki-img" src="../../assets/images/login/ZK_login_EN.png" alt="DNA-Nexus OPAQUE zero-knowledge password login screen">
+    </article>
+  </div>
+
+  <h2 id="first-admin">First administrator bootstrap</h2>
+  <p>
+    On a fresh installation, DNA-Nexus needs one initial administrator account.
+    If there are no enabled admin users yet, the first successful login is used to create or enable
+    the initial administrator.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Only a trusted person should perform the first login on a new server.
+    The first successful login may become the initial administrator for that DNA-Nexus installation.
+  </div>
+
+  <p>
+    After the first administrator exists, later users are not automatically promoted to administrator.
+    New users may need to wait for administrator approval depending on the selected login method and server settings.
+  </p>
+
+  <h2 id="after-login">After login</h2>
   <ol class="steps">
     <li>
-      <h3>Open the login page</h3>
-      <p>Open the DNA-Nexus server address in your browser.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Login page.
-      </div>
+      <h3>Confirm that the dashboard opens</h3>
+      <p>
+        After login, confirm that the DNA-Nexus dashboard or main application view opens normally.
+      </p>
     </li>
+
     <li>
-      <h3>Sign in as administrator</h3>
-      <p>Use the initial administrator credentials created during installation or provided by the installer.</p>
+      <h3>Open the administration area</h3>
+      <p>
+        After the first administrator login, the DNA-Nexus workspace may still look empty.
+        This is expected on a new installation.
+      </p>
+
+      <img class="wiki-img" src="../../assets/images/admin_setup/admin_EN.png" alt="DNA-Nexus first administrator view with Admin menu in the sidebar">
+
+      <p>
+        Before creating normal users or uploading content, open the <strong>Admin</strong>
+        area from the left sidebar. The Admin area is used for the initial server setup,
+        user management, approvals, storage settings and other administrator tasks.
+      </p>
     </li>
+
     <li>
-      <h3>Check the dashboard</h3>
-      <p>Confirm that the dashboard opens and there are no critical alerts.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Dashboard after first login.
-      </div>
+      <h3>Check users and approvals</h3>
+      <p>
+        Open the user administration or approvals page and confirm whether any new identities are waiting for approval.
+      </p>
     </li>
+
     <li>
-      <h3>Review server settings</h3>
-      <p>Open the settings page and verify language, server name, storage paths and security settings.</p>
+      <h3>Continue initial setup</h3>
+      <p>
+        After the first login works, continue with <a href="../administration/settings.html">server settings</a>,
+        user creation and storage allocation.
+      </p>
     </li>
   </ol>
 

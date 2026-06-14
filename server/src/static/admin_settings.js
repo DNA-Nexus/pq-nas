@@ -2855,7 +2855,17 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     window.addEventListener("pqnas-language-changed", () => {
         updateLanguagePill(currentLanguageName());
         applyAdminStaticI18n();
-        if (themePill && themeSelect) setSimplePill(themePill, "info", tr("admin.theme.pill", null, "Theme"), themeSelect.value || "dark");
+
+        if (themePill && themeSelect) {
+            setSimplePill(themePill, "info", tr("admin.theme.pill", null, "Theme"), themeSelect.value || "dark");
+        }
+
+        // Dynamic admin settings sections build their text in JavaScript.
+        // Re-render them after language changes so pills and tables do not keep
+        // stale text from the previously selected language.
+        refreshAll().catch((e) => {
+            console.error("[admin_settings] refresh after language change failed", e);
+        });
     });
 
     // ---------------------------
