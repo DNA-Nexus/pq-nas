@@ -199,9 +199,7 @@
   </p>
 
   <figure>
-    <a class="clickable-image" href="../../assets/images/users/enable_EN.png">
-      <img src="../../assets/images/users/enable_EN.png" alt="Enable pending user from approvals">
-    </a>
+    <img class="wiki-img wiki-img-medium" src="../../assets/images/users/enable_EN.png" alt="Enable pending user from approvals">
     <figcaption>
       Click <strong>Enable</strong> to approve the pending user.
     </figcaption>
@@ -215,9 +213,7 @@
   </p>
 
   <figure>
-    <a class="clickable-image" href="../../assets/images/users/done_EN.png">
-      <img src="../../assets/images/users/done_EN.png" alt="Enabled user on the user profiles page">
-    </a>
+    <img class="wiki-img wiki-img-medium" src="../../assets/images/users/done_EN.png" alt="Enabled user on the user profiles page">
     <figcaption>
       Enabled users are managed from the normal user profiles page.
     </figcaption>
@@ -270,10 +266,126 @@
 <section id="users-opaque-auth">
   <h2>Flow 2: Adding users with OPAQUE / zero-knowledge password</h2>
 
+  <p>
+    When <strong>OPAQUE authentication</strong> is enabled, administrators create new users
+    from the <strong>Approvals</strong> section. OPAQUE is a zero-knowledge password
+    authentication flow: the user password is processed in the user’s browser and is not
+    sent to the server as a traditional login secret.
+  </p>
+
+  <h3>1. Administrator creates the OPAQUE setup link</h3>
+
+  <p>
+    Open <strong>Admin → Approvals</strong>. In the <strong>Create OPAQUE user</strong>
+    panel, enter the user’s name and login/email address. These two fields are required.
+    The administrator may also choose the user role and an optional storage quota, but
+    storage allocation is not required at this stage.
+  </p>
+
+  <figure>
+    <img class="wiki-img wiki-img-medium" src="../../assets/images/users/opaque/appr_EN.png" alt="Create OPAQUE user and setup link from the approvals page">
+    <figcaption>
+      In OPAQUE mode, administrators create a setup link from the Approvals page.
+    </figcaption>
+  </figure>
+
+  <p>
+    Click <strong>Create user and setup link</strong>. DNA-Nexus creates a single-use setup
+    link and shows it in a confirmation card. The administrator can click
+    <strong>Copy link</strong> to copy the setup URL.
+  </p>
+
   <div class="callout">
-    <strong>Coming next:</strong> This flow will document how user creation works when
-    OPAQUE password authentication is enabled.
+    <strong>Important:</strong> The setup link is shown in this form only once. Copy it
+    before closing the card, then deliver it to the future user through an appropriate
+    communication channel.
   </div>
+
+  <p>
+    At this point, the actual user identity has not been fully created yet. The pending
+    setup entry is waiting for the user to open the link and set their password.
+  </p>
+
+  <h3>2. User opens the setup link and sets a password</h3>
+
+  <p>
+    The user opens the setup link and enters a new password. The OPAQUE registration
+    happens between the browser and the server without sending the plaintext password
+    to the server.
+  </p>
+
+  <p>
+    During this setup step, DNA-Nexus creates the user’s fingerprint and 24 recovery
+    words. The recovery words are shown to the user only once.
+  </p>
+
+  <figure>
+    <img class="wiki-img wiki-img-medium" src="../../assets/images/users/opaque/words_EN.png" alt="OPAQUE setup page showing recovery words once">
+    <figcaption>
+      The user must copy the 24 recovery words before closing the setup page.
+    </figcaption>
+  </figure>
+
+  <div class="callout warning">
+    <strong>Important:</strong> The recovery words must be stored safely before the page is
+    closed. They are not shown to the administrator, and they cannot be displayed again
+    from the admin UI.
+  </div>
+
+  <h3>3. User appears in User profiles</h3>
+
+  <p>
+    After the setup flow is completed, the user appears on the <strong>User profiles</strong>
+    page. From there, administrators can manage the user in the same way as users created
+    through the QR / DNA Connect flow.
+  </p>
+
+  <p>
+    Typical follow-up tasks include editing the display name or notes, changing the role,
+    checking the account status and allocating storage. If the user needs file uploads,
+    make sure a positive storage quota is assigned.
+  </p>
+
+  <h3>4. Password reset and OPAQUE user actions</h3>
+
+  <p>
+    If an OPAQUE user forgets their password, go back to the <strong>Approvals</strong>
+    page. The list may look empty by default because completed users are hidden from the
+    action-focused view. Use the filter field to search by name, email address or another
+    known value.
+  </p>
+
+  <p>
+    When the user is found, the administrator may see several OPAQUE-specific actions:
+  </p>
+
+  <ul>
+    <li>
+      <strong>Create reset link</strong> creates a new single-use reset link. The user opens
+      the link and sets a new OPAQUE password.
+    </li>
+    <li>
+      <strong>Force reset</strong> disables the current OPAQUE credential immediately and
+      creates a new reset link. The user cannot sign in again until the reset link has been
+      completed.
+    </li>
+    <li>
+      <strong>Revoke / cancel</strong> changes the user to a revoked state. Use this when
+      the user should no longer be allowed to sign in, but you want to keep an administrative
+      record of the account.
+    </li>
+    <li>
+      <strong>Delete</strong> removes the user entry completely. This should normally be
+      reserved for cleanup of test data or entries that were created by mistake.
+    </li>
+  </ul>
+
+  <p>
+    If a user is still pending and has not completed the setup link yet, the user does not
+    have a fingerprint or a full identity. In that case the Approvals page can show a
+    <strong>Cancel setup link</strong> action. This invalidates the single-use setup link
+    and removes the pending row from the onboarding list.
+  </p>
 </section>
 
 <section id="users-password-auth">

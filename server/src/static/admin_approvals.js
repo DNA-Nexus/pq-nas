@@ -99,20 +99,31 @@ function clearOpaqueCreateForm() {
 
 async function showOpaqueCreatedModal(created, tokenResponse) {
     const setupUrl = String(tokenResponse.setup_url || tokenResponse.setup_path || "");
-    const recoveryWords = String(created.recovery_words || "");
+
+    const rows = [
+        { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: created.name || created.login || "" },
+        { label: "Login", value: created.login || "", mono: true },
+    ];
+
+    if (created.fingerprint) {
+        rows.push({ label: tr("admin.approvals.fingerprint", null, "Fingerprint"), value: created.fingerprint || "", mono: true });
+    } else {
+        rows.push({
+            label: tr("admin.approvals.fingerprint", null, "Fingerprint"),
+            value: tr("admin.approvals.opaque.generated_during_setup", null, "Generated during user setup")
+        });
+    }
+
+    rows.push(
+        { label: tr("admin.approvals.opaque.expires", null, "Vanhenee"), value: epochLabel(tokenResponse.expires_at) || String(tokenResponse.expires_at || "") },
+        { label: tr("admin.approvals.opaque.setup_url", null, "Setup URL"), value: setupUrl, mono: true }
+    );
 
     const ok = await openApprovalsConfirmModal({
         title: tr("admin.approvals.opaque.create_user_created_title", null, "OPAQUE user created"),
         subtitle: created.login || "",
-        rows: [
-            { label: tr("admin.approvals.opaque.user", null, "Käyttäjä"), value: created.name || created.login || "" },
-            { label: "Login", value: created.login || "", mono: true },
-            { label: tr("admin.approvals.fingerprint", null, "Fingerprint"), value: created.fingerprint || "", mono: true },
-            { label: tr("admin.approvals.opaque.recovery_words", null, "Recovery words"), value: recoveryWords, mono: true },
-            { label: tr("admin.approvals.opaque.expires", null, "Vanhenee"), value: epochLabel(tokenResponse.expires_at) || String(tokenResponse.expires_at || "") },
-            { label: tr("admin.approvals.opaque.setup_url", null, "Setup URL"), value: setupUrl, mono: true },
-        ],
-        note: tr("admin.approvals.opaque.create_user_created_note", null, "Copy the recovery words and setup link now. Recovery words are shown only once."),
+        rows,
+        note: tr("admin.approvals.opaque.create_user_created_note", null, "Copy the setup link now. Recovery words are generated and shown only to the user during setup."),
         confirmText: tr("admin.approvals.opaque.copy_link", null, "Kopioi linkki"),
         cancelText: tr("admin.approvals.opaque.close", null, "Sulje"),
     });
@@ -129,6 +140,7 @@ async function showOpaqueCreatedModal(created, tokenResponse) {
     }
 }
 
+
 async function createOpaqueUserAndSetupLink() {
     const name = String($("opaqueCreateName")?.value || "").trim();
     const login = String($("opaqueCreateLogin")?.value || "").trim().toLowerCase();
@@ -143,23 +155,21 @@ async function createOpaqueUserAndSetupLink() {
         throw new Error(tr("admin.approvals.opaque.create_user_invalid_role", null, "Invalid role."));
     }
 
+    const setup_language =
+        (window.PQNAS_I18N && typeof window.PQNAS_I18N.getLanguage === "function")
+            ? window.PQNAS_I18N.getLanguage()
+            : "en";
+
     const created = await apiPost("/api/admin/users/opaque-create", {
         login,
         name,
         role,
         quota_bytes,
-        include_public_key: false
-    });
-
-    const token = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
-        login: created.login,
-        fingerprint: created.fingerprint,
-        purpose: "new_user",
-        enable_user_on_finish: true,
+        setup_language,
         expires_in_seconds: 86400
     });
 
-    await showOpaqueCreatedModal(created, token);
+    await showOpaqueCreatedModal(created, created);
     clearOpaqueCreateForm();
     await refresh();
 }
@@ -228,16 +238,48 @@ async function showSetupLinkModal(row, tokenResponse) {
 }
 
 async function createOpaqueSetupLink(row) {
+    const setup_language =
+        (window.PQNAS_I18N && typeof window.PQNAS_I18N.getLanguage === "function")
+            ? window.PQNAS_I18N.getLanguage()
+            : "en";
+
     const j = await apiPost("/api/admin/auth/opaque/enrollment-token/create", {
         login: row.login,
         fingerprint: row.fingerprint,
         purpose: row.credential_exists ? "reset_password" : "new_user",
         enable_user_on_finish: true,
+        setup_language,
         expires_in_seconds: 86400
     });
 
     await showSetupLinkModal(row, j);
     await refresh();
+}
+
+
+async function cancelOpaquePendingSetup(row) {
+    const ok = await openApprovalsConfirmModal({
+        title: tr("admin.approvals.opaque.pending_cancel_title", null, "Cancel pending setup?"),
+        subtitle: row.login || "",
+        rows: [
+            { label: tr("admin.approvals.opaque.user", null, "User"), value: row.name || row.login || "" },
+            { label: "Login", value: row.login || "", mono: true },
+        ],
+        note: tr("admin.approvals.opaque.pending_cancel_note", null, "This cancels the single-use setup link. No user identity has been created yet."),
+        confirmText: tr("admin.approvals.opaque.pending_cancel_confirm", null, "Cancel setup link"),
+        cancelText: tr("admin.approvals.cancel", null, "Cancel"),
+        danger: true,
+    });
+    if (!ok) return;
+
+    setMsg(tr("admin.approvals.opaque.pending_canceling", null, "Cancelling pending setup…"));
+
+    await apiPost("/api/admin/auth/opaque/pending-cancel", {
+        login: row.login
+    });
+
+    await refresh();
+    setMsg(tr("admin.approvals.opaque.pending_cancelled_msg", null, "Pending setup cancelled"));
 }
 
 
@@ -305,7 +347,8 @@ function renderOpaqueApprovals() {
     }
 
     tb.innerHTML = rows.map(row => {
-        const canCreateLink = row.onboarding_state !== "revoked";
+        const hasFingerprint = !!String(row.fingerprint || "").trim();
+        const canCreateLink = hasFingerprint && row.onboarding_state !== "revoked";
         const linkText = row.credential_exists ? tr("admin.approvals.opaque.create_reset_link", null, "Luo reset-linkki") : tr("admin.approvals.opaque.create_setup_link", null, "Luo setup-linkki");
         const tokenInfo =
             row.token_state === "active" ? `${tr("admin.approvals.opaque.active_link_expires", null, "Aktiivinen linkki, vanhenee:")} ${epochLabel(row.token_expires_at)}` :
@@ -344,20 +387,35 @@ function renderOpaqueApprovals() {
             </td>
 
             <td class="row-actions">
+                ${!String(row.fingerprint || "").trim() ? `<button class="pq-btn secondary" data-act="opaque-pending-cancel" data-login="${esc(row.login || "")}" type="button">${esc(tr("admin.approvals.opaque.pending_cancel", null, "Cancel setup link"))}</button>` : ""}
                 ${canCreateLink ? `<button class="pq-btn secondary" data-act="opaque-setup" data-fp="${esc(row.fingerprint)}" type="button">${esc(linkText)}</button>` : ""}
-                ${row.credential_exists && row.credential_enabled && row.onboarding_state !== "revoked" ? `<button class="pq-btn danger" data-act="opaque-force-reset" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.force_reset", null, "Pakota reset"))}</button>` : ""}
-                <button class="pq-btn secondary" data-act="opaque-revoke" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.revoke_cancel", null, "Peru / revoke"))}</button>
-                <button class="pq-btn danger" data-act="opaque-delete" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.delete", null, "Delete"))}</button>
+                ${hasFingerprint && row.credential_exists && row.credential_enabled && row.onboarding_state !== "revoked" ? `<button class="pq-btn danger" data-act="opaque-force-reset" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.force_reset", null, "Pakota reset"))}</button>` : ""}
+                ${hasFingerprint ? `<button class="pq-btn secondary" data-act="opaque-revoke" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.opaque.revoke_cancel", null, "Peru / revoke"))}</button>` : ""}
+                ${hasFingerprint ? `<button class="pq-btn danger" data-act="opaque-delete" data-fp="${esc(row.fingerprint)}" type="button">${esc(tr("admin.approvals.delete", null, "Delete"))}</button>` : ""}
             </td>
         </tr>`;
     }).join("");
 
     tb.querySelectorAll("button").forEach(b => {
         b.addEventListener("click", async () => {
-            const fp = b.getAttribute("data-fp");
-            const act = b.getAttribute("data-act");
-            const row = opaqueOnboarding.find(x => x.fingerprint === fp);
-            if (!fp || !act || !row) return;
+            const fp = b.getAttribute("data-fp") || "";
+            const login = b.getAttribute("data-login") || "";
+            const act = b.getAttribute("data-act") || "";
+            const row = opaqueOnboarding.find(x =>
+                (fp && x.fingerprint === fp) ||
+                (!fp && login && x.login === login)
+            );
+            if (!act || !row) return;
+            if (!fp && act !== "opaque-pending-cancel") return;
+
+            if (act === "opaque-pending-cancel") {
+                try {
+                    await cancelOpaquePendingSetup(row);
+                } catch (e) {
+                    setMsg(tr("admin.approvals.opaque.error", { error: e.message }, "Error: " + e.message));
+                }
+                return;
+            }
 
             if (act === "opaque-setup") {
                 try {

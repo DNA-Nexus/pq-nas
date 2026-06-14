@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>DNA-Nexus OPAQUE setup</title>
+  <title data-i18n="opaque_enroll.page_title">DNA-Nexus OPAQUE setup</title>
+  <script src="/static/i18n.js?v=20260614-opaque-enroll-i18n-1"></script>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -62,21 +63,21 @@
 </head>
 <body>
   <main class="card">
-    <h1>Set your DNA-Nexus password</h1>
-    <p>This page uses OPAQUE zero-knowledge password setup. Your password is processed in this browser and is not sent to the server.</p>
+    <h1 data-i18n="opaque_enroll.heading">Set your DNA-Nexus password</h1>
+    <p data-i18n="opaque_enroll.intro">This page uses OPAQUE zero-knowledge password setup. Your password is processed in this browser and is not sent to the server.</p>
 
     <form id="form">
-      <label for="password">New password</label>
+      <label for="password" data-i18n="opaque_enroll.new_password">New password</label>
       <input id="password" type="password" autocomplete="new-password" minlength="12" required>
 
-      <label for="confirm">Confirm password</label>
+      <label for="confirm" data-i18n="opaque_enroll.confirm_password">Confirm password</label>
       <input id="confirm" type="password" autocomplete="new-password" minlength="12" required>
 
-      <button id="submit" type="submit">Set password</button>
+      <button id="submit" type="submit" data-i18n="opaque_enroll.submit">Set password</button>
     </form>
 
     <div id="status" class="status"></div>
-    <p class="small">The setup link is single-use. If it has expired, ask an administrator for a new link.</p>
+    <p class="small" data-i18n="opaque_enroll.link_single_use">The setup link is single-use. If it has expired, ask an administrator for a new link.</p>
   </main>
 
   <script type="module">
@@ -85,6 +86,31 @@
 
     const params = new URLSearchParams(location.search);
     const token = (params.get("token") || "").trim();
+    const setupLang = (params.get("lang") || "").trim();
+
+    async function initLanguage() {
+      if (!window.PQNAS_I18N) return;
+      if (setupLang) {
+        await window.PQNAS_I18N.setLanguage(setupLang, { persist: false });
+        return;
+      }
+      await window.PQNAS_I18N.ready();
+    }
+
+    function t(key, fallback, vars = null) {
+      if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+        return window.PQNAS_I18N.t(key, vars, fallback);
+      }
+      let out = String(fallback || "");
+      if (vars && typeof vars === "object") {
+        for (const [k, v] of Object.entries(vars)) {
+          out = out.replaceAll(`{${k}}`, String(v ?? ""));
+        }
+      }
+      return out;
+    }
+
+    await initLanguage();
 
     const form = document.getElementById("form");
     const submit = document.getElementById("submit");
@@ -134,7 +160,7 @@
 
     if (!token) {
       submit.disabled = true;
-      setStatus("Missing setup token.", "error");
+      setStatus(t("opaque_enroll.missing_token", "Missing setup token."), "error");
     }
 
     form.addEventListener("submit", async (ev) => {
@@ -144,33 +170,33 @@
       const confirm = confirmEl.value;
 
       if (password.length < 12) {
-        setStatus("Password must be at least 12 characters.", "error");
+        setStatus(t("opaque_enroll.password_min", "Password must be at least 12 characters."), "error");
         return;
       }
       if (password !== confirm) {
-        setStatus("Passwords do not match.", "error");
+        setStatus(t("opaque_enroll.password_mismatch", "Passwords do not match."), "error");
         return;
       }
 
       submit.disabled = true;
 
       try {
-        setStatus("Loading OPAQUE client...");
+        setStatus(t("opaque_enroll.loading_client", "Loading OPAQUE client..."));
         const opaque = await loadOpaqueClient();
 
-        setStatus("Creating registration request in browser...");
+        setStatus(t("opaque_enroll.creating_request", "Creating registration request in browser..."));
         const regStart = parseOpaqueResult(await opaque.opaqueRegistrationStart(password));
         if (!regStart.ok || !regStart.client_registration_state_b64 || !regStart.registration_request_b64) {
-          throw new Error("OPAQUE registration start failed");
+          throw new Error(t("opaque_enroll.opaque_start_failed", "OPAQUE registration start failed"));
         }
 
-        setStatus("Contacting server...");
+        setStatus(t("opaque_enroll.contacting_server", "Contacting server..."));
         const serverStart = await postJson("/api/auth/opaque/enrollment/start", {
           token,
           registration_request_b64: regStart.registration_request_b64
         });
 
-        setStatus("Finalizing registration in browser...");
+        setStatus(t("opaque_enroll.finalizing", "Finalizing registration in browser..."));
         const regFinish = parseOpaqueResult(await opaque.opaqueRegistrationFinish(
           password,
           regStart.client_registration_state_b64,
@@ -178,10 +204,10 @@
         ));
 
         if (!regFinish.ok || !regFinish.registration_upload_b64) {
-          throw new Error("OPAQUE registration finish failed");
+          throw new Error(t("opaque_enroll.opaque_finish_failed", "OPAQUE registration finish failed"));
         }
 
-        setStatus("Saving credential...");
+        setStatus(t("opaque_enroll.saving", "Saving credential..."));
         const done = await postJson("/api/auth/opaque/enrollment/finish", {
           token,
           registration_upload_b64: regFinish.registration_upload_b64
@@ -190,13 +216,34 @@
         passwordEl.value = "";
         confirmEl.value = "";
 
-        if (done.ready_for_login) {
-          setStatus(`Password set. You can now sign in as ${done.login}.`, "ok");
+        const readyLine = t(
+          "opaque_enroll.success_ready",
+          "Password set. You can now sign in as {login}.",
+          { login: done.login || "" }
+        );
+        const pendingLine = t(
+          "opaque_enroll.success_pending",
+          "Password set, but the account is not enabled yet. Ask an administrator to enable it."
+        );
+
+        if (done.recovery_words) {
+          const loginLine = done.ready_for_login ? readyLine : pendingLine;
+          setStatus(
+            `${loginLine}\n\n${t("opaque_enroll.recovery_title", "Recovery words — shown once:")}\n${done.recovery_words}\n\n${t("opaque_enroll.recovery_note", "Copy these 24 words now and store them safely. They cannot be shown again.")}`,
+            "ok"
+          );
+        } else if (done.ready_for_login) {
+          setStatus(readyLine, "ok");
         } else {
-          setStatus("Password set, but the account is not enabled yet. Ask an administrator to enable it.", "ok");
+          setStatus(pendingLine, "ok");
         }
       } catch (err) {
-        setStatus(`Setup failed: ${err && err.message ? err.message : String(err)}`, "error");
+        setStatus(
+          t("opaque_enroll.setup_failed", "Setup failed: {message}", {
+            message: err && err.message ? err.message : String(err)
+          }),
+          "error"
+        );
         submit.disabled = false;
       }
     });
