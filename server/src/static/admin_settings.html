@@ -1259,22 +1259,20 @@
                     </div>
 
                     <div class="note">
-                        <span data-i18n="admin.uploads.note1">These values control landing storage.</span>
+                        <span data-i18n="admin.uploads.note1">These values control how often the migration worker runs and how aggressively it drains landing storage.</span>
                     </div>
 
                     <div class="note">
-                        <b><span data-i18n="admin.uploads.tiering">Upload tiering</span></b> lets new uploads land in a fast pool first,
-                        then migrate to capacity storage.
+                        <b><span data-i18n="admin.uploads.tiering">Upload tiering</span></b>
+                        <span data-i18n="admin.uploads.note2">lets new uploads land in a fast pool first, then migrate to capacity storage.</span>
 
                         <br><br>
 
-                        Select an <span class="mono">internal pool</span> for landing.
-                        USB / removable pools are automatically blocked for safety.
+                        <span data-i18n="admin.uploads.note3">Select an internal pool for landing. USB and removable pools are automatically blocked for safety.</span>
 
                         <br><br>
 
-                        The migration worker later moves files to capacity pools
-                        according to tiering policy.
+                        <span data-i18n="admin.uploads.note4">The migration worker later moves files to capacity pools according to the tiering policy.</span>
                     </div>
 
                 </div>
@@ -1506,10 +1504,27 @@
 
         <div class="modalBd">
             <div class="note">
-                <span data-i18n="admin.uploads.help_body">Upload limits
+                <p data-i18n="admin.uploads.help_intro">
+                    Upload tiering lets new uploads land in a fast internal pool first and later migrate to capacity storage.
+                </p>
 
-Upload tiering
-New uploads land in a fast internal pool first and later migrate to capacity storage.</span>
+                <p>
+                    <strong data-i18n="admin.uploads.help_landing_title">Landing storage</strong><br>
+                    <span data-i18n="admin.uploads.help_landing_body">
+                        Select an internal pool for landing. USB and removable pools are automatically blocked for safety.
+                    </span>
+                </p>
+
+                <p>
+                    <strong data-i18n="admin.uploads.help_worker_title">Migration worker</strong><br>
+                    <span data-i18n="admin.uploads.help_worker_body">
+                        Worker interval controls how often the worker wakes up. Minimum landing age controls how old a file must be before it can be moved. Max files per pass controls how many eligible files are moved during one worker pass.
+                    </span>
+                </p>
+
+                <p data-i18n="admin.uploads.help_safety">
+                    Upload tiering is not a backup feature. It only controls where new uploads land first and how they are later moved.
+                </p>
             </div>
         </div>
     </div>

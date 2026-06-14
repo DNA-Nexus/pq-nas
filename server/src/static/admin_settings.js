@@ -1524,16 +1524,16 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
     function tieringWarningsText(c) {
         const ws = Array.isArray(c?.warnings) ? c.warnings : [];
-        if (!ws.length) return tr("admin.settings.none", null, "None");
+        if (!ws.length) return tr("admin.uploads.none", null, "None");
 
         return ws.map(w => {
-            if (w === "usb_blocked") return tr("admin.settings.warn_usb_blocked", null, "USB blocked");
-            if (w === "removable_blocked") return tr("admin.settings.warn_removable_blocked", null, "Removable blocked");
-            if (w === "low_free_space") return tr("admin.settings.warn_low_free_space", null, "Low free space");
-            if (w === "not_mounted") return tr("admin.settings.warn_not_mounted", null, "Not mounted");
-            if (w === "not_writable") return tr("admin.settings.warn_not_writable", null, "Not writable");
-            if (w === "statvfs_failed") return tr("admin.settings.warn_space_unknown", null, "Space unknown");
-            if (w === "missing_mount") return tr("admin.settings.warn_missing_mount", null, "Missing mount");
+            if (w === "usb_blocked") return tr("admin.uploads.warn_usb_blocked", null, "USB blocked");
+            if (w === "removable_blocked") return tr("admin.uploads.warn_removable_blocked", null, "Removable blocked");
+            if (w === "low_free_space") return tr("admin.uploads.warn_low_free_space", null, "Low free space");
+            if (w === "not_mounted") return tr("admin.uploads.warn_not_mounted", null, "Not mounted");
+            if (w === "not_writable") return tr("admin.uploads.warn_not_writable", null, "Not writable");
+            if (w === "statvfs_failed") return tr("admin.uploads.warn_space_unknown", null, "Space unknown");
+            if (w === "missing_mount") return tr("admin.uploads.warn_missing_mount", null, "Missing mount");
             return String(w);
         }).join(", ");
     }
@@ -1579,9 +1579,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             opt.disabled = !eligible;
 
             if (eligible) {
-                opt.textContent = tr("admin.settings.pool_free_label", { pool: poolId, mount, free: freeTxt }, `${poolId} — ${mount} — ${freeTxt} free`);
+                opt.textContent = tr("admin.uploads.pool_free_label", { pool: poolId, mount, free: freeTxt }, `${poolId} — ${mount} — ${freeTxt} free`);
             } else {
-                opt.textContent = tr("admin.settings.pool_blocked_label", { pool: poolId, mount, warnings: warnTxt }, `${poolId} — ${mount} — BLOCKED (${warnTxt})`);
+                opt.textContent = tr("admin.uploads.pool_blocked_label", { pool: poolId, mount, warnings: warnTxt }, `${poolId} — ${mount} — BLOCKED (${warnTxt})`);
             }
 
             if (poolId === String(selectedPoolId || "")) {
@@ -1603,10 +1603,10 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const c = tieringCandidateByPoolId(tieringLandingPool?.value || "");
 
         if (!c) {
-            setSimplePill(tieringMountPill, "info", tr("admin.settings.mount", null, "Mount"), "—");
-            setSimplePill(tieringSpacePill, "info", tr("admin.settings.space", null, "Space"), "—");
-            setSimplePill(tieringEligibilityPill, "warn", tr("admin.settings.eligibility", null, "Eligibility"), tr("admin.settings.no_selection", null, "No selection"));
-            setSimplePill(tieringWarnPill, "warn", tr("admin.settings.warnings", null, "Warnings"), "—");
+            setSimplePill(tieringMountPill, "info", tr("admin.uploads.mount", null, "Mount"), "—");
+            setSimplePill(tieringSpacePill, "info", tr("admin.uploads.space", null, "Space"), "—");
+            setSimplePill(tieringEligibilityPill, "warn", tr("admin.uploads.eligibility", null, "Eligibility"), tr("admin.uploads.no_selection", null, "No selection"));
+            setSimplePill(tieringWarnPill, "warn", tr("admin.uploads.warnings", null, "Warnings"), "—");
             return;
         }
 
@@ -1616,18 +1616,18 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const eligible = !!c.eligible;
         const warnTxt = tieringWarningsText(c);
 
-        setSimplePill(tieringMountPill, "info", tr("admin.settings.mount", null, "Mount"), mount);
-        setSimplePill(tieringSpacePill, "info", tr("admin.settings.space", null, "Space"), tr("admin.settings.free_total", { free: freeTxt, total: totalTxt }, `${freeTxt} free / ${totalTxt} total`));
+        setSimplePill(tieringMountPill, "info", tr("admin.uploads.mount", null, "Mount"), mount);
+        setSimplePill(tieringSpacePill, "info", tr("admin.uploads.space", null, "Space"), tr("admin.uploads.free_total", { free: freeTxt, total: totalTxt }, `${freeTxt} free / ${totalTxt} total`));
         setSimplePill(
             tieringEligibilityPill,
             eligible ? "ok" : "warn",
-            tr("admin.settings.eligibility", null, "Eligibility"),
-            eligible ? tr("admin.settings.eligible", null, "Eligible") : tr("admin.settings.blocked", null, "Blocked")
+            tr("admin.uploads.eligibility", null, "Eligibility"),
+            eligible ? tr("admin.uploads.eligible", null, "Eligible") : tr("admin.uploads.blocked", null, "Blocked")
         );
         setSimplePill(
             tieringWarnPill,
-            warnTxt === tr("admin.settings.none", null, "None") ? "info" : "warn",
-            tr("admin.settings.warnings", null, "Warnings"),
+            warnTxt === tr("admin.uploads.none", null, "None") ? "info" : "warn",
+            tr("admin.uploads.warnings", null, "Warnings"),
             warnTxt
         );
     }
@@ -1648,25 +1648,25 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         updateTieringDetailPills();
 
         if (tieringPill) {
-            let txt = tr("admin.settings.disabled", null, "Disabled");
+            let txt = tr("admin.uploads.disabled", null, "Disabled");
             let kind = "warn";
 
             if (enabled) {
                 const c = tieringCandidateByPoolId(landingPoolId);
                 if (landingPoolId && c && c.eligible) {
-                    txt = tr("admin.settings.enabled_pool", { pool: landingPoolId }, `Enabled • ${landingPoolId}`);
+                    txt = tr("admin.uploads.status_enabled_pool", { pool: landingPoolId }, `Enabled • ${landingPoolId}`);
                     kind = "ok";
                 } else if (landingPoolId) {
-                    txt = tr("admin.settings.enabled_pool_blocked", { pool: landingPoolId }, `Enabled • ${landingPoolId} (blocked)`);
+                    txt = tr("admin.uploads.status_enabled_pool_blocked", { pool: landingPoolId }, `Enabled • ${landingPoolId} (blocked)`);
                     kind = "warn";
                 } else {
-                    txt = tr("admin.settings.enabled_no_pool", null, "Enabled • no pool");
+                    txt = tr("admin.uploads.status_enabled_no_pool", null, "Enabled • no pool");
                     kind = "warn";
                 }
             }
 
             tieringPill.className = "pill " + kind;
-            tieringPill.innerHTML = `<span class="k">${escapeHtml(tr("admin.settings.tiering", null, "Tiering:"))}</span> <span class="v">${escapeHtml(txt)}</span>`;
+            tieringPill.innerHTML = `<span class="k">${escapeHtml(tr("admin.uploads.tiering_label", null, "Tiering:"))}</span> <span class="v">${escapeHtml(txt)}</span>`;
         }
     }
 
