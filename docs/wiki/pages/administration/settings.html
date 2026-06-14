@@ -85,8 +85,9 @@
       <li><a href="#audit-log-rotation-retention">Audit log rotation and retention</a></li>
       <li><a href="#snapshots-btrfs">Snapshots (Btrfs)</a></li>
       <li><a href="#system-backups">System Backups</a></li>
-      <li><a href="#recommended-setting">Recommended setting</a></li>
-      <li><a href="#verify">Verify the setting</a></li>
+      <li><a href="#uploads-tiering">Uploads</a></li>
+      <li><a href="#language-and-theme">Language and theme</a></li>
+      <li><a href="#verify">Verify initial settings</a></li>
     </ol>
   </div>
 
@@ -111,6 +112,11 @@
     More verbose logging can be useful during testing or troubleshooting, but it can also create
     unnecessary noise in normal use.
   </p>
+
+  <div class="callout">
+    <strong>Recommendation:</strong> Use <strong>SECURITY</strong> for normal installations.
+    Increase verbosity only when troubleshooting or when a more detailed audit trail is required.
+  </div>
 
   <h2 id="audit-log-rotation-retention">Audit log rotation and retention</h2>
   <p>
@@ -390,65 +396,197 @@
     <li><strong>Sources</strong> lists the files or databases included in each group.</li>
   </ul>
 
-  <h2 id="recommended-setting">Recommended setting</h2>
+  <h2 id="uploads-tiering">Uploads</h2>
   <p>
-    For a normal installation, <strong>SECURITY</strong> is a good default audit verbosity level.
-    It records important security and administration events without logging every possible detail.
+    If the server has a fast SSD or another fast internal storage pool, it can be used as
+    <strong>landing storage</strong> for uploads. In this model, new uploads land first in a
+    fast pool, and the server later moves them to their final storage locations according to
+    the upload tiering policy.
+  </p>
+
+  <img class="wiki-img" src="../../assets/images/admin_setup/uploadsEN.png" alt="DNA-Nexus upload tiering settings">
+
+  <div class="callout">
+    <strong>Upload tiering:</strong> This helps make uploads feel faster, especially when the
+    final capacity storage is slower than the initial landing storage.
+  </div>
+
+  <h3>How upload tiering works</h3>
+  <p>
+    When upload tiering is enabled, the selected landing pool receives newly uploaded files first.
+    A background migration worker then moves those files from landing storage to capacity storage
+    according to the configured tiering policy.
   </p>
 
   <p>
-    If Btrfs is used for DNA-Nexus data storage, enable snapshots and use an automatic schedule
-    unless the server has a separate backup or recovery policy that intentionally disables them.
+    Only internal pools should be used for landing storage. USB or removable pools are blocked
+    automatically for safety.
+  </p>
+
+  <h3>Choosing worker values</h3>
+  <p>
+    The worker settings control how often the migration worker runs and how aggressively
+    it drains landing storage. Smaller values make migration more responsive, while larger
+    values reduce background activity.
   </p>
 
   <p>
-    Keep System Backups enabled for normal installations. They provide a lightweight recovery
-    point for important DNA-Nexus configuration and internal system state.
+    Example values for a small or moderate installation could be a worker interval of
+    <code>60</code> seconds, a minimum landing age of <code>60</code> seconds and a maximum
+    of <code>8</code> files per pass. Busier servers may need different values depending on
+    disk speed, upload volume and the capacity storage layout.
+  </p>
+
+  <h3>Upload tiering settings</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Meaning</th>
+          <th>Typical use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Enabled</td>
+          <td>Turns upload tiering on or off.</td>
+          <td>Enable this when the server has a fast landing pool available.</td>
+        </tr>
+        <tr>
+          <td>Landing pool</td>
+          <td>The internal storage pool where new uploads arrive first.</td>
+          <td>Select a fast SSD-backed pool when possible.</td>
+        </tr>
+        <tr>
+          <td>Worker interval (sec)</td>
+          <td>How often the migration worker wakes up and checks whether files should be moved.</td>
+          <td>Use a short interval for responsive migration behavior.</td>
+        </tr>
+        <tr>
+          <td>Minimum landing age (sec)</td>
+          <td>The minimum time a file stays in landing storage before it becomes eligible for migration.</td>
+          <td>Use a small buffer so uploads are not moved immediately while still being written.</td>
+        </tr>
+        <tr>
+          <td>Max files per pass</td>
+          <td>The maximum number of files the migration worker moves during one pass.</td>
+          <td>Use this to control how aggressively landing storage is drained.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Status information</h3>
+  <p>
+    The upload tiering section also shows helpful runtime status information:
+  </p>
+
+  <ul>
+    <li><strong>Mount</strong> shows the selected landing path or mountpoint.</li>
+    <li><strong>Space</strong> shows available and total capacity for the landing pool.</li>
+    <li><strong>Eligibility</strong> shows whether the selected pool can be used for upload landing.</li>
+    <li><strong>Warnings</strong> shows whether the server has detected a problem with the current configuration.</li>
+  </ul>
+
+  <h3>When to use it</h3>
+  <p>
+    Upload tiering is most useful when the server has a small fast SSD for incoming writes and
+    a larger slower capacity pool for final storage. It can improve the user experience by making
+    uploads complete quickly while the server handles migration in the background.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Upload tiering is not a backup feature. It only controls where
+    uploaded files land first and how they are later moved.
+  </div>
+
+  <h2 id="language-and-theme">Language and theme</h2>
+  <p>
+    At the end of the initial administrator setup, the administrator can choose the
+    preferred UI language and visual theme.
+  </p>
+
+  <img class="wiki-img" src="../../assets/images/admin_setup/languageEN.png" alt="DNA-Nexus language and theme settings">
+
+  <h3>UI language</h3>
+  <p>
+    The language selection controls the language used by the current administrator
+    in this browser. It also helps define the default language experience for other users,
+    but each user can choose their own language separately.
   </p>
 
   <div class="callout">
-    <strong>Recommendation:</strong> Use <strong>SECURITY</strong> for normal installations.
-    Increase verbosity only when troubleshooting or when a more detailed audit trail is required.
+    <strong>Per-user choice:</strong> Changing the administrator language does not force
+    all users to use the same language. Users can select their own preferred language
+    independently.
   </div>
 
-  <h2 id="verify">Verify the setting</h2>
+  <h3>UI theme</h3>
+  <p>
+    The theme setting controls the visual appearance of the DNA-Nexus interface.
+    Available themes may change over time, so this guide does not list every theme by name.
+  </p>
+
+  <p>
+    After selecting a theme, save it. Some pages may apply the theme immediately,
+    while others may require a page refresh.
+  </p>
+
+  <h2 id="verify">Verify initial settings</h2>
+  <p>
+    After reviewing the administrator settings, confirm that the most important
+    first-run choices have been saved intentionally.
+  </p>
+
   <ol class="steps">
     <li>
-      <h3>Open Admin settings</h3>
+      <h3>Audit settings are selected</h3>
       <p>
-        Open the <strong>Admin</strong> area from the left sidebar and go to the settings page.
+        Confirm that audit verbosity is set to the intended level.
+        For most installations, <strong>SECURITY</strong> is a good default.
+        Also confirm that audit rotation and retention match the support or compliance policy.
       </p>
     </li>
 
     <li>
-      <h3>Select audit verbosity</h3>
+      <h3>Snapshot policy is understood</h3>
       <p>
-        Find the audit verbosity setting and select the desired level.
-        For most installations, choose <strong>SECURITY</strong>.
+        If Btrfs storage is used, confirm whether snapshots are enabled and whether
+        they should run automatically or only manually.
       </p>
     </li>
 
     <li>
-      <h3>Save the setting</h3>
+      <h3>System Backups are running</h3>
       <p>
-        Save or apply the settings. The selected audit verbosity and audit log rotation
-        policy will be used for future audit log entries.
+        Confirm that System Backups show a healthy status, a next scheduled run,
+        and no unexpected missing critical sources.
       </p>
     </li>
 
     <li>
-      <h3>Review the audit log later</h3>
+      <h3>Upload tiering is intentional</h3>
       <p>
-        After using the system, open the audit log page to confirm that important administration
-        and security events are being recorded.
+        If upload tiering is enabled, confirm that the selected landing pool is internal,
+        eligible and has enough free space.
+      </p>
+    </li>
+
+    <li>
+      <h3>Language and theme are set</h3>
+      <p>
+        Confirm that the administrator UI language and visual theme are comfortable to use.
+        Other users can still choose their own language separately.
       </p>
     </li>
   </ol>
 
   <div class="callout success">
-    <strong>Success check:</strong> Audit verbosity is set to <strong>SECURITY</strong>
-    or another level intentionally selected by the administrator.
+    <strong>Success check:</strong> The administrator settings have been reviewed,
+    saved and verified before normal users or production data are added.
   </div>
+
 
 </article>
 
