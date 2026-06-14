@@ -390,3 +390,60 @@ th {
     padding: 24px 16px 42px;
   }
 }
+
+/* Wiki home hero and language picker */
+.wiki-home-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) 1fr;
+  gap: 24px;
+  align-items: center;
+  margin: 24px 0 32px;
+}
+
+.wiki-home-hero img {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.language-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 20px 0 28px;
+}
+
+.language-card {
+  display: block;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.04);
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.language-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(116, 208, 255, 0.55);
+  background: rgba(116, 208, 255, 0.08);
+}
+
+.language-card strong {
+  display: block;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+
+.language-card span {
+  display: block;
+  opacity: 0.82;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .wiki-home-hero {
+    grid-template-columns: 1fr;
+  }
+}
