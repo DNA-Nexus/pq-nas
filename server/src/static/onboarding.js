@@ -1761,6 +1761,31 @@ function renderStep() {
     }
 
     
+    function getWikiUrl() {
+        const configured = String(
+            window.DNANexusWikiUrl ||
+            window.DNX_WIKI_URL ||
+            ""
+        ).trim();
+
+        if (configured) {
+            return configured;
+        }
+
+        const lang = String(
+            document.documentElement.getAttribute("lang") ||
+            navigator.language ||
+            ""
+        ).toLowerCase();
+
+        if (lang.startsWith("fi")) {
+            return "/static/wiki/fi/index.html";
+        }
+
+        return "/static/wiki/index.html";
+    }
+
+
 function toggleHelpMenu() {
         if (helpMenu) {
             closeHelpMenu();
@@ -1780,6 +1805,14 @@ function toggleHelpMenu() {
 
         helpMenu = createEl("div", "dnx-tour-menu");
         helpMenu.appendChild(createEl("div", "dnx-tour-menu-title", "Nexus Guide"));
+
+        const wikiBtn = createEl("button", "", "Open DNA-Nexus Wiki");
+        wikiBtn.type = "button";
+        wikiBtn.addEventListener("click", () => {
+            closeHelpMenu();
+            window.open(getWikiUrl(), "_blank", "noopener,noreferrer");
+        });
+        helpMenu.appendChild(wikiBtn);
 
         for (const tour of tours) {
             const btn = createEl("button", "", `Restart: ${tour.title || tour.id}`);
