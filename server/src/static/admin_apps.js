@@ -1,11 +1,13 @@
 (() => {
     function tr(key, vars = null, fallback = "") {
+        const fb = fallback || key;
         try {
             if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
-                return window.PQNAS_I18N.t(key, vars, fallback || key);
+                const value = window.PQNAS_I18N.t(key, vars, fb);
+                return String(value || "").trim() ? value : fb;
             }
         } catch (_) {}
-        return fallback || key;
+        return fb;
     }
 
     function applyStaticI18n() {
@@ -492,41 +494,56 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
     </select>
 `;
 
-            const overrideField = document.createElement("div");
-            overrideField.className = "policyField";
-            overrideField.innerHTML = `
-    <label class="policyLbl">${esc(tr("admin.apps.user_override", null, "User override"))}</label>
-    <label class="policyChk">
-        <input type="checkbox" />
-        <span>${esc(tr("admin.apps.allow_user_override", null, "Allow user override"))}</span>
-    </label>
-`;
-            const visibilityField = document.createElement("div");
-            visibilityField.className = "policyField";
-            visibilityField.innerHTML = `
-    <label class="policyLbl">${esc(tr("admin.apps.visibility", null, "Visibility"))}</label>
-    <label class="policyChk">
-        <input type="checkbox" />
-        <span>${esc(tr("admin.apps.admin_only", null, "Admin only"))}</span>
-    </label>
-`;
             const launchSel = launchField.querySelector("select");
             const windowSel = windowField.querySelector("select");
-            const overrideChk = overrideField.querySelector("input");
-            const adminOnlyChk = visibilityField.querySelector("input");
+
+            const overrideChk = document.createElement("input");
+            overrideChk.type = "checkbox";
+            overrideChk.checked = !!pol.allow_user_override;
+
+            const adminOnlyChk = document.createElement("input");
+            adminOnlyChk.type = "checkbox";
+            adminOnlyChk.checked = !!pol.admin_only;
 
             launchSel.value = pol.default_launch;
             windowSel.value = pol.window_profile;
-            overrideChk.checked = !!pol.allow_user_override;
-            adminOnlyChk.checked = !!pol.admin_only;
 
             policyGrid.appendChild(launchField);
             policyGrid.appendChild(windowField);
-            policyGrid.appendChild(overrideField);
-            policyGrid.appendChild(visibilityField);
 
             const actions = document.createElement("div");
             actions.className = "row";
+
+            function makePolicyToggleButton(chk, label) {
+                const b = document.createElement("button");
+                b.className = "pq-btn secondary policyToggle";
+                b.type = "button";
+
+                const sync = () => {
+                    const on = !!(chk && chk.checked);
+                    b.setAttribute("aria-pressed", on ? "true" : "false");
+                    b.textContent = `${on ? "[x]" : "[ ]"} ${label}`;
+                };
+
+                b.addEventListener("click", () => {
+                    if (!chk) return;
+                    chk.checked = !chk.checked;
+                    sync();
+                });
+
+                sync();
+                return b;
+            }
+
+            const overridePolicyBtn = makePolicyToggleButton(
+                overrideChk,
+                tr("admin.apps.allow_user_override", null, "Allow user override")
+            );
+
+            const adminOnlyPolicyBtn = makePolicyToggleButton(
+                adminOnlyChk,
+                tr("admin.apps.admin_only", null, "Admin only")
+            );
 
             const saveBtn = document.createElement("button");
             saveBtn.className = "pq-btn secondary";
@@ -609,6 +626,8 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
                 }
             });
 
+            actions.appendChild(overridePolicyBtn);
+            actions.appendChild(adminOnlyPolicyBtn);
             actions.appendChild(saveBtn);
             actions.appendChild(openBtn);
             actions.appendChild(btn);
