@@ -324,6 +324,24 @@ test -f "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh" || {
   exit 1
 }
 
+# First-admin bootstrap helper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-first-admin
+FIRST_ADMIN_HELPER_SRC="$REPO_ROOT/tools/runtime/pqnas-first-admin"
+if [[ ! -f "$FIRST_ADMIN_HELPER_SRC" ]]; then
+  echo "ERROR: Missing first-admin helper: $FIRST_ADMIN_HELPER_SRC"
+  exit 23
+fi
+
+install -m 0755 \
+  "$FIRST_ADMIN_HELPER_SRC" \
+  "$STAGE/libexec/pqnas/pqnas-first-admin"
+
+test -x "$STAGE/libexec/pqnas/pqnas-first-admin" || {
+  echo "ERROR: first-admin helper did not stage"
+  exit 24
+}
+
 # Drive-bay locate root wrapper.
 # Package layout expected by installer:
 #   <asset_root>/libexec/pqnas/pqnas-drive-locate
@@ -512,3 +530,4 @@ echo "  /tmp/pqnas-test/pqnas/pqnas_keygen"
 echo "  /tmp/pqnas-test/pqnas/nodus-cli"
 echo "  /tmp/pqnas-test/pqnas/runtime/dna/dna-connect-cli"
 echo "  /tmp/pqnas-test/pqnas/runtime/dna/libdna.so"
+echo "  /tmp/pqnas-test/pqnas/libexec/pqnas/pqnas-first-admin"
