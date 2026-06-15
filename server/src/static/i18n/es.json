@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Esto cancela el enlace setup de un solo uso. Aún no se ha creado la identidad del usuario.",
   "admin.approvals.opaque.pending_cancel_confirm": "Cancelar enlace setup",
   "admin.approvals.opaque.pending_canceling": "Cancelando configuración pendiente…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Configuración pendiente cancelada"
+  "admin.approvals.opaque.pending_cancelled_msg": "Configuración pendiente cancelada",
+  "admin.users.fp_readonly_title": "El fingerprint es la identidad inmutable del usuario y el administrador no puede cambiarlo."
 }

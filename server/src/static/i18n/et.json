@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "See tühistab ühekordse setup-lingi. Kasutaja identiteeti pole veel loodud.",
   "admin.approvals.opaque.pending_cancel_confirm": "Tühista setup-link",
   "admin.approvals.opaque.pending_canceling": "Tühistan ootel setupi…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Ootel setup tühistatud"
+  "admin.approvals.opaque.pending_cancelled_msg": "Ootel setup tühistatud",
+  "admin.users.fp_readonly_title": "Fingerprint on kasutaja muutumatu identiteet ja administraator ei saa seda muuta."
 }

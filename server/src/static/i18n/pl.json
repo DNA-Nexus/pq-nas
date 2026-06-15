@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "To anuluje jednorazowy link setup. Tożsamość użytkownika nie została jeszcze utworzona.",
   "admin.approvals.opaque.pending_cancel_confirm": "Anuluj link setup",
   "admin.approvals.opaque.pending_canceling": "Anulowanie oczekującej konfiguracji…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Oczekująca konfiguracja anulowana"
+  "admin.approvals.opaque.pending_cancelled_msg": "Oczekująca konfiguracja anulowana",
+  "admin.users.fp_readonly_title": "Fingerprint jest niezmienną tożsamością użytkownika i administrator nie może go zmienić."
 }

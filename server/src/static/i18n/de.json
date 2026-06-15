@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Dies bricht den einmaligen Setup-Link ab. Es wurde noch keine Benutzeridentität erstellt.",
   "admin.approvals.opaque.pending_cancel_confirm": "Setup-Link abbrechen",
   "admin.approvals.opaque.pending_canceling": "Ausstehendes Setup wird abgebrochen…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Ausstehendes Setup abgebrochen"
+  "admin.approvals.opaque.pending_cancelled_msg": "Ausstehendes Setup abgebrochen",
+  "admin.users.fp_readonly_title": "Der Fingerprint ist die unveränderliche Benutzeridentität und kann vom Administrator nicht geändert werden."
 }

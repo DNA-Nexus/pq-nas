@@ -43337,6 +43337,30 @@ srv.Post("/api/v4/snapshots/restore/confirm", [&](const httplib::Request& req, h
         }
 
         const std::string fp    = j.value("fingerprint", "");
+
+        // Security: fingerprint is the immutable identity / primary key.
+        // Admin may search/select by fingerprint, but profile upsert must never
+        // create a new fingerprint or treat fingerprint as an editable field.
+        auto existing_user_for_immutable_fp = users.get(fp);
+        if (!existing_user_for_immutable_fp.has_value()) {
+            pqnas::AuditEvent ev;
+            ev.event = "admin.users.upsert_reject_unknown_fingerprint";
+            ev.outcome = "deny";
+            ev.f["fingerprint"] = fp;
+            ev.f["reason"] = "fingerprint_is_immutable_and_must_already_exist";
+            ev.f["ts"] = now_iso_utc();
+            ev.f["actor_fp"] = actor_fp;
+            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+            audit_append(ev);
+
+            reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "fingerprint_immutable"},
+                {"message", "fingerprint is immutable; admin users upsert can only update an existing user profile"}
+            }.dump());
+            return;
+        }
+
         const std::string name  = j.value("name", "");
         const std::string role  = j.value("role", "user");
         const std::string notes = j.value("notes", "");

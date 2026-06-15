@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Questo annulla il link setup monouso. L'identità utente non è ancora stata creata.",
   "admin.approvals.opaque.pending_cancel_confirm": "Annulla link setup",
   "admin.approvals.opaque.pending_canceling": "Annullamento setup in sospeso…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Setup in sospeso annullato"
+  "admin.approvals.opaque.pending_cancelled_msg": "Setup in sospeso annullato",
+  "admin.users.fp_readonly_title": "Il fingerprint è l’identità immutabile dell’utente e non può essere modificato dall’amministratore."
 }

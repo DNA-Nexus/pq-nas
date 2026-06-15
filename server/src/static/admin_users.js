@@ -1618,6 +1618,7 @@ async function submitAllocationFromModal() {
 
 let allUsers = [];
 let actorFp = "";
+let adminUsersEditFingerprint = "";
 
 const ADMIN_USERS_SORT_STORAGE_KEY = "pqnas_admin_users_sort_v1";
 let adminUsersSort = (() => {
@@ -2013,8 +2014,12 @@ ${detailRow}
 
             setProfileEditorOpen(true);
 
-            // Fill the edit form
+            // Fill the edit form. Fingerprint is identity and must stay immutable.
+            adminUsersEditFingerprint = fp;
             $("fp").value = fp;
+            $("fp").readOnly = true;
+            $("fp").setAttribute("aria-readonly", "true");
+            $("fp").title = tr("admin.users.fp_readonly_title", null, "Fingerprint is the immutable user identity and cannot be changed by admin.");
             $("name").value = u.name || "";
             $("role").value = (u.role || "user");
             $("notes").value = u.notes || "";
@@ -2178,7 +2183,8 @@ async function refresh() {
 }
 
 async function upsertFromForm() {
-    const fp = ($("fp")?.value || "").trim();
+    const visibleFp = ($("fp")?.value || "").trim();
+    const fp = String(adminUsersEditFingerprint || visibleFp || "").trim();
     const name = ($("name")?.value || "").trim();
     const role = ($("role")?.value || "user").trim();
     const notes = ($("notes")?.value || "").trim();
@@ -2187,6 +2193,9 @@ async function upsertFromForm() {
     const avatar_url = ($("avatar_url")?.value || "").trim(); // only if you add this input
 
     if (!fp || fp.length < 32) throw new Error(tr("admin.users.fp_invalid", null, "fingerprint looks invalid"));
+    if (visibleFp && visibleFp !== fp) {
+        throw new Error(tr("admin.users.fp_immutable", null, "Fingerprint cannot be changed. Select the correct user and edit profile fields only."));
+    }
 
     await apiPost("/api/v4/admin/users/upsert", {
         fingerprint: fp,
@@ -2199,7 +2208,7 @@ async function upsertFromForm() {
 
     await refresh();
     setMsg(tr("admin.users.upsert_ok", null, "Upsert OK"));
-    showToast(tr("admin.users.user_upserted", null, "User upserted"));
+    showToast(tr("admin.users.user_upserted", null, "User updated"));
 }
 
 
@@ -2208,6 +2217,11 @@ window.addEventListener("load", async () => {
     $("filter")?.addEventListener("input", render);
 
     setProfileEditorOpen(false);
+    if ($("fp")) {
+        $("fp").readOnly = true;
+        $("fp").setAttribute("aria-readonly", "true");
+        $("fp").title = tr("admin.users.fp_readonly_title", null, "Fingerprint is the immutable user identity and cannot be changed by admin.");
+    }
     $("profileEditorToggle")?.addEventListener("click", () => {
         setProfileEditorOpen(!isProfileEditorOpen());
     });

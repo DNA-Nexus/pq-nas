@@ -4690,5 +4690,6 @@
   "admin.approvals.opaque.pending_cancel_note": "This cancels the single-use setup link. No user identity has been created yet.",
   "admin.approvals.opaque.pending_cancel_confirm": "Cancel setup link",
   "admin.approvals.opaque.pending_canceling": "Cancelling pending setup…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Pending setup cancelled"
+  "admin.approvals.opaque.pending_cancelled_msg": "Pending setup cancelled",
+  "admin.users.fp_readonly_title": "Fingerprint is the immutable user identity and cannot be changed by admin."
 }

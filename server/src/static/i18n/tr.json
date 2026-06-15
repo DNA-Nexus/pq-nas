@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Bu, tek kullanımlık setup bağlantısını iptal eder. Kullanıcı kimliği henüz oluşturulmadı.",
   "admin.approvals.opaque.pending_cancel_confirm": "Setup bağlantısını iptal et",
   "admin.approvals.opaque.pending_canceling": "Bekleyen setup iptal ediliyor…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Bekleyen setup iptal edildi"
+  "admin.approvals.opaque.pending_cancelled_msg": "Bekleyen setup iptal edildi",
+  "admin.users.fp_readonly_title": "Fingerprint kullanıcının değiştirilemez kimliğidir ve yönetici tarafından değiştirilemez."
 }

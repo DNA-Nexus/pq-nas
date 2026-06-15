@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "这会取消一次性设置链接。用户身份尚未创建。",
   "admin.approvals.opaque.pending_cancel_confirm": "取消设置链接",
   "admin.approvals.opaque.pending_canceling": "正在取消待处理设置…",
-  "admin.approvals.opaque.pending_cancelled_msg": "待处理设置已取消"
+  "admin.approvals.opaque.pending_cancelled_msg": "待处理设置已取消",
+  "admin.users.fp_readonly_title": "Fingerprint 是不可变的用户身份，管理员不能更改它。"
 }

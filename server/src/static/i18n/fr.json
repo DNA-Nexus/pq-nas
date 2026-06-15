@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Cela annule le lien setup à usage unique. Aucune identité utilisateur n'a encore été créée.",
   "admin.approvals.opaque.pending_cancel_confirm": "Annuler le lien setup",
   "admin.approvals.opaque.pending_canceling": "Annulation de la configuration en attente…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Configuration en attente annulée"
+  "admin.approvals.opaque.pending_cancelled_msg": "Configuration en attente annulée",
+  "admin.users.fp_readonly_title": "Le fingerprint est l’identité immuable de l’utilisateur et ne peut pas être modifié par l’administrateur."
 }

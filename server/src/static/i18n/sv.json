@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Detta avbryter engångslänken för setup. Ingen användaridentitet har skapats ännu.",
   "admin.approvals.opaque.pending_cancel_confirm": "Avbryt setup-länk",
   "admin.approvals.opaque.pending_canceling": "Avbryter väntande setup…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Väntande setup avbruten"
+  "admin.approvals.opaque.pending_cancelled_msg": "Väntande setup avbruten",
+  "admin.users.fp_readonly_title": "Fingerprint är användarens oföränderliga identitet och kan inte ändras av admin."
 }

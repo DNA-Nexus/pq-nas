@@ -4690,5 +4690,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Tämä peruu kertakäyttöisen setup-linkin. Käyttäjän DNA-identiteettiä ei ole vielä luotu.",
   "admin.approvals.opaque.pending_cancel_confirm": "Peru setup-linkki",
   "admin.approvals.opaque.pending_canceling": "Perutaan pending setup…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Pending setup peruttu"
+  "admin.approvals.opaque.pending_cancelled_msg": "Pending setup peruttu",
+  "admin.users.fp_readonly_title": "Fingerprint on pysyvä käyttäjäidentiteetti, eikä ylläpitäjä voi muuttaa sitä."
 }

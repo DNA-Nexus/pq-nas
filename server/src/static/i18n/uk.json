@@ -4683,5 +4683,6 @@
   "admin.approvals.opaque.pending_cancel_note": "Це скасує одноразове setup-посилання. Ідентичність користувача ще не створена.",
   "admin.approvals.opaque.pending_cancel_confirm": "Скасувати setup-посилання",
   "admin.approvals.opaque.pending_canceling": "Скасування очікуваного налаштування…",
-  "admin.approvals.opaque.pending_cancelled_msg": "Очікуване налаштування скасовано"
+  "admin.approvals.opaque.pending_cancelled_msg": "Очікуване налаштування скасовано",
+  "admin.users.fp_readonly_title": "Fingerprint є незмінною ідентичністю користувача, і адміністратор не може його змінити."
 }
