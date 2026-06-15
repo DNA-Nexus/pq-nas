@@ -113,6 +113,75 @@ html[data-theme="bright"] .raidPromptInput{
         document.head.appendChild(style);
     }
 
+
+    function ensurePoolDestroySurfaceCss() {
+        if (document.getElementById("raidMgrDestroySurfaceCss")) return;
+
+        const style = document.createElement("style");
+        style.id = "raidMgrDestroySurfaceCss";
+        style.textContent = `
+.poolDestroyOverlay .poolDestroyDialog{
+  background:
+    linear-gradient(var(--panel), var(--panel)),
+    linear-gradient(var(--bg), var(--bg));
+  color: var(--fg);
+  border-color: var(--border2);
+  box-shadow: var(--shadow);
+}
+
+.poolDestroyOverlay .poolDestroyDialog .uiDialogHeader,
+.poolDestroyOverlay .poolDestroyDialog .raidDialogHeader{
+  background:
+    linear-gradient(var(--panel2), var(--panel2)),
+    linear-gradient(var(--bg), var(--bg));
+  color: var(--fg);
+  border-color: var(--border2);
+}
+
+.poolDestroyOverlay .poolDestroyDialog .raidDialogInnerCard,
+.poolDestroyOverlay .poolDestroyDialog details,
+.poolDestroyOverlay .poolDestroyDialog label{
+  background:
+    linear-gradient(var(--panel2), var(--panel2)),
+    linear-gradient(var(--bg), var(--bg));
+  color: var(--fg);
+  border-color: var(--border2);
+}
+
+.poolDestroyOverlay .poolDestroyDialog input[type="text"]{
+  background:
+    linear-gradient(var(--panel), var(--panel)),
+    linear-gradient(var(--bg), var(--bg));
+  color: var(--fg);
+  border-color: var(--border2);
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    function preparePoolDestroySurface(ov) {
+        ensurePoolDestroySurfaceCss();
+
+        if (!ov) return;
+        ov.classList.add("poolDestroyOverlay");
+
+        const dialog = ov.querySelector(".raidDialogShell, .uiDialog, .modalCard");
+        if (dialog) dialog.classList.add("poolDestroyDialog");
+
+        ov.querySelectorAll([
+            ".poolDestroyDialog",
+            ".uiDialogHeader",
+            ".raidDialogHeader",
+            ".raidDialogInnerCard",
+            "details",
+            "label",
+            "input[type='text']"
+        ].join(",")).forEach((node) => {
+            node.style.background = "";
+            node.style.backgroundColor = "";
+        });
+    }
+
     function openRaidPromptModal(opts = {}) {
         ensureRaidPromptCss();
 
@@ -4350,7 +4419,41 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
   </div>
 </div>
 `;
-            document.body.appendChild(ov);
+                    preparePoolDestroySurface(ov);
+        
+        {
+            const poolDestroySurface = "linear-gradient(var(--panel), var(--panel)),linear-gradient(var(--bg), var(--bg))";
+            const poolDestroySurface2 = "linear-gradient(var(--panel2), var(--panel2)),linear-gradient(var(--bg), var(--bg))";
+
+            Array.from(ov.children || []).forEach((node) => {
+                node.style.background = poolDestroySurface;
+                node.style.color = "var(--fg)";
+                node.style.borderColor = "var(--border2)";
+                node.style.boxShadow = "var(--shadow)";
+            });
+
+            ov.querySelectorAll([
+                ".uiDialogHeader",
+                ".raidDialogHeader",
+                ".raidDialogInnerCard",
+                "details",
+                "label"
+            ].join(",")).forEach((node) => {
+                node.style.background = poolDestroySurface2;
+                node.style.color = "var(--fg)";
+                node.style.borderColor = "var(--border2)";
+            });
+
+            ov.querySelectorAll("input[type='text']").forEach((node) => {
+                node.style.background = poolDestroySurface;
+                node.style.color = "var(--fg)";
+                node.style.borderColor = "var(--border2)";
+            });
+        }
+
+
+
+document.body.appendChild(ov);
             return ov;
         }
 
@@ -4360,6 +4463,41 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
             const closeBtn = ov.querySelector("#poolDestroyCloseBtn");
             const cancelBtn = ov.querySelector("#poolDestroyCancelBtn");
             const doBtn = ov.querySelector("#poolDestroyDoBtn");
+
+            const paintPoolDestroyDoBtn = () => {
+                if (!doBtn) return;
+
+                doBtn.classList.add("danger");
+                doBtn.style.borderColor = "rgb(var(--fail-rgb))";
+                doBtn.style.fontWeight = "900";
+
+                if (doBtn.disabled) {
+                    doBtn.style.background =
+                        "color-mix(in srgb, rgb(var(--fail-rgb)) 24%, var(--panel))";
+                    doBtn.style.color =
+                        "color-mix(in srgb, rgb(var(--fail-rgb)) 80%, var(--fg))";
+                    doBtn.style.opacity = "0.78";
+                    return;
+                }
+
+                doBtn.style.background =
+                    "color-mix(in srgb, rgb(var(--fail-rgb)) 72%, var(--panel))";
+                doBtn.style.color = "var(--fg)";
+                doBtn.style.opacity = "1";
+            };
+
+            const clearPoolDestroyNonDangerButtons = () => {
+                [closeBtn, cancelBtn].forEach((btn) => {
+                    if (!btn) return;
+                    btn.classList.remove("danger");
+                    btn.style.borderColor = "";
+                    btn.style.fontWeight = "";
+                    btn.style.background = "";
+                    btn.style.color = "";
+                    btn.style.opacity = "";
+                });
+            };
+
             const mountInp = ov.querySelector("#poolDestroyMountInp");
             const wipeChk = ov.querySelector("#poolDestroyWipeChk");
             const typeInp = ov.querySelector("#poolDestroyTypeInp");
@@ -4368,6 +4506,8 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
             mountInp.value = String(mount || "");
             wipeChk.checked = false;
             typeInp.value = "";
+            clearPoolDestroyNonDangerButtons();
+            paintPoolDestroyDoBtn();
             dbg.textContent = tr("raidmgr.idle", null, "(idle)");
 
             const refreshDoEnabled = () => {
@@ -4382,7 +4522,14 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
             closeBtn.onclick = close;
             cancelBtn.onclick = close;
 
-            doBtn.onclick = async () => {
+            
+            typeInp?.addEventListener("input", () => {
+                window.setTimeout(() => {
+                    clearPoolDestroyNonDangerButtons();
+                    paintPoolDestroyDoBtn();
+                }, 0);
+            });
+doBtn.onclick = async () => {
                 // 🔒 Hard guard: only allow pools under /srv/pqnas/pools
                 const mnt = String(mountInp.value || "").trim();
                 if (!mnt.startsWith("/srv/pqnas/pools/")) {
@@ -4731,7 +4878,9 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
             if (!slotCountInp.value) slotCountInp.value = "1";
             forceChk.checked = false;
 
-            ov.classList.add("show");
+                        clearPoolDestroyNonDangerButtons();
+            paintPoolDestroyDoBtn();
+ov.classList.add("show");
             await refreshDisks();
         }
         createBtn?.addEventListener("click", () => {
