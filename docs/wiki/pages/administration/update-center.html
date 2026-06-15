@@ -65,16 +65,145 @@
 </aside>
     <main class="content">
 
+<!-- WIKI:UPDATE-CENTER:BEGIN -->
   <h1>Update Center</h1>
 
   <p>
-    This page documents the DNA-Nexus Update Center.
-    Use this section to explain how administrators check available updates, review update status and apply server updates.
+    DNA-Nexus / PQ-NAS is continuously improved with new features, security
+    improvements and reliability fixes. To make these improvements available on
+    the server, an administrator can update the server software from the
+    <strong>Update Center</strong>.
   </p>
 
-  <div class="callout">
-    <strong>Draft:</strong> Add screenshots and detailed update workflow steps here.
-  </div>
+  <figure>
+    <a href="../../assets/images/update/upp_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/update/upp_EN.png" alt="Update Center showing the latest GitHub release and downloaded update packages" />
+    </a>
+    <figcaption>Administration → Update Center</figcaption>
+  </figure>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#checking-for-updates">Checking for updates</a></li>
+      <li><a href="#downloading-an-update-package">Downloading an update package</a></li>
+      <li><a href="#checking-the-downloaded-package">Checking the downloaded package</a></li>
+      <li><a href="#building-and-validating-the-install-plan">Building and validating the install plan</a></li>
+      <li><a href="#dry-running-the-update">Dry-running the update</a></li>
+      <li><a href="#installing-the-update">Installing the update</a></li>
+      <li><a href="#cleaning-old-packages">Cleaning old packages</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="checking-for-updates">Checking for updates</h2>
+
+  <p>
+    The Update Center checks GitHub for the latest available DNA-Nexus / PQ-NAS
+    release. The administrator can also run this check manually by clicking
+    <strong>Check now</strong>.
+  </p>
+
+  <p>
+    When a core update package is found, the Update Center shows it under
+    <strong>Latest GitHub release</strong>. Compare the latest available version
+    number with the currently installed version. If the GitHub release is newer,
+    the update should be downloaded to the server.
+  </p>
+
+  <p>
+    Click <strong>Open release</strong> to view the release page on GitHub and read
+    more details about the update package.
+  </p>
+
+  <h2 id="downloading-an-update-package">Downloading an update package</h2>
+
+  <p>
+    Click <strong>Download to server</strong> to download the selected update
+    package to the server.
+  </p>
+
+  <p>
+    After the package has been downloaded, it appears under
+    <strong>Update packages on server</strong>. Select the newest package from the
+    list before continuing.
+  </p>
+
+  <h2 id="checking-the-downloaded-package">Checking the downloaded package</h2>
+
+  <p>
+    Click <strong>Check downloaded package</strong> to inspect the package contents.
+    If the package passes the checks, the Update Center reports
+    <strong>Check OK</strong>.
+  </p>
+
+  <p>
+    At this stage, nothing has been installed yet.
+  </p>
+
+  <h2 id="building-and-validating-the-install-plan">Building and validating the install plan</h2>
+
+  <p>
+    Next, click <strong>Build install plan</strong>. This checks the currently
+    installed software components and compares them with the contents of the update
+    package.
+  </p>
+
+  <p>
+    After the install plan has been created, click
+    <strong>Validate install plan</strong>. This performs the final checks and
+    creates a digest summary for the complete plan.
+  </p>
+
+  <h2 id="dry-running-the-update">Dry-running the update</h2>
+
+  <p>
+    If validation succeeds, click <strong>Dry-run plan</strong>. This performs a
+    test run of the update package before any real installation is applied.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/update/run_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/update/run_EN.png" alt="Update Center dry-run output showing files that would be changed" />
+    </a>
+    <figcaption>Dry-running the install plan</figcaption>
+  </figure>
+
+  <p>
+    The administrator is shown the files that would change during the update. When
+    the output looks correct, the real installation can be started.
+  </p>
+
+  <h2 id="installing-the-update">Installing the update</h2>
+
+  <p>
+    Click <strong>Update downloaded packages</strong> to start the real update.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/update/conf_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/update/conf_EN.png" alt="Final confirmation dialog before installing the downloaded update package" />
+    </a>
+    <figcaption>Final confirmation before applying the update</figcaption>
+  </figure>
+
+  <p>
+    A final confirmation is shown before the update is applied. After confirming,
+    the Update Center installs the package.
+  </p>
+
+  <p>
+    When everything goes well, the update can complete without downtime. In some
+    cases, the server program should be restarted from the shell after installation:
+  </p>
+
+  <pre><code>sudo systemctl restart pqnas.service</code></pre>
+
+  <h2 id="cleaning-old-packages">Cleaning old packages</h2>
+
+  <p>
+    Old update packages can be removed from the server by selecting a package and
+    clicking <strong>Delete selected package</strong>.
+  </p>
+<!-- WIKI:UPDATE-CENTER:END -->
 
 </main>
   </div>
