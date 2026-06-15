@@ -65,16 +65,100 @@
 </aside>
     <main class="content">
 
+<!-- WIKI:APPLICATIONS:BEGIN -->
   <h1>Applications</h1>
 
   <p>
-    This page documents the administrator application management view.
-    Use this section to explain installed bundled apps, app visibility, launcher/sidebar behavior and future application management tasks.
+    DNA-Nexus / PQ-NAS uses a modular architecture. This means that additional
+    features can be added to the system by installing applications.
   </p>
 
-  <div class="callout">
-    <strong>Draft:</strong> Add screenshots and detailed application management steps here.
-  </div>
+  <p>
+    Applications are managed from the administrator menu under
+    <strong>Applications</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/apps/apps_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/apps/apps_EN.png" alt="Applications administration page showing installed applications and launch policy settings" />
+    </a>
+    <figcaption>Administration → Applications</figcaption>
+  </figure>
+
+  <p>
+    On this page, an administrator can install, remove, update, open and configure
+    applications.
+  </p>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#installed-applications">Installed applications</a></li>
+      <li><a href="#launch-policy">Launch policy</a></li>
+      <li><a href="#visibility">Application visibility</a></li>
+      <li><a href="#saving-opening-and-removing">Saving, opening and removing applications</a></li>
+      <li><a href="#installing-a-new-application">Installing a new application or version</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="installed-applications">Installed applications</h2>
+
+  <p>
+    Each installed application is shown in the applications list. After an
+    application has been installed, the administrator can define how the application
+    should behave when it is launched.
+  </p>
+
+  <h2 id="launch-policy">Launch policy</h2>
+
+  <p>
+    <strong>Default launch</strong> controls how the application opens by default.
+  </p>
+
+  <ul>
+    <li><strong>Automatic</strong> lets DNA-Nexus choose the default launch behavior.</li>
+    <li><strong>Embedded</strong> opens the application inside the DNA-Nexus desktop or workspace experience.</li>
+    <li><strong>Detached</strong> opens the application in a separate window.</li>
+  </ul>
+
+  <p>
+    <strong>Window profile</strong> defines the initial window size used when the
+    application is opened in detached mode.
+  </p>
+
+  <p>
+    <strong>Allow user override</strong> means that users may change their own launch
+    preferences for the application. In DNA-Nexus / PQ-NAS version 1.2.1, this option
+    is visible in the interface, but user-side overrides are not yet active.
+  </p>
+
+  <h2 id="visibility">Application visibility</h2>
+
+  <p>
+    When <strong>Admin only</strong> is enabled, the application is hidden from normal
+    users and is only available to administrators.
+  </p>
+
+  <p>
+    This is useful for administrative tools such as Storage Manager and Snapshot
+    Manager.
+  </p>
+
+  <h2 id="saving-opening-and-removing">Saving, opening and removing applications</h2>
+
+  <ul>
+    <li>Click <strong>Save launch policy</strong> to store the selected launch and visibility settings.</li>
+    <li>Click <strong>Open</strong> to launch the selected application in its own window.</li>
+    <li>Click <strong>Uninstall</strong> to remove an installed application.</li>
+  </ul>
+
+  <h2 id="installing-a-new-application">Installing a new application or version</h2>
+
+  <p>
+    A new application, or a new version of an existing application, can be installed
+    from a ZIP package using the upload area on the right side of the Applications
+    page.
+  </p>
+<!-- WIKI:APPLICATIONS:END -->
 
 </main>
   </div>
