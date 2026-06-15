@@ -96,9 +96,9 @@
       <li><a href="#open-login-page">Open the login page</a></li>
       <li><a href="#choose-login-method">Choose the login method</a></li>
       <li><a href="#first-admin">First administrator bootstrap</a></li>
-      <li><a href="#bootstrap-qr">Method 1: QR / DNA Connect bootstrap</a></li>
-      <li><a href="#bootstrap-opaque">Method 2: OPAQUE bootstrap</a></li>
-      <li><a href="#bootstrap-password">Method 3: Username/password bootstrap</a></li>
+      <li><a href="#recommended-helper">Recommended: use pqnas-first-admin</a></li>
+      <li><a href="#helper-behavior">What the helper does</a></li>
+      <li><a href="#manual-bootstrap">Advanced/manual bootstrap</a></li>
       <li><a href="#bootstrap-cleanup">Remove bootstrap tokens</a></li>
       <li><a href="#after-login">After login</a></li>
     </ol>
@@ -151,8 +151,8 @@
   <h2 id="first-admin">First administrator bootstrap</h2>
   <p>
     A fresh DNA-Nexus installation needs exactly one initial administrator before normal user
-    management can begin. The bootstrap mechanism depends on the browser login method selected
-    during installation.
+    management can begin. DNA-Nexus has one internal fingerprint-based identity model, but the
+    first-admin bootstrap path depends on the browser login method selected during installation.
   </p>
 
   <div class="callout warning">
@@ -160,152 +160,110 @@
     bootstrap. After an enabled administrator exists, later users are not automatically promoted.
   </div>
 
+  <h2 id="recommended-helper">Recommended: use pqnas-first-admin</h2>
+  <p>
+    The recommended first-admin setup method is the server-side helper command installed by
+    DNA-Nexus:
+  </p>
+
+  <pre><code>sudo pqnas-first-admin</code></pre>
+
+  <p>
+    Run this command on the server after installation. The helper detects the active login mode
+    from the local server configuration and guides the administrator through the correct bootstrap
+    flow.
+  </p>
+
+  <div class="callout">
+    <strong>Why use the helper?</strong> It avoids copying long curl commands, uses the local
+    server endpoint during bootstrap, creates temporary bootstrap tokens only when needed, and
+    removes those tokens after the first admin has been created.
+  </div>
+
+  <h2 id="helper-behavior">What the helper does</h2>
   <table>
     <thead>
       <tr>
         <th>Login method</th>
-        <th>How first admin is created</th>
-        <th>When to use it</th>
+        <th>Helper behavior</th>
+        <th>Result</th>
       </tr>
     </thead>
     <tbody>
       <tr>
         <td><strong>QR / DNA Connect</strong></td>
-        <td>The first successfully verified DNA Connect identity becomes the initial admin.</td>
-        <td>Best for owner/admin setups where the admin uses a trusted DNA-Nexus compatible device.</td>
+        <td>The helper explains that the first trusted QR/DNA Connect login performs the bootstrap.</td>
+        <td>The first verified identity becomes the initial admin.</td>
       </tr>
       <tr>
         <td><strong>OPAQUE</strong></td>
-        <td>The installer or server admin enables a one-time OPAQUE bootstrap token. The browser performs OPAQUE registration and the server creates the first admin.</td>
-        <td>Best when the installation should use zero-knowledge password login from the beginning.</td>
+        <td>The helper creates a temporary OPAQUE bootstrap token, restarts the service, and shows the browser setup page to open.</td>
+        <td>The browser performs zero-knowledge password registration and creates the first admin.</td>
       </tr>
       <tr>
         <td><strong>Username/password</strong></td>
-        <td>The installer or server admin enables a one-time password bootstrap token and calls the password bootstrap endpoint.</td>
-        <td>Best for traditional business/customer installations where users expect email + password login.</td>
+        <td>The helper creates a temporary password bootstrap token, asks for admin login/name/password, and calls the local bootstrap endpoint.</td>
+        <td>The first admin is created and recovery words are shown once.</td>
       </tr>
     </tbody>
   </table>
 
-  <h2 id="bootstrap-qr">Method 1: QR / DNA Connect bootstrap</h2>
+  <h2 id="manual-bootstrap">Advanced/manual bootstrap</h2>
   <p>
-    In QR / DNA Connect mode, the browser shows a QR code. The first trusted identity that
-    successfully verifies the login on a fresh server becomes the initial administrator.
+    Manual bootstrap is mainly useful for debugging, automation, or installer development.
+    Normal administrators should use <code>sudo pqnas-first-admin</code>.
   </p>
 
-  <ol class="steps">
-    <li>
-      <h3>Open the login page</h3>
-      <p>Open the DNA-Nexus server URL in a browser.</p>
-    </li>
-    <li>
-      <h3>Scan the QR code</h3>
-      <p>Use DNA Connect or a compatible trusted device to approve the login.</p>
-    </li>
-    <li>
-      <h3>Confirm admin access</h3>
-      <p>
-        After the login completes, open the <strong>Admin</strong> area from the sidebar.
-        The first verified identity is now the initial administrator.
-      </p>
-    </li>
-  </ol>
-
-  <div class="callout">
-    <strong>Note:</strong> QR bootstrap is the only first-admin method where the first successful
-    browser login itself can create the initial administrator. Password and OPAQUE installs use
-    explicit bootstrap tokens instead.
-  </div>
-
-  <h2 id="bootstrap-opaque">Method 2: OPAQUE bootstrap</h2>
+  <h3 id="bootstrap-qr">Manual method 1: QR / DNA Connect</h3>
   <p>
-    OPAQUE mode uses a zero-knowledge password flow. The plaintext password must not be sent to
-    the server. Because there is no admin yet on a fresh installation, OPAQUE first-admin setup
-    uses a temporary bootstrap token.
+    In QR / DNA Connect mode, open the DNA-Nexus login page and scan the QR code with a trusted
+    DNA-Nexus compatible device. On a fresh server with no enabled admin users, the first verified
+    identity becomes the initial administrator.
   </p>
 
-  <ol class="steps">
-    <li>
-      <h3>Enable OPAQUE login mode</h3>
-      <p>The server must run with OPAQUE browser login enabled.</p>
-      <pre><code>PQNAS_LOGIN_MODE=opaque</code></pre>
-    </li>
-    <li>
-      <h3>Set a temporary OPAQUE bootstrap token</h3>
-      <p>
-        The installer may create this automatically. If doing it manually, set a strong random
-        token only for the bootstrap window.
-      </p>
-      <pre><code>PQNAS_OPAQUE_BOOTSTRAP_TOKEN=&lt;temporary-random-token&gt;</code></pre>
-    </li>
-    <li>
-      <h3>Open the OPAQUE bootstrap/setup page</h3>
-      <p>
-        Complete the OPAQUE setup in the browser. The browser performs the OPAQUE cryptographic
-        registration steps locally; the server stores only the OPAQUE credential record.
-      </p>
-    </li>
-    <li>
-      <h3>Save the recovery words</h3>
-      <p>
-        If a new admin identity is created, DNA-Nexus shows 24 recovery words once.
-        Store them safely. They are not stored by the server and cannot be shown again.
-      </p>
-    </li>
-    <li>
-      <h3>Remove the bootstrap token</h3>
-      <p>After the first admin exists, remove the temporary token and restart the service.</p>
-    </li>
-  </ol>
-
-  <h2 id="bootstrap-password">Method 3: Username/password bootstrap</h2>
+  <h3 id="bootstrap-opaque">Manual method 2: OPAQUE</h3>
   <p>
-    Traditional username/password mode uses an explicit one-time bootstrap endpoint.
-    A normal password login attempt must not create users by itself. This prevents unknown
-    visitors from creating accounts from the public login page.
+    OPAQUE bootstrap needs a temporary server-side token because the browser performs the
+    zero-knowledge password registration. The plaintext password must not be sent to the server.
   </p>
 
-  <ol class="steps">
-    <li>
-      <h3>Enable password login mode</h3>
-      <p>The server must run with password login enabled.</p>
-      <pre><code>PQNAS_LOGIN_MODE=password</code></pre>
-    </li>
-    <li>
-      <h3>Set a temporary password bootstrap token</h3>
-      <p>
-        The installer may create this automatically. If doing it manually, generate a strong random
-        token and keep it only until the first admin is created.
-      </p>
-      <pre><code>PQNAS_PASSWORD_BOOTSTRAP_TOKEN=&lt;temporary-random-token&gt;</code></pre>
-    </li>
-    <li>
-      <h3>Create the first admin from the server</h3>
-      <p>
-        Run the bootstrap request locally on the server. Localhost is recommended during bootstrap
-        so that a public proxy, tunnel or cached route cannot point to the wrong backend.
-      </p>
-      <pre><code>curl -sS \
+  <pre><code>PQNAS_LOGIN_MODE=opaque
+PQNAS_OPAQUE_BOOTSTRAP_TOKEN=&lt;temporary-random-token&gt;</code></pre>
+
+  <p>
+    After restarting the service, open the OPAQUE bootstrap page in a browser:
+  </p>
+
+  <pre><code>/static/opaque-bootstrap.html</code></pre>
+
+  <p>
+    Enter the bootstrap token, admin login, display name and password. If the setup succeeds,
+    copy the 24 recovery words immediately. They are shown once and are not stored by the server.
+  </p>
+
+  <h3 id="bootstrap-password">Manual method 3: Username/password</h3>
+  <p>
+    Traditional username/password mode uses an explicit one-time bootstrap endpoint. A normal
+    password login attempt must not create users by itself.
+  </p>
+
+  <pre><code>PQNAS_LOGIN_MODE=password
+PQNAS_PASSWORD_BOOTSTRAP_TOKEN=&lt;temporary-random-token&gt;</code></pre>
+
+  <p>
+    After restarting the service, run the bootstrap request locally on the server:
+  </p>
+
+  <pre><code>curl -sS \
   -H "Content-Type: application/json" \
   -H "X-PQNAS-Bootstrap-Token: $token" \
   -d '{"login":"admin@example.com","name":"Admin","password":"change-this-long-password"}' \
   http://127.0.0.1:8081/api/auth/password/bootstrap-admin</code></pre>
-    </li>
-    <li>
-      <h3>Save the recovery words</h3>
-      <p>
-        If the endpoint creates a new admin identity, it returns 24 recovery words once.
-        Save them immediately. The server does not store the words.
-      </p>
-    </li>
-    <li>
-      <h3>Log in normally</h3>
-      <p>
-        After the bootstrap succeeds, open the public DNA-Nexus login page and sign in with
-        the admin email and password.
-      </p>
-    </li>
-  </ol>
+
+  <p>
+    Localhost is recommended during bootstrap so that a public proxy, tunnel or cached route
+    cannot point to the wrong backend. If recovery words are returned, copy them immediately.
+  </p>
 
   <h2 id="bootstrap-cleanup">Remove bootstrap tokens</h2>
   <p>
@@ -313,11 +271,18 @@
     the first administrator has been created.
   </p>
 
-  <pre><code># Password bootstrap cleanup example
+  <pre><code># Recommended cleanup
+sudo pqnas-first-admin cleanup</code></pre>
+
+  <p>
+    Manual cleanup examples:
+  </p>
+
+  <pre><code># Password bootstrap cleanup
 sudo sed -i '/^PQNAS_PASSWORD_BOOTSTRAP_TOKEN=/d' /etc/pqnas/pqnas.env
 sudo systemctl restart pqnas.service</code></pre>
 
-  <pre><code># OPAQUE bootstrap cleanup example
+  <pre><code># OPAQUE bootstrap cleanup
 sudo sed -i '/^PQNAS_OPAQUE_BOOTSTRAP_TOKEN=/d' /etc/pqnas/pqnas.env
 sudo systemctl restart pqnas.service</code></pre>
 
@@ -344,12 +309,17 @@ sudo systemctl restart pqnas.service</code></pre>
       <tr>
         <td><code>bootstrap_disabled</code></td>
         <td>Password mode is enabled, but no password bootstrap token is configured.</td>
-        <td>Set <code>PQNAS_PASSWORD_BOOTSTRAP_TOKEN</code> temporarily.</td>
+        <td>Set <code>PQNAS_PASSWORD_BOOTSTRAP_TOKEN</code> temporarily or run <code>sudo pqnas-first-admin</code>.</td>
       </tr>
       <tr>
         <td><code>bootstrap_denied</code></td>
         <td>The supplied bootstrap token is missing or does not match.</td>
         <td>Use the exact token from the server environment.</td>
+      </tr>
+      <tr>
+        <td><code>opaque_bootstrap_disabled</code></td>
+        <td>OPAQUE mode is enabled, but no OPAQUE bootstrap token is configured.</td>
+        <td>Set <code>PQNAS_OPAQUE_BOOTSTRAP_TOKEN</code> temporarily or run <code>sudo pqnas-first-admin</code>.</td>
       </tr>
       <tr>
         <td><code>enabled_admin_exists</code></td>
