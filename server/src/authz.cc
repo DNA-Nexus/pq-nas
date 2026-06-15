@@ -197,3 +197,31 @@ bool is_admin_cookie(const httplib::Request& req,
     if (!allowlist) return false;
     return allowlist->is_admin(fp_hex);
 }
+
+
+bool is_admin_cookie_users(const httplib::Request& req,
+                           const unsigned char cookie_key[32],
+                           const pqnas::UsersRegistry* users,
+                           std::string* out_fp_hex)
+{
+    if (out_fp_hex) out_fp_hex->clear();
+
+    const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
+    if (cookieVal.empty()) return false;
+
+    std::string fp_b64;
+    long exp = 0;
+    if (!session_cookie_verify(cookie_key, cookieVal, fp_b64, exp)) return false;
+
+    const long now = std::time(nullptr);
+    if (now > exp) return false;
+
+    std::string raw;
+    if (!b64std_decode_to_bytes(fp_b64, raw)) return false;
+
+    const std::string fp_hex(raw.begin(), raw.end());
+    if (out_fp_hex) *out_fp_hex = fp_hex;
+
+    if (!users) return false;
+    return users->is_admin_enabled(fp_hex);
+}

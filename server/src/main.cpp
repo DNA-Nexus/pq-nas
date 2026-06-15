@@ -11343,7 +11343,7 @@ v5.app_pair_build_qr_uri =
         update_center_deps.reply_json = reply_json;
         update_center_deps.require_admin =
             [&](const httplib::Request& req, httplib::Response& res) -> bool {
-                return require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist);
+                return require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users);
             };
         update_center_deps.require_admin_actor =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
@@ -11894,7 +11894,7 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
             adminOnlyApp = false;
         }
 
-        if (adminOnlyApp && !is_admin_cookie(req, COOKIE_KEY, &allowlist)) {
+        if (adminOnlyApp && !is_admin_cookie_users(req, COOKIE_KEY, &users)) {
             res.status = 403;
             res.set_header("Cache-Control", "no-store");
             res.set_content(R"({"ok":false,"error":"forbidden","message":"Admin-only app"})",
@@ -12052,7 +12052,7 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
     out["bundled"] = json::array();
     out["installed"] = json::array();
     out["launch_policy_by_app_id"] = json::object();
-    const bool isAdmin = is_admin_cookie(req, COOKIE_KEY, &allowlist);
+    const bool isAdmin = is_admin_cookie_users(req, COOKIE_KEY, &users);
 
     json appLaunchPolicy = load_app_launch_policy_json();
     json appLaunchPolicyById = json::object();
@@ -18722,7 +18722,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
 
 
     srv.Get("/api/v4/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {
-       if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+       if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
        int n = 200;
        if (req.has_param("n")) {
@@ -18753,7 +18753,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
     });
 
     srv.Get("/api/v4/audit/verify", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
         std::string state = trim_nl(slurp_file(audit_state_path));
         std::string last_hash;
@@ -18785,7 +18785,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
     // Admin Settings UI
     srv.Get("/admin/settings", [&](const httplib::Request& req, httplib::Response& res) {
         // Gate page itself (admin-only)
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
         std::string body;
         if (!read_file_to_string(STATIC_ADMIN_SETTINGS_HTML, body)) {
@@ -18802,7 +18802,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
 
     // ---- Admin: rotate audit log ----
     srv.Post("/api/v4/admin/rotate-audit", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) {
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) {
             return;
         }
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
@@ -18833,7 +18833,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
 
 // ---- Admin: audit retention preview (dry-run) ----
 srv.Post("/api/v4/admin/audit/preview-prune", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     nlohmann::json in = nlohmann::json::object();
@@ -18855,7 +18855,7 @@ srv.Post("/api/v4/admin/audit/preview-prune", [&](const httplib::Request& req, h
 
 // ---- Admin: audit retention prune (delete candidates based on SAVED policy) ----
 srv.Post("/api/v4/admin/audit/prune", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     // Load saved retention policy from admin_settings_path
@@ -18952,7 +18952,7 @@ srv.Post("/api/v4/admin/audit/prune", [&](const httplib::Request& req, httplib::
 
     // Admin settings API
     srv.Get("/api/v4/admin/settings", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
 		// SAFE accessor for audit_min_level (never throws)
 		auto get_level_safe = [&](const json& j, const std::string& fallback) -> std::string {
@@ -19197,7 +19197,7 @@ json dna_connect_identity = json{
     });
 
 srv.Post("/api/v4/admin/settings/send-dna-alert-contact-request", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     try {
@@ -19271,7 +19271,7 @@ srv.Post("/api/v4/admin/settings/send-dna-alert-contact-request", [&](const http
 });
  // Admin settings API
 srv.Post("/api/v4/admin/settings", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto load_settings_json = [&]() -> json {
@@ -20339,7 +20339,7 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
     }
 });
 srv.Post("/api/v4/admin/settings/create-dna-alert-identity", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     try {
@@ -20426,7 +20426,7 @@ srv.Post("/api/v4/admin/settings/create-dna-alert-identity", [&](const httplib::
 });
 
 srv.Get("/api/v4/admin/settings/dna-alert-identity-info", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
     json st = build_dna_connect_identity_status_json();
     reply_json(res, 200, json{
@@ -20436,7 +20436,7 @@ srv.Get("/api/v4/admin/settings/dna-alert-identity-info", [&](const httplib::Req
 });
 
 srv.Post("/api/v4/admin/settings/send-dna-alert-contact-request", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
         if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     try {
@@ -21206,7 +21206,7 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     });
 
     srv.Get("/admin/apps", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
     std::string body;
     if (!read_file_to_string(STATIC_ADMIN_APPS_HTML, body)) {
@@ -22064,7 +22064,7 @@ WHERE CAST(strftime('%s', datetime(strftime('%Y-%m-01 00:00:00', generated_at_ep
 
     // GET /api/v4/admin/stats/trends?period=24h|7d|30d|90d|all&bucket=raw|hour|day
     srv.Get("/api/v4/admin/stats/trends", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
         auto param_or = [&](const char* key, const std::string& fallback) -> std::string {
             return req.has_param(key) ? req.get_param_value(key) : fallback;
@@ -44101,7 +44101,7 @@ srv.Get("/api/v4/apps/has", [&](const httplib::Request& req, httplib::Response& 
     out["installed"] = json::array();
     out["bundled"] = json::array();
 
-    const bool isAdmin = is_admin_cookie(req, COOKIE_KEY, &allowlist);
+    const bool isAdmin = is_admin_cookie_users(req, COOKIE_KEY, &users);
 
     json appLaunchPolicy = load_app_launch_policy_json();
     json appLaunchPolicyById = json::object();
@@ -44224,7 +44224,7 @@ srv.Get("/api/v4/apps/has", [&](const httplib::Request& req, httplib::Response& 
 
 
     srv.Post("/api/v4/apps/upload_install", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
         auto reply = [&](int status, const json& j) {
             res.status = status;
@@ -44486,7 +44486,7 @@ srv.Post("/api/v4/apps/install_bundled", [&](const httplib::Request& req, httpli
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     };
     //only admins can install apps
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
     auto audit_fail = [&](const std::string& why) {
         pqnas::AuditEvent ev;
@@ -44656,7 +44656,7 @@ srv.Post("/api/v4/apps/launch_policy", [&](const httplib::Request& req, httplib:
         res.set_content(j.dump(2), "application/json; charset=utf-8");
     };
 
-    if (!is_admin_cookie(req, COOKIE_KEY, &allowlist)) {
+    if (!is_admin_cookie_users(req, COOKIE_KEY, &users)) {
         reply(403, {
             {"ok", false},
             {"error", "forbidden"},
@@ -44767,7 +44767,7 @@ srv.Post("/api/v4/apps/uninstall", [&](const httplib::Request& req, httplib::Res
     };
 
     // only admins can uninstall apps
-    if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
     json in;
     try { in = json::parse(req.body); }
@@ -44921,7 +44921,7 @@ srv.Post("/api/v4/apps/uninstall", [&](const httplib::Request& req, httplib::Res
             }.dump());
             return;
         }
-        if (!require_admin_cookie(req, res, COOKIE_KEY, allowlist_path, &allowlist)) return;
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
         res.set_header("Cache-Control", "no-store");
 

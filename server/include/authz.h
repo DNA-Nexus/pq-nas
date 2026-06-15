@@ -41,3 +41,10 @@ bool is_admin_cookie(const httplib::Request& req,
                      const unsigned char cookie_key[32],
                      const pqnas::Allowlist* allowlist,
                      std::string* out_fp_hex = nullptr);
+
+// Preferred admin check.
+// users.json is the canonical source for admin role + enabled status.
+bool is_admin_cookie_users(const httplib::Request& req,
+                           const unsigned char cookie_key[32],
+                           const pqnas::UsersRegistry* users,
+                           std::string* out_fp_hex = nullptr);

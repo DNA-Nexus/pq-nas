@@ -44,6 +44,7 @@
 //   lock discipline near RoutesV5OpaqueEnrollmentsFileLock.
 
 #include "routes_v5.h"
+#include "allowlist.h"
 #include "users_registry.h"
 #include "password_credentials.h"
 #include "dna_identity_generator.h"
@@ -175,6 +176,24 @@ static std::string routes_v5_opaque_credentials_path() {
 
     return "/etc/pqnas/opaque_credentials.json";
 }
+
+static bool routes_v5_sync_admin_to_allowlist(const RoutesV5Context& ctx, const std::string& fp_hex) {
+    if (fp_hex.empty()) {
+        return false;
+    }
+
+    if (!ctx.allowlist || !ctx.allowlist_path || ctx.allowlist_path->empty()) {
+        return true;
+    }
+
+    const bool changed = ctx.allowlist->add_admin(fp_hex);
+    if (!changed) {
+        return true;
+    }
+
+    return ctx.allowlist->save(*ctx.allowlist_path);
+}
+
 
 static bool routes_v5_is_safe_b64ish(const std::string& s, std::size_t max_len) {
     if (s.empty() || s.size() > max_len) return false;
@@ -4242,6 +4261,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             }
         }
 
+        if (!routes_v5_sync_admin_to_allowlist(ctx, fp_hex)) {
+            if (!have_existing_admin) {
+                ctx.users->erase(fp_hex);
+                ctx.users->save(*ctx.users_path);
+            }
+
+            routes_v5_secure_clear_string(bootstrap_recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "allowlist_admin_sync_failed"}}.dump());
+            return;
+        }
+
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
             if (!have_existing_admin) {
                 const bool rolled_back =
@@ -4925,6 +4955,18 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "users_save_failed");
             routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
+            return;
+        }
+
+        if (role == "admin" && status == "enabled" &&
+            !routes_v5_sync_admin_to_allowlist(ctx, ident.fingerprint_hex)) {
+            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "allowlist_admin_sync_failed");
+
+            ctx.users->erase(ident.fingerprint_hex);
+            ctx.users->save(*ctx.users_path);
+
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "allowlist_admin_sync_failed"}}.dump());
             return;
         }
 
