@@ -223,10 +223,46 @@ async function prepareAdminAvatarUploadBlob(file) {
     );
 }
 
+function badge(variant, text, title = "") {
+    const v = String(variant || "").trim();
+    const cls = v ? `pq-badge ${v}` : "pq-badge";
+    const t = title ? ` title="${esc(title)}"` : "";
+    return `<span class="${cls}"${t}>${esc(text || "")}</span>`;
+}
+
 function pill(status) {
-    const cls = (status || "disabled");
-    const badge = cls === "enabled" ? "ok" : cls === "revoked" ? "err" : "";
-    return `<span class="pq-badge ${badge}">${esc(statusLabel(cls))}</span>`;
+    const s = String(status || "disabled").toLowerCase();
+    const variant =
+        s === "enabled" ? "ok" :
+        s === "disabled" ? "warn" :
+        s === "revoked" ? "err" :
+        "muted";
+
+    return badge(variant, statusLabel(s));
+}
+
+function rolePill(role) {
+    const r = String(role || "").toLowerCase();
+    if (!r) return `<span class="muted">—</span>`;
+
+    const variant =
+        r === "admin" ? "info" :
+        r === "user" ? "muted" :
+        "muted";
+
+    return badge(variant, roleLabel(r));
+}
+
+function groupPill(group) {
+    const g = String(group || "").trim();
+    if (!g) return `<span class="muted">—</span>`;
+    return badge("muted", g);
+}
+
+function poolPill(poolId) {
+    const p = String(poolId || "").trim();
+    if (!p) return "";
+    return badge("info", p);
 }
 
 function esc(s) {
@@ -304,9 +340,9 @@ function closeAvatarModal() {
 }
 
 function storagePill(state) {
-    const s = (state || "unallocated");
-    const badge = (s === "allocated") ? "ok" : "";
-    return `<span class="pq-badge ${badge}">${esc(storageStateLabel(s))}</span>`;
+    const s = String(state || "unallocated").toLowerCase();
+    const variant = s === "allocated" ? "ok" : "muted";
+    return badge(variant, storageStateLabel(s));
 }
 function storagePoolIdForUser(u) {
     const raw =
@@ -325,7 +361,7 @@ function storageCellHtml(u) {
     if (state !== "allocated") return main;
 
     const poolId = storagePoolIdForUser(u);
-    return `${main} <span class="pq-badge">${esc(poolId)}</span>`;
+    return `${main} ${poolPill(poolId)}`;
 }
 function fmtBytes(n) {
     n = Number(n || 0);
@@ -1828,9 +1864,9 @@ function render() {
 
         <div class="detailKV"><div class="k">${esc(tr("admin.users.fingerprint", null, "Fingerprint"))}</div><div class="v mono">${esc(fp)}</div></div>
         <div class="detailKV"><div class="k">${esc(tr("admin.users.name_placeholder", null, "Name"))}</div><div class="v">${esc(u.name || "—")}</div></div>
-        <div class="detailKV"><div class="k">${esc(tr("admin.users.role", null, "Role"))}</div><div class="v">${esc(u.role || "—")}</div></div>
+        <div class="detailKV"><div class="k">${esc(tr("admin.users.role", null, "Role"))}</div><div class="v">${rolePill(u.role)}</div></div>
         <div class="detailKV"><div class="k">${esc(tr("admin.users.status", null, "Status"))}</div><div class="v">${pill(u.status)}</div></div>
-        <div class="detailKV"><div class="k">${esc(tr("admin.users.group", null, "Group"))}</div><div class="v">${esc(u.group || "—")}</div></div>
+        <div class="detailKV"><div class="k">${esc(tr("admin.users.group", null, "Group"))}</div><div class="v">${groupPill(u.group)}</div></div>
         <div class="detailKV"><div class="k">${esc(tr("admin.users.email", null, "Email"))}</div><div class="v">${esc(u.email || "—")}</div></div>
         <div class="detailKV"><div class="k">${esc(tr("admin.users.storage", null, "Storage"))}</div><div class="v">${storageCellHtml(u)}</div></div>
         <div class="detailKV"><div class="k">${esc(tr("admin.users.quota", null, "Quota"))}</div><div class="v mono">${esc(quotaText)}</div></div>
@@ -1934,9 +1970,9 @@ function render() {
     <div class="muted" style="white-space:pre-wrap;">${esc(u.notes || "")}</div>
   </td>
 
-  <td>${esc(roleLabel(u.role || ""))}</td>
+  <td>${rolePill(u.role)}</td>
   <td>${pill(u.status)}</td>
-  <td>${esc(u.group || "")}</td>
+  <td>${groupPill(u.group)}</td>
     <td>${storageCellHtml(u)}</td>
   <td class="mono">${fmtQuotaCell(u)}</td>
   <td class="mono">${esc(u.added_at || "")}</td>

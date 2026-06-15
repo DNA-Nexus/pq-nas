@@ -78,17 +78,30 @@
         const badge = ensureNavAlertBadge(approvalsBtn);
 
         let pending = 0;
-        try {
-            const r = await fetch("/api/v4/admin/users", {
-                credentials: "include",
-                headers: { "Accept": "application/json" },
-                cache: "no-store"
-            });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok || !j.ok) return;
 
-            const users = Array.isArray(j.users) ? j.users : [];
-            pending = users.filter(u => String(u.status || "").toLowerCase() !== "enabled").length;
+        try {
+            const cfg = await tryGetJson("/api/auth/config");
+            const mode = String((cfg.j && cfg.j.mode) || "").toLowerCase();
+
+            if (mode === "opaque") {
+                const onboarding = await tryGetJson("/api/admin/auth/opaque/onboarding/status");
+                if (!onboarding.ok || !onboarding.j || !onboarding.j.ok) return;
+
+                const entries = Array.isArray(onboarding.j.entries) ? onboarding.j.entries : [];
+
+                // Match the Approvals page default view:
+                // setup_done rows are historical/completed and should not raise the nav alert.
+                pending = entries.filter(row => {
+                    const state = String(row.onboarding_state || "").toLowerCase();
+                    return state && state !== "setup_done";
+                }).length;
+            } else {
+                const usersResp = await tryGetJson("/api/v4/admin/users");
+                if (!usersResp.ok || !usersResp.j || !usersResp.j.ok) return;
+
+                const users = Array.isArray(usersResp.j.users) ? usersResp.j.users : [];
+                pending = users.filter(u => String(u.status || "").toLowerCase() !== "enabled").length;
+            }
         } catch {
             return;
         }
