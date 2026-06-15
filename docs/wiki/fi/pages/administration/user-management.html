@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Käyttäjien hallinta</title>
+  <link rel="stylesheet" href="../../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Ylläpitäjän opas</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Aloita tästä</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wikin etusivu</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Palvelimen asennus</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >Ensimmäinen kirjautuminen</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ylläpito</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html">Käyttäjien luominen</a>
+      <a href="../../pages/administration/user-management.html" data-user-management-link class="active" aria-current="page">Käyttäjien hallinta</a></li>
+        <li><a href="../../pages/administration/applications.html">Sovellukset</a></li>
+        <li><a href="../../pages/administration/update-center.html">Päivityskeskus</a></li>
+        <li><a href="../../pages/administration/settings.html" >Palvelimen asetukset</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Tallennuksen hallinta</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Tilannekuvat</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Sovellukset</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >Tiedostonhallinta</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Ohjeet</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Yleiset ongelmat</a></li>
+        <li><a href="../../pages/page-template.html" >Sivupohja</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+
+  <h1>Käyttäjien hallinta</h1>
+
+  <p>
+    Käyttäjien ylläpitotoimet hoidetaan kohdasta <strong>Ylläpito → Käyttäjäprofiilit</strong>.
+    Hyväksyntä ja käyttöönotto käsitellään käyttäjien luontivaiheessa; tämä sivu keskittyy olemassa olevien käyttäjien hallintaan.
+  </p>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#kayttajien-hallinta-yleiskuva">Käyttäjien hallinnan yleiskuva</a></li>
+      <li><a href="#tallennuspoolien-valinen-siirto">Tallennuspoolien välinen siirto</a></li>
+      <li><a href="#jarjestely-muokkaus-ja-avatarit">Järjestely, muokkaus ja avatarit</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="kayttajien-hallinta-yleiskuva">Käyttäjien hallinnan yleiskuva</h2>
+  <p>
+    Kohdassa <strong>Ylläpito → Käyttäjäprofiilit</strong> ylläpitäjä voi aktivoida käyttäjiä,
+    poistaa käyttäjiä käytöstä, kumota käyttäjän pääsyn kokonaan, asettaa tallennustilan kiintiöitä
+    ja hallita käyttäjän tallennuspoolia.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/managing/users_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/managing/users_FI.png" alt="Käyttäjäprofiilit-sivu, jossa näkyvät käyttäjien hallintatoiminnot" />
+    </a>
+    <figcaption>Ylläpito → Käyttäjäprofiilit</figcaption>
+  </figure>
+
+  <ul>
+    <li><strong>Aktivoi / ota käyttöön</strong> sallii käyttäjän kirjautumisen, jos valittu kirjautumistapa on muuten kunnossa.</li>
+    <li><strong>Poista käytöstä</strong> estää kirjautumisen poistamatta käyttäjämerkintää.</li>
+    <li><strong>Kumoa / revoke</strong> estää pääsyn kokonaan ja säilyttää tilistä ylläpidollisen merkinnän.</li>
+    <li><strong>Kiintiö</strong> määrittää käyttäjälle varatun tallennustilan määrän.</li>
+  </ul>
+
+  <h2 id="tallennuspoolien-valinen-siirto">Tallennuspoolien välinen siirto</h2>
+  <p>
+    Käyttäjä voidaan siirtää tallennuspoolista toiseen. Käytä <strong>Siirrä</strong>-toimintoa,
+    kun haluat valita käyttäjälle uuden kohdepoolin.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/managing/migrate_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/managing/migrate_FI.png" alt="Siirrä-toiminto, jossa käyttäjälle valitaan uusi kohdetallennuspooli" />
+    </a>
+    <figcaption>Käyttäjän siirtäminen toiseen tallennuspooliin</figcaption>
+  </figure>
+
+  <p>
+    Kun käyttäjä siirretään uuteen kohdepooliin, vanhan poolin kopio säilytetään tarkoituksella turvallisuussyistä.
+    Sen voi myöhemmin poistaa <strong>Siivoa vanha kopio</strong> -toiminnolla.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/managing/clean_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/managing/clean_FI.png" alt="Siivoa vanha kopio -toiminto, jolla poistetaan käyttäjän tiedot vanhasta tallennuspoolista" />
+    </a>
+    <figcaption>Vanhan kopion siivoaminen edellisestä tallennuspoolista</figcaption>
+  </figure>
+
+  <div class="callout warning">
+    <strong>Tärkeää:</strong> Siivoa vanha kopio -toiminto poistaa käyttäjän tallentamat tiedostot aiemmasta tallennuspoolista.
+    Käytä tätä vasta, kun olet varmistanut että siirto uuteen pooliin onnistui.
+  </div>
+
+  <h2 id="jarjestely-muokkaus-ja-avatarit">Järjestely, muokkaus ja avatarit</h2>
+  <p>
+    Käyttäjäluetteloa voidaan järjestellä yläpalkin toiminnoilla ja klikkaamalla taulukon otsikoita.
+    Esimerkiksi <strong>Kiintiö</strong>-otsikon klikkaaminen järjestää käyttäjät tallennustilan kiintiön perusteella.
+  </p>
+
+  <p>
+    Ylläpitäjä voi myös asettaa käyttäjälle avatar-kuvan. Avaa käyttäjän kortti ja klikkaa <strong>Muokkaa</strong>.
+    Käyttäjän tiedot tulevat näkyviin <strong>Muokkaa profiilia</strong> -kohtaan. Muutosten jälkeen
+    muista painaa <strong>Lisää / Päivitä</strong>, jotta muutokset tallentuvat.
+  </p>
+
+</main>
+  </div>
+  <script src="../../../assets/js/wiki.js"></script>
+</body>
+</html>

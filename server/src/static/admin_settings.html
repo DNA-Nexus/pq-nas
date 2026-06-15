@@ -754,11 +754,11 @@
 
                 <div class="bd">
                     <div class="row">
-                        <div style="font-weight:950;" data-i18n="admin.password_user_create.heading">Create password-auth user with DNA recovery phrase</div>
+                        <div style="font-weight:950;" data-i18n="admin.password_user_create.heading">Create password-auth user setup link</div>
                     </div>
 
                     <div class="note" data-i18n="admin.password_user_create.desc">
-                        Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.
+                        Creates a one-time setup link. The user sets their own password and sees their own DNA recovery words.
                     </div>
 
                     <div class="passwordUserCreateGrid" style="margin-top:12px;">
@@ -780,17 +780,7 @@
                                    autocomplete="off"
                                    placeholder="user@example.com" />
                         </label>
-
-                        <label class="passwordUserCreateField">
-                            <span class="label" data-i18n="admin.password_user_create.initial_password">Initial password</span>
-                            <input id="adminCreatePasswordUserPassword"
-                                   class="pq-input"
-                                   type="password"
-                                   autocomplete="new-password"
-                                   minlength="12" />
-                        </label>
-
-                        <label class="passwordUserCreateField">
+<label class="passwordUserCreateField">
                             <span class="label" data-i18n="admin.password_user_create.role">Role</span>
                             <select id="adminCreatePasswordUserRole" class="pq-select">
                                 <option value="user" selected data-i18n="admin.password_user_create.role_user">user</option>
@@ -823,13 +813,13 @@
                     </div>
 
                     <div class="passwordSettingsActions" style="margin-top:12px;">
-                        <button id="btnAdminCreatePasswordUser" class="pq-btn primary" type="button" data-i18n="admin.password_user_create.create_button">Create password user</button>
+                        <button id="btnAdminCreatePasswordUser" class="pq-btn primary" type="button" data-i18n="admin.password_user_create.create_button">Create setup link</button>
                     </div>
 
                     <div class="passwordRecoveryBox" id="adminCreatePasswordUserResult">
-                        <div style="font-weight:950; margin-bottom:8px;" data-i18n="admin.password_user_create.result_title">Recovery words — shown once</div>
+                        <div style="font-weight:950; margin-bottom:8px;" data-i18n="admin.password_user_create.result_title">Setup link — shown once</div>
                         <div class="note" style="margin-bottom:10px;" data-i18n="admin.password_user_create.result_note">
-                            Copy these 24 words now. They are not stored by the server and cannot be shown again.
+                            Copy this setup link and send it to the user. Recovery words will be shown only to the user.
                         </div>
 
                         <textarea id="adminCreatePasswordUserRecovery"
@@ -845,7 +835,7 @@
 
                         <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
                             <input id="adminCreatePasswordUserCopied" type="checkbox" />
-                            <span data-i18n="admin.password_user_create.copied_checkbox">I have copied the recovery words.</span>
+                            <span data-i18n="admin.password_user_create.copied_checkbox">I have copied the setup link.</span>
                         </label>
                     </div>
                 </div>

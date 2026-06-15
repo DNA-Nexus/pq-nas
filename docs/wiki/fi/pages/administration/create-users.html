@@ -30,8 +30,10 @@
     <section class="nav-section">
       <p class="nav-heading">Ylläpito</p>
       <ul class="nav-list">
-        <li><a href="../../pages/administration/create-users.html" class="active">Käyttäjien luominen</a></li>
-        <li><a href="../../pages/administration/user-approval.html" >Käyttäjien hyväksyntä</a></li>
+        <li><a href="../../pages/administration/create-users.html" class="active" aria-current="page">Käyttäjien luominen</a>
+      <a href="../../pages/administration/user-management.html" data-user-management-link>Käyttäjien hallinta</a></li>
+        <li><a href="../../pages/administration/applications.html">Sovellukset</a></li>
+        <li><a href="../../pages/administration/update-center.html">Päivityskeskus</a></li>
         <li><a href="../../pages/administration/settings.html" >Palvelimen asetukset</a></li>
       </ul>
     </section>
@@ -109,7 +111,8 @@
       <h3>Tell the user to sign in</h3>
       <p>After approval, the user can sign in and start using DNA-Nexus apps.</p>
     </li>
-  </ol>
+        <li><a href="#tapa-3-password">Tapa 3: Käyttäjien lisääminen password-auth-tunnistuksella</a></li>
+</ol>
 
   <h2>Fields to document</h2>
   <div class="table-wrap">
@@ -148,11 +151,80 @@
 
   <div class="footer-nav">
     <a href="../getting-started/first-login.html">← Previous: Ensimmäinen kirjautuminen</a>
-    <a href="user-approval.html">Next: Käyttäjien hyväksyntä →</a>
   </div>
 </article>
 
-    </main>
+    
+  <h2 id="tapa-3-password">Tapa 3: Käyttäjien lisääminen password-auth-tunnistuksella</h2>
+  <p>
+    Kun käytössä on perinteinen käyttäjätunnus/salasana-kirjautuminen, uusia käyttäjiä luodaan
+    kohdasta <strong>Ylläpito → Asetukset</strong>. Avaa kortti
+    <strong>Tietoturva • Luo salasanakäyttäjä</strong>.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/passwd/create_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/passwd/create_FI.png" alt="Ylläpito Asetukset -sivu, jossa näkyy Tietoturva Luo salasanakäyttäjä -kortti" />
+    </a>
+    <figcaption>Ylläpito → Asetukset → Tietoturva • Luo salasanakäyttäjä</figcaption>
+  </figure>
+
+  <p>
+    Täytä uuden käyttäjän <strong>nimi</strong> ja <strong>kirjautumistunnus / sähköposti</strong>. Valitse sen jälkeen:
+  </p>
+  <ul>
+    <li><strong>Rooli</strong> – tavallisesti <em>käyttäjä</em> tai <em>ylläpitäjä</em>.</li>
+    <li><strong>Tila</strong> – normaalissa käytössä joko <em>pois käytöstä — vaatii hyväksynnän</em> tai <em>käytössä — voi kirjautua heti</em>.</li>
+    <li><strong>Kiintiö tavuina</strong> – valinnainen säilytystilan varaus. Sen voi määrittää tai muuttaa myös myöhemmin Käyttäjäprofiilit-näkymässä.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Huomio tilasta:</strong> Jos omassa buildissäsi näkyy lisäksi jokin odottaa-/pending-tyylinen tila,
+    käsittele sitä toistaiseksi valinnaisena siirtymätilana. Useimmissa tapauksissa on yksinkertaisinta käyttää
+    joko <strong>pois käytöstä</strong> tai <strong>käytössä</strong>.
+  </div>
+
+  <p>
+    Kun ylläpitäjä painaa <strong>Luo käyttöönotto­linkki</strong> -painiketta, DNA-Nexus luo kertakäyttöisen
+    setup-/käyttöönotto­linkin. Ylläpitäjä kopioi tämän linkin ja toimittaa sen turvallisesti uudelle käyttäjälle.
+  </p>
+
+  <p>
+    Uusi käyttäjä avaa linkin ja viimeistelee tilin valitsemalla itselleen salasanan.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/passwd/pass_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/passwd/pass_FI.png" alt="Salasanan asetusnäkymä, jossa uusi käyttäjä viimeistelee tilin" />
+    </a>
+    <figcaption>Kutsuttu käyttäjä viimeistelee tilin asettamalla oman salasanansa</figcaption>
+  </figure>
+
+  <p>
+    Kun salasanan asetus onnistuu, DNA-Nexus näyttää käyttäjälle tilin luomisessa muodostetut tiedot:
+    <strong>sormenjäljen</strong> sekä <strong>24 palautussanaa</strong>.
+  </p>
+
+  <figure>
+    <a href="../../../assets/images/users/passwd/done_FI.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../../assets/images/users/passwd/done_FI.png" alt="Valmis näkymä, jossa näkyvät sormenjälki ja 24 palautussanaa" />
+    </a>
+    <figcaption>Käyttäjälle näytetään luotu sormenjälki ja 24 palautussanaa</figcaption>
+  </figure>
+
+  <div class="callout warning">
+    <strong>Tärkeää:</strong> 24 palautussanaa näytetään vain kerran, eikä palvelin tallenna niitä.
+    Käyttäjän on kopioitava ja tallennettava sanat turvalliseen paikkaan ennen sivulta poistumista.
+    Kuka tahansa näillä sanoilla voi palauttaa kyseisen DNA-identiteetin.
+  </div>
+
+  <p>
+    Kun käyttöönotto on valmis, tili ilmestyy normaaleihin käyttäjähallinnan näkymiin.
+    Jos tili luotiin pois käytöstä -tilassa, käyttäjä tarvitsee vielä ylläpitäjän hyväksynnän tai aktivoinnin ennen kuin kirjautuminen onnistuu.
+  </p>
+
+
+</main>
   </div>
   <script src="../../../assets/js/wiki.js"></script>
 </body>

@@ -673,22 +673,20 @@
     async function createPasswordUserFromAdminSettings() {
         const name = String(adminCreatePasswordUserName?.value || "").trim();
         const login = String(adminCreatePasswordUserLogin?.value || "").trim();
-        const password = String(adminCreatePasswordUserPassword?.value || "");
         const role = String(adminCreatePasswordUserRole?.value || "user").trim() || "user";
         const status = String(adminCreatePasswordUserStatus?.value || "disabled").trim() || "disabled";
         const quotaRaw = String(adminCreatePasswordUserQuota?.value || "").trim();
 
         if (!login) throw new Error(tAdminPassword("admin.password_user_create.login_required", "Login/email is required."));
-        if (password.length < 12) throw new Error(tAdminPassword("admin.password_user_create.initial_password_too_short", "Initial password must be at least 12 characters."));
         if (role !== "user" && role !== "admin") throw new Error(tAdminPassword("admin.password_user_create.invalid_role", "Invalid role."));
         if (status !== "enabled" && status !== "disabled" && status !== "pending") throw new Error(tAdminPassword("admin.password_user_create.invalid_status", "Invalid status."));
 
         const body = {
             name,
             login,
-            password,
             role,
-            status
+            status,
+            setup_language: currentLanguageName()
         };
 
         if (quotaRaw !== "") {
@@ -731,7 +729,7 @@
         adminCreatePasswordUserResult.classList.add("show");
 
         if (adminCreatePasswordUserRecovery) {
-            adminCreatePasswordUserRecovery.value = j.recovery_words || "";
+            adminCreatePasswordUserRecovery.value = j.setup_url || j.setup_path || "";
             adminCreatePasswordUserRecovery.focus();
             adminCreatePasswordUserRecovery.select();
         }
@@ -741,7 +739,7 @@
         }
 
         if (adminCreatePasswordUserResultFingerprint) {
-            adminCreatePasswordUserResultFingerprint.textContent = j.fingerprint || "";
+            adminCreatePasswordUserResultFingerprint.textContent = j.fingerprint || "created when user completes setup";
         }
 
         if (adminCreatePasswordUserResultStatus) {
@@ -752,11 +750,7 @@
             adminCreatePasswordUserResultQuota.textContent = String(j.quota_bytes ?? 0);
         }
 
-        if (adminCreatePasswordUserPassword) {
-            adminCreatePasswordUserPassword.value = "";
-        }
-
-        if (adminCreatePasswordUserCopied) {
+                if (adminCreatePasswordUserCopied) {
             adminCreatePasswordUserCopied.checked = false;
         }
     }

@@ -68,6 +68,7 @@
 #include <unordered_map>
 #include <cerrno>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -727,6 +728,190 @@ static std::string routes_v5_auth_mode() {
     if (mode == "opaque") return "opaque";
     return "qr";
 }
+
+static std::mutex& routes_v5_password_enrollments_file_mu() {
+    static std::mutex mu;
+    return mu;
+}
+
+static std::string routes_v5_password_enrollments_path(const RoutesV5Context& ctx) {
+    const char* raw = std::getenv("PQNAS_PASSWORD_ENROLLMENTS_PATH");
+    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    if (ctx.users_path && !ctx.users_path->empty()) {
+        std::filesystem::path p(*ctx.users_path);
+        return (p.parent_path() / "password_enrollments.json").string();
+    }
+
+    return "/etc/pqnas/password_enrollments.json";
+}
+
+static bool routes_v5_is_safe_password_setup_token(const std::string& s) {
+    if (s.size() < 32 || s.size() > 256) return false;
+
+    for (unsigned char c : s) {
+        const bool ok =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (!ok) return false;
+    }
+
+    return true;
+}
+
+static std::string routes_v5_random_password_setup_token() {
+    unsigned char raw[32];
+    randombytes_buf(raw, sizeof(raw));
+
+    char out[sodium_base64_ENCODED_LEN(sizeof(raw), sodium_base64_VARIANT_URLSAFE_NO_PADDING)];
+    sodium_bin2base64(out, sizeof(out), raw, sizeof(raw), sodium_base64_VARIANT_URLSAFE_NO_PADDING);
+    sodium_memzero(raw, sizeof(raw));
+
+    return std::string(out);
+}
+
+static json routes_v5_empty_password_enrollments_doc() {
+    return json{{"version", 1}, {"tokens", json::array()}};
+}
+
+static json routes_v5_load_password_enrollments_no_lock(const std::string& path, std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return routes_v5_empty_password_enrollments_doc();
+    }
+
+    std::ifstream in(path);
+    if (!in) {
+        if (err) *err = "open_failed";
+        return json{};
+    }
+
+    try {
+        json doc = json::parse(in);
+        if (!doc.is_object()) {
+            if (err) *err = "json_not_object";
+            return json{};
+        }
+        if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+            doc["tokens"] = json::array();
+        }
+        if (!doc.contains("version")) {
+            doc["version"] = 1;
+        }
+        return doc;
+    } catch (const std::exception& e) {
+        if (err) *err = std::string("json_parse_failed: ") + e.what();
+        return json{};
+    }
+}
+
+static bool routes_v5_save_password_enrollments_no_lock(const std::string& path,
+                                                        const json& doc,
+                                                        std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    if (ec) {
+        if (err) *err = "create_directories_failed: " + ec.message();
+        return false;
+    }
+
+    std::filesystem::path tmp = path;
+    tmp += ".tmp.";
+
+    {
+        std::ofstream out(tmp.string(), std::ios::trunc);
+        if (!out) {
+            if (err) *err = "open_for_write_failed";
+            return false;
+        }
+
+        out << doc.dump(2) << "\n";
+        out.flush();
+
+        if (!out) {
+            if (err) *err = "write_failed";
+            return false;
+        }
+    }
+
+    std::filesystem::permissions(
+        tmp,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace,
+        ec
+    );
+
+    ec.clear();
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::remove(path, ec);
+        ec.clear();
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            if (err) *err = "rename_failed: " + ec.message();
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void routes_v5_prune_password_enrollments_doc(json& doc, long now) {
+    if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+        doc["tokens"] = json::array();
+        return;
+    }
+
+    json kept = json::array();
+
+    for (const auto& rec : doc["tokens"]) {
+        if (!rec.is_object()) continue;
+
+        const long expires_at = rec.value("expires_at", 0L);
+        const long used_at = rec.value("used_at", 0L);
+
+        if (expires_at > 0 && expires_at + 86400 < now) continue;
+        if (used_at > 0 && used_at + 86400 < now) continue;
+
+        kept.push_back(rec);
+    }
+
+    doc["tokens"] = kept;
+}
+
+static long routes_v5_epoch_now_for_password_setup(const RoutesV5Context& ctx) {
+    if (ctx.now_epoch) return ctx.now_epoch();
+    return static_cast<long>(std::time(nullptr));
+}
+
+static std::optional<pqnas::UserRec> routes_v5_find_password_user_by_login(
+    const RoutesV5Context& ctx,
+    const std::string& login,
+    std::string* out_fp = nullptr
+) {
+    if (out_fp) out_fp->clear();
+    if (!ctx.users || login.empty()) return std::nullopt;
+
+    const auto snap = ctx.users->snapshot();
+    for (const auto& kv : snap) {
+        const auto& u = kv.second;
+        if (!u.email.empty() &&
+            pqnas::PasswordCredentials::normalize_login(u.email) == login) {
+            if (out_fp) *out_fp = u.fingerprint;
+            return u;
+        }
+    }
+
+    return std::nullopt;
+}
+
 
 static bool routes_v5_qr_auth_enabled() {
     return routes_v5_auth_mode() == "qr";
@@ -4325,6 +4510,222 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         routes_v5_secure_clear_string(response_body);
     });
 
+    // ---- POST /api/auth/password/setup-finish ----
+    //
+    // Public token-protected password setup. This is where the user's DNA
+    // identity and recovery words are created. Recovery words are returned once
+    // to the user, not to the admin who created the setup link.
+    srv.Post("/api/auth/password/setup-finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!routes_v5_password_auth_enabled()) {
+            reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
+            return;
+        }
+
+        json j;
+        std::string err;
+        if (!parse_json_body(req, j, err)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", err}}.dump());
+            return;
+        }
+
+        const std::string token = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "token"));
+        const std::string password = v5_json_string_or_empty(j, "password");
+
+        if (!routes_v5_is_safe_password_setup_token(token)) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        if (password.size() < 12 || password.size() > 1024) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+            return;
+        }
+
+        const std::string token_hash = sha256_hex(token);
+        const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
+        if (!routes_v5_simple_ip_rate_limit_allow(
+                std::string("password.setup_finish.") + token_hash,
+                ip_for_rate_limit,
+                20,
+                std::chrono::seconds(60))) {
+            res.set_header("Retry-After", "60");
+            reply_json(res, 429, json{{"ok", false}, {"error", "too_many_setup_attempts"}}.dump());
+            return;
+        }
+
+        if (!ctx.users || !ctx.users_path || ctx.users_path->empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_registry_not_configured"}}.dump());
+            return;
+        }
+
+        const long now = routes_v5_epoch_now_for_password_setup(ctx);
+        const std::string enrollments_path = routes_v5_password_enrollments_path(ctx);
+
+        std::lock_guard<std::mutex> lock(routes_v5_password_enrollments_file_mu());
+
+        std::string lerr;
+        json doc = routes_v5_load_password_enrollments_no_lock(enrollments_path, &lerr);
+        if (!lerr.empty()) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_enrollments_load_failed"}, {"detail", lerr}}.dump());
+            return;
+        }
+
+        routes_v5_prune_password_enrollments_doc(doc, now);
+
+        json* token_rec = nullptr;
+        for (auto& rec : doc["tokens"]) {
+            if (!rec.is_object()) continue;
+            if (rec.value("token_hash", "") != token_hash) continue;
+            token_rec = &rec;
+            break;
+        }
+
+        if (!token_rec ||
+            token_rec->value("used_at", 0L) > 0 ||
+            token_rec->value("expires_at", 0L) <= now) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        const std::string login = pqnas::PasswordCredentials::normalize_login(token_rec->value("login", ""));
+        const std::string name = routes_v5_trim_ascii_copy(token_rec->value("name", ""));
+        const std::string role = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(token_rec->value("role", "user")));
+        const std::string user_status = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(token_rec->value("status", "disabled")));
+        const std::uint64_t quota_bytes = token_rec->value("quota_bytes", static_cast<std::uint64_t>(0));
+
+        if (login.empty() || role.empty() || user_status.empty()) {
+            reply_json(res, 401, json{{"ok", false}, {"error", "invalid_or_expired_token"}}.dump());
+            return;
+        }
+
+        pqnas::PasswordCredentials creds;
+        const std::string creds_path = routes_v5_password_credentials_path(ctx);
+
+        if (!creds.load(creds_path)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_load_failed"}}.dump());
+            return;
+        }
+
+        if (creds.get(login).has_value() ||
+            routes_v5_find_password_user_by_login(ctx, login).has_value()) {
+            routes_v5_audit_password(ctx, req, "password.setup_finish", "deny", login, "", "login_already_exists");
+            reply_json(res, 409, json{{"ok", false}, {"error", "login_already_exists"}}.dump());
+            return;
+        }
+
+        pqnas::GeneratedDnaIdentity ident;
+        std::string gen_error;
+        if (!pqnas::generate_dna_identity(ident, gen_error)) {
+            routes_v5_secure_clear_string(ident.recovery_words);
+            routes_v5_audit_password(ctx, req, "password.setup_finish", "deny", login, "", "identity_generation_failed");
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "identity_generation_failed"},
+                {"message", gen_error}
+            }.dump());
+            return;
+        }
+
+        if (ctx.users->get(ident.fingerprint_hex).has_value()) {
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 409, json{{"ok", false}, {"error", "fingerprint_already_exists"}}.dump());
+            return;
+        }
+
+        std::string hash;
+        if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
+            return;
+        }
+
+        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+
+        pqnas::UserRec u;
+        u.fingerprint = ident.fingerprint_hex;
+        u.name = name.empty() ? login : name;
+        u.role = role;
+        u.status = user_status;
+        u.added_at = now_iso;
+        u.last_seen = "";
+        u.notes = "Created by password-auth user setup link";
+        u.group = "";
+        u.email = login;
+        u.address = "";
+        u.avatar_url = "";
+        u.storage_state = "unallocated";
+        u.quota_bytes = quota_bytes;
+        u.root_rel = "";
+        u.storage_pool_id = "";
+        u.storage_set_at = "";
+        u.storage_set_by = "";
+
+        pqnas::PasswordCredentialRec rec;
+        rec.login = login;
+        rec.fingerprint = ident.fingerprint_hex;
+        rec.password_hash = hash;
+        rec.enabled = true;
+        rec.created_at = now_iso;
+        rec.updated_at = now_iso;
+
+        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
+            return;
+        }
+
+        if (!creds.upsert(rec) || !creds.save(creds_path)) {
+            ctx.users->erase(ident.fingerprint_hex);
+            ctx.users->save(*ctx.users_path);
+
+            routes_v5_secure_clear_string(ident.recovery_words);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
+            return;
+        }
+
+        (*token_rec)["used_at"] = now;
+
+        std::string serr;
+        if (!routes_v5_save_password_enrollments_no_lock(enrollments_path, doc, &serr)) {
+            routes_v5_audit_password(ctx, req, "password.setup_finish", "deny", login, ident.fingerprint_hex, "token_mark_used_failed");
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_enrollment_mark_used_failed"}, {"detail", serr}}.dump());
+            return;
+        }
+
+        routes_v5_audit_password(ctx, req, "password.setup_finish", "ok", login, ident.fingerprint_hex, "");
+
+        json out = {
+            {"ok", true},
+            {"login", login},
+            {"fingerprint", ident.fingerprint_hex},
+            {"role", role},
+            {"status", user_status},
+            {"quota_bytes", quota_bytes},
+            {"recovery_words_shown_once", true},
+            {"warning", "Recovery words are shown once and are not stored by the server."}
+        };
+
+        std::string response_body = out.dump();
+        std::string recovery_words_json = json(ident.recovery_words).dump();
+
+        if (!routes_v5_append_json_member_to_object(
+                response_body,
+                std::string("\"recovery_words\":") + recovery_words_json)) {
+            routes_v5_secure_clear_string(recovery_words_json);
+            routes_v5_secure_clear_string(ident.recovery_words);
+            routes_v5_secure_clear_string(response_body);
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "response_build_failed"}}.dump());
+            return;
+        }
+
+        routes_v5_secure_clear_string(recovery_words_json);
+        routes_v5_secure_clear_string(ident.recovery_words);
+
+        reply_json(res, 200, response_body);
+        routes_v5_secure_clear_string(response_body);
+    });
+
+
     // ---- POST /api/auth/password/login ----
     srv.Post("/api/auth/password/login", [&](const httplib::Request& req, httplib::Response& res) {
         if (!routes_v5_password_auth_enabled()) {
@@ -4799,12 +5200,9 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     //
     // Admin-only password-auth user provisioning.
     //
-    // This creates a CPUNK/DNA-style identity:
-    //   24-word BIP39 recovery phrase
-    //   -> deterministic ML-DSA-87 keypair
-    //   -> fingerprint = SHA3-512(public key)
-    //
-    // Recovery words are returned once and are not stored by the server.
+    // This intentionally creates a setup link only. The user's DNA identity and
+    // recovery words are generated later when the user opens the setup page and
+    // chooses their own password. Recovery words must not be shown to the admin.
     srv.Post("/api/admin/users/password-create", [&](const httplib::Request& req, httplib::Response& res) {
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
@@ -4836,12 +5234,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         }
 
         const std::string login = pqnas::PasswordCredentials::normalize_login(v5_json_string_or_empty(j, "login"));
-        const std::string password = v5_json_string_or_empty(j, "password");
         const std::string name = routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "name"));
-        const bool include_public_key = j.value("include_public_key", false);
 
         std::uint64_t requested_quota_bytes = 0;
-        if (j.contains("quota_bytes") && !j["quota_bytes"].is_null()) {
+        if (j.contains("quota_bytes" ) && !j["quota_bytes"].is_null()) {
             if (!j["quota_bytes"].is_number_unsigned()) {
                 reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_quota_bytes"}}.dump());
                 return;
@@ -4855,13 +5251,32 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         std::string status = routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "status")));
         if (status.empty()) status = "disabled";
 
-        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
-            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
-            return;
+        std::string setup_language =
+            routes_v5_lower_ascii_copy(routes_v5_trim_ascii_copy(v5_json_string_or_empty(j, "setup_language")));
+        if (setup_language != "en" &&
+            setup_language != "fi" &&
+            setup_language != "zh" &&
+            setup_language != "sv" &&
+            setup_language != "uk" &&
+            setup_language != "de" &&
+            setup_language != "et" &&
+            setup_language != "pl" &&
+            setup_language != "es" &&
+            setup_language != "fr" &&
+            setup_language != "it" &&
+            setup_language != "tr") {
+            setup_language = "en";
         }
 
-        if (password.size() < 12 || password.size() > 1024) {
-            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "password_length"}}.dump());
+        long ttl = 86400;
+        if (j.contains("expires_in_seconds") && j["expires_in_seconds"].is_number_integer()) {
+            ttl = j["expires_in_seconds"].get<long>();
+        }
+        if (ttl < 300) ttl = 300;
+        if (ttl > 604800) ttl = 604800;
+
+        if (login.empty() || login.size() > 254 || routes_v5_has_control_chars(login)) {
+            reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_login"}}.dump());
             return;
         }
 
@@ -4870,7 +5285,7 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        if (status != "enabled" && status != "disabled" && status != "revoked") {
+        if (status != "enabled" && status != "disabled" && status != "pending" && status != "revoked") {
             reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid_status"}}.dump());
             return;
         }
@@ -4888,137 +5303,86 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
-        if (creds.get(login).has_value()) {
+        if (creds.get(login).has_value() ||
+            routes_v5_find_password_user_by_login(ctx, login).has_value()) {
             routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, "", "login_already_exists");
             reply_json(res, 409, json{{"ok", false}, {"error", "login_already_exists"}}.dump());
             return;
         }
 
-        pqnas::GeneratedDnaIdentity ident;
-        std::string gen_error;
-        if (!pqnas::generate_dna_identity(ident, gen_error)) {
-            // identity_generation_failed_clear_v1
-            routes_v5_secure_clear_string(ident.recovery_words);
-            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, "", "identity_generation_failed");
-            reply_json(res, 500, json{
-                {"ok", false},
-                {"error", "identity_generation_failed"},
-                {"message", gen_error}
-            }.dump());
+        std::string token = routes_v5_random_password_setup_token();
+        if (!routes_v5_is_safe_password_setup_token(token)) {
+            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "token_rng_failed"}}.dump());
             return;
         }
 
-        if (ctx.users->get(ident.fingerprint_hex).has_value()) {
-            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "fingerprint_collision");
-            routes_v5_secure_clear_string(ident.recovery_words);
-            reply_json(res, 409, json{{"ok", false}, {"error", "fingerprint_already_exists"}}.dump());
-            return;
-        }
+        const std::string token_hash = sha256_hex(token);
+        const long now = routes_v5_epoch_now_for_password_setup(ctx);
+        const std::string path = routes_v5_password_enrollments_path(ctx);
 
-        const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : std::string{};
+        {
+            std::lock_guard<std::mutex> lock(routes_v5_password_enrollments_file_mu());
 
-        pqnas::UserRec u;
-        u.fingerprint = ident.fingerprint_hex;
-        u.name = name.empty() ? login : name;
-        u.role = role;
-        u.status = status;
-        u.added_at = now_iso;
-        u.last_seen = "";
-        u.notes = "Created by password-auth provisioning with CPUNK/DNA recovery phrase";
-        u.group = "";
-        u.email = login;
-        u.address = "";
-        u.avatar_url = "";
-        u.storage_state = "unallocated";
-        u.quota_bytes = requested_quota_bytes;
-        u.root_rel = "";
-        u.storage_pool_id = "";
-        u.storage_set_at = "";
-        u.storage_set_by = "";
-
-        std::string hash;
-        if (!pqnas::PasswordCredentials::hash_password(password, hash)) {
-            routes_v5_secure_clear_string(ident.recovery_words);
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_hash_failed"}}.dump());
-            return;
-        }
-
-        pqnas::PasswordCredentialRec rec;
-        rec.login = login;
-        rec.fingerprint = ident.fingerprint_hex;
-        rec.password_hash = hash;
-        rec.enabled = true;
-        rec.created_at = now_iso;
-        rec.updated_at = now_iso;
-
-        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
-            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "users_save_failed");
-            routes_v5_secure_clear_string(ident.recovery_words);
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
-            return;
-        }
-
-        if (role == "admin" && status == "enabled" &&
-            !routes_v5_sync_admin_to_allowlist(ctx, ident.fingerprint_hex)) {
-            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "allowlist_admin_sync_failed");
-
-            ctx.users->erase(ident.fingerprint_hex);
-            ctx.users->save(*ctx.users_path);
-
-            routes_v5_secure_clear_string(ident.recovery_words);
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "allowlist_admin_sync_failed"}}.dump());
-            return;
-        }
-
-        if (!creds.upsert(rec) || !creds.save(creds_path)) {
-            routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "credentials_save_failed");
-
-            const bool rolled_back =
-                ctx.users->erase(ident.fingerprint_hex) &&
-                ctx.users->save(*ctx.users_path);
-            if (!rolled_back) {
-                routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, ident.fingerprint_hex, "user_rollback_failed");
+            std::string lerr;
+            json doc = routes_v5_load_password_enrollments_no_lock(path, &lerr);
+            if (!lerr.empty()) {
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_enrollments_load_failed"}, {"detail", lerr}}.dump());
+                return;
             }
 
-            routes_v5_secure_clear_string(ident.recovery_words);
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
-            return;
+            routes_v5_prune_password_enrollments_doc(doc, now);
+
+            doc["tokens"].push_back(json{
+                {"token_hash", token_hash},
+                {"login", login},
+                {"name", name},
+                {"role", role},
+                {"status", status},
+                {"quota_bytes", requested_quota_bytes},
+                {"setup_language", setup_language},
+                {"created_by_fp", actor_fp},
+                {"created_at", now},
+                {"expires_at", now + ttl},
+                {"used_at", 0}
+            });
+
+            std::string serr;
+            if (!routes_v5_save_password_enrollments_no_lock(path, doc, &serr)) {
+                routes_v5_audit_password(ctx, req, "password.user_create", "deny", login, actor_fp, "password_enrollment_save_failed");
+                reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "password_enrollments_save_failed"}, {"detail", serr}}.dump());
+                return;
+            }
         }
 
-        routes_v5_audit_password(ctx, req, "password.user_create", "ok", login, ident.fingerprint_hex, "");
+        const std::string setup_path =
+            std::string("/static/password-setup.html?token=") + token +
+            std::string("&lang=") + setup_language;
 
-        json out = {
+        std::string origin = req_header_or_empty(req, "Origin");
+        if (origin.empty()) {
+            const std::string host = req_header_or_empty(req, "Host");
+            std::string proto = req_header_or_empty(req, "X-Forwarded-Proto");
+            if (proto.empty()) proto = "https";
+            if (!host.empty()) origin = proto + "://" + host;
+        }
+
+        const std::string setup_url = origin.empty() ? setup_path : (origin + setup_path);
+
+        routes_v5_audit_password(ctx, req, "password.user_create", "ok", login, actor_fp, "setup_link_created");
+
+        reply_json(res, 200, json{
             {"ok", true},
             {"login", login},
-            {"fingerprint", ident.fingerprint_hex},
             {"role", role},
             {"status", status},
             {"quota_bytes", requested_quota_bytes},
-            {"recovery_words_shown_once", true},
-            {"warning", "Recovery words are shown once and are not stored by the server."}
-        };
-
-        if (include_public_key) {
-            out["public_key_b64"] = ident.public_key_b64;
-        }
-
-        std::string response_body = out.dump();
-        std::string recovery_words_json = json(ident.recovery_words).dump();
-
-        if (!routes_v5_append_json_member_to_object(
-                response_body,
-                std::string("\"recovery_words\":") + recovery_words_json)) {
-            routes_v5_secure_clear_string(recovery_words_json);
-            routes_v5_secure_clear_string(ident.recovery_words);
-            routes_v5_secure_clear_string(response_body);
-            reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "response_build_failed"}}.dump());
-            return;
-        }
-
-        routes_v5_secure_clear_string(recovery_words_json);
-        routes_v5_secure_clear_string(ident.recovery_words);
-        reply_json(res, 200, response_body);
-        routes_v5_secure_clear_string(response_body);
+            {"setup_language", setup_language},
+            {"expires_at", now + ttl},
+            {"token_shown_once", true},
+            {"token", token},
+            {"setup_path", setup_path},
+            {"setup_url", setup_url}
+        }.dump());
     });
 
 

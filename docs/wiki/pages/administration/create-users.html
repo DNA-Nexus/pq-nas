@@ -30,8 +30,10 @@
     <section class="nav-section">
       <p class="nav-heading">Administration</p>
       <ul class="nav-list">
-        <li><a href="../../pages/administration/create-users.html" class="active">Creating users</a></li>
-        <li><a href="../../pages/administration/user-approval.html" >User approval</a></li>
+        <li><a href="../../pages/administration/create-users.html" class="active" aria-current="page">Creating users</a>
+      <a href="../../pages/administration/user-management.html" data-user-management-link>User management</a></li>
+        <li><a href="../../pages/administration/applications.html">Applications</a></li>
+        <li><a href="../../pages/administration/update-center.html">Update Center</a></li>
         <li><a href="../../pages/administration/settings.html" >Server settings</a></li>
       </ul>
     </section>
@@ -129,7 +131,6 @@
 <!-- user-creation-auth-methods:end -->
 
 
-
 <h3>Create or receive a user registration</h3>
       <p>The user account may be created by an administrator or requested by the user from the login page.</p>
     </li>
@@ -148,7 +149,8 @@
       <h3>Tell the user to sign in</h3>
       <p>After approval, the user can sign in and start using DNA-Nexus apps.</p>
     </li>
-  </ol>
+        <li><a href="#flow-3-password">Flow 3: Adding users with password authentication</a></li>
+</ol>
 
 <!-- users-qr-dna-connect:start -->
 <section id="users-qr-dna-connect">
@@ -389,18 +391,79 @@
 </section>
 
 <section id="users-password-auth">
-  <h2>Flow 3: Adding users with username/password authentication</h2>
-
-  <div class="callout">
-    <strong>Coming next:</strong> This flow will document the traditional username/password
-    user creation and approval process.
-  </div>
 </section>
 <!-- user-creation-future-auth-flows:end -->
 
 </article>
 
-    </main>
+    
+  <h2 id="flow-3-password">Flow 3: Adding users with password authentication</h2>
+  <p>
+    When the traditional username/password login method is installed, new users are created
+    from <strong>Admin → Settings</strong>. Open the card
+    <strong>Security • Create password user</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/passwd/create_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/passwd/create_EN.png" alt="Admin Settings page showing the Security Create password user card" />
+    </a>
+    <figcaption>Admin Settings → Security • Create password user</figcaption>
+  </figure>
+
+  <p>
+    Fill in the new user's <strong>name</strong> and <strong>login / email</strong>. Then choose:
+  </p>
+  <ul>
+    <li><strong>Role</strong> – normally <em>user</em> or <em>admin</em>.</li>
+    <li><strong>Status</strong> – normally <em>disabled — needs approval</em> or <em>enabled — can sign in immediately</em>.</li>
+    <li><strong>Quota bytes</strong> – optional storage quota reservation. It can also be changed later from User Profiles.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Note about status:</strong> If your build also shows a waiting/pending-style status, treat it as an optional transitional state until its behavior is confirmed. In most cases, use either <strong>disabled</strong> or <strong>enabled</strong>.
+  </div>
+
+  <p>
+    When the administrator clicks <strong>Create setup link</strong>, DNA-Nexus creates a one-time setup link.
+    The administrator copies that link and sends it securely to the new user.
+  </p>
+
+  <p>
+    The new user opens the setup link and completes the account by choosing a password.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/passwd/pass_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/passwd/pass_EN.png" alt="Password setup page where the user chooses their password" />
+    </a>
+    <figcaption>The invited user completes the account by setting their own password</figcaption>
+  </figure>
+
+  <p>
+    After successful password setup, DNA-Nexus shows the user’s generated <strong>fingerprint</strong>
+    and the <strong>24 recovery words</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/passwd/done_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/passwd/done_EN.png" alt="Completed password setup page showing fingerprint and 24 recovery words" />
+    </a>
+    <figcaption>The user sees the generated fingerprint and the 24 recovery words</figcaption>
+  </figure>
+
+  <div class="callout warning">
+    <strong>Important:</strong> The 24 recovery words are shown only once and are not stored by the server.
+    The user must copy and store them safely before leaving the page. Anyone with these words can recover that DNA identity.
+  </div>
+
+  <p>
+    After setup, the account appears in the normal user management views. If the account was created in a disabled state,
+    the user still needs administrator approval or enabling before sign-in is allowed.
+  </p>
+
+
+</main>
   </div>
   <script src="../../assets/js/wiki.js"></script>
 </body>

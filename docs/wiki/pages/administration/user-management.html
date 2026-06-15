@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User management</title>
+  <link rel="stylesheet" href="../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Administrator guide</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Start here</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wiki home</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Server installation</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >First login</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Administration</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html">Creating users</a>
+      <a href="../../pages/administration/user-management.html" data-user-management-link class="active" aria-current="page">User management</a></li>
+        <li><a href="../../pages/administration/applications.html">Applications</a></li>
+        <li><a href="../../pages/administration/update-center.html">Update Center</a></li>
+        <li><a href="../../pages/administration/settings.html" >Server settings</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Storage Manager</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Snapshots</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Apps</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >File Manager</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Help</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Common issues</a></li>
+        <li><a href="../../pages/page-template.html" >Page template</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+
+  <h1>User management</h1>
+
+  <p>
+    User maintenance tasks are handled from <strong>Admin → User Profiles</strong>.
+    Approval and onboarding are covered in the user creation flow; this page focuses on ongoing user management after users exist.
+  </p>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#user-management-overview">User management overview</a></li>
+      <li><a href="#storage-migration">Storage migration between pools</a></li>
+      <li><a href="#sorting-and-editing">Sorting, editing and avatars</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="user-management-overview">User management overview</h2>
+  <p>
+    From <strong>Admin → User Profiles</strong>, the administrator can enable users, disable users,
+    revoke access completely, set storage quotas and manage storage allocation.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/managing/users_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/managing/users_EN.png" alt="Admin User Profiles page showing user management actions" />
+    </a>
+    <figcaption>Admin → User Profiles</figcaption>
+  </figure>
+
+  <ul>
+    <li><strong>Enable / activate</strong> allows the user to sign in, assuming the selected login method is otherwise valid.</li>
+    <li><strong>Disable</strong> prevents the user from signing in without deleting the account record.</li>
+    <li><strong>Revoke</strong> blocks access completely and keeps an administrative record of the account.</li>
+    <li><strong>Quota</strong> controls the user’s reserved storage amount.</li>
+  </ul>
+
+  <h2 id="storage-migration">Storage migration between pools</h2>
+  <p>
+    A user can be moved from one storage pool to another. Use the <strong>Move</strong> action
+    to select the new target pool.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/managing/migrate_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/managing/migrate_EN.png" alt="Move user dialog for selecting a new target storage pool" />
+    </a>
+    <figcaption>Moving a user to another storage pool</figcaption>
+  </figure>
+
+  <p>
+    When a user is moved to a new target pool, the old pool copy is intentionally kept for safety.
+    It can later be removed with the <strong>Clean old copy</strong> action.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/users/managing/clean_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/users/managing/clean_EN.png" alt="Clean old copy action for removing user data from the previous storage pool" />
+    </a>
+    <figcaption>Cleaning the old copy from the previous storage pool</figcaption>
+  </figure>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Cleaning the old copy removes the user’s stored files from the previous storage pool.
+    Use this only after you have verified that the migration to the new pool completed successfully.
+  </div>
+
+  <h2 id="sorting-and-editing">Sorting, editing and avatars</h2>
+  <p>
+    The user list can be sorted using the controls in the top bar and by clicking table headers.
+    For example, clicking the <strong>Quota</strong> header sorts users by storage quota.
+  </p>
+
+  <p>
+    The administrator can also set a user avatar. Open the user card and click <strong>Edit</strong>.
+    The user’s details appear in the <strong>Edit profile</strong> section. After making changes,
+    remember to click <strong>Add / Update</strong> so the changes are saved.
+  </p>
+
+</main>
+  </div>
+  <script src="../../assets/js/wiki.js"></script>
+</body>
+</html>
