@@ -331,6 +331,45 @@ def install_drive_locate_assets(asset_root: str, log: Optional[Log] = None) -> s
     return wrapper_dst
 
 
+def install_first_admin_helper_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install the first-admin bootstrap helper.
+
+    Package layout:
+      <asset_root>/sbin/pqnas-first-admin
+      <asset_root>/libexec/pqnas/pqnas-first-admin
+
+    Repo layout:
+      <asset_root>/tools/runtime/pqnas-first-admin
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-first-admin"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-first-admin"),
+        os.path.join(asset_root, "tools", "runtime", "pqnas-first-admin"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "First-admin helper not found in package/repo assets. "
+            "Expected pqnas-first-admin under sbin/libexec or tools/runtime."
+        )
+
+    helper_dst = "/usr/local/sbin/pqnas-first-admin"
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    if log:
+        log.write(f"[*] Installed first-admin helper: {helper_dst}")
+
+    return helper_dst
+
+
 def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = None) -> Tuple[str, str]:
     """
     Install Update Center apply helper assets.
@@ -3228,11 +3267,11 @@ class ExecuteScreen(Screen):
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
         log_line(self.logw, f"Login mode: {login_mode_label(st.login_mode)}")
         if st.login_mode == "password":
-            log_line(self.logw, "First password admin bootstrap token will be written to /etc/pqnas/pqnas.env.")
-            log_line(self.logw, "After the service starts, create the first admin with /api/auth/password/bootstrap-admin.")
+            log_line(self.logw, "First-admin helper will be installed as: /usr/local/sbin/pqnas-first-admin")
+            log_line(self.logw, "After installation, run: sudo pqnas-first-admin")
         elif st.login_mode == "opaque":
             log_line(self.logw, "OPAQUE helper, credentials store, and server setup will be installed.")
-            log_line(self.logw, "OPAQUE first-admin enrollment UI/API is a follow-up milestone.")
+            log_line(self.logw, "First-admin helper will prepare the OPAQUE bootstrap token and browser setup page.")
         log_line(self.logw, "")
         log_line(
             self.logw,
@@ -3529,6 +3568,8 @@ class ExecuteScreen(Screen):
             ensure_update_center_runtime_dirs(log=self.logw)
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
             install_drive_locate_assets(asset_root, log=self.logw)
+            first_admin_helper_path = install_first_admin_helper_assets(asset_root, log=self.logw)
+            self.logw.write(f"[*] First-admin helper ready: {first_admin_helper_path}")
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
@@ -3684,7 +3725,9 @@ class ExecuteScreen(Screen):
                 f"Mode: {mode}\n"
                 f"Backend: {backend}\n\n"
                 "Created folders:\n"
-                "  data/ logs/ apps/ audit/ tmp/\n"
+                "  data/ logs/ apps/ audit/ tmp/\n\n"
+                "First admin setup:\n"
+                "  sudo pqnas-first-admin\n"
             )
             self.app.push_screen(
                 HealthScreen(

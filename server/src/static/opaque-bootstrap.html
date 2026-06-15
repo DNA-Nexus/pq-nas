@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DNA-Nexus OPAQUE first admin bootstrap</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #172554, #020617 65%);
+      color: #e5e7eb;
+    }
+    .card {
+      width: min(92vw, 560px);
+      border: 1px solid rgba(148,163,184,.35);
+      border-radius: 22px;
+      padding: 28px;
+      background: rgba(15,23,42,.88);
+      box-shadow: 0 24px 80px rgba(0,0,0,.42);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.55rem; }
+    p { color: #cbd5e1; line-height: 1.5; }
+    label { display:block; margin: 16px 0 8px; font-weight: 650; }
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 13px 14px;
+      border: 1px solid rgba(148,163,184,.45);
+      border-radius: 12px;
+      background: rgba(15,23,42,.7);
+      color: #f8fafc;
+      font: inherit;
+    }
+    button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 13px 14px;
+      border: 0;
+      border-radius: 12px;
+      background: #38bdf8;
+      color: #082f49;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .status {
+      min-height: 1.5em;
+      margin-top: 16px;
+      color: #bfdbfe;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .error { color: #fecaca; }
+    .ok { color: #bbf7d0; }
+    .small { font-size: .9rem; color: #94a3b8; }
+    .warn {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(251,191,36,.35);
+      color: #fde68a;
+      background: rgba(120,53,15,.28);
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>OPAQUE first admin bootstrap</h1>
+    <p>
+      This page creates the first DNA-Nexus administrator in OPAQUE mode.
+      The password is processed locally in this browser and is not sent to the server.
+    </p>
+
+    <div class="warn">
+      Use this only during initial setup. Remove the bootstrap token immediately after success.
+    </div>
+
+    <form id="form">
+      <label for="token">Bootstrap token</label>
+      <input id="token" type="password" autocomplete="off" required>
+
+      <label for="login">Admin email / login</label>
+      <input id="login" type="email" autocomplete="username" required>
+
+      <label for="name">Admin display name</label>
+      <input id="name" type="text" autocomplete="name" maxlength="128">
+
+      <label for="password">Admin password</label>
+      <input id="password" type="password" autocomplete="new-password" minlength="12" required>
+
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" type="password" autocomplete="new-password" minlength="12" required>
+
+      <button id="submit" type="submit">Create first admin</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <p class="small">Recovery words are shown once. Copy them immediately and store them safely.</p>
+  </main>
+
+  <script type="module">
+    const OPAQUE_CLIENT_MODULE_URL = "/static/opaque/pqnas_opaque_browser_client.js?v=20260613-opaque-bootstrap-1";
+    const OPAQUE_CLIENT_WASM_URL = "/static/opaque/pqnas_opaque_browser_client_bg.wasm?v=20260613-opaque-bootstrap-1";
+
+    const params = new URLSearchParams(location.search);
+    const tokenFromUrl = (params.get("token") || "").trim();
+
+    const form = document.getElementById("form");
+    const submit = document.getElementById("submit");
+    const statusEl = document.getElementById("status");
+    const tokenEl = document.getElementById("token");
+    const loginEl = document.getElementById("login");
+    const nameEl = document.getElementById("name");
+    const passwordEl = document.getElementById("password");
+    const confirmEl = document.getElementById("confirm");
+
+    if (tokenFromUrl) tokenEl.value = tokenFromUrl;
+
+    function setStatus(message, cls = "") {
+      statusEl.className = "status " + cls;
+      statusEl.textContent = message;
+    }
+
+    function parseOpaqueResult(value) {
+      if (typeof value === "string") return JSON.parse(value);
+      if (value && typeof value === "object") return value;
+      throw new Error("Unexpected OPAQUE client result");
+    }
+
+    async function loadOpaqueClient() {
+      const mod = await import(OPAQUE_CLIENT_MODULE_URL);
+      if (typeof mod.default === "function") {
+        await mod.default(OPAQUE_CLIENT_WASM_URL);
+      }
+      if (typeof mod.opaqueRegistrationStart !== "function" ||
+          typeof mod.opaqueRegistrationFinish !== "function") {
+        throw new Error("OPAQUE registration functions missing");
+      }
+      return mod;
+    }
+
+    async function postJson(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(body)
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = data && (data.message || data.error) ? (data.message || data.error) : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+
+      const bootstrap_token = tokenEl.value.trim();
+      const login = loginEl.value.trim();
+      const name = nameEl.value.trim();
+      const password = passwordEl.value;
+      const confirm = confirmEl.value;
+
+      if (!bootstrap_token) {
+        setStatus("Bootstrap token is required.", "error");
+        return;
+      }
+      if (!login) {
+        setStatus("Admin login is required.", "error");
+        return;
+      }
+      if (password.length < 12) {
+        setStatus("Password must be at least 12 characters.", "error");
+        return;
+      }
+      if (password !== confirm) {
+        setStatus("Passwords do not match.", "error");
+        return;
+      }
+
+      submit.disabled = true;
+
+      try {
+        setStatus("Loading OPAQUE client...");
+        const opaque = await loadOpaqueClient();
+
+        setStatus("Creating OPAQUE registration request in browser...");
+        const regStart = parseOpaqueResult(await opaque.opaqueRegistrationStart(password));
+        if (!regStart.ok || !regStart.client_registration_state_b64 || !regStart.registration_request_b64) {
+          throw new Error("OPAQUE registration start failed.");
+        }
+
+        setStatus("Contacting server...");
+        const serverStart = await postJson("/api/auth/opaque/bootstrap-admin/start", {
+          bootstrap_token,
+          login,
+          registration_request_b64: regStart.registration_request_b64
+        });
+
+        setStatus("Finalizing OPAQUE registration in browser...");
+        const regFinish = parseOpaqueResult(await opaque.opaqueRegistrationFinish(
+          password,
+          regStart.client_registration_state_b64,
+          serverStart.registration_response_b64
+        ));
+
+        if (!regFinish.ok || !regFinish.registration_upload_b64) {
+          throw new Error("OPAQUE registration finish failed.");
+        }
+
+        setStatus("Creating first admin...");
+        const done = await postJson("/api/auth/opaque/bootstrap-admin/finish", {
+          bootstrap_token,
+          login,
+          name,
+          registration_upload_b64: regFinish.registration_upload_b64
+        });
+
+        passwordEl.value = "";
+        confirmEl.value = "";
+
+        const recovery = done.recovery_words
+          ? `\n\nRecovery words — shown once:\n${done.recovery_words}\n\nCopy these 24 words now. They cannot be shown again.`
+          : "";
+
+        setStatus(
+          `First admin created.\nLogin: ${done.login || login}\nFingerprint: ${done.fingerprint || ""}${recovery}`,
+          "ok"
+        );
+      } catch (err) {
+        setStatus(`Bootstrap failed: ${err && err.message ? err.message : String(err)}`, "error");
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

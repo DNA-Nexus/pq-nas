@@ -1,0 +1,360 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="${PQNAS_ENV_FILE:-/etc/pqnas/pqnas.env}"
+SERVICE="${PQNAS_SERVICE:-pqnas.service}"
+LOCAL_BASE="${PQNAS_LOCAL_BASE_URL:-http://127.0.0.1:8081}"
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+need_root() {
+  if [ "$(id -u)" != "0" ]; then
+    die "Run as root: sudo pqnas-first-admin"
+  fi
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+env_get() {
+  local key="$1"
+  if [ -f "$ENV_FILE" ]; then
+    sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n1
+  fi
+}
+
+env_set() {
+  local key="$1"
+  local value="$2"
+
+  [ -f "$ENV_FILE" ] || die "$ENV_FILE not found"
+
+  local tmp
+  tmp="$(mktemp)"
+
+  grep -v -E "^${key}=" "$ENV_FILE" > "$tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+
+  cp -a "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d_%H%M%S)"
+  install -m 0600 -o root -g root "$tmp" "$ENV_FILE"
+  rm -f "$tmp"
+}
+
+env_unset() {
+  local key="$1"
+
+  [ -f "$ENV_FILE" ] || return 0
+
+  local tmp
+  tmp="$(mktemp)"
+
+  grep -v -E "^${key}=" "$ENV_FILE" > "$tmp" || true
+  cp -a "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d_%H%M%S)"
+  install -m 0600 -o root -g root "$tmp" "$ENV_FILE"
+  rm -f "$tmp"
+}
+
+restart_service() {
+  systemctl restart "$SERVICE"
+}
+
+random_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 | tr -d '\n'
+  else
+    python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32), end="")
+PY
+  fi
+}
+
+auth_mode() {
+  python3 - "$LOCAL_BASE/api/auth/config" "$ENV_FILE" <<'PY'
+import json
+import sys
+import urllib.request
+
+url = sys.argv[1]
+env_file = sys.argv[2]
+
+try:
+    with urllib.request.urlopen(url, timeout=3) as r:
+        data = json.loads(r.read().decode("utf-8"))
+        mode = str(data.get("mode") or "").strip().lower()
+        if mode:
+            print(mode)
+            raise SystemExit(0)
+except Exception:
+    pass
+
+mode = ""
+try:
+    with open(env_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("PQNAS_LOGIN_MODE="):
+                mode = line.split("=", 1)[1].strip().lower()
+except FileNotFoundError:
+    pass
+
+print(mode or "qr")
+PY
+}
+
+public_base_url() {
+  local v
+  v="$(env_get PQNAS_PUBLIC_BASE_URL || true)"
+  if [ -z "$v" ]; then
+    v="$(env_get PQNAS_ORIGIN || true)"
+  fi
+  if [ -z "$v" ]; then
+    v="$LOCAL_BASE"
+  fi
+  printf '%s' "$v"
+}
+
+pretty_json_file() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+p = sys.argv[1]
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+except Exception:
+    with open(p, "r", encoding="utf-8", errors="replace") as f:
+        print(f.read())
+PY
+}
+
+json_ok() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
+    raise SystemExit(0 if data.get("ok") is True else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+cleanup_password() {
+  env_unset PQNAS_PASSWORD_BOOTSTRAP_TOKEN
+  restart_service
+  echo "Password bootstrap token removed and $SERVICE restarted."
+}
+
+cleanup_opaque() {
+  env_unset PQNAS_OPAQUE_BOOTSTRAP_TOKEN
+  restart_service
+  echo "OPAQUE bootstrap token removed and $SERVICE restarted."
+}
+
+cleanup_all() {
+  env_unset PQNAS_PASSWORD_BOOTSTRAP_TOKEN
+  env_unset PQNAS_OPAQUE_BOOTSTRAP_TOKEN
+  restart_service
+  echo "Bootstrap tokens removed and $SERVICE restarted."
+}
+
+run_qr() {
+  cat <<'TXT'
+This server is in QR / DNA Connect mode.
+
+Open the DNA-Nexus login page in a browser and scan the QR code with a trusted
+DNA-Nexus compatible device.
+
+On a fresh server with no enabled admin users, the first verified identity
+becomes the initial administrator.
+TXT
+}
+
+run_password() {
+  need_cmd python3
+  need_cmd curl
+
+  local mode
+  mode="$(auth_mode)"
+  if [ "$mode" != "password" ]; then
+    die "Server is not in password mode. Current mode: $mode"
+  fi
+
+  local token
+  token="$(env_get PQNAS_PASSWORD_BOOTSTRAP_TOKEN || true)"
+  if [ -z "$token" ]; then
+    token="$(random_token)"
+    env_set PQNAS_PASSWORD_BOOTSTRAP_TOKEN "$token"
+    restart_service
+  fi
+
+  echo "Password bootstrap token is active temporarily."
+  echo "Bootstrap endpoint: $LOCAL_BASE/api/auth/password/bootstrap-admin"
+  echo
+
+  local admin_login admin_name admin_pass admin_pass2
+  read -rp "Admin email/login: " admin_login
+  read -rp "Admin display name: " admin_name
+
+  while true; do
+    read -rsp "Admin password, min 12 chars: " admin_pass
+    echo
+    read -rsp "Confirm password: " admin_pass2
+    echo
+
+    if [ "$admin_pass" != "$admin_pass2" ]; then
+      echo "Passwords do not match."
+      continue
+    fi
+
+    if [ "${#admin_pass}" -lt 12 ]; then
+      echo "Password is too short."
+      continue
+    fi
+
+    break
+  done
+
+  local body response
+  body="$(ADMIN_LOGIN="$admin_login" ADMIN_NAME="$admin_name" ADMIN_PASS="$admin_pass" python3 - <<'PY'
+import json
+import os
+print(json.dumps({
+    "login": os.environ["ADMIN_LOGIN"],
+    "name": os.environ["ADMIN_NAME"],
+    "password": os.environ["ADMIN_PASS"],
+}))
+PY
+)"
+  admin_pass=""
+  admin_pass2=""
+
+  response="$(mktemp)"
+  curl -sS \
+    -H "Content-Type: application/json" \
+    -H "X-PQNAS-Bootstrap-Token: $token" \
+    -d "$body" \
+    "$LOCAL_BASE/api/auth/password/bootstrap-admin" > "$response"
+
+  echo
+  pretty_json_file "$response"
+  echo
+
+  if json_ok "$response"; then
+    echo "If recovery_words were shown above, copy them now. They cannot be shown again."
+    read -rp "Press Enter after saving recovery words to remove the bootstrap token..."
+    rm -f "$response"
+    cleanup_password
+  else
+    rm -f "$response"
+    echo "Bootstrap failed. Token was left in place for troubleshooting."
+    echo "Run 'sudo pqnas-first-admin cleanup-password' after fixing the issue."
+    exit 1
+  fi
+}
+
+run_opaque() {
+  need_cmd python3
+
+  local mode
+  mode="$(auth_mode)"
+  if [ "$mode" != "opaque" ]; then
+    die "Server is not in OPAQUE mode. Current mode: $mode"
+  fi
+
+  local token
+  token="$(env_get PQNAS_OPAQUE_BOOTSTRAP_TOKEN || true)"
+  if [ -z "$token" ]; then
+    token="$(random_token)"
+    env_set PQNAS_OPAQUE_BOOTSTRAP_TOKEN "$token"
+    restart_service
+  fi
+
+  local base
+  base="$(public_base_url)"
+
+  cat <<TXT
+OPAQUE first-admin bootstrap is prepared.
+
+Open this page in a browser:
+
+  ${base}/static/opaque-bootstrap.html
+
+Bootstrap token:
+
+  ${token}
+
+The OPAQUE password is processed in the browser and is not sent to the server.
+After the browser shows success and recovery words, save the recovery words.
+
+TXT
+
+  read -rp "Press Enter after completing OPAQUE setup to remove the bootstrap token..."
+  cleanup_opaque
+}
+
+usage() {
+  cat <<'TXT'
+Usage:
+  sudo pqnas-first-admin
+  sudo pqnas-first-admin qr
+  sudo pqnas-first-admin password
+  sudo pqnas-first-admin opaque
+  sudo pqnas-first-admin cleanup
+  sudo pqnas-first-admin cleanup-password
+  sudo pqnas-first-admin cleanup-opaque
+
+Default mode auto-detects /api/auth/config.
+TXT
+}
+
+main() {
+  need_root
+
+  local cmd="${1:-auto}"
+
+  case "$cmd" in
+    -h|--help|help)
+      usage
+      ;;
+    cleanup)
+      cleanup_all
+      ;;
+    cleanup-password)
+      cleanup_password
+      ;;
+    cleanup-opaque)
+      cleanup_opaque
+      ;;
+    qr)
+      run_qr
+      ;;
+    password)
+      run_password
+      ;;
+    opaque)
+      run_opaque
+      ;;
+    auto)
+      case "$(auth_mode)" in
+        password) run_password ;;
+        opaque) run_opaque ;;
+        qr|"") run_qr ;;
+        *) die "Unknown login mode: $(auth_mode)" ;;
+      esac
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
