@@ -79,6 +79,7 @@
       </div>
 <!-- wiki-language-topbar:end -->
 <article class="article">
+<!-- WIKI:DROP-ZONE:BEGIN -->
   <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Apps</div>
   <h1>Drop Zone</h1>
   <div class="meta">
@@ -86,54 +87,187 @@
     <span>Audience: Administrator</span>
   </div>
 
-  <p class="lead">Document public upload links, branding, passwords, expiry, size limits and destination folders.</p>
+  <p class="lead">
+    Drop Zone lets users create customized one-way upload links for customers,
+    partners or other external recipients. Files uploaded through a Drop Zone link
+    are delivered into the creator's own DNA-Nexus file storage.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/dropzone/drop_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/dropzone/drop_EN.png" alt="Drop Zone overview showing created upload links" />
+    </a>
+    <figcaption>Drop Zone overview</figcaption>
+  </figure>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#what-drop-zone-does">What Drop Zone does</a></li>
+      <li><a href="#creating-a-drop-zone">Creating a Drop Zone</a></li>
+      <li><a href="#branding-the-upload-page">Branding the upload page</a></li>
+      <li><a href="#recipient-upload-page">Recipient upload page</a></li>
+      <li><a href="#after-files-are-uploaded">After files are uploaded</a></li>
+      <li><a href="#reactivating-an-expired-link">Reactivating an expired link</a></li>
+      <li><a href="#important-notes">Important notes</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what-drop-zone-does">What Drop Zone does</h2>
+
+  <p>
+    A Drop Zone is a one-way upload page. The recipient can upload files through
+    the link, but cannot browse the link creator's other files or folders.
+  </p>
+
+  <p>
+    Uploaded files are stored in the destination folder selected by the user who
+    created the Drop Zone. After upload, the files can be reviewed from normal
+    DNA-Nexus tools such as <strong>File Manager</strong>.
+  </p>
+
+  <h2 id="creating-a-drop-zone">Creating a Drop Zone</h2>
+
+  <p>
+    To create a new upload link, open Drop Zone and click <strong>Create Drop Zone</strong>.
+    The setup dialog asks for the basic upload-link settings.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/dropzone/crea_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/dropzone/crea_EN.png" alt="Create Drop Zone dialog with basic upload link settings" />
+    </a>
+    <figcaption>Creating a new Drop Zone</figcaption>
+  </figure>
+
+  <p>
+    The <strong>Name</strong> field is the internal Drop Zone name shown to the user
+    who creates the link. The <strong>Destination folder</strong> defines where incoming
+    files will be stored.
+  </p>
+
+  <p>
+    The <strong>Expires</strong> setting controls how long the upload link remains valid.
+    A password can also be assigned to the upload page. If password protection is used,
+    the password must be shared with the recipient separately.
+  </p>
+
+  <p>
+    Drop Zones can also define a maximum size for a single file and a maximum size for
+    the whole upload. These limits help keep incoming uploads predictable.
+  </p>
+
+  <p>
+    The duplicate filename setting controls what happens when a file with the same name
+    already exists in the destination. The available choices are:
+  </p>
+
+  <ul>
+    <li><strong>Create new version</strong></li>
+    <li><strong>Keep both files</strong> — DNA-Nexus adds a suffix such as <span class="mono">(1)</span> to the filename</li>
+    <li><strong>Reject duplicate filename</strong></li>
+  </ul>
+
+  <h2 id="branding-the-upload-page">Branding the upload page</h2>
+
+  <p>
+    If desired, the upload page can be customized to match the user's company or project
+    branding. Branded layouts can also be saved as reusable templates for future Drop Zones.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/dropzone/bra_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/dropzone/bra_EN.png" alt="Drop Zone branding settings and preview" />
+    </a>
+    <figcaption>Branding the upload page</figcaption>
+  </figure>
+
+  <p>
+    The user can enter the company name, provide a logo URL, or upload a logo directly
+    to the server. The upload page colors, button labels and footer text can also be
+    customized.
+  </p>
+
+  <p>
+    All branding changes are visible in the preview. When the page looks correct, the
+    Drop Zone link is created with the button at the bottom of the dialog.
+  </p>
+
+  <h2 id="recipient-upload-page">Recipient upload page</h2>
+
+  <p>
+    The recipient sees a dedicated upload page. The page displays the configured branding
+    and the upload rules, such as expiration time and upload limits.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/dropzone/cust_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/dropzone/cust_EN.png" alt="Customer-facing Drop Zone upload page" />
+    </a>
+    <figcaption>Customer-facing upload page</figcaption>
+  </figure>
+
+  <p>
+    Files can be dragged directly into the upload area or selected from the upload button.
+    The uploaded files become visible to the link creator, but the recipient does not see
+    the creator's other files.
+  </p>
+
+  <h2 id="after-files-are-uploaded">After files are uploaded</h2>
+
+  <p>
+    When a recipient uploads files, Drop Zone shows a notification next to the Drop Zone
+    name, for example <strong>!1</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/dropzone/final_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/dropzone/final_EN.png" alt="Drop Zone after a recipient has uploaded files" />
+    </a>
+    <figcaption>Uploaded files notification</figcaption>
+  </figure>
+
+  <p>
+    After the files have arrived safely, the user can click <strong>Open folder</strong>
+    to review the uploaded content in the destination folder.
+  </p>
+
+  <p>
+    After confirming that the files have been received, the user can click
+    <strong>Clear history</strong>. This removes the notification marker from the Drop Zone
+    list and also removes the names of already uploaded files from the recipient's upload page.
+  </p>
+
+  <h2 id="reactivating-an-expired-link">Reactivating an expired link</h2>
+
+  <p>
+    An expired Drop Zone link can be reactivated without creating a completely new Drop Zone.
+    Open the existing Drop Zone card and use the renewal actions at the bottom of the card,
+    such as <strong>Renew for 7 days</strong> or <strong>Renew for 30 days</strong>.
+  </p>
+
+  <p>
+    This is useful when the same customer or partner needs to upload files again later.
+    The user can keep the same Drop Zone setup, destination folder, branding and limits,
+    instead of creating a new Drop Zone for every upload round.
+  </p>
+
+  <h2 id="important-notes">Important notes</h2>
 
   <div class="callout">
-    <strong>Draft note:</strong> This page is a placeholder. Replace this text with real steps,
-    screenshots and verification checks when the feature is documented.
+    <strong>One-way access:</strong> Drop Zone is for receiving files. It does not give
+    the recipient general browsing access to the user's storage.
   </div>
 
-  <h2>Overview</h2>
-  <p>Write a short explanation of what this feature does and when an administrator should use it.</p>
-
-  <h2>Steps</h2>
-  <ol class="steps">
-    <li>
-      <h3>Open the correct page</h3>
-      <p>Describe where the administrator should click in the DNA-Nexus interface.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Add the first screenshot for this page.
-      </div>
-    </li>
-    <li>
-      <h3>Configure the feature</h3>
-      <p>Describe the fields, choices and safe defaults.</p>
-    </li>
-    <li>
-      <h3>Verify the result</h3>
-      <p>Explain how the administrator knows that the operation succeeded.</p>
-    </li>
-  </ol>
-
-  <h2>Troubleshooting</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symptom</th>
-          <th>Possible cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Example problem</td>
-          <td>Example cause</td>
-          <td>Example solution</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="callout">
+    <strong>Password sharing:</strong> If password protection is enabled, the password must
+    be sent to the recipient separately from the upload link.
   </div>
+
+  <div class="callout warning">
+    <strong>Choose limits carefully:</strong> Expiration time, file-size limits and total upload
+    limits should match the expected use case and the sensitivity of the files being received.
+  </div>
+<!-- WIKI:DROP-ZONE:END -->
 </article>
 
     </main>
