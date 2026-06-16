@@ -100,6 +100,8 @@
     const btnSnapReload = $("btnSnapReload");
     const snapPerVolume = $("snapPerVolume");
     const snapVolTbody = $("snapVolTbody");
+    const snapPoolSelect = $("snapPoolSelect");
+    const btnSnapAddPool = $("btnSnapAddPool");
 
     // --- uploads ---
     const uploadPill = $("uploadPill");
@@ -183,6 +185,7 @@
     let gStorageRoots = null; // populated from GET /api/v4/admin/settings
     let gTieringCandidates = []; // populated from GET /api/v4/admin/settings
     let gSnapshotsLast = null;
+    let gSnapshotPoolCandidates = [];
 
     function serverDataRootOrFallback() {
         const dr = gStorageRoots && typeof gStorageRoots.data_root === "string" ? gStorageRoots.data_root.trim() : "";
@@ -243,6 +246,230 @@
         return vals.map(v => `<option value="${v}" ${String(v)===String(selected)?"selected":""}>${v}</option>`).join("");
     }
 
+    function snapshotPathBasename(path) {
+        const s = String(path || "").replace(/\/+$/, "");
+        const parts = s.split("/").filter(Boolean);
+        return parts.length ? parts[parts.length - 1] : "volume";
+    }
+
+    function safeSnapshotVolumeName(raw) {
+        let s = String(raw || "").trim();
+        if (!s) s = "volume";
+        s = s.replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+        if (!s) s = "volume";
+        return s.length > 48 ? s.slice(0, 48) : s;
+    }
+
+    function snapshotRootForSource(source, name) {
+        const src = String(source || "").replace(/\/+$/, "");
+        const nm = safeSnapshotVolumeName(name || snapshotPathBasename(src));
+
+        if (src === serverDataRootOrFallback()) {
+            return "/srv/pqnas/.snapshots/data";
+        }
+
+        return `${src}/.snapshots`;
+    }
+
+    function snapshotVolumeSource(v) {
+        return String(v?.source_subvolume || "").replace(/\/+$/, "");
+    }
+
+    function snapshotCandidateSource(c) {
+        return String(c?.source_subvolume || c?.mount_path || c?.mount || c?.path || "").replace(/\/+$/, "");
+    }
+
+    function isSnapshotSourceProtected(source) {
+        const src = String(source || "").replace(/\/+$/, "");
+        const vols = Array.isArray(gSnapshotsLast?.volumes) ? gSnapshotsLast.volumes : [];
+        return vols.some(v => snapshotVolumeSource(v) === src);
+    }
+
+    function normalizeSnapshotPoolCandidate(raw) {
+        const c = raw && typeof raw === "object" ? raw : {};
+        const mount = String(
+            c.mount_path ||
+            c.mount ||
+            c.mountpoint ||
+            c.path ||
+            c.root ||
+            c.source_subvolume ||
+            ""
+        ).trim().replace(/\/+$/, "");
+
+        if (!mount) return null;
+
+        // Do not offer the whole runtime root as a snapshot volume. The default protected
+        // data volume is /srv/pqnas/data; additional pools should normally be under
+        // /srv/pqnas/pools/<pool_id>.
+        if (mount === "/srv/pqnas") return null;
+
+        const status = c.status && typeof c.status === "object" ? c.status : {};
+        const fs = String(
+            c.fs_type ||
+            c.fstype ||
+            c.filesystem ||
+            c.fs ||
+            status.fs_type ||
+            status.fstype ||
+            ""
+        ).trim().toLowerCase();
+
+        const mounted = (typeof status.mounted === "boolean") ? status.mounted : true;
+        const eligible = mounted && (!fs || fs.includes("btrfs"));
+
+        const nameRaw =
+            c.pool_id ||
+            c.id ||
+            c.name ||
+            c.display_name ||
+            snapshotPathBasename(mount);
+
+        const name = safeSnapshotVolumeName(nameRaw);
+        const display = String(c.display_name || c.name || name).trim() || name;
+
+        return {
+            name,
+            display_name: display,
+            source_subvolume: mount,
+            snap_root: snapshotRootForSource(mount, name),
+            eligible,
+            reason: !mounted ? "not mounted" : (fs && !fs.includes("btrfs") ? `not btrfs (${fs})` : "")
+        };
+    }
+
+    function renderSnapshotPoolOptions() {
+        if (!snapPoolSelect) return;
+
+        snapPoolSelect.innerHTML = "";
+
+        const usable = (Array.isArray(gSnapshotPoolCandidates) ? gSnapshotPoolCandidates : [])
+            .filter(c => c && c.eligible)
+            .filter(c => !isSnapshotSourceProtected(c.source_subvolume));
+
+        if (!usable.length) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = tr("admin.snap.no_unprotected_pools", null, "No unprotected Btrfs pools found");
+            snapPoolSelect.appendChild(opt);
+            if (btnSnapAddPool) btnSnapAddPool.disabled = true;
+            return;
+        }
+
+        const ph = document.createElement("option");
+        ph.value = "";
+        ph.textContent = tr("admin.snap.select_pool", null, "Select pool…");
+        snapPoolSelect.appendChild(ph);
+
+        for (const c of usable) {
+            const opt = document.createElement("option");
+            opt.value = c.source_subvolume;
+            opt.textContent = `${c.display_name || c.name} • ${c.source_subvolume}`;
+            opt.dataset.name = c.name;
+            opt.dataset.snapRoot = c.snap_root;
+            snapPoolSelect.appendChild(opt);
+        }
+
+        if (btnSnapAddPool) btnSnapAddPool.disabled = false;
+    }
+
+    async function loadSnapshotPoolCandidates() {
+        const candidates = [];
+
+        // Always include the main data root as a candidate; it is normally already protected.
+        candidates.push({
+            name: "data",
+            display_name: "Data volume",
+            source_subvolume: serverDataRootOrFallback(),
+            snap_root: "/srv/pqnas/.snapshots/data",
+            eligible: true,
+            reason: ""
+        });
+
+        try {
+            const j = await fetchJsonOrThrow("/api/v4/storage/pools", { cache: "no-store" });
+            const rawPools =
+                Array.isArray(j?.pools) ? j.pools :
+                Array.isArray(j?.storage_pools) ? j.storage_pools :
+                Array.isArray(j?.items) ? j.items :
+                Array.isArray(j) ? j :
+                [];
+
+            for (const raw of rawPools) {
+                const c = normalizeSnapshotPoolCandidate(raw);
+                if (!c) continue;
+
+                const dup = candidates.some(x => snapshotCandidateSource(x) === snapshotCandidateSource(c));
+                if (!dup) candidates.push(c);
+            }
+        } catch (e) {
+            console.warn("snapshot pool candidate load failed", e);
+        }
+
+        gSnapshotPoolCandidates = candidates;
+        renderSnapshotPoolOptions();
+    }
+
+    function addSelectedPoolToSnapshots() {
+        const src = String(snapPoolSelect?.value || "").trim().replace(/\/+$/, "");
+        if (!src) {
+            showToast("warn", tr("admin.snap.no_pool_selected", null, "No pool selected"), tr("admin.snap.select_pool_first", null, "Select a mounted Btrfs pool first."));
+            return;
+        }
+
+        const c = (Array.isArray(gSnapshotPoolCandidates) ? gSnapshotPoolCandidates : [])
+            .find(x => snapshotCandidateSource(x) === src);
+
+        if (!c) {
+            showToast("fail", tr("admin.snap.pool_not_found", null, "Pool not found"), src);
+            return;
+        }
+
+        if (!c.eligible) {
+            showToast("fail", tr("admin.snap.pool_not_eligible", null, "Pool not eligible"), c.reason || src);
+            return;
+        }
+
+        const cur = currentSnapshotsFromUi();
+        const volumes = Array.isArray(cur.volumes) ? cur.volumes.map(v => ({ ...v })) : [];
+
+        if (volumes.some(v => snapshotVolumeSource(v) === src)) {
+            showToast("warn", tr("admin.snap.already_protected", null, "Already protected"), src);
+            return;
+        }
+
+        volumes.push({
+            name: safeSnapshotVolumeName(c.name || snapshotPathBasename(src)),
+            source_subvolume: src,
+            snap_root: c.snap_root || snapshotRootForSource(src, c.name)
+        });
+
+        const next = { ...cur, volumes };
+        gSnapshotsLast = next;
+        applySnapshotsToUi(next);
+
+        showToast("ok", tr("admin.snap.pool_added", null, "Pool added"), tr("admin.snap.pool_added_msg", null, "Click Save snapshots to persist this change."));
+    }
+
+    function removeSnapshotVolumeAt(index) {
+        const cur = currentSnapshotsFromUi();
+        const volumes = Array.isArray(cur.volumes) ? cur.volumes.map(v => ({ ...v })) : [];
+
+        if (index <= 0) {
+            showToast("warn", tr("admin.snap.default_data_kept", null, "Default data volume kept"), tr("admin.snap.default_data_kept_msg", null, "The main data volume is kept as the first snapshot volume."));
+            return;
+        }
+
+        if (index >= volumes.length) return;
+
+        const removed = volumes.splice(index, 1)[0];
+        const next = { ...cur, volumes };
+        gSnapshotsLast = next;
+        applySnapshotsToUi(next);
+
+        showToast("warn", tr("admin.snap.volume_removed", null, "Snapshot volume removed"), tr("admin.snap.volume_removed_msg", { volume: removed?.name || "volume" }, "{volume} removed. Click Save snapshots to persist."));
+    }
+
     function renderSnapshotVolumesTable(sn) {
         if (!snapVolTbody) return;
         snapVolTbody.innerHTML = "";
@@ -258,31 +485,45 @@
             const v = vols[i] && typeof vols[i] === "object" ? vols[i] : {};
             const name = String(v.name || `vol${i}`);
             const src  = String(v.source_subvolume || "");
+            const root = String(v.snap_root || "");
 
             const vs = (v.schedule && typeof v.schedule === "object") ? v.schedule : {};
             const tpd = perVol ? Number(vs.times_per_day ?? globalTpd) : globalTpd;
             const jit = perVol ? Number(vs.jitter_seconds ?? globalJit) : globalJit;
 
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
+            const rowEl = document.createElement("tr");
+            rowEl.innerHTML = `
           <td class="mono" title="${escapeHtml(name)}">${escapeHtml(name)}</td>
           <td class="mono" title="${escapeHtml(src)}">${escapeHtml(src)}</td>
+          <td class="mono" title="${escapeHtml(root)}">${escapeHtml(root || "—")}</td>
           <td>
-            <select class="pq-select snapVolTpd" data-i="${i}" ${perVol ? "" : "disabled"}>
+            <select class="pq-select snapVolTpd" data-i="${i}" style="width:54px; min-width:0; max-width:54px; box-sizing:border-box; padding-left:6px; padding-right:4px;" ${perVol ? "" : "disabled"}>
               ${tpdOptionsHtml(Math.min(24, Math.max(1, tpd || 6)))}
             </select>
           </td>
           <td>
             <input class="pq-input mono snapVolJit"
-                   style="min-width:120px"
+                   style="width:54px; min-width:0; max-width:54px; box-sizing:border-box; padding-left:6px; padding-right:4px;"
                    type="number" min="0" max="3600"
                    data-i="${i}"
                    value="${String(Math.min(3600, Math.max(0, jit || 120)))}"
                    ${perVol ? "" : "disabled"} />
           </td>
+          <td>
+            <button class="pq-btn snapVolRemoveBtn" type="button" title="${escapeHtml(tr("admin.snap.remove", null, "Remove"))}" aria-label="${escapeHtml(tr("admin.snap.remove", null, "Remove"))}" style="width:32px; min-width:0; box-sizing:border-box; padding-left:7px; padding-right:7px;" data-i="${i}" ${i === 0 ? "disabled" : ""}>×</button>
+          </td>
         `;
-            snapVolTbody.appendChild(tr);
+
+            rowEl.querySelector(".snapVolRemoveBtn")?.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                const idx = Number(ev.currentTarget?.getAttribute("data-i") || "-1");
+                removeSnapshotVolumeAt(idx);
+            });
+
+            snapVolTbody.appendChild(rowEl);
         }
+
+        renderSnapshotPoolOptions();
     }
 
     function showToast(kind, title, msg) {
@@ -1206,6 +1447,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (snapEnabled) snapEnabled.dataset.src = src;
 
         renderSnapshotVolumesTable(s);
+        renderSnapshotPoolOptions();
         syncSnapshotsEnabledUi();
     }
 
@@ -2137,6 +2379,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             applyTheme(serverTheme);
             // snapshots
             applySnapshotsToUi(j.snapshots || defaultSnapshots());
+            await loadSnapshotPoolCandidates();
 
             // active audit file info
             updateActiveSizePill(j);
@@ -2471,6 +2714,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     snapPerVolume?.addEventListener("change", () => {
         renderSnapshotVolumesTable(gSnapshotsLast || currentSnapshotsFromUi());
         syncSnapshotsEnabledUi();
+    });
+
+    btnSnapAddPool?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        addSelectedPoolToSnapshots();
     });
 
     // ---------------------------

@@ -1065,12 +1065,12 @@
                         </label>
 
                         <select id="snapTimesPerDay" class="pq-select" aria-label="Snapshots per day">
-                            <option value="1" data-i18n="admin.snap.per_day" data-i18n-fallback="1 / day">1 / day</option>
-                            <option value="2" data-i18n="admin.snap.per_day" data-i18n-fallback="2 / day">2 / day</option>
-                            <option value="4" data-i18n="admin.snap.per_day" data-i18n-fallback="4 / day">4 / day</option>
-                            <option value="6" data-i18n="admin.snap.per_day" data-i18n-fallback="6 / day">6 / day</option>
-                            <option value="12" data-i18n="admin.snap.per_day" data-i18n-fallback="12 / day">12 / day</option>
-                            <option value="24" data-i18n="admin.snap.per_day" data-i18n-fallback="24 / day">24 / day</option>
+                            <option value="1" data-i18n="admin.snap.per_day_1">1/day</option>
+                            <option value="2" data-i18n="admin.snap.per_day_2">2/day</option>
+                            <option value="4" data-i18n="admin.snap.per_day_4">4/day</option>
+                            <option value="6" data-i18n="admin.snap.per_day_6">6/day</option>
+                            <option value="12" data-i18n="admin.snap.per_day_12">12/day</option>
+                            <option value="24" data-i18n="admin.snap.per_day_24">24/day</option>
                         </select>
 
                         <input id="snapJitter" class="pq-input mono" style="min-width:180px" type="number" min="0" max="3600"
@@ -1085,15 +1085,32 @@
                                placeholder="/srv/pqnas/.snapshots/data" />
                     </div>
 
+                    <div class="row" style="gap:10px; align-items:flex-end;">
+                        <label style="display:flex; flex-direction:column; gap:6px; min-width:360px; flex:1 1 360px;">
+                            <span class="tierFieldLabel" data-i18n="admin.snap.add_pool_title">Add storage pool to snapshots</span>
+                            <select id="snapPoolSelect" class="pq-select" aria-label="Add storage pool to snapshots">
+                                <option value="" data-i18n="admin.snap.loading_pools">Loading pools…</option>
+                            </select>
+                        </label>
+                        <button id="btnSnapAddPool" class="pq-btn" type="button"><span data-i18n="admin.snap.add_pool">Add pool</span></button>
+                    </div>
+
+                    <div class="note">
+                        <span data-i18n="admin.snap.add_pool_note_prefix">Add mounted Btrfs storage pools here if they should be protected by snapshots. Pool snapshot roots are stored inside the pool, for example</span>
+                        <span class="mono">/srv/pqnas/pools/pool2/.snapshots</span>.
+                    </div>
+
                     <div class="row" style="width:100%;">
                         <div class="tableWrap" style="width:100%;">
                             <table>
                                 <thead>
                                 <tr>
-                                    <th style="width:28%;" data-i18n="admin.snap.volume">Volume</th>
-                                    <th style="width:42%;" data-i18n="admin.snap.source_subvolume">Source subvolume</th>
-                                    <th style="width:15%;" data-i18n="admin.snap.times_day">Times/day</th>
-                                    <th style="width:15%;" data-i18n="admin.snap.jitter_s">Jitter (s)</th>
+                                    <th style="width:12%;" title="Volume" data-i18n="admin.snap.table.vol">Vol</th>
+                                    <th style="width:31%;" title="Source subvolume" data-i18n="admin.snap.table.source">Source</th>
+                                    <th style="width:33%;" title="Snapshot root" data-i18n="admin.snap.table.root">Root</th>
+                                    <th style="width:8%;" title="Snapshots per day" data-i18n="admin.snap.table.per_day_short">#/day</th>
+                                    <th style="width:7%;" title="Jitter seconds" data-i18n="admin.snap.table.jitter_short">±s</th>
+                                    <th style="width:9%;"></th>
                                 </tr>
                                 </thead>
                                 <tbody id="snapVolTbody"></tbody>

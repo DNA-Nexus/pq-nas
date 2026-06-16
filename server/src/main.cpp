@@ -42341,7 +42341,35 @@ srv.Post("/api/v4/snapshots/create", [&](const httplib::Request& req, httplib::R
         reply_json(res, 400, json{{"ok",false},{"error","bad_request"},{"message","live_path not allowed"}}.dump());
         return;
     }
-    if (!starts_with(snap_root, "/srv/pqnas/.snapshots/")) {
+    // Allow the legacy global snapshot root and pool-local snapshot roots.
+    //
+    // Old default:
+    //   /srv/pqnas/.snapshots/data
+    //
+    // Pool-local Btrfs snapshots:
+    //   source_subvolume = /srv/pqnas/pools/pool2
+    //   snap_root        = /srv/pqnas/pools/pool2/.snapshots
+    //
+    // Btrfs snapshots must stay on the same Btrfs filesystem, so pool snapshots
+    // should live inside that pool's mount/subvolume instead of the global
+    // /srv/pqnas/.snapshots tree.
+    const std::string snap_root_norm =
+        std::filesystem::path(snap_root).lexically_normal().string();
+
+    const std::string source_norm =
+        std::filesystem::path(it->source_subvolume).lexically_normal().string();
+
+    const std::string pool_local_snap_root =
+        (std::filesystem::path(source_norm) / ".snapshots").lexically_normal().string();
+
+    const bool legacy_global_snap_root =
+        starts_with(snap_root_norm, "/srv/pqnas/.snapshots/");
+
+    const bool pool_local_snap_root_ok =
+        snap_root_norm == pool_local_snap_root ||
+        starts_with(snap_root_norm, pool_local_snap_root + "/");
+
+    if (!legacy_global_snap_root && !pool_local_snap_root_ok) {
         audit_fail("snap_root_not_allowed", 400, snap_root);
         reply_json(res, 400, json{{"ok",false},{"error","bad_request"},{"message","snap_root not allowed"}}.dump());
         return;
@@ -42364,9 +42392,52 @@ srv.Post("/api/v4/snapshots/create", [&](const httplib::Request& req, httplib::R
     }
 
     std::error_code ec;
-    std::filesystem::create_directories(snap_root, ec);
+    std::filesystem::create_directories(snap_root_norm, ec);
 
-    const std::filesystem::path dst = std::filesystem::path(snap_root) / id;
+    // Pool roots are usually owned by root. If the DNA-Nexus runtime user
+    // cannot create <pool>/.snapshots directly, create that snapshot root as
+    // a Btrfs subvolume using the same sudo/btrfs path used for snapshots.
+    if (ec && pool_local_snap_root_ok) {
+        auto shell_quote = [](const std::string& s) {
+            std::string out = "'";
+            for (char c : s) {
+                if (c == '\'') out += "'\\''";
+                else out += c;
+            }
+            out += "'";
+            return out;
+        };
+
+        const std::string cmd =
+            "sudo -n /usr/bin/btrfs subvolume create " +
+            shell_quote(snap_root_norm) +
+            " >/dev/null 2>&1";
+
+        const int rc = std::system(cmd.c_str());
+        if (rc == 0) {
+            ec.clear();
+        } else {
+            std::cerr << "[snapshots] snap_root auto-create failed root="
+                      << snap_root_norm << " rc=" << rc << "\n";
+        }
+    }
+
+    if (ec) {
+        audit_fail("mkdir_failed", 500, snap_root_norm);
+        reply_json(res, 500, json{{"ok",false},{"error","server_error"},{"message","snapshot root mkdir failed"}}.dump());
+        return;
+    }
+
+    std::error_code ec_root;
+    if (!std::filesystem::exists(snap_root_norm, ec_root) ||
+        !std::filesystem::is_directory(snap_root_norm, ec_root))
+    {
+        audit_fail("snap_root_missing_after_create", 500, snap_root_norm);
+        reply_json(res, 500, json{{"ok",false},{"error","server_error"},{"message","snapshot root missing after create"}}.dump());
+        return;
+    }
+
+    const std::filesystem::path dst = std::filesystem::path(snap_root_norm) / id;
     if (std::filesystem::exists(dst, ec) && !ec) {
         audit_fail("already_exists", 409, dst.string());
         reply_json(res, 409, json{{"ok",false},{"error","already_exists"},{"message","snapshot id already exists"}}.dump());
