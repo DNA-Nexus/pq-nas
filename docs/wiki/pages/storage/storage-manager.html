@@ -79,61 +79,538 @@
       </div>
 <!-- wiki-language-topbar:end -->
 <article class="article">
+<!-- WIKI:STORAGE-MANAGER:BEGIN -->
   <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Storage</div>
   <h1>Storage Manager</h1>
   <div class="meta">
-    <span>Status: Draft</span>
+    <span>Status: In progress</span>
     <span>Audience: Administrator</span>
   </div>
 
-  <p class="lead">Document disks, storage pools, quotas, capacity warnings and storage expansion.</p>
+  <p class="lead">
+    Storage Manager is used to manage DNA-Nexus storage space, disks and
+    storage pools.
+  </p>
+
+  <p>
+    From Storage Manager, an administrator can see which disks belong to which
+    pool, create new pools, expand existing pools and monitor storage activity.
+    The same page also shows upload tiering activity, so administrators can see
+    files moving from a temporary landing pool into their final storage location.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/raid_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/raid_EN.png" alt="Storage Manager showing upload tiering information and a storage pool" />
+    </a>
+    <figcaption>Storage → Storage Manager</figcaption>
+  </figure>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#what-storage-manager-is-for">What Storage Manager is for</a></li>
+      <li><a href="#upload-tiering-status">Upload tiering status</a></li>
+      <li><a href="#landing-pool">Landing pool</a></li>
+      <li><a href="#migrating-files">Migrating files</a></li>
+      <li><a href="#storage-pools">Storage pools</a></li>
+      <li><a href="#creating-a-new-storage-pool">Creating a new storage pool</a></li>
+      <li><a href="#after-creating-a-storage-pool">After creating a storage pool</a></li>
+      <li><a href="#converting-a-single-device-pool-into-a-two-device-raid1-pool">Converting a single-device pool into a two-device RAID1 pool</a></li>
+      <li><a href="#removing-a-drive-from-a-storage-pool">Removing a drive from a storage pool</a></li>
+      <li><a href="#system-volume-and-reservations">System volume and quota reservations</a></li>
+      <li><a href="#snapshot-coverage">Snapshot coverage</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what-storage-manager-is-for">What Storage Manager is for</h2>
+
+  <p>
+    In Windows terms, storage pools are roughly comparable to having different
+    storage drives such as <strong>C:</strong> or <strong>D:</strong>. In
+    DNA-Nexus, pools are Linux storage locations backed by one or more
+    disks or devices.
+  </p>
+
+  <p>
+    A pool can be used as a general home pool, a RAID-backed pool, a fast landing
+    pool for uploads, or a storage area for specific users or workloads.
+  </p>
+
+  <h2 id="upload-tiering-status">Upload tiering status</h2>
+
+  <p>
+    At the top of Storage Manager, the administrator can see files managed by
+    upload tiering. Upload tiering is configured in
+    <a href="../../pages/administration/settings.html#uploads-tiering">Administrator settings → Upload tiering</a>.
+  </p>
+
+  <p>
+    Upload tiering can use a temporary <strong>landing pool</strong>. This landing
+    pool can be a fast device, such as an SSD, where uploaded files are first
+    written. After that, DNA-Nexus moves the files to their final storage
+    location according to the configured tiering rules.
+  </p>
+
+  <h2 id="landing-pool">Landing pool</h2>
+
+  <p>
+    The <strong>Landing</strong> value shows how many files are currently waiting
+    in the landing pool. By default, files are moved from the landing pool to final
+    storage after a short delay.
+  </p>
+
+  <p>
+    In the default configuration, the delay is 15 seconds. The migration activity is visible
+    in real time on the Storage Manager page.
+  </p>
+
+  <h2 id="migrating-files">Migrating files</h2>
+
+  <p>
+    The <strong>Migrating</strong> value shows how many files are currently being
+    migrated from the landing pool to final storage.
+  </p>
+
+  <p>
+    The <strong>Max/pass</strong> value controls how many files may be migrated during
+    one migration pass. For example, a value of <strong>4</strong> means that up to
+    four files can be processed in one pass.
+  </p>
+
+  <h2 id="storage-pools">Storage pools</h2>
+
+  <p>
+    Storage pools define where DNA-Nexus stores data. A pool may be backed
+    by a single disk, a RAID setup or another supported storage layout.
+  </p>
+
+  <p>
+    In Storage Manager, the administrator can inspect pools, see their member
+    devices, check available capacity and manage pool structure. Depending on the
+    pool and device state, actions may include adding devices, removing empty slots,
+    converting the structure or taking the pool into use.
+  </p>
+
+<!-- WIKI:STORAGE-MANAGER:SYSTEM-VOLUME:BEGIN -->
+<!-- WIKI:STORAGE-MANAGER:CREATE-POOL:BEGIN -->
+  <h2 id="creating-a-new-storage-pool">Creating a new storage pool</h2>
+
+  <p>
+    To create a new storage pool, open Storage Manager and click
+    <strong>Create new pool</strong> at the top of the page.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/create_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/create_EN.png" alt="Create storage pool dialog" />
+    </a>
+    <figcaption>Create storage pool dialog</figcaption>
+  </figure>
+
+  <p>
+    In the dialog, enter the basic pool details:
+  </p>
+
+  <ul>
+    <li><strong>pool_id</strong> is the internal identifier used by the server.</li>
+    <li><strong>Display name</strong> is the user-facing name shown in the interface.</li>
+    <li><strong>Mode</strong> selects the pool layout, such as <strong>single</strong> or <strong>raid1</strong>.</li>
+    <li><strong>Slot count</strong> controls how many drive slots are shown for the pool.</li>
+  </ul>
+
+  <p>
+    If the administrator wants to assign drives immediately, set the slot count first
+    and click <strong>Update slots</strong>. For example, setting the slot count to
+    <strong>2</strong> creates two drive selectors. The administrator can then select
+    automatically detected devices for those slots.
+  </p>
+
+  <p>
+    If the selected mode is <strong>raid1</strong>, at least two drive slots must be
+    configured. RAID1 needs two or more devices so the data can be mirrored.
+  </p>
+
+  <div class="callout warning">
+    <strong>Warning:</strong> The <strong>Force wipe</strong> option is destructive.
+    Use it only when the selected device may be erased. Existing data, partitions or
+    filesystem structures on the selected device may be lost.
+  </div>
+
+  <p>
+    After the pool details and optional devices have been selected, click
+    <strong>Create</strong>. Storage Manager creates a plan and applies the requested
+    pool creation operation.
+  </p>
+<!-- WIKI:STORAGE-MANAGER:CREATE-POOL:END -->
+
+<!-- WIKI:STORAGE-MANAGER:AFTER-CREATE-POOL:BEGIN -->
+  <h2 id="after-creating-a-storage-pool">After creating a storage pool</h2>
+
+  <p>
+    After a storage pool has been created, it appears as its own pool card in
+    Storage Manager. User-created pools are shown separately from the system volume.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/done_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/done_EN.png" alt="Created RAID1 storage pool in Storage Manager" />
+    </a>
+    <figcaption>A newly created RAID1 storage pool shown in Storage Manager</figcaption>
+  </figure>
+
+  <p>
+    The pool header shows the pool name, mount path, filesystem type, RAID mode,
+    slot count, UUID, online state and whether the pool is editable. In this example,
+    the pool is mounted under <code>/srv/pqnas/pools/pool2</code>, uses Btrfs and is
+    running in <strong>RAID1</strong> mode.
+  </p>
+
+  <h3 id="pool-slots-and-member-devices">Slots and member devices</h3>
+
+  <p>
+    The <strong>Slots</strong> section lists the configured drive slots for the pool.
+    Each slot shows the device currently assigned to that slot. The device path, such
+    as <code>/dev/sda</code> or <code>/dev/sdb</code>, is shown together with a more
+    stable device identity line when available.
+  </p>
+
+  <p>
+    Slot information helps the administrator understand which physical or detected
+    devices belong to the pool. The <strong>present</strong> badge means that the
+    expected device is currently detected by the server.
+  </p>
+
+  <p>
+    The <strong>Member drives</strong> section shows the live Btrfs member devices
+    detected for the pool. This is useful for comparing the saved slot layout with
+    the actual current pool membership.
+  </p>
+
+  <h3 id="pool-summary">Pool summary</h3>
+
+  <p>
+    The <strong>Summary</strong> section shows the current storage state of the pool:
+  </p>
+
+  <ul>
+    <li><strong>Mode</strong> shows the detected pool layout, such as <strong>Single</strong> or <strong>RAID1</strong>.</li>
+    <li><strong>Devices</strong> shows how many devices are members of the pool.</li>
+    <li><strong>Used (fs)</strong> shows actual filesystem usage.</li>
+    <li><strong>Free (fs)</strong> shows free filesystem space.</li>
+    <li><strong>Committed users</strong> shows quota capacity reserved for users on this pool.</li>
+    <li><strong>Committed workspaces</strong> shows quota capacity reserved for shared workspaces on this pool.</li>
+    <li><strong>Committed total</strong> is the combined user and workspace reservation.</li>
+    <li><strong>Remaining allocatable</strong> shows how much capacity can still be assigned as quota reservations.</li>
+  </ul>
+
+  <p>
+    In RAID1 mode, usable capacity is normally closer to the size of one member
+    device rather than the sum of all devices, because data is mirrored for
+    redundancy.
+  </p>
+
+  <h3 id="pool-actions">Pool actions</h3>
+
+  <p>
+    Editable pools may show actions such as <strong>Remove drive</strong>,
+    <strong>Rename</strong>, <strong>Convert RAID</strong> and <strong>Destroy</strong>.
+    These actions modify the storage pool and should be used carefully.
+  </p>
+
+  <div class="callout warning">
+    <strong>Warning:</strong> The <strong>Destroy</strong> action is destructive. Use
+    it only when the selected pool and its data may be removed.
+  </div>
+<!-- WIKI:STORAGE-MANAGER:AFTER-CREATE-POOL:END -->
+
+
+
+<!-- WIKI:STORAGE-MANAGER:TO-RAID1:BEGIN -->
+  <h2 id="converting-a-single-device-pool-into-a-two-device-raid1-pool">Converting a single-device pool into a two-device RAID1 pool</h2>
+
+  <p>
+    To convert a single-device pool into a two-device RAID1 pool, first click
+    <strong>Edit slots</strong> on the pool card.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/from_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/from_EN.png" alt="Edit slots dialog for converting a single-device pool into a two-device pool" />
+    </a>
+    <figcaption>Edit the slot layout before adding the second device</figcaption>
+  </figure>
+
+  <p>
+    In the dialog, change the slot count from <strong>1</strong> to <strong>2</strong>
+    and click <strong>Update slots</strong>. In the new second slot, select the drive
+    that will be added to the pool and then click <strong>Save layout</strong>.
+  </p>
+
+  <p>
+    After saving the new layout, the pool card may show yellow warnings such as
+    <strong>missing</strong> and <strong>pending add</strong>. These warnings indicate
+    that the saved slot layout now expects a second drive, but the live pool has not
+    yet been updated to use it.
+  </p>
+
+  <p>
+    To add the drive to the live pool, click <strong>Apply layout</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/doit_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/doit_EN.png" alt="Apply layout dialog when adding a second device to the pool" />
+    </a>
+    <figcaption>Apply the saved layout to add the second device to the live pool</figcaption>
+  </figure>
+
+  <p>
+    The dialog shows the planned structure and explains that you are adding a drive to
+    the storage pool. Continue by selecting <strong>Activate now</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/after_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/after_EN.png" alt="Pool after the second drive has been added" />
+    </a>
+    <figcaption>The pool after the second drive has been added</figcaption>
+  </figure>
+
+  <p>
+    After the second drive has been added, the warnings disappear and the pool shows
+    the new two-device structure and updated free space information. At this stage,
+    the pool has two devices, but it is still operating in <strong>Single</strong>
+    mode without RAID mirroring.
+  </p>
+
+  <p>
+    If the pool should be converted to RAID1, click <strong>Convert RAID</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/raid_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/raid_EN.png" alt="Convert RAID dialog showing conversion from Single to RAID1" />
+    </a>
+    <figcaption>Convert the pool from Single mode to RAID1</figcaption>
+  </figure>
+
+  <p>
+    The conversion dialog shows the current mode, the target mode
+    <strong>RAID1</strong>, the number of devices and a short summary of the operation.
+    Click <strong>Preview</strong> first and then <strong>Apply</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/conf_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/conf_EN.png" alt="Final confirmation dialog for RAID1 conversion" />
+    </a>
+    <figcaption>Final confirmation before the RAID1 conversion is applied</figcaption>
+  </figure>
+
+  <p>
+    A final confirmation dialog is shown. Continue by selecting
+    <strong>Activate now</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/toraid1/final_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/toraid1/final_EN.png" alt="Pool after conversion to RAID1" />
+    </a>
+    <figcaption>The completed two-device RAID1 pool</figcaption>
+  </figure>
+
+  <p>
+    The result is a pool with two mirrored devices. In RAID1 mode, usable data
+    capacity is approximately 50% of the combined raw device size, because the same
+    data is stored on both drives.
+  </p>
 
   <div class="callout">
-    <strong>Draft note:</strong> This page is a placeholder. Replace this text with real steps,
-    screenshots and verification checks when the feature is documented.
+    <strong>Note:</strong> Adding a second drive to a pool and converting the pool to
+    RAID1 are two separate steps. First the second device is added to the live pool.
+    Only after that should the pool be converted from <strong>Single</strong> mode to
+    <strong>RAID1</strong>.
+  </div>
+<!-- WIKI:STORAGE-MANAGER:TO-RAID1:END -->
+
+<!-- WIKI:STORAGE-MANAGER:REMOVE-DRIVE:BEGIN -->
+  <h2 id="removing-a-drive-from-a-storage-pool">Removing a drive from a storage pool</h2>
+
+  <p>
+    To remove a drive from a storage pool, use the <strong>Remove drive</strong>
+    action on the pool card.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/remove_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/remove_EN.png" alt="Remove drive dialog in Storage Manager" />
+    </a>
+    <figcaption>Remove drive dialog in Storage Manager</figcaption>
+  </figure>
+
+  <p>
+    In the dialog, select the drive that should be removed from the pool. The
+    <strong>Force</strong> option should normally be left disabled. Enable it only
+    if you fully understand why the currently used pool drive must be removed.
+  </p>
+
+  <p>
+    Click <strong>Preview</strong> first. This creates a removal plan and enables
+    the <strong>Apply</strong> button. After reviewing the operation, click
+    <strong>Apply</strong> to start removing the drive from the pool.
+  </p>
+
+  <p>
+    During drive removal, DNA-Nexus and Btrfs migrate data away from the selected
+    drive to the remaining member devices. This can take time, especially if the
+    pool contains a large amount of data.
+  </p>
+
+  <h3 id="what-happens-when-a-drive-is-removed">What happens when a drive is removed</h3>
+
+  <ul>
+    <li>
+      <strong>RAID1 pool:</strong> data is migrated away from the removed drive and
+      kept on the remaining device or devices. If the pool had only two devices,
+      removing one of them leaves the pool with less or no redundancy, because only
+      one device remains.
+    </li>
+    <li>
+      <strong>Single pool or capacity-expanding pool:</strong> data is migrated off
+      the selected drive to the remaining member devices. This reduces the usable
+      capacity of the pool. The removal can succeed only if the remaining devices
+      have enough free space for the migrated data.
+    </li>
+  </ul>
+
+  <p>
+    If there is not enough free space on the remaining devices, the drive removal
+    may fail. In that situation, the administrator may need to free space first or
+    add another device before trying again.
+  </p>
+
+  <h3 id="after-removing-a-drive">After removing a drive</h3>
+
+  <p>
+    After a drive has been removed from a pool, the pool card may show warnings such
+    as <strong>degraded</strong>, <strong>pending add</strong> or
+    <strong>missing</strong>.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/storage/after_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/storage/after_EN.png" alt="Storage pool warnings after a drive has been removed" />
+    </a>
+    <figcaption>Warnings after a drive has been removed while the saved slot layout still expects the old device</figcaption>
+  </figure>
+
+
+  <p>
+    This can happen when the saved slot layout still contains two slots, but the
+    live Btrfs pool now has only one member device. One saved slot is marked as
+    <strong>missing</strong>, while the remaining device is still
+    <strong>present</strong>.
+  </p>
+
+  <p>
+    If the administrator plans to add a replacement drive, this warning can be useful:
+    it shows that the pool still expects another device. If no replacement drive will
+    be added and the pool should continue with fewer devices, the saved slot layout
+    should be updated.
+  </p>
+
+  <p>
+    To clear the warnings without adding a new drive, click <strong>Edit slots</strong>,
+    reduce the slot count to match the current number of member devices, click
+    <strong>Update slots</strong>, make sure the remaining slot points to the current
+    member device, and then click <strong>Save layout</strong>.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Do not click <strong>Apply layout</strong> just to hide
+    these warnings. Apply layout is used when you want DNA-Nexus to make the live
+    Btrfs pool match the saved slot layout, for example by adding a missing device.
+    If you only want to accept the current smaller pool, update and save the slot
+    layout instead.
+  </div>
+<!-- WIKI:STORAGE-MANAGER:REMOVE-DRIVE:END -->
+
+  <h2 id="system-volume-and-reservations">System volume and quota reservations</h2>
+
+  <p>
+    Storage Manager may show a pool marked as <strong>System volume</strong>. This
+    is a Btrfs volume detected by DNA-Nexus and shown for visibility.
+    In a typical installation, this volume is mounted under <code>/srv/pqnas</code>.
+  </p>
+
+  <p>
+    The system volume is used by DNA-Nexus for server-managed runtime storage. Depending
+    on the installation, this may include configuration, application data, user data
+    roots, shared workspaces, installed app data and other DNA-Nexus managed directories.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> The system volume is not a normal user-created storage
+    pool. Treat it as part of the server infrastructure. Do not destroy, reformat or
+    remove devices from the system volume unless you are intentionally rebuilding the
+    server.
   </div>
 
-  <h2>Overview</h2>
-  <p>Write a short explanation of what this feature does and when an administrator should use it.</p>
+  <p>
+    For production use, administrators may prefer to keep the system volume separate
+    from large customer or user storage pools. In that model, the system volume remains
+    a smaller server/runtime area, while larger HDD, SSD, SAS or SATA pools are created
+    separately and assigned to users or workloads.
+  </p>
 
-  <h2>Steps</h2>
-  <ol class="steps">
-    <li>
-      <h3>Open the correct page</h3>
-      <p>Describe where the administrator should click in the DNA-Nexus interface.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Add the first screenshot for this page.
-      </div>
-    </li>
-    <li>
-      <h3>Configure the feature</h3>
-      <p>Describe the fields, choices and safe defaults.</p>
-    </li>
-    <li>
-      <h3>Verify the result</h3>
-      <p>Explain how the administrator knows that the operation succeeded.</p>
-    </li>
-  </ol>
+  <h3 id="actual-usage-vs-reserved-quota">Actual usage vs reserved quota</h3>
 
-  <h2>Troubleshooting</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symptom</th>
-          <th>Possible cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Example problem</td>
-          <td>Example cause</td>
-          <td>Example solution</td>
-        </tr>
-      </tbody>
-    </table>
+  <p>
+    The pool summary separates actual filesystem usage from quota reservations.
+    <strong>Used (fs)</strong> shows how much space is currently used on the filesystem.
+    <strong>Free (fs)</strong> shows free filesystem space.
+  </p>
+
+  <p>
+    <strong>Users reserved</strong> shows the total quota reserved for user accounts.
+    <strong>Workspaces reserved</strong> shows the total quota reserved for shared
+    workspaces. When a new shared workspace is created, DNA-Nexus currently
+    creates an automatic workspace quota reservation. The default shared workspace
+    reservation is <strong>10 GiB</strong>.
+  </p>
+
+  <p>
+    <strong>Reserved total</strong> is the sum of user quota reservations and workspace
+    quota reservations. <strong>Still allocatable</strong> shows how much capacity can
+    still be assigned as new quota reservations.
+  </p>
+
+  <p>
+    Reserved quota is not the same as actual disk usage. For example, a shared
+    workspace may contain only a few hundred MiB of files, but still reserve 10 GiB
+    from the pool. This reservation defines how much the workspace is allowed to grow.
+  </p>
+<!-- WIKI:STORAGE-MANAGER:SYSTEM-VOLUME:END -->
+
+  <h2 id="snapshot-coverage">Snapshot coverage</h2>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Creating a storage pool does not automatically add it
+    to snapshot protection. Snapshot Manager only manages volumes that are present
+    in the snapshot configuration.
   </div>
+
+  <p>
+    If a new Btrfs pool should be protected by snapshots, it must also be added to
+    the snapshot configuration before it appears in Snapshot Manager.
+  </p>
+
+  <div class="callout">
+    <strong>Documentation note:</strong> Detailed pool creation, RAID conversion,
+    expansion and device replacement steps will be documented in separate sections
+    of this page.
+  </div>
+<!-- WIKI:STORAGE-MANAGER:END -->
 </article>
 
     </main>

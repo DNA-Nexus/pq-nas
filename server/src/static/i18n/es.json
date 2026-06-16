@@ -3706,7 +3706,7 @@
   "raidmgr.convert.raid1_requires_2": "RAID1 requiere al menos 2 dispositivos miembro actuales.",
   "raidmgr.convert.same_mode": "El modo objetivo es el mismo que el modo actual.",
   "raidmgr.convert.started": "Conversión RAID iniciada ✓",
-  "raidmgr.convert.summary_base": "Pool: {pool}\\nModo actual: {current}\\nModo objetivo: {target}\\nDispositivos actuales: {devices}\\n\\n",
+  "raidmgr.convert.summary_base": "Pool: {pool}\nModo actual: {current}\nModo objetivo: {target}\nDispositivos actuales: {devices}\n\n",
   "raidmgr.convert.target_mode": "Modo objetivo",
   "raidmgr.convert.title": "Convertir RAID",
   "raidmgr.convert.title_for_pool": "Convertir RAID · {pool}",
