@@ -4878,9 +4878,7 @@ doBtn.onclick = async () => {
             if (!slotCountInp.value) slotCountInp.value = "1";
             forceChk.checked = false;
 
-                        clearPoolDestroyNonDangerButtons();
-            paintPoolDestroyDoBtn();
-ov.classList.add("show");
+            ov.classList.add("show");
             await refreshDisks();
         }
         createBtn?.addEventListener("click", () => {
