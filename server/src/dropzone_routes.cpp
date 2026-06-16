@@ -1807,6 +1807,118 @@ void register_dropzone_routes(httplib::Server& srv, const DropZoneRoutesDeps& de
         });
     });
 
+    srv.Get("/api/v4/dropzones/uploads", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
+            !deps.dropzone_index) {
+            reply_json_local(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "dropzone route dependencies missing"}
+            });
+            return;
+        }
+
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor(req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        const std::string id = req.get_param_value("id");
+        if (id.empty()) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "missing id"}
+            });
+            return;
+        }
+
+        std::string get_err;
+        const auto zone_opt = deps.dropzone_index->get_by_id(id, &get_err);
+
+        if (!get_err.empty()) {
+            audit_local(deps, "v4.dropzones_uploads_fail", "fail", {
+                {"actor_fp", actor_fp},
+                {"dropzone_id", id},
+                {"reason", "get_by_id_failed"},
+                {"detail", get_err}
+            });
+
+            reply_json_local(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to read drop zone"}
+            });
+            return;
+        }
+
+        if (!zone_opt.has_value() || zone_opt->owner_fp != actor_fp) {
+            audit_local(deps, "v4.dropzones_uploads_fail", "fail", {
+                {"actor_fp", actor_fp},
+                {"dropzone_id", id},
+                {"reason", "not_found_or_not_owner"}
+            });
+
+            reply_json_local(deps, res, 404, json{
+                {"ok", false},
+                {"error", "not_found"},
+                {"message", "drop zone not found"}
+            });
+            return;
+        }
+
+        std::string list_err;
+        const auto rows = deps.dropzone_index->list_uploads(id, 200, &list_err);
+
+        if (!list_err.empty()) {
+            audit_local(deps, "v4.dropzones_uploads_fail", "fail", {
+                {"actor_fp", actor_fp},
+                {"dropzone_id", id},
+                {"reason", "list_uploads_failed"},
+                {"detail", list_err}
+            });
+
+            reply_json_local(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to list uploads"}
+            });
+            return;
+        }
+
+        json uploads = json::array();
+
+        for (const auto& row : rows) {
+            uploads.push_back(json{
+                {"id", row.id},
+                {"original_filename", row.original_filename},
+                {"stored_filename", row.stored_filename},
+                {"stored_path", row.stored_path},
+                {"size_bytes", row.size_bytes},
+                {"created_epoch", row.created_epoch},
+                {"uploader_name", row.uploader_name},
+                {"uploader_message", row.uploader_message},
+                {"scan_status", row.scan_status}
+            });
+        }
+
+        audit_local(deps, "v4.dropzones_uploads_ok", "ok", {
+            {"actor_fp", actor_fp},
+            {"dropzone_id", id},
+            {"count", std::to_string(uploads.size())}
+        });
+
+        res.set_header("Cache-Control", "no-store");
+
+        reply_json_local(deps, res, 200, json{
+            {"ok", true},
+            {"id", id},
+            {"uploads", uploads}
+        });
+    });
+
     srv.Post("/api/v4/dropzones/clear-history", [&](const httplib::Request& req, httplib::Response& res) {
         if (!deps.users || !deps.cookie_key || !deps.require_user_auth_users_actor ||
             !deps.dropzone_index) {
