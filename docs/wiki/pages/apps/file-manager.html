@@ -79,61 +79,251 @@
       </div>
 <!-- wiki-language-topbar:end -->
 <article class="article">
+<!-- WIKI:FILE-MANAGER:BEGIN -->
   <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Apps</div>
   <h1>File Manager</h1>
   <div class="meta">
     <span>Status: Draft</span>
-    <span>Audience: Administrator</span>
+    <span>Audience: User</span>
   </div>
 
-  <p class="lead">Document upload, download, folders, rename, delete, sharing and file operations.</p>
+  <p class="lead">
+    File Manager is the main file management tool in DNA-Nexus. Users can browse
+    their files, open folders, select items, manage shared workspaces and recover
+    deleted files from the trash.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/fm_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/fm_EN.png" alt="DNA-Nexus File Manager showing files and folders" />
+    </a>
+    <figcaption>File Manager overview</figcaption>
+  </figure>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#what-file-manager-does">What File Manager does</a></li>
+      <li><a href="#moving-between-folders">Moving between folders</a></li>
+      <li><a href="#selecting-files-and-folders">Selecting files and folders</a></li>
+      <li><a href="#context-actions">Context actions</a></li>
+      <li><a href="#file-properties-comments-and-locking">File properties, comments and locking</a></li>
+      <li><a href="#file-versioning-and-comparison">File versioning and comparison</a></li>
+      <li><a href="#shared-workspaces">Shared workspaces</a></li>
+      <li><a href="#trash-and-restore">Trash and restore</a></li>
+      <li><a href="#important-notes">Important notes</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what-file-manager-does">What File Manager does</h2>
+
+  <p>
+    File Manager shows the user's files and folders. It is the basic tool for
+    browsing, opening, uploading, downloading, moving, renaming and deleting stored
+    content.
+  </p>
+
+  <p>
+    The same interface can also open shared workspaces. Shared workspaces allow the
+    user to collaborate with other people in a common file area. Depending on the
+    workspace settings, the user can invite other DNA-Nexus users or external
+    collaborators to use the shared file area.
+  </p>
+
+  <h2 id="moving-between-folders">Moving between folders</h2>
+
+  <p>
+    Users can move from one folder to another by double-clicking folder icons.
+    To go back to a higher level, use the <strong>Up</strong> button in the top
+    toolbar or click the breadcrumb path.
+  </p>
+
+  <p>
+    The breadcrumb path shows the current location and lets the user jump back to
+    an earlier folder level without navigating one step at a time.
+  </p>
+
+  <h2 id="selecting-files-and-folders">Selecting files and folders</h2>
+
+  <p>
+    Files and folders can be selected one at a time, or several at once.
+    Users can drag a selection box with the mouse, or use <strong>Shift</strong>
+    and <strong>Ctrl</strong> together with mouse clicks to select multiple items.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/sel_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/sel_EN.png" alt="Selecting a file in File Manager" />
+    </a>
+    <figcaption>Selecting items in File Manager</figcaption>
+  </figure>
+
+  <figure>
+    <a href="../../assets/images/filemanager/sel_many_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/sel_many_EN.png" alt="Selecting multiple files in File Manager" />
+    </a>
+    <figcaption>Selecting multiple items</figcaption>
+  </figure>
+
+  <h2 id="context-actions">Context actions</h2>
+
+  <p>
+    File Manager shows different actions depending on what the user has selected.
+    The context menu can change depending on whether the selection contains one file,
+    several files, one folder, or multiple items.
+  </p>
+
+  <p>
+    This means that some actions are only shown when they make sense for the current
+    selection.
+  </p>
+
+  <h2 id="file-properties-comments-and-locking">File properties, comments and locking</h2>
+
+  <p>
+    When the user selects <strong>Properties</strong> from a file menu, a dialog opens
+    that shows the file's main details and related actions.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/lock_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/lock_EN.png" alt="File properties dialog with comment and lock controls" />
+    </a>
+    <figcaption>File properties dialog</figcaption>
+  </figure>
+
+  <p>
+    From this dialog, the user can mark the file as a favorite, copy the file checksum
+    (<strong>SHA-256</strong>), view available file versions, create a normal share link,
+    or create a <strong>post-quantum (PQ) invite link</strong>.
+  </p>
+
+  <p>
+    At the bottom of the dialog, the user can also add a comment and lock the file.
+    Comments are visible to other users and are especially useful in shared workspaces.
+    File locking is also important in shared workspaces when users want to show that a
+    file is reserved or should not be edited by others at the same time.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/badges.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/badges.png" alt="Example file icons showing comment, lock, favorite and shared badges" />
+    </a>
+    <figcaption>File badges and visual indicators</figcaption>
+  </figure>
+
+  <p>
+    When a file has a comment, a speech-bubble badge appears on the file icon.
+    A locked file is highlighted in yellow and shows a lock symbol.
+    A favorite file shows a yellow star, and a shared file shows a share badge.
+  </p>
+
+  <h2 id="file-versioning-and-comparison">File versioning and comparison</h2>
+
+  <p>
+    DNA-Nexus can preserve older versions of files. When a file is saved to the
+    server, the user can keep the previous version. The newest file becomes the
+    current version, while older versions remain available behind it.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/vers_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/vers_EN.png" alt="File versions dialog showing preserved versions" />
+    </a>
+    <figcaption>File versions</figcaption>
+  </figure>
+
+  <p>
+    By opening <strong>Versions</strong> from the file context menu, the user can
+    view earlier versions of the file. The version list also shows whether a
+    version has been marked or locked.
+  </p>
+
+  <p>
+    DNA-Nexus can handle comparisons between different file types. Archive-style
+    files, such as ZIP and RAR-type packages, can be compared to show differences
+    between the package contents.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/zip_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/zip_EN.png" alt="Archive version comparison showing added, removed and changed files" />
+    </a>
+    <figcaption>Archive package comparison</figcaption>
+  </figure>
+
+  <p>
+    The archive comparison view shows which files were added, removed, moved,
+    renamed, changed or left unchanged between two package versions.
+  </p>
+
+  <p>
+    Image files can be compared side by side. Text-based files can be compared in
+    a GitHub-style diff view, where new text is highlighted in green and removed
+    text is highlighted in red.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/comp_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/comp_EN.png" alt="Text file comparison showing added and removed lines" />
+    </a>
+    <figcaption>Text and file comparison</figcaption>
+  </figure>
+
+  <h2 id="shared-workspaces">Shared workspaces</h2>
+
+  <p>
+    File Manager can also open shared workspaces. A shared workspace is a common
+    file area where invited people can work with the same files. This is useful for
+    projects, teams, customers or external collaborators.
+  </p>
+
+  <p>
+    Shared workspaces are separate from the user's normal personal folders, but they
+    are accessed through the same File Manager interface.
+  </p>
+
+  <h2 id="trash-and-restore">Trash and restore</h2>
+
+  <p>
+    When a user deletes files in File Manager, they are not removed permanently at once.
+    Deleted files are moved to the trash first.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/trash_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/trash_EN.png" alt="File Manager trash view showing deleted files and restore actions" />
+    </a>
+    <figcaption>Trash view</figcaption>
+  </figure>
+
+  <p>
+    The trash can be opened from the trash button in the top toolbar. From there,
+    users can restore accidentally deleted files or remove them permanently.
+  </p>
+
+  <p>
+    The top of the trash view shows information about the number of deleted items,
+    the amount of space they use, and the next cleanup time. The cleanup removes
+    files that have been in the trash for more than 30 days.
+  </p>
+
+  <h2 id="important-notes">Important notes</h2>
 
   <div class="callout">
-    <strong>Draft note:</strong> This page is a placeholder. Replace this text with real steps,
-    screenshots and verification checks when the feature is documented.
+    <strong>Trash is temporary:</strong> Deleted files can be restored from the trash
+    only until they are permanently cleaned up.
   </div>
 
-  <h2>Overview</h2>
-  <p>Write a short explanation of what this feature does and when an administrator should use it.</p>
-
-  <h2>Steps</h2>
-  <ol class="steps">
-    <li>
-      <h3>Open the correct page</h3>
-      <p>Describe where the administrator should click in the DNA-Nexus interface.</p>
-      <div class="screenshot-placeholder">
-        <strong>Screenshot placeholder:</strong> Add the first screenshot for this page.
-      </div>
-    </li>
-    <li>
-      <h3>Configure the feature</h3>
-      <p>Describe the fields, choices and safe defaults.</p>
-    </li>
-    <li>
-      <h3>Verify the result</h3>
-      <p>Explain how the administrator knows that the operation succeeded.</p>
-    </li>
-  </ol>
-
-  <h2>Troubleshooting</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Symptom</th>
-          <th>Possible cause</th>
-          <th>Fix</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Example problem</td>
-          <td>Example cause</td>
-          <td>Example solution</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="callout">
+    <strong>Context matters:</strong> Available actions can change depending on whether
+    the user has selected a file, a folder, multiple files or multiple folders.
   </div>
+
+  <div class="callout">
+    <strong>Shared workspaces:</strong> Workspace access depends on the permissions and
+    invitations configured for that workspace.
+  </div>
+<!-- WIKI:FILE-MANAGER:END -->
 </article>
 
     </main>
