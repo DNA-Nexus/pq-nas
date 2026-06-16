@@ -243,22 +243,31 @@
 
   <h2 id="snapshots-btrfs">Snapshots (Btrfs)</h2>
   <p>
-    If the DNA-Nexus data storage uses <strong>Btrfs</strong>, the server can create
-    automatic snapshots. Snapshots are point-in-time views of the data and can later
-    be used for recovery through the Snapshot Manager app.
+    If a DNA-Nexus data volume or storage pool uses <strong>Btrfs</strong>, the server can create
+    filesystem snapshots for that volume. Snapshots are point-in-time views of the selected Btrfs
+    source and can later be used for recovery through the Snapshot Manager app.
   </p>
 
   <img class="wiki-img" src="../../assets/images/admin_setup/snapEN.png" alt="DNA-Nexus admin settings page with Btrfs snapshot settings">
 
   <div class="callout warning">
     <strong>Btrfs required:</strong> DNA-Nexus snapshot support depends on Btrfs.
-    If the selected storage backend is Ext4, snapshot features are not available on that backend.
+    If a storage backend is Ext4 or another non-Btrfs filesystem, Btrfs snapshot features are not
+    available for that backend.
+  </div>
+
+  <div class="callout">
+    <strong>Per-pool snapshots:</strong> Snapshot protection is configured per volume.
+    The default <span class="mono">data</span> volume can be protected, and additional Btrfs
+    storage pools can be added separately. For pool snapshots, the snapshot root is stored inside
+    the pool itself, for example <span class="mono">/srv/pqnas/pools/pool2/.snapshots</span>.
   </div>
 
   <h3>Snapshot settings</h3>
   <p>
     The administrator can enable or disable snapshots, choose whether snapshots are created
-    automatically, and define how often snapshots should be taken.
+    automatically, add Btrfs storage pools to snapshot protection, and define how often snapshots
+    should be taken.
   </p>
 
   <div class="table-wrap">
@@ -273,7 +282,7 @@
       <tbody>
         <tr>
           <td>Enabled</td>
-          <td>Turns snapshot support on or off for the configured Btrfs snapshot path.</td>
+          <td>Turns snapshot support on or off for the configured Btrfs snapshot volumes.</td>
           <td>Enable this when the server should keep recoverable point-in-time copies.</td>
         </tr>
         <tr>
@@ -283,35 +292,71 @@
         </tr>
         <tr>
           <td>Per-volume schedule</td>
-          <td>Allows each volume to override the global snapshot schedule.</td>
+          <td>Allows each protected volume to override the global snapshot schedule.</td>
           <td>Use this when some volumes need snapshots more or less often than others.</td>
         </tr>
         <tr>
           <td>Times/day</td>
           <td>Defines how many automatic snapshots should be taken per day.</td>
-          <td>For example, 1 snapshot per day for low-activity systems.</td>
+          <td>For example, 1 snapshot per day for low-activity systems, or more frequent snapshots for active data.</td>
         </tr>
         <tr>
           <td>Jitter (s)</td>
           <td>Adds a small randomized delay in seconds before scheduled snapshot jobs run.</td>
           <td>Use jitter to avoid all snapshot jobs starting at exactly the same second.</td>
         </tr>
+        <tr>
+          <td>Add storage pool to snapshots</td>
+          <td>Adds a mounted Btrfs storage pool to the protected snapshot volume list.</td>
+          <td>Use this when user data, workspace data, media, or app data has been moved to a separate storage pool.</td>
+        </tr>
+        <tr>
+          <td>Snapshot root</td>
+          <td>Shows where snapshots for that volume are stored.</td>
+          <td>For normal pool snapshots, keep the snapshot root inside the same pool, such as <span class="mono">/srv/pqnas/pools/pool2/.snapshots</span>.</td>
+        </tr>
+        <tr>
+          <td>Remove</td>
+          <td>Removes a volume from future snapshot scheduling.</td>
+          <td>Use this only when that volume no longer needs new snapshots. Existing snapshots are not deleted automatically by removing the volume from the settings list.</td>
+        </tr>
       </tbody>
     </table>
+  </div>
+
+  <h3>Protected volumes and storage pools</h3>
+  <p>
+    The snapshot table lists each protected volume, its source path, its snapshot root, and optional
+    per-volume schedule values. The default <span class="mono">data</span> volume usually points to
+    <span class="mono">/srv/pqnas/data</span>. Additional pools usually point to paths such as
+    <span class="mono">/srv/pqnas/pools/pool2</span>.
+  </p>
+
+  <p>
+    When a pool is added to snapshot protection, DNA-Nexus stores that pool's snapshots inside the pool.
+    This keeps the Btrfs snapshot on the same filesystem as the source, which is required for normal
+    Btrfs subvolume snapshots.
+  </p>
+
+  <div class="callout warning">
+    <strong>Important:</strong> Snapshots are not a replacement for external backups.
+    Snapshots protect against accidental changes and deletions on the same filesystem, but they do not
+    protect against total disk loss, theft, fire, or severe filesystem corruption.
   </div>
 
   <h3>Manual snapshots</h3>
   <p>
     If automatic scheduling is disabled while snapshots remain enabled, snapshots are manual only.
-    In that mode, users or administrators can still trigger snapshot creation, but the scheduler
-    does not run automatically.
+    In that mode, users or administrators can still trigger snapshot creation from Snapshot Manager,
+    but the scheduler does not run automatically.
   </p>
 
   <h3>Snapshot Manager app</h3>
   <p>
-    The settings page controls whether snapshots are enabled and how the automatic schedule works.
-    Actual snapshot management is done in the separate <strong>Snapshot Manager</strong> app.
-    From Snapshot Manager, administrators can review available snapshots and perform operations
+    The settings page controls whether snapshots are enabled, which volumes are protected, and how the
+    automatic schedule works. Actual snapshot management is done in the separate
+    <strong>Snapshot Manager</strong> app. From Snapshot Manager, administrators can review available
+    snapshots, create a snapshot immediately, inspect snapshot details, and perform recovery operations
     such as restoring data from a snapshot.
   </p>
 

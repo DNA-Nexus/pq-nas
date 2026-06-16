@@ -69,30 +69,30 @@
   <h1>Snapshots</h1>
 
   <p>
-    DNA-Nexus / PQ-NAS can be configured to create filesystem snapshots for
-    configured Btrfs data volumes. A snapshot stores the state of the selected
-    Btrfs subvolume at a specific moment. In the default configuration, this means
-    the PQ-NAS data volume, not the entire Linux operating system.
+    DNA-Nexus can create Btrfs filesystem snapshots for configured snapshot volumes.
+    A snapshot stores the state of a selected Btrfs source at a specific moment.
+    Snapshots are useful when you need a fast rollback point for stored NAS data.
   </p>
 
   <p>
-    Snapshots are useful when you want a fast rollback point for stored NAS data.
-    If files are accidentally changed, deleted or damaged, the selected data volume
-    can be restored back to an earlier working state.
+    The default protected volume is usually the DNA-Nexus data volume at
+    <span class="mono">/srv/pqnas/data</span>. Administrators can also add separate
+    Btrfs storage pools, such as <span class="mono">/srv/pqnas/pools/pool2</span>,
+    to snapshot protection.
   </p>
 
   <figure>
     <a href="../../assets/images/snapshots/snap_EN.png" target="_blank" rel="noopener">
-      <img class="wiki-img wiki-img-medium" src="../../assets/images/snapshots/snap_EN.png" alt="Snapshots page showing existing snapshots and snapshot controls" />
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/snapshots/snap_EN.png" alt="Snapshot Manager showing protected volumes and available snapshots" />
     </a>
-    <figcaption>Storage → Snapshots</figcaption>
+    <figcaption>Snapshot Manager with protected volumes and available snapshots</figcaption>
   </figure>
 
   <nav class="toc">
     <ol>
       <li><a href="#what-snapshots-include">What snapshots include</a></li>
+      <li><a href="#protected-volumes-and-pools">Protected volumes and pools</a></li>
       <li><a href="#requirements">Requirements</a></li>
-      <li><a href="#enabling-snapshots">Enabling snapshots</a></li>
       <li><a href="#creating-a-manual-snapshot">Creating a manual snapshot</a></li>
       <li><a href="#restoring-a-snapshot">Restoring a snapshot</a></li>
       <li><a href="#important-notes">Important notes</a></li>
@@ -102,57 +102,76 @@
   <h2 id="what-snapshots-include">What snapshots include</h2>
 
   <p>
-    Snapshots are created from the configured <strong>source subvolume</strong>.
-    In the default configuration, this is the PQ-NAS data volume:
+    Snapshots are created from the configured <strong>source subvolume</strong> or
+    Btrfs source path. In the default configuration, this is:
   </p>
 
   <pre><code>/srv/pqnas/data</code></pre>
 
   <p>
-    The snapshots themselves are stored under the configured snapshot root, for
-    example:
+    The snapshots themselves are stored under that volume's configured snapshot root.
+    For the default data volume, this is usually:
   </p>
 
   <pre><code>/srv/pqnas/.snapshots/data</code></pre>
 
   <p>
-    In the default configuration, snapshots cover the PQ-NAS data root at
-    <code>/srv/pqnas/data</code>. This includes data stored under that root, such as
-    user data, workspaces, avatars and application data files located there.
+    In the default configuration, snapshots cover data stored under
+    <span class="mono">/srv/pqnas/data</span>. This includes user data, workspaces,
+    avatars and application data files located under that data root.
   </p>
 
   <p>
     Snapshots do not automatically include the whole Linux operating system,
     server binaries, installed application packages, static runtime files or
-    configuration files stored outside the configured Btrfs subvolume.
+    configuration files stored outside the configured Btrfs source.
+  </p>
+
+  <h2 id="protected-volumes-and-pools">Protected volumes and pools</h2>
+
+  <p>
+    Snapshot protection is configured per volume. Snapshot Manager shows the
+    configured protected volumes on the left. Selecting a volume shows the snapshots
+    available for that volume.
+  </p>
+
+  <p>
+    Additional Btrfs storage pools can be added from
+    <a href="../../pages/administration/settings.html#snapshots-btrfs">Administrator settings → Snapshots</a>.
+    For example, a pool mounted at:
+  </p>
+
+  <pre><code>/srv/pqnas/pools/pool2</code></pre>
+
+  <p>
+    normally stores its snapshots inside the pool:
+  </p>
+
+  <pre><code>/srv/pqnas/pools/pool2/.snapshots</code></pre>
+
+  <p>
+    Keeping the snapshot root inside the same pool is important because Btrfs snapshots
+    must stay on the same Btrfs filesystem as the source.
   </p>
 
   <h2 id="requirements">Requirements</h2>
 
   <p>
-    In DNA-Nexus / PQ-NAS, snapshots are available when the underlying storage
-    uses <strong>Btrfs</strong> and the configured data volume is a Btrfs subvolume.
-  </p>
-
-  <h2 id="enabling-snapshots">Enabling snapshots</h2>
-
-  <p>
-    Snapshot support can be enabled from the administrator settings under the
-    <strong>Snapshots</strong> section:
-    <a href="../../pages/administration/settings.html#snapshots-btrfs">Administrator settings → Snapshots</a>.
+    Snapshot support requires <strong>Btrfs</strong>. Non-Btrfs backends, such as Ext4,
+    cannot use Btrfs snapshot features.
   </p>
 
   <p>
-    Depending on configuration, snapshots can be created automatically on a schedule.
-    Even when automatic snapshots are not enabled, the administrator can still create
-    a snapshot manually at any time.
+    The DNA-Nexus server must also be able to run the required Btrfs commands with
+    sufficient privileges. If snapshot verification or restore actions are disabled,
+    check the Snapshot Manager sudo setup instructions.
   </p>
 
   <h2 id="creating-a-manual-snapshot">Creating a manual snapshot</h2>
 
   <p>
-    To create a snapshot manually, open the Snapshots page and click
-    <strong>Create snapshot now</strong>.
+    To create a snapshot manually, select the protected volume in Snapshot Manager and
+    click <strong>Create snapshot now</strong>.
   </p>
 
   <figure>
@@ -163,15 +182,15 @@
   </figure>
 
   <p>
-    A confirmation dialog is shown with the snapshot name. After confirming,
-    the snapshot is created immediately.
+    A confirmation dialog is shown with the snapshot name. After confirming, the
+    snapshot is created immediately under that volume's snapshot root.
   </p>
 
   <h2 id="restoring-a-snapshot">Restoring a snapshot</h2>
 
   <p>
-    To restore an older snapshot, select the desired snapshot from the list based on
-    its timestamp and click <strong>Restore</strong>.
+    To restore an older snapshot, select the protected volume, select the desired
+    snapshot from the list based on its timestamp, and click <strong>Restore</strong>.
   </p>
 
   <figure>
@@ -188,21 +207,22 @@
 
   <p>
     During snapshot restore, the server software restarts automatically. In most
-    cases, users will only notice that the service is unavailable for a few seconds.
+    cases, users will only notice that the service is unavailable for a short time.
   </p>
 
   <h2 id="important-notes">Important notes</h2>
 
   <div class="callout warning">
-    <strong>Important:</strong> Restoring a snapshot returns the selected data volume
+    <strong>Important:</strong> Restoring a snapshot returns the selected volume
     to the earlier state captured by that snapshot. Changes made inside that volume
     after the snapshot was taken may be lost.
   </div>
 
   <div class="callout">
     <strong>Note:</strong> Snapshots are designed for fast rollback of configured
-    Btrfs data volumes. They do not replace full system backups or separate backups
-    of server configuration, binaries, static runtime files or operating system files.
+    Btrfs data volumes and Btrfs storage pools. They do not replace full system backups
+    or separate backups of server configuration, binaries, static runtime files or
+    operating system files.
   </div>
 
   <div class="callout">
