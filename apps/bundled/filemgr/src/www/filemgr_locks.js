@@ -230,6 +230,11 @@
   }
 
   function propsItemKind() {
+    const kind = String($("propsModal")?.dataset?.fmPropsKind || "").toLowerCase();
+    if (kind === "dir" || kind === "folder") return "dir";
+    if (kind === "file") return "file";
+
+    // Legacy fallback for older app.js builds where the title was still English.
     const title = String($("propsTitle")?.textContent || "").toLowerCase();
     if (title.includes("folder")) return "dir";
     if (title.includes("file")) return "file";
@@ -241,8 +246,12 @@
     const body = $("propsBody");
     const title = String($("propsTitle")?.textContent || "");
     if (!modal || !body || !modal.classList.contains("show")) return false;
-    if (!/^(File|Folder|Item) properties/i.test(title)) return false;
-    return true;
+
+    // Prefer language-independent metadata from app.js.
+    if (String(modal.dataset.fmPropsActive || "") === "1") return true;
+
+    // Legacy fallback for English-only older builds.
+    return /^(File|Folder|Item) properties/i.test(title);
   }
 
   function expiryLabel(epoch) {

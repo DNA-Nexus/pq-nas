@@ -2491,6 +2491,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!lastUploadError) return;
     if (!propsTitle || !propsPath || !propsBody) return;
 
+    if (propsModal) {
+      delete propsModal.dataset.fmPropsActive;
+      delete propsModal.dataset.fmPropsKind;
+      delete propsModal.dataset.fmPropsRel;
+    }
+
     propsTitle.textContent = "Upload error details";
     propsPath.textContent = lastUploadError.file ? `/${lastUploadError.file}` : "(unknown file)";
     propsBody.innerHTML = "";
@@ -6499,6 +6505,13 @@ function describeMoveItems(items) {
 
     const rel = joinPath(curPath, item.name || "");
     const isDirHint = item.type === "dir";
+
+    if (propsModal) {
+      propsModal.dataset.fmPropsActive = "1";
+      propsModal.dataset.fmPropsKind = isDirHint ? "dir" : "file";
+      propsModal.dataset.fmPropsRel = rel || ".";
+    }
+
     const caps = fmCaps();
     const favoritesEnabled = caps.favorites !== false;
     const sharesEnabled = caps.shares !== false;
@@ -6611,6 +6624,13 @@ function describeMoveItems(items) {
     }
 
     const isDir = st.type === "dir";
+
+    if (propsModal) {
+      propsModal.dataset.fmPropsActive = "1";
+      propsModal.dataset.fmPropsKind = isDir ? "dir" : (st.type === "file" ? "file" : "unknown");
+      propsModal.dataset.fmPropsRel = String(st.path_norm || ("/" + (rel || ""))).replace(/^\/+/, "") || ".";
+    }
+
     if (propsTitle) propsTitle.textContent = isDir ? tr("filemgr.props.folder_title", null, "Folder properties") : (st.type === "file" ? tr("filemgr.props.file_title", null, "File properties") : tr("filemgr.props.item_title", null, "Item properties"));
     if (propsPath) propsPath.textContent = st.path_norm || ("/" + (rel || ""));
 
