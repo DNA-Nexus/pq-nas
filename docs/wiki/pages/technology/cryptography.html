@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cryptography · DNA-Nexus Wiki</title>
+  <link rel="stylesheet" href="../../assets/css/wiki.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+  <div class="brand">
+    <div class="logo">DN</div>
+    <div>
+      <div class="brand-title">DNA-Nexus Wiki</div>
+      <div class="brand-subtitle">Administrator guide</div>
+    </div>
+  </div>
+
+  <nav>
+    <section class="nav-section">
+      <p class="nav-heading">Start here</p>
+      <ul class="nav-list">
+        <li><a href="../../index.html" >Wiki home</a></li>
+        <li><a href="../../pages/getting-started/server-installation.html" >Server installation</a></li>
+        <li><a href="../../pages/getting-started/first-login.html" >First login</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Administration</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/administration/create-users.html" >Creating users</a></li>
+        <li><a href="../../pages/administration/user-management.html">User management</a></li>
+        <li><a href="../../pages/administration/applications.html">Applications</a></li>
+        <li><a href="../../pages/administration/update-center.html">Update Center</a></li>
+        <li><a href="../../pages/administration/settings.html" >Server settings</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Storage</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/storage/storage-manager.html" >Storage Manager</a></li>
+        <li><a href="../../pages/storage/snapshots.html" >Snapshots</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Apps</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/apps/file-manager.html" >File Manager</a></li>
+        <li><a href="../../pages/apps/drop-zone.html" >Drop Zone</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Technology</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/technology/cryptography.html" class="active" aria-current="page">Cryptography</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
+      <p class="nav-heading">Help</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/troubleshooting/common-issues.html" >Common issues</a></li>
+        <li><a href="../../pages/page-template.html" >Page template</a></li>
+      </ul>
+    </section>
+  </nav>
+</aside>
+    <main class="content">
+<!-- wiki-language-topbar:start -->
+      <div class="wiki-topbar" data-wiki-topbar>
+        <details class="wiki-language-switcher">
+          <summary aria-label="Select language" title="Select language">
+            <img class="wiki-language-current-flag" src="../../assets/images/flags/en.svg" alt="">
+            <span class="wiki-language-caret">▾</span>
+          </summary>
+          <div class="wiki-language-menu" role="menu">
+        <a class="wiki-language-option active" href="cryptography.html" aria-current="page"><img src="../../assets/images/flags/en.svg" alt=""> <span>English</span></a>
+          </div>
+        </details>
+      </div>
+<!-- wiki-language-topbar:end -->
+<article class="article">
+  <div class="breadcrumbs"><a href="../../index.html">Wiki home</a> / Technology</div>
+  <h1>Cryptography</h1>
+  <div class="meta">
+    <span>Status: Draft</span>
+    <span>Audience: Administrators and technical users</span>
+  </div>
+
+  <p class="lead">
+    This page explains the cryptographic building blocks used by DNA-Nexus in practical terms.
+    It is intended as a central reference for post-quantum sharing, local browser decryption,
+    file integrity and related security concepts.
+  </p>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#post-quantum-sharing">Post-quantum sharing</a></li>
+      <li><a href="#ml-kem-768">ML-KEM-768</a></li>
+      <li><a href="#aes-256-gcm">AES-256-GCM</a></li>
+      <li><a href="#local-device-key">Local device key</a></li>
+      <li><a href="#content-encryption">Content encryption</a></li>
+      <li><a href="#file-integrity">File integrity</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="post-quantum-sharing">Post-quantum sharing</h2>
+  <p>
+    DNA-Nexus can use post-quantum protected invite links for sensitive file sharing.
+    The recipient opens the invite in a browser, enrolls a local device key and then
+    decrypts the protected file locally before download.
+  </p>
+
+  <h2 id="ml-kem-768">ML-KEM-768</h2>
+
+  <p>
+    <strong>ML-KEM-768</strong> is a post-quantum key encapsulation mechanism.
+    In DNA-Nexus, it is used for protected sharing: the recipient browser has a
+    local ML-KEM-768 device key, and the shared file key can be opened only by
+    that enrolled browser/device key.
+  </p>
+
+  <p>
+    ML-KEM-768 is not used to encrypt the whole file directly. Instead, it is used
+    to protect or open a smaller file key. The actual file content is then encrypted
+    with a symmetric encryption algorithm such as <strong>AES-256-GCM</strong>.
+  </p>
+
+  <p>
+    ML-KEM-768 targets NIST security category 3. In simple terms, this is intended
+    to give a security level comparable to about <strong>192-bit symmetric security</strong>.
+    A 192-bit search space is <strong>2<sup>192</sup></strong>, which is about
+    <strong>6.28 × 10<sup>57</sup></strong> possible values.
+  </p>
+
+  <p>
+    <strong>Scale comparison:</strong> even if you imagined a huge sand pile containing
+    <strong>10<sup>22</sup></strong> grains of sand, a 2<sup>192</sup> space would still
+    be about <strong>6.28 × 10<sup>35</sup></strong> times larger than that grain count.
+    Even a hypothetical machine trying <strong>10<sup>18</sup></strong> candidates every
+    second would need about <strong>2 × 10<sup>32</sup> years</strong> to count through
+    the full 2<sup>192</sup> space.
+  </p>
+
+  <p>
+    It is still better to describe ML-KEM as lattice-based security rather than
+    “trying every key.” Its real security comes from hard lattice problems, not
+    from a simple password-style key search.
+  </p>
+
+  <h2 id="aes-256-gcm">AES-256-GCM</h2>
+
+  <p>
+    <strong>AES-256-GCM</strong> is used for encrypting file content. AES-256 provides
+    a 256-bit secret key, and GCM adds authenticated encryption. This means the browser
+    can both decrypt the file and verify that the encrypted content has not been modified.
+  </p>
+
+  <p>
+    The AES-256 key space is <strong>2<sup>256</sup></strong> possible keys.
+    Written out, that is approximately
+    <strong>1.16 × 10<sup>77</sup></strong> possible keys. This is far beyond
+    practical brute force.
+  </p>
+
+  <p>
+    <strong>Scale comparison:</strong> a 2<sup>256</sup> key space is
+    <strong>2<sup>64</sup></strong> times larger than a 2<sup>192</sup> space.
+    That is about <strong>18.4 quintillion times larger</strong>. Even at
+    <strong>10<sup>18</sup></strong> guesses per second, counting through the full
+    AES-256 key space would take about <strong>3.7 × 10<sup>51</sup> years</strong>.
+  </p>
+
+  <p>
+    GCM also uses a nonce, commonly 96 bits. A 96-bit nonce space contains
+    <strong>2<sup>96</sup></strong> possible values, about
+    <strong>7.92 × 10<sup>28</sup></strong>. The important rule is that the same
+    nonce must not be reused with the same AES key.
+  </p>
+
+  <p>
+    <strong>Scale comparison:</strong> 2<sup>96</sup> is not meant to be a brute-force
+    security level in GCM. It is a uniqueness space for nonces. Even so, counting through
+    2<sup>96</sup> values at one trillion new values per second would take about
+    <strong>2.5 billion years</strong>. The real rule is simpler: never reuse the same
+    nonce with the same AES key.
+  </p>
+
+  <p>
+    GCM typically uses a 128-bit authentication tag. A random successful forgery
+    attempt has roughly a <strong>1 in 2<sup>128</sup></strong> chance, about
+    <strong>1 in 3.40 × 10<sup>38</sup></strong>, assuming correct use of the algorithm.
+  </p>
+
+  <p>
+    <strong>Scale comparison:</strong> a 128-bit authentication tag has about
+    <strong>3.40 × 10<sup>38</sup></strong> possible tag values. A random successful
+    forgery is like guessing the right one out of that entire space. Even at one trillion
+    random attempts per second, the expected time for one random hit would be on the order
+    of <strong>10<sup>19</sup> years</strong>, assuming ideal random guessing.
+  </p>
+
+  <h2 id="local-device-key">Local device key</h2>
+  <p>
+    A recipient browser can hold a local device key protected by a passphrase. The passphrase
+    is not sent to the server. If the passphrase is lost, that browser cannot unlock older
+    shares tied to the previous local device key.
+  </p>
+
+  <h2 id="content-encryption">Content encryption</h2>
+  <p>
+    Protected share content is encrypted separately from the invite flow. The browser opens
+    the file key and decrypts the file locally before handing the file to the user.
+  </p>
+
+  <h2 id="file-integrity">File integrity</h2>
+  <p>
+    DNA-Nexus can show and copy file checksums such as SHA-256 so that users can identify
+    files and verify integrity-sensitive workflows.
+  </p>
+</article>
+
+    </main>
+  </div>
+  <script src="../../assets/js/wiki.js"></script>
+</body>
+</html>

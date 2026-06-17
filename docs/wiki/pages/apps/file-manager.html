@@ -55,6 +55,13 @@
     </section>
 
     <section class="nav-section">
+      <p class="nav-heading">Technology</p>
+      <ul class="nav-list">
+        <li><a href="../../pages/technology/cryptography.html" >Cryptography</a></li>
+      </ul>
+    </section>
+
+    <section class="nav-section">
       <p class="nav-heading">Help</p>
       <ul class="nav-list">
         <li><a href="../../pages/troubleshooting/common-issues.html" >Common issues</a></li>
@@ -108,6 +115,7 @@
       <li><a href="#context-actions">Context actions</a></li>
       <li><a href="#file-properties-comments-and-locking">File properties, comments and locking</a></li>
       <li><a href="#file-versioning-and-comparison">File versioning and comparison</a></li>
+      <li><a href="#secure-sharing-and-pq-invite-links">Secure sharing and PQ invite links</a></li>
       <li><a href="#shared-workspaces">Shared workspaces</a></li>
       <li><a href="#trash-and-restore">Trash and restore</a></li>
       <li><a href="#important-notes">Important notes</a></li>
@@ -226,6 +234,13 @@
   </p>
 
   <figure>
+    <a href="../../assets/images/filemanager/ask_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/ask_EN.png" alt="Version preservation prompt shown when saving a file" />
+    </a>
+    <figcaption>Keeping the previous version when saving a file</figcaption>
+  </figure>
+
+  <figure>
     <a href="../../assets/images/filemanager/vers_EN.png" target="_blank" rel="noopener">
       <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/vers_EN.png" alt="File versions dialog showing preserved versions" />
     </a>
@@ -268,6 +283,52 @@
     </a>
     <figcaption>Text and file comparison</figcaption>
   </figure>
+
+  <h2 id="secure-sharing-and-pq-invite-links">Secure sharing and PQ invite links</h2>
+
+  <p>
+    File Manager can create share links for files so that the user can share a file
+    with an external recipient. The recipient opens the link in a browser and can
+    download the file or, for supported media such as video, view it directly in the browser.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/pq_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/pq_EN.png" alt="Creating a post-quantum invite link from File Manager" />
+    </a>
+    <figcaption>Creating a share link or post-quantum invite link</figcaption>
+  </figure>
+
+  <p>
+    For sensitive files, the user can create a <strong>post-quantum (PQ) invite link</strong>.
+    A PQ invite link protects the shared file with
+    <a href="../technology/cryptography.html#ml-kem-768"><strong>ML-KEM-768</strong></a>
+    and <a href="../technology/cryptography.html#aes-256-gcm"><strong>AES-256-GCM</strong></a>.
+    The file key is opened in the recipient's browser, and the file is decrypted
+    locally before download.
+  </p>
+
+  <p>
+    When the recipient opens a PQ invite link, the browser uses a local device key
+    protected by a passphrase. The passphrase is never sent to the server and cannot
+    be recovered by the server. After the recipient enrolls the browser, the share is
+    tied to that browser's local device key. This means that a copied link alone is
+    not enough to open the protected file from another browser or device.
+  </p>
+
+  <figure>
+    <a href="../../assets/images/filemanager/shares/pq3_EN.png" target="_blank" rel="noopener">
+      <img class="wiki-img wiki-img-medium" src="../../assets/images/filemanager/shares/pq3_EN.png" alt="Recipient opens a post-quantum protected share in the browser" />
+    </a>
+    <figcaption>Opening a post-quantum protected share</figcaption>
+  </figure>
+
+  <p>
+    On the final download page, DNA-Nexus shows the protection details, including
+    the recipient KEM, content encryption method and local browser decryption status.
+    This gives the recipient clear confirmation that the protected share is decrypted
+    locally in the browser before the file is downloaded.
+  </p>
 
   <h2 id="shared-workspaces">Shared workspaces</h2>
 
