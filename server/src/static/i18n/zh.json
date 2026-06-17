@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "继续",
   "filemgr.conflict.existing": "现有文件",
   "filemgr.conflict.keep": "保留现有文件",
-  "filemgr.conflict.keep_desc": "跳过此次上传，保留 PQ-NAS 中已存储的文件。",
+  "filemgr.conflict.keep_desc": "跳过此次上传，并保留服务器上已有的文件。",
   "filemgr.conflict.new": "新文件",
   "filemgr.conflict.replace": "用新文件替换",
   "filemgr.conflict.replace_desc": "上传这个新文件并替换现有文件。",

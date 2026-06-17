@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Fortsätt",
   "filemgr.conflict.existing": "Befintlig fil",
   "filemgr.conflict.keep": "Behåll befintlig",
-  "filemgr.conflict.keep_desc": "Hoppa över den här uppladdningen och behåll filen som redan finns lagrad i PQ-NAS.",
+  "filemgr.conflict.keep_desc": "Hoppa över denna uppladdning och behåll filen som redan finns på servern.",
   "filemgr.conflict.new": "Ny fil",
   "filemgr.conflict.replace": "Ersätt med ny",
   "filemgr.conflict.replace_desc": "Ladda upp den här nya filen och ersätt den befintliga.",

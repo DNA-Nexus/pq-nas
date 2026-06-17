@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Continuar",
   "filemgr.conflict.existing": "Archivo existente",
   "filemgr.conflict.keep": "Conservar existente",
-  "filemgr.conflict.keep_desc": "Omitir esta subida y conservar el archivo ya almacenado en PQ-NAS.",
+  "filemgr.conflict.keep_desc": "Omitir esta carga y conservar el archivo que ya está en el servidor.",
   "filemgr.conflict.new": "Archivo nuevo",
   "filemgr.conflict.replace": "Reemplazar por el nuevo",
   "filemgr.conflict.replace_desc": "Subir este nuevo archivo y reemplazar el existente.",

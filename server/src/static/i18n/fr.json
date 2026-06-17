@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Continuer",
   "filemgr.conflict.existing": "Fichier existant",
   "filemgr.conflict.keep": "Conserver l’existant",
-  "filemgr.conflict.keep_desc": "Ignorer ce téléversement et conserver le fichier déjà stocké dans PQ-NAS.",
+  "filemgr.conflict.keep_desc": "Ignorer cet envoi et conserver le fichier déjà présent sur le serveur.",
   "filemgr.conflict.new": "Nouveau fichier",
   "filemgr.conflict.replace": "Remplacer par le nouveau",
   "filemgr.conflict.replace_desc": "Téléverser ce nouveau fichier et remplacer l’existant.",

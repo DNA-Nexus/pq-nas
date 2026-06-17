@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Jatka",
   "filemgr.conflict.existing": "Olemassa oleva tiedosto",
   "filemgr.conflict.keep": "Säilytä nykyinen",
-  "filemgr.conflict.keep_desc": "Ohita tämä lataus ja säilytä PQ-NASissa jo oleva tiedosto.",
+  "filemgr.conflict.keep_desc": "Ohita tämä lataus ja säilytä palvelimella jo oleva tiedosto.",
   "filemgr.conflict.new": "Uusi tiedosto",
   "filemgr.conflict.replace": "Korvaa uudella",
   "filemgr.conflict.replace_desc": "Lataa uusi tiedosto ja korvaa nykyinen tiedosto.",

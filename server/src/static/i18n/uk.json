@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Продовжити",
   "filemgr.conflict.existing": "Наявний файл",
   "filemgr.conflict.keep": "Залишити наявний",
-  "filemgr.conflict.keep_desc": "Пропустити це завантаження та залишити файл, що вже зберігається в PQ-NAS.",
+  "filemgr.conflict.keep_desc": "Пропустити це завантаження й залишити файл, який уже є на сервері.",
   "filemgr.conflict.new": "Новий файл",
   "filemgr.conflict.replace": "Замінити новим",
   "filemgr.conflict.replace_desc": "Завантажити новий файл і замінити наявний.",

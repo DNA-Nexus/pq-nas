@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Devam et",
   "filemgr.conflict.existing": "Mevcut dosya",
   "filemgr.conflict.keep": "Mevcut olanı koru",
-  "filemgr.conflict.keep_desc": "Bu yüklemeyi atla ve PQ-NAS içinde zaten depolanmış olan dosyayı koru.",
+  "filemgr.conflict.keep_desc": "Bu yüklemeyi atla ve sunucuda zaten bulunan dosyayı koru.",
   "filemgr.conflict.new": "Yeni dosya",
   "filemgr.conflict.replace": "Yenisiyle değiştir",
   "filemgr.conflict.replace_desc": "Bu yeni dosyayı yükle ve mevcut olanın yerine koy.",

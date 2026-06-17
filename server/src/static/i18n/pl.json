@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Kontynuuj",
   "filemgr.conflict.existing": "Istniejący plik",
   "filemgr.conflict.keep": "Zachowaj istniejący",
-  "filemgr.conflict.keep_desc": "Pomiń to przesyłanie i zachowaj plik już zapisany w PQ-NAS.",
+  "filemgr.conflict.keep_desc": "Pomiń to przesyłanie i zachowaj plik, który już znajduje się na serwerze.",
   "filemgr.conflict.new": "Nowy plik",
   "filemgr.conflict.replace": "Zastąp nowym",
   "filemgr.conflict.replace_desc": "Prześlij ten nowy plik i zastąp istniejący.",

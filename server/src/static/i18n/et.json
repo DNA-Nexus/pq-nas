@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Jätka",
   "filemgr.conflict.existing": "Olemasolev fail",
   "filemgr.conflict.keep": "Säilita olemasolev",
-  "filemgr.conflict.keep_desc": "Jäta see üleslaadimine vahele ja säilita PQ-NAS-is juba olev fail.",
+  "filemgr.conflict.keep_desc": "Jäta see üleslaadimine vahele ja säilita serveris juba olev fail.",
   "filemgr.conflict.new": "Uus fail",
   "filemgr.conflict.replace": "Asenda uuega",
   "filemgr.conflict.replace_desc": "Laadi see uus fail üles ja asenda olemasolev.",

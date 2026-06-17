@@ -2402,7 +2402,7 @@
   "filemgr.conflict.continue": "Fortfahren",
   "filemgr.conflict.existing": "Bestehende Datei",
   "filemgr.conflict.keep": "Bestehende behalten",
-  "filemgr.conflict.keep_desc": "Diesen Upload überspringen und die in PQ-NAS gespeicherte Datei behalten.",
+  "filemgr.conflict.keep_desc": "Diesen Upload überspringen und die bereits auf dem Server vorhandene Datei behalten.",
   "filemgr.conflict.new": "Neue Datei",
   "filemgr.conflict.replace": "Durch neue ersetzen",
   "filemgr.conflict.replace_desc": "Diese neue Datei hochladen und die bestehende ersetzen.",
