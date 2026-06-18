@@ -2973,7 +2973,7 @@
   "filemgr.ws.fingerprint_placeholder": "Sormenjälki",
   "filemgr.ws.invite_created": "Kertakäyttökutsu luotu roolille {role}.",
   "filemgr.ws.leave": "Poistu",
-  "filemgr.ws.leave_confirm": "Poistutaanko työtilasta?\\n\\nTyötila: {name}\\n\\nPoistumisen jälkeen se katoaa Sijainti-valikosta.",
+  "filemgr.ws.leave_confirm": "Poistutaanko työtilasta?\n\nTyötila: {name}\n\nPoistumisen jälkeen se katoaa Sijainti-valikosta.",
   "filemgr.ws.leave_failed": "Poistuminen epäonnistui: {error}",
   "filemgr.ws.leave_title": "Poistutaanko työtilasta?",
   "filemgr.ws.leaving": "Poistutaan…",

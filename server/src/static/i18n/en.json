@@ -2973,7 +2973,7 @@
   "filemgr.ws.fingerprint_placeholder": "Fingerprint",
   "filemgr.ws.invite_created": "One-time invite created for {role}.",
   "filemgr.ws.leave": "Leave",
-  "filemgr.ws.leave_confirm": "Leave workspace?\\n\\nWorkspace: {name}\\n\\nAfter leaving, it will disappear from the Location dropdown.",
+  "filemgr.ws.leave_confirm": "Leave workspace?\n\nWorkspace: {name}\n\nAfter leaving, it will disappear from the Location dropdown.",
   "filemgr.ws.leave_failed": "Leave failed: {error}",
   "filemgr.ws.leave_title": "Leave workspace?",
   "filemgr.ws.leaving": "Leaving…",

@@ -2035,7 +2035,7 @@
                 <input id="sharedSpaceInviteFp" class="mono" placeholder="${tr("filemgr.ws.fingerprint_placeholder", null, "Fingerprint")}" style="flex:1; min-width:260px;" />
                 <select id="sharedSpaceInviteRole" style="min-width:120px;">
                     <option value="viewer">${tr("filemgr.ws.role.viewer", null, "viewer")}</option>
-                    <option value="editor" selected>editor</option>
+                    <option value="editor" selected>${tr("filemgr.ws.role.editor", null, "editor")}</option>
                     <option value="owner">${tr("filemgr.ws.role.owner", null, "owner")}</option>
                 </select>
                 <button id="sharedSpaceInviteBtn" class="btn" type="button">${tr("filemgr.ws.send_invite", null, "Send invite")}</button>
