@@ -356,6 +356,89 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         homeBlurb.appendChild(dock);
         return dock;
     }
+
+    function ensureAppOpeningSpinCss() {
+        if (document.getElementById("appOpeningSpinCss")) return;
+
+        const style = document.createElement("style");
+        style.id = "appOpeningSpinCss";
+        style.textContent = "@keyframes appOpeningSpin{to{transform:rotate(360deg)}}";
+        document.head.appendChild(style);
+    }
+
+    function showAppOpeningOverlay(label, appKey) {
+        const dock = getAppFrameDock();
+        if (!dock) return;
+
+        ensureAppOpeningSpinCss();
+
+        if (!dock.style.position) {
+            dock.style.position = "relative";
+        }
+
+        let overlay = document.getElementById("appOpeningOverlay");
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.id = "appOpeningOverlay";
+            overlay.setAttribute("role", "status");
+            overlay.setAttribute("aria-live", "polite");
+
+            overlay.style.position = "absolute";
+            overlay.style.inset = "0";
+            overlay.style.zIndex = "9999";
+            overlay.style.display = "flex";
+            overlay.style.alignItems = "center";
+            overlay.style.justifyContent = "center";
+            overlay.style.gap = "12px";
+            overlay.style.background = "rgba(0,0,0,.30)";
+            overlay.style.color = "var(--fg)";
+            overlay.style.fontWeight = "900";
+            overlay.style.pointerEvents = "none";
+
+            const spin = document.createElement("span");
+            spin.setAttribute("aria-hidden", "true");
+            spin.style.width = "26px";
+            spin.style.height = "26px";
+            spin.style.borderRadius = "999px";
+            spin.style.border = "3px solid rgba(255,255,255,.24)";
+            spin.style.borderTopColor = "currentColor";
+            spin.style.animation = "appOpeningSpin .8s linear infinite";
+
+            const txt = document.createElement("span");
+            txt.id = "appOpeningText";
+
+            overlay.appendChild(spin);
+            overlay.appendChild(txt);
+        }
+
+        overlay.dataset.appKey = String(appKey || "");
+        overlay.hidden = false;
+        overlay.style.display = "flex";
+
+        const txt = overlay.querySelector("#appOpeningText");
+        if (txt) txt.textContent = label || "Opening app…";
+
+        dock.appendChild(overlay);
+    }
+
+    function updateAppOpeningOverlay(label, appKey) {
+        const overlay = document.getElementById("appOpeningOverlay");
+        if (!overlay || overlay.hidden) return;
+        if (appKey && overlay.dataset.appKey && overlay.dataset.appKey !== String(appKey)) return;
+
+        const txt = overlay.querySelector("#appOpeningText");
+        if (txt) txt.textContent = label || "Still opening…";
+    }
+
+    function hideAppOpeningOverlay(appKey) {
+        const overlay = document.getElementById("appOpeningOverlay");
+        if (!overlay) return;
+        if (appKey && overlay.dataset.appKey && overlay.dataset.appKey !== String(appKey)) return;
+
+        overlay.hidden = true;
+        overlay.style.display = "none";
+    }
+
     function getHomeContentHost() {
         if (!homeBlurb) return null;
 
@@ -3006,6 +3089,13 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const key = appFrameKey(app);
         const now = Date.now();
 
+        const appOpeningLabel = "Opening " + (app.name || app.title || app.id || "app") + "...";
+        showAppOpeningOverlay(appOpeningLabel, key);
+
+        const appOpeningSlowTimer = window.setTimeout(function() {
+            updateAppOpeningOverlay("Still opening... waiting for app files.", key);
+        }, 7000);
+
         // Keep cached iframes alive, but only one visible/interactive.
         for (const rec of appFrameCache.values()) {
             if (!rec || !rec.frameWrap) continue;
@@ -3020,9 +3110,17 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (!rec) {
             const frame = document.createElement("iframe");
             frame.className = "appFrame";
-            frame.src = appUrl(app, "embedded");
             frame.dataset.appId = app.id;
             frame.dataset.appVer = app.ver;
+            frame.dataset.appKey = key;
+
+            frame.addEventListener("load", function() {
+                frame.dataset.appLoaded = "1";
+                window.clearTimeout(appOpeningSlowTimer);
+                hideAppOpeningOverlay(key);
+            });
+
+            frame.src = appUrl(app, "embedded");
 
             const frameWrap = document.createElement("div");
             frameWrap.className = "appFrameWrap";
@@ -3049,6 +3147,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         rec.frameWrap.style.width = "100%";
         rec.frameWrap.style.height = "100%";
         rec.frameWrap.style.flex = "1 1 auto";
+
+        if (rec.frame && rec.frame.dataset.appLoaded === "1") {
+            window.clearTimeout(appOpeningSlowTimer);
+            hideAppOpeningOverlay(key);
+        }
 
         pruneCachedAppFrames(key);
     }
