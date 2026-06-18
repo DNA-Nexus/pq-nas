@@ -69,3 +69,41 @@ Useful searches:
 ### Notes
 
 This should be fixed before release because admin behavior must be consistent regardless of login method.
+
+## My Activity should not depend on personal storage allocation
+
+Workspace-only users can exist without a personal file storage allocation. For example,
+an OPAQUE-provisioned user may be enabled and able to accept a shared workspace invite,
+but still have personal storage marked as unallocated.
+
+Observed problem:
+- The user can receive a pending workspace invitation.
+- The user can accept the invitation.
+- The user can enter or leave the workspace.
+- My Activity does not show these events when the user's personal storage/root is not allocated.
+
+Reason:
+- My Activity currently stores/reads activity from the user's personal storage root.
+- If the user has no allocated personal storage, there may be no user root or activity DB.
+
+Desired fix:
+- Move activity logging to account-level/system metadata instead of user quota storage.
+- Suggested location: /var/lib/pqnas/activity/users/<fingerprint>/activity.sqlite
+  or /srv/pqnas/.system/activity/users/<fingerprint>/activity.sqlite.
+- Activity metadata should not consume or require the user's personal file quota.
+
+Events that should be recorded:
+- workspace.invite.sent
+- workspace.invite.accepted
+- workspace.invite.declined
+- workspace.left
+- workspace.member.removed
+- workspace.member.role_changed
+
+Acceptance criteria:
+- A user with storage_state=unallocated can still see My Activity.
+- Accepting a workspace invite appears in My Activity.
+- Declining a workspace invite appears in My Activity.
+- Leaving a workspace appears in My Activity.
+- Existing allocated-storage users keep seeing their previous activity or a migration/compatibility path exists.
+
