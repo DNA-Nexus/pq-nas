@@ -396,7 +396,7 @@
             btn.textContent = resolved ? tr("filemgr.people.edit", null, "Edit People") : tr("filemgr.people.add", null, "Add to People");
             hint.textContent = resolved
                 ? "Saved in People"
-                : "Not saved in People";
+                : tr("filemgr.people.not_saved", null, "Not saved in People");
 
             btn.addEventListener("click", async () => {
                 const defaultNotes = String(person.notes || "").trim() ||
@@ -442,7 +442,7 @@
                     btn.textContent = old;
                     hint.textContent = resolved
                         ? "Saved in People"
-                        : "Not saved in People";
+                        : tr("filemgr.people.not_saved", null, "Not saved in People");
                     setStatus(statusEl, tr("filemgr.people.save_failed", { error: String(e && e.message ? e.message : e) }, `People save failed: ${String(e && e.message ? e.message : e)}`));
                 } finally {
                     btn.disabled = false;

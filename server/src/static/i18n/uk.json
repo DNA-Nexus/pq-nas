@@ -2588,7 +2588,7 @@
   "filemgr.people.modal_subtitle": "Збережіть приватне ім'я та нотатки для цього учасника робочого простору.",
   "filemgr.people.modal_title_add": "Додати до Людей",
   "filemgr.people.modal_title_edit": "Редагувати Людей",
-  "filemgr.people.not_saved": "Не збережено в Людях",
+  "filemgr.people.not_saved": "Не збережено в контактах",
   "filemgr.people.notes_placeholder": "Необов'язкові нотатки, видимі лише у вашому списку Людей",
   "filemgr.people.private_notes": "Приватні нотатки",
   "filemgr.people.save": "Зберегти Людей",
