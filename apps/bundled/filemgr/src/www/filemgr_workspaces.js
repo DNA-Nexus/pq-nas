@@ -2210,11 +2210,16 @@
 
         const externalPanel = document.getElementById("sharedSpaceExternalAccessPanel");
         if (externalPanel) {
-            externalPanel.style.display = "block";
+            const canManageExternalAccess = canCurrentScopeManageMembers();
+
+            // External access links and one-time invites expand the workspace trust boundary.
+            // Keep the entire panel owner-only; editors can edit files, viewers can view files,
+            // but neither role should see or distribute external member access links.
+            externalPanel.style.display = canManageExternalAccess ? "block" : "none";
+
             const externalInviteControls = externalPanel.querySelector("#sharedSpaceExternalInviteControls");
             if (externalInviteControls) {
-                externalInviteControls.style.display =
-                    String(FM.scope.workspaceRole || "") === "owner" ? "block" : "none";
+                externalInviteControls.style.display = canManageExternalAccess ? "block" : "none";
             }
         }
 
