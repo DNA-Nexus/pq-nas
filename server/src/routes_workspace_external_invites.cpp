@@ -812,9 +812,9 @@ void register_workspace_external_invite_routes(
         }
 
         m.role = role;
-        m.status = "enabled";
-        m.responded_at = deps.now_iso_utc ? deps.now_iso_utc() : "";
-        m.responded_by = actor_fp;
+        m.status = "invited";
+        m.responded_at = "";
+        m.responded_by = "";
         normalize_workspace_member_v1(&m);
 
         if (!deps.workspaces->add_or_update_member(workspace_id, m)) {

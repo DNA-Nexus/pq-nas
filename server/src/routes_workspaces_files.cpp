@@ -2539,15 +2539,9 @@ srv.Get("/api/v4/workspaces/members",
         return;
     }
 
-    bool target_enabled_user = false;
-    for (const auto& ukv : deps.users->snapshot()) {
-        const auto& u = ukv.second;
-        const std::string ufp = u.fingerprint.empty() ? ukv.first : u.fingerprint;
-        if (ufp == target_fp && u.status == "enabled") {
-            target_enabled_user = true;
-            break;
-        }
-    }
+    const auto target_user = deps.users->get(target_fp);
+    const bool target_enabled_user =
+        target_user.has_value() && target_user->status == "enabled";
 
     if (!target_enabled_user) {
         audit_fail(workspace_id, "target_user_not_enabled", 403, target_fp);
@@ -2577,11 +2571,11 @@ srv.Get("/api/v4/workspaces/members",
     WorkspaceMemberRec member;
     member.fingerprint = target_fp;
     member.role = role;
-    member.status = "enabled";
+    member.status = "invited";
     member.added_at = now_iso;
     member.added_by = actor_fp;
-    member.responded_at = now_iso;
-    member.responded_by = actor_fp;
+    member.responded_at = "";
+    member.responded_by = "";
 
     if (existing.has_value() && !existing->added_at.empty()) {
         member.added_at = existing->added_at;
@@ -2629,6 +2623,172 @@ srv.Get("/api/v4/workspaces/members",
         {"member", workspace_member_to_user_json(*member2, deps.users)}
     }.dump());
 });
+
+    // GET /api/v4/workspaces/invites
+    //
+    // Pending internal workspace invitations for the authenticated user.
+    // External one-time invites are handled by the separate external invite flow.
+    srv.Get("/api/v4/workspaces/invites",
+            [&](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor ||
+            !deps.require_user_auth_users_actor(
+                req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        res.set_header("Cache-Control", "no-store");
+
+        if (!deps.workspaces || !deps.workspaces->load(deps.workspaces_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "workspaces_reload_failed"},
+                {"message", "failed to reload workspaces"}
+            }.dump());
+            return;
+        }
+
+        json invites = json::array();
+
+        for (const auto& kv : deps.workspaces->snapshot()) {
+            const auto& w = kv.second;
+            if (w.status != "enabled") continue;
+
+            for (const auto& m : w.members) {
+                if (m.fingerprint == actor_fp && m.status == "invited") {
+                    invites.push_back(json{
+                        {"workspace", {
+                            {"workspace_id", w.workspace_id},
+                            {"name", w.name},
+                            {"kind", w.kind},
+                            {"status", w.status},
+                            {"created_by", w.created_by},
+                            {"created_at", w.created_at}
+                        }},
+                        {"member", workspace_member_to_user_json(m, deps.users)}
+                    });
+                    break;
+                }
+            }
+        }
+
+        deps.reply_json(res, 200, json{
+            {"ok", true},
+            {"invites", invites}
+        }.dump());
+    });
+
+    // POST /api/v4/workspaces/invites/respond
+    //
+    // Body: { "workspace_id": "ws_...", "accept": true|false }
+    srv.Post("/api/v4/workspaces/invites/respond",
+             [&](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor ||
+            !deps.require_user_auth_users_actor(
+                req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (!deps.origin || deps.origin->empty()) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "origin not configured"}
+            }.dump());
+            return;
+        }
+
+        if (!require_same_origin_for_cookie_mutation_ws(req, res, *deps.origin)) return;
+
+        res.set_header("Cache-Control", "no-store");
+
+        json j;
+        try {
+            j = req.body.empty() ? json::object() : json::parse(req.body);
+        } catch (...) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid json"}
+            }.dump());
+            return;
+        }
+
+        const std::string workspace_id = trim_copy_safe(j.value("workspace_id", ""));
+        const bool accept = j.value("accept", false);
+
+        if (workspace_id.empty()) {
+            deps.reply_json(res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "missing workspace_id"}
+            }.dump());
+            return;
+        }
+
+        if (!deps.workspaces || !deps.workspaces->load(deps.workspaces_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "workspaces_reload_failed"},
+                {"message", "failed to reload workspaces"}
+            }.dump());
+            return;
+        }
+
+        auto wopt = deps.workspaces->get(workspace_id);
+        if (!wopt.has_value() || wopt->status != "enabled") {
+            deps.reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "workspace_not_found"},
+                {"message", "workspace not found"}
+            }.dump());
+            return;
+        }
+
+        auto member = deps.workspaces->get_member(workspace_id, actor_fp);
+        if (!member.has_value() || member->status != "invited") {
+            deps.reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "invite_not_found"},
+                {"message", "pending workspace invite not found"}
+            }.dump());
+            return;
+        }
+
+        const std::string new_status = accept ? "enabled" : "disabled";
+        const std::int64_t now_epoch =
+            deps.now_epoch_sec ? deps.now_epoch_sec() : 0;
+        const std::string now_iso = iso_utc_from_epoch_sec(now_epoch);
+
+        if (!deps.workspaces->set_member_status(workspace_id, actor_fp, new_status, now_iso, actor_fp)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "invite_response_failed"},
+                {"message", "failed to update workspace invite"}
+            }.dump());
+            return;
+        }
+
+        if (!deps.workspaces->save(deps.workspaces_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "workspaces_save_failed"},
+                {"message", "failed to save workspaces"}
+            }.dump());
+            return;
+        }
+
+        deps.reply_json(res, 200, json{
+            {"ok", true},
+            {"workspace_id", workspace_id},
+            {"status", new_status}
+        }.dump());
+    });
 
     // POST /api/v4/workspaces/members/remove
     //

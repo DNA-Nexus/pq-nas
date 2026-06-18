@@ -4738,5 +4738,21 @@
   "filemgr.archive_compare.moved_note": "Siirron tai uudelleennimeämisen tunnistus perustuu samaan tiedostokokoon ja CRC-arvoon.",
   "filemgr.archive_compare.too_large": "ZIP on liian suuri selainpuolen vertailuun",
   "filemgr.archive_compare.current": "Nykyinen tiedosto",
-  "filemgr.archive_compare.version": "Valittu versio"
+  "filemgr.archive_compare.version": "Valittu versio",
+  "filemgr.ws.invite_member_title": "Kutsu jäsen",
+  "filemgr.ws.send_invite": "Lähetä kutsu",
+  "filemgr.ws.invite_member_help": "Kutsuttu käyttäjä näkee File Managerissa odottavan työtilakutsun ja voi hyväksyä tai hylätä sen.",
+  "filemgr.ws.sending_invite": "Lähetetään kutsua…",
+  "filemgr.ws.invite_sent_pending": "Kutsu lähetetty. Käyttäjän täytyy hyväksyä se ennen kuin työtila näkyy sijaintivalitsimessa.",
+  "filemgr.ws.pending_invites_title": "{count} työtilakutsu(a)",
+  "filemgr.ws.pending_invites_desc": "Hyväksy kutsu ennen kuin työtila ilmestyy sijaintivalitsimeen.",
+  "filemgr.ws.pending_invite_meta": "Rooli: {role}",
+  "filemgr.ws.pending_invite_meta_by": "Rooli: {role} · Kutsuja: {by}",
+  "filemgr.ws.accept_invite": "Hyväksy",
+  "filemgr.ws.decline_invite": "Hylkää",
+  "filemgr.ws.accepting_invite": "Hyväksytään…",
+  "filemgr.ws.declining_invite": "Hylätään…",
+  "filemgr.ws.invite_accepted": "Työtilakutsu hyväksytty: {name}",
+  "filemgr.ws.invite_declined": "Työtilakutsu hylätty: {name}",
+  "filemgr.ws.invite_response_failed": "Kutsuun vastaaminen epäonnistui: {error}"
 }

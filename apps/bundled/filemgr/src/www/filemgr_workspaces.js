@@ -635,6 +635,207 @@
         return j;
     }
 
+    async function fetchWorkspaceInvites() {
+        const r = await fetch("/api/v4/workspaces/invites", {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        });
+
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j || !j.ok || !Array.isArray(j.invites)) {
+            throw new Error((j && (j.message || j.error)) || `HTTP ${r.status}`);
+        }
+        return j.invites;
+    }
+
+    async function apiRespondWorkspaceInvite(workspaceId, accept) {
+        const r = await fetch("/api/v4/workspaces/invites/respond", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                accept: !!accept
+            })
+        });
+
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j || !j.ok) {
+            throw new Error((j && (j.message || j.error)) || `HTTP ${r.status}`);
+        }
+        return j;
+    }
+
+    function ensureWorkspaceInvitePanel() {
+        let panel = document.getElementById("workspaceInvitePanel");
+        if (panel) return panel;
+
+        panel = document.createElement("div");
+        panel.id = "workspaceInvitePanel";
+        panel.style.display = "none";
+        panel.style.margin = "0 14px 12px";
+        panel.style.padding = "12px";
+        panel.style.border = "1px solid rgba(var(--warn-rgb),0.38)";
+        panel.style.borderRadius = "16px";
+        panel.style.background = "rgba(var(--warn-rgb),0.10)";
+        panel.style.boxShadow = "0 12px 34px rgba(0,0,0,0.18)";
+
+        const host = scopeBar && scopeBar.parentNode ? scopeBar.parentNode : document.querySelector(".panel");
+        if (host && scopeBar && scopeBar.parentNode === host) {
+            scopeBar.insertAdjacentElement("afterend", panel);
+        } else if (host) {
+            host.insertBefore(panel, host.firstChild || null);
+        } else {
+            document.body.insertBefore(panel, document.body.firstChild || null);
+        }
+
+        return panel;
+    }
+
+    function renderWorkspaceInvitePanel(invites) {
+        const panel = ensureWorkspaceInvitePanel();
+        const list = Array.isArray(invites) ? invites : [];
+
+        if (!list.length) {
+            panel.style.display = "none";
+            panel.innerHTML = "";
+            return;
+        }
+
+        panel.style.display = "block";
+        panel.innerHTML = "";
+
+        const title = document.createElement("div");
+        title.style.fontWeight = "950";
+        title.style.marginBottom = "8px";
+        title.textContent = tr("filemgr.ws.pending_invites_title", { count: list.length }, list.length === 1 ? "1 workspace invitation" : `${list.length} workspace invitations`);
+        panel.appendChild(title);
+
+        const desc = document.createElement("div");
+        desc.className = "hint";
+        desc.style.marginBottom = "10px";
+        desc.textContent = tr("filemgr.ws.pending_invites_desc", null, "Accept an invitation before the workspace appears in the Location selector.");
+        panel.appendChild(desc);
+
+        for (const inv of list) {
+            const ws = inv && inv.workspace ? inv.workspace : {};
+            const member = inv && inv.member ? inv.member : {};
+            const workspaceId = String(ws.workspace_id || "");
+            const workspaceName = String(ws.name || workspaceId || tr("filemgr.ws.workspace", null, "Workspace"));
+            const role = String(member.role || "viewer");
+            const invitedBy = String(member.added_by || "");
+
+            const row = document.createElement("div");
+            row.style.display = "grid";
+            row.style.gridTemplateColumns = "minmax(0,1fr) auto";
+            row.style.gap = "12px";
+            row.style.alignItems = "center";
+            row.style.padding = "10px";
+            row.style.border = "1px solid rgba(var(--fg-rgb),0.14)";
+            row.style.borderRadius = "14px";
+            row.style.background = "rgba(255,255,255,0.045)";
+            row.style.marginTop = "8px";
+
+            const info = document.createElement("div");
+            info.style.minWidth = "0";
+
+            const name = document.createElement("div");
+            name.style.fontWeight = "900";
+            name.textContent = workspaceName;
+            info.appendChild(name);
+
+            const meta = document.createElement("div");
+            meta.className = "mono";
+            meta.style.opacity = ".78";
+            meta.style.fontSize = "12px";
+            meta.style.overflowWrap = "anywhere";
+            meta.textContent = invitedBy
+                ? tr("filemgr.ws.pending_invite_meta_by", { role: workspaceRoleLabel(role), by: invitedBy }, `Role: ${workspaceRoleLabel(role)} · Invited by: ${invitedBy}`)
+                : tr("filemgr.ws.pending_invite_meta", { role: workspaceRoleLabel(role) }, `Role: ${workspaceRoleLabel(role)}`);
+            info.appendChild(meta);
+
+            const actions = document.createElement("div");
+            actions.style.display = "flex";
+            actions.style.gap = "8px";
+            actions.style.flexWrap = "wrap";
+            actions.style.justifyContent = "flex-end";
+
+            const acceptBtn = document.createElement("button");
+            acceptBtn.type = "button";
+            acceptBtn.className = "btn";
+            acceptBtn.textContent = tr("filemgr.ws.accept_invite", null, "Accept");
+
+            const declineBtn = document.createElement("button");
+            declineBtn.type = "button";
+            declineBtn.className = "btn secondary";
+            declineBtn.textContent = tr("filemgr.ws.decline_invite", null, "Decline");
+
+            async function respond(accept) {
+                const oldAccept = acceptBtn.textContent;
+                const oldDecline = declineBtn.textContent;
+
+                acceptBtn.disabled = true;
+                declineBtn.disabled = true;
+                acceptBtn.textContent = accept
+                    ? tr("filemgr.ws.accepting_invite", null, "Accepting…")
+                    : oldAccept;
+                declineBtn.textContent = accept
+                    ? oldDecline
+                    : tr("filemgr.ws.declining_invite", null, "Declining…");
+
+                try {
+                    await apiRespondWorkspaceInvite(workspaceId, accept);
+                    await refreshWorkspaceChoices();
+                    if (FM.refresh) await FM.refresh();
+
+                    if (accept) {
+                        panel.dataset.lastStatus = tr("filemgr.ws.invite_accepted", { name: workspaceName }, `Accepted workspace invitation: ${workspaceName}`);
+                    } else {
+                        panel.dataset.lastStatus = tr("filemgr.ws.invite_declined", { name: workspaceName }, `Declined workspace invitation: ${workspaceName}`);
+                    }
+                } catch (e) {
+                    acceptBtn.disabled = false;
+                    declineBtn.disabled = false;
+                    acceptBtn.textContent = oldAccept;
+                    declineBtn.textContent = oldDecline;
+
+                    const err = document.createElement("div");
+                    err.className = "hint";
+                    err.style.marginTop = "8px";
+                    err.style.color = "rgb(var(--fail-rgb))";
+                    err.textContent = tr("filemgr.ws.invite_response_failed", { error: String(e && e.message ? e.message : e) }, `Invite response failed: ${String(e && e.message ? e.message : e)}`);
+                    row.appendChild(err);
+                }
+            }
+
+            acceptBtn.addEventListener("click", () => respond(true));
+            declineBtn.addEventListener("click", () => respond(false));
+
+            actions.appendChild(acceptBtn);
+            actions.appendChild(declineBtn);
+
+            row.appendChild(info);
+            row.appendChild(actions);
+            panel.appendChild(row);
+        }
+    }
+
+    async function refreshWorkspaceInvites() {
+        try {
+            const invites = await fetchWorkspaceInvites();
+            renderWorkspaceInvitePanel(invites);
+        } catch (e) {
+            console.warn("Workspace invite refresh failed:", e);
+            renderWorkspaceInvitePanel([]);
+        }
+    }
+
     async function apiLeaveWorkspace(workspaceId) {
         const r = await fetch("/api/v4/workspaces/leave", {
             method: "POST",
@@ -747,6 +948,7 @@
 
             populateScopeSelect(workspaces);
             applyScopeUi();
+            await refreshWorkspaceInvites();
         } catch (e) {
             console.warn("Workspace refresh failed:", e);
             resetToUserScope();
@@ -1828,7 +2030,7 @@
         panel.id = "sharedSpaceInvitePanel";
         panel.style.cssText = "display:none; margin-bottom:12px; padding:10px; border:1px solid rgba(var(--fg-rgb),0.16); border-radius:14px; background:rgba(255,255,255,0.035);";
         panel.innerHTML = `
-            <div style="font-weight:900; margin-bottom:8px;">${tr("filemgr.ws.add_member_title", null, "Add member")}</div>
+            <div style="font-weight:900; margin-bottom:8px;">${tr("filemgr.ws.invite_member_title", null, "Invite member")}</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                 <input id="sharedSpaceInviteFp" class="mono" placeholder="${tr("filemgr.ws.fingerprint_placeholder", null, "Fingerprint")}" style="flex:1; min-width:260px;" />
                 <select id="sharedSpaceInviteRole" style="min-width:120px;">
@@ -1836,10 +2038,10 @@
                     <option value="editor" selected>editor</option>
                     <option value="owner">${tr("filemgr.ws.role.owner", null, "owner")}</option>
                 </select>
-                <button id="sharedSpaceInviteBtn" class="btn" type="button">${tr("filemgr.ws.add_member", null, "Add member")}</button>
+                <button id="sharedSpaceInviteBtn" class="btn" type="button">${tr("filemgr.ws.send_invite", null, "Send invite")}</button>
             </div>
             <div class="mono" style="opacity:.7; font-size:12px; margin-top:8px;">
-                ${tr("filemgr.ws.add_member_help", null, "The invited user will see this under Shared Space invites.")}
+                ${tr("filemgr.ws.invite_member_help", null, "The invited user will see a pending workspace invitation in File Manager and can accept or decline it.")}
             </div>
         `;
 
@@ -1860,11 +2062,14 @@
 
             const old = inviteBtn.textContent;
             inviteBtn.disabled = true;
-            inviteBtn.textContent = tr("filemgr.ws.adding_member", null, "Adding member…");
+            inviteBtn.textContent = tr("filemgr.ws.sending_invite", null, "Sending invite…");
 
             try {
                 await apiAddWorkspaceMember(workspaceId, fp, role);
                 if (fpEl) fpEl.value = "";
+                if (workspaceMembersStatus) {
+                    workspaceMembersStatus.textContent = tr("filemgr.ws.invite_sent_pending", null, "Invitation sent. The user must accept it before the workspace appears in their Location selector.");
+                }
                 await openWorkspaceMembersModal();
             } catch (e) {
                 if (workspaceMembersStatus) {
@@ -2395,6 +2600,7 @@
 
             populateScopeSelect(workspaces);
             applyScopeUi();
+            await refreshWorkspaceInvites();
 
             scopeSelect?.addEventListener("change", async () => {
                 const v = String(scopeSelect.value || "");

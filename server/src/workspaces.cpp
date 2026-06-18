@@ -455,7 +455,7 @@ std::vector<WorkspaceRec> WorkspacesRegistry::list_for_member(const std::string&
     for (const auto& kv : by_id_) {
         const auto& w = kv.second;
         for (const auto& m : w.members) {
-            if (m.fingerprint == fp) {
+            if (m.fingerprint == fp && m.status == "enabled") {
                 out.push_back(w);
                 break;
             }

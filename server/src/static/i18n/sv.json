@@ -4731,5 +4731,21 @@
   "filemgr.archive_compare.moved_note": "Identifiering av flyttade/omdöpta filer baseras på samma filstorlek och CRC.",
   "filemgr.archive_compare.too_large": "ZIP-filen är för stor för jämförelse i webbläsaren",
   "filemgr.archive_compare.current": "Aktuell fil",
-  "filemgr.archive_compare.version": "Vald version"
+  "filemgr.archive_compare.version": "Vald version",
+  "filemgr.ws.invite_member_title": "Invite member",
+  "filemgr.ws.send_invite": "Send invite",
+  "filemgr.ws.invite_member_help": "The invited user will see a pending workspace invitation in File Manager and can accept or decline it.",
+  "filemgr.ws.sending_invite": "Sending invite…",
+  "filemgr.ws.invite_sent_pending": "Invitation sent. The user must accept it before the workspace appears in their Location selector.",
+  "filemgr.ws.pending_invites_title": "{count} workspace invitation(s)",
+  "filemgr.ws.pending_invites_desc": "Accept an invitation before the workspace appears in the Location selector.",
+  "filemgr.ws.pending_invite_meta": "Role: {role}",
+  "filemgr.ws.pending_invite_meta_by": "Role: {role} · Invited by: {by}",
+  "filemgr.ws.accept_invite": "Accept",
+  "filemgr.ws.decline_invite": "Decline",
+  "filemgr.ws.accepting_invite": "Accepting…",
+  "filemgr.ws.declining_invite": "Declining…",
+  "filemgr.ws.invite_accepted": "Accepted workspace invitation: {name}",
+  "filemgr.ws.invite_declined": "Declined workspace invitation: {name}",
+  "filemgr.ws.invite_response_failed": "Invite response failed: {error}"
 }
