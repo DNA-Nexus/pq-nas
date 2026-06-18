@@ -754,6 +754,9 @@ html[data-theme="win_classic"] .modal.show{
     let peopleKeyboardInstalled = false;
 
     function contactLabel(c) {
+        const displayName = String((c && c.display_name) || "").trim();
+        if (displayName) return displayName;
+
         const nickname = String((c && c.nickname) || "").trim();
         if (nickname) return nickname;
 
@@ -767,6 +770,9 @@ html[data-theme="win_classic"] .modal.show{
     function contactDisplayNameLine(c) {
         const displayName = String((c && c.display_name) || "").trim();
         if (!displayName) return "";
+
+        const label = contactLabel(c).trim();
+        if (displayName === label) return "";
 
         const nickname = String((c && c.nickname) || "").trim();
         const fp = String((c && c.subject_fingerprint) || "").trim();

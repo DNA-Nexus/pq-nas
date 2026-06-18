@@ -116,21 +116,25 @@
 }
 
 .peopleCardTop{
-    display:block;
-    position:relative;
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
+    align-items:start;
+    gap:10px;
     min-width:0;
-    padding-right:92px;
+    padding-right:0;
 }
 
 .peopleCardActions{
-    position:absolute;
-    top:10px;
-    right:10px;
+    position:static;
+    top:auto;
+    right:auto;
     display:flex;
     gap:5px;
-    flex-wrap:nowrap;
+    flex-wrap:wrap;
     justify-content:flex-end;
-    opacity:.58;
+    justify-self:end;
+    max-width:100%;
+    opacity:.72;
     transition:opacity 120ms ease, transform 120ms ease;
 }
 
@@ -146,6 +150,7 @@
     border-radius:10px;
     font-size:11px;
     line-height:1.1;
+    white-space:nowrap;
 }
 
 .peopleCardKind{
