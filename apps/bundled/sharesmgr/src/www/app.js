@@ -59,6 +59,7 @@
 
     let shares = [];
     let lastLoadedAt = 0;
+    let manualSort = null;
 
     function nowMs() { return Date.now(); }
 
@@ -900,7 +901,68 @@ html[data-theme="bright"] .sharesConfirmBackdrop{
         return out;
     }
 
+    // shares-manager-header-sort:start
+    function sortableText(value) {
+        return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
+    function sortableTime(value, emptyValue) {
+        if (!value) return emptyValue;
+        const t = Date.parse(value);
+        return Number.isFinite(t) ? t : emptyValue;
+    }
+
+    function sortableNumber(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    function shareSortValue(s, key) {
+        if (key === "path") return { kind: "text", value: sortableText(s.path || "") };
+        if (key === "type") return { kind: "text", value: sortableText(s.type || "—") };
+        if (key === "expires") return { kind: "number", value: sortableTime(s.expires_at, Number.POSITIVE_INFINITY) };
+        if (key === "downloads") return { kind: "number", value: sortableNumber(s.downloads ?? 0) };
+        if (key === "created") return { kind: "number", value: sortableTime(s.created_at, 0) };
+        if (key === "url") return { kind: "text", value: sortableText(s.url || (s.token ? ("/s/" + s.token) : "")) };
+        if (key === "token") return { kind: "text", value: sortableText(s.token || "") };
+        if (key === "pq_state") return { kind: "text", value: sortableText(pqStateOf(s)) };
+        if (key === "invite_url") return { kind: "text", value: sortableText(s.invite_url || "") };
+        if (key === "share_url") return { kind: "text", value: sortableText(s.url || (s.token ? ("/s/" + s.token) : "")) };
+        return { kind: "text", value: "" };
+    }
+
+    function compareShareSortValues(a, b) {
+        if (a.kind === "number" && b.kind === "number") {
+            return a.value - b.value;
+        }
+        return String(a.value).localeCompare(String(b.value), undefined, {
+            numeric: true,
+            sensitivity: "base"
+        });
+    }
+
+    function applyManualSort(list) {
+        if (!manualSort || !manualSort.key) return null;
+
+        const out = list.slice();
+        const dir = manualSort.dir === "desc" ? -1 : 1;
+        const key = manualSort.key;
+
+        out.sort((a, b) => {
+            const cmp = compareShareSortValues(shareSortValue(a, key), shareSortValue(b, key));
+            if (cmp !== 0) return cmp * dir;
+
+            // Stable secondary sort by creation time, newest first.
+            return sortableTime(b.created_at, 0) - sortableTime(a.created_at, 0);
+        });
+
+        return out;
+    }
+
     function applySort(list) {
+        const manual = applyManualSort(list);
+        if (manual) return manual;
+
         const mode = sort?.value || "created_desc";
 
         const parseCreated = (s) => Date.parse(s.created_at || "") || 0;
@@ -923,6 +985,7 @@ html[data-theme="bright"] .sharesConfirmBackdrop{
 
         return out;
     }
+    // shares-manager-header-sort:end
 
     function td(text, cls) {
         const el = document.createElement("td");
@@ -1229,6 +1292,86 @@ html[data-theme="bright"] .sharesConfirmBackdrop{
         }
     }
 
+
+    function sortKeyForHeader(th) {
+        if (!th) return "";
+        if (th.classList.contains("colPath")) return "path";
+        if (th.classList.contains("colType")) return "type";
+        if (th.classList.contains("colExp")) return "expires";
+        if (th.classList.contains("colDl")) return "downloads";
+        if (th.classList.contains("colCreated")) return "created";
+        if (th.classList.contains("colUrl")) return "url";
+        if (th.classList.contains("colToken")) return "token";
+        if (th.classList.contains("colState")) return "pq_state";
+        if (th.classList.contains("colInvite")) return "invite_url";
+        return "";
+    }
+
+    function ensureSortIndicator(th) {
+        let indicator = th.querySelector(".sharesSortIndicator");
+        if (indicator) return indicator;
+
+        indicator = document.createElement("span");
+        indicator.className = "sharesSortIndicator";
+        indicator.setAttribute("aria-hidden", "true");
+        indicator.style.marginInlineStart = "6px";
+        indicator.style.opacity = ".78";
+        th.appendChild(indicator);
+        return indicator;
+    }
+
+    function updateSortHeaderIndicators() {
+        document.querySelectorAll("th.sharesSortable").forEach((th) => {
+            const key = sortKeyForHeader(th);
+            const indicator = ensureSortIndicator(th);
+
+            th.removeAttribute("aria-sort");
+
+            if (manualSort && manualSort.key === key) {
+                indicator.textContent = manualSort.dir === "asc" ? "▲" : "▼";
+                th.setAttribute("aria-sort", manualSort.dir === "asc" ? "ascending" : "descending");
+            } else {
+                indicator.textContent = "";
+            }
+        });
+    }
+
+    function initHeaderSorting() {
+        document.querySelectorAll("table.tbl th").forEach((th) => {
+            const key = sortKeyForHeader(th);
+            if (!key) return;
+
+            th.classList.add("sharesSortable");
+            th.tabIndex = 0;
+            th.title = sharesT("sharesmgr.sort_by_column", null, "Sort by this column");
+            ensureSortIndicator(th);
+
+            if (th.dataset.sharesSortBound === "1") return;
+            th.dataset.sharesSortBound = "1";
+
+            const activate = () => {
+                const nextDir =
+                    manualSort && manualSort.key === key && manualSort.dir === "asc"
+                        ? "desc"
+                        : "asc";
+
+                manualSort = { key, dir: nextDir };
+
+                if (sort) sort.value = "";
+                render();
+            };
+
+            th.addEventListener("click", activate);
+            th.addEventListener("keydown", (ev) => {
+                if (ev.key !== "Enter" && ev.key !== " ") return;
+                ev.preventDefault();
+                activate();
+            });
+        });
+
+        updateSortHeaderIndicators();
+    }
+
     function render() {
         const filteredAll = applySort(applyFilters(shares));
         const groups = splitShares(filteredAll);
@@ -1251,6 +1394,7 @@ html[data-theme="bright"] .sharesConfirmBackdrop{
         renderStandardRows(groups.standard, showTok);
         renderWorkspaceRows(groups.workspace, showTok);
         renderPqRows(groups.pq, showTok);
+        updateSortHeaderIndicators();
 
         if (btnRevokeExpired) {
             const nExp = expiredShares(shares).length;
@@ -1274,15 +1418,20 @@ html[data-theme="bright"] .sharesConfirmBackdrop{
         if (q) q.value = "";
         if (state) state.value = "all";
         if (sort) sort.value = "created_desc";
+        manualSort = null;
         if (showToken) showToken.checked = false;
         render();
     };
 
     if (q) q.oninput = () => render();
     if (state) state.onchange = () => render();
-    if (sort) sort.onchange = () => render();
+    if (sort) sort.onchange = () => {
+        manualSort = null;
+        render();
+    };
     if (showToken) showToken.onchange = () => render();
 
+    initHeaderSorting();
     initSectionToggles();
     loadVersion();
     loadShares().catch(() => {

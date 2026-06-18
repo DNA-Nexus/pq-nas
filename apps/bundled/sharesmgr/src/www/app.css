@@ -406,3 +406,22 @@ body{
         align-items:flex-start;
     }
 }
+
+th.sharesSortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sharesSortable:hover {
+    text-decoration: underline;
+}
+
+th.sharesSortable:focus {
+    outline: 2px solid rgba(var(--accent-rgb), 0.55);
+    outline-offset: 2px;
+}
+
+.sharesSortIndicator {
+    font-size: 11px;
+}
+
