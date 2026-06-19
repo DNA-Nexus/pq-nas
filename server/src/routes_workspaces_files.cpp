@@ -35,6 +35,7 @@
 #include "trash_index.h"
 #include "runtime_paths.h"
 #include "gallery_meta.h"
+#include "workspace_messages.h"
 
 namespace pqnas {
     static std::string hex_encode_lower_local(const unsigned char* data, std::size_t len) {
@@ -14528,6 +14529,7 @@ srv.Post("/api/v4/workspaces/files/move",
         }.dump());
     });
 
+    register_workspace_message_routes(srv, deps);
     
 }
 
