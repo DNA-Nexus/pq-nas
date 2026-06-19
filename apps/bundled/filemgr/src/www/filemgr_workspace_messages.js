@@ -961,11 +961,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let messages = [];
   let latestId = 0;
   let unreadCount = 0;
-  let selfFp = "";
-  let actorRole = "";
   let canModerateMessages = false;
   let actorMuted = false;
-  let mutes = [];
+  let allMuted = false;
   let pendingAttachments = [];
   const WS_MSG_FILE_REF_MIME = "application/x-pqnas-workspace-file-ref";
   let refreshBusy = false;
@@ -1069,9 +1067,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     els.status.style.color = isError ? "rgb(var(--fail-rgb))" : "";
   }
 
-  function isTargetMuted(targetFp) {
-    const want = String(targetFp || "");
-    return Array.isArray(mutes) && mutes.some((m) => String(m && m.target_fp || "") === want);
+  function isTargetMuted(targetKey) {
+    return String(targetKey || "") === "*" ? !!allMuted : false;
   }
 
   function applyModerationUi() {
@@ -1140,12 +1137,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
-  async function setMute(targetFp, muted, targetLabel = "") {
+  async function setMute(targetKey, muted, targetLabel = "") {
     const ws = currentWorkspaceId();
-    const target = String(targetFp || "").trim();
+    const target = String(targetKey || "").trim();
     if (!ws || !target) return;
 
-    const label = target === "*"
+    const targetAll = target === "*";
+    const messageId = targetAll ? 0 : Number(target || 0);
+    if (!targetAll && (!Number.isFinite(messageId) || messageId <= 0)) return;
+
+    const label = targetAll
       ? tr("filemgr.ws.messages.everyone", null, "everyone")
       : String(targetLabel || "").trim() || tr("filemgr.ws.messages.member", null, "Member");
 
@@ -1177,14 +1178,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workspace_id: ws,
-          target_fp: target,
+          target_all: targetAll,
+          message_id: messageId,
           muted: !!muted
         })
       });
 
-      mutes = Array.isArray(j.mutes) ? j.mutes : [];
-      applyModerationUi();
       await refreshMessages({ markRead: true });
+      applyModerationUi();
       setStatus(muted
         ? tr("filemgr.ws.messages.muted", null, "Muted.")
         : tr("filemgr.ws.messages.unmuted", null, "Unmuted.")
@@ -1220,11 +1221,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       messages = [];
       latestId = 0;
       unreadCount = 0;
-      selfFp = "";
-      actorRole = "";
       canModerateMessages = false;
       actorMuted = false;
-      mutes = [];
+      allMuted = false;
       pendingAttachments = [];
       if (els) renderPendingAttachments();
     }
@@ -1258,7 +1257,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     for (const msg of messages) {
       const row = document.createElement("div");
-      const own = !!selfFp && String(msg.author_fp || "") === selfFp;
+      const own = !!msg.is_own;
       row.className = own ? "wsMsgRow wsMsgOwn" : "wsMsgRow";
 
       const meta = document.createElement("div");
@@ -1266,7 +1265,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       const author = document.createElement("div");
       author.className = "wsMsgAuthor";
-      author.textContent = String(msg.author_name || msg.author_fp || tr("filemgr.ws.member", null, "Member"));
+      author.textContent = String(msg.author_name || tr("filemgr.ws.member", null, "Member"));
 
       const time = document.createElement("div");
       time.className = "wsMsgTime";
@@ -1276,7 +1275,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       metaRight.className = "wsMsgMetaRight";
       metaRight.appendChild(time);
 
-      const canDelete = own || canModerateMessages;
+      const canDelete = !!msg.can_delete;
       if (canDelete) {
         const del = document.createElement("button");
         del.type = "button";
@@ -1291,9 +1290,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         metaRight.appendChild(del);
       }
 
-      if (canModerateMessages && !own && msg.author_fp) {
-        const target = String(msg.author_fp || "");
-        const muted = isTargetMuted(target);
+      if (msg.can_mute_author) {
+        const target = String(msg.id || "");
+        const muted = !!msg.author_muted;
         const mute = document.createElement("button");
         mute.type = "button";
         mute.className = "wsMsgMiniBtn wsMsgMuteBtn" + (muted ? " isMuted" : "");
@@ -1372,11 +1371,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       const j = await fetchJson(`/api/v4/workspaces/messages?${qs.toString()}`);
       activeWorkspaceId = ws;
-      selfFp = String(j.actor_fp || "");
-      actorRole = String(j.actor_role || "");
       canModerateMessages = !!j.can_moderate_messages;
       actorMuted = !!j.actor_muted;
-      mutes = Array.isArray(j.mutes) ? j.mutes : [];
+      allMuted = !!j.message_board_muted_all;
       messages = Array.isArray(j.messages) ? j.messages : [];
       latestId = Number(j.latest_id || 0);
       unreadCount = Number(j.unread_count || 0);

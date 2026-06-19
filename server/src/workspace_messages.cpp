@@ -795,7 +795,6 @@ json message_row_to_json(const WorkspaceFileRouteDeps& deps,
     return json{
         {"id", sqlite3_column_int64(st, 0)},
         {"workspace_id", sqlite_text_col(st, 1)},
-        {"author_fp", author_fp},
         {"author_name", resolve_message_author_name_wsmsg(deps, workspace, author_fp, author_name_db)},
         {"body", sqlite_text_col(st, 4)},
         {"attachments", attachments},
@@ -859,6 +858,31 @@ bool workspace_member_is_owner_wsmsg(const WorkspaceRec& workspace,
     return false;
 }
 
+bool message_target_is_muted_wsmsg(sqlite3* db,
+                                    const std::string& workspace_id,
+                                    const std::string& target_fp,
+                                    std::string* err) {
+    if (workspace_id.empty() || target_fp.empty()) return false;
+
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "SELECT 1 FROM workspace_message_mutes "
+            "WHERE workspace_id=? AND target_fp=? "
+            "LIMIT 1;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+    bind_text_wsmsg(st.stmt, 2, target_fp);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc == SQLITE_ROW) return true;
+    if (rc != SQLITE_DONE && err) *err = sqlite3_errmsg(db);
+    return false;
+}
+
 bool message_actor_is_muted_wsmsg(sqlite3* db,
                                   const WorkspaceMessageActor& actor,
                                   std::string* err) {
@@ -881,49 +905,6 @@ bool message_actor_is_muted_wsmsg(sqlite3* db,
     if (rc == SQLITE_ROW) return true;
     if (rc != SQLITE_DONE && err) *err = sqlite3_errmsg(db);
     return false;
-}
-
-json list_message_mutes_wsmsg(const WorkspaceFileRouteDeps& deps,
-                              sqlite3* db,
-                              const WorkspaceRec& workspace,
-                              std::string* err) {
-    json out = json::array();
-
-    StmtHandle st;
-    if (!prepare_wsmsg(db,
-            "SELECT target_fp, muted_by_fp, muted_at_epoch, reason "
-            "FROM workspace_message_mutes "
-            "WHERE workspace_id=? "
-            "ORDER BY target_fp ASC;",
-            &st.stmt,
-            err)) {
-        return out;
-    }
-
-    bind_text_wsmsg(st.stmt, 1, workspace.workspace_id);
-
-    while (true) {
-        const int rc = sqlite3_step(st.stmt);
-        if (rc == SQLITE_DONE) break;
-        if (rc != SQLITE_ROW) {
-            if (err) *err = sqlite3_errmsg(db);
-            break;
-        }
-
-        const std::string target_fp = sqlite_text_col(st.stmt, 0);
-        const std::string by_fp = sqlite_text_col(st.stmt, 1);
-
-        out.push_back(json{
-            {"target_fp", target_fp},
-            {"target_name", target_fp == "*" ? "Everyone" : resolve_message_author_name_wsmsg(deps, workspace, target_fp, "")},
-            {"muted_by_fp", by_fp},
-            {"muted_by_name", resolve_message_author_name_wsmsg(deps, workspace, by_fp, "")},
-            {"muted_at_epoch", sqlite3_column_int64(st.stmt, 2)},
-            {"reason", sqlite_text_col(st.stmt, 3)}
-        });
-    }
-
-    return out;
 }
 
 bool upsert_message_mute_wsmsg(sqlite3* db,
@@ -1108,18 +1089,20 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
-        json mutes = json::array();
-        if (can_moderate) {
-            mutes = list_message_mutes_wsmsg(deps, db.db, actor.workspace, &moderr);
-            if (!moderr.empty()) {
-                reply_json_wsmsg(deps, res, 500, json{
-                    {"ok", false},
-                    {"error", "server_error"},
-                    {"message", "failed to list workspace message mutes"},
-                    {"detail", moderr}
-                });
-                return;
-            }
+        const bool message_board_muted_all = message_target_is_muted_wsmsg(
+            db.db,
+            actor.workspace.workspace_id,
+            "*",
+            &moderr
+        );
+        if (!moderr.empty()) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to read workspace message board mute state"},
+                {"detail", moderr}
+            });
+            return;
         }
 
         const int limit = int_param_wsmsg(
@@ -1183,7 +1166,34 @@ void register_workspace_message_routes(httplib::Server& srv,
         while (true) {
             const int rc = sqlite3_step(st.stmt);
             if (rc == SQLITE_ROW) {
-                messages.push_back(message_row_to_json(deps, actor.workspace, st.stmt));
+                const std::string row_author_fp = sqlite_text_col(st.stmt, 2);
+                json msg = message_row_to_json(deps, actor.workspace, st.stmt);
+
+                const bool is_own = row_author_fp == actor.fp;
+                const bool author_is_owner = workspace_member_is_owner_wsmsg(actor.workspace, row_author_fp);
+                const bool author_muted = message_target_is_muted_wsmsg(
+                    db.db,
+                    actor.workspace.workspace_id,
+                    row_author_fp,
+                    &moderr
+                );
+
+                if (!moderr.empty()) {
+                    reply_json_wsmsg(deps, res, 500, json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "failed to read message mute state"},
+                        {"detail", moderr}
+                    });
+                    return;
+                }
+
+                msg["is_own"] = is_own;
+                msg["can_delete"] = is_own || can_moderate;
+                msg["can_mute_author"] = can_moderate && !is_own && !author_is_owner;
+                msg["author_muted"] = author_muted;
+
+                messages.push_back(std::move(msg));
                 continue;
             }
 
@@ -1209,11 +1219,9 @@ void register_workspace_message_routes(httplib::Server& srv,
         reply_json_wsmsg(deps, res, 200, json{
             {"ok", true},
             {"workspace_id", actor.workspace.workspace_id},
-            {"actor_fp", actor.fp},
-            {"actor_role", actor.role},
             {"can_moderate_messages", can_moderate},
             {"actor_muted", actor_muted},
-            {"mutes", mutes},
+            {"message_board_muted_all", message_board_muted_all},
             {"messages", messages},
             {"latest_id", latest_id},
             {"last_seen_id", seen_id},
@@ -1420,12 +1428,15 @@ void register_workspace_message_routes(httplib::Server& srv,
             {"message", json{
                 {"id", new_id},
                 {"workspace_id", actor.workspace.workspace_id},
-                {"author_fp", actor.fp},
                 {"author_name", actor.display_name},
                 {"body", text},
                 {"attachments", attachments},
                 {"created_at_epoch", now},
-                {"created_at", created_at}
+                {"created_at", created_at},
+                {"is_own", true},
+                {"can_delete", true},
+                {"can_mute_author", false},
+                {"author_muted", false}
             }}
         });
     });
@@ -1540,16 +1551,24 @@ void register_workspace_message_routes(httplib::Server& srv,
         }
 
         const std::string workspace_id = body.value("workspace_id", "");
-        std::string target_fp = trim_copy_wsmsg(body.value("target_fp", ""));
+        const bool target_all = body.value("target_all", false);
         const bool muted = body.value("muted", true);
         std::string reason = trim_copy_wsmsg(body.value("reason", ""));
+
+        sqlite3_int64 message_id = 0;
+        try {
+            message_id = static_cast<sqlite3_int64>(body.value("message_id", 0LL));
+        } catch (...) {
+            message_id = 0;
+        }
+
         if (reason.size() > 500) reason = reason.substr(0, 500);
 
-        if (target_fp.empty()) {
+        if (!target_all && message_id <= 0) {
             reply_json_wsmsg(deps, res, 400, json{
                 {"ok", false},
                 {"error", "bad_request"},
-                {"message", "target_fp is required"}
+                {"message", "target_all or message_id is required"}
             });
             return;
         }
@@ -1566,7 +1585,47 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
+        SqliteHandle db;
+        std::string dberr;
+        if (!open_workspace_messages_db(deps, &db, &dberr)) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to open workspace messages db"},
+                {"detail", dberr}
+            });
+            return;
+        }
+
+        std::string target_fp;
+        if (target_all) {
+            target_fp = "*";
+        } else {
+            if (!get_message_author_wsmsg(
+                    db.db,
+                    actor.workspace.workspace_id,
+                    message_id,
+                    &target_fp,
+                    &dberr)) {
+                reply_json_wsmsg(deps, res, 404, json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "message not found"}
+                });
+                return;
+            }
+        }
+
         if (target_fp != "*") {
+            if (target_fp == actor.fp) {
+                reply_json_wsmsg(deps, res, 400, json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {"message", "cannot mute yourself"}
+                });
+                return;
+            }
+
             if (!workspace_has_enabled_member_fp_wsmsg(actor.workspace, target_fp)) {
                 reply_json_wsmsg(deps, res, 404, json{
                     {"ok", false},
@@ -1584,18 +1643,6 @@ void register_workspace_message_routes(httplib::Server& srv,
                 });
                 return;
             }
-        }
-
-        SqliteHandle db;
-        std::string dberr;
-        if (!open_workspace_messages_db(deps, &db, &dberr)) {
-            reply_json_wsmsg(deps, res, 500, json{
-                {"ok", false},
-                {"error", "server_error"},
-                {"message", "failed to open workspace messages db"},
-                {"detail", dberr}
-            });
-            return;
         }
 
         bool ok = false;
@@ -1628,18 +1675,6 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
-        std::string list_err;
-        json mutes = list_message_mutes_wsmsg(deps, db.db, actor.workspace, &list_err);
-        if (!list_err.empty()) {
-            reply_json_wsmsg(deps, res, 500, json{
-                {"ok", false},
-                {"error", "server_error"},
-                {"message", "failed to list workspace message mutes"},
-                {"detail", list_err}
-            });
-            return;
-        }
-
         audit_workspace_message_best_effort(
             deps,
             req,
@@ -1652,9 +1687,9 @@ void register_workspace_message_routes(httplib::Server& srv,
         reply_json_wsmsg(deps, res, 200, json{
             {"ok", true},
             {"workspace_id", actor.workspace.workspace_id},
-            {"target_fp", target_fp},
-            {"muted", muted},
-            {"mutes", mutes}
+            {"target_all", target_fp == "*"},
+            {"message_id", message_id},
+            {"muted", muted}
         });
     });
 

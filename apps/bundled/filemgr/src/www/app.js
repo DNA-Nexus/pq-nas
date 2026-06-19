@@ -6217,7 +6217,7 @@ function describeMoveItems(items) {
     st.textContent = `
       .tile.fmWsMsgTarget{
         outline:3px solid rgba(var(--warn-rgb),0.92);
-        box-shadow:0 0 0 6px rgba(var(--warn-rgb),0.18), 0 20px 52px rgba(0,0,0,0.28);
+        box-shadow:0 0 0 6px rgba(var(--warn-rgb),0.18), var(--shadow);
         transform:translateY(-2px);
       }
     `;
