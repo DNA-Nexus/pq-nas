@@ -18,6 +18,8 @@ namespace {
 
 constexpr int k_workspace_messages_default_limit = 100;
 constexpr int k_workspace_messages_max_limit = 200;
+constexpr int k_workspace_messages_active_cap_per_workspace = 5000;
+constexpr sqlite3_int64 k_workspace_messages_soft_delete_keep_seconds = 30LL * 24LL * 60LL * 60LL;
 constexpr std::size_t k_workspace_message_max_bytes = 4000;
 
 std::mutex g_workspace_messages_schema_mu;
@@ -616,6 +618,70 @@ struct WorkspaceMessageActor {
     WorkspaceRec workspace;
     WorkspaceMemberRec member;
 };
+
+bool prune_workspace_messages_wsmsg(sqlite3* db,
+                                    const std::string& workspace_id,
+                                    sqlite3_int64 now_epoch,
+                                    std::string* err) {
+    if (!db || workspace_id.empty()) return true;
+
+    {
+        StmtHandle st;
+        if (!prepare_wsmsg(db,
+                "DELETE FROM workspace_messages "
+                "WHERE workspace_id=? "
+                "AND deleted_at_epoch>0 "
+                "AND deleted_at_epoch<?;",
+                &st.stmt,
+                err)) {
+            return false;
+        }
+
+        bind_text_wsmsg(st.stmt, 1, workspace_id);
+        sqlite3_bind_int64(st.stmt, 2, now_epoch - k_workspace_messages_soft_delete_keep_seconds);
+
+        const int rc = sqlite3_step(st.stmt);
+        if (rc != SQLITE_DONE) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+    }
+
+    {
+        StmtHandle st;
+        if (!prepare_wsmsg(db,
+                "UPDATE workspace_messages "
+                "SET deleted_at_epoch=?, deleted_by_fp='system-prune' "
+                "WHERE workspace_id=? "
+                "AND deleted_at_epoch=0 "
+                "AND id IN ("
+                "  SELECT id FROM ("
+                "    SELECT id FROM workspace_messages "
+                "    WHERE workspace_id=? "
+                "    AND deleted_at_epoch=0 "
+                "    ORDER BY id DESC "
+                "    LIMIT -1 OFFSET ?"
+                "  )"
+                ");",
+                &st.stmt,
+                err)) {
+            return false;
+        }
+
+        sqlite3_bind_int64(st.stmt, 1, now_epoch);
+        bind_text_wsmsg(st.stmt, 2, workspace_id);
+        bind_text_wsmsg(st.stmt, 3, workspace_id);
+        sqlite3_bind_int64(st.stmt, 4, k_workspace_messages_active_cap_per_workspace);
+
+        const int rc = sqlite3_step(st.stmt);
+        if (rc != SQLITE_DONE) {
+            if (err) *err = sqlite3_errmsg(db);
+            return false;
+        }
+    }
+
+    return true;
+}
 
 bool require_workspace_message_actor(const WorkspaceFileRouteDeps& deps,
                                      const httplib::Request& req,
@@ -1410,6 +1476,22 @@ void register_workspace_message_routes(httplib::Server& srv,
                 {"detail", dberr}
             });
             return;
+        }
+
+        std::string prune_err;
+        if (!prune_workspace_messages_wsmsg(
+                db.db,
+                actor.workspace.workspace_id,
+                now,
+                &prune_err)) {
+            audit_workspace_message_best_effort(
+                deps,
+                req,
+                "workspace.messages_prune_failed",
+                "warn",
+                actor,
+                0
+            );
         }
 
         audit_workspace_message_best_effort(
