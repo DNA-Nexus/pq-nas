@@ -6,11 +6,13 @@
 #include <chrono>
 #include <cctype>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pqnas {
@@ -22,7 +24,16 @@ constexpr int k_workspace_messages_active_cap_per_workspace = 5000;
 constexpr sqlite3_int64 k_workspace_messages_soft_delete_keep_seconds = 30LL * 24LL * 60LL * 60LL;
 constexpr std::size_t k_workspace_message_max_bytes = 4000;
 
+constexpr sqlite3_int64 k_workspace_messages_rate_window_seconds = 60;
+constexpr int k_workspace_messages_post_rate_limit = 30;
+constexpr int k_workspace_messages_delete_rate_limit = 60;
+constexpr int k_workspace_messages_mute_rate_limit = 30;
+constexpr int k_workspace_messages_read_rate_limit = 120;
+constexpr std::size_t k_workspace_messages_rate_bucket_cap = 10000;
+
 std::mutex g_workspace_messages_schema_mu;
+std::mutex g_workspace_messages_rate_mu;
+std::unordered_map<std::string, std::deque<sqlite3_int64>> g_workspace_messages_rate;
 
 struct SqliteHandle {
     sqlite3* db = nullptr;
@@ -618,6 +629,116 @@ struct WorkspaceMessageActor {
     WorkspaceRec workspace;
     WorkspaceMemberRec member;
 };
+
+std::string workspace_message_rate_key_wsmsg(const httplib::Request& req,
+                                             const WorkspaceMessageActor& actor,
+                                             const char* action) {
+    const std::string remote_addr = req.remote_addr.empty() ? "unknown" : req.remote_addr;
+
+    std::ostringstream oss;
+    oss << (action ? action : "unknown")
+        << '|'
+        << remote_addr
+        << '|'
+        << actor.workspace.workspace_id
+        << '|'
+        << actor.fp;
+
+    return oss.str();
+}
+
+void compact_workspace_message_rate_map_locked_wsmsg(sqlite3_int64 now_epoch) {
+    const sqlite3_int64 min_epoch = now_epoch - k_workspace_messages_rate_window_seconds;
+
+    for (auto it = g_workspace_messages_rate.begin(); it != g_workspace_messages_rate.end(); ) {
+        auto& hits = it->second;
+        while (!hits.empty() && hits.front() <= min_epoch) {
+            hits.pop_front();
+        }
+
+        if (hits.empty()) {
+            it = g_workspace_messages_rate.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+bool workspace_message_rate_limited_wsmsg(const httplib::Request& req,
+                                          const WorkspaceMessageActor& actor,
+                                          const char* action,
+                                          int max_hits,
+                                          sqlite3_int64 now_epoch,
+                                          sqlite3_int64* retry_after_seconds) {
+    if (retry_after_seconds) *retry_after_seconds = k_workspace_messages_rate_window_seconds;
+    if (max_hits <= 0) return false;
+
+    const std::string key = workspace_message_rate_key_wsmsg(req, actor, action);
+
+    std::lock_guard<std::mutex> lock(g_workspace_messages_rate_mu);
+
+    if (g_workspace_messages_rate.size() >= k_workspace_messages_rate_bucket_cap) {
+        compact_workspace_message_rate_map_locked_wsmsg(now_epoch);
+    }
+
+    auto found = g_workspace_messages_rate.find(key);
+    if (g_workspace_messages_rate.size() >= k_workspace_messages_rate_bucket_cap &&
+        found == g_workspace_messages_rate.end()) {
+        if (retry_after_seconds) *retry_after_seconds = k_workspace_messages_rate_window_seconds;
+        return true;
+    }
+
+    auto& hits = g_workspace_messages_rate[key];
+
+    const sqlite3_int64 min_epoch = now_epoch - k_workspace_messages_rate_window_seconds;
+    while (!hits.empty() && hits.front() <= min_epoch) {
+        hits.pop_front();
+    }
+
+    if (hits.size() >= static_cast<std::size_t>(max_hits)) {
+        sqlite3_int64 retry = k_workspace_messages_rate_window_seconds;
+        if (!hits.empty()) {
+            retry = k_workspace_messages_rate_window_seconds - (now_epoch - hits.front());
+            if (retry < 1) retry = 1;
+        }
+
+        if (retry_after_seconds) *retry_after_seconds = retry;
+        return true;
+    }
+
+    hits.push_back(now_epoch);
+    return false;
+}
+
+bool require_workspace_message_rate_limit_wsmsg(const WorkspaceFileRouteDeps& deps,
+                                                const httplib::Request& req,
+                                                httplib::Response& res,
+                                                const WorkspaceMessageActor& actor,
+                                                const char* action,
+                                                int max_hits,
+                                                sqlite3_int64 now_epoch) {
+    sqlite3_int64 retry_after = 0;
+
+    if (!workspace_message_rate_limited_wsmsg(
+            req,
+            actor,
+            action,
+            max_hits,
+            now_epoch,
+            &retry_after)) {
+        return true;
+    }
+
+    res.set_header("Retry-After", std::to_string(retry_after));
+
+    reply_json_wsmsg(deps, res, 429, json{
+        {"ok", false},
+        {"error", "rate_limited"},
+        {"message", "too many requests, try again later"}
+    });
+
+    return false;
+}
 
 bool prune_workspace_messages_wsmsg(sqlite3* db,
                                     const std::string& workspace_id,
@@ -1335,6 +1456,17 @@ void register_workspace_message_routes(httplib::Server& srv,
         WorkspaceMessageActor actor;
         if (!require_workspace_message_actor(deps, req, res, workspace_id, &actor)) return;
 
+        if (!require_workspace_message_rate_limit_wsmsg(
+                deps,
+                req,
+                res,
+                actor,
+                "post",
+                k_workspace_messages_post_rate_limit,
+                now_epoch_wsmsg(deps))) {
+            return;
+        }
+
         std::string attachments_err;
         json attachments = sanitize_message_attachments_wsmsg(
             body,
@@ -1558,6 +1690,17 @@ void register_workspace_message_routes(httplib::Server& srv,
         WorkspaceMessageActor actor;
         if (!require_workspace_message_actor(deps, req, res, workspace_id, &actor)) return;
 
+        if (!require_workspace_message_rate_limit_wsmsg(
+                deps,
+                req,
+                res,
+                actor,
+                "delete",
+                k_workspace_messages_delete_rate_limit,
+                now_epoch_wsmsg(deps))) {
+            return;
+        }
+
         SqliteHandle db;
         std::string dberr;
         if (!open_workspace_messages_db(deps, &db, &dberr)) {
@@ -1664,6 +1807,17 @@ void register_workspace_message_routes(httplib::Server& srv,
                 {"error", "forbidden"},
                 {"message", "only workspace owner can mute members"}
             });
+            return;
+        }
+
+        if (!require_workspace_message_rate_limit_wsmsg(
+                deps,
+                req,
+                res,
+                actor,
+                "mute",
+                k_workspace_messages_mute_rate_limit,
+                now_epoch_wsmsg(deps))) {
             return;
         }
 
@@ -1794,6 +1948,17 @@ void register_workspace_message_routes(httplib::Server& srv,
 
         WorkspaceMessageActor actor;
         if (!require_workspace_message_actor(deps, req, res, workspace_id, &actor)) return;
+
+        if (!require_workspace_message_rate_limit_wsmsg(
+                deps,
+                req,
+                res,
+                actor,
+                "read",
+                k_workspace_messages_read_rate_limit,
+                now_epoch_wsmsg(deps))) {
+            return;
+        }
 
         SqliteHandle db;
         std::string dberr;
