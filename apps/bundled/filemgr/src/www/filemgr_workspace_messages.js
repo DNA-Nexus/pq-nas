@@ -20,6 +20,30 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const st = document.createElement("style");
     st.id = "workspaceMessagesStyle";
     st.textContent = `
+      #workspaceMessagesFab,
+      #workspaceMessagesDrawer,
+      .wsMsgConfirmBackdrop{
+        --wsmsg-fg-rgb: var(--fg-rgb);
+
+        /* Opaque component surfaces derived from solid theme tokens.
+           Do not use --panel / --panel2 here: some themes intentionally
+           define them as translucent glass layers. */
+        --wsmsg-surface: color-mix(in srgb, var(--bg) 92%, var(--fg) 8%);
+        --wsmsg-surface-2: color-mix(in srgb, var(--bg) 86%, var(--fg) 14%);
+        --wsmsg-surface-3: color-mix(in srgb, var(--bg) 80%, var(--fg) 20%);
+
+        --wsmsg-border: var(--border2);
+        --wsmsg-shadow: color-mix(in srgb, var(--bg) 76%, transparent);
+        --wsmsg-overlay: color-mix(in srgb, var(--bg) 72%, transparent);
+
+        --wsmsg-soft-layer: color-mix(in srgb, var(--wsmsg-surface) 90%, var(--fg) 10%);
+        --wsmsg-strong-layer: color-mix(in srgb, var(--wsmsg-surface-2) 88%, var(--fg) 12%);
+        --wsmsg-input-bg: color-mix(in srgb, var(--wsmsg-surface) 94%, var(--bg) 6%);
+        --wsmsg-card-bg: color-mix(in srgb, var(--wsmsg-surface) 88%, var(--fg) 12%);
+        --wsmsg-card-bg-hover: color-mix(in srgb, var(--wsmsg-surface) 82%, var(--fg) 18%);
+        --wsmsg-danger-border: rgba(var(--fail-rgb),0.45);
+      }
+
       #workspaceMessagesFab{
         position:fixed;
         left:18px;
@@ -32,16 +56,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         padding:10px 14px;
         border-radius:999px;
         border:1px solid rgba(var(--fg-rgb),0.32);
-        background:linear-gradient(180deg, rgba(var(--fg-rgb),0.14), rgba(0,0,0,0.34));
+        background:linear-gradient(180deg, rgba(var(--fg-rgb),0.14), var(--wsmsg-overlay));
         color:var(--fg);
-        box-shadow:0 18px 55px rgba(0,0,0,.34), 0 0 20px rgba(var(--fg-rgb),.12);
+        box-shadow:0 18px 55px var(--wsmsg-overlay), 0 0 20px rgba(var(--fg-rgb),.12);
         cursor:pointer;
         font-weight:950;
       }
 
       #workspaceMessagesFab:hover{
         border-color:rgba(var(--fg-rgb),0.58);
-        background:linear-gradient(180deg, rgba(var(--fg-rgb),0.20), rgba(0,0,0,0.32));
+        background:linear-gradient(180deg, rgba(var(--fg-rgb),0.20), var(--wsmsg-overlay));
       }
 
       body.scope-workspace #workspaceMessagesFab{
@@ -62,7 +86,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         padding:0 6px;
         border-radius:999px;
         background:rgba(var(--warn-rgb),0.95);
-        color:#161000;
+        color:var(--bg);
         font-size:12px;
         line-height:20px;
         font-weight:950;
@@ -83,10 +107,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         display:none;
         flex-direction:column;
         overflow:hidden;
-        border:1px solid rgba(var(--fg-rgb),0.24);
+        border:1px solid rgba(var(--fg-rgb),0.30);
         border-radius:22px;
-        background:linear-gradient(180deg, var(--fm_surface2, var(--panel2)), var(--fm_surface, var(--panel)));
-        box-shadow:0 28px 110px rgba(0,0,0,.62), 0 0 28px rgba(var(--fg-rgb),.10);
+        background:var(--wsmsg-surface);
+        background:linear-gradient(180deg, var(--wsmsg-surface-2), var(--wsmsg-surface));
+        background-clip:padding-box;
+        isolation:isolate;
+        box-shadow:0 28px 110px var(--wsmsg-overlay), 0 0 28px rgba(var(--fg-rgb),.16);
       }
 
       #workspaceMessagesDrawer.show{
@@ -101,7 +128,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         gap:12px;
         padding:14px 16px;
         border-bottom:1px solid var(--border2);
-        background:rgba(0,0,0,.16);
+        background:var(--wsmsg-strong-layer);
       }
 
       .wsMsgTitle{
@@ -122,6 +149,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         padding:14px;
         display:grid;
         gap:10px;
+        background:var(--wsmsg-surface);
       }
 
       .wsMsgEmpty{
@@ -137,7 +165,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         gap:5px;
         border:1px solid rgba(var(--fg-rgb),0.13);
         border-radius:16px;
-        background:rgba(255,255,255,.035);
+        background:rgba(var(--wsmsg-fg-rgb),.035);
         padding:10px 12px;
         justify-self:start;
         width:min(82%, 620px);
@@ -178,6 +206,154 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         opacity:.76;
       }
 
+      .wsMsgMetaRight{
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        gap:6px;
+        flex:0 0 auto;
+      }
+
+      .wsMsgMiniBtn{
+        border:1px solid rgba(var(--fg-rgb),0.18);
+        border-radius:999px;
+        background:var(--wsmsg-soft-layer);
+        color:var(--fg);
+        cursor:pointer;
+        min-width:26px;
+        height:24px;
+        padding:0 8px;
+        font-size:11px;
+        line-height:1;
+        font-weight:950;
+      }
+
+      .wsMsgMiniBtn:hover{
+        border-color:rgba(var(--fg-rgb),0.36);
+        background:rgba(var(--fg-rgb),0.10);
+      }
+
+      .wsMsgConfirmBackdrop{
+        position:fixed;
+        inset:0;
+        z-index:10050;
+        display:none;
+        align-items:center;
+        justify-content:center;
+        padding:18px;
+        background:var(--wsmsg-overlay);
+        backdrop-filter:blur(4px);
+      }
+
+      .wsMsgConfirmBackdrop.show{
+        display:flex;
+      }
+
+      .wsMsgConfirmBox{
+        width:min(460px, calc(100vw - 32px));
+        border:1px solid rgba(var(--fg-rgb),0.30);
+        border-radius:22px;
+        background:var(--wsmsg-surface);
+        background:linear-gradient(180deg, var(--wsmsg-surface-2), var(--wsmsg-surface));
+        color:var(--fg);
+        box-shadow:0 30px 110px var(--wsmsg-overlay), 0 0 28px rgba(var(--fg-rgb),.16);
+        overflow:hidden;
+      }
+
+      .wsMsgConfirmHead{
+        padding:16px 18px 10px;
+        border-bottom:1px solid rgba(var(--fg-rgb),0.12);
+      }
+
+      .wsMsgConfirmTitle{
+        font-weight:950;
+        font-size:17px;
+        letter-spacing:.2px;
+      }
+
+      .wsMsgConfirmBody{
+        display:grid;
+        gap:12px;
+        padding:14px 18px 16px;
+      }
+
+      .wsMsgConfirmMessage{
+        color:var(--fg);
+        line-height:1.42;
+      }
+
+      .wsMsgConfirmTarget{
+        display:grid;
+        gap:4px;
+        border:1px solid rgba(var(--fg-rgb),0.14);
+        border-radius:14px;
+        padding:10px 12px;
+        background:rgba(var(--fg-rgb),0.06);
+      }
+
+      .wsMsgConfirmTargetLabel{
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:.06em;
+        color:var(--fg-dim);
+        font-weight:850;
+      }
+
+      .wsMsgConfirmTargetValue{
+        font-weight:950;
+        overflow-wrap:anywhere;
+      }
+
+      .wsMsgConfirmActions{
+        display:flex;
+        justify-content:flex-end;
+        gap:10px;
+        padding:12px 18px 16px;
+        border-top:1px solid rgba(var(--fg-rgb),0.12);
+      }
+
+      .wsMsgConfirmOk.wsMsgConfirmOk.wsMsgConfirmDanger{
+        border-color:var(--wsmsg-danger-border);
+      }
+
+      .wsMsgDeleteBtn{
+        color:rgba(var(--fg-rgb),0.92);
+      }
+
+      .wsMsgMuteBtn.isMuted{
+        border-color:rgba(var(--warn-rgb),0.58);
+        background:rgba(var(--warn-rgb),0.16);
+      }
+
+      .wsMsgHeadActions{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        flex:0 0 auto;
+      }
+
+      .wsMsgMuteAll{
+        display:none;
+      }
+
+      #workspaceMessagesDrawer.canModerate .wsMsgMuteAll{
+        display:inline-flex;
+      }
+
+      .wsMsgMutedBanner{
+        border:1px solid rgba(var(--warn-rgb),0.36);
+        border-radius:14px;
+        padding:9px 11px;
+        background:rgba(var(--warn-rgb),0.12);
+        color:var(--fg);
+        font-size:12px;
+        font-weight:850;
+      }
+
+      .wsMsgMutedBanner.hidden{
+        display:none;
+      }
+
       .wsMsgBody{
         white-space:pre-wrap;
         overflow-wrap:anywhere;
@@ -192,7 +368,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         gap:10px;
         padding:12px 14px 14px;
         border-top:1px solid var(--border2);
-        background:rgba(0,0,0,.12);
+        background:var(--wsmsg-strong-layer);
       }
 
       .wsMsgInput{
@@ -203,7 +379,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         padding:10px 12px;
         border-radius:14px;
         border:1px solid var(--border2);
-        background:rgba(0,0,0,.22);
+        background:var(--wsmsg-input-bg);
         color:var(--fg);
         font:inherit;
         line-height:1.35;
@@ -293,7 +469,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       .wsMsgAttachmentRemove{
         border:1px solid rgba(var(--fg-rgb),0.16);
         border-radius:999px;
-        background:rgba(0,0,0,0.10);
+        background:var(--wsmsg-surface);
         color:var(--fg);
         cursor:pointer;
         width:26px;
@@ -329,12 +505,35 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       html[data-theme="bright"] #workspaceMessagesDrawer,
       html[data-theme="win_classic"] #workspaceMessagesDrawer{
-        background:#f8fafc;
+        background:var(--wsmsg-surface);
+        background:linear-gradient(180deg, var(--wsmsg-surface-2), var(--wsmsg-surface));
+      }
+
+      html[data-theme="bright"] .wsMsgHead,
+      html[data-theme="win_classic"] .wsMsgHead{
+        background:var(--wsmsg-surface);
+      }
+
+      html[data-theme="bright"] .wsMsgList,
+      html[data-theme="win_classic"] .wsMsgList{
+        background:rgba(248,250,252,0.96);
+      }
+
+      html[data-theme="bright"] .wsMsgFoot,
+      html[data-theme="win_classic"] .wsMsgFoot{
+        background:var(--wsmsg-surface);
+      }
+
+      html[data-theme="bright"] .wsMsgConfirmBox,
+      html[data-theme="win_classic"] .wsMsgConfirmBox{
+        background:var(--wsmsg-surface);
+        background:linear-gradient(180deg, var(--wsmsg-surface-2), var(--wsmsg-surface));
+        color:var(--fg);
       }
 
       html[data-theme="bright"] .wsMsgInput,
       html[data-theme="win_classic"] .wsMsgInput{
-        background:#fff;
+        background:var(--wsmsg-surface);
         color:var(--fg);
         border-color:rgba(20,24,32,.18);
       }
@@ -407,6 +606,105 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     return j;
+  }
+
+  function ensureConfirmModal() {
+    installStyle();
+
+    let backdrop = document.getElementById("wsMsgConfirmBackdrop");
+    if (backdrop) return backdrop;
+
+    backdrop = document.createElement("div");
+    backdrop.id = "wsMsgConfirmBackdrop";
+    backdrop.className = "wsMsgConfirmBackdrop";
+    backdrop.setAttribute("aria-hidden", "true");
+    backdrop.innerHTML = `
+      <div class="wsMsgConfirmBox" role="dialog" aria-modal="true">
+        <div class="wsMsgConfirmHead">
+          <div class="wsMsgConfirmTitle"></div>
+        </div>
+        <div class="wsMsgConfirmBody">
+          <div class="wsMsgConfirmMessage"></div>
+          <div class="wsMsgConfirmTarget">
+            <div class="wsMsgConfirmTargetLabel"></div>
+            <div class="wsMsgConfirmTargetValue"></div>
+          </div>
+        </div>
+        <div class="wsMsgConfirmActions">
+          <button type="button" class="btn secondary wsMsgConfirmCancel"></button>
+          <button type="button" class="btn wsMsgConfirmOk"></button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+    return backdrop;
+  }
+
+  function wsMsgConfirm(opts = {}) {
+    const backdrop = ensureConfirmModal();
+    const box = backdrop.querySelector(".wsMsgConfirmBox");
+    const title = backdrop.querySelector(".wsMsgConfirmTitle");
+    const msg = backdrop.querySelector(".wsMsgConfirmMessage");
+    const target = backdrop.querySelector(".wsMsgConfirmTarget");
+    const targetLabel = backdrop.querySelector(".wsMsgConfirmTargetLabel");
+    const targetValue = backdrop.querySelector(".wsMsgConfirmTargetValue");
+    const cancel = backdrop.querySelector(".wsMsgConfirmCancel");
+    const ok = backdrop.querySelector(".wsMsgConfirmOk");
+
+    title.textContent = opts.title || tr("filemgr.ws.messages.confirm_title", null, "Confirm action");
+    msg.textContent = opts.message || "";
+    targetLabel.textContent = opts.targetLabel || tr("filemgr.ws.messages.target", null, "Target");
+    targetValue.textContent = opts.target || "";
+    target.style.display = opts.target ? "grid" : "none";
+    cancel.textContent = opts.cancelText || tr("filemgr.cancel", null, "Cancel");
+    ok.textContent = opts.confirmText || tr("filemgr.ok", null, "OK");
+    ok.classList.toggle("wsMsgConfirmDanger", !!opts.danger);
+
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    return new Promise((resolve) => {
+      let done = false;
+
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+
+        backdrop.classList.remove("show");
+        backdrop.setAttribute("aria-hidden", "true");
+
+        ok.removeEventListener("click", onOk);
+        cancel.removeEventListener("click", onCancel);
+        backdrop.removeEventListener("click", onBackdrop);
+        document.removeEventListener("keydown", onKey);
+
+        resolve(value);
+      };
+
+      const onOk = () => finish(true);
+      const onCancel = () => finish(false);
+      const onBackdrop = (ev) => {
+        if (ev.target === backdrop) finish(false);
+      };
+      const onKey = (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          finish(false);
+        }
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          finish(true);
+        }
+      };
+
+      ok.addEventListener("click", onOk);
+      cancel.addEventListener("click", onCancel);
+      backdrop.addEventListener("click", onBackdrop);
+      document.addEventListener("keydown", onKey);
+
+      setTimeout(() => ok.focus(), 20);
+    });
   }
 
   function formatTime(value) {
@@ -641,6 +939,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     try {
+      if (FM && typeof FM.openAndHighlightRelPath === "function") {
+        FM.openAndHighlightRelPath(path, kind);
+        setDrawerOpen(false).catch(() => {});
+        return;
+      }
+
       if (FM && typeof FM.setPathAndLoad === "function") {
         FM.setPathAndLoad(targetPath);
         setDrawerOpen(false).catch(() => {});
@@ -658,6 +962,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let latestId = 0;
   let unreadCount = 0;
   let selfFp = "";
+  let actorRole = "";
+  let canModerateMessages = false;
+  let actorMuted = false;
+  let mutes = [];
   let pendingAttachments = [];
   const WS_MSG_FILE_REF_MIME = "application/x-pqnas-workspace-file-ref";
   let refreshBusy = false;
@@ -690,10 +998,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           <div class="wsMsgTitle">${tr("filemgr.ws.messages.title", null, "Workspace messages")}</div>
           <div class="wsMsgSub"></div>
         </div>
-        <button type="button" class="btn secondary wsMsgClose">${tr("filemgr.close", null, "Close")}</button>
+        <div class="wsMsgHeadActions">
+          <button type="button" class="btn secondary wsMsgMuteAll">${tr("filemgr.ws.messages.mute_all", null, "Mute all")}</button>
+          <button type="button" class="btn secondary wsMsgClose">${tr("filemgr.close", null, "Close")}</button>
+        </div>
       </div>
       <div class="wsMsgList" aria-live="polite"></div>
       <div class="wsMsgFoot">
+        <div class="wsMsgMutedBanner hidden">${tr("filemgr.ws.messages.you_are_muted", null, "You are muted in this workspace message board.")}</div>
         <div class="wsMsgDropHint">${tr("filemgr.ws.messages.drop_file_hint", null, "Drop a workspace file here to attach a reference.")}</div>
         <textarea class="wsMsgInput"
                   maxlength="4000"
@@ -715,6 +1027,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       drawer,
       sub: drawer.querySelector(".wsMsgSub"),
       close: drawer.querySelector(".wsMsgClose"),
+      muteAll: drawer.querySelector(".wsMsgMuteAll"),
+      mutedBanner: drawer.querySelector(".wsMsgMutedBanner"),
       list: drawer.querySelector(".wsMsgList"),
       input: drawer.querySelector(".wsMsgInput"),
       pending: drawer.querySelector(".wsMsgPendingAttachments"),
@@ -728,6 +1042,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     els.close.addEventListener("click", async () => {
       await setDrawerOpen(false);
+    });
+
+    els.muteAll.addEventListener("click", async () => {
+      const allMuted = isTargetMuted("*");
+      await setMute("*", !allMuted, tr("filemgr.ws.messages.everyone_except_owner", null, "Everyone except owners"));
     });
 
     els.send.addEventListener("click", sendMessage);
@@ -750,6 +1069,139 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     els.status.style.color = isError ? "rgb(var(--fail-rgb))" : "";
   }
 
+  function isTargetMuted(targetFp) {
+    const want = String(targetFp || "");
+    return Array.isArray(mutes) && mutes.some((m) => String(m && m.target_fp || "") === want);
+  }
+
+  function applyModerationUi() {
+    ensureUi();
+
+    els.drawer.classList.toggle("canModerate", !!canModerateMessages);
+
+    const allMuted = isTargetMuted("*");
+    if (els.muteAll) {
+      els.muteAll.textContent = allMuted
+        ? tr("filemgr.ws.messages.unmute_all", null, "Unmute all")
+        : tr("filemgr.ws.messages.mute_all", null, "Mute all");
+    }
+
+    if (els.mutedBanner) {
+      els.mutedBanner.classList.toggle("hidden", !actorMuted);
+    }
+
+    const inputDisabled = !!actorMuted;
+    els.input.disabled = inputDisabled;
+    els.send.disabled = inputDisabled || sendBusy;
+
+    if (inputDisabled) {
+      els.input.placeholder = tr("filemgr.ws.messages.you_are_muted", null, "You are muted in this workspace message board.");
+    } else {
+      els.input.placeholder = tr("filemgr.ws.messages.placeholder", null, "Write a message for workspace members…");
+    }
+  }
+
+  async function deleteMessage(messageId) {
+    const ws = currentWorkspaceId();
+    const id = Number(messageId || 0);
+    if (!ws || !id) return;
+
+    const ok = await wsMsgConfirm({
+      title: tr("filemgr.ws.messages.delete_title", null, "Delete message?"),
+      message: tr("filemgr.ws.messages.delete_confirm", null, "This message will be removed from the workspace message board."),
+      confirmText: tr("filemgr.ws.messages.delete", null, "Delete"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      danger: true
+    });
+    if (!ok) return;
+
+    setStatus(tr("filemgr.ws.messages.deleting", null, "Deleting…"));
+
+    try {
+      await fetchJson("/api/v4/workspaces/messages/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: ws,
+          message_id: id
+        })
+      });
+
+      await refreshMessages({ markRead: true });
+      setStatus(tr("filemgr.ws.messages.deleted", null, "Deleted."));
+      setTimeout(() => {
+        if (els && els.status.textContent === tr("filemgr.ws.messages.deleted", null, "Deleted.")) setStatus("");
+      }, 1200);
+    } catch (e) {
+      setStatus(
+        tr("filemgr.ws.messages.delete_failed", { error: String(e && e.message ? e.message : e) }, `Delete failed: ${String(e && e.message ? e.message : e)}`),
+        true
+      );
+    }
+  }
+
+  async function setMute(targetFp, muted, targetLabel = "") {
+    const ws = currentWorkspaceId();
+    const target = String(targetFp || "").trim();
+    if (!ws || !target) return;
+
+    const label = target === "*"
+      ? tr("filemgr.ws.messages.everyone", null, "everyone")
+      : String(targetLabel || "").trim() || tr("filemgr.ws.messages.member", null, "Member");
+
+    const ok = await wsMsgConfirm({
+      title: muted
+        ? tr("filemgr.ws.messages.mute_title", null, "Mute member?")
+        : tr("filemgr.ws.messages.unmute_title", null, "Unmute member?"),
+      message: muted
+        ? tr("filemgr.ws.messages.mute_confirm", { target: label }, `${label} will not be able to send messages to this workspace board.`)
+        : tr("filemgr.ws.messages.unmute_confirm", { target: label }, `${label} will be able to send messages again.`),
+      targetLabel: tr("filemgr.ws.messages.member_label", null, "Member"),
+      target: label,
+      confirmText: muted
+        ? tr("filemgr.ws.messages.mute", null, "Mute")
+        : tr("filemgr.ws.messages.unmute", null, "Unmute"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      danger: muted
+    });
+    if (!ok) return;
+
+    setStatus(muted
+      ? tr("filemgr.ws.messages.muting", null, "Muting…")
+      : tr("filemgr.ws.messages.unmuting", null, "Unmuting…")
+    );
+
+    try {
+      const j = await fetchJson("/api/v4/workspaces/messages/mute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: ws,
+          target_fp: target,
+          muted: !!muted
+        })
+      });
+
+      mutes = Array.isArray(j.mutes) ? j.mutes : [];
+      applyModerationUi();
+      await refreshMessages({ markRead: true });
+      setStatus(muted
+        ? tr("filemgr.ws.messages.muted", null, "Muted.")
+        : tr("filemgr.ws.messages.unmuted", null, "Unmuted.")
+      );
+      setTimeout(() => {
+        const mutedText = tr("filemgr.ws.messages.muted", null, "Muted.");
+        const unmutedText = tr("filemgr.ws.messages.unmuted", null, "Unmuted.");
+        if (els && (els.status.textContent === mutedText || els.status.textContent === unmutedText)) setStatus("");
+      }, 1200);
+    } catch (e) {
+      setStatus(
+        tr("filemgr.ws.messages.mute_failed", { error: String(e && e.message ? e.message : e) }, `Mute update failed: ${String(e && e.message ? e.message : e)}`),
+        true
+      );
+    }
+  }
+
   function updateVisibility() {
     ensureUi();
 
@@ -769,6 +1221,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       latestId = 0;
       unreadCount = 0;
       selfFp = "";
+      actorRole = "";
+      canModerateMessages = false;
+      actorMuted = false;
+      mutes = [];
       pendingAttachments = [];
       if (els) renderPendingAttachments();
     }
@@ -816,8 +1272,47 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       time.className = "wsMsgTime";
       time.textContent = formatTime(msg.created_at);
 
+      const metaRight = document.createElement("div");
+      metaRight.className = "wsMsgMetaRight";
+      metaRight.appendChild(time);
+
+      const canDelete = own || canModerateMessages;
+      if (canDelete) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "wsMsgMiniBtn wsMsgDeleteBtn";
+        del.title = tr("filemgr.ws.messages.delete", null, "Delete message");
+        del.textContent = "×";
+        del.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          deleteMessage(msg.id);
+        });
+        metaRight.appendChild(del);
+      }
+
+      if (canModerateMessages && !own && msg.author_fp) {
+        const target = String(msg.author_fp || "");
+        const muted = isTargetMuted(target);
+        const mute = document.createElement("button");
+        mute.type = "button";
+        mute.className = "wsMsgMiniBtn wsMsgMuteBtn" + (muted ? " isMuted" : "");
+        mute.title = muted
+          ? tr("filemgr.ws.messages.unmute_member", null, "Unmute member")
+          : tr("filemgr.ws.messages.mute_member", null, "Mute member");
+        mute.textContent = muted
+          ? tr("filemgr.ws.messages.unmute_short", null, "Unmute")
+          : tr("filemgr.ws.messages.mute_short", null, "Mute");
+        mute.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          setMute(target, !muted, String(msg.author_name || ""));
+        });
+        metaRight.appendChild(mute);
+      }
+
       meta.appendChild(author);
-      meta.appendChild(time);
+      meta.appendChild(metaRight);
 
       const body = document.createElement("div");
       body.className = "wsMsgBody";
@@ -878,10 +1373,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const j = await fetchJson(`/api/v4/workspaces/messages?${qs.toString()}`);
       activeWorkspaceId = ws;
       selfFp = String(j.actor_fp || "");
+      actorRole = String(j.actor_role || "");
+      canModerateMessages = !!j.can_moderate_messages;
+      actorMuted = !!j.actor_muted;
+      mutes = Array.isArray(j.mutes) ? j.mutes : [];
       messages = Array.isArray(j.messages) ? j.messages : [];
       latestId = Number(j.latest_id || 0);
       unreadCount = Number(j.unread_count || 0);
 
+      applyModerationUi();
       renderMessages();
 
       if (drawerOpen || opts.markRead) {
@@ -932,6 +1432,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     sendBusy = true;
     els.send.disabled = true;
+    if (actorMuted) {
+      setStatus(tr("filemgr.ws.messages.you_are_muted", null, "You are muted in this workspace message board."), true);
+      sendBusy = false;
+      applyModerationUi();
+      return;
+    }
     setStatus(tr("filemgr.ws.messages.sending", null, "Sending…"));
 
     try {
@@ -962,8 +1468,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       );
     } finally {
       sendBusy = false;
-      els.send.disabled = false;
-      els.input.focus();
+      applyModerationUi();
+      if (!actorMuted) els.input.focus();
     }
   }
 
@@ -1015,7 +1521,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       els.drawer.querySelector(".wsMsgTitle").textContent = tr("filemgr.ws.messages.title", null, "Workspace messages");
       els.close.textContent = tr("filemgr.close", null, "Close");
       els.send.textContent = tr("filemgr.ws.messages.send", null, "Send");
-      els.input.placeholder = tr("filemgr.ws.messages.placeholder", null, "Write a message for workspace members…");
+      if (els.muteAll) {
+        els.muteAll.textContent = isTargetMuted("*")
+          ? tr("filemgr.ws.messages.unmute_all", null, "Unmute all")
+          : tr("filemgr.ws.messages.mute_all", null, "Mute all");
+      }
+      els.input.placeholder = actorMuted
+        ? tr("filemgr.ws.messages.you_are_muted", null, "You are muted in this workspace message board.")
+        : tr("filemgr.ws.messages.placeholder", null, "Write a message for workspace members…");
       const hint = els.drawer.querySelector(".wsMsgDropHint");
       if (hint) hint.textContent = tr("filemgr.ws.messages.drop_file_hint", null, "Drop a workspace file here to attach a reference.");
       renderPendingAttachments();

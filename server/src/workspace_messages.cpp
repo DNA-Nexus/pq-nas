@@ -257,6 +257,8 @@ bool open_workspace_messages_db(const WorkspaceFileRouteDeps& deps,
                 "author_name TEXT NOT NULL DEFAULT '',"
                 "body TEXT NOT NULL,"
                 "attachments_json TEXT NOT NULL DEFAULT '[]',"
+                "deleted_at_epoch INTEGER NOT NULL DEFAULT 0,"
+                "deleted_by_fp TEXT NOT NULL DEFAULT '',"
                 "created_at_epoch INTEGER NOT NULL,"
                 "created_at TEXT NOT NULL"
                 ");",
@@ -272,9 +274,31 @@ bool open_workspace_messages_db(const WorkspaceFileRouteDeps& deps,
             return false;
         }
 
+        if (!exec_sql_allow_duplicate_column_wsmsg(out->db,
+                "ALTER TABLE workspace_messages ADD COLUMN deleted_at_epoch INTEGER NOT NULL DEFAULT 0;",
+                &sqlerr)) {
+            if (err) *err = sqlerr;
+            return false;
+        }
+
+        if (!exec_sql_allow_duplicate_column_wsmsg(out->db,
+                "ALTER TABLE workspace_messages ADD COLUMN deleted_by_fp TEXT NOT NULL DEFAULT '';",
+                &sqlerr)) {
+            if (err) *err = sqlerr;
+            return false;
+        }
+
         if (!exec_sql_wsmsg(out->db,
                 "CREATE INDEX IF NOT EXISTS idx_workspace_messages_ws_id "
                 "ON workspace_messages(workspace_id, id);",
+                &sqlerr)) {
+            if (err) *err = sqlerr;
+            return false;
+        }
+
+        if (!exec_sql_wsmsg(out->db,
+                "CREATE INDEX IF NOT EXISTS idx_workspace_messages_active_ws_id "
+                "ON workspace_messages(workspace_id, deleted_at_epoch, id);",
                 &sqlerr)) {
             if (err) *err = sqlerr;
             return false;
@@ -287,6 +311,20 @@ bool open_workspace_messages_db(const WorkspaceFileRouteDeps& deps,
                 "last_seen_id INTEGER NOT NULL DEFAULT 0,"
                 "last_seen_at_epoch INTEGER NOT NULL DEFAULT 0,"
                 "PRIMARY KEY(workspace_id, reader_fp)"
+                ");",
+                &sqlerr)) {
+            if (err) *err = sqlerr;
+            return false;
+        }
+
+        if (!exec_sql_wsmsg(out->db,
+                "CREATE TABLE IF NOT EXISTS workspace_message_mutes ("
+                "workspace_id TEXT NOT NULL,"
+                "target_fp TEXT NOT NULL,"
+                "muted_by_fp TEXT NOT NULL,"
+                "muted_at_epoch INTEGER NOT NULL,"
+                "reason TEXT NOT NULL DEFAULT '',"
+                "PRIMARY KEY(workspace_id, target_fp)"
                 ");",
                 &sqlerr)) {
             if (err) *err = sqlerr;
@@ -681,7 +719,7 @@ sqlite3_int64 latest_message_id_wsmsg(sqlite3* db,
                                       std::string* err) {
     StmtHandle st;
     if (!prepare_wsmsg(db,
-            "SELECT COALESCE(MAX(id), 0) FROM workspace_messages WHERE workspace_id=?;",
+            "SELECT COALESCE(MAX(id), 0) FROM workspace_messages WHERE workspace_id=? AND deleted_at_epoch=0;",
             &st.stmt,
             err)) {
         return 0;
@@ -729,7 +767,7 @@ sqlite3_int64 unread_count_wsmsg(sqlite3* db,
                                  std::string* err) {
     StmtHandle st;
     if (!prepare_wsmsg(db,
-            "SELECT COUNT(*) FROM workspace_messages WHERE workspace_id=? AND id>?;",
+            "SELECT COUNT(*) FROM workspace_messages WHERE workspace_id=? AND id>? AND deleted_at_epoch=0;",
             &st.stmt,
             err)) {
         return 0;
@@ -799,6 +837,214 @@ bool mark_read_wsmsg(sqlite3* db,
     return true;
 }
 
+bool is_workspace_owner_wsmsg(const WorkspaceMessageActor& actor) {
+    return actor.role == "owner";
+}
+
+bool workspace_has_enabled_member_fp_wsmsg(const WorkspaceRec& workspace,
+                                           const std::string& fp) {
+    if (fp.empty()) return false;
+    for (const auto& m : workspace.members) {
+        if (m.fingerprint == fp && m.status == "enabled") return true;
+    }
+    return false;
+}
+
+bool workspace_member_is_owner_wsmsg(const WorkspaceRec& workspace,
+                                     const std::string& fp) {
+    if (fp.empty()) return false;
+    for (const auto& m : workspace.members) {
+        if (m.fingerprint == fp && m.status == "enabled" && m.role == "owner") return true;
+    }
+    return false;
+}
+
+bool message_actor_is_muted_wsmsg(sqlite3* db,
+                                  const WorkspaceMessageActor& actor,
+                                  std::string* err) {
+    if (is_workspace_owner_wsmsg(actor)) return false;
+
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "SELECT 1 FROM workspace_message_mutes "
+            "WHERE workspace_id=? AND (target_fp='*' OR target_fp=?) "
+            "LIMIT 1;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, actor.workspace.workspace_id);
+    bind_text_wsmsg(st.stmt, 2, actor.fp);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc == SQLITE_ROW) return true;
+    if (rc != SQLITE_DONE && err) *err = sqlite3_errmsg(db);
+    return false;
+}
+
+json list_message_mutes_wsmsg(const WorkspaceFileRouteDeps& deps,
+                              sqlite3* db,
+                              const WorkspaceRec& workspace,
+                              std::string* err) {
+    json out = json::array();
+
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "SELECT target_fp, muted_by_fp, muted_at_epoch, reason "
+            "FROM workspace_message_mutes "
+            "WHERE workspace_id=? "
+            "ORDER BY target_fp ASC;",
+            &st.stmt,
+            err)) {
+        return out;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace.workspace_id);
+
+    while (true) {
+        const int rc = sqlite3_step(st.stmt);
+        if (rc == SQLITE_DONE) break;
+        if (rc != SQLITE_ROW) {
+            if (err) *err = sqlite3_errmsg(db);
+            break;
+        }
+
+        const std::string target_fp = sqlite_text_col(st.stmt, 0);
+        const std::string by_fp = sqlite_text_col(st.stmt, 1);
+
+        out.push_back(json{
+            {"target_fp", target_fp},
+            {"target_name", target_fp == "*" ? "Everyone" : resolve_message_author_name_wsmsg(deps, workspace, target_fp, "")},
+            {"muted_by_fp", by_fp},
+            {"muted_by_name", resolve_message_author_name_wsmsg(deps, workspace, by_fp, "")},
+            {"muted_at_epoch", sqlite3_column_int64(st.stmt, 2)},
+            {"reason", sqlite_text_col(st.stmt, 3)}
+        });
+    }
+
+    return out;
+}
+
+bool upsert_message_mute_wsmsg(sqlite3* db,
+                               const std::string& workspace_id,
+                               const std::string& target_fp,
+                               const std::string& muted_by_fp,
+                               std::int64_t now_epoch,
+                               const std::string& reason,
+                               std::string* err) {
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "INSERT INTO workspace_message_mutes("
+            "workspace_id, target_fp, muted_by_fp, muted_at_epoch, reason"
+            ") VALUES(?,?,?,?,?) "
+            "ON CONFLICT(workspace_id, target_fp) DO UPDATE SET "
+            "muted_by_fp=excluded.muted_by_fp, "
+            "muted_at_epoch=excluded.muted_at_epoch, "
+            "reason=excluded.reason;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+    bind_text_wsmsg(st.stmt, 2, target_fp);
+    bind_text_wsmsg(st.stmt, 3, muted_by_fp);
+    sqlite3_bind_int64(st.stmt, 4, now_epoch);
+    bind_text_wsmsg(st.stmt, 5, reason);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    return true;
+}
+
+bool delete_message_mute_wsmsg(sqlite3* db,
+                               const std::string& workspace_id,
+                               const std::string& target_fp,
+                               std::string* err) {
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "DELETE FROM workspace_message_mutes WHERE workspace_id=? AND target_fp=?;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+    bind_text_wsmsg(st.stmt, 2, target_fp);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    return true;
+}
+
+bool get_message_author_wsmsg(sqlite3* db,
+                              const std::string& workspace_id,
+                              sqlite3_int64 message_id,
+                              std::string* author_fp,
+                              std::string* err) {
+    if (author_fp) author_fp->clear();
+
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "SELECT author_fp FROM workspace_messages "
+            "WHERE workspace_id=? AND id=? AND deleted_at_epoch=0;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+    sqlite3_bind_int64(st.stmt, 2, message_id);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc == SQLITE_ROW) {
+        if (author_fp) *author_fp = sqlite_text_col(st.stmt, 0);
+        return true;
+    }
+
+    if (rc != SQLITE_DONE && err) *err = sqlite3_errmsg(db);
+    return false;
+}
+
+bool soft_delete_message_wsmsg(sqlite3* db,
+                               const std::string& workspace_id,
+                               sqlite3_int64 message_id,
+                               const std::string& actor_fp,
+                               std::int64_t now_epoch,
+                               std::string* err) {
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "UPDATE workspace_messages "
+            "SET deleted_at_epoch=?, deleted_by_fp=? "
+            "WHERE workspace_id=? AND id=? AND deleted_at_epoch=0;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    sqlite3_bind_int64(st.stmt, 1, now_epoch);
+    bind_text_wsmsg(st.stmt, 2, actor_fp);
+    bind_text_wsmsg(st.stmt, 3, workspace_id);
+    sqlite3_bind_int64(st.stmt, 4, message_id);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    return sqlite3_changes(db) > 0;
+}
+
 void audit_workspace_message_best_effort(const WorkspaceFileRouteDeps& deps,
                                          const httplib::Request& req,
                                          const std::string& event,
@@ -849,6 +1095,33 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
+        std::string moderr;
+        const bool can_moderate = is_workspace_owner_wsmsg(actor);
+        const bool actor_muted = message_actor_is_muted_wsmsg(db.db, actor, &moderr);
+        if (!moderr.empty()) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to read workspace message mute state"},
+                {"detail", moderr}
+            });
+            return;
+        }
+
+        json mutes = json::array();
+        if (can_moderate) {
+            mutes = list_message_mutes_wsmsg(deps, db.db, actor.workspace, &moderr);
+            if (!moderr.empty()) {
+                reply_json_wsmsg(deps, res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "failed to list workspace message mutes"},
+                    {"detail", moderr}
+                });
+                return;
+            }
+        }
+
         const int limit = int_param_wsmsg(
             req,
             "limit",
@@ -865,7 +1138,7 @@ void register_workspace_message_routes(httplib::Server& srv,
             if (!prepare_wsmsg(db.db,
                     "SELECT id, workspace_id, author_fp, author_name, body, attachments_json, created_at_epoch, created_at "
                     "FROM workspace_messages "
-                    "WHERE workspace_id=? AND id>? "
+                    "WHERE workspace_id=? AND id>? AND deleted_at_epoch=0 "
                     "ORDER BY id ASC "
                     "LIMIT ?;",
                     &st.stmt,
@@ -888,7 +1161,7 @@ void register_workspace_message_routes(httplib::Server& srv,
                     "FROM ("
                     "  SELECT id, workspace_id, author_fp, author_name, body, attachments_json, created_at_epoch, created_at "
                     "  FROM workspace_messages "
-                    "  WHERE workspace_id=? "
+                    "  WHERE workspace_id=? AND deleted_at_epoch=0 "
                     "  ORDER BY id DESC "
                     "  LIMIT ?"
                     ") ORDER BY id ASC;",
@@ -937,6 +1210,10 @@ void register_workspace_message_routes(httplib::Server& srv,
             {"ok", true},
             {"workspace_id", actor.workspace.workspace_id},
             {"actor_fp", actor.fp},
+            {"actor_role", actor.role},
+            {"can_moderate_messages", can_moderate},
+            {"actor_muted", actor_muted},
+            {"mutes", mutes},
             {"messages", messages},
             {"latest_id", latest_id},
             {"last_seen_id", seen_id},
@@ -1018,6 +1295,27 @@ void register_workspace_message_routes(httplib::Server& srv,
                 {"error", "server_error"},
                 {"message", "failed to open workspace messages db"},
                 {"detail", dberr}
+            });
+            return;
+        }
+
+        std::string mute_err;
+        const bool muted = message_actor_is_muted_wsmsg(db.db, actor, &mute_err);
+        if (!mute_err.empty()) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to read workspace message mute state"},
+                {"detail", mute_err}
+            });
+            return;
+        }
+
+        if (muted) {
+            reply_json_wsmsg(deps, res, 403, json{
+                {"ok", false},
+                {"error", "muted"},
+                {"message", "you are muted in this workspace message board"}
             });
             return;
         }
@@ -1129,6 +1427,234 @@ void register_workspace_message_routes(httplib::Server& srv,
                 {"created_at_epoch", now},
                 {"created_at", created_at}
             }}
+        });
+    });
+
+    srv.Post("/api/v4/workspaces/messages/delete",
+             [&deps](const httplib::Request& req, httplib::Response& res) {
+        res.set_header("Cache-Control", "no-store");
+        if (!require_same_origin_for_cookie_mutation_wsmsg(req, res, deps)) return;
+
+        json body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded() || !body.is_object()) {
+            reply_json_wsmsg(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid json"}
+            });
+            return;
+        }
+
+        const std::string workspace_id = body.value("workspace_id", "");
+        sqlite3_int64 message_id = 0;
+        try {
+            message_id = static_cast<sqlite3_int64>(body.value("message_id", 0LL));
+        } catch (...) {
+            message_id = 0;
+        }
+
+        if (message_id <= 0) {
+            reply_json_wsmsg(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid message_id"}
+            });
+            return;
+        }
+
+        WorkspaceMessageActor actor;
+        if (!require_workspace_message_actor(deps, req, res, workspace_id, &actor)) return;
+
+        SqliteHandle db;
+        std::string dberr;
+        if (!open_workspace_messages_db(deps, &db, &dberr)) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to open workspace messages db"},
+                {"detail", dberr}
+            });
+            return;
+        }
+
+        std::string author_fp;
+        if (!get_message_author_wsmsg(db.db, actor.workspace.workspace_id, message_id, &author_fp, &dberr)) {
+            reply_json_wsmsg(deps, res, 404, json{
+                {"ok", false},
+                {"error", "not_found"},
+                {"message", "message not found"}
+            });
+            return;
+        }
+
+        const bool can_delete = is_workspace_owner_wsmsg(actor) || author_fp == actor.fp;
+        if (!can_delete) {
+            reply_json_wsmsg(deps, res, 403, json{
+                {"ok", false},
+                {"error", "forbidden"},
+                {"message", "only the author or workspace owner can delete this message"}
+            });
+            return;
+        }
+
+        const std::int64_t now = now_epoch_wsmsg(deps);
+        if (!soft_delete_message_wsmsg(db.db, actor.workspace.workspace_id, message_id, actor.fp, now, &dberr)) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to delete workspace message"},
+                {"detail", dberr}
+            });
+            return;
+        }
+
+        audit_workspace_message_best_effort(
+            deps,
+            req,
+            "workspace.messages_delete_ok",
+            "ok",
+            actor,
+            message_id
+        );
+
+        reply_json_wsmsg(deps, res, 200, json{
+            {"ok", true},
+            {"workspace_id", actor.workspace.workspace_id},
+            {"message_id", message_id}
+        });
+    });
+
+    srv.Post("/api/v4/workspaces/messages/mute",
+             [&deps](const httplib::Request& req, httplib::Response& res) {
+        res.set_header("Cache-Control", "no-store");
+        if (!require_same_origin_for_cookie_mutation_wsmsg(req, res, deps)) return;
+
+        json body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded() || !body.is_object()) {
+            reply_json_wsmsg(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid json"}
+            });
+            return;
+        }
+
+        const std::string workspace_id = body.value("workspace_id", "");
+        std::string target_fp = trim_copy_wsmsg(body.value("target_fp", ""));
+        const bool muted = body.value("muted", true);
+        std::string reason = trim_copy_wsmsg(body.value("reason", ""));
+        if (reason.size() > 500) reason = reason.substr(0, 500);
+
+        if (target_fp.empty()) {
+            reply_json_wsmsg(deps, res, 400, json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "target_fp is required"}
+            });
+            return;
+        }
+
+        WorkspaceMessageActor actor;
+        if (!require_workspace_message_actor(deps, req, res, workspace_id, &actor)) return;
+
+        if (!is_workspace_owner_wsmsg(actor)) {
+            reply_json_wsmsg(deps, res, 403, json{
+                {"ok", false},
+                {"error", "forbidden"},
+                {"message", "only workspace owner can mute members"}
+            });
+            return;
+        }
+
+        if (target_fp != "*") {
+            if (!workspace_has_enabled_member_fp_wsmsg(actor.workspace, target_fp)) {
+                reply_json_wsmsg(deps, res, 404, json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "target member not found"}
+                });
+                return;
+            }
+
+            if (workspace_member_is_owner_wsmsg(actor.workspace, target_fp)) {
+                reply_json_wsmsg(deps, res, 400, json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {"message", "workspace owner cannot be muted"}
+                });
+                return;
+            }
+        }
+
+        SqliteHandle db;
+        std::string dberr;
+        if (!open_workspace_messages_db(deps, &db, &dberr)) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to open workspace messages db"},
+                {"detail", dberr}
+            });
+            return;
+        }
+
+        bool ok = false;
+        if (muted) {
+            ok = upsert_message_mute_wsmsg(
+                db.db,
+                actor.workspace.workspace_id,
+                target_fp,
+                actor.fp,
+                now_epoch_wsmsg(deps),
+                reason,
+                &dberr
+            );
+        } else {
+            ok = delete_message_mute_wsmsg(
+                db.db,
+                actor.workspace.workspace_id,
+                target_fp,
+                &dberr
+            );
+        }
+
+        if (!ok) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to update workspace message mute state"},
+                {"detail", dberr}
+            });
+            return;
+        }
+
+        std::string list_err;
+        json mutes = list_message_mutes_wsmsg(deps, db.db, actor.workspace, &list_err);
+        if (!list_err.empty()) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to list workspace message mutes"},
+                {"detail", list_err}
+            });
+            return;
+        }
+
+        audit_workspace_message_best_effort(
+            deps,
+            req,
+            muted ? "workspace.messages_mute_ok" : "workspace.messages_unmute_ok",
+            "ok",
+            actor,
+            0
+        );
+
+        reply_json_wsmsg(deps, res, 200, json{
+            {"ok", true},
+            {"workspace_id", actor.workspace.workspace_id},
+            {"target_fp", target_fp},
+            {"muted", muted},
+            {"mutes", mutes}
         });
     });
 
