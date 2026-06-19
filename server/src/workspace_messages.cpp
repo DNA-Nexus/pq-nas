@@ -1264,6 +1264,50 @@ bool delete_message_mute_wsmsg(sqlite3* db,
 
 // Resolve the author fingerprint for an existing non-deleted message. The
 // frontend sends message_id for muting/deleting; the server resolves target fp.
+sqlite3_int64 workspace_message_mute_count_wsmsg(sqlite3* db,
+                                                  const std::string& workspace_id,
+                                                  std::string* err) {
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "SELECT COUNT(*) FROM workspace_message_mutes WHERE workspace_id=?;",
+            &st.stmt,
+            err)) {
+        return 0;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc == SQLITE_ROW) {
+        return sqlite3_column_int64(st.stmt, 0);
+    }
+
+    if (rc != SQLITE_DONE && err) *err = sqlite3_errmsg(db);
+    return 0;
+}
+
+bool delete_all_workspace_message_mutes_wsmsg(sqlite3* db,
+                                              const std::string& workspace_id,
+                                              std::string* err) {
+    StmtHandle st;
+    if (!prepare_wsmsg(db,
+            "DELETE FROM workspace_message_mutes WHERE workspace_id=?;",
+            &st.stmt,
+            err)) {
+        return false;
+    }
+
+    bind_text_wsmsg(st.stmt, 1, workspace_id);
+
+    const int rc = sqlite3_step(st.stmt);
+    if (rc != SQLITE_DONE) {
+        if (err) *err = sqlite3_errmsg(db);
+        return false;
+    }
+
+    return true;
+}
+
 bool get_message_author_wsmsg(sqlite3* db,
                               const std::string& workspace_id,
                               sqlite3_int64 message_id,
@@ -1409,6 +1453,21 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
+        const sqlite3_int64 mute_count = workspace_message_mute_count_wsmsg(
+            db.db,
+            actor.workspace.workspace_id,
+            &moderr
+        );
+        if (!moderr.empty()) {
+            reply_json_wsmsg(deps, res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "failed to read workspace message mute count"},
+                {"detail", moderr}
+            });
+            return;
+        }
+
         const int limit = int_param_wsmsg(
             req,
             "limit",
@@ -1527,6 +1586,7 @@ void register_workspace_message_routes(httplib::Server& srv,
             {"can_moderate_messages", can_moderate},
             {"actor_muted", actor_muted},
             {"message_board_muted_all", message_board_muted_all},
+            {"workspace_message_mute_count", mute_count},
             {"messages", messages},
             {"latest_id", latest_id},
             {"last_seen_id", seen_id},
@@ -2019,6 +2079,12 @@ void register_workspace_message_routes(httplib::Server& srv,
                 actor.fp,
                 now_epoch_wsmsg(deps),
                 reason,
+                &dberr
+            );
+        } else if (target_fp == "*") {
+            ok = delete_all_workspace_message_mutes_wsmsg(
+                db.db,
+                actor.workspace.workspace_id,
                 &dberr
             );
         } else {

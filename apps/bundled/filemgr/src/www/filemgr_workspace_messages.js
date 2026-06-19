@@ -964,6 +964,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let canModerateMessages = false;
   let actorMuted = false;
   let allMuted = false;
+  let muteCount = 0;
   let pendingAttachments = [];
   const WS_MSG_FILE_REF_MIME = "application/x-pqnas-workspace-file-ref";
   let refreshBusy = false;
@@ -1043,8 +1044,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
 
     els.muteAll.addEventListener("click", async () => {
-      const allMuted = isTargetMuted("*");
-      await setMute("*", !allMuted, tr("filemgr.ws.messages.everyone_except_owner", null, "Everyone except owners"));
+      const hasAnyMute = isTargetMuted("*") || muteCount > 0;
+      await setMute("*", !hasAnyMute, tr("filemgr.ws.messages.everyone_except_owner", null, "Everyone except owners"));
     });
 
     els.send.addEventListener("click", sendMessage);
@@ -1076,9 +1077,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     els.drawer.classList.toggle("canModerate", !!canModerateMessages);
 
-    const allMuted = isTargetMuted("*");
+    const hasAnyMute = isTargetMuted("*") || muteCount > 0;
     if (els.muteAll) {
-      els.muteAll.textContent = allMuted
+      els.muteAll.textContent = hasAnyMute
         ? tr("filemgr.ws.messages.unmute_all", null, "Unmute all")
         : tr("filemgr.ws.messages.mute_all", null, "Mute all");
     }
@@ -1224,6 +1225,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       canModerateMessages = false;
       actorMuted = false;
       allMuted = false;
+      muteCount = 0;
       pendingAttachments = [];
       if (els) renderPendingAttachments();
     }
@@ -1374,6 +1376,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       canModerateMessages = !!j.can_moderate_messages;
       actorMuted = !!j.actor_muted;
       allMuted = !!j.message_board_muted_all;
+      muteCount = Number(j.workspace_message_mute_count || 0);
       messages = Array.isArray(j.messages) ? j.messages : [];
       latestId = Number(j.latest_id || 0);
       unreadCount = Number(j.unread_count || 0);
