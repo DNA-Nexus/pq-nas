@@ -47120,7 +47120,7 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
     }
 
     const std::string body = out.dump(2);
-    std::cerr << "[shares/list] fp=" << fp_hex
+    std::cerr << "[shares/list] fp=" << (fp_hex.size() > 16 ? fp_hex.substr(0, 12) + "..." : fp_hex)
               << " visible=" << out["shares"].size()
               << " total=" << v.size()
               << " body_bytes=" << body.size()
