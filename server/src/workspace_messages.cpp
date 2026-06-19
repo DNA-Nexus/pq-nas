@@ -1,5 +1,25 @@
 #include "workspace_messages.h"
 
+/*
+ * Workspace message board backend.
+ *
+ * This module implements the lightweight per-workspace message board used by
+ * File Manager. Messages are stored server-side in a small SQLite database
+ * next to the normal PQ-NAS config files. The feature is intentionally scoped
+ * to workspace members only; the browser UI is treated as untrusted and all
+ * membership, moderation, mute and delete decisions are repeated here.
+ *
+ * Security notes:
+ * - No shell commands are executed in this module.
+ * - Mutating routes require same-origin checks for cookie-based requests.
+ * - Workspace membership is checked for every route.
+ * - Full fingerprints remain internal; normal API message responses expose
+ *   UI-safe booleans such as is_own/can_delete/can_mute_author instead.
+ * - Attachment cards are references to workspace paths, not direct file reads.
+ * - Message table growth is bounded by pruning old/deleted rows.
+ * - Rate limiting is in-memory and defensive; it resets on service restart.
+ */
+
 #include <sqlite3.h>
 
 #include <algorithm>
@@ -18,12 +38,18 @@
 namespace pqnas {
 namespace {
 
+// Default and maximum number of messages returned by the list endpoint.
+// The API clamps client-provided limits to this range.
 constexpr int k_workspace_messages_default_limit = 100;
 constexpr int k_workspace_messages_max_limit = 200;
+// Retention policy. Active rows above the per-workspace cap are soft-deleted;
+// soft-deleted rows are physically removed after the keep window.
 constexpr int k_workspace_messages_active_cap_per_workspace = 5000;
 constexpr sqlite3_int64 k_workspace_messages_soft_delete_keep_seconds = 30LL * 24LL * 60LL * 60LL;
 constexpr std::size_t k_workspace_message_max_bytes = 4000;
 
+// Simple per-user/per-workspace/per-IP sliding-window rate limits.
+// These protect the SQLite DB and message table from accidental or malicious spam.
 constexpr sqlite3_int64 k_workspace_messages_rate_window_seconds = 60;
 constexpr int k_workspace_messages_post_rate_limit = 30;
 constexpr int k_workspace_messages_delete_rate_limit = 60;
@@ -31,10 +57,16 @@ constexpr int k_workspace_messages_mute_rate_limit = 30;
 constexpr int k_workspace_messages_read_rate_limit = 120;
 constexpr std::size_t k_workspace_messages_rate_bucket_cap = 10000;
 
+// Schema creation/migration is guarded so concurrent first requests do not try
+// to run the same CREATE/ALTER statements at the same time.
 std::mutex g_workspace_messages_schema_mu;
+// In-memory rate-limit buckets. This is intentionally process-local; it is a
+// cheap abuse guard, not a durable security ledger.
 std::mutex g_workspace_messages_rate_mu;
 std::unordered_map<std::string, std::deque<sqlite3_int64>> g_workspace_messages_rate;
 
+// RAII wrapper for sqlite3*. It keeps error paths simple and prevents leaks
+// when a handler returns early.
 struct SqliteHandle {
     sqlite3* db = nullptr;
     ~SqliteHandle() {
@@ -46,6 +78,7 @@ struct SqliteHandle {
     SqliteHandle& operator=(const SqliteHandle&) = delete;
 };
 
+// RAII wrapper for prepared statements.
 struct StmtHandle {
     sqlite3_stmt* stmt = nullptr;
     ~StmtHandle() {
@@ -57,6 +90,8 @@ struct StmtHandle {
     StmtHandle& operator=(const StmtHandle&) = delete;
 };
 
+// Trim ASCII whitespace from both ends. Used before comparing IDs,
+// names and user-provided small text fields.
 std::string trim_copy_wsmsg(const std::string& s) {
     std::size_t a = 0;
     while (a < s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
@@ -67,11 +102,14 @@ std::string trim_copy_wsmsg(const std::string& s) {
     return s.substr(a, b - a);
 }
 
+// Fetch one HTTP header without throwing or creating optional boilerplate.
 std::string header_value_wsmsg(const httplib::Request& req, const char* key) {
     auto it = req.headers.find(key);
     return it == req.headers.end() ? std::string() : it->second;
 }
 
+// Central JSON reply helper. Prefer the server-provided responder when
+// available so route behavior stays consistent with the rest of PQ-NAS.
 void reply_json_wsmsg(const WorkspaceFileRouteDeps& deps,
                       httplib::Response& res,
                       int code,
@@ -85,6 +123,9 @@ void reply_json_wsmsg(const WorkspaceFileRouteDeps& deps,
     res.set_content(body.dump(), "application/json; charset=utf-8");
 }
 
+// CSRF guard for mutating routes. Cookie-based browser calls must come from
+// the configured origin or a same-origin referer. Bearer-token calls are
+// allowed to skip this check because they are not ambient browser credentials.
 bool require_same_origin_for_cookie_mutation_wsmsg(const httplib::Request& req,
                                                    httplib::Response& res,
                                                    const WorkspaceFileRouteDeps& deps) {
@@ -137,6 +178,8 @@ bool require_same_origin_for_cookie_mutation_wsmsg(const httplib::Request& req,
     return false;
 }
 
+// Clock abstraction. Tests can provide deps.now_epoch_sec; production falls
+// back to system_clock.
 std::int64_t now_epoch_wsmsg(const WorkspaceFileRouteDeps& deps) {
     if (deps.now_epoch_sec) {
         return deps.now_epoch_sec();
@@ -149,6 +192,8 @@ std::int64_t now_epoch_wsmsg(const WorkspaceFileRouteDeps& deps) {
     );
 }
 
+// Store a readable UTC timestamp alongside the epoch value for UI display and
+// easier DB inspection.
 std::string iso_utc_from_epoch_wsmsg(std::int64_t epoch) {
     std::time_t t = static_cast<std::time_t>(epoch);
     std::tm tmv{};
@@ -159,6 +204,8 @@ std::string iso_utc_from_epoch_wsmsg(std::int64_t epoch) {
     return std::string(buf);
 }
 
+// Place the SQLite DB next to the configured workspace/users state files.
+// This keeps the message board state with the rest of PQ-NAS runtime config.
 std::filesystem::path workspace_messages_db_path(const WorkspaceFileRouteDeps& deps) {
     if (!deps.workspaces_path.empty()) {
         std::filesystem::path p(deps.workspaces_path);
@@ -173,6 +220,8 @@ std::filesystem::path workspace_messages_db_path(const WorkspaceFileRouteDeps& d
     return std::filesystem::path("/etc/pqnas/workspace_messages.sqlite3");
 }
 
+// Execute fixed SQL statements used for pragmas, schema creation and simple
+// transaction control. This is sqlite3_exec, not shell execution.
 bool exec_sql_wsmsg(sqlite3* db, const char* sql, std::string* err) {
     char* emsg = nullptr;
     const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &emsg);
@@ -188,6 +237,8 @@ bool exec_sql_wsmsg(sqlite3* db, const char* sql, std::string* err) {
     return true;
 }
 
+// Migration helper for ALTER TABLE ADD COLUMN. SQLite has no IF NOT EXISTS for
+// older ALTER TABLE forms, so duplicate-column errors are treated as success.
 bool exec_sql_allow_duplicate_column_wsmsg(sqlite3* db, const char* sql, std::string* err) {
     char* emsg = nullptr;
     const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &emsg);
@@ -207,6 +258,7 @@ bool exec_sql_allow_duplicate_column_wsmsg(sqlite3* db, const char* sql, std::st
     return false;
 }
 
+// Prepare a SQLite statement and normalize error propagation.
 bool prepare_wsmsg(sqlite3* db,
                    const char* sql,
                    sqlite3_stmt** out,
@@ -220,6 +272,9 @@ bool prepare_wsmsg(sqlite3* db,
     return true;
 }
 
+// Open the workspace message database and ensure the current schema exists.
+// Schema work is cheap after first run because CREATE IF NOT EXISTS and the
+// duplicate-column migration helper are idempotent.
 bool open_workspace_messages_db(const WorkspaceFileRouteDeps& deps,
                                 SqliteHandle* out,
                                 std::string* err) {
@@ -348,11 +403,14 @@ bool open_workspace_messages_db(const WorkspaceFileRouteDeps& deps,
     return true;
 }
 
+// Safely read a nullable SQLite TEXT column as std::string.
 std::string sqlite_text_col(sqlite3_stmt* st, int col) {
     const unsigned char* t = sqlite3_column_text(st, col);
     return t ? reinterpret_cast<const char*>(t) : std::string();
 }
 
+// Last-resort UI display for unknown users. Avoid showing full fingerprints in
+// normal message responses.
 std::string short_fp_wsmsg(const std::string& fp) {
     const std::string v = trim_copy_wsmsg(fp);
     if (v.empty()) return "Member";
@@ -360,6 +418,8 @@ std::string short_fp_wsmsg(const std::string& fp) {
     return v.substr(0, 18) + "...";
 }
 
+// Extract the best human-readable name from a user JSON object. Different
+// provisioning paths may use slightly different field names.
 std::string preferred_name_from_user_json_wsmsg(const json& j) {
     static const char* keys[] = {
         "nickname",
@@ -383,6 +443,7 @@ std::string preferred_name_from_user_json_wsmsg(const json& j) {
     return {};
 }
 
+// Check whether a user JSON object represents the given fingerprint.
 bool user_json_matches_fp_wsmsg(const json& j, const std::string& fp) {
     static const char* fp_keys[] = {
         "fingerprint",
@@ -401,6 +462,8 @@ bool user_json_matches_fp_wsmsg(const json& j, const std::string& fp) {
     return false;
 }
 
+// Best-effort lookup from users.json so old messages can still display a
+// friendly name even if the workspace member record has no display_name.
 std::string lookup_user_preferred_name_wsmsg(const std::string& users_path,
                                              const std::string& fp) {
     if (users_path.empty() || fp.empty()) return {};
@@ -445,6 +508,8 @@ std::string lookup_user_preferred_name_wsmsg(const std::string& users_path,
     return {};
 }
 
+// Resolve the author display name in privacy-friendly priority order:
+// workspace member name -> users.json name -> stored DB name -> shortened fp.
 std::string resolve_message_author_name_wsmsg(const WorkspaceFileRouteDeps& deps,
                                               const WorkspaceRec& workspace,
                                               const std::string& author_fp,
@@ -468,6 +533,9 @@ std::string resolve_message_author_name_wsmsg(const WorkspaceFileRouteDeps& deps
     return short_fp_wsmsg(fp);
 }
 
+// Normalize an attachment reference path. The message board stores only
+// workspace-relative references; it rejects absolute paths, traversal,
+// backslashes, empty segments and NUL characters.
 bool normalize_attachment_path_wsmsg(const std::string& in,
                                       std::string* out,
                                       std::string* err) {
@@ -516,12 +584,16 @@ bool normalize_attachment_path_wsmsg(const std::string& in,
     return true;
 }
 
+// Derive a display name from a normalized path when the client did not provide
+// one.
 std::string leaf_name_from_path_wsmsg(const std::string& path) {
     const auto slash = path.find_last_of('/');
     if (slash == std::string::npos) return path;
     return path.substr(slash + 1);
 }
 
+// Validate and normalize attachment references before storing them. These are
+// metadata references only; no file is opened, served or trusted here.
 json sanitize_message_attachments_wsmsg(const json& body,
                                         const std::string& workspace_id,
                                         std::string* err) {
@@ -581,6 +653,8 @@ json sanitize_message_attachments_wsmsg(const json& body,
     return out;
 }
 
+// Parse stored attachment JSON defensively. Corrupt values are treated as an
+// empty attachment list instead of breaking message rendering.
 json parse_attachments_json_wsmsg(const std::string& raw) {
     if (raw.empty()) return json::array();
 
@@ -589,10 +663,12 @@ json parse_attachments_json_wsmsg(const std::string& raw) {
     return j;
 }
 
+// Bind text values using SQLITE_TRANSIENT so SQLite owns its own copy.
 void bind_text_wsmsg(sqlite3_stmt* st, int idx, const std::string& value) {
     sqlite3_bind_text(st, idx, value.c_str(), -1, SQLITE_TRANSIENT);
 }
 
+// Read and clamp an integer query parameter.
 int int_param_wsmsg(const httplib::Request& req,
                     const char* name,
                     int def,
@@ -610,6 +686,7 @@ int int_param_wsmsg(const httplib::Request& req,
     }
 }
 
+// Read an int64 query parameter with a safe fallback.
 sqlite3_int64 int64_param_wsmsg(const httplib::Request& req,
                                 const char* name,
                                 sqlite3_int64 def) {
@@ -622,6 +699,8 @@ sqlite3_int64 int64_param_wsmsg(const httplib::Request& req,
     }
 }
 
+// Authenticated workspace actor resolved for a request. This bundles the
+// session fingerprint, workspace role, display name and current workspace record.
 struct WorkspaceMessageActor {
     std::string fp;
     std::string role;
@@ -630,6 +709,8 @@ struct WorkspaceMessageActor {
     WorkspaceMemberRec member;
 };
 
+// Rate-limit key. Include action, remote address, workspace and actor so one
+// noisy user/workspace does not consume the whole process budget.
 std::string workspace_message_rate_key_wsmsg(const httplib::Request& req,
                                              const WorkspaceMessageActor& actor,
                                              const char* action) {
@@ -647,6 +728,7 @@ std::string workspace_message_rate_key_wsmsg(const httplib::Request& req,
     return oss.str();
 }
 
+// Remove expired rate-limit buckets while the rate-limit mutex is held.
 void compact_workspace_message_rate_map_locked_wsmsg(sqlite3_int64 now_epoch) {
     const sqlite3_int64 min_epoch = now_epoch - k_workspace_messages_rate_window_seconds;
 
@@ -664,6 +746,8 @@ void compact_workspace_message_rate_map_locked_wsmsg(sqlite3_int64 now_epoch) {
     }
 }
 
+// Sliding-window limiter. Returns true when the caller should be rejected with
+// HTTP 429 and reports the retry-after duration.
 bool workspace_message_rate_limited_wsmsg(const httplib::Request& req,
                                           const WorkspaceMessageActor& actor,
                                           const char* action,
@@ -688,6 +772,7 @@ bool workspace_message_rate_limited_wsmsg(const httplib::Request& req,
         return true;
     }
 
+    // Create the bucket only after the global cap check above.
     auto& hits = g_workspace_messages_rate[key];
 
     const sqlite3_int64 min_epoch = now_epoch - k_workspace_messages_rate_window_seconds;
@@ -710,6 +795,7 @@ bool workspace_message_rate_limited_wsmsg(const httplib::Request& req,
     return false;
 }
 
+// Route-facing rate-limit wrapper that emits the standard JSON 429 response.
 bool require_workspace_message_rate_limit_wsmsg(const WorkspaceFileRouteDeps& deps,
                                                 const httplib::Request& req,
                                                 httplib::Response& res,
@@ -740,6 +826,8 @@ bool require_workspace_message_rate_limit_wsmsg(const WorkspaceFileRouteDeps& de
     return false;
 }
 
+// Bounded-growth guard. Old soft-deleted rows are permanently deleted, and
+// active rows beyond the per-workspace cap are soft-deleted by system-prune.
 bool prune_workspace_messages_wsmsg(sqlite3* db,
                                     const std::string& workspace_id,
                                     sqlite3_int64 now_epoch,
@@ -804,6 +892,8 @@ bool prune_workspace_messages_wsmsg(sqlite3* db,
     return true;
 }
 
+// Authenticate the caller and verify that they are an enabled member of an
+// enabled workspace. UI visibility is not trusted as an authorization boundary.
 bool require_workspace_message_actor(const WorkspaceFileRouteDeps& deps,
                                      const httplib::Request& req,
                                      httplib::Response& res,
@@ -869,6 +959,7 @@ bool require_workspace_message_actor(const WorkspaceFileRouteDeps& deps,
     WorkspaceMemberRec found;
     bool ok = false;
     for (const auto& m : w.members) {
+        // Only enabled workspace members may use the message board.
         if (m.fingerprint == actor_fp && m.status == "enabled") {
             found = m;
             ok = true;
@@ -901,6 +992,7 @@ bool require_workspace_message_actor(const WorkspaceFileRouteDeps& deps,
     return true;
 }
 
+// Latest non-deleted message id for unread/read-state calculations.
 sqlite3_int64 latest_message_id_wsmsg(sqlite3* db,
                                       const std::string& workspace_id,
                                       std::string* err) {
@@ -923,6 +1015,7 @@ sqlite3_int64 latest_message_id_wsmsg(sqlite3* db,
     return 0;
 }
 
+// Last message id that this actor has marked as seen in this workspace.
 sqlite3_int64 last_seen_id_wsmsg(sqlite3* db,
                                  const std::string& workspace_id,
                                  const std::string& actor_fp,
@@ -948,6 +1041,7 @@ sqlite3_int64 last_seen_id_wsmsg(sqlite3* db,
     return 0;
 }
 
+// Count active messages newer than last_seen_id.
 sqlite3_int64 unread_count_wsmsg(sqlite3* db,
                                  const std::string& workspace_id,
                                  sqlite3_int64 last_seen_id,
@@ -972,6 +1066,8 @@ sqlite3_int64 unread_count_wsmsg(sqlite3* db,
     return 0;
 }
 
+// Convert a DB row to the public API message shape. Full author_fp is used only
+// internally to resolve a friendly name and is not returned to the browser.
 json message_row_to_json(const WorkspaceFileRouteDeps& deps,
                          const WorkspaceRec& workspace,
                          sqlite3_stmt* st) {
@@ -990,6 +1086,8 @@ json message_row_to_json(const WorkspaceFileRouteDeps& deps,
     };
 }
 
+// Upsert read-state. The MAX() keeps read state monotonic so older client calls
+// cannot move last_seen_id backwards.
 bool mark_read_wsmsg(sqlite3* db,
                      const std::string& workspace_id,
                      const std::string& actor_fp,
@@ -1023,10 +1121,12 @@ bool mark_read_wsmsg(sqlite3* db,
     return true;
 }
 
+// Owner check used for moderation actions.
 bool is_workspace_owner_wsmsg(const WorkspaceMessageActor& actor) {
     return actor.role == "owner";
 }
 
+// Verify that a target fingerprint is still an enabled member of the workspace.
 bool workspace_has_enabled_member_fp_wsmsg(const WorkspaceRec& workspace,
                                            const std::string& fp) {
     if (fp.empty()) return false;
@@ -1036,6 +1136,7 @@ bool workspace_has_enabled_member_fp_wsmsg(const WorkspaceRec& workspace,
     return false;
 }
 
+// Used to prevent muting owners.
 bool workspace_member_is_owner_wsmsg(const WorkspaceRec& workspace,
                                      const std::string& fp) {
     if (fp.empty()) return false;
@@ -1045,6 +1146,8 @@ bool workspace_member_is_owner_wsmsg(const WorkspaceRec& workspace,
     return false;
 }
 
+// Check whether one exact target is muted. "*" is stored as the workspace-wide
+// non-owner mute marker and is checked explicitly by callers.
 bool message_target_is_muted_wsmsg(sqlite3* db,
                                     const std::string& workspace_id,
                                     const std::string& target_fp,
@@ -1070,6 +1173,8 @@ bool message_target_is_muted_wsmsg(sqlite3* db,
     return false;
 }
 
+// Check whether the current actor is muted. Owners are never muted, even when
+// the workspace-wide "*" mute exists.
 bool message_actor_is_muted_wsmsg(sqlite3* db,
                                   const WorkspaceMessageActor& actor,
                                   std::string* err) {
@@ -1094,6 +1199,8 @@ bool message_actor_is_muted_wsmsg(sqlite3* db,
     return false;
 }
 
+// Create or update a mute record. target_fp may be "*" for the workspace-wide
+// "mute all non-owners" state.
 bool upsert_message_mute_wsmsg(sqlite3* db,
                                const std::string& workspace_id,
                                const std::string& target_fp,
@@ -1130,6 +1237,7 @@ bool upsert_message_mute_wsmsg(sqlite3* db,
     return true;
 }
 
+// Remove a mute record.
 bool delete_message_mute_wsmsg(sqlite3* db,
                                const std::string& workspace_id,
                                const std::string& target_fp,
@@ -1154,6 +1262,8 @@ bool delete_message_mute_wsmsg(sqlite3* db,
     return true;
 }
 
+// Resolve the author fingerprint for an existing non-deleted message. The
+// frontend sends message_id for muting/deleting; the server resolves target fp.
 bool get_message_author_wsmsg(sqlite3* db,
                               const std::string& workspace_id,
                               sqlite3_int64 message_id,
@@ -1183,6 +1293,8 @@ bool get_message_author_wsmsg(sqlite3* db,
     return false;
 }
 
+// Soft-delete a message instead of removing it immediately. This keeps audit
+// and read-state behavior stable; pruning removes old deleted rows later.
 bool soft_delete_message_wsmsg(sqlite3* db,
                                const std::string& workspace_id,
                                sqlite3_int64 message_id,
@@ -1213,6 +1325,7 @@ bool soft_delete_message_wsmsg(sqlite3* db,
     return sqlite3_changes(db) > 0;
 }
 
+// Best-effort security audit event. Failures here must not break user actions.
 void audit_workspace_message_best_effort(const WorkspaceFileRouteDeps& deps,
                                          const httplib::Request& req,
                                          const std::string& event,
@@ -1239,8 +1352,12 @@ void audit_workspace_message_best_effort(const WorkspaceFileRouteDeps& deps,
 
 } // namespace
 
+// Register all workspace message HTTP routes.
 void register_workspace_message_routes(httplib::Server& srv,
                                        const WorkspaceFileRouteDeps& deps) {
+    // List messages and moderation state for the current workspace.
+    // This route returns UI-safe authorization booleans per message instead of
+    // exposing full fingerprints to the browser.
     srv.Get("/api/v4/workspaces/messages",
             [&deps](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
@@ -1376,6 +1493,7 @@ void register_workspace_message_routes(httplib::Server& srv,
                 }
 
                 msg["is_own"] = is_own;
+                // The browser receives permission decisions, not raw fingerprints.
                 msg["can_delete"] = is_own || can_moderate;
                 msg["can_mute_author"] = can_moderate && !is_own && !author_is_owner;
                 msg["author_muted"] = author_muted;
@@ -1416,6 +1534,8 @@ void register_workspace_message_routes(httplib::Server& srv,
         });
     });
 
+    // Create a new message. The server validates workspace membership, mute
+    // state, message size, attachment references, rate limits and SQLite writes.
     srv.Post("/api/v4/workspaces/messages/post",
              [&deps](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
@@ -1529,6 +1649,8 @@ void register_workspace_message_routes(httplib::Server& srv,
         const std::int64_t now = now_epoch_wsmsg(deps);
         const std::string created_at = iso_utc_from_epoch_wsmsg(now);
 
+        // BEGIN IMMEDIATE reserves the write lock up front so insert + read-state
+        // update either commit together or fail together.
         if (!exec_sql_wsmsg(db.db, "BEGIN IMMEDIATE;", &dberr)) {
             reply_json_wsmsg(deps, res, 503, json{
                 {"ok", false},
@@ -1597,6 +1719,7 @@ void register_workspace_message_routes(httplib::Server& srv,
             return;
         }
 
+        // Commit only after the message insert and mark-read update both succeed.
         if (!exec_sql_wsmsg(db.db, "COMMIT;", &dberr)) {
             std::string rollback_err;
             (void)exec_sql_wsmsg(db.db, "ROLLBACK;", &rollback_err);
@@ -1655,6 +1778,8 @@ void register_workspace_message_routes(httplib::Server& srv,
         });
     });
 
+    // Soft-delete a message. Authors can delete their own messages; workspace
+    // owners can delete any message in the workspace.
     srv.Post("/api/v4/workspaces/messages/delete",
              [&deps](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
@@ -1760,6 +1885,8 @@ void register_workspace_message_routes(httplib::Server& srv,
         });
     });
 
+    // Owner-only moderation endpoint. The browser sends message_id/target_all;
+    // the server resolves the actual target fingerprint internally.
     srv.Post("/api/v4/workspaces/messages/mute",
              [&deps](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
@@ -1852,6 +1979,8 @@ void register_workspace_message_routes(httplib::Server& srv,
             }
         }
 
+        // For individual mutes, make sure the message author is still a valid
+        // non-owner member before creating the mute.
         if (target_fp != "*") {
             if (target_fp == actor.fp) {
                 reply_json_wsmsg(deps, res, 400, json{
@@ -1929,6 +2058,8 @@ void register_workspace_message_routes(httplib::Server& srv,
         });
     });
 
+    // Mark messages as read for the actor. This is a mutation because it writes
+    // workspace_message_reads, so it keeps the same-origin and rate-limit guards.
     srv.Post("/api/v4/workspaces/messages/read",
              [&deps](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Cache-Control", "no-store");
