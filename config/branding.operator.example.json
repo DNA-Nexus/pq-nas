@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "product_name": "Operator Cloud",
+  "product_short_name": "Operator Cloud",
+  "company_name": "Operator Ltd",
+  "copyright": "© Operator Ltd",
+  "hide_upstream_brand": true,
+  "logo_dark": "/static/branding/logo-dark.png",
+  "logo_bright": "/static/branding/logo-bright.png",
+  "favicon": "/static/branding/favicon.png",
+  "primary_color": "#0057b8",
+  "accent_color": "#00a3e0",
+  "support_url": "",
+  "presentation_url": "",
+  "show_presentation_link": false
+}
