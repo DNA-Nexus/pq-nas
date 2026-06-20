@@ -4,6 +4,7 @@
 #include <cctype>
 #include <chrono>
 #include <ctime>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -36,6 +37,8 @@
 #include "runtime_paths.h"
 #include "gallery_meta.h"
 #include "workspace_messages.h"
+#include "password_credentials.h"
+#include "opaque_credentials.h"
 
 namespace pqnas {
     static std::string hex_encode_lower_local(const unsigned char* data, std::size_t len) {
@@ -131,6 +134,315 @@ namespace pqnas {
         }
         return require_same_origin_for_cookie_mutation_ws(req, res, *deps.origin);
     }
+
+    static std::string ws_files_external_trim_copy_local(const std::string& s) {
+        std::size_t a = 0;
+        while (a < s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+
+        std::size_t b = s.size();
+        while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) --b;
+
+        return s.substr(a, b - a);
+    }
+
+    static std::string ws_files_external_lower_copy_local(std::string s) {
+        for (char& c : s) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return s;
+    }
+
+    static bool ws_files_external_starts_with_local(
+        const std::string& s,
+        const std::string& prefix
+    ) {
+        return s.rfind(prefix, 0) == 0;
+    }
+
+    static bool ws_files_user_is_external_workspace_only_local(const UserRec& u) {
+        const std::string group =
+            ws_files_external_lower_copy_local(ws_files_external_trim_copy_local(u.group));
+        const std::string notes =
+            ws_files_external_lower_copy_local(ws_files_external_trim_copy_local(u.notes));
+        const std::string email =
+            ws_files_external_lower_copy_local(ws_files_external_trim_copy_local(u.email));
+        const std::string name =
+            ws_files_external_lower_copy_local(ws_files_external_trim_copy_local(u.name));
+
+        if (group == "external" || group == "external workspace") return true;
+        if (notes.find("external_workspace_only=1") != std::string::npos) return true;
+        if (notes.find("external workspace opaque account") != std::string::npos) return true;
+        if (ws_files_external_starts_with_local(email, "external-")) return true;
+        if (ws_files_external_starts_with_local(name, "external-")) return true;
+
+        return false;
+    }
+
+    static std::string ws_files_password_credentials_path_local(
+        const WorkspaceFileRouteDeps& deps
+    ) {
+        const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
+        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
+        if (!env_path.empty()) return env_path;
+
+        if (!deps.users_path.empty()) {
+            std::filesystem::path p(deps.users_path);
+            return (p.parent_path() / "password_credentials.json").string();
+        }
+
+        return "/var/lib/pqnas/password_credentials.json";
+    }
+
+    static std::string ws_files_opaque_credentials_path_local(
+        const WorkspaceFileRouteDeps& deps
+    ) {
+        const char* raw = std::getenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
+        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
+        if (!env_path.empty()) return env_path;
+
+        const char* cfg_env = std::getenv("PQNAS_CONFIG");
+        const std::string cfg_path = ws_files_external_trim_copy_local(cfg_env ? cfg_env : "");
+        if (!cfg_path.empty()) {
+            return (std::filesystem::path(cfg_path) / "opaque_credentials.json").string();
+        }
+
+        const char* cfg_root_env = std::getenv("PQNAS_CONFIG_ROOT");
+        const std::string cfg_root_path =
+            ws_files_external_trim_copy_local(cfg_root_env ? cfg_root_env : "");
+        if (!cfg_root_path.empty()) {
+            return (std::filesystem::path(cfg_root_path) / "opaque_credentials.json").string();
+        }
+
+        if (!deps.users_path.empty()) {
+            std::filesystem::path p(deps.users_path);
+            return (p.parent_path() / "opaque_credentials.json").string();
+        }
+
+        return "/etc/pqnas/opaque_credentials.json";
+    }
+
+    static std::string ws_files_opaque_enrollments_path_local(
+        const WorkspaceFileRouteDeps& deps
+    ) {
+        const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
+        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
+        if (!env_path.empty()) return env_path;
+
+        if (!deps.users_path.empty()) {
+            std::filesystem::path p(deps.users_path);
+            return (p.parent_path() / "opaque_enrollments.json").string();
+        }
+
+        return "/var/lib/pqnas/opaque_enrollments.json";
+    }
+
+    static bool ws_files_mark_opaque_enrollments_used_for_fp_local(
+        const WorkspaceFileRouteDeps& deps,
+        const std::string& fingerprint,
+        httplib::Response& res
+    ) {
+        const std::string fp = ws_files_external_trim_copy_local(fingerprint);
+        if (fp.empty()) return true;
+
+        const std::string path = ws_files_opaque_enrollments_path_local(deps);
+
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec)) return true;
+
+        json doc;
+        {
+            std::ifstream in(path);
+            if (!in.good()) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "opaque_enrollments_open_failed"},
+                    {"message", "failed to open opaque enrollments during external cleanup"}
+                }.dump());
+                return false;
+            }
+
+            try {
+                in >> doc;
+            } catch (...) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "opaque_enrollments_parse_failed"},
+                    {"message", "failed to parse opaque enrollments during external cleanup"}
+                }.dump());
+                return false;
+            }
+        }
+
+        if (!doc.is_object() || !doc.contains("tokens") || !doc["tokens"].is_array()) {
+            return true;
+        }
+
+        const long now = deps.now_epoch_sec
+            ? static_cast<long>(deps.now_epoch_sec())
+            : static_cast<long>(std::time(nullptr));
+
+        bool changed = false;
+        for (auto& rec : doc["tokens"]) {
+            if (!rec.is_object()) continue;
+            if (rec.value("fingerprint", std::string{}) != fp) continue;
+            if (rec.value("used_at", 0L) != 0) continue;
+
+            rec["used_at"] = now;
+            changed = true;
+        }
+
+        if (!changed) return true;
+
+        const std::filesystem::path target(path);
+        std::filesystem::create_directories(target.parent_path(), ec);
+
+        std::ofstream out(path, std::ios::trunc);
+        if (!out.good()) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "opaque_enrollments_save_failed"},
+                {"message", "failed to save opaque enrollments during external cleanup"}
+            }.dump());
+            return false;
+        }
+
+        out << doc.dump(2) << "\n";
+        return out.good();
+    }
+
+    static bool ws_files_has_enabled_external_membership_local(
+        WorkspacesRegistry* workspaces,
+        const std::string& fingerprint
+    ) {
+        if (!workspaces) return true;
+
+        const std::string fp = ws_files_external_trim_copy_local(fingerprint);
+        if (fp.empty()) return true;
+
+        const auto spaces = workspaces->list_for_member(fp);
+        for (const auto& w : spaces) {
+            if (w.status != "enabled") continue;
+
+            auto mopt = workspaces->get_member(w.workspace_id, fp);
+            if (!mopt.has_value()) continue;
+
+            WorkspaceMemberRec m = *mopt;
+            normalize_workspace_member_v1(&m);
+
+            if (m.status == "enabled" && m.member_kind == "external") {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool ws_files_delete_orphan_external_user_local(
+        const WorkspaceFileRouteDeps& deps,
+        httplib::Response& res,
+        const std::string& fingerprint,
+        bool* deleted
+    ) {
+        if (deleted) *deleted = false;
+
+        const std::string fp = ws_files_external_trim_copy_local(fingerprint);
+        if (fp.empty()) return true;
+
+        // If the identity still belongs to another active external workspace,
+        // keep the backing account.
+        if (ws_files_has_enabled_external_membership_local(deps.workspaces, fp)) {
+            return true;
+        }
+
+        if (!deps.users || deps.users_path.empty()) return true;
+
+        if (!deps.users->load(deps.users_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "users_reload_failed"},
+                {"message", "failed to reload users before external cleanup"}
+            }.dump());
+            return false;
+        }
+
+        auto uopt = deps.users->get(fp);
+        if (!uopt.has_value()) return true;
+
+        UserRec u = *uopt;
+
+        // Safety guard: never delete a normal DNA-Nexus user from workspace cleanup.
+        if (!ws_files_user_is_external_workspace_only_local(u)) return true;
+
+        const std::string login =
+            pqnas::PasswordCredentials::normalize_login(u.email);
+
+        if (!ws_files_mark_opaque_enrollments_used_for_fp_local(deps, fp, res)) {
+            return false;
+        }
+
+        if (!login.empty()) {
+            const std::string pass_path = ws_files_password_credentials_path_local(deps);
+            pqnas::PasswordCredentials pass_creds;
+
+            if (!pass_creds.load(pass_path)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "password_credentials_load_failed"},
+                    {"message", "failed to load password credentials during external cleanup"}
+                }.dump());
+                return false;
+            }
+
+            if (pass_creds.get(login).has_value()) {
+                if (!pass_creds.erase(login) || !pass_creds.save(pass_path)) {
+                    deps.reply_json(res, 500, json{
+                        {"ok", false},
+                        {"error", "password_credentials_cleanup_failed"},
+                        {"message", "failed to remove password credential during external cleanup"}
+                    }.dump());
+                    return false;
+                }
+            }
+        }
+
+        if (!login.empty()) {
+            const std::string opaque_path = ws_files_opaque_credentials_path_local(deps);
+            pqnas::OpaqueCredentials opaque_creds;
+
+            if (!opaque_creds.load(opaque_path)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "opaque_credentials_load_failed"},
+                    {"message", "failed to load OPAQUE credentials during external cleanup"}
+                }.dump());
+                return false;
+            }
+
+            if (opaque_creds.get(login).has_value()) {
+                if (!opaque_creds.erase(login) || !opaque_creds.save(opaque_path)) {
+                    deps.reply_json(res, 500, json{
+                        {"ok", false},
+                        {"error", "opaque_credentials_cleanup_failed"},
+                        {"message", "failed to remove OPAQUE credential during external cleanup"}
+                    }.dump());
+                    return false;
+                }
+            }
+        }
+
+        if (!deps.users->erase(fp) || !deps.users->save(deps.users_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "external_user_delete_failed"},
+                {"message", "failed to delete orphan external workspace user"}
+            }.dump());
+            return false;
+        }
+
+        if (deleted) *deleted = true;
+        return true;
+    }
+
     static bool sha256_file_local(const std::filesystem::path& p, std::string* out_hex, std::string* err) {
         std::ifstream f(p, std::ios::binary);
         if (!f.good()) {
@@ -2603,6 +2915,16 @@ srv.Get("/api/v4/workspaces/members",
         return;
     }
 
+    bool deleted_external_user = false;
+    if (!ws_files_delete_orphan_external_user_local(
+            deps,
+            res,
+            target_fp,
+            &deleted_external_user)) {
+        audit_fail(workspace_id, "external_orphan_cleanup_failed", 500, target_fp);
+        return;
+    }
+
     auto w2 = deps.workspaces->get(workspace_id);
     auto actor2 = deps.workspaces->get_member(workspace_id, actor_fp);
     auto member2 = deps.workspaces->get_member(workspace_id, target_fp);
@@ -2982,6 +3304,17 @@ srv.Get("/api/v4/workspaces/members",
         return;
     }
 
+    bool deleted_external_user = false;
+    if (!ws_files_delete_orphan_external_user_local(
+            deps,
+            res,
+            target_fp,
+            &deleted_external_user)) {
+        audit_fail(workspace_id, "external_orphan_cleanup_failed", 500, target_fp);
+        return;
+    }
+    (void)deleted_external_user;
+
     auto w2 = deps.workspaces->get(workspace_id);
     auto actor2 = deps.workspaces->get_member(workspace_id, actor_fp);
     if (!w2.has_value() || !actor2.has_value()) {
@@ -2999,7 +3332,7 @@ srv.Get("/api/v4/workspaces/members",
     deps.reply_json(res, 200, json{
         {"ok", true},
         {"workspace", workspace_to_user_json(*w2, *actor2, deps.users_path)},
-        {"removed_fingerprint", target_fp}
+        {"removed_fingerprint", target_fp},
     }.dump());
 });
 

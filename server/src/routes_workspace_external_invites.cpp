@@ -2,6 +2,7 @@
 
 #include "dna_identity_generator.h"
 #include "password_credentials.h"
+#include "opaque_credentials.h"
 #include "workspace_access_shared.h"
 
 #include <algorithm>
@@ -67,12 +68,364 @@ bool request_wants_html_local(const httplib::Request& req) {
     return accept.find("text/html") != std::string::npos;
 }
 
+std::string external_invite_normalize_lang_local(std::string raw) {
+    raw = trim_copy_safe(raw);
+
+    for (char& c : raw) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    const std::size_t comma = raw.find(',');
+    if (comma != std::string::npos) raw = raw.substr(0, comma);
+
+    const std::size_t semi = raw.find(';');
+    if (semi != std::string::npos) raw = raw.substr(0, semi);
+
+    const std::size_t dash = raw.find_first_of("-_");
+    if (dash != std::string::npos) raw = raw.substr(0, dash);
+
+    raw = trim_copy_safe(raw);
+
+    if (raw == "en" || raw == "fi" || raw == "sv" || raw == "et" ||
+        raw == "es" || raw == "uk" || raw == "tr" || raw == "zh" ||
+        raw == "it" || raw == "fr" || raw == "de" || raw == "pl") {
+        return raw;
+    }
+
+    return "en";
+}
+
+std::string external_invite_language_from_request_local(const httplib::Request& req) {
+    if (req.has_param("lang")) {
+        return external_invite_normalize_lang_local(req.get_param_value("lang"));
+    }
+
+    return external_invite_normalize_lang_local(header_value_local(req, "Accept-Language"));
+}
+
+std::string external_invite_t_local(const std::string& lang_in, const std::string& key) {
+    const std::string lang = external_invite_normalize_lang_local(lang_in);
+
+    using Dict = std::map<std::string, std::string>;
+
+    static const std::map<std::string, Dict> k = {
+        {"en", {
+            {"page_title", "DNA-Nexus External Invite"},
+            {"brand", "DNA-Nexus / External Shared Space Invite"},
+            {"kicker", "One-time invite"},
+            {"state_scan_title", "Scan with DNA Connect"},
+            {"state_scan_text", "Open DNA Connect on your phone and scan this QR code to accept the external Shared Space invite."},
+            {"state_accepted_title", "Invite already accepted"},
+            {"state_accepted_text", "This one-time invite has already been accepted. Use the member access link below for future visits."},
+            {"state_expired_title", "Invite expired"},
+            {"state_expired_text", "This one-time invite has expired. Ask the Shared Space owner to create a new invite."},
+            {"state_unavailable_title", "Invite unavailable"},
+            {"state_unavailable_text", "This one-time invite cannot be used. Ask the Shared Space owner to create a new invite."},
+            {"description", "Description"},
+            {"qr_unavailable", "This QR invite is no longer active."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Role"},
+            {"label_status", "Status"},
+            {"copy_invite", "Copy invite link"},
+            {"copied", "Copied"},
+            {"copy_failed", "Copy failed"},
+            {"open_member_access", "Open member access page"},
+            {"footer_text", "Scan the QR with DNA Connect to accept this one-time invite. After acceptance, use the member access page for future visits."},
+            {"invite_link", "Invite link"}
+        }},
+        {"fi", {
+            {"page_title", "DNA-Nexus ulkopuolinen kutsu"},
+            {"brand", "DNA-Nexus / Ulkopuolinen Shared Space -kutsu"},
+            {"kicker", "Kertakäyttöinen kutsu"},
+            {"state_scan_title", "Skannaa DNA Connectilla"},
+            {"state_scan_text", "Avaa DNA Connect puhelimellasi ja skannaa tämä QR-koodi hyväksyäksesi ulkopuolisen Shared Space -kutsun."},
+            {"state_accepted_title", "Kutsu on jo hyväksytty"},
+            {"state_accepted_text", "Tämä kertakäyttöinen kutsu on jo hyväksytty. Käytä jatkossa alla olevaa jäsenen käyttösivun linkkiä."},
+            {"state_expired_title", "Kutsu on vanhentunut"},
+            {"state_expired_text", "Tämä kertakäyttöinen kutsu on vanhentunut. Pyydä Shared Space -omistajaa luomaan uusi kutsu."},
+            {"state_unavailable_title", "Kutsu ei ole käytettävissä"},
+            {"state_unavailable_text", "Tätä kertakäyttöistä kutsua ei voi käyttää. Pyydä Shared Space -omistajaa luomaan uusi kutsu."},
+            {"description", "Kuvaus"},
+            {"qr_unavailable", "Tämä QR-kutsu ei ole enää aktiivinen."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rooli"},
+            {"label_status", "Tila"},
+            {"copy_invite", "Kopioi kutsulinkki"},
+            {"copied", "Kopioitu"},
+            {"copy_failed", "Kopiointi epäonnistui"},
+            {"open_member_access", "Avaa jäsenen käyttösivu"},
+            {"footer_text", "Skannaa QR-koodi DNA Connectilla hyväksyäksesi tämän kertakäyttöisen kutsun. Hyväksymisen jälkeen käytä jäsenen käyttösivua myöhempiä käyntejä varten."},
+            {"invite_link", "Kutsulinkki"}
+        }},
+        {"sv", {
+            {"page_title", "DNA-Nexus extern inbjudan"},
+            {"brand", "DNA-Nexus / Extern Shared Space-inbjudan"},
+            {"kicker", "Engångsinbjudan"},
+            {"state_scan_title", "Skanna med DNA Connect"},
+            {"state_scan_text", "Öppna DNA Connect på din telefon och skanna QR-koden för att acceptera den externa Shared Space-inbjudan."},
+            {"state_accepted_title", "Inbjudan har redan accepterats"},
+            {"state_accepted_text", "Denna engångsinbjudan har redan accepterats. Använd länken till medlemsåtkomstsidan nedan vid framtida besök."},
+            {"state_expired_title", "Inbjudan har gått ut"},
+            {"state_expired_text", "Denna engångsinbjudan har gått ut. Be Shared Space-ägaren skapa en ny inbjudan."},
+            {"state_unavailable_title", "Inbjudan är inte tillgänglig"},
+            {"state_unavailable_text", "Denna engångsinbjudan kan inte användas. Be Shared Space-ägaren skapa en ny inbjudan."},
+            {"description", "Beskrivning"},
+            {"qr_unavailable", "Denna QR-inbjudan är inte längre aktiv."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Roll"},
+            {"label_status", "Status"},
+            {"copy_invite", "Kopiera inbjudningslänk"},
+            {"copied", "Kopierad"},
+            {"copy_failed", "Kopiering misslyckades"},
+            {"open_member_access", "Öppna medlemsåtkomstsidan"},
+            {"footer_text", "Skanna QR-koden med DNA Connect för att acceptera denna engångsinbjudan. Efter acceptans använder du medlemsåtkomstsidan vid framtida besök."},
+            {"invite_link", "Inbjudningslänk"}
+        }},
+        {"et", {
+            {"page_title", "DNA-Nexus väline kutse"},
+            {"brand", "DNA-Nexus / Väline Shared Space kutse"},
+            {"kicker", "Ühekordne kutse"},
+            {"state_scan_title", "Skanni DNA Connectiga"},
+            {"state_scan_text", "Ava telefonis DNA Connect ja skanni see QR-kood, et nõustuda välise Shared Space kutsega."},
+            {"state_accepted_title", "Kutse on juba vastu võetud"},
+            {"state_accepted_text", "See ühekordne kutse on juba vastu võetud. Edaspidi kasuta allolevat liikme juurdepääsulehe linki."},
+            {"state_expired_title", "Kutse on aegunud"},
+            {"state_expired_text", "See ühekordne kutse on aegunud. Palu Shared Space omanikul luua uus kutse."},
+            {"state_unavailable_title", "Kutse pole saadaval"},
+            {"state_unavailable_text", "Seda ühekordset kutset ei saa kasutada. Palu Shared Space omanikul luua uus kutse."},
+            {"description", "Kirjeldus"},
+            {"qr_unavailable", "See QR-kutse pole enam aktiivne."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Roll"},
+            {"label_status", "Olek"},
+            {"copy_invite", "Kopeeri kutselink"},
+            {"copied", "Kopeeritud"},
+            {"copy_failed", "Kopeerimine ebaõnnestus"},
+            {"open_member_access", "Ava liikme juurdepääsuleht"},
+            {"footer_text", "Skanni QR-kood DNA Connectiga, et see ühekordne kutse vastu võtta. Pärast vastuvõtmist kasuta edaspidi liikme juurdepääsulehte."},
+            {"invite_link", "Kutselink"}
+        }},
+        {"es", {
+            {"page_title", "Invitación externa de DNA-Nexus"},
+            {"brand", "DNA-Nexus / Invitación externa a Shared Space"},
+            {"kicker", "Invitación de un solo uso"},
+            {"state_scan_title", "Escanea con DNA Connect"},
+            {"state_scan_text", "Abre DNA Connect en tu teléfono y escanea este código QR para aceptar la invitación externa a Shared Space."},
+            {"state_accepted_title", "La invitación ya fue aceptada"},
+            {"state_accepted_text", "Esta invitación de un solo uso ya fue aceptada. Usa el enlace de acceso de miembro de abajo para visitas futuras."},
+            {"state_expired_title", "La invitación ha caducado"},
+            {"state_expired_text", "Esta invitación de un solo uso ha caducado. Pide al propietario de Shared Space que cree una nueva invitación."},
+            {"state_unavailable_title", "Invitación no disponible"},
+            {"state_unavailable_text", "Esta invitación de un solo uso no se puede usar. Pide al propietario de Shared Space que cree una nueva invitación."},
+            {"description", "Descripción"},
+            {"qr_unavailable", "Esta invitación QR ya no está activa."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rol"},
+            {"label_status", "Estado"},
+            {"copy_invite", "Copiar enlace de invitación"},
+            {"copied", "Copiado"},
+            {"copy_failed", "No se pudo copiar"},
+            {"open_member_access", "Abrir página de acceso de miembro"},
+            {"footer_text", "Escanea el QR con DNA Connect para aceptar esta invitación de un solo uso. Después de aceptarla, usa la página de acceso de miembro para visitas futuras."},
+            {"invite_link", "Enlace de invitación"}
+        }},
+        {"uk", {
+            {"page_title", "Зовнішнє запрошення DNA-Nexus"},
+            {"brand", "DNA-Nexus / Зовнішнє запрошення до Shared Space"},
+            {"kicker", "Одноразове запрошення"},
+            {"state_scan_title", "Скануйте за допомогою DNA Connect"},
+            {"state_scan_text", "Відкрийте DNA Connect на телефоні та відскануйте цей QR-код, щоб прийняти зовнішнє запрошення до Shared Space."},
+            {"state_accepted_title", "Запрошення вже прийнято"},
+            {"state_accepted_text", "Це одноразове запрошення вже прийнято. Для наступних відвідувань використовуйте посилання на сторінку доступу учасника нижче."},
+            {"state_expired_title", "Термін дії запрошення минув"},
+            {"state_expired_text", "Термін дії цього одноразового запрошення минув. Попросіть власника Shared Space створити нове запрошення."},
+            {"state_unavailable_title", "Запрошення недоступне"},
+            {"state_unavailable_text", "Це одноразове запрошення не можна використати. Попросіть власника Shared Space створити нове запрошення."},
+            {"description", "Опис"},
+            {"qr_unavailable", "Це QR-запрошення більше не активне."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Роль"},
+            {"label_status", "Стан"},
+            {"copy_invite", "Копіювати посилання запрошення"},
+            {"copied", "Скопійовано"},
+            {"copy_failed", "Не вдалося скопіювати"},
+            {"open_member_access", "Відкрити сторінку доступу учасника"},
+            {"footer_text", "Скануйте QR-код за допомогою DNA Connect, щоб прийняти це одноразове запрошення. Після прийняття використовуйте сторінку доступу учасника для наступних відвідувань."},
+            {"invite_link", "Посилання запрошення"}
+        }},
+        {"tr", {
+            {"page_title", "DNA-Nexus harici davet"},
+            {"brand", "DNA-Nexus / Harici Shared Space daveti"},
+            {"kicker", "Tek kullanımlık davet"},
+            {"state_scan_title", "DNA Connect ile tara"},
+            {"state_scan_text", "Telefonunda DNA Connect'i aç ve harici Shared Space davetini kabul etmek için bu QR kodunu tara."},
+            {"state_accepted_title", "Davet zaten kabul edildi"},
+            {"state_accepted_text", "Bu tek kullanımlık davet zaten kabul edildi. Gelecekteki ziyaretler için aşağıdaki üye erişim sayfası bağlantısını kullan."},
+            {"state_expired_title", "Davet süresi doldu"},
+            {"state_expired_text", "Bu tek kullanımlık davetin süresi doldu. Shared Space sahibinden yeni bir davet oluşturmasını iste."},
+            {"state_unavailable_title", "Davet kullanılamıyor"},
+            {"state_unavailable_text", "Bu tek kullanımlık davet kullanılamaz. Shared Space sahibinden yeni bir davet oluşturmasını iste."},
+            {"description", "Açıklama"},
+            {"qr_unavailable", "Bu QR daveti artık aktif değil."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rol"},
+            {"label_status", "Durum"},
+            {"copy_invite", "Davet bağlantısını kopyala"},
+            {"copied", "Kopyalandı"},
+            {"copy_failed", "Kopyalama başarısız"},
+            {"open_member_access", "Üye erişim sayfasını aç"},
+            {"footer_text", "Bu tek kullanımlık daveti kabul etmek için QR kodunu DNA Connect ile tara. Kabul ettikten sonra sonraki ziyaretler için üye erişim sayfasını kullan."},
+            {"invite_link", "Davet bağlantısı"}
+        }},
+        {"zh", {
+            {"page_title", "DNA-Nexus 外部邀请"},
+            {"brand", "DNA-Nexus / 外部 Shared Space 邀请"},
+            {"kicker", "一次性邀请"},
+            {"state_scan_title", "使用 DNA Connect 扫描"},
+            {"state_scan_text", "在手机上打开 DNA Connect，并扫描此二维码以接受外部 Shared Space 邀请。"},
+            {"state_accepted_title", "邀请已被接受"},
+            {"state_accepted_text", "此一次性邀请已被接受。以后访问请使用下面的成员访问页面链接。"},
+            {"state_expired_title", "邀请已过期"},
+            {"state_expired_text", "此一次性邀请已过期。请让 Shared Space 所有者创建新的邀请。"},
+            {"state_unavailable_title", "邀请不可用"},
+            {"state_unavailable_text", "此一次性邀请无法使用。请让 Shared Space 所有者创建新的邀请。"},
+            {"description", "描述"},
+            {"qr_unavailable", "此二维码邀请已不再有效。"},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "角色"},
+            {"label_status", "状态"},
+            {"copy_invite", "复制邀请链接"},
+            {"copied", "已复制"},
+            {"copy_failed", "复制失败"},
+            {"open_member_access", "打开成员访问页面"},
+            {"footer_text", "使用 DNA Connect 扫描二维码以接受此一次性邀请。接受后，请使用成员访问页面进行后续访问。"},
+            {"invite_link", "邀请链接"}
+        }},
+        {"it", {
+            {"page_title", "Invito esterno DNA-Nexus"},
+            {"brand", "DNA-Nexus / Invito esterno a Shared Space"},
+            {"kicker", "Invito monouso"},
+            {"state_scan_title", "Scansiona con DNA Connect"},
+            {"state_scan_text", "Apri DNA Connect sul telefono e scansiona questo codice QR per accettare l'invito esterno a Shared Space."},
+            {"state_accepted_title", "Invito già accettato"},
+            {"state_accepted_text", "Questo invito monouso è già stato accettato. Usa il link alla pagina di accesso membro qui sotto per le visite future."},
+            {"state_expired_title", "Invito scaduto"},
+            {"state_expired_text", "Questo invito monouso è scaduto. Chiedi al proprietario di Shared Space di creare un nuovo invito."},
+            {"state_unavailable_title", "Invito non disponibile"},
+            {"state_unavailable_text", "Questo invito monouso non può essere usato. Chiedi al proprietario di Shared Space di creare un nuovo invito."},
+            {"description", "Descrizione"},
+            {"qr_unavailable", "Questo invito QR non è più attivo."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Ruolo"},
+            {"label_status", "Stato"},
+            {"copy_invite", "Copia link invito"},
+            {"copied", "Copiato"},
+            {"copy_failed", "Copia non riuscita"},
+            {"open_member_access", "Apri pagina di accesso membro"},
+            {"footer_text", "Scansiona il QR con DNA Connect per accettare questo invito monouso. Dopo l'accettazione, usa la pagina di accesso membro per le visite future."},
+            {"invite_link", "Link invito"}
+        }},
+        {"fr", {
+            {"page_title", "Invitation externe DNA-Nexus"},
+            {"brand", "DNA-Nexus / Invitation externe Shared Space"},
+            {"kicker", "Invitation à usage unique"},
+            {"state_scan_title", "Scannez avec DNA Connect"},
+            {"state_scan_text", "Ouvrez DNA Connect sur votre téléphone et scannez ce QR code pour accepter l'invitation externe Shared Space."},
+            {"state_accepted_title", "Invitation déjà acceptée"},
+            {"state_accepted_text", "Cette invitation à usage unique a déjà été acceptée. Utilisez le lien d'accès membre ci-dessous pour les prochaines visites."},
+            {"state_expired_title", "Invitation expirée"},
+            {"state_expired_text", "Cette invitation à usage unique a expiré. Demandez au propriétaire du Shared Space de créer une nouvelle invitation."},
+            {"state_unavailable_title", "Invitation indisponible"},
+            {"state_unavailable_text", "Cette invitation à usage unique ne peut pas être utilisée. Demandez au propriétaire du Shared Space de créer une nouvelle invitation."},
+            {"description", "Description"},
+            {"qr_unavailable", "Cette invitation QR n'est plus active."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rôle"},
+            {"label_status", "Statut"},
+            {"copy_invite", "Copier le lien d'invitation"},
+            {"copied", "Copié"},
+            {"copy_failed", "Échec de la copie"},
+            {"open_member_access", "Ouvrir la page d'accès membre"},
+            {"footer_text", "Scannez le QR avec DNA Connect pour accepter cette invitation à usage unique. Après acceptation, utilisez la page d'accès membre pour les prochaines visites."},
+            {"invite_link", "Lien d'invitation"}
+        }},
+        {"de", {
+            {"page_title", "Externe DNA-Nexus-Einladung"},
+            {"brand", "DNA-Nexus / Externe Shared Space-Einladung"},
+            {"kicker", "Einmalige Einladung"},
+            {"state_scan_title", "Mit DNA Connect scannen"},
+            {"state_scan_text", "Öffnen Sie DNA Connect auf Ihrem Telefon und scannen Sie diesen QR-Code, um die externe Shared Space-Einladung anzunehmen."},
+            {"state_accepted_title", "Einladung bereits angenommen"},
+            {"state_accepted_text", "Diese einmalige Einladung wurde bereits angenommen. Verwenden Sie für zukünftige Besuche den untenstehenden Link zur Mitgliederzugangsseite."},
+            {"state_expired_title", "Einladung abgelaufen"},
+            {"state_expired_text", "Diese einmalige Einladung ist abgelaufen. Bitten Sie den Shared Space-Besitzer, eine neue Einladung zu erstellen."},
+            {"state_unavailable_title", "Einladung nicht verfügbar"},
+            {"state_unavailable_text", "Diese einmalige Einladung kann nicht verwendet werden. Bitten Sie den Shared Space-Besitzer, eine neue Einladung zu erstellen."},
+            {"description", "Beschreibung"},
+            {"qr_unavailable", "Diese QR-Einladung ist nicht mehr aktiv."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rolle"},
+            {"label_status", "Status"},
+            {"copy_invite", "Einladungslink kopieren"},
+            {"copied", "Kopiert"},
+            {"copy_failed", "Kopieren fehlgeschlagen"},
+            {"open_member_access", "Mitgliederzugangsseite öffnen"},
+            {"footer_text", "Scannen Sie den QR-Code mit DNA Connect, um diese einmalige Einladung anzunehmen. Verwenden Sie nach der Annahme die Mitgliederzugangsseite für zukünftige Besuche."},
+            {"invite_link", "Einladungslink"}
+        }},
+        {"pl", {
+            {"page_title", "Zewnętrzne zaproszenie DNA-Nexus"},
+            {"brand", "DNA-Nexus / Zewnętrzne zaproszenie do Shared Space"},
+            {"kicker", "Zaproszenie jednorazowe"},
+            {"state_scan_title", "Zeskanuj za pomocą DNA Connect"},
+            {"state_scan_text", "Otwórz DNA Connect na telefonie i zeskanuj ten kod QR, aby zaakceptować zewnętrzne zaproszenie do Shared Space."},
+            {"state_accepted_title", "Zaproszenie zostało już zaakceptowane"},
+            {"state_accepted_text", "To jednorazowe zaproszenie zostało już zaakceptowane. Przy kolejnych wizytach użyj poniższego linku do strony dostępu członka."},
+            {"state_expired_title", "Zaproszenie wygasło"},
+            {"state_expired_text", "To jednorazowe zaproszenie wygasło. Poproś właściciela Shared Space o utworzenie nowego zaproszenia."},
+            {"state_unavailable_title", "Zaproszenie niedostępne"},
+            {"state_unavailable_text", "Tego jednorazowego zaproszenia nie można użyć. Poproś właściciela Shared Space o utworzenie nowego zaproszenia."},
+            {"description", "Opis"},
+            {"qr_unavailable", "To zaproszenie QR nie jest już aktywne."},
+            {"label_shared_space", "Shared Space"},
+            {"label_role", "Rola"},
+            {"label_status", "Status"},
+            {"copy_invite", "Kopiuj link zaproszenia"},
+            {"copied", "Skopiowano"},
+            {"copy_failed", "Kopiowanie nie powiodło się"},
+            {"open_member_access", "Otwórz stronę dostępu członka"},
+            {"footer_text", "Zeskanuj QR za pomocą DNA Connect, aby zaakceptować to jednorazowe zaproszenie. Po zaakceptowaniu używaj strony dostępu członka przy kolejnych wizytach."},
+            {"invite_link", "Link zaproszenia"}
+        }}
+    };
+
+    auto lit = k.find(lang);
+    if (lit != k.end()) {
+        auto kit = lit->second.find(key);
+        if (kit != lit->second.end()) return kit->second;
+    }
+
+    auto eit = k.find("en");
+    if (eit != k.end()) {
+        auto kit = eit->second.find(key);
+        if (kit != eit->second.end()) return kit->second;
+    }
+
+    return key;
+}
+
 void reply_external_invite_landing_html_local(
     const WorkspaceExternalInviteRouteDeps& deps,
+    const httplib::Request& req,
     httplib::Response& res,
     const WorkspaceExternalInviteRec& inv,
     const WorkspaceRec& w
 ) {
+    const std::string lang = external_invite_language_from_request_local(req);
+    auto t = [&](const std::string& key) {
+        return external_invite_t_local(lang, key);
+    };
+
     const std::string origin = deps.origin ? *deps.origin : std::string{};
     const std::string invite_id_q = deps.url_encode ? deps.url_encode(inv.invite_id) : inv.invite_id;
     const std::string workspace_id_q = deps.url_encode ? deps.url_encode(w.workspace_id) : w.workspace_id;
@@ -105,28 +458,24 @@ void reply_external_invite_landing_html_local(
     const std::string invite_role = html_escape_local(inv.role.empty() ? "viewer" : inv.role);
     const std::string invite_status = html_escape_local(inv.status.empty() ? "pending" : inv.status);
 
-    std::string state_title = "Scan with DNA Connect";
-    std::string state_text =
-        "Open DNA Connect on your phone and scan this QR code to accept the external Shared Space invite.";
+    std::string state_title = t("state_scan_title");
+    std::string state_text = t("state_scan_text");
 
     if (inv.status == "accepted") {
-        state_title = "Invite already accepted";
-        state_text =
-            "This one-time invite has already been accepted. Use the member access link below for future visits.";
+        state_title = t("state_accepted_title");
+        state_text = t("state_accepted_text");
     } else if (inv.status == "expired") {
-        state_title = "Invite expired";
-        state_text =
-            "This one-time invite has expired. Ask the Shared Space owner to create a new invite.";
+        state_title = t("state_expired_title");
+        state_text = t("state_expired_text");
     } else if (inv.status != "pending" || inv.st_token.empty()) {
-        state_title = "Invite unavailable";
-        state_text =
-            "This one-time invite cannot be used. Ask the Shared Space owner to create a new invite.";
+        state_title = t("state_unavailable_title");
+        state_text = t("state_unavailable_text");
     }
 
     std::string notes_html;
     if (!workspace_notes.empty()) {
         notes_html =
-            "<div class=\"notes\"><div class=\"label\">Description</div><p>" +
+            "<div class=\"notes\"><div class=\"label\">" + html_escape_local(t("description")) + "</div><p>" +
             workspace_notes +
             "</p></div>";
     }
@@ -141,19 +490,19 @@ void reply_external_invite_landing_html_local(
         qr_html =
             "<div class=\"qrbox mutedbox\">"
             "<div class=\"bigmark\">!</div>"
-            "<div>This QR invite is no longer active.</div>"
+            "<div>" + html_escape_local(t("qr_unavailable")) + "</div>"
             "</div>";
     }
 
     const std::string html =
         std::string("<!doctype html>\n") +
-R"HTML(<html lang="en">
+std::string("<html lang=\"") + html_escape_local(lang) + R"HTML(">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 )HTML" +
         refresh_meta +
-R"HTML(<title>DNA-Nexus External Invite</title>
+R"HTML(<title>)HTML" + html_escape_local(t("page_title")) + R"HTML(</title>
 <style>
 :root{
     color-scheme:dark;
@@ -344,35 +693,34 @@ code{
 </head>
 <body>
 <div class="wrap">
-    <div class="brand"><div class="logo"></div><div>DNA-Nexus / External Shared Space Invite</div></div>
+    <div class="brand"><div class="logo"></div><div>)HTML" + html_escape_local(t("brand")) + R"HTML(</div></div>
     <main class="card">
         <section class="hero">
             <div>
 )HTML" +
-        "                <div class=\"kicker\">One-time invite</div>\n"
+        "                <div class=\"kicker\">" + html_escape_local(t("kicker")) + "</div>\n"
         "                <h1>" + html_escape_local(state_title) + "</h1>\n"
         "                <p class=\"lead\">" + html_escape_local(state_text) + "</p>\n"
         "                <div class=\"meta\">\n"
-        "                    <div class=\"pill\">Shared Space: " + workspace_name + "</div>\n"
-        "                    <div class=\"pill\">Role: " + invite_role + "</div>\n"
-        "                    <div class=\"pill\">Status: " + invite_status + "</div>\n"
+        "                    <div class=\"pill\">" + html_escape_local(t("label_shared_space")) + ": " + workspace_name + "</div>\n"
+        "                    <div class=\"pill\">" + html_escape_local(t("label_role")) + ": " + invite_role + "</div>\n"
+        "                    <div class=\"pill\">" + html_escape_local(t("label_status")) + ": " + invite_status + "</div>\n"
         "                </div>\n" +
         notes_html +
 R"HTML(
                 <div class="actions">
 )HTML" +
-        "                    <button type=\"button\" data-copy=\"" + html_escape_local(page_url) + "\">Copy invite link</button>\n"
-        "                    <a class=\"button\" href=\"" + html_escape_local(member_access_url) + "\">Open member access page</a>\n"
+        "                    <button type=\"button\" data-copy=\"" + html_escape_local(page_url) + "\" data-copy-label=\"" + html_escape_local(t("copy_invite")) + "\" data-copied=\"" + html_escape_local(t("copied")) + "\" data-copy-failed=\"" + html_escape_local(t("copy_failed")) + "\">" + html_escape_local(t("copy_invite")) + "</button>\n"
+        "                    <a class=\"button\" href=\"" + html_escape_local(member_access_url) + "\">" + html_escape_local(t("open_member_access")) + "</a>\n"
 R"HTML(                </div>
             </div>
 )HTML" +
         qr_html +
-R"HTML(
-        </section>
+R"HTML(        </section>
         <div class="footer">
-            Scan the QR with DNA Connect to accept this one-time invite. After acceptance,
-            use the member access page for future visits. Invite link:
 )HTML" +
+        "            " + html_escape_local(t("footer_text")) + "\n" +
+        "            " + html_escape_local(t("invite_link")) + ":\n" +
         " <code>" + html_escape_local(page_url) + "</code>\n" +
 R"HTML(        </div>
     </main>
@@ -384,11 +732,11 @@ R"HTML(        </div>
             var value = btn.getAttribute("data-copy") || "";
             try {
                 await navigator.clipboard.writeText(value);
-                btn.textContent = "Copied";
-                setTimeout(function(){ btn.textContent = "Copy invite link"; }, 1400);
+                btn.textContent = btn.getAttribute("data-copied") || "Copied";
+                setTimeout(function(){ btn.textContent = btn.getAttribute("data-copy-label") || "Copy invite link"; }, 1400);
             } catch (e) {
-                btn.textContent = "Copy failed";
-                setTimeout(function(){ btn.textContent = "Copy invite link"; }, 1400);
+                btn.textContent = btn.getAttribute("data-copy-failed") || "Copy failed";
+                setTimeout(function(){ btn.textContent = btn.getAttribute("data-copy-label") || "Copy invite link"; }, 1400);
             }
         });
     });
@@ -615,6 +963,32 @@ std::string workspace_external_password_credentials_path_local(
     }
 
     return "/var/lib/pqnas/password_credentials.json";
+}
+
+std::string workspace_external_opaque_credentials_path_local(
+    const WorkspaceExternalInviteRouteDeps& deps) {
+    const char* raw = std::getenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
+    const std::string env_path = trim_copy_safe(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    const char* cfg_env = std::getenv("PQNAS_CONFIG");
+    const std::string cfg_path = trim_copy_safe(cfg_env ? cfg_env : "");
+    if (!cfg_path.empty()) {
+        return (std::filesystem::path(cfg_path) / "opaque_credentials.json").string();
+    }
+
+    const char* cfg_root_env = std::getenv("PQNAS_CONFIG_ROOT");
+    const std::string cfg_root_path = trim_copy_safe(cfg_root_env ? cfg_root_env : "");
+    if (!cfg_root_path.empty()) {
+        return (std::filesystem::path(cfg_root_path) / "opaque_credentials.json").string();
+    }
+
+    if (!deps.users_path.empty()) {
+        std::filesystem::path p(deps.users_path);
+        return (p.parent_path() / "opaque_credentials.json").string();
+    }
+
+    return "/etc/pqnas/opaque_credentials.json";
 }
 
 void clear_string_best_effort_local(std::string& s) {
@@ -966,7 +1340,7 @@ bool workspace_external_mark_opaque_enrollments_used_for_fp_local(
     return true;
 }
 
-bool workspace_external_disable_orphan_user_local(
+bool workspace_external_delete_orphan_user_local(
     const WorkspaceExternalInviteRouteDeps& deps,
     httplib::Response& res,
     const std::string& fingerprint
@@ -974,6 +1348,8 @@ bool workspace_external_disable_orphan_user_local(
     const std::string fp = trim_copy_safe(fingerprint);
     if (fp.empty()) return true;
 
+    // Not orphaned: the same external account still belongs to another
+    // enabled external workspace membership.
     if (workspace_external_has_enabled_external_membership_local(deps.workspaces, fp)) {
         return true;
     }
@@ -993,32 +1369,83 @@ bool workspace_external_disable_orphan_user_local(
     if (!uopt.has_value()) return true;
 
     UserRec u = *uopt;
+
+    // Safety guard: never delete a normal user from this workspace cleanup path.
     if (!user_is_external_workspace_only_local(u)) return true;
 
-    const std::string now_iso =
-        deps.now_iso_utc ? deps.now_iso_utc() : std::string{};
+    const std::string login =
+        pqnas::PasswordCredentials::normalize_login(u.email);
 
-    if (u.status != "disabled") {
-        u.status = "disabled";
+    // Invalidate pending OPAQUE setup tokens before deleting the user record.
+    if (!workspace_external_mark_opaque_enrollments_used_for_fp_local(deps, fp, res)) {
+        return false;
     }
 
-    if (u.notes.find("external_workspace_orphan_disabled_at=") == std::string::npos) {
-        if (!u.notes.empty()) u.notes += "; ";
-        u.notes += "external_workspace_orphan_disabled_at=" + now_iso;
+    // Best-effort classic password credential cleanup for password-mode
+    // external invite accounts.
+    if (!login.empty()) {
+        const std::string pass_path =
+            workspace_external_password_credentials_path_local(deps);
+
+        pqnas::PasswordCredentials pass_creds;
+        if (!pass_creds.load(pass_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "password_credentials_load_failed"},
+                {"message", "failed to load password credentials during external cleanup"}
+            }.dump());
+            return false;
+        }
+
+        if (pass_creds.get(login).has_value()) {
+            if (!pass_creds.erase(login) || !pass_creds.save(pass_path)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "password_credentials_cleanup_failed"},
+                    {"message", "failed to remove password credential during external cleanup"}
+                }.dump());
+                return false;
+            }
+        }
     }
 
-    if (!deps.users->upsert(u) || !deps.users->save(deps.users_path)) {
+    // Best-effort OPAQUE credential cleanup for OPAQUE-mode external accounts.
+    if (!login.empty()) {
+        const std::string opaque_path =
+            workspace_external_opaque_credentials_path_local(deps);
+
+        pqnas::OpaqueCredentials opaque_creds;
+        if (!opaque_creds.load(opaque_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "opaque_credentials_load_failed"},
+                {"message", "failed to load OPAQUE credentials during external cleanup"}
+            }.dump());
+            return false;
+        }
+
+        if (opaque_creds.get(login).has_value()) {
+            if (!opaque_creds.erase(login) || !opaque_creds.save(opaque_path)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "opaque_credentials_cleanup_failed"},
+                    {"message", "failed to remove OPAQUE credential during external cleanup"}
+                }.dump());
+                return false;
+            }
+        }
+    }
+
+    if (!deps.users->erase(fp) || !deps.users->save(deps.users_path)) {
         deps.reply_json(res, 500, json{
             {"ok", false},
-            {"error", "users_save_failed"},
-            {"message", "failed to disable orphan external workspace user"}
+            {"error", "external_user_delete_failed"},
+            {"message", "failed to delete orphan external workspace user"}
         }.dump());
         return false;
     }
 
-    // If the invite was removed before the outsider finished OPAQUE setup,
-    // invalidate any unused setup token for this fingerprint as best effort.
-    return workspace_external_mark_opaque_enrollments_used_for_fp_local(deps, fp, res);
+    return true;
 }
 
 } // namespace
@@ -1055,27 +1482,28 @@ void register_workspace_external_invite_routes(
     // External workspace users are sent directly to external_workspace.html, not
     // the main DNA-Nexus desktop/app shell.
     srv.Get("/api/v4/workspaces/external-session/landing",
-            [&](const httplib::Request& req, httplib::Response& res) {
+    [&](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
-        std::string actor_role;
+        std::string actor_sid;
 
-        if (!deps.require_user_auth_users_actor ||
-            !deps.require_user_auth_users_actor(
-                req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+        if (!deps.require_user_auth_users_actor(
+                req,
+                res,
+                deps.cookie_key,
+                deps.users,
+                &actor_fp,
+                &actor_sid)) {
             return;
         }
 
-        if (!deps.reply_json || !deps.users || !deps.workspaces) {
+        if (!deps.users || deps.users_path.empty() ||
+            !deps.users->load(deps.users_path)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
-                {"error", "server_error"},
-                {"message", "external workspace landing route not fully configured"}
+                {"error", "users_reload_failed"},
+                {"message", "failed to reload users for external-session landing"}
             }.dump());
             return;
-        }
-
-        if (!deps.users_path.empty()) {
-            deps.users->load(deps.users_path);
         }
 
         auto uopt = deps.users->get(actor_fp);
@@ -1087,58 +1515,52 @@ void register_workspace_external_invite_routes(
             return;
         }
 
-        if (!reload_workspaces_or_500(deps, res)) return;
+        std::string workspace_id;
+        if (deps.workspaces) {
+            const auto spaces = deps.workspaces->list_for_member(actor_fp);
+            for (const auto& w : spaces) {
+                if (w.status != "enabled") continue;
 
-        json workspaces = json::array();
-        std::string first_workspace_id;
+                auto mopt = deps.workspaces->get_member(w.workspace_id, actor_fp);
+                if (!mopt.has_value()) continue;
 
-        const auto owned = deps.workspaces->list_for_member(actor_fp);
-        for (const auto& w : owned) {
-            if (w.status != "enabled") continue;
+                WorkspaceMemberRec m = *mopt;
+                normalize_workspace_member_v1(&m);
 
-            auto member = deps.workspaces->get_member(w.workspace_id, actor_fp);
-            if (!member.has_value()) continue;
-
-            WorkspaceMemberRec m = *member;
-            normalize_workspace_member_v1(&m);
-
-            if (m.status != "enabled") continue;
-            if (m.member_kind != "external") continue;
-
-            if (first_workspace_id.empty()) {
-                first_workspace_id = w.workspace_id;
+                if (m.status == "enabled" && m.member_kind == "external") {
+                    workspace_id = w.workspace_id;
+                    break;
+                }
             }
-
-            workspaces.push_back(json{
-                {"workspace_id", w.workspace_id},
-                {"name", w.name},
-                {"role", m.role},
-                {"member_kind", m.member_kind}
-            });
         }
 
-        if (first_workspace_id.empty()) {
+        if (!workspace_id.empty()) {
             deps.reply_json(res, 200, json{
                 {"ok", true},
                 {"external_workspace_only", true},
-                {"workspace_url", ""},
-                {"workspaces", workspaces},
-                {"message", "external user has no enabled workspace membership"}
+                {"workspace_id", workspace_id},
+                {"workspace_url", workspace_external_member_access_path_local(deps, workspace_id)}
             }.dump());
             return;
         }
 
-        const std::string workspace_path =
-            workspace_external_member_access_path_local(deps, first_workspace_id);
+        // Fail closed: external-only identity exists, but it no longer belongs
+        // to any active external workspace. Do not let it fall through into /app.
+        res.set_header(
+            "Set-Cookie",
+            "pqnas_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+        );
 
         deps.reply_json(res, 200, json{
             {"ok", true},
             {"external_workspace_only", true},
-            {"workspace_id", first_workspace_id},
-            {"workspace_url", workspace_path},
-            {"workspaces", workspaces}
+            {"no_workspace", true},
+            {"workspace_id", ""},
+            {"workspace_url", ""},
+            {"login_url", "/static/login.html"}
         }.dump());
     });
+
 
     // GET /api/v4/workspaces/members?workspace_id=ws_xxx
     //
@@ -1475,11 +1897,6 @@ void register_workspace_external_invite_routes(
             return;
         }
 
-        WorkspaceMemberRec target_before_remove = *target;
-        normalize_workspace_member_v1(&target_before_remove);
-        const bool target_was_external =
-            target_before_remove.member_kind == "external";
-
         if (!deps.workspaces->remove_member(workspace_id, target_fp)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
@@ -1491,8 +1908,7 @@ void register_workspace_external_invite_routes(
 
         if (!save_workspaces_or_500(deps, res)) return;
 
-        if (target_was_external &&
-            !workspace_external_disable_orphan_user_local(deps, res, target_fp)) {
+        if (!workspace_external_delete_orphan_user_local(deps, res, target_fp)) {
             return;
         }
 
@@ -2328,7 +2744,7 @@ void register_workspace_external_invite_routes(
                 return;
             }
 
-            reply_external_invite_landing_html_local(deps, res, *inv, *wopt);
+            reply_external_invite_landing_html_local(deps, req, res, *inv, *wopt);
             return;
         }
 

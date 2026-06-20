@@ -1,3 +1,42 @@
+// External workspace users must never enter the normal desktop/app launcher.
+// The server-side landing endpoint is the source of truth.
+(function pqnasExternalWorkspaceAppGuard(){
+    "use strict";
+
+    if (window.pqnasExternalWorkspaceAppGuardInstalled) return;
+    window.pqnasExternalWorkspaceAppGuardInstalled = true;
+
+    try {
+        const path = String(window.location.pathname || "");
+        const isNormalApp =
+            path === "/app" ||
+            path === "/app/" ||
+            path === "/static/app.html" ||
+            path.endsWith("/app.html");
+
+        if (!isNormalApp) return;
+
+        fetch("/api/v4/workspaces/external-session/landing", {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        })
+        .then(r => r.json().catch(() => null))
+        .then(j => {
+            if (!j || !j.ok || !j.external_workspace_only) return;
+
+            if (j.workspace_url) {
+                window.location.replace(String(j.workspace_url));
+                return;
+            }
+
+            window.location.replace(String(j.login_url || "/static/login.html"));
+        })
+        .catch(() => {});
+    } catch (_) {}
+})();
+
 (() => {
     const out = document.getElementById("out");
 
