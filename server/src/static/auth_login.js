@@ -10,6 +10,66 @@
 
     const el = (id) => document.getElementById(id);
 
+    const loginPageParams = new URLSearchParams(window.location.search || "");
+
+    function safeReturnTo(raw) {
+        const value = String(raw || "").trim();
+        if (!value) return "";
+        if (!value.startsWith("/")) return "";
+        if (value.startsWith("//")) return "";
+        if (value.includes("\n") || value.includes("\r")) return "";
+
+        // For now this is intentionally narrow. External users should only be
+        // returned to the isolated Shared Space surface after login.
+        if (!value.startsWith("/static/external_workspace.html?")) return "";
+
+        return value;
+    }
+
+    const loginReturnTo = safeReturnTo(loginPageParams.get("return_to") || "");
+
+    function postLoginTarget() {
+        return loginReturnTo || "/app";
+    }
+
+    async function externalWorkspacePostLoginTarget() {
+        const fallback = postLoginTarget();
+
+        // If setup/login explicitly included return_to, trust the already-sanitized value.
+        if (fallback && fallback !== "/app") {
+            return fallback;
+        }
+
+        // Otherwise ask the server whether this session belongs to an
+        // external-workspace-only user. This prevents those users from ever
+        // landing on the normal DNA-Nexus desktop after browser login.
+        try {
+            const r = await fetch("/api/v4/workspaces/external-session/landing", {
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            });
+
+            const j = await r.json().catch(() => null);
+
+            if (
+                r.ok &&
+                j &&
+                j.ok === true &&
+                j.external_workspace_only === true &&
+                typeof j.workspace_url === "string" &&
+                j.workspace_url.trim()
+            ) {
+                return j.workspace_url.trim();
+            }
+        } catch (_) {
+            // Keep normal login usable if the helper endpoint is temporarily unavailable.
+        }
+
+        return fallback || "/app";
+    }
+
+
     function tr(key, vars, fallback) {
         const api = window.PQNAS_I18N;
         if (api && typeof api.t === "function") {
@@ -218,7 +278,7 @@
                     return;
                 }
 
-                window.location.href = "/app";
+                window.location.href = await externalWorkspacePostLoginTarget();
             } catch (e) {
                 console.error(e);
                 setBusy(false);
@@ -485,7 +545,7 @@
                     throw new Error("Login OK, but session cookie did not stick.");
                 }
 
-                window.location.href = "/app";
+                window.location.href = await externalWorkspacePostLoginTarget();
             } catch (e) {
                 console.error(e);
                 setStatusKey("auth.login.invalid_login_password", "Invalid login or password.");

@@ -229,6 +229,32 @@ let signedIn = false;
         topReadyBadge.classList.toggle("loading", kind === "loading");
     }
 
+    async function logoutExternalWorkspaceSession(button) {
+        const btn = button || document.getElementById("btnExternalLogout");
+        if (btn) btn.disabled = true;
+
+        setStatus(tr("external.status.logging_out", null, "Logging out..."), "loading");
+        setTopReadyBadge(tr("external.status.logging_out_short", null, "logout"), "loading");
+
+        try {
+            await fetch("/api/v4/workspaces/external-session/logout", {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            });
+        } catch (_) {
+            // Still leave the isolated workspace UI even if the HTTP response is unavailable.
+        }
+
+        try {
+            localStorage.removeItem("pqnas_opaque_login");
+            localStorage.removeItem("pqnas_password_login");
+        } catch (_) {}
+
+        window.location.href = "/static/login.html";
+    }
+
     function applyExternalViewPrefs() {
         if (filesEl) filesEl.classList.toggle("listView", externalViewMode === "list");
 
@@ -5768,6 +5794,22 @@ resetMarqueeVisual();
             launchExternalUploadPicker(false);
         }, true);
     }
+
+    let externalLogoutClickWired = true;
+    document.addEventListener("click", (ev) => {
+        const btn = ev.target && ev.target.closest
+            ? ev.target.closest("#btnExternalLogout")
+            : null;
+        if (!btn) return;
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === "function") {
+            ev.stopImmediatePropagation();
+        }
+
+        logoutExternalWorkspaceSession(btn);
+    }, true);
 
     wireDirectUploadPicker();
 

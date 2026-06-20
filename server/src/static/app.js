@@ -592,6 +592,52 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     let authed = false;
     let isAdmin = false;
 
+    let externalWorkspaceRedirectInFlight = false;
+
+    function currentPathLooksExternalWorkspace() {
+        try {
+            return String(window.location.pathname || "").endsWith("/static/external_workspace.html");
+        } catch {
+            return false;
+        }
+    }
+
+    async function maybeRedirectExternalWorkspaceOnly(ok, admin) {
+        if (!ok || admin) return false;
+        if (externalWorkspaceRedirectInFlight) return true;
+        if (currentPathLooksExternalWorkspace()) return false;
+
+        externalWorkspaceRedirectInFlight = true;
+
+        try {
+            const r = await fetch("/api/v4/workspaces/external-session/landing", {
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            });
+
+            const j = await r.json().catch(() => null);
+
+            if (
+                r.ok &&
+                j &&
+                j.ok === true &&
+                j.external_workspace_only === true &&
+                typeof j.workspace_url === "string" &&
+                j.workspace_url.trim()
+            ) {
+                window.location.replace(j.workspace_url);
+                return true;
+            }
+        } catch (_) {
+            // If the helper route is unavailable, do not lock out normal users.
+        }
+
+        externalWorkspaceRedirectInFlight = false;
+        return false;
+    }
+
+
     let currentPairing = null; // { pair_id, expires_at, qr_svg, qr_uri }
     let pairPollTimer = null;
 
@@ -3310,6 +3356,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     }
 
                     isAdmin = ok && role === "admin";
+
+                    const externalWorkspaceRedirected =
+                        await maybeRedirectExternalWorkspaceOnly(ok, isAdmin);
+                    if (externalWorkspaceRedirected) return;
 
                     // show admin-only links
                     show(navAdmin, isAdmin);

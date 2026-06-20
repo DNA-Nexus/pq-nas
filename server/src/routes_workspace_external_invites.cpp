@@ -855,11 +855,150 @@ bool expire_pending_invites_if_needed(const WorkspaceExternalInviteRouteDeps& de
     return save_invites_or_500(deps, res);
 }
 
+
+bool user_is_external_workspace_only_local(const UserRec& u) {
+    const std::string group = lower_ascii_copy_local(trim_copy_safe(u.group));
+    const std::string notes = lower_ascii_copy_local(trim_copy_safe(u.notes));
+    const std::string email = lower_ascii_copy_local(trim_copy_safe(u.email));
+    const std::string name = lower_ascii_copy_local(trim_copy_safe(u.name));
+
+    if (group == "external") return true;
+    if (group == "external workspace") return true;
+    if (notes.find("external_workspace_only=1") != std::string::npos) return true;
+    if (notes.find("external workspace opaque account") != std::string::npos) return true;
+    if (email.rfind("external-", 0) == 0) return true;
+    if (name.rfind("external-", 0) == 0) return true;
+
+    return false;
+}
+
+std::string workspace_external_member_access_path_local(
+    const WorkspaceExternalInviteRouteDeps& deps,
+    const std::string& workspace_id
+) {
+    const std::string ws_q = deps.url_encode ? deps.url_encode(workspace_id) : workspace_id;
+    return std::string("/static/external_workspace.html?workspace_id=") + ws_q;
+}
+
 } // namespace
 
 void register_workspace_external_invite_routes(
     httplib::Server& srv,
     const WorkspaceExternalInviteRouteDeps& deps) {
+    // POST /api/v4/workspaces/external-session/logout
+    //
+    // Clears the browser session cookie for isolated external workspace users.
+    // This is intentionally simple and safe for normal users too: it only logs
+    // out the current browser session.
+    srv.Post("/api/v4/workspaces/external-session/logout",
+             [&](const httplib::Request& req, httplib::Response& res) {
+        (void)req;
+
+        res.status = 200;
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        res.set_header("Cache-Control", "no-store");
+
+        // Main session cookie used by QR/password/OPAQUE browser login.
+        res.set_header(
+            "Set-Cookie",
+            "pqnas_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure"
+        );
+
+        res.body = R"({"ok":true})";
+    });
+
+    // GET /api/v4/workspaces/external-session/landing
+    //
+    // Browser-login landing helper for OPAQUE/password external workspace users.
+    // Normal DNA-Nexus users get external_workspace_only=false.
+    // External workspace users are sent directly to external_workspace.html, not
+    // the main DNA-Nexus desktop/app shell.
+    srv.Get("/api/v4/workspaces/external-session/landing",
+            [&](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        std::string actor_role;
+
+        if (!deps.require_user_auth_users_actor ||
+            !deps.require_user_auth_users_actor(
+                req, res, deps.cookie_key, deps.users, &actor_fp, &actor_role)) {
+            return;
+        }
+
+        if (!deps.reply_json || !deps.users || !deps.workspaces) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "external workspace landing route not fully configured"}
+            }.dump());
+            return;
+        }
+
+        if (!deps.users_path.empty()) {
+            deps.users->load(deps.users_path);
+        }
+
+        auto uopt = deps.users->get(actor_fp);
+        if (!uopt.has_value() || !user_is_external_workspace_only_local(*uopt)) {
+            deps.reply_json(res, 200, json{
+                {"ok", true},
+                {"external_workspace_only", false}
+            }.dump());
+            return;
+        }
+
+        if (!reload_workspaces_or_500(deps, res)) return;
+
+        json workspaces = json::array();
+        std::string first_workspace_id;
+
+        const auto owned = deps.workspaces->list_for_member(actor_fp);
+        for (const auto& w : owned) {
+            if (w.status != "enabled") continue;
+
+            auto member = deps.workspaces->get_member(w.workspace_id, actor_fp);
+            if (!member.has_value()) continue;
+
+            WorkspaceMemberRec m = *member;
+            normalize_workspace_member_v1(&m);
+
+            if (m.status != "enabled") continue;
+            if (m.member_kind != "external") continue;
+
+            if (first_workspace_id.empty()) {
+                first_workspace_id = w.workspace_id;
+            }
+
+            workspaces.push_back(json{
+                {"workspace_id", w.workspace_id},
+                {"name", w.name},
+                {"role", m.role},
+                {"member_kind", m.member_kind}
+            });
+        }
+
+        if (first_workspace_id.empty()) {
+            deps.reply_json(res, 200, json{
+                {"ok", true},
+                {"external_workspace_only", true},
+                {"workspace_url", ""},
+                {"workspaces", workspaces},
+                {"message", "external user has no enabled workspace membership"}
+            }.dump());
+            return;
+        }
+
+        const std::string workspace_path =
+            workspace_external_member_access_path_local(deps, first_workspace_id);
+
+        deps.reply_json(res, 200, json{
+            {"ok", true},
+            {"external_workspace_only", true},
+            {"workspace_id", first_workspace_id},
+            {"workspace_url", workspace_path},
+            {"workspaces", workspaces}
+        }.dump());
+    });
+
     // GET /api/v4/workspaces/members?workspace_id=ws_xxx
     //
     // Any enabled member can view the member list. Only owners can mutate it.
@@ -1468,7 +1607,7 @@ void register_workspace_external_invite_routes(
             u.status = "disabled";
             u.added_at = now_iso;
             u.last_seen = "";
-            u.notes = "Temporary external workspace OPAQUE account awaiting credential enrollment for " + workspace_id;
+            u.notes = "external_workspace_only=1; Temporary external workspace OPAQUE account awaiting credential enrollment for " + workspace_id;
             u.group = "External";
             u.email = login;
             u.address = "";
@@ -1604,15 +1743,18 @@ void register_workspace_external_invite_routes(
                 }
             }
 
+            const std::string access_path =
+                std::string("/static/external_workspace.html?workspace_id=") +
+                (deps.url_encode ? deps.url_encode(workspace_id) : workspace_id);
             const std::string setup_path =
                 std::string("/static/opaque-enroll.html?token=") +
-                (deps.url_encode ? deps.url_encode(token) : token);
+                (deps.url_encode ? deps.url_encode(token) : token) +
+                "&return_to=" +
+                (deps.url_encode ? deps.url_encode(access_path) : access_path);
             const std::string setup_url =
                 (deps.origin ? *deps.origin : std::string{}) + setup_path;
             const std::string access_url =
-                (deps.origin ? *deps.origin : std::string{}) +
-                "/static/external_workspace.html?workspace_id=" +
-                (deps.url_encode ? deps.url_encode(workspace_id) : workspace_id);
+                (deps.origin ? *deps.origin : std::string{}) + access_path;
 
             audit_invite_event(deps, "workspace.external_opaque_invite_created", "ok", {
                 {"workspace_id", workspace_id},

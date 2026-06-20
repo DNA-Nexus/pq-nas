@@ -59,6 +59,23 @@
     .error { color: #fecaca; }
     .ok { color: #bbf7d0; }
     .small { font-size: .9rem; color: #94a3b8; }
+    .postSetupActions { margin-top: 16px; display: grid; gap: 10px; }
+    .postSetupActions[hidden] { display: none; }
+    .postSetupActions a {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 0;
+      padding: 13px 14px;
+      border: 0;
+      border-radius: 12px;
+      background: #38bdf8;
+      color: #082f49;
+      font-weight: 800;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -77,6 +94,9 @@
     </form>
 
     <div id="status" class="status"></div>
+    <div id="postSetupActions" class="postSetupActions" hidden>
+      <a id="continueAfterSetup" href="/static/login.html">Sign in</a>
+    </div>
     <p class="small" data-i18n="opaque_enroll.link_single_use">The setup link is single-use. If it has expired, ask an administrator for a new link.</p>
   </main>
 
@@ -87,6 +107,19 @@
     const params = new URLSearchParams(location.search);
     const token = (params.get("token") || "").trim();
     const setupLang = (params.get("lang") || "").trim();
+
+    function safeReturnTo(raw) {
+      const value = String(raw || "").trim();
+      if (!value) return "";
+      if (!value.startsWith("/")) return "";
+      if (value.startsWith("//")) return "";
+      if (value.includes("\n") || value.includes("\r")) return "";
+      if (!value.startsWith("/static/external_workspace.html?")) return "";
+      return value;
+    }
+
+    const returnTo = safeReturnTo(params.get("return_to") || "");
+
 
     async function initLanguage() {
       if (!window.PQNAS_I18N) return;
@@ -117,10 +150,26 @@
     const statusEl = document.getElementById("status");
     const passwordEl = document.getElementById("password");
     const confirmEl = document.getElementById("confirm");
+    const postSetupActions = document.getElementById("postSetupActions");
+    const continueAfterSetup = document.getElementById("continueAfterSetup");
 
     function setStatus(message, cls = "") {
       statusEl.className = "status " + cls;
       statusEl.textContent = message;
+    }
+
+    function loginUrlWithReturnTo() {
+      if (!returnTo) return "/static/login.html";
+      return "/static/login.html?return_to=" + encodeURIComponent(returnTo);
+    }
+
+    function showPostSetupActions() {
+      if (!postSetupActions || !continueAfterSetup) return;
+      continueAfterSetup.href = loginUrlWithReturnTo();
+      continueAfterSetup.textContent = returnTo
+        ? "Sign in and open shared space"
+        : "Sign in";
+      postSetupActions.hidden = false;
     }
 
     function parseOpaqueResult(value) {
@@ -236,6 +285,10 @@
           setStatus(readyLine, "ok");
         } else {
           setStatus(pendingLine, "ok");
+        }
+
+        if (done.ready_for_login) {
+          showPostSetupActions();
         }
       } catch (err) {
         setStatus(

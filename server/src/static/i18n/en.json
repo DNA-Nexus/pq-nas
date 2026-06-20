@@ -4807,5 +4807,8 @@
   "filemgr.ws.copy_setup_link": "Copy setup link",
   "filemgr.ws.external_opaque_send_hint": "Send the username, OPAQUE setup link, and access link to the outsider. They open the setup link first, choose their password, then sign in and open the Shared Space.",
   "filemgr.ws.external_setup_details_copied": "External setup details copied.",
-  "filemgr.ws.external_opaque_invite_ok": "OPAQUE external setup created for {role}."
+  "filemgr.ws.external_opaque_invite_ok": "OPAQUE external setup created for {role}.",
+  "external.action.logout": "Logout",
+  "external.status.logging_out": "Logging out...",
+  "external.status.logging_out_short": "logout"
 }

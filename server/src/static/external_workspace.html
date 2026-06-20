@@ -18,7 +18,7 @@
     <script defer src="/static/external_workspace_image_preview.js?v=external-image-preview-i18n-1"></script>
 
     <script defer src="/static/external_workspace_pdf_preview.js?v=external-pdf-preview-i18n-2"></script>
-    <script defer src="/static/external_workspace.js?v=external-main-password-access-1"></script>
+    <script defer src="/static/external_workspace.js?v=external-main-logout-1"></script>
     <script defer src="/static/external_workspace_selection_properties.js?v=external-selection-properties-i18n-1"></script>
 </head>
 <body>
@@ -79,6 +79,7 @@
                         <option value="size-asc" data-i18n="external.sort.size_asc">Size ↑</option>
                     </select>
                     <button class="pq-btn secondary" id="btnReload" type="button" data-i18n="common.refresh">Refresh</button>
+                    <button class="pq-btn secondary" id="btnExternalLogout" type="button" data-i18n="external.action.logout">Logout</button>
                 </div>
 
                 <div class="toolbarGroup hidden" id="editorTools">
@@ -245,5 +246,47 @@
     <div class="contextSep"></div>
     <button type="button" data-action="multi-clear" data-i18n="external.menu.clear_selection">Clear selection</button>
 </div>
+
+<script id="externalWorkspaceInlineLogoutHandler">
+(function(){
+    "use strict";
+
+    document.addEventListener("click", async function(ev) {
+        var btn = ev.target && ev.target.closest
+            ? ev.target.closest("#btnExternalLogout")
+            : null;
+
+        if (!btn) return;
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === "function") {
+            ev.stopImmediatePropagation();
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Logging out...";
+
+        try {
+            await fetch("/api/v4/workspaces/external-session/logout", {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            });
+        } catch (e) {
+            // Even if the request fails, leave the isolated external UI.
+        }
+
+        try {
+            localStorage.removeItem("pqnas_opaque_login");
+            localStorage.removeItem("pqnas_password_login");
+        } catch (e) {}
+
+        window.location.replace("/static/login.html");
+    }, true);
+})();
+</script>
+
 </body>
 </html>
