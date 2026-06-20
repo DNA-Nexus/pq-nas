@@ -1111,6 +1111,83 @@
         }
     }
 
+    const PEOPLE_EXTERNAL_ARCHIVE_MARKER = "[pqnas:archived_external_workspace=1]";
+
+    function workspaceMemberLooksExternal(member) {
+        const raw = String(
+            member && (
+                member.member_kind ||
+                member.kind ||
+                member.type ||
+                member.subject_kind ||
+                ""
+            ) || ""
+        ).trim().toLowerCase();
+
+        const group = String(member && member.group || "").trim().toLowerCase();
+        const email = String(member && member.email || "").trim().toLowerCase();
+        const name = String(member && (member.name || member.display_name || member.label) || "").trim().toLowerCase();
+        const notes = String(member && member.notes || "").trim().toLowerCase();
+
+        if (raw === "external" || raw === "external_dna" || raw === "external_workspace") return true;
+        if (group === "external" || group === "external workspace") return true;
+        if (email.startsWith("external-")) return true;
+        if (name.startsWith("external-")) return true;
+        if (notes.includes("external_workspace_only=1")) return true;
+        if (notes.includes("external workspace")) return true;
+
+        return false;
+    }
+
+    async function apiResolvePersonForWorkspaceCleanup(fingerprint) {
+        const fp = String(fingerprint || "").trim();
+        if (!fp) return null;
+
+        const r = await fetch(`/api/v4/people/resolve?fingerprint=${encodeURIComponent(fp)}`, {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        });
+
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j || !j.ok || !j.resolved || !j.person) return null;
+        return j.person;
+    }
+
+    async function apiArchivePeopleForRemovedExternal(fingerprint) {
+        const fp = String(fingerprint || "").trim();
+        if (!fp) return false;
+
+        const person = await apiResolvePersonForWorkspaceCleanup(fp);
+        if (!person) return false;
+
+        const existingNotes = String(person.notes || "").trim();
+        const notes = existingNotes.includes(PEOPLE_EXTERNAL_ARCHIVE_MARKER)
+            ? existingNotes
+            : (existingNotes ? `${existingNotes}\n${PEOPLE_EXTERNAL_ARCHIVE_MARKER}` : PEOPLE_EXTERNAL_ARCHIVE_MARKER);
+
+        const r = await fetch("/api/v4/people/upsert", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify({
+                subject_fingerprint: fp,
+                subject_kind: "external_dna",
+                display_name: String(person.display_name || person.subject_fingerprint_short || fp),
+                nickname: String(person.nickname || ""),
+                notes
+            })
+        });
+
+        const j = await r.json().catch(() => null);
+        return !!(r.ok && j && j.ok);
+    }
+
     async function apiCreateWorkspaceExternalInvite(workspaceId, role, expiresInSeconds) {
         const r = await fetch("/api/v4/workspaces/external-invites/create", {
             method: "POST",
@@ -1717,6 +1794,15 @@
                     remove.textContent = tr("filemgr.ws.removing", null, "Removing…");
                     try {
                         await apiRemoveWorkspaceMember(workspaceId, fp);
+
+                        if (workspaceMemberLooksExternal(m)) {
+                            try {
+                                await apiArchivePeopleForRemovedExternal(fp);
+                            } catch (_) {
+                                // Best-effort only: workspace access cleanup already succeeded.
+                            }
+                        }
+
                         await reloadMembers();
                     } catch (e) {
                         if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.remove_failed", { error: String(e && e.message ? e.message : e) }, "Remove failed: " + String(e && e.message ? e.message : e));

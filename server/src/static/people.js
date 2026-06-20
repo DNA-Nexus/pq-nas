@@ -29,6 +29,13 @@
         detailOpenFp: ""
     };
 
+    const PEOPLE_EXTERNAL_ARCHIVE_MARKER = "[pqnas:archived_external_workspace=1]";
+
+    function isArchivedExternalContact(c) {
+        const notes = String(c && c.notes || "");
+        return notes.includes(PEOPLE_EXTERNAL_ARCHIVE_MARKER);
+    }
+
     function esc(s) {
         return String(s ?? "")
             .replaceAll("&", "&amp;")
@@ -119,7 +126,8 @@
 
     function filterContacts() {
         const q = String(state.search || "").trim().toLowerCase();
-        const source = Array.isArray(state.contacts) ? state.contacts : [];
+        const raw = Array.isArray(state.contacts) ? state.contacts : [];
+        const source = raw.filter((c) => !isArchivedExternalContact(c));
 
         if (!q) return sortNewFirst(source);
 

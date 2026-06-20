@@ -25,6 +25,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         closeAfterRestore: false,
     };
 
+    const peopleNameCache = new Map();
+
     let rootEl = null;
     let panelEl = null;
     let titleEl = null;
@@ -57,13 +59,91 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         return `${v} B`;
     }
 
-    function actorDisplay(row) {
+    function normalizeFingerprintForPeople(fp) {
+        return String(fp || "")
+            .trim()
+            .replace(/[\s:-]+/g, "")
+            .toLowerCase();
+    }
+
+    function versionFallbackActorName(row) {
         return String(
             row.actor_display ||
             row.actor_name_snapshot ||
             row.actor_fp ||
             tr("filemgr.versions.unknown", null, "Unknown")
         );
+    }
+
+    async function resolvePeopleDisplayNameForFp(fp) {
+        const clean = normalizeFingerprintForPeople(fp);
+        if (!clean) return "";
+
+        if (peopleNameCache.has(clean)) {
+            return peopleNameCache.get(clean) || "";
+        }
+
+        try {
+            const r = await fetch(`/api/v4/people/resolve?fingerprint=${encodeURIComponent(clean)}`, {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Accept": "application/json" },
+            });
+
+            const j = await r.json().catch(() => null);
+            const person = j && j.person ? j.person : {};
+            const name = String(person.display_name || "").trim();
+
+            peopleNameCache.set(clean, name);
+            return name;
+        } catch (_) {
+            peopleNameCache.set(clean, "");
+            return "";
+        }
+    }
+
+    async function applyPeopleNamesToVersions(rows) {
+        const list = Array.isArray(rows) ? rows : [];
+        const fps = new Set();
+
+        for (const row of list) {
+            const fp = normalizeFingerprintForPeople(row && row.actor_fp);
+            if (fp) fps.add(fp);
+
+            const flags = Array.isArray(row && row.flags) ? row.flags : [];
+            for (const f of flags) {
+                const ffp = normalizeFingerprintForPeople(f && f.actor_fp);
+                if (ffp) fps.add(ffp);
+            }
+        }
+
+        if (!fps.size) return;
+
+        await Promise.all(Array.from(fps).map((fp) => resolvePeopleDisplayNameForFp(fp)));
+
+        for (const row of list) {
+            const fp = normalizeFingerprintForPeople(row && row.actor_fp);
+            const name = fp ? String(peopleNameCache.get(fp) || "").trim() : "";
+            if (name) {
+                row.actor_display = name;
+                row.actor_people_display = name;
+            }
+
+            const flags = Array.isArray(row && row.flags) ? row.flags : [];
+            for (const f of flags) {
+                const ffp = normalizeFingerprintForPeople(f && f.actor_fp);
+                const fname = ffp ? String(peopleNameCache.get(ffp) || "").trim() : "";
+                if (fname) {
+                    f.actor_display = fname;
+                    f.actor_people_display = fname;
+                }
+            }
+        }
+    }
+
+    function actorDisplay(row) {
+        return versionFallbackActorName(row);
     }
 
     function kindLabel(row) {
@@ -539,7 +619,9 @@ html[data-theme="orange"] .pqfvFlagSummary{
             throw new Error(msg || tr("filemgr.versions.load_failed", null, "failed to load versions"));
         }
 
-        return Array.isArray(j.versions) ? j.versions : [];
+        const versions = Array.isArray(j.versions) ? j.versions : [];
+        await applyPeopleNamesToVersions(versions);
+        return versions;
     }
 
     function renderVersions() {

@@ -64,18 +64,34 @@
         return name || shortFp(fp);
     }
 
-    function memberKind(member) {
+    function memberLooksExternal(member) {
         const raw = String(
             member && (
                 member.member_kind ||
                 member.kind ||
                 member.type ||
+                member.subject_kind ||
                 ""
             ) || ""
-        ).toLowerCase();
+        ).trim().toLowerCase();
 
-        if (raw === "external" || raw === "external_dna") return "external_dna";
-        return "local_user";
+        const group = String(member && member.group || "").trim().toLowerCase();
+        const email = String(member && member.email || "").trim().toLowerCase();
+        const name = String(member && (member.name || member.display_name || member.label) || "").trim().toLowerCase();
+        const notes = String(member && member.notes || "").trim().toLowerCase();
+
+        if (raw === "external" || raw === "external_dna" || raw === "external_workspace") return true;
+        if (group === "external" || group === "external workspace") return true;
+        if (email.startsWith("external-")) return true;
+        if (name.startsWith("external-")) return true;
+        if (notes.includes("external_workspace_only=1")) return true;
+        if (notes.includes("external workspace")) return true;
+
+        return false;
+    }
+
+    function memberKind(member) {
+        return memberLooksExternal(member) ? "external_dna" : "local_user";
     }
 
     function setStatus(statusEl, text) {
