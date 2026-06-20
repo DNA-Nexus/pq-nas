@@ -880,6 +880,147 @@ std::string workspace_external_member_access_path_local(
     return std::string("/static/external_workspace.html?workspace_id=") + ws_q;
 }
 
+bool workspace_external_has_enabled_external_membership_local(
+    pqnas::WorkspacesRegistry* workspaces,
+    const std::string& fingerprint
+) {
+    if (!workspaces) return true;
+
+    const std::string fp = trim_copy_safe(fingerprint);
+    if (fp.empty()) return true;
+
+    const auto spaces = workspaces->list_for_member(fp);
+    for (const auto& w : spaces) {
+        if (w.status != "enabled") continue;
+
+        auto mopt = workspaces->get_member(w.workspace_id, fp);
+        if (!mopt.has_value()) continue;
+
+        WorkspaceMemberRec m = *mopt;
+        normalize_workspace_member_v1(&m);
+
+        if (m.status == "enabled" && m.member_kind == "external") {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool workspace_external_mark_opaque_enrollments_used_for_fp_local(
+    const WorkspaceExternalInviteRouteDeps& deps,
+    const std::string& fingerprint,
+    httplib::Response& res
+) {
+    const std::string fp = trim_copy_safe(fingerprint);
+    if (fp.empty() || !deps.now_epoch_sec) return true;
+
+    const long now = static_cast<long>(deps.now_epoch_sec());
+    const std::string enrollments_path =
+        workspace_external_opaque_enrollments_path_local(deps);
+
+    std::lock_guard<std::mutex> lock(
+        workspace_external_opaque_enrollments_file_mu_local());
+
+    std::string lerr;
+    json doc =
+        workspace_external_load_opaque_enrollments_no_lock_local(
+            enrollments_path, &lerr);
+
+    if (!lerr.empty()) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "opaque_enrollments_load_failed"},
+            {"message", "failed to load opaque enrollments"},
+            {"detail", lerr}
+        }.dump());
+        return false;
+    }
+
+    if (!doc.contains("tokens") || !doc["tokens"].is_array()) return true;
+
+    bool changed = false;
+    for (auto& rec : doc["tokens"]) {
+        if (!rec.is_object()) continue;
+        if (rec.value("fingerprint", std::string{}) != fp) continue;
+        if (rec.value("used_at", 0L) != 0) continue;
+
+        rec["used_at"] = now;
+        changed = true;
+    }
+
+    if (!changed) return true;
+
+    std::string serr;
+    if (!workspace_external_save_opaque_enrollments_no_lock_local(
+            enrollments_path, doc, &serr)) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "opaque_enrollments_save_failed"},
+            {"message", "failed to save opaque enrollments"},
+            {"detail", serr}
+        }.dump());
+        return false;
+    }
+
+    return true;
+}
+
+bool workspace_external_disable_orphan_user_local(
+    const WorkspaceExternalInviteRouteDeps& deps,
+    httplib::Response& res,
+    const std::string& fingerprint
+) {
+    const std::string fp = trim_copy_safe(fingerprint);
+    if (fp.empty()) return true;
+
+    if (workspace_external_has_enabled_external_membership_local(deps.workspaces, fp)) {
+        return true;
+    }
+
+    if (!deps.users || deps.users_path.empty()) return true;
+
+    if (!deps.users->load(deps.users_path)) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "users_reload_failed"},
+            {"message", "failed to reload users before external cleanup"}
+        }.dump());
+        return false;
+    }
+
+    auto uopt = deps.users->get(fp);
+    if (!uopt.has_value()) return true;
+
+    UserRec u = *uopt;
+    if (!user_is_external_workspace_only_local(u)) return true;
+
+    const std::string now_iso =
+        deps.now_iso_utc ? deps.now_iso_utc() : std::string{};
+
+    if (u.status != "disabled") {
+        u.status = "disabled";
+    }
+
+    if (u.notes.find("external_workspace_orphan_disabled_at=") == std::string::npos) {
+        if (!u.notes.empty()) u.notes += "; ";
+        u.notes += "external_workspace_orphan_disabled_at=" + now_iso;
+    }
+
+    if (!deps.users->upsert(u) || !deps.users->save(deps.users_path)) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "users_save_failed"},
+            {"message", "failed to disable orphan external workspace user"}
+        }.dump());
+        return false;
+    }
+
+    // If the invite was removed before the outsider finished OPAQUE setup,
+    // invalidate any unused setup token for this fingerprint as best effort.
+    return workspace_external_mark_opaque_enrollments_used_for_fp_local(deps, fp, res);
+}
+
 } // namespace
 
 void register_workspace_external_invite_routes(
@@ -1334,6 +1475,11 @@ void register_workspace_external_invite_routes(
             return;
         }
 
+        WorkspaceMemberRec target_before_remove = *target;
+        normalize_workspace_member_v1(&target_before_remove);
+        const bool target_was_external =
+            target_before_remove.member_kind == "external";
+
         if (!deps.workspaces->remove_member(workspace_id, target_fp)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
@@ -1344,6 +1490,11 @@ void register_workspace_external_invite_routes(
         }
 
         if (!save_workspaces_or_500(deps, res)) return;
+
+        if (target_was_external &&
+            !workspace_external_disable_orphan_user_local(deps, res, target_fp)) {
+            return;
+        }
 
         deps.reply_json(res, 200, json{{"ok", true}}.dump());
     });

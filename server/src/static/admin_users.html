@@ -627,6 +627,16 @@
             <section class="pane" aria-label="Users table" data-i18n-aria-label="admin.users.users_table" style="min-height:0;">
                 <h2 data-i18n="admin.users.sidebar_title">Users</h2>
 
+                <div class="row" style="margin:0 0 10px; justify-content:space-between; align-items:center;">
+                    <label class="hint" style="display:flex; align-items:center; gap:8px; font-weight:850;">
+                        <input id="showExternalUsers" type="checkbox">
+                        <span data-i18n="admin.users.show_external_workspace_users">Show external workspace users</span>
+                    </label>
+                    <div class="hint" id="externalUsersNotice" data-i18n="admin.users.external_hidden_default">
+                        External workspace users are hidden from this normal user list by default.
+                    </div>
+                </div>
+
                 <div class="paneBody">
                     <div class="tableWrap">
                         <table>
@@ -747,7 +757,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_users.js?v=20260613-collapsible-sort-1"></script>
+<script src="/static/admin_users.js?v=20260620-external-users-filter-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

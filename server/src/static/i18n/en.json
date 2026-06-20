@@ -4814,5 +4814,10 @@
   "opaque_enroll.success_ready_prefix": "Password set. You can now sign in as",
   "opaque_enroll.success_ready_before_link": "Password set. You can now",
   "opaque_enroll.success_ready_link": "sign in",
-  "opaque_enroll.success_ready_after_link": "as"
+  "opaque_enroll.success_ready_after_link": "as",
+  "admin.users.show_external_workspace_users": "Show external workspace users",
+  "admin.users.external_hidden_default": "External workspace users are hidden from this normal user list by default.",
+  "admin.users.external_hidden_count": "{count} external workspace users hidden",
+  "admin.users.external_visible_notice": "External workspace users are visible in this list.",
+  "admin.users.loaded_users_external_hidden": "Loaded {count} users ({hidden} external hidden)"
 }

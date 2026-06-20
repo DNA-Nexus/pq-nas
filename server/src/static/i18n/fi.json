@@ -4814,5 +4814,10 @@
   "opaque_enroll.success_ready_prefix": "Salasana asetettu. Voit nyt kirjautua käyttäjänä",
   "opaque_enroll.success_ready_before_link": "Salasana asetettu. Voit nyt",
   "opaque_enroll.success_ready_link": "kirjautua",
-  "opaque_enroll.success_ready_after_link": "käyttäjänä"
+  "opaque_enroll.success_ready_after_link": "käyttäjänä",
+  "admin.users.show_external_workspace_users": "Näytä ulkopuoliset workspace-käyttäjät",
+  "admin.users.external_hidden_default": "Ulkopuoliset workspace-käyttäjät piilotetaan tästä normaalista käyttäjälistasta oletuksena.",
+  "admin.users.external_hidden_count": "{count} ulkopuolista workspace-käyttäjää piilotettu",
+  "admin.users.external_visible_notice": "Ulkopuoliset workspace-käyttäjät näkyvät tässä listassa.",
+  "admin.users.loaded_users_external_hidden": "Ladattu {count} käyttäjää ({hidden} ulkopuolista piilotettu)"
 }

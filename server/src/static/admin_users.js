@@ -1620,6 +1620,77 @@ let allUsers = [];
 let actorFp = "";
 let adminUsersEditFingerprint = "";
 
+function isExternalWorkspaceUser(u) {
+    const group = String(u && u.group || "").trim().toLowerCase();
+    const notes = String(u && u.notes || "").trim().toLowerCase();
+    const email = String(u && u.email || "").trim().toLowerCase();
+    const name = String(u && u.name || "").trim().toLowerCase();
+
+    if (group === "external" || group === "external workspace") return true;
+    if (notes.includes("external_workspace_only=1")) return true;
+    if (notes.includes("external workspace opaque account")) return true;
+    if (email.startsWith("external-")) return true;
+    if (name.startsWith("external-")) return true;
+
+    return false;
+}
+
+function adminUsersShowExternal() {
+    const el = $("showExternalUsers");
+    return !!(el && el.checked);
+}
+
+function adminUsersExternalCount() {
+    return allUsers.filter(isExternalWorkspaceUser).length;
+}
+
+function adminUsersVisibleCount() {
+    const showExternal = adminUsersShowExternal();
+    return allUsers.filter(u => showExternal || !isExternalWorkspaceUser(u)).length;
+}
+
+function adminUsersLoadedMessage() {
+    const visible = adminUsersVisibleCount();
+    const hidden = adminUsersShowExternal() ? 0 : adminUsersExternalCount();
+
+    if (hidden > 0) {
+        return tr(
+            "admin.users.loaded_users_external_hidden",
+            { count: visible, hidden },
+            `Loaded ${visible} users (${hidden} external hidden)`
+        );
+    }
+
+    return tr("admin.users.loaded_users", { count: visible }, `Loaded ${visible} users`);
+}
+
+function syncExternalUsersNotice() {
+    const el = $("externalUsersNotice");
+    if (!el) return;
+
+    const hidden = adminUsersShowExternal() ? 0 : adminUsersExternalCount();
+
+    if (hidden > 0) {
+        el.textContent = tr(
+            "admin.users.external_hidden_count",
+            { count: hidden },
+            `${hidden} external workspace users hidden`
+        );
+    } else if (adminUsersShowExternal()) {
+        el.textContent = tr(
+            "admin.users.external_visible_notice",
+            null,
+            "External workspace users are visible in this list."
+        );
+    } else {
+        el.textContent = tr(
+            "admin.users.external_hidden_default",
+            null,
+            "External workspace users are hidden from this normal user list by default."
+        );
+    }
+}
+
 const ADMIN_USERS_SORT_STORAGE_KEY = "pqnas_admin_users_sort_v1";
 let adminUsersSort = (() => {
     try {
@@ -1775,14 +1846,21 @@ function bindAdminUsersSortHeaders() {
 
 function render() {
     const f = ($("filter")?.value || "").toLowerCase().trim();
+    const showExternal = adminUsersShowExternal();
+
     let rows = allUsers.filter(u => {
+        if (!showExternal && isExternalWorkspaceUser(u)) return false;
+
         const hay = [
             u.fingerprint, u.name, u.notes, u.role, u.status,
             u.group, u.email, u.storage_state,
             String(u.quota_bytes || "")
         ].join(" ").toLowerCase();
+
         return !f || hay.includes(f);
     });
+
+    syncExternalUsersNotice();
 
     rows = sortAdminUserRows(rows);
 
@@ -2179,7 +2257,7 @@ async function refresh() {
     actorFp = String(j.actor_fp || "");
     allUsers = (j.users || []).sort((a,b) => (a.fingerprint||"").localeCompare(b.fingerprint||""));
     render();
-    setMsg(tr("admin.users.loaded_users", { count: allUsers.length }, `Loaded ${allUsers.length} users`));
+    setMsg(adminUsersLoadedMessage());
 }
 
 async function upsertFromForm() {
@@ -2214,7 +2292,14 @@ async function upsertFromForm() {
 
 window.addEventListener("load", async () => {
     $("btnRefresh")?.addEventListener("click", refresh);
-    $("filter")?.addEventListener("input", render);
+    $("filter")?.addEventListener("input", () => {
+        render();
+        setMsg(adminUsersLoadedMessage());
+    });
+    $("showExternalUsers")?.addEventListener("change", () => {
+        render();
+        setMsg(adminUsersLoadedMessage());
+    });
 
     setProfileEditorOpen(false);
     if ($("fp")) {
