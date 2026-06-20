@@ -4810,5 +4810,9 @@
   "filemgr.ws.external_opaque_invite_ok": "OPAQUE-ulkoisen käyttäjän setup luotu roolille {role}.",
   "external.action.logout": "Kirjaudu ulos",
   "external.status.logging_out": "Kirjaudutaan ulos...",
-  "external.status.logging_out_short": "ulos"
+  "external.status.logging_out_short": "ulos",
+  "opaque_enroll.success_ready_prefix": "Salasana asetettu. Voit nyt kirjautua käyttäjänä",
+  "opaque_enroll.success_ready_before_link": "Salasana asetettu. Voit nyt",
+  "opaque_enroll.success_ready_link": "kirjautua",
+  "opaque_enroll.success_ready_after_link": "käyttäjänä"
 }

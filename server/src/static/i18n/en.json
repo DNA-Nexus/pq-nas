@@ -4810,5 +4810,9 @@
   "filemgr.ws.external_opaque_invite_ok": "OPAQUE external setup created for {role}.",
   "external.action.logout": "Logout",
   "external.status.logging_out": "Logging out...",
-  "external.status.logging_out_short": "logout"
+  "external.status.logging_out_short": "logout",
+  "opaque_enroll.success_ready_prefix": "Password set. You can now sign in as",
+  "opaque_enroll.success_ready_before_link": "Password set. You can now",
+  "opaque_enroll.success_ready_link": "sign in",
+  "opaque_enroll.success_ready_after_link": "as"
 }

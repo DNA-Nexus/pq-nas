@@ -58,6 +58,9 @@
     }
     .error { color: #fecaca; }
     .ok { color: #bbf7d0; }
+    .status strong.loginValue { color: #f8fafc; font-weight: 900; }
+    .status a.loginPageLink { color: #7dd3fc; font-weight: 900; text-decoration: none; }
+    .status a.loginPageLink:hover { text-decoration: underline; }
     .small { font-size: .9rem; color: #94a3b8; }
     .postSetupActions { margin-top: 16px; display: grid; gap: 10px; }
     .postSetupActions[hidden] { display: none; }
@@ -156,6 +159,47 @@
     function setStatus(message, cls = "") {
       statusEl.className = "status " + cls;
       statusEl.textContent = message;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setStatusHtml(html, cls = "") {
+      statusEl.className = "status " + cls;
+      statusEl.innerHTML = html;
+    }
+
+    function loginPageAbsoluteUrl() {
+      const loginPath = loginUrlWithReturnTo();
+      try {
+        return new URL(loginPath, window.location.origin).toString();
+      } catch (_) {
+        return loginPath || "/static/login.html";
+      }
+    }
+
+    function readyLoginHtml(login) {
+      const beforeLink = t(
+        "opaque_enroll.success_ready_before_link",
+        "Password set. You can now"
+      );
+      const linkText = t(
+        "opaque_enroll.success_ready_link",
+        "sign in"
+      );
+      const afterLink = t(
+        "opaque_enroll.success_ready_after_link",
+        "as"
+      );
+      const href = loginPageAbsoluteUrl();
+
+      return `${escapeHtml(beforeLink)} <a class="loginPageLink" href="${escapeHtml(href)}">${escapeHtml(linkText)}</a> ${escapeHtml(afterLink)} <strong class="loginValue">${escapeHtml(login || "")}</strong>`;
     }
 
     function loginUrlWithReturnTo() {
@@ -265,24 +309,31 @@
         passwordEl.value = "";
         confirmEl.value = "";
 
-        const readyLine = t(
-          "opaque_enroll.success_ready",
-          "Password set. You can now sign in as {login}.",
-          { login: done.login || "" }
-        );
         const pendingLine = t(
           "opaque_enroll.success_pending",
           "Password set, but the account is not enabled yet. Ask an administrator to enable it."
         );
 
+        const recoveryTitle = t("opaque_enroll.recovery_title", "Recovery words — shown once:");
+        const recoveryNote = t(
+          "opaque_enroll.recovery_note",
+          "Copy these 24 words now and store them safely. They cannot be shown again."
+        );
+
         if (done.recovery_words) {
-          const loginLine = done.ready_for_login ? readyLine : pendingLine;
-          setStatus(
-            `${loginLine}\n\n${t("opaque_enroll.recovery_title", "Recovery words — shown once:")}\n${done.recovery_words}\n\n${t("opaque_enroll.recovery_note", "Copy these 24 words now and store them safely. They cannot be shown again.")}`,
-            "ok"
-          );
+          if (done.ready_for_login) {
+            setStatusHtml(
+              `${readyLoginHtml(done.login || "")}\n\n${escapeHtml(recoveryTitle)}\n${escapeHtml(done.recovery_words)}\n\n${escapeHtml(recoveryNote)}`,
+              "ok"
+            );
+          } else {
+            setStatus(
+              `${pendingLine}\n\n${recoveryTitle}\n${done.recovery_words}\n\n${recoveryNote}`,
+              "ok"
+            );
+          }
         } else if (done.ready_for_login) {
-          setStatus(readyLine, "ok");
+          setStatusHtml(readyLoginHtml(done.login || ""), "ok");
         } else {
           setStatus(pendingLine, "ok");
         }
