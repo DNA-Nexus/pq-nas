@@ -107,6 +107,44 @@
         }
     }
 
+    function renderBrandTemplate(template, brand) {
+        return String(template || "")
+            .replaceAll("{product_name}", brand.product_name || "")
+            .replaceAll("{product_short_name}", brand.product_short_name || brand.product_name || "")
+            .replaceAll("{company_name}", brand.company_name || "")
+            .replaceAll("{copyright}", brand.copyright || "");
+    }
+
+    function applyVersionBranding(root, brand) {
+        if (!brand || brand.enabled !== true) return;
+
+        const shortName = brand.product_short_name || brand.product_name || "";
+        if (!shortName) return;
+
+        const walker = document.createTreeWalker(
+            root || document,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode(node) {
+                    const value = String(node.nodeValue || "").trim();
+                    if (/^DNA-Nexus\s+v\d+(?:\.\d+)*(?:[-+][A-Za-z0-9._-]+)?$/.test(value)) {
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    return NodeFilter.FILTER_REJECT;
+                }
+            }
+        );
+
+        const nodes = [];
+        while (walker.nextNode()) {
+            nodes.push(walker.currentNode);
+        }
+
+        for (const node of nodes) {
+            node.nodeValue = String(node.nodeValue || "").replace(/^DNA-Nexus\s+v/, shortName + " v");
+        }
+    }
+
     function apply(root) {
         root = root || document;
         const brand = currentBrand || DEFAULT_BRAND;
@@ -139,6 +177,12 @@
             else if (key === "company_name") el.textContent = brand.company_name;
             else if (key === "copyright") el.textContent = brand.copyright;
         });
+
+        root.querySelectorAll("[data-brand-template]").forEach((el) => {
+            el.textContent = renderBrandTemplate(el.getAttribute("data-brand-template"), brand);
+        });
+
+        applyVersionBranding(root, brand);
 
         root.querySelectorAll("[data-brand-aria-label]").forEach((el) => {
             const key = el.getAttribute("data-brand-aria-label");
@@ -213,6 +257,10 @@
     } else {
         load();
     }
+
+    window.addEventListener("pqnas-language-changed", function () {
+        setTimeout(function () { apply(document); }, 0);
+    });
 
     window.addEventListener("pqnas-theme-changed", function () {
         apply(document);

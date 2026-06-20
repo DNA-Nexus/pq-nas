@@ -90,6 +90,33 @@
     }
 
 
+    function brandedProductShortName(fallback = "DNA-Nexus") {
+        try {
+            const api = window.PQNAS_BRANDING;
+            if (!api || typeof api.current !== "function") return fallback;
+
+            const brand = api.current();
+            if (!brand || brand.enabled !== true) return fallback;
+
+            return String(brand.product_short_name || brand.product_name || fallback).trim() || fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
+
+    async function brandedProductShortNameReady(fallback = "DNA-Nexus") {
+        try {
+            const api = window.PQNAS_BRANDING;
+            if (api && typeof api.ready === "function") {
+                await api.ready();
+            }
+        } catch {}
+
+        return brandedProductShortName(fallback);
+    }
+
+
     function injectShellDialogCss() {
         if (document.getElementById("shellDialogCss")) return;
 
@@ -3390,7 +3417,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         const serverVersion = String(j.server_version || j.current_server_version || j.version || "").trim();
                         statusLine.removeAttribute("data-i18n");
                         statusLine.removeAttribute("data-i18n-fallback");
-                        statusLine.textContent = serverVersion ? `DNA-Nexus v${serverVersion}` : "DNA-Nexus";
+                        const productShortName = await brandedProductShortNameReady("DNA-Nexus");
+                        statusLine.textContent = serverVersion ? `${productShortName} v${serverVersion}` : productShortName;
                         versionShown = true;
                     }
 
