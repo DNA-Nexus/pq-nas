@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "product_name": "DNA-Nexus NAS",
+  "product_short_name": "DNA-Nexus",
+  "company_name": "CPUNK",
+  "copyright": "© CPUNK 2026 · DNA-Nexus",
+  "hide_upstream_brand": false,
+  "logo_dark": "/static/img/logo/Nexus_logo_dark.png",
+  "logo_bright": "/static/img/logo/nexuslogo_text.svg",
+  "favicon": "/static/favicon.ico",
+  "primary_color": "",
+  "accent_color": "",
+  "support_url": "",
+  "presentation_url": "/static/nexus-presentation/index.html",
+  "show_presentation_link": true
+}
