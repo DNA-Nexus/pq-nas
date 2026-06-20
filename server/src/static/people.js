@@ -124,10 +124,14 @@
         });
     }
 
+    function visiblePeopleContacts() {
+        const raw = Array.isArray(state.contacts) ? state.contacts : [];
+        return raw.filter((c) => !isArchivedExternalContact(c));
+    }
+
     function filterContacts() {
         const q = String(state.search || "").trim().toLowerCase();
-        const raw = Array.isArray(state.contacts) ? state.contacts : [];
-        const source = raw.filter((c) => !isArchivedExternalContact(c));
+        const source = visiblePeopleContacts();
 
         if (!q) return sortNewFirst(source);
 
@@ -1084,7 +1088,7 @@ html[data-theme="win_classic"] .modal.show{
         const contacts = filterContacts();
         ensureSelection(contacts);
 
-        if (!state.contacts.length) {
+        if (!visiblePeopleContacts().length) {
             return `
                 <div class="card" style="padding:16px; margin-top:12px;">
                     <h3 style="margin:0 0 8px 0; font-size:17px;">${esc(tr("people.no_saved_title", null, "No people saved yet"))}</h3>
@@ -1140,7 +1144,10 @@ html[data-theme="win_classic"] .modal.show{
                     <input id="peopleSearch" type="search" value="${esc(state.search)}"
                            placeholder="${esc(tr("people.search_placeholder", null, "Search people, notes, fingerprints…"))}"
                            style="min-width:min(420px,100%);">
-                    <div class="mini">${esc(tr("people.saved_count", { count: state.contacts.length }, `${state.contacts.length} saved`))}</div>
+                    <div class="mini">${(() => {
+                        const visibleCount = visiblePeopleContacts().length;
+                        return esc(tr("people.saved_count", { count: visibleCount }, `${visibleCount} saved`));
+                    })()}</div>
                 </div>
             </div>
 
@@ -1148,12 +1155,6 @@ html[data-theme="win_classic"] .modal.show{
             ${window.PQPeopleEditor ? "" : renderEditor()}
             ${renderContactsList()}
 
-            <div class="card peopleFutureCard" style="padding:16px; margin-top:12px;">
-                <h3 style="margin:0 0 8px 0; font-size:17px;">${esc(tr("people.future_title", null, "Future use"))}</h3>
-                <div class="mini" style="line-height:1.6;">
-                    ${esc(tr("people.future_desc", null, "These labels will later appear in @mentions, file locks, comments, activity timelines, “what changed?” digests, and access maps."))}
-                </div>
-            </div>
             </div>
         `;
 
