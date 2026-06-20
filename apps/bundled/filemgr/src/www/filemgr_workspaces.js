@@ -1759,7 +1759,7 @@
         panel.innerHTML = `
             <div style="font-weight:900; margin-bottom:8px;">${tr("filemgr.ws.external_title", null, "External member access")}</div>
             <div class="hint" style="margin-bottom:10px;">
-                ${tr("filemgr.ws.external_desc", null, "Create a one-time invite for a new external DNA Connect identity. After they accept, give them the member access link for future visits.")}
+                ${tr("filemgr.ws.external_desc", null, "Create access for an external person. In OPAQUE mode this creates a setup link; in password mode it creates a temporary username and password; in QR mode it creates a DNA Connect invite.")}
             </div>
 
             <div class="row" style="margin-bottom:12px;">
@@ -1770,7 +1770,7 @@
 
             <div id="sharedSpaceExternalInviteControls">
                 <div class="hint" style="margin-bottom:8px;">
-                    ${tr("filemgr.ws.external_owner_help", null, "Owner only: create a one-time invite. Send it to the outsider so they can open it and scan the QR with DNA Connect.")}
+                    ${tr("filemgr.ws.external_owner_help", null, "Owner only: create a one-time invite. In OPAQUE mode, send the setup link so the outsider can set their password. In QR mode, they open the invite and scan the QR with DNA Connect.")}
                 </div>
 
                 <div class="row">
@@ -1844,7 +1844,104 @@
 
             try {
                 const j = await apiCreateWorkspaceExternalInvite(workspaceId, role, expires);
+                const opaque = j && j.opaque_invite ? j.opaque_invite : null;
                 const pw = j && j.password_invite ? j.password_invite : null;
+
+                if (opaque && opaque.login && opaque.setup_url) {
+                    const login = String(opaque.login || "");
+                    const setupUrl = String(opaque.setup_url || "");
+                    const accessUrl = String(opaque.member_access_url || externalWorkspaceAccessUrl(workspaceId));
+                    const expiresAt = Number(opaque.expires_at_epoch || 0);
+                    const expiresText = expiresAt > 0
+                        ? new Date(expiresAt * 1000).toLocaleString()
+                        : tr("filemgr.ws.unknown", null, "unknown");
+
+                    const bundle =
+                        `${tr("filemgr.ws.external_login", null, "Username")}: ${login}\n` +
+                        `${tr("filemgr.ws.external_opaque_setup_link", null, "OPAQUE setup link")}: ${setupUrl}\n` +
+                        `${tr("filemgr.ws.external_access_link", null, "Access link")}: ${accessUrl}`;
+
+                    if (result) {
+                        result.innerHTML = `
+                            <div class="hint" style="margin-bottom:8px;">
+                                ${tr("filemgr.ws.external_opaque_invite_created", null, "OPAQUE setup link created. Copy these details now; the setup link is shown only once.")}
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:140px minmax(0,1fr); gap:8px; margin-bottom:10px;">
+                                <div class="k">${tr("filemgr.ws.external_login", null, "Username")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(login)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_expires", null, "Expires")}</div>
+                                <div class="v">${escapeHtml(expiresText)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_opaque_setup_link", null, "OPAQUE setup link")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(setupUrl)}</div>
+
+                                <div class="k">${tr("filemgr.ws.external_access_link", null, "Access link")}</div>
+                                <div class="v mono" style="overflow-wrap:anywhere;">${escapeHtml(accessUrl)}</div>
+                            </div>
+
+                            <div class="row" style="margin-bottom:10px;">
+                                <button id="sharedSpaceCopyExternalOpaqueBundleBtn"
+                                        class="btn secondary"
+                                        type="button">
+                                    ${tr("filemgr.ws.copy_external_setup_details", null, "Copy setup details")}
+                                </button>
+                                <button id="sharedSpaceCopyExternalOpaqueSetupBtn"
+                                        class="btn secondary"
+                                        type="button">
+                                    ${tr("filemgr.ws.copy_setup_link", null, "Copy setup link")}
+                                </button>
+                            </div>
+
+                            <div class="hint">
+                                ${tr("filemgr.ws.external_opaque_send_hint", null, "Send the username, OPAQUE setup link, and access link to the outsider. They open the setup link first, choose their password, then sign in and open the Shared Space.")}
+                            </div>
+                        `;
+
+                        const copyBundleBtn = result.querySelector("#sharedSpaceCopyExternalOpaqueBundleBtn");
+                        copyBundleBtn?.addEventListener("click", async () => {
+                            const oldText = copyBundleBtn.textContent;
+                            copyBundleBtn.disabled = true;
+                            copyBundleBtn.textContent = tr("filemgr.ws.copying", null, "Copying…");
+                            try {
+                                await copyTextToClipboard(bundle);
+                                copyBundleBtn.textContent = tr("filemgr.ws.copied", null, "Copied");
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.external_setup_details_copied", null, "External setup details copied.");
+                            } catch (e) {
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.copy_failed", { error: String(e && e.message ? e.message : e) }, `Copy failed: ${String(e && e.message ? e.message : e)}`);
+                            } finally {
+                                setTimeout(() => {
+                                    copyBundleBtn.textContent = oldText;
+                                    copyBundleBtn.disabled = false;
+                                }, 1200);
+                            }
+                        });
+
+                        const copySetupBtn = result.querySelector("#sharedSpaceCopyExternalOpaqueSetupBtn");
+                        copySetupBtn?.addEventListener("click", async () => {
+                            const oldText = copySetupBtn.textContent;
+                            copySetupBtn.disabled = true;
+                            copySetupBtn.textContent = tr("filemgr.ws.copying", null, "Copying…");
+                            try {
+                                await copyTextToClipboard(setupUrl);
+                                copySetupBtn.textContent = tr("filemgr.ws.copied", null, "Copied");
+                            } catch (e) {
+                                if (workspaceMembersStatus) workspaceMembersStatus.textContent = tr("filemgr.ws.copy_failed", { error: String(e && e.message ? e.message : e) }, `Copy failed: ${String(e && e.message ? e.message : e)}`);
+                            } finally {
+                                setTimeout(() => {
+                                    copySetupBtn.textContent = oldText;
+                                    copySetupBtn.disabled = false;
+                                }, 1200);
+                            }
+                        });
+                    }
+
+                    if (workspaceMembersStatus) {
+                        workspaceMembersStatus.textContent = tr("filemgr.ws.external_opaque_invite_ok", { role: workspaceRoleLabel(role) }, `OPAQUE external setup created for ${role}.`);
+                    }
+                    return;
+                }
 
                 if (pw && pw.login && pw.password) {
                     const login = String(pw.login || "");

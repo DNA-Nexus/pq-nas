@@ -9,9 +9,17 @@
 #include <cstdlib>
 #include <filesystem>
 #include <exception>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <map>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <system_error>
+
+#include <openssl/sha.h>
 
 #include <nlohmann/json.hpp>
 
@@ -567,19 +575,32 @@ std::string lower_ascii_copy_local(std::string s) {
     return s;
 }
 
-bool workspace_external_password_auth_enabled_local() {
+std::string workspace_external_auth_mode_local() {
     const char* login_raw = std::getenv("PQNAS_LOGIN_MODE");
     const std::string login_mode =
         lower_ascii_copy_local(trim_copy_safe(login_raw ? login_raw : ""));
 
-    if (login_mode == "password") return true;
-    if (login_mode == "qr") return false;
+    if (login_mode == "password" || login_mode == "opaque" || login_mode == "qr") {
+        return login_mode;
+    }
 
     const char* auth_raw = std::getenv("PQNAS_AUTH_MODE");
     const std::string auth_mode =
         lower_ascii_copy_local(trim_copy_safe(auth_raw ? auth_raw : ""));
 
-    return auth_mode == "password";
+    // Legacy deployments may only set PQNAS_AUTH_MODE=password.
+    if (auth_mode == "password" || auth_mode == "opaque") return auth_mode;
+
+    // PQNAS_AUTH_MODE=v5 without an explicit browser login mode means QR/DNA Connect.
+    return "qr";
+}
+
+bool workspace_external_password_auth_enabled_local() {
+    return workspace_external_auth_mode_local() == "password";
+}
+
+bool workspace_external_opaque_auth_enabled_local() {
+    return workspace_external_auth_mode_local() == "opaque";
 }
 
 std::string workspace_external_password_credentials_path_local(
@@ -599,6 +620,184 @@ std::string workspace_external_password_credentials_path_local(
 void clear_string_best_effort_local(std::string& s) {
     std::fill(s.begin(), s.end(), '\0');
     s.clear();
+}
+
+std::string workspace_external_sha256_hex_local(const std::string& s) {
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(s.data()), s.size(), digest);
+
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    out.resize(SHA256_DIGEST_LENGTH * 2);
+
+    for (std::size_t i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        out[i * 2] = hex[(digest[i] >> 4) & 0x0f];
+        out[i * 2 + 1] = hex[digest[i] & 0x0f];
+    }
+
+    return out;
+}
+
+bool workspace_external_login_exists_local(const WorkspaceExternalInviteRouteDeps& deps,
+                                           const std::string& login) {
+    if (!deps.users) return false;
+
+    const std::string want = pqnas::PasswordCredentials::normalize_login(login);
+    if (want.empty()) return false;
+
+    const auto snap = deps.users->snapshot();
+    for (const auto& kv : snap) {
+        const auto& u = kv.second;
+        if (!u.email.empty() &&
+            pqnas::PasswordCredentials::normalize_login(u.email) == want) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::mutex& workspace_external_opaque_enrollments_file_mu_local() {
+    static std::mutex mu;
+    return mu;
+}
+
+std::string workspace_external_opaque_enrollments_path_local(
+    const WorkspaceExternalInviteRouteDeps& deps) {
+    const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
+    const std::string env_path = trim_copy_safe(raw ? raw : "");
+    if (!env_path.empty()) return env_path;
+
+    if (!deps.users_path.empty()) {
+        std::filesystem::path p(deps.users_path);
+        return (p.parent_path() / "opaque_enrollments.json").string();
+    }
+
+    return "/var/lib/pqnas/opaque_enrollments.json";
+}
+
+bool workspace_external_is_safe_enrollment_token_local(const std::string& s) {
+    if (s.size() < 32 || s.size() > 256) return false;
+
+    for (unsigned char c : s) {
+        const bool ok =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (!ok) return false;
+    }
+
+    return true;
+}
+
+json workspace_external_empty_opaque_enrollments_doc_local() {
+    return json{{"version", 1}, {"tokens", json::array()}};
+}
+
+json workspace_external_load_opaque_enrollments_no_lock_local(const std::string& path,
+                                                              std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return workspace_external_empty_opaque_enrollments_doc_local();
+    }
+
+    std::ifstream in(path);
+    if (!in) {
+        if (err) *err = "open_failed";
+        return json{};
+    }
+
+    try {
+        json doc = json::parse(in);
+        if (!doc.is_object()) {
+            if (err) *err = "json_not_object";
+            return json{};
+        }
+        if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+            doc["tokens"] = json::array();
+        }
+        if (!doc.contains("version")) {
+            doc["version"] = 1;
+        }
+        return doc;
+    } catch (const std::exception& e) {
+        if (err) *err = std::string("json_parse_failed: ") + e.what();
+        return json{};
+    }
+}
+
+bool workspace_external_save_opaque_enrollments_no_lock_local(const std::string& path,
+                                                              const json& doc,
+                                                              std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    const std::filesystem::path target(path);
+    std::filesystem::create_directories(target.parent_path(), ec);
+    if (ec) {
+        if (err) *err = "create_directories_failed: " + ec.message();
+        return false;
+    }
+
+    const std::filesystem::path tmp =
+        target.string() +
+        ".tmp.external." +
+        std::to_string(static_cast<long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
+            if (err) *err = "open_tmp_for_write_failed";
+            return false;
+        }
+
+        out << doc.dump(2) << "\n";
+        out.flush();
+        out.close();
+
+        if (!out) {
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp, rm_ec);
+            if (err) *err = "write_tmp_failed";
+            return false;
+        }
+    }
+
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        if (err) *err = "atomic_rename_failed: " + ec.message();
+        return false;
+    }
+
+    return true;
+}
+
+void workspace_external_prune_opaque_enrollments_doc_local(json& doc, long now) {
+    if (!doc.contains("tokens") || !doc["tokens"].is_array()) {
+        doc["tokens"] = json::array();
+        return;
+    }
+
+    json kept = json::array();
+    for (const auto& rec : doc["tokens"]) {
+        if (!rec.is_object()) continue;
+
+        const long expires_at = rec.value("expires_at", 0L);
+        const long used_at = rec.value("used_at", 0L);
+
+        if (expires_at > 0 && expires_at + 86400 < now) continue;
+        if (used_at > 0 && used_at + 86400 < now) continue;
+
+        kept.push_back(rec);
+    }
+
+    doc["tokens"] = kept;
 }
 
 std::string make_external_workspace_temp_login_local(
@@ -1104,6 +1303,7 @@ void register_workspace_external_invite_routes(
         if (!require_same_origin_for_cookie_mutation_local(req, res, deps)) return;
 
         const bool password_mode = workspace_external_password_auth_enabled_local();
+        const bool opaque_mode = workspace_external_opaque_auth_enabled_local();
 
         if (!deps.reply_json) {
             res.status = 500;
@@ -1122,7 +1322,7 @@ void register_workspace_external_invite_routes(
             return;
         }
 
-        if (!password_mode &&
+        if (!password_mode && !opaque_mode &&
             (!deps.external_invites || !deps.app ||
              !deps.build_req_payload_canonical ||
              !deps.sign_req_token || !deps.st_hash_b64_from_st)) {
@@ -1163,11 +1363,11 @@ void register_workspace_external_invite_routes(
         if (ttl > 7 * 24 * 3600) ttl = 7 * 24 * 3600;
 
         if (!reload_workspaces_or_500(deps, res)) return;
-        if (!password_mode && !reload_invites_or_500(deps, res)) return;
+        if (!password_mode && !opaque_mode && !reload_invites_or_500(deps, res)) return;
 
         const long now = static_cast<long>(deps.now_epoch_sec());
         const long invite_expires_at = now + ttl;
-        if (!password_mode && !expire_pending_invites_if_needed(deps, res, now)) return;
+        if (!password_mode && !opaque_mode && !expire_pending_invites_if_needed(deps, res, now)) return;
 
         auto wopt = deps.workspaces->get(workspace_id);
         if (!wopt.has_value() || wopt->status != "enabled") {
@@ -1191,6 +1391,262 @@ void register_workspace_external_invite_routes(
                 {"error", "forbidden"},
                 {"message", "workspace owner required"}
             }.dump());
+            return;
+        }
+
+        if (opaque_mode) {
+            if (!deps.users || deps.users_path.empty() || !deps.now_iso_utc ||
+                !deps.random_b64url) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "opaque external invite routes not fully configured"}
+                }.dump());
+                return;
+            }
+
+            std::string login =
+                pqnas::PasswordCredentials::normalize_login(j.value("login", ""));
+            if (login.empty()) {
+                for (int i = 0; i < 24; ++i) {
+                    login = make_external_workspace_temp_login_local(deps);
+                    if (!login.empty() &&
+                        !workspace_external_login_exists_local(deps, login)) {
+                        break;
+                    }
+                    login.clear();
+                }
+            } else if (workspace_external_login_exists_local(deps, login)) {
+                deps.reply_json(res, 409, json{
+                    {"ok", false},
+                    {"error", "login_already_exists"},
+                    {"message", "login already exists"}
+                }.dump());
+                return;
+            }
+
+            if (login.empty() || login.size() > 254) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "failed to generate temporary login"}
+                }.dump());
+                return;
+            }
+
+            pqnas::GeneratedDnaIdentity ident;
+            std::string gen_error;
+            if (!pqnas::generate_dna_identity(ident, gen_error)) {
+                clear_string_best_effort_local(ident.recovery_words);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "identity_generation_failed"},
+                    {"message", gen_error}
+                }.dump());
+                return;
+            }
+
+            const std::string fp_hex = ident.fingerprint_hex;
+            clear_string_best_effort_local(ident.recovery_words);
+
+            if (deps.users->get(fp_hex).has_value()) {
+                deps.reply_json(res, 409, json{
+                    {"ok", false},
+                    {"error", "fingerprint_already_exists"}
+                }.dump());
+                return;
+            }
+
+            const std::string now_iso = deps.now_iso_utc();
+            const std::string display_name =
+                trim_copy_safe(j.value("display_name", std::string{}));
+
+            pqnas::UserRec u;
+            u.fingerprint = fp_hex;
+            u.name = display_name.empty() ? login : display_name;
+            u.role = "user";
+            u.status = "disabled";
+            u.added_at = now_iso;
+            u.last_seen = "";
+            u.notes = "Temporary external workspace OPAQUE account awaiting credential enrollment for " + workspace_id;
+            u.group = "External";
+            u.email = login;
+            u.address = "";
+            u.avatar_url = "";
+            u.storage_state = "unallocated";
+            u.quota_bytes = 0;
+            u.root_rel = "";
+            u.storage_pool_id = "";
+            u.storage_set_at = "";
+            u.storage_set_by = "";
+
+            pqnas::WorkspaceMemberRec member;
+            member.fingerprint = fp_hex;
+            member.role = role;
+            member.status = "enabled";
+            member.member_kind = "external";
+            member.display_name = u.name;
+            member.added_at = now_iso;
+            member.added_by = actor_fp;
+            member.responded_at = now_iso;
+            member.responded_by = actor_fp;
+            pqnas::normalize_workspace_member_v1(&member);
+
+            auto rollback_opaque_external = [&]() {
+                if (deps.workspaces) {
+                    deps.workspaces->remove_member(workspace_id, fp_hex);
+                    deps.workspaces->save(deps.workspaces_path);
+                }
+                if (deps.users) {
+                    deps.users->erase(fp_hex);
+                    deps.users->save(deps.users_path);
+                }
+            };
+
+            if (!deps.users->upsert(u)) {
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "user_create_failed"},
+                    {"message", "failed to create external user"}
+                }.dump());
+                return;
+            }
+
+            if (!deps.workspaces->add_or_update_member(workspace_id, member)) {
+                deps.users->erase(fp_hex);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "member_update_failed"},
+                    {"message", "failed to add external workspace member"}
+                }.dump());
+                return;
+            }
+
+            if (!deps.users->save(deps.users_path)) {
+                deps.workspaces->remove_member(workspace_id, fp_hex);
+                deps.users->erase(fp_hex);
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "users_save_failed"},
+                    {"message", "failed to save external user"}
+                }.dump());
+                return;
+            }
+
+            if (!save_workspaces_or_500(deps, res)) {
+                deps.users->erase(fp_hex);
+                deps.users->save(deps.users_path);
+                return;
+            }
+
+            std::string token = deps.random_b64url(32);
+            if (!workspace_external_is_safe_enrollment_token_local(token)) {
+                rollback_opaque_external();
+                deps.reply_json(res, 500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "opaque setup token rng failed"}
+                }.dump());
+                return;
+            }
+
+            const std::string token_hash = workspace_external_sha256_hex_local(token);
+            const std::string enrollments_path =
+                workspace_external_opaque_enrollments_path_local(deps);
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    workspace_external_opaque_enrollments_file_mu_local());
+
+                std::string lerr;
+                json doc =
+                    workspace_external_load_opaque_enrollments_no_lock_local(
+                        enrollments_path, &lerr);
+                if (!lerr.empty()) {
+                    rollback_opaque_external();
+                    clear_string_best_effort_local(token);
+                    deps.reply_json(res, 500, json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "opaque_enrollments_load_failed"},
+                        {"detail", lerr}
+                    }.dump());
+                    return;
+                }
+
+                workspace_external_prune_opaque_enrollments_doc_local(doc, now);
+
+                doc["tokens"].push_back(json{
+                    {"token_hash", token_hash},
+                    {"login", login},
+                    {"fingerprint", fp_hex},
+                    {"purpose", "new_user"},
+                    {"created_by_fp", actor_fp},
+                    {"user_status_at_issue", u.status},
+                    {"created_at", now},
+                    {"expires_at", invite_expires_at},
+                    {"used_at", 0},
+                    {"enable_user_on_finish", true}
+                });
+
+                std::string serr;
+                if (!workspace_external_save_opaque_enrollments_no_lock_local(
+                        enrollments_path, doc, &serr)) {
+                    rollback_opaque_external();
+                    clear_string_best_effort_local(token);
+                    deps.reply_json(res, 500, json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "opaque_enrollments_save_failed"},
+                        {"detail", serr}
+                    }.dump());
+                    return;
+                }
+            }
+
+            const std::string setup_path =
+                std::string("/static/opaque-enroll.html?token=") +
+                (deps.url_encode ? deps.url_encode(token) : token);
+            const std::string setup_url =
+                (deps.origin ? *deps.origin : std::string{}) + setup_path;
+            const std::string access_url =
+                (deps.origin ? *deps.origin : std::string{}) +
+                "/static/external_workspace.html?workspace_id=" +
+                (deps.url_encode ? deps.url_encode(workspace_id) : workspace_id);
+
+            audit_invite_event(deps, "workspace.external_opaque_invite_created", "ok", {
+                {"workspace_id", workspace_id},
+                {"role", role},
+                {"actor_fp", actor_fp},
+                {"external_fp", fp_hex},
+                {"login", login}
+            });
+
+            json response_json = json::object();
+            response_json["ok"] = true;
+            response_json["invite"] = json{
+                {"workspace_id", workspace_id},
+                {"role", role},
+                {"status", "pending_opaque_setup"},
+                {"accepted_fingerprint", fp_hex},
+                {"expires_at_epoch", invite_expires_at}
+            };
+            response_json["member"] = workspace_member_public_json(member);
+            response_json["opaque_invite"] = json{
+                {"login", login},
+                {"temporary", true},
+                {"expires_at_epoch", invite_expires_at},
+                {"fingerprint", fp_hex},
+                {"setup_url", setup_url},
+                {"setup_path", setup_path},
+                {"token_shown_once", true},
+                {"member_access_url", access_url}
+            };
+
+            std::string response_body = response_json.dump();
+            deps.reply_json(res, 200, response_body);
+            clear_string_best_effort_local(response_body);
+            clear_string_best_effort_local(token);
             return;
         }
 
