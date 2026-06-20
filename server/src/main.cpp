@@ -112,6 +112,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_workspace_external_sessions.h"
 #include "routes_workspace_external_invites.h"
 #include "routes_workspaces_files.h"
+#include "routes_workspace_links.h"
 //storage health
 #include "drive_health.h"
 #include "drive_health_monitor.h"
@@ -22850,6 +22851,7 @@ LIMIT 2000;
     };
 
     pqnas::register_workspace_file_routes(srv, ws_file_deps);
+    pqnas::register_workspace_link_routes(srv, ws_file_deps);
 
 pqnas::WorkspaceExternalInviteRouteDeps ws_external_invite_deps;
 ws_external_invite_deps.users = &users;

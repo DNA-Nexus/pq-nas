@@ -1010,6 +1010,32 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return `/api/v4/files/mkdir?path=${encodeURIComponent(path || "")}`;
   }
 
+  function currentWorkspaceIdForLinks() {
+    if (window.PQNAS_FILEMGR &&
+        typeof window.PQNAS_FILEMGR.isWorkspaceScope === "function" &&
+        window.PQNAS_FILEMGR.isWorkspaceScope() &&
+        typeof window.PQNAS_FILEMGR.getWorkspaceId === "function") {
+      return String(window.PQNAS_FILEMGR.getWorkspaceId() || "").trim();
+    }
+
+    return "";
+  }
+
+  function workspaceLinksEnabledHere() {
+    return !!currentWorkspaceIdForLinks();
+  }
+
+  function workspaceLinksListUrl(path) {
+    const qs = new URLSearchParams();
+    qs.set("workspace_id", currentWorkspaceIdForLinks());
+    qs.set("path", normalizeDeepLinkPath(path || ""));
+    return `/api/v4/workspaces/files/links/list?${qs.toString()}`;
+  }
+
+  function workspaceLinksMutationUrl(action) {
+    return `/api/v4/workspaces/files/links/${action}`;
+  }
+
   function apiPutUrl(path, overwrite) {
     const api = fmApi();
     if (api && typeof api.putUrl === "function") return api.putUrl(path || "", !!overwrite);
@@ -1100,6 +1126,152 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const d = new Date(unix * 1000);
     return d.toISOString().replace("T", " ").replace("Z", "");
   }
+
+  function workspaceLinkUrlValidationError(value) {
+    const url = String(value || "").trim();
+
+    if (!url) return tr("filemgr.link.url_required", null, "URL is required.");
+    if (url.length > 2048) return tr("filemgr.link.url_too_long", null, "URL is too long.");
+    if (/[\r\n\0]/.test(url)) return tr("filemgr.link.url_control_chars", null, "URL contains invalid control characters.");
+
+    if (url.startsWith("/")) {
+      if (url.startsWith("//")) return tr("filemgr.link.url_protocol_relative", null, "Protocol-relative URLs are not allowed.");
+      if (url.includes("\\")) return tr("filemgr.link.url_backslash", null, "Backslashes are not allowed in internal URLs.");
+      return "";
+    }
+
+    if (url.startsWith("http://") || url.startsWith("https://")) return "";
+
+    return tr("filemgr.link.url_invalid", null, "Use http://, https://, or an internal /path URL.");
+  }
+
+  function workspaceLinkTypeLabel(item) {
+    const t = String(item && item.detected_type || "").toLowerCase();
+
+    if (t === "photo_gallery_share") {
+      return tr("filemgr.link.type_photo_gallery_share", null, "Photo Gallery album");
+    }
+
+    if (t === "web_link") {
+      return tr("filemgr.link.type_web_link", null, "Web link");
+    }
+
+    if (t === "internal_link") {
+      return tr("filemgr.link.type_internal_link", null, "DNA-Nexus link");
+    }
+
+    return tr("filemgr.link.type_link", null, "Link");
+  }
+
+  function workspaceLinkGlyph(item) {
+    const t = String(item && item.detected_type || "").toLowerCase();
+
+    if (t === "photo_gallery_share") return "🖼️";
+    if (t === "web_link") return "🌐";
+    return "🔗";
+  }
+
+  function workspaceLinkDisplayUrl(item) {
+    const raw = String(item && item.url || "").trim();
+    if (!raw) return "";
+
+    if (raw.startsWith("/")) return raw;
+
+    try {
+      const u = new URL(raw);
+      return u.hostname || raw;
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  function inferWorkspaceLinkName(url) {
+    const raw = String(url || "").trim();
+
+    if (!raw) return tr("filemgr.link.default_name", null, "New link");
+
+    if (raw.startsWith("/")) {
+      const parts = raw.split("/").filter(Boolean);
+      const last = parts.length ? parts[parts.length - 1] : "";
+      return last || tr("filemgr.link.internal_default_name", null, "DNA-Nexus link");
+    }
+
+    try {
+      const u = new URL(raw);
+      return u.hostname || tr("filemgr.link.default_name", null, "New link");
+    } catch (_) {
+      return tr("filemgr.link.default_name", null, "New link");
+    }
+  }
+
+  async function fetchWorkspaceLinksForSnapshot(snap, opts = {}) {
+    if (!snap || !snap.inWorkspace || !snap.workspaceId) return [];
+
+    const url = workspaceLinksListUrl(snap.path || "");
+    const r = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Accept": "application/json" },
+      signal: opts.signal
+    });
+
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.ok || !Array.isArray(j.links)) {
+      const msg = j && (j.message || j.error) ? `${j.error || ""} ${j.message || ""}`.trim() : `HTTP ${r.status}`;
+      throw new Error(msg);
+    }
+
+    return j.links
+        .filter((it) => it && typeof it === "object")
+        .map((it) => ({
+          ...it,
+          type: "link",
+          size_bytes: 0
+        }));
+  }
+
+  async function postWorkspaceLinkMutation(action, body) {
+    const r = await fetch(workspaceLinksMutationUrl(action), {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body || {})
+    });
+
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.ok) {
+      const msg = j && (j.message || j.error || j.detail)
+          ? [j.error, j.message, j.detail].filter(Boolean).join(" ")
+          : `HTTP ${r.status}`;
+      throw new Error(msg || `HTTP ${r.status}`);
+    }
+
+    return j;
+  }
+
+  function openWorkspaceLink(item) {
+    const url = String(item && item.url || "").trim();
+    if (!url) {
+      setBadge("err", "error");
+      status.textContent = tr("filemgr.link.missing_url", null, "Link URL is missing.");
+      return;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function copyWorkspaceLink(item) {
+    const url = String(item && item.url || "").trim();
+    const ok = url ? await copyText(url) : false;
+
+    setBadge(ok ? "ok" : "err", ok ? "ready" : "error");
+    status.textContent = ok
+        ? tr("filemgr.link.copied", null, "Link copied.")
+        : tr("filemgr.link.copy_failed", null, "Failed to copy link.");
+  }
+
   function currentTrashScopeInfo() {
     const inWorkspace =
         window.PQNAS_FILEMGR &&
@@ -5238,6 +5410,186 @@ function describeMoveItems(items) {
     await load(true);
   }
 
+
+  async function openAddWorkspaceLinkDialog(parentPath) {
+    if (!workspaceLinksEnabledHere()) {
+      setBadge("warn", "links");
+      status.textContent = tr("filemgr.link.workspace_only", null, "Links are currently available in workspaces only.");
+      return;
+    }
+
+    if (!requireWritableScopeOrExplain(tr("filemgr.link.add_action", null, "Add link"))) return;
+
+    const parent = normalizeDeepLinkPath(parentPath != null ? parentPath : curPath);
+    const baseShown = parent ? `/${parent}` : "/";
+
+    const url = await fmPromptModal({
+      title: tr("filemgr.link.add_title", null, "Add link"),
+      subtitle: tr("filemgr.link.add_subtitle", { path: baseShown }, `Create a link shortcut in ${baseShown}.`),
+      label: tr("filemgr.link.url_label", null, "URL"),
+      value: "",
+      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal DNA-Nexus /path URL."),
+      confirmText: tr("filemgr.link.next", null, "Next"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      validate(value) {
+        return workspaceLinkUrlValidationError(value);
+      },
+    });
+
+    if (!url) return;
+
+    const defaultName = inferWorkspaceLinkName(url);
+    const name = await fmPromptModal({
+      title: tr("filemgr.link.name_title", null, "Name link"),
+      subtitle: tr("filemgr.link.name_subtitle", null, "Choose the name shown in File Manager."),
+      label: tr("filemgr.link.name_label", null, "Link name"),
+      value: defaultName,
+      help: tr("filemgr.link.name_help", null, "This is only the shortcut name. It does not change the target."),
+      confirmText: tr("filemgr.link.create_confirm", null, "Create link"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      validate(value) {
+        const v = String(value || "").trim();
+        if (!v) return tr("filemgr.link.name_required", null, "Link name is required.");
+        if (v.length > 160) return tr("filemgr.link.name_too_long", null, "Link name is too long.");
+        if (v.includes("/") || v.includes("\\")) return tr("filemgr.link.name_path_separators", null, "Link name cannot contain path separators.");
+        return "";
+      },
+    });
+
+    if (!name) return;
+
+    try {
+      setBadge("warn", "working…");
+      status.textContent = tr("filemgr.link.creating", null, "Creating link…");
+
+      await postWorkspaceLinkMutation("create", {
+        workspace_id: currentWorkspaceIdForLinks(),
+        parent_path: parent,
+        name: String(name || "").trim(),
+        url: String(url || "").trim()
+      });
+
+      setBadge("ok", "ready");
+      status.textContent = tr("filemgr.link.created", null, "Link created.");
+      clearSelection();
+      clearFileListCache();
+      await load(true);
+    } catch (e) {
+      setBadge("err", "error");
+      const msg = String(e && e.message ? e.message : e);
+      status.textContent = tr("filemgr.link.create_failed", { error: msg }, `Create link failed: ${msg}`);
+    }
+  }
+
+  async function editWorkspaceLink(item) {
+    if (!item || item.type !== "link") return;
+    if (!requireWritableScopeOrExplain(tr("filemgr.link.edit_action", null, "Edit link"))) return;
+
+    const nextUrl = await fmPromptModal({
+      title: tr("filemgr.link.edit_title", null, "Edit link"),
+      subtitle: tr("filemgr.link.edit_subtitle", { name: item.name || "" }, `Update ${item.name || "link"}.`),
+      label: tr("filemgr.link.url_label", null, "URL"),
+      value: String(item.url || ""),
+      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal DNA-Nexus /path URL."),
+      confirmText: tr("filemgr.link.next", null, "Next"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      validate(value) {
+        return workspaceLinkUrlValidationError(value);
+      },
+    });
+
+    if (!nextUrl) return;
+
+    const nextName = await fmPromptModal({
+      title: tr("filemgr.link.name_title", null, "Name link"),
+      subtitle: tr("filemgr.link.name_subtitle", null, "Choose the name shown in File Manager."),
+      label: tr("filemgr.link.name_label", null, "Link name"),
+      value: String(item.name || ""),
+      help: tr("filemgr.link.name_help", null, "This is only the shortcut name. It does not change the target."),
+      confirmText: tr("filemgr.link.update_confirm", null, "Update link"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      validate(value) {
+        const v = String(value || "").trim();
+        if (!v) return tr("filemgr.link.name_required", null, "Link name is required.");
+        if (v.length > 160) return tr("filemgr.link.name_too_long", null, "Link name is too long.");
+        if (v.includes("/") || v.includes("\\")) return tr("filemgr.link.name_path_separators", null, "Link name cannot contain path separators.");
+        return "";
+      },
+    });
+
+    if (!nextName) return;
+
+    try {
+      setBadge("warn", "working…");
+      status.textContent = tr("filemgr.link.updating", null, "Updating link…");
+
+      await postWorkspaceLinkMutation("update", {
+        workspace_id: currentWorkspaceIdForLinks(),
+        id: item.link_id || item.id || "",
+        name: String(nextName || "").trim(),
+        url: String(nextUrl || "").trim()
+      });
+
+      setBadge("ok", "ready");
+      status.textContent = tr("filemgr.link.updated", null, "Link updated.");
+      clearSelection();
+      clearFileListCache();
+      await load(true);
+    } catch (e) {
+      setBadge("err", "error");
+      const msg = String(e && e.message ? e.message : e);
+      status.textContent = tr("filemgr.link.update_failed", { error: msg }, `Update link failed: ${msg}`);
+    }
+  }
+
+  async function deleteWorkspaceLink(item) {
+    if (!item || item.type !== "link") return;
+    if (!requireWritableScopeOrExplain(tr("filemgr.link.delete_action", null, "Delete link"))) return;
+
+    const ok = await fmConfirmModal({
+      title: tr("filemgr.link.delete_title", null, "Delete link?"),
+      subtitle: tr("filemgr.link.delete_subtitle", null, "This removes only the shortcut. It does not delete the target."),
+      rows: [
+        {
+          label: tr("filemgr.delete.item", null, "Item"),
+          value: item.name || item.link_id || "",
+          mono: false
+        },
+        {
+          label: tr("filemgr.link.url_label", null, "URL"),
+          value: item.url || "",
+          mono: true
+        }
+      ],
+      note: tr("filemgr.link.delete_note", null, "The original website, album, or share remains unchanged."),
+      confirmText: tr("filemgr.link.delete_confirm", null, "Delete link"),
+      cancelText: tr("filemgr.cancel", null, "Cancel"),
+      danger: true,
+    });
+
+    if (!ok) return;
+
+    try {
+      setBadge("warn", "working…");
+      status.textContent = tr("filemgr.link.deleting", null, "Deleting link…");
+
+      await postWorkspaceLinkMutation("delete", {
+        workspace_id: currentWorkspaceIdForLinks(),
+        id: item.link_id || item.id || ""
+      });
+
+      setBadge("ok", "ready");
+      status.textContent = tr("filemgr.link.deleted", null, "Link deleted.");
+      clearSelection();
+      clearFileListCache();
+      await load(true);
+    } catch (e) {
+      setBadge("err", "error");
+      const msg = String(e && e.message ? e.message : e);
+      status.textContent = tr("filemgr.link.delete_failed", { error: msg }, `Delete link failed: ${msg}`);
+    }
+  }
+
   function expiresSecFromPreset(v) {
     if (v === "1h") return 3600;
     if (v === "24h") return 86400;
@@ -5862,6 +6214,21 @@ function describeMoveItems(items) {
       return;
     }
 
+    if (item.type === "link") {
+      ctxEl.appendChild(menuItem(tr("filemgr.menu.open_link", null, "Open link"), "↗", () => openWorkspaceLink(item)));
+      ctxEl.appendChild(menuItem(tr("filemgr.menu.copy_link", null, "Copy link"), "", () => copyWorkspaceLink(item)));
+
+      if (canWrite) {
+        ctxEl.appendChild(menuSep());
+        ctxEl.appendChild(menuItem(tr("filemgr.menu.edit_link", null, "Edit link…"), "", () => editWorkspaceLink(item)));
+        ctxEl.appendChild(menuItem(tr("filemgr.menu.delete_link", null, "Delete link…"), "🗑", () => deleteWorkspaceLink(item), { danger: true }));
+      }
+
+      ctxEl.setAttribute("aria-hidden", "false");
+      placeMenu(x, y);
+      return;
+    }
+
     if (item.type === "dir") {
       ctxEl.appendChild(menuItem(tr("filemgr.menu.open", null, "Open"), "↩", () => {
         curPath = joinPath(curPath, item.name);
@@ -6066,6 +6433,9 @@ function describeMoveItems(items) {
     if (canWrite) {
       ctxEl.appendChild(menuItem(tr("filemgr.menu.upload_files", null, "Upload files…"), "", () => pickFiles()));
       ctxEl.appendChild(menuItem(tr("filemgr.menu.upload_folder", null, "Upload folder…"), "", () => pickFolder()));
+      if (workspaceLinksEnabledHere()) {
+        ctxEl.appendChild(menuItem(tr("filemgr.menu.add_link", null, "Add link…"), "", () => openAddWorkspaceLinkDialog(curPath)));
+      }
       ctxEl.appendChild(menuSep());
     }
 
@@ -6401,50 +6771,97 @@ function describeMoveItems(items) {
   }
 
   function tile(item) {
-    const key = `${item.type}:${item.name}`;
+    const key = item.type === "link"
+        ? `link:${item.link_id || item.id || item.name || ""}`
+        : `${item.type}:${item.name}`;
 
     const t = document.createElement("div");
     t.className = "tile";
+    if (item.type === "link") {
+      t.classList.add("linkTile");
+      if (String(item.detected_type || "") === "photo_gallery_share") {
+        t.classList.add("photoAlbumLinkTile");
+      }
+    }
     t.dataset.key = key;
     t.dataset.relPath = currentRelPathFor(item);
-    t.dataset.itemType = item.type === "dir" ? "dir" : "file";
+    t.dataset.itemType = item.type === "link" ? "link" : (item.type === "dir" ? "dir" : "file");
     t.dataset.name = item.name || "";
     t.style.position = "relative";
+
+    const caps = fmCaps();
 
     const icoWrap = document.createElement("div");
     icoWrap.className = "icoWrap";
     icoWrap.setAttribute("aria-hidden", "true");
 
-    const node = getIconNode(iconMarkupFor(item));
-    if (node) icoWrap.appendChild(node);
+    if (item.type === "link") {
+      const preview = document.createElement("div");
+      preview.className = "linkPreview";
 
-    const nm = document.createElement("div");
-    nm.className = "name";
-    nm.textContent = item.name || "(unnamed)";
+      const previewGlyph = document.createElement("div");
+      previewGlyph.className = "linkPreviewGlyph";
+      previewGlyph.textContent = workspaceLinkGlyph(item);
 
-    const meta = document.createElement("div");
-    meta.className = "meta";
+      preview.appendChild(previewGlyph);
 
-    const left = document.createElement("span");
-    left.textContent = item.type === "dir" ? tr("filemgr.list.dir", null, "dir") : fmtSize(item.size_bytes || 0);
+      const nm = document.createElement("div");
+      nm.className = "name linkName";
+      nm.textContent = item.name || tr("filemgr.link.default_name", null, "New link");
 
-    const right = document.createElement("span");
-    right.textContent = fmtTime(item.mtime_unix);
+      const urlLine = document.createElement("div");
+      urlLine.className = "linkUrlLine mono";
+      urlLine.textContent = workspaceLinkDisplayUrl(item);
 
-    meta.appendChild(left);
-    meta.appendChild(right);
+      const meta = document.createElement("div");
+      meta.className = "meta linkMeta";
 
-    const caps = fmCaps();
-    if (caps.favorites !== false) {
-      t.appendChild(makeFavoriteButton(item));
+      const right = document.createElement("span");
+      right.textContent = fmtTime(item.mtime_unix);
+
+      meta.appendChild(right);
+
+      t.appendChild(preview);
+      t.appendChild(nm);
+      t.appendChild(urlLine);
+      t.appendChild(meta);
+    } else {
+      const node = getIconNode(iconMarkupFor(item));
+      if (node) icoWrap.appendChild(node);
+
+      const nm = document.createElement("div");
+      nm.className = "name";
+      nm.textContent = item.name || "(unnamed)";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const left = document.createElement("span");
+      left.textContent = item.type === "dir" ? tr("filemgr.list.dir", null, "dir") : fmtSize(item.size_bytes || 0);
+
+      const right = document.createElement("span");
+      right.textContent = fmtTime(item.mtime_unix);
+
+      meta.appendChild(left);
+      meta.appendChild(right);
+
+      if (caps.favorites !== false) {
+        t.appendChild(makeFavoriteButton(item));
+      }
+      t.appendChild(icoWrap);
+      t.appendChild(nm);
+      t.appendChild(meta);
     }
-    t.appendChild(icoWrap);
-    t.appendChild(nm);
-    t.appendChild(meta);
 
     t.addEventListener("click", (e) => {
       if (marqueeOn) return;
       if (e.target && e.target.closest && e.target.closest(".favBtn")) return;
+
+      if (item.type === "link") {
+        setSingleSelection(key);
+        selectionAnchorKey = key;
+        return;
+      }
 
       const additive = (e.ctrlKey || e.metaKey);
 
@@ -6466,6 +6883,13 @@ function describeMoveItems(items) {
     t.addEventListener("contextmenu", (e) => {
       e.preventDefault();
 
+      if (item.type === "link") {
+        setSingleSelection(key);
+        selectionAnchorKey = key;
+        openMenuAt(e.clientX, e.clientY, item);
+        return;
+      }
+
       if (selectedKeys.size > 1) {
         if (!selectedKeys.has(key)) {
           setSingleSelection(key);
@@ -6483,7 +6907,9 @@ function describeMoveItems(items) {
 
     t.addEventListener("dblclick", (e) => {
       if (e.target && e.target.closest && e.target.closest(".favBtn")) return;
-      if (item.type === "dir") {
+      if (item.type === "link") {
+        openWorkspaceLink(item);
+      } else if (item.type === "dir") {
         curPath = joinPath(curPath, item.name);
         clearSelection();
         load();
@@ -7142,7 +7568,29 @@ function describeMoveItems(items) {
         if (!sameScopeSnapshot(loadSnap, currentScopeSnapshot(loadPath))) return;
       }
 
-      const allItemsRaw = Array.isArray(j.items) ? j.items.slice() : [];
+      let allItemsRaw = Array.isArray(j.items) ? j.items.slice() : [];
+
+      if (loadSnap.inWorkspace && loadSnap.workspaceId) {
+        try {
+          const linkSnap = {
+            ...loadSnap,
+            path: curPath,
+            workspaceId: loadSnap.workspaceId,
+            inWorkspace: true
+          };
+          const linkItems = await fetchWorkspaceLinksForSnapshot(linkSnap, {
+            signal: controller.signal
+          });
+
+          if (controller.signal.aborted) return;
+          if (mySeq !== loadSeq) return;
+          if (!sameScopeSnapshot(loadSnap, currentScopeSnapshot(loadPath))) return;
+
+          allItemsRaw = allItemsRaw.concat(linkItems);
+        } catch (e) {
+          console.warn("Workspace links load failed:", e);
+        }
+      }
 
       const allItems = sorter
           ? sorter.sortItems(allItemsRaw, {
@@ -7151,7 +7599,10 @@ function describeMoveItems(items) {
             isFavoriteItem
           })
           : allItemsRaw.sort((a, b) => {
-            if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+            const rank = (it) => it && it.type === "dir" ? 0 : (it && it.type === "link" ? 2 : 1);
+            const ar = rank(a);
+            const br = rank(b);
+            if (ar !== br) return ar - br;
             return String(a.name || "").localeCompare(String(b.name || ""));
           });
 
