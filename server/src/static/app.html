@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>DNA-Nexus NAS</title>
+    <title data-brand-title="">DNA-Nexus NAS</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
 
     <link rel="stylesheet" href="/static/theme.css">
@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/shell_menu.css?v=20260507-shell-clean-1">
     <script src="/static/theme.js"></script>
     <script src="/static/i18n.js?v=20260518-shell-i18n-1"></script>
+    <script src="/static/branding.js?v=20260620-branding-ui-1"></script>
     <link rel="stylesheet" href="/static/people.css?v=20260516-people-selected-visibility-1">
     <link rel="stylesheet" href="/static/node_profile.css?v=20260529-node-profile-4">
 
@@ -541,8 +542,8 @@
 <div class="desktop">
     <aside class="sidebar">
         <div class="brand">
-            <button class="brandLogoButton" id="nodeProfileButton" type="button" aria-label="Open DNA-Nexus node profile" title="Open node profile">
-                <img class="brandLogo" id="brandLogo" src="/static/img/logo/nexuslogo_text.svg" alt="DNA-Nexus logo">
+            <button class="brandLogoButton" id="nodeProfileButton" type="button" aria-label="Open DNA-Nexus node profile" data-brand-aria-label="product_node_profile" title="Open node profile">
+                <img class="brandLogo" id="brandLogo" src="/static/img/logo/nexuslogo_text.svg" alt="DNA-Nexus logo" data-brand-logo="theme" data-brand-logo-fallback="/static/img/logo/nexuslogo_text.svg" data-brand-alt="product_logo">
             </button>
         </div>
 
@@ -629,7 +630,7 @@
             </aside>
         </div>
 
-        <div class="footerline">© CPUNK 2026 • DNA-Nexus</div>
+        <div class="footerline" data-brand-text="copyright">© CPUNK 2026 • DNA-Nexus</div>
     </main>
 </div>
 
@@ -649,6 +650,11 @@
         var LOGO_SRC = "/static/img/logo/nexuslogo_text.svg";
 
         function applyBrandLogo() {
+            if (window.PQNAS_BRANDING && window.PQNAS_BRANDING.isEnabled()) {
+                window.PQNAS_BRANDING.apply(document);
+                return;
+            }
+
             var img = document.getElementById("brandLogo");
             if (!img) return;
 

@@ -85,6 +85,25 @@
         }
     }
 
+    function applyLoginBranding() {
+        const api = window.PQNAS_BRANDING;
+        if (!api) return;
+
+        if (typeof api.apply === "function") {
+            api.apply(document);
+        }
+
+        if (typeof api.ready === "function") {
+            api.ready()
+                .then(() => {
+                    if (typeof api.apply === "function") {
+                        api.apply(document);
+                    }
+                })
+                .catch(() => {});
+        }
+    }
+
     function setBusy(isBusy) {
         document.body.classList.toggle("busy", !!isBusy);
     }
@@ -173,7 +192,7 @@
 
         card.innerHTML = `
             <div class="loginMark">
-                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
+                <div class="pq-badge loginMarkBadge" data-brand-text="product_short_name">DNA-Nexus</div>
             </div>
 
             <h1 data-i18n="auth.login.title">Sign in</h1>
@@ -182,11 +201,12 @@
                 Use your DNA-Nexus username or email address.
             </div>
 
-            <div class="presentationLinkWrap">
+            <div class="presentationLinkWrap" data-brand-hide-if-presentation-disabled>
                 <a class="presentationLink"
                    href="/static/nexus-presentation/index.html"
                    target="_blank"
                    rel="noopener"
+                   data-brand-presentation-link
                    data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
             </div>
 
@@ -221,7 +241,7 @@
 
             <div id="status" class="status" data-i18n="auth.login.ready">Ready.</div>
 
-            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© CPUNK 2026 · DNA-Nexus</div>
         `;
 
         const form = el("passwordLoginForm");
@@ -229,6 +249,7 @@
         const passwordInput = el("passwordLoginPassword");
 
         applyStaticI18n();
+        applyLoginBranding();
 
         if (loginInput) loginInput.focus();
 
@@ -366,7 +387,7 @@
 
         card.innerHTML = `
             <div class="loginMark">
-                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
+                <div class="pq-badge loginMarkBadge" data-brand-text="product_short_name">DNA-Nexus</div>
             </div>
 
             <h1 data-i18n="auth.opaque.title">Zero-knowledge sign in</h1>
@@ -375,11 +396,12 @@
                 Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.
             </div>
 
-            <div class="presentationLinkWrap">
+            <div class="presentationLinkWrap" data-brand-hide-if-presentation-disabled>
                 <a class="presentationLink"
                    href="/static/nexus-presentation/index.html"
                    target="_blank"
                    rel="noopener"
+                   data-brand-presentation-link
                    data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
             </div>
 
@@ -418,7 +440,7 @@
 
             <div id="status" class="status" data-i18n="auth.opaque.ready">OPAQUE login ready.</div>
 
-            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© CPUNK 2026 · DNA-Nexus</div>
         `;
 
         const form = el("opaqueLoginForm");
@@ -427,6 +449,7 @@
         const button = el("opaqueLoginButton");
 
         applyStaticI18n();
+        applyLoginBranding();
 
         try {
             const saved =
