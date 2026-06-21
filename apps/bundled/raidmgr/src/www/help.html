@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title data-i18n="raidmgr.help.page_title">PQ-NAS • Storage Manager Help</title>
+    <title data-i18n="raidmgr.help.page_title">Storage Manager Help</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
 
     <link rel="stylesheet" href="/static/theme.css">
@@ -103,14 +103,14 @@
     <div class="hero">
         <div>
             <h1 class="title" data-i18n="raidmgr.help.title">Storage Manager Help</h1>
-            <div class="sub" data-i18n="raidmgr.help.subtitle">Manage storage pools, slots, drives, and RAID mode in PQ-NAS.</div>
+            <div class="sub" data-i18n="raidmgr.help.subtitle">Manage storage pools, slots, drives, and RAID mode on this server.</div>
         </div>
     </div>
 
     <div class="card">
         <h2 data-i18n="raidmgr.help.what_title">What this page is for</h2>
         <p>
-            Storage Manager is used to create and maintain storage pools in PQ-NAS.
+            Storage Manager is used to create and maintain storage pools on this server.
             It shows all pools, their slots, current member drives, usage summary, and management actions.
         </p>
     </div>
@@ -118,7 +118,7 @@
     <div class="card">
         <h2 data-i18n="raidmgr.help.actions_title">Main actions</h2>
         <ul>
-            <li data-i18n="raidmgr.help.action_create_pool">Create new pool creates a new editable PQ-NAS pool.</li>
+            <li data-i18n="raidmgr.help.action_create_pool">Create new pool creates a new editable storage pool.</li>
             <li data-i18n="raidmgr.help.action_edit_slots">Edit slots changes the saved slot layout and pool mode metadata.</li>
             <li data-i18n="raidmgr.help.action_add_slot">Add slot adds one more empty visible slot.</li>
             <li data-i18n="raidmgr.help.action_remove_slot">Remove empty slot removes one unused empty slot.</li>
@@ -126,14 +126,14 @@
             <li data-i18n="raidmgr.help.action_remove_drive">Remove drive removes a current member drive from the pool.</li>
             <li data-i18n="raidmgr.help.action_rename">Rename changes the display name of the pool.</li>
             <li data-i18n="raidmgr.help.action_convert">Convert RAID converts between single and raid1.</li>
-            <li data-i18n="raidmgr.help.action_destroy">Destroy removes the pool from PQ-NAS and can optionally wipe member drives.</li>
+            <li data-i18n="raidmgr.help.action_destroy">Destroy removes the pool from server configuration and can optionally wipe member drives.</li>
         </ul>
     </div>
 
     <div class="card">
         <h2 data-i18n="raidmgr.help.slots_title">Slots vs member drives</h2>
         <p>
-            Slots are the saved PQ-NAS layout. Member drives are the drives currently attached to the live Btrfs pool.
+            Slots are the saved storage layout. Member drives are the drives currently attached to the live Btrfs pool.
         </p>
         <p>
             These can temporarily differ. When they differ, Pool Manager shows a pending layout state.

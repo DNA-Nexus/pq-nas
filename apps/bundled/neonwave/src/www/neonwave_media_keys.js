@@ -108,7 +108,7 @@
 
         const title = t.name || String(t.path || "").split("/").pop() || "NeonWave";
         const artist = "NeonWave";
-        const album = String(t.path || "").split("/").slice(-2, -1)[0] || "DNA-Nexus";
+        const album = String(t.path || "").split("/").slice(-2, -1)[0] || "Unknown album";
 
         const artwork = [];
         if (t.cover) {

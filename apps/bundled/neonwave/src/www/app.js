@@ -508,7 +508,7 @@
             raw = j.files;
         }
 
-        // Hide PQ-NAS private/app metadata directories from Neonwave.
+        // Hide private/app metadata directories from NeonWave.
         // Examples: .pqnas_activity, .pqnas_echostack, .pqnas_photogallery
         return filterInternalPqnasNeonwaveItems(raw);
     }

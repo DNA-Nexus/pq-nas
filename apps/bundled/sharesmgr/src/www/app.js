@@ -396,7 +396,7 @@
                 if (r.status === 403) {
                     statusLine.textContent = sharesT("sharesmgr.not_allowed", null, "Not allowed (403). This app needs share list access for your account.");
                 } else if (r.status === 401) {
-                    statusLine.textContent = sharesT("sharesmgr.not_signed_in", null, "Not signed in (401). Open PQ-NAS and sign in.");
+                    statusLine.textContent = sharesT("sharesmgr.not_signed_in", null, "Not signed in (401). Open the main app and sign in.");
                 } else {
                     statusLine.textContent = sharesT("sharesmgr.failed_to_load_status", { status: r.status }, "Failed to load shares ({status}).");
                 }

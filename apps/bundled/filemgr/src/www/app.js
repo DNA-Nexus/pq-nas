@@ -950,7 +950,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const rawPath = String(item.path || item.rel || item.rel_path || "").trim();
     const leaf = (rawName || rawPath).split("/").filter(Boolean).pop() || "";
 
-    // Hide PQ-NAS owned per-user/app metadata folders from normal File Manager.
+    // Hide application-owned per-user/app metadata folders from normal File Manager.
     // Do not hide all dotfiles; user-created .env/.ssh/etc. may be legitimate.
     return leaf === ".pqnas_activity" ||
            leaf === ".pqnas_echostack" ||
@@ -1157,7 +1157,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     if (t === "internal_link") {
-      return tr("filemgr.link.type_internal_link", null, "DNA-Nexus link");
+      return tr("filemgr.link.type_internal_link", null, "Internal link");
     }
 
     return tr("filemgr.link.type_link", null, "Link");
@@ -1193,7 +1193,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (raw.startsWith("/")) {
       const parts = raw.split("/").filter(Boolean);
       const last = parts.length ? parts[parts.length - 1] : "";
-      return last || tr("filemgr.link.internal_default_name", null, "DNA-Nexus link");
+      return last || tr("filemgr.link.internal_default_name", null, "Internal link");
     }
 
     try {
@@ -2153,7 +2153,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       <div class="fmUploadProgressCard" role="dialog" aria-modal="true" aria-labelledby="fmUploadProgressTitle">
         <div class="fmUploadProgressHead">
           <div>
-            <div class="fmUploadProgressKicker">DNA-Nexus upload</div>
+            <div class="fmUploadProgressKicker">Upload</div>
             <h2 id="fmUploadProgressTitle">Uploading files</h2>
             <p id="fmUploadProgressSub">Preparing upload…</p>
           </div>
@@ -2206,7 +2206,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const cancel = backdrop.querySelector("#fmUploadProgressCancel");
     const cancelTop = backdrop.querySelector("#fmUploadProgressCancelTop");
 
-    if (kicker) kicker.textContent = tr("filemgr.upload.kicker", null, "DNA-Nexus upload");
+    if (kicker) kicker.textContent = tr("filemgr.upload.kicker", null, "Upload");
     if (title) title.textContent = tr("filemgr.upload.title", null, "Uploading files");
     if (close) close.textContent = tr("filemgr.upload.close", null, "Close");
     if (cancel) cancel.textContent = tr("filemgr.upload.cancel_upload", null, "Cancel upload");
@@ -2629,7 +2629,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (errLike && errLike.kind === "file_exists") return "File already exists";
     if (low.includes("file already exists")) return "File already exists";
     if (isUploadQuotaError(errLike)) return "Quota exceeded";
-    if (http === 400 || low.includes("gateway") || low.includes("before pq-nas")) return "Gateway rejected before PQ-NAS";
+    if (http === 400 || low.includes("gateway") || low.includes("before pq-nas")) return "Gateway rejected before server";
     if (http === 413 || low.includes("too large")) return "Quota/upload limit exceeded";
     if (http >= 400) return `Upload failed (HTTP ${http})`;
     return "Upload failed";
@@ -3089,7 +3089,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           reject(Object.assign(
             new Error(
               `Workspace quota/upload limit exceeded. This large file is ${fmtSize(size)}. ` +
-              `Workspace uploads are not chunked yet, so the request can fail before PQ-NAS returns a normal error.`
+              `Workspace uploads are not chunked yet, so the request can fail before the server returns a normal error.`
             ),
             {
               kind: "workspace_large_upload_not_chunked_yet",
@@ -3457,7 +3457,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const isHardStop =
             (summary === "Quota exceeded") ||
             (summary === "Quota/upload limit exceeded") ||
-            (summary === "Gateway rejected before PQ-NAS");
+            (summary === "Gateway rejected before server");
 
         const pct = isHardStop ? 100 : (uploadedBytesCommitted / totalBytes) * 100;
 
@@ -5428,7 +5428,7 @@ function describeMoveItems(items) {
       subtitle: tr("filemgr.link.add_subtitle", { path: baseShown }, `Create a link shortcut in ${baseShown}.`),
       label: tr("filemgr.link.url_label", null, "URL"),
       value: "",
-      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal DNA-Nexus /path URL."),
+      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal /path URL."),
       confirmText: tr("filemgr.link.next", null, "Next"),
       cancelText: tr("filemgr.cancel", null, "Cancel"),
       validate(value) {
@@ -5490,7 +5490,7 @@ function describeMoveItems(items) {
       subtitle: tr("filemgr.link.edit_subtitle", { name: item.name || "" }, `Update ${item.name || "link"}.`),
       label: tr("filemgr.link.url_label", null, "URL"),
       value: String(item.url || ""),
-      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal DNA-Nexus /path URL."),
+      help: tr("filemgr.link.url_help", null, "Use https://, http://, or an internal /path URL."),
       confirmText: tr("filemgr.link.next", null, "Next"),
       cancelText: tr("filemgr.cancel", null, "Cancel"),
       validate(value) {

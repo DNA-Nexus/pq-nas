@@ -786,7 +786,7 @@ html[data-theme="bright"] .raidPromptInput{
         const label = String(p?.label || "").trim();     // btrfs label
         const mount = String(p?.mount || "").trim();
 
-        if (disp) return disp;   // PQ-NAS display name (user-friendly)
+        if (disp) return disp;   // Saved display name (user-friendly)
         if (label) return label; // fallback to btrfs label
         if (mount) {
             const parts = mount.replace(/\/+$/, "").split("/");
@@ -800,7 +800,7 @@ html[data-theme="bright"] .raidPromptInput{
         const label = String(p?.label || "").trim();     // btrfs label
         const mount = String(p?.mount || "").trim();
 
-        if (disp) return disp;   // PQ-NAS display name (user-friendly)
+        if (disp) return disp;   // Saved display name (user-friendly)
         if (label) return label; // fallback to btrfs label
         if (mount) {
             const parts = mount.replace(/\/+$/, "").split("/");
@@ -3757,7 +3757,7 @@ Tip: these are the Btrfs member devices that form this pool.
   <button class="btn" type="button" data-pool-action="apply-layout" data-mount="${esc(mount)}">${esc(tr("raidmgr.action.apply_layout", null, "Apply layout"))}</button>
 </div>
       <div class="pqPoolNote">
-  ${pendingHtml ? esc(tr("raidmgr.note.layout_differs", null, "Saved slot layout differs from current Btrfs membership. This can be normal for test pools or after manual device changes. Use Apply layout only when you want PQ-NAS to make Btrfs match the saved slot layout.")) : esc(tr("raidmgr.note.layout_matches", null, "Saved slot layout matches the current pool membership."))}
+  ${pendingHtml ? esc(tr("raidmgr.note.layout_differs", null, "Saved slot layout differs from current Btrfs membership. This can be normal for test pools or after manual device changes. Use Apply layout only when you want the server to make Btrfs match the saved slot layout.")) : esc(tr("raidmgr.note.layout_matches", null, "Saved slot layout matches the current pool membership."))}
 </div>
     ` : `
       <div class="pqPoolNote">${esc(tr("raidmgr.note.system_volume", null, "This is a detected Btrfs system volume. It is shown for visibility, not managed as a normal pool."))}</div>
@@ -4379,7 +4379,7 @@ ${rows}
 
   <div class="card" style="margin-top:10px;">
     <div class="v" style="opacity:.9; white-space:pre-line;">
-${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and remove it from PQ-NAS pools config. Optionally it can wipe member disks (VERY destructive)."))}
+${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and remove it from server pool configuration. Optionally it can wipe member disks (VERY destructive)."))}
     </div>
 
     <div style="margin-top:12px;">
@@ -4396,7 +4396,7 @@ ${esc(tr("raidmgr.destroy.warning_body", null, "This will unmount the pool and r
         <span class="v" style="opacity:.95;">${esc(tr("raidmgr.destroy.wipe_label", null, "Wipe member disks (destructive)"))}</span>
       </label>
       <div class="v" style="opacity:.75; margin-top:6px;">
-        ${esc(tr("raidmgr.destroy.wipe_help", null, "When ON, PQ-NAS will wipefs/sgdisk each member device after unmount."))}
+        ${esc(tr("raidmgr.destroy.wipe_help", null, "When ON, the server will wipefs/sgdisk each member device after unmount."))}
       </div>
     </div>
 
@@ -5284,11 +5284,11 @@ ${esc(JSON.stringify({ http: lp.http, error: lp.error, json: lp.j || null, txt: 
               </div>
             
               <div class="v" style="opacity:.78; margin-top:10px; line-height:1.45;">
-                ${esc(tr("raidmgr.no_managed_body2", null, "This usually means DNA-Nexus server is currently using a single storage volume, or Btrfs pool mounts have not been created / mounted yet."))}
+                ${esc(tr("raidmgr.no_managed_body2", null, "This usually means the server is currently using a single storage volume, or Btrfs pool mounts have not been created / mounted yet."))}
               </div>
             
               <div class="v" style="opacity:.78; margin-top:10px; line-height:1.45;">
-                ${esc(tr("raidmgr.no_managed_body3_prefix", null, "System storage may still be"))} <span class="mono">${esc(rootFs)}</span>, ${esc(tr("raidmgr.no_managed_body3_suffix", null, "and that is fine. What matters here is whether DNA-Nexus server has managed Btrfs pools available."))}
+                ${esc(tr("raidmgr.no_managed_body3_prefix", null, "System storage may still be"))} <span class="mono">${esc(rootFs)}</span>, ${esc(tr("raidmgr.no_managed_body3_suffix", null, "and that is fine. What matters here is whether the server has managed Btrfs pools available."))}
               </div>
             
               <div class="v" style="opacity:.72; margin-top:10px;">
