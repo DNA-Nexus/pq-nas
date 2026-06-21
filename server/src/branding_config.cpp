@@ -68,6 +68,7 @@ BrandingConfig load_branding_config() {
 
     cfg.logo_dark = json_string_or(j, "logo_dark", cfg.logo_dark);
     cfg.logo_bright = json_string_or(j, "logo_bright", cfg.logo_bright);
+    cfg.logo_wordmark = json_string_or(j, "logo_wordmark", cfg.logo_wordmark);
     cfg.favicon = json_string_or(j, "favicon", cfg.favicon);
 
     cfg.primary_color = json_string_or(j, "primary_color", cfg.primary_color);
@@ -80,7 +81,8 @@ BrandingConfig load_branding_config() {
     if (cfg.product_short_name.empty()) cfg.product_short_name = "DNA-Nexus";
     if (cfg.company_name.empty()) cfg.company_name = "CPUNK";
     if (cfg.logo_dark.empty()) cfg.logo_dark = "/static/img/logo/Nexus_logo_dark.png";
-    if (cfg.logo_bright.empty()) cfg.logo_bright = "/static/img/logo/nexuslogo_text.svg";
+    if (cfg.logo_bright.empty()) cfg.logo_bright = "/static/img/logo/Nexus_logo_bright.png";
+    if (cfg.logo_wordmark.empty()) cfg.logo_wordmark = "/static/img/logo/nexuslogo_text.svg";
 
     return cfg;
 }
@@ -96,6 +98,7 @@ nlohmann::json branding_config_public_json(const BrandingConfig& cfg) {
         {"hide_upstream_brand", cfg.hide_upstream_brand},
         {"logo_dark", cfg.logo_dark},
         {"logo_bright", cfg.logo_bright},
+        {"logo_wordmark", cfg.logo_wordmark},
         {"favicon", cfg.favicon},
         {"primary_color", cfg.primary_color},
         {"accent_color", cfg.accent_color},

@@ -18,7 +18,8 @@
         copyright: "© CPUNK 2026 · DNA-Nexus",
         hide_upstream_brand: false,
         logo_dark: "/static/img/logo/Nexus_logo_dark.png",
-        logo_bright: "/static/img/logo/nexuslogo_text.svg",
+        logo_bright: "/static/img/logo/Nexus_logo_bright.png",
+        logo_wordmark: "/static/img/logo/nexuslogo_text.svg",
         favicon: "/static/favicon.ico",
         primary_color: "",
         accent_color: "",
@@ -48,6 +49,7 @@
 
         out.logo_dark = cleanString(raw.logo_dark, out.logo_dark) || out.logo_dark;
         out.logo_bright = cleanString(raw.logo_bright, out.logo_bright) || out.logo_bright;
+        out.logo_wordmark = cleanString(raw.logo_wordmark, out.logo_wordmark) || out.logo_wordmark;
         out.favicon = cleanString(raw.favicon, out.favicon) || out.favicon;
 
         out.primary_color = cleanString(raw.primary_color, "");
@@ -197,7 +199,17 @@
 
         root.querySelectorAll("img[data-brand-logo]").forEach((img) => {
             const fallback = img.getAttribute("data-brand-logo-fallback") || img.getAttribute("src") || "";
-            const src = pickLogoForTheme(theme, fallback);
+            const mode = img.getAttribute("data-brand-logo") || "theme";
+
+            let src = "";
+            if (mode === "wordmark") {
+                src = brand.enabled
+                    ? (brand.logo_wordmark || fallback || DEFAULT_BRAND.logo_wordmark)
+                    : (fallback || DEFAULT_BRAND.logo_wordmark);
+            } else {
+                src = pickLogoForTheme(theme, fallback);
+            }
+
             if (src && img.getAttribute("src") !== src) {
                 img.setAttribute("src", src);
             }

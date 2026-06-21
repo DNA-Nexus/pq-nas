@@ -5,12 +5,13 @@
   "company_name": "Operator Ltd",
   "copyright": "© Operator Ltd",
   "hide_upstream_brand": true,
-  "logo_dark": "/static/branding/logo-dark.png",
-  "logo_bright": "/static/branding/logo-bright.png",
+  "logo_dark": "/static/img/logo/Nexus_logo_dark.png",
+  "logo_bright": "/static/img/logo/Nexus_logo_bright.png",
   "favicon": "/static/branding/favicon.png",
   "primary_color": "#0057b8",
   "accent_color": "#00a3e0",
   "support_url": "",
   "presentation_url": "",
-  "show_presentation_link": false
+  "show_presentation_link": false,
+  "logo_wordmark": "/static/img/logo/nexuslogo_text.svg"
 }

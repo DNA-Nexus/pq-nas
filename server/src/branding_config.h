@@ -15,7 +15,8 @@ struct BrandingConfig {
     bool hide_upstream_brand = false;
 
     std::string logo_dark = "/static/img/logo/Nexus_logo_dark.png";
-    std::string logo_bright = "/static/img/logo/nexuslogo_text.svg";
+    std::string logo_bright = "/static/img/logo/Nexus_logo_bright.png";
+    std::string logo_wordmark = "/static/img/logo/nexuslogo_text.svg";
     std::string favicon = "/static/favicon.ico";
 
     std::string primary_color;

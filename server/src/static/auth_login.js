@@ -433,11 +433,6 @@
 
                 <button id="opaqueLoginButton" type="submit" data-i18n="auth.login.sign_in_button">Sign in</button>
             </form>
-
-            <div class="hint" data-i18n="auth.opaque.no_password_fallback_hint">
-                This page never falls back to sending your password to the server.
-            </div>
-
             <div id="status" class="status" data-i18n="auth.opaque.ready">OPAQUE login ready.</div>
 
             <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© Server 2026</div>
