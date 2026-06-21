@@ -1818,8 +1818,8 @@
   "dropzone.create_link": "Luo linkki",
   "dropzone.created_title": "Drop Zone luotu",
   "dropzone.default_brand.button_text": "Lähetä tiedostot",
-  "dropzone.default_brand.description": "Lataa tiedostot suoraan turvalliselle DNA-Nexus-palvelimellemme.",
-  "dropzone.default_brand.footer_text": "Suojattu DNA-Nexuksella",
+  "dropzone.default_brand.description": "Lataa tiedostot suoraan turvalliseen latauspalveluumme.",
+  "dropzone.default_brand.footer_text": "Suojattu lataus",
   "dropzone.default_brand.title": "Lähetä tiedostot turvallisesti",
   "dropzone.default_destination": "Saapuvat/Drop Zonet/Drop Zone",
   "dropzone.default_name": "Drop Zone",
@@ -4874,5 +4874,11 @@
   "filemgr.link.type_photo_gallery_share": "Photo Gallery -albumi",
   "filemgr.link.type_web_link": "Nettisivulinkki",
   "filemgr.link.type_internal_link": "DNA-Nexus-linkki",
-  "filemgr.link.type_link": "Linkki"
+  "filemgr.link.type_link": "Linkki",
+  "dropzone.template.secure_documents.description": "Lataa sopimukset, lomakkeet ja muut asiakirjat suoraan turvalliseen latauspalveluumme.",
+  "dropzone.template.secure_documents.footer_text": "Suojattu lataus",
+  "dropzone.template.accounting_receipts.footer_text": "Suojattu tiedostojen vastaanotto",
+  "dropzone.template.media_delivery.footer_text": "Suojattu suurten tiedostojen toimitus",
+  "dropzone.template.support_logs.footer_text": "Suojattu tukitiedostojen lähetys",
+  "dropzone.template.job_applications.footer_text": "Suojattu rekrytointitiedostojen vastaanotto"
 }

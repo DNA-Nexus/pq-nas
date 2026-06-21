@@ -59,11 +59,11 @@
       name: "Secure documents",
       branding: {
         title: "Send documents securely",
-        description: "Upload contracts, forms and other documents directly to our secure DNA-Nexus server.",
+        description: "Upload contracts, forms and other documents directly to our secure upload server.",
         primary_color: "#ff9f1c",
         background_color: "#080a0f",
         button_text: "Upload documents",
-        footer_text: "Secured by DNA-Nexus"
+        footer_text: "Secured upload"
       }
     },
     {
@@ -75,7 +75,7 @@
         primary_color: "#2f80ed",
         background_color: "#07111f",
         button_text: "Upload accounting files",
-        footer_text: "Secure file intake powered by DNA-Nexus"
+        footer_text: "Secure file intake"
       }
     },
     {
@@ -87,7 +87,7 @@
         primary_color: "#9b51e0",
         background_color: "#10091a",
         button_text: "Upload media files",
-        footer_text: "Large file delivery secured by DNA-Nexus"
+        footer_text: "Large file delivery"
       }
     },
     {
@@ -99,7 +99,7 @@
         primary_color: "#27ae60",
         background_color: "#06140d",
         button_text: "Upload support files",
-        footer_text: "Support file upload secured by DNA-Nexus"
+        footer_text: "Support file upload"
       }
     },
     {
@@ -111,7 +111,7 @@
         primary_color: "#f2994a",
         background_color: "#111014",
         button_text: "Upload application",
-        footer_text: "Recruitment file intake secured by DNA-Nexus"
+        footer_text: "Recruitment file intake"
       }
     }
   ];
@@ -356,12 +356,12 @@
 
   const DEFAULT_BRAND_TEXT_KEYS = {
     "Send files securely": "dropzone.default_brand.title",
-    "Upload files directly to our secure DNA-Nexus server.": "dropzone.default_brand.description",
+    "Upload files directly to our secure upload server.": "dropzone.default_brand.description",
     "Upload files": "dropzone.default_brand.button_text",
-    "Secured by DNA-Nexus": "dropzone.default_brand.footer_text",
+    "Secured upload": "dropzone.default_brand.footer_text",
 
     "Send documents securely": "dropzone.template.secure_documents.title",
-    "Upload contracts, forms and other documents directly to our secure DNA-Nexus server.": "dropzone.template.secure_documents.description",
+    "Upload contracts, forms and other documents directly to our secure upload server.": "dropzone.template.secure_documents.description",
     "Upload documents": "dropzone.template.secure_documents.button_text",
 
     "Send receipts and payroll files": "dropzone.template.accounting_receipts.title",
@@ -380,10 +380,10 @@
     "Upload your CV, application letter and attachments through this secure upload page.": "dropzone.template.job_applications.description",
     "Upload application": "dropzone.template.job_applications.button_text",
 
-    "Secure file intake powered by DNA-Nexus": "dropzone.template.accounting_receipts.footer_text",
-    "Large file delivery secured by DNA-Nexus": "dropzone.template.media_delivery.footer_text",
-    "Support file upload secured by DNA-Nexus": "dropzone.template.support_logs.footer_text",
-    "Recruitment file intake secured by DNA-Nexus": "dropzone.template.job_applications.footer_text"
+    "Secure file intake": "dropzone.template.accounting_receipts.footer_text",
+    "Large file delivery": "dropzone.template.media_delivery.footer_text",
+    "Support file upload": "dropzone.template.support_logs.footer_text",
+    "Recruitment file intake": "dropzone.template.job_applications.footer_text"
   };
 
   function trKnownBrandText(value) {
@@ -866,11 +866,11 @@
     clearBrandLogoPreviewStatus();
     updateBrandLogoPreview();
     if (brandTitleInput) brandTitleInput.value = tr("dropzone.default_brand.title", null, "Send files securely");
-    if (brandDescriptionInput) brandDescriptionInput.value = tr("dropzone.default_brand.description", null, "Upload files directly to our secure DNA-Nexus server.");
+    if (brandDescriptionInput) brandDescriptionInput.value = tr("dropzone.default_brand.description", null, "Upload files directly to our secure upload server.");
     if (brandPrimaryColorInput) brandPrimaryColorInput.value = "#ff9f1c";
     if (brandBackgroundColorInput) brandBackgroundColorInput.value = "#080a0f";
     if (brandButtonTextInput) brandButtonTextInput.value = tr("dropzone.default_brand.button_text", null, "Upload files");
-    if (brandFooterTextInput) brandFooterTextInput.value = tr("dropzone.default_brand.footer_text", null, "Secured by DNA-Nexus");
+    if (brandFooterTextInput) brandFooterTextInput.value = tr("dropzone.default_brand.footer_text", null, "Secured upload");
 
     refreshBrandTemplateSelect();
 

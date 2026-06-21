@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>DNA-Nexus • Drop Zone</title>
+  <title data-brand-title-suffix=" • Drop Zone">DNA-Nexus • Drop Zone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="/static/i18n.js?v=20260519-dropzone-i18n-1"></script>
+  <script src="/static/branding.js?v=20260620-dropzone-branding-1"></script>
   <link rel="stylesheet" href="/static/theme.css?v=20260609-dropzone-theme-1">
   <script src="/static/theme.js?v=20260609-dropzone-theme-1"></script>
   <link rel="stylesheet" href="./style.css?v=20260606-branded-dropzone-logo-upload-1">
@@ -13,7 +14,7 @@
 <main class="dzShell">
   <section class="dzHero">
     <div>
-      <div class="dzKicker" data-i18n="dropzone.kicker">DNA-Nexus Server</div>
+      <div class="dzKicker" data-brand-template="{product_short_name} Server">DNA-Nexus Server</div>
       <h1>Drop Zone <span id="appVersion" class="appVersion"></span></h1>
       <p data-i18n="dropzone.hero_text">
         Secure one-way upload links for outsiders. They can upload files,
@@ -141,7 +142,7 @@
         <div class="dzGrid2">
           <label>
             <span data-i18n="dropzone.brand_company">Company name</span>
-            <input id="brandCompanyInput" name="brand_company" type="text" maxlength="120" placeholder="Vakka-Suomen Puhelin">
+            <input id="brandCompanyInput" name="brand_company" type="text" maxlength="120" placeholder="My Company Ltd.">
           </label>
 
           <label>
@@ -172,7 +173,7 @@
 
         <label>
           <span data-i18n="dropzone.brand_description">Description</span>
-          <input id="brandDescriptionInput" name="brand_description" type="text" maxlength="360" placeholder="Upload files directly to our secure DNA-Nexus server.">
+          <input id="brandDescriptionInput" name="brand_description" type="text" maxlength="360" placeholder="Upload files directly to our secure upload server.">
         </label>
 
         <div class="dzGrid2">
@@ -195,7 +196,7 @@
 
           <label>
             <span data-i18n="dropzone.brand_footer_text">Footer text</span>
-            <input id="brandFooterTextInput" name="brand_footer_text" type="text" maxlength="180" placeholder="Secured by DNA-Nexus">
+            <input id="brandFooterTextInput" name="brand_footer_text" type="text" maxlength="180" placeholder="Secured upload">
           </label>
         </div>
         </div>
@@ -211,6 +212,6 @@
   </section>
 </div>
 
-<script src="./app.js?v=20260610-dropzone-i18n-hardcoded-defaults-1"></script>
+<script src="./app.js?v=20260620-dropzone-branding-1"></script>
 </body>
 </html>
