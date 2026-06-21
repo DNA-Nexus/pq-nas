@@ -157,6 +157,19 @@
             .replace(/"/g, "&quot;");
     }
 
+    function pqsuBrandEyebrow() {
+        try {
+            const api = window.PQNAS_BRANDING;
+            const brand = api && typeof api.current === "function" ? api.current() : null;
+            if (brand && brand.enabled === true) {
+                const name = String(brand.product_short_name || brand.product_name || "").trim();
+                if (name) return `${name} Post-Quantum Share`;
+            }
+        } catch (_) {}
+
+        return tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share");
+    }
+
     function showUnlockModal({ mode, alg, purpose, errorMessage = "" }) {
         injectStyle();
 
@@ -172,7 +185,7 @@
             backdrop.innerHTML = `
               <div class="pqsu-modal" role="dialog" aria-modal="true" aria-labelledby="pqsu-title">
                 <div class="pqsu-head">
-                  <div class="pqsu-eyebrow">${escapeHtml(tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share"))}</div>
+                  <div class="pqsu-eyebrow">${escapeHtml(pqsuBrandEyebrow())}</div>
                   <h2 id="pqsu-title" class="pqsu-title">${isSetup ? escapeHtml(tr("pqshare.unlock.create_passphrase_title", null, "Create device key passphrase")) : escapeHtml(tr("pqshare.unlock.unlock_title", null, "Unlock device key"))}</h2>
                 </div>
                 <div class="pqsu-body">
@@ -283,7 +296,7 @@
             backdrop.innerHTML = `
               <div class="pqsu-modal" role="dialog" aria-modal="true" aria-labelledby="pqsu-confirm-title">
                 <div class="pqsu-head">
-                  <div class="pqsu-eyebrow">${escapeHtml(tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share"))}</div>
+                  <div class="pqsu-eyebrow">${escapeHtml(pqsuBrandEyebrow())}</div>
                   <h2 id="pqsu-confirm-title" class="pqsu-title">${escapeHtml(options.title || tr("pqshare.confirm.title", null, "Confirm action"))}</h2>
                 </div>
                 <div class="pqsu-body">

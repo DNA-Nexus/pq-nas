@@ -936,7 +936,7 @@ html[data-theme="bright"] .externalDialogInput{
             <div class="fmUploadProgressCard" role="dialog" aria-modal="true" aria-labelledby="fmUploadProgressTitle">
                 <div class="fmUploadProgressHead">
                     <div>
-                        <div class="fmUploadProgressKicker">${escapeHtml(tr("external.upload.kicker", null, "DNA-Nexus upload"))}</div>
+                        <div class="fmUploadProgressKicker">${escapeHtml(tr("external.upload.kicker", null, "Upload"))}</div>
                         <div id="fmUploadProgressTitle" class="fmUploadProgressTitle">${escapeHtml(tr("external.upload.uploading_files", null, "Uploading files"))}</div>
                         <p id="fmUploadProgressSub">${escapeHtml(tr("external.upload.preparing", null, "Preparing upload…"))}</p>
                     </div>
@@ -1310,7 +1310,7 @@ html[data-theme="bright"] .externalDialogInput{
                             <div class="externalUploadConflictChoices">
                                 <label>
                                     <input type="radio" name="externalUploadConflictChoice" value="keep_old" checked>
-                                    <span><b>${escapeHtml(tr("external.upload.keep_existing", null, "Keep existing"))}</b><br><small>${escapeHtml(tr("external.upload.keep_existing_desc", null, "Skip this upload and keep the file already stored in PQ-NAS."))}</small></span>
+                                    <span><b>${escapeHtml(tr("external.upload.keep_existing", null, "Keep existing"))}</b><br><small>${escapeHtml(tr("external.upload.keep_existing_desc", null, "Skip this upload and keep the existing stored file."))}</small></span>
                                 </label>
                                 <label>
                                     <input type="radio" name="externalUploadConflictChoice" value="replace">
@@ -5275,7 +5275,7 @@ resetMarqueeVisual();
         const ok = await openExternalConfirmModal({
             title: tr("external.trash.restore_title", null, "Restore this item from trash?"),
             subtitle: label,
-            message: tr("external.trash.restore_note", null, "If the original path is already occupied, DNA-Nexus will restore it with a conflict-safe name."),
+            message: tr("external.trash.restore_note", null, "If the original path is already occupied, the item will be restored with a conflict-safe name."),
             confirmText: tr("external.trash.restore", null, "Restore"),
             cancelText: tr("external.modal.cancel", null, "Cancel")
         });

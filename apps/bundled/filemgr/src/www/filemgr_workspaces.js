@@ -224,6 +224,73 @@
         return isWorkspaceScope() && FM.scope.workspaceRole === "owner";
     }
 
+    let workspaceAuthConfigPromise = null;
+
+    function workspaceLoginModeFromConfig(cfg) {
+        const c = cfg && typeof cfg === "object" ? cfg : {};
+        return String(
+            c.mode ||
+            c.login_mode ||
+            c.auth_mode ||
+            c.effective_mode ||
+            "qr"
+        ).trim().toLowerCase() || "qr";
+    }
+
+    async function fetchWorkspaceAuthConfig() {
+        if (workspaceAuthConfigPromise) return workspaceAuthConfigPromise;
+
+        workspaceAuthConfigPromise = fetch("/api/auth/config", {
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        })
+            .then((r) => r.json().catch(() => null))
+            .catch(() => ({ mode: "qr" }));
+
+        return workspaceAuthConfigPromise;
+    }
+
+    function applyExternalAccessPanelAuthMode(panel, mode) {
+        if (!panel) return;
+
+        const loginMode = String(mode || "").trim().toLowerCase();
+        const isOpaque = loginMode === "opaque";
+
+        const copyRow = panel.querySelector("#sharedSpaceCopyExternalAccessRow");
+        if (copyRow) {
+            copyRow.hidden = isOpaque;
+            copyRow.style.display = isOpaque ? "none" : "";
+        }
+
+        const desc = panel.querySelector("#sharedSpaceExternalAccessDesc");
+        if (desc && isOpaque) {
+            desc.textContent = tr(
+                "filemgr.ws.external_desc_opaque",
+                null,
+                "Create access for an external person. OPAQUE mode creates a one-time setup link so the outsider can set their password and then sign in normally."
+            );
+        }
+
+        const ownerHelp = panel.querySelector("#sharedSpaceExternalOwnerHelp");
+        if (ownerHelp && isOpaque) {
+            ownerHelp.textContent = tr(
+                "filemgr.ws.external_owner_help_opaque",
+                null,
+                "Create a one-time setup link. Send the setup link to the outsider so they can set their password. After setup, they sign in normally and land in this shared space."
+            );
+        }
+    }
+
+    async function refreshExternalAccessPanelAuthMode(panel) {
+        try {
+            const cfg = await fetchWorkspaceAuthConfig();
+            applyExternalAccessPanelAuthMode(panel, workspaceLoginModeFromConfig(cfg));
+        } catch (_) {
+            applyExternalAccessPanelAuthMode(panel, "qr");
+        }
+    }
+
 
     function getCapabilities() {
         if (!isWorkspaceScope()) {
@@ -1844,18 +1911,18 @@
 
         panel.innerHTML = `
             <div style="font-weight:900; margin-bottom:8px;">${tr("filemgr.ws.external_title", null, "External member access")}</div>
-            <div class="hint" style="margin-bottom:10px;">
+            <div id="sharedSpaceExternalAccessDesc" class="hint" style="margin-bottom:10px;">
                 ${tr("filemgr.ws.external_desc", null, "Create access for an external person. In OPAQUE mode this creates a setup link; in password mode it creates a temporary username and password; in QR mode it creates a DNA Connect invite.")}
             </div>
 
-            <div class="row" style="margin-bottom:12px;">
+            <div id="sharedSpaceCopyExternalAccessRow" class="row" style="margin-bottom:12px;">
                 <button id="sharedSpaceCopyExternalAccessBtn" class="btn secondary" type="button">
                     ${tr("filemgr.ws.copy_member_access", null, "Copy member access link")}
                 </button>
             </div>
 
             <div id="sharedSpaceExternalInviteControls">
-                <div class="hint" style="margin-bottom:8px;">
+                <div id="sharedSpaceExternalOwnerHelp" class="hint" style="margin-bottom:8px;">
                     ${tr("filemgr.ws.external_owner_help", null, "Owner only: create a one-time invite. In OPAQUE mode, send the setup link so the outsider can set their password. In QR mode, they open the invite and scan the QR with DNA Connect.")}
                 </div>
 
@@ -1881,6 +1948,7 @@
         `;
 
         body.insertBefore(panel, workspaceMembersList);
+        refreshExternalAccessPanelAuthMode(panel);
 
         const copyBtn = panel.querySelector("#sharedSpaceCopyExternalAccessBtn");
         copyBtn?.addEventListener("click", async () => {
