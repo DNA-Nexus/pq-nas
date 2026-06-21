@@ -274,7 +274,7 @@ html[data-theme="bright"] .pqnasFolderPickerPromptInput{
     function isPqnasInternalFolderName(name) {
         const n = String(name || "").trim().toLowerCase();
 
-        // Hide DNA-Nexus/PQ-NAS internal folders from destination pickers.
+        // Hide application-owned internal folders from destination pickers.
         // Examples: .pqnas, .pqnas_activity, .pqnas_versions, .pqnas_locks.
         return n === ".pqnas" || n.startsWith(".pqnas_") || n.startsWith(".pqnas-");
     }
