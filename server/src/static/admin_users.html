@@ -544,6 +544,83 @@
             opacity:1;
         }
 
+        .userMainLine{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            min-width:0;
+        }
+
+        .userNameText{
+            min-width:0;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            font-size:13px;
+            font-weight:500;
+            line-height:1.25;
+        }
+
+        .userNotesText{
+            margin-top:3px;
+            font-size:12px;
+            line-height:1.25;
+            white-space:pre-wrap;
+            overflow-wrap:anywhere;
+        }
+
+        .userQuotaCell{
+            white-space:nowrap;
+        }
+
+        .usageSummaryGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap:10px;
+            margin: 10px 0 12px;
+        }
+
+        .usageMetric{
+            border:1px solid rgba(var(--fg-rgb),0.12);
+            border-radius:14px;
+            background:rgba(0,0,0,0.12);
+            padding:10px 12px;
+            min-width:0;
+        }
+
+        .usageMetric .k{
+            font-size:11px;
+            color:rgba(var(--fg-rgb),0.58);
+            text-transform:uppercase;
+            letter-spacing:.06em;
+            font-weight:900;
+        }
+
+        .usageMetric .v{
+            margin-top:5px;
+            font-family:var(--mono);
+            font-size:13px;
+            color:rgba(var(--fg-rgb),0.94);
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+        }
+
+        .usageExplain{
+            margin-top:12px;
+            border:1px solid rgba(var(--info-rgb),0.22);
+            border-radius:14px;
+            background:rgba(var(--info-rgb),0.08);
+            padding:10px 12px;
+            color:rgba(var(--fg-rgb),0.78);
+            font-size:12px;
+            line-height:1.45;
+        }
+
+        .usageExplain .mono{
+            font-size:11px;
+        }
+
     </style>
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
@@ -644,15 +721,14 @@
                             <thead>
                             <tr>
                                 <th style="width:6%;" data-i18n="admin.users.avatar">Avatar</th>
-                                <th style="width:28%;"><button class="sortTh" type="button" data-sort="fingerprint" aria-label="Sort by Fingerprint"><span data-i18n="admin.users.fingerprint">Fingerprint</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
-                                <th style="width:22%;"><button class="sortTh" type="button" data-sort="name" aria-label="Sort by Name / Notes"><span data-i18n="admin.users.name_notes">Name / Notes</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:30%;"><button class="sortTh" type="button" data-sort="name" aria-label="Sort by Name / Notes"><span data-i18n="admin.users.name_notes">Name / Notes</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:6%;"><button class="sortTh" type="button" data-sort="role" aria-label="Sort by Role"><span data-i18n="admin.users.role">Role</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:7%;"><button class="sortTh" type="button" data-sort="status" aria-label="Sort by Status"><span data-i18n="admin.users.status">Status</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:8%;"><button class="sortTh" type="button" data-sort="group" aria-label="Sort by Group"><span data-i18n="admin.users.group">Group</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
-                                <th style="width:7%;"><button class="sortTh" type="button" data-sort="storage" aria-label="Sort by Storage"><span data-i18n="admin.users.storage">Storage</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
-                                <th style="width:6%;"><button class="sortTh" type="button" data-sort="quota" aria-label="Sort by Quota"><span data-i18n="admin.users.quota">Quota</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:8%;"><button class="sortTh" type="button" data-sort="storage" aria-label="Sort by Storage"><span data-i18n="admin.users.storage">Storage</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
+                                <th style="width:13%;"><button class="sortTh" type="button" data-sort="quota" aria-label="Sort by storage usage"><span data-i18n="admin.users.storage_usage">Storage usage</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:12%;"><button class="sortTh" type="button" data-sort="added" aria-label="Sort by Added"><span data-i18n="admin.users.added">Added</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
-                                <th style="width:20%;" data-i18n="admin.users.actions">Actions</th>
+                                <th style="width:10%;" data-i18n="admin.users.actions">Actions</th>
                             </tr>
                             </thead>
                             <tbody id="tbody"></tbody>
@@ -758,7 +834,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_users.js?v=20260620-external-users-filter-1"></script>
+<script src="/static/admin_users.js?v=20260621-storage-insight-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

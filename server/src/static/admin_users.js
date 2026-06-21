@@ -283,10 +283,22 @@ function fmtGBFromBytes(b) {
 }
 
 function fmtQuotaCell(u) {
-    const st = (u.storage_state || "unallocated");
+    const st = String(u.storage_state || "unallocated").toLowerCase();
     if (st !== "allocated") return `<span class="muted">—</span>`;
-    const gb = fmtGBFromBytes(u.quota_bytes);
-    return gb ? `${esc(gb)} GB` : `<span class="muted">0</span>`;
+
+    const quotaBytes = Number(u.quota_bytes ?? 0);
+    const usedBytes = Number(u.used_bytes ?? u.storage_used_bytes ?? 0);
+
+    if (!Number.isFinite(quotaBytes) || quotaBytes <= 0) {
+        return `<span class="muted">0</span>`;
+    }
+
+    const text = quotaUsageText(
+        Number.isFinite(usedBytes) ? usedBytes : 0,
+        quotaBytes
+    );
+
+    return `<span title="${esc(text)}">${esc(text)}</span>`;
 }
 function shortFp(fp) {
     fp = String(fp || "");
@@ -1906,10 +1918,16 @@ function render() {
                 pct >= 0.70 ? "warn" :
                     "";
 
+        const safeUsedBytes = Number.isFinite(usedBytes) ? usedBytes : 0;
+        const remainingBytes = quotaBytes2 > 0 ? Math.max(0, quotaBytes2 - safeUsedBytes) : NaN;
+        const remainingText = Number.isFinite(remainingBytes) ? fmtBytes(remainingBytes) : "—";
+        const usedText = fmtBytes(safeUsedBytes);
+        const usagePctText = quotaBytes2 > 0 ? `${pct100}%` : "—";
+
         const detailRow = isOpen ? `
 
 <tr class="detailRow" data-fp="${esc(fp)}">
-  <td colspan="10">
+  <td colspan="9">
     <div class="detailGrid">
       <div class="detailBox">
         <h3>${esc(tr("admin.users.profile", null, "Profile"))}</h3>
@@ -1954,18 +1972,52 @@ function render() {
       </div>
 
       <div class="detailBox">
-        <h3>${esc(tr("admin.users.notes", null, "Notes"))}</h3>
-        <pre class="detailPre">${esc(u.notes || "—")}</pre>
+        <h3>${esc(tr("admin.users.storage_usage", null, "Storage usage"))}</h3>
+
+        <div class="usageSummaryGrid">
+          <div class="usageMetric">
+            <div class="k">${esc(tr("admin.users.used", null, "Used"))}</div>
+            <div class="v" title="${esc(usedText)}">${esc(usedText)}</div>
+          </div>
+
+          <div class="usageMetric">
+            <div class="k">${esc(tr("admin.users.quota", null, "Quota"))}</div>
+            <div class="v" title="${esc(quotaText)}">${esc(quotaText)}</div>
+          </div>
+
+          <div class="usageMetric">
+            <div class="k">${esc(tr("admin.users.remaining", null, "Remaining"))}</div>
+            <div class="v" title="${esc(remainingText)}">${esc(remainingText)}</div>
+          </div>
+
+          <div class="usageMetric">
+            <div class="k">${esc(tr("admin.users.usage_percent", null, "Usage"))}</div>
+            <div class="v">${esc(usagePctText)}</div>
+          </div>
+        </div>
 
         <div class="quotaBox">
           <div class="quotaTop">
-            <div class="quotaLabel">${esc(tr("admin.users.storage_usage", null, "Storage usage"))}</div>
+            <div class="quotaLabel">${esc(tr("admin.users.used_quota", null, "Used / quota"))}</div>
             <div class="quotaNum mono">${esc(quotaUsageText(u.used_bytes ?? u.storage_used_bytes, u.quota_bytes))}</div>
           </div>
-            <div class="quotaBar" title="${esc(quotaUsageText(usedBytes, quotaBytes2))}">
-                <div class="quotaFill ${quotaCls}" style="width:${pct100}%"></div>
+          <div class="quotaBar" title="${esc(quotaUsageText(usedBytes, quotaBytes2))}">
+            <div class="quotaFill ${quotaCls}" style="width:${pct100}%"></div>
           </div>
         </div>
+
+        <div class="usageExplain">
+          ${esc(tr(
+              "admin.users.quota_includes_hidden",
+              null,
+              "Quota usage can include normal user files plus hidden per-user storage such as file version history."
+          ))}
+          <br>
+          <span class="mono">.pqnas/versions</span>
+        </div>
+
+        <h3 style="margin-top:14px;">${esc(tr("admin.users.notes", null, "Notes"))}</h3>
+        <pre class="detailPre">${esc(u.notes || "—")}</pre>
       </div>
 
 <div class="detailBox">
@@ -2037,23 +2089,21 @@ function render() {
 <tr class="userRow" data-fp="${esc(fp)}" aria-expanded="${isOpen ? "true" : "false"}">
   <td>${avatarThumb(u)}</td>
 
-  <td class="mono">
-    <button class="expBtn" data-exp="${esc(fp)}" type="button" aria-expanded="${isOpen ? "true" : "false"}" title="${esc(tr("admin.users.expand_collapse", null, "Expand/collapse"))}">
-      ${isOpen ? "▾" : "▸"}
-    </button>
-    <span style="margin-left:8px;" title="${esc(fp)}">${esc(shortFp(fp))}</span>
-  </td>
-
   <td>
-    <div><b>${esc(u.name || "")}</b>${selfTag}</div>
-    <div class="muted" style="white-space:pre-wrap;">${esc(u.notes || "")}</div>
+    <div class="userMainLine">
+      <button class="expBtn" data-exp="${esc(fp)}" type="button" aria-expanded="${isOpen ? "true" : "false"}" title="${esc(tr("admin.users.expand_collapse", null, "Expand/collapse"))}">
+        ${isOpen ? "▾" : "▸"}
+      </button>
+      <span class="userNameText" title="${esc(u.name || u.email || fp)}">${esc(u.name || u.email || "—")}</span>${selfTag}
+    </div>
+    <div class="muted userNotesText">${esc(u.notes || "")}</div>
   </td>
 
   <td>${rolePill(u.role)}</td>
   <td>${pill(u.status)}</td>
   <td>${groupPill(u.group)}</td>
-    <td>${storageCellHtml(u)}</td>
-  <td class="mono">${fmtQuotaCell(u)}</td>
+  <td>${storageCellHtml(u)}</td>
+  <td class="mono userQuotaCell">${fmtQuotaCell(u)}</td>
   <td class="mono">${esc(u.added_at || "")}</td>
 
   <td class="row-actions">
