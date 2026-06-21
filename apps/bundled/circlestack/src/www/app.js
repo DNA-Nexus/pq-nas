@@ -421,7 +421,7 @@ function csAchievementShortText(badge) {
 
   const texts = {
     "account.node_steward":
-      csT("profile.achShort.account.nodeSteward", "Admin or steward of this DNA-Nexus node."),
+      csT("profile.achShort.account.nodeSteward", "Admin or steward of this Circle Stack node."),
 
     "account.established_signal":
       csT("profile.achShort.account.establishedSignal", "Account has existed for at least 100 days."),
@@ -584,7 +584,7 @@ function csAchievementDescriptionText(badge, mode = "short") {
   }
 
   const exact = {
-    "Admin or steward of this DNA-Nexus node.": "nodeSteward",
+    "Admin or steward of this Circle Stack node.": "nodeSteward",
     "Created the first Circle Stack post.": "firstSignal",
     "Created the first share link.": "firstShare",
     "Created the first Drop Zone.": "dropZoneOperator",
@@ -594,7 +594,7 @@ function csAchievementDescriptionText(badge, mode = "short") {
     "Published the first local public Circle Stack post through federation.": "federationPioneer",
     "Delivered several local Circle Stack signals through federation.": "signalCourier",
 
-    "You are an admin or steward of this DNA-Nexus node.": "nodeSteward",
+    "You are an admin or steward of this Circle Stack node.": "nodeSteward",
     "You created your first Circle Stack post.": "firstSignal",
     "You created your first share link. Sharing is one of the core NAS powers: letting someone access exactly what you choose, when you choose.": "firstShare",
     "You created your first Drop Zone.": "dropZoneOperator",
@@ -611,14 +611,14 @@ function csAchievementDescriptionText(badge, mode = "short") {
     "You created your first Drop Zone. Drop Zone lets outsiders send files inward without giving them full NAS access.": "dropZoneOperator",
     "You paired your first trusted device. Trusted devices make secure access easier while keeping control tied to your account.": "trustedDevice",
     "You created your first Circle Stack post. Circle Stack starts with one signal, then grows into a private social layer around your NAS.": "firstSignal",
-    "You are an admin or steward of this DNA-Nexus node. Stewardship means keeping the node useful, safe, and alive.": "nodeSteward",
+    "You are an admin or steward of this Circle Stack node. Stewardship means keeping the node useful, safe, and alive.": "nodeSteward",
     "You published the first local public Circle Stack post through federation.": "federationPioneer",
     "You delivered several local Circle Stack signals through federation.": "signalCourier",
 
     "You are storing heavier web snapshots locally. Deep Archive is for users who want pages to remain available even when the original web changes.": "deepArchive",
     "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack.": "firstRemoteSignal",
     "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers.": "knownOrigin",
-    "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable.": "bridgeBuilder"
+    "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider Circle Stack network more discoverable.": "bridgeBuilder"
   };
 
   const exactSlug = exact[fallback] || "";
@@ -1242,10 +1242,10 @@ function csAchievementReplayText(badge) {
 
   const texts = {
     "account.node_steward":
-      csT("profile.achReplay.account.nodeSteward", "You help keep this DNA-Nexus node alive. Steward badges are about responsibility: maintaining the server, supporting users, and keeping the space trustworthy."),
+      csT("profile.achReplay.account.nodeSteward", "You help keep this Circle Stack node alive. Steward badges are about responsibility: maintaining the server, supporting users, and keeping the space trustworthy."),
 
     "account.established_signal":
-      csT("profile.achReplay.account.establishedSignal", "Your identity has started to build history. Time matters in DNA-Nexus because long-lived accounts are harder to fake than one-day identities."),
+      csT("profile.achReplay.account.establishedSignal", "Your identity has started to build history. Time matters because long-lived accounts are harder to fake than one-day identities."),
 
     "account.old_guard":
       csT("profile.achReplay.account.oldGuard", "This account has been around for a long time. Old Guard badges show continuity, patience, and a persistent identity inside your own network."),
@@ -1266,7 +1266,7 @@ function csAchievementReplayText(badge) {
       csT("profile.achReplay.circlestack.anchorVoice", "Anchor voices shape the memory of a circle. This badge is for long-term posting history and continued presence."),
 
     "circlestack.public_voice":
-      csT("profile.achReplay.circlestack.publicVoice", "You have shared beyond your private circle. Public Voice means some of your posts help the wider DNA-Nexus network feel alive."),
+      csT("profile.achReplay.circlestack.publicVoice", "You have shared beyond your private circle. Public Voice means some of your posts help the wider Circle Stack network feel alive."),
 
     "circlestack.media_runner":
       csT("profile.achReplay.circlestack.mediaRunner", "You enrich posts with media. Images, videos, and other files turn a feed from plain text into shared memory."),
@@ -1356,7 +1356,7 @@ function csAchievementReplayText(badge) {
       csT("profile.achReplay.media.soundVault", "Your audio archive is becoming serious. Sound Vault marks a self-hosted library of tracks, recordings, or sound memories."),
 
     "federation.pioneer":
-      csT("profile.achReplay.federation.pioneer", "Your NAS has sent its first public Circle Stack signal into the wider DNA-Nexus network. This is the moment your node stops being only local."),
+      csT("profile.achReplay.federation.pioneer", "Your NAS has sent its first public Circle Stack signal into the wider Circle Stack network. This is the moment your node stops being only local."),
 
     "federation.signal_courier":
       csT("profile.achReplay.federation.signalCourier", "Your NAS is carrying signals across the network. Signal Courier is about reliable participation, not just one successful test."),
@@ -1365,13 +1365,13 @@ function csAchievementReplayText(badge) {
       csT("profile.achReplay.federation.firstRemoteSignal", "Your node heard another NAS. First Remote Signal means the federation is no longer theoretical — another origin reached your Circle Stack."),
 
     "federation.cross_node_conversation":
-      csT("profile.achReplay.federation.crossNodeConversation", "Conversation has crossed node boundaries. This badge marks real social activity between separate DNA-Nexus servers."),
+      csT("profile.achReplay.federation.crossNodeConversation", "Conversation has crossed node boundaries. This badge marks real social activity between separate Circle Stack servers."),
 
     "federation.known_origin":
       csT("profile.achReplay.federation.knownOrigin", "You added or discovered another NAS origin. Known origins are the first step toward a real web of personal servers."),
 
     "federation.bridge_builder":
-      csT("profile.achReplay.federation.bridgeBuilder", "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider DNA-Nexus network more discoverable.")
+      csT("profile.achReplay.federation.bridgeBuilder", "You have helped connect this NAS with multiple origins. Bridge Builder is about making the wider Circle Stack network more discoverable.")
   };
 
   return texts[id] || "";
@@ -4602,7 +4602,7 @@ function csYouTubeThumbUrl(videoId) {
 
 function csDefaultLinkPreviewBadge(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
-    return "DNA-NEXUS SHARE";
+    return "CIRCLE STACK SHARE";
   }
 
   return urlObj ? urlObj.hostname : "LINK";
@@ -4654,7 +4654,7 @@ function csPreviewBadgeFromDoc(doc, urlObj) {
 
 function csDefaultLinkPreviewTitle(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
-    return "DNA-Nexus shared item";
+    return "Shared Circle Stack item";
   }
 
   return urlObj ? urlObj.hostname : "Link";
@@ -4662,7 +4662,7 @@ function csDefaultLinkPreviewTitle(urlObj) {
 
 function csDefaultLinkPreviewDesc(urlObj) {
   if (urlObj && urlObj.pathname.startsWith("/s/")) {
-    return "Open shared DNA-Nexus item";
+    return "Open shared Circle Stack item";
   }
 
   return urlObj ? urlObj.href : "";
