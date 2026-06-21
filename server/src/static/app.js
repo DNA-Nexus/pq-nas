@@ -90,7 +90,7 @@
     }
 
 
-    function brandedProductShortName(fallback = "DNA-Nexus") {
+    function brandedProductShortName(fallback = "Server") {
         try {
             const api = window.PQNAS_BRANDING;
             if (!api || typeof api.current !== "function") return fallback;
@@ -105,7 +105,7 @@
     }
 
 
-    async function brandedProductShortNameReady(fallback = "DNA-Nexus") {
+    async function brandedProductShortNameReady(fallback = "Server") {
         try {
             const api = window.PQNAS_BRANDING;
             if (api && typeof api.ready === "function") {
@@ -226,7 +226,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             const title = document.createElement("div");
             title.className = "shellDialogTitle";
-            title.textContent = options.title || tr("shell.dialog.title", null, "DNA-Nexus");
+            title.textContent = options.title || tr("shell.dialog.title", null, "Server");
 
             head.appendChild(title);
 
@@ -918,16 +918,16 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         {
             id: "dark",
             title: "DNA Dark",
-            desc: "Default dark DNA-Nexus theme."
+            desc: "Default dark theme."
         },
         {
             id: "bright",
             title: "Bright",
-            desc: "Light / bright DNA-Nexus theme."
+            desc: "Light / bright theme."
         },
         {
             id: "cpunk_orange",
-            title: "CPUNK Orange",
+            title: "Orange",
             desc: "Cyberpunk orange theme."
         },
         {
@@ -2133,7 +2133,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         setActiveApp("");
 
         if (wsTitle) wsTitle.textContent = tr("shell.trusted.title", null, "Trusted Devices");
-        if (wsSubtitle) wsSubtitle.textContent = tr("shell.trusted.subtitle", null, "Pair this phone or other devices with your DNA-Nexus account");
+        if (wsSubtitle) wsSubtitle.textContent = tr("shell.trusted.subtitle", null, "Pair this phone or other devices with your account");
         if (mainPaneTitle) mainPaneTitle.textContent = tr("shell.trusted.title", null, "Trusted Devices");
 
         if (!homeBlurb) return;
@@ -2209,7 +2209,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     <div style="margin-top:24px;">
         <h3 style="margin:0 0 8px 0; font-size:18px;">${tr("shell.trusted.devices_title", null, "Trusted devices")}</h3>
         <div style="color:var(--fg-dim); line-height:1.5; margin-bottom:12px;">
-            ${tr("shell.trusted.devices_desc", null, "Devices that can access your DNA-Nexus account through app pairing.")}
+            ${tr("shell.trusted.devices_desc", null, "Devices that can access your account through app pairing.")}
         </div>
         ${trustedDevicesError ? `
             <div class="bigState" style="display:block; margin-top:8px;">
@@ -2225,7 +2225,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     <div style="max-width:760px; font-family:var(--sans);">
         <h3 style="margin:0 0 8px 0; font-size:18px; font-family:inherit;">${tr("shell.trusted.pair_title", null, "Pair a new device")}</h3>
         <div style="color:var(--fg-dim); line-height:1.5; margin-bottom:14px; font-family:inherit;">
-            ${tr("shell.trusted.pair_intro", null, "Open the DNA-Nexus mobile app, choose scan/pair, and scan the QR code shown here. After you confirm on the phone, this page will update automatically.")}
+            ${tr("shell.trusted.pair_intro", null, "Open the mobile app, choose scan/pair, and scan the QR code shown here. After you confirm on the phone, this page will update automatically.")}
         </div>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; font-family:inherit;">
@@ -2529,7 +2529,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         setActiveApp("");
 
         if (wsTitle) wsTitle.textContent = tr("settings.page.title", null, "Settings");
-        if (wsSubtitle) wsSubtitle.textContent = tr("settings.page.subtitle", null, "Personal DNA-Nexus preferences");
+        if (wsSubtitle) wsSubtitle.textContent = tr("settings.page.subtitle", null, "Personal preferences");
         if (mainPaneTitle) mainPaneTitle.textContent = tr("settings.page.title", null, "Settings");
 
         if (!homeBlurb) return;
@@ -2614,7 +2614,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         </h3>
 
         <div class="mini" style="line-height:1.5; margin-bottom:12px;">
-            ${escapeHtml(tr("settings.password.desc", null, "Change the password used to sign in to DNA-Nexus on password-auth installations."))}
+            ${escapeHtml(tr("settings.password.desc", null, "Change the password used to sign in on password-auth installations."))}
         </div>
 
         <div style="display:grid; gap:10px; max-width:540px;">
@@ -2748,7 +2748,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                             ${escapeHtml(tr("settings.profile.choose_avatar", null, "Choose avatar"))}
                         </button>
                         <div class="mini" style="margin-top:6px; line-height:1.4;">
-                            ${escapeHtml(tr("settings.profile.avatar_help", null, "You can pick a normal photo. DNA-Nexus will resize it to a small avatar automatically. PNG, JPEG, and WebP work best."))}
+                            ${escapeHtml(tr("settings.profile.avatar_help", null, "You can pick a normal photo. The server will resize it to a small avatar automatically. PNG, JPEG, and WebP work best."))}
                         </div>
                         ${p.avatar_url ? `
                             <button class="btn secondary" id="userProfileRemoveAvatarBtn" type="button">
@@ -2829,7 +2829,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 </h3>
 
                 <div class="mini" style="line-height:1.5; margin-bottom:10px;">
-                    ${escapeHtml(tr("settings.language.desc", null, "Choose the language used by DNA-Nexus on this device."))}
+                    ${escapeHtml(tr("settings.language.desc", null, "Choose the language used on this device."))}
                 </div>
 
                 <div
@@ -2852,7 +2852,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 </h3>
 
                 <div class="mini" style="line-height:1.5;">
-                    ${escapeHtml(tr("settings.theme.desc", null, "Choose how DNA-Nexus looks on this device."))}
+                    ${escapeHtml(tr("settings.theme.desc", null, "Choose how the interface looks on this device."))}
                 </div>
 
                 <div style="margin-top:12px;">
@@ -3285,7 +3285,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             const msg = tr(
                 "shell.apps.incompatible_message_versions",
                 { min, current },
-                `This app requires DNA-Nexus Server ${min} or newer. Current server is ${current}.`
+                `This app requires server version ${min} or newer. Current server is ${current}.`
             );
 
             openShellAlertDialog({
@@ -3417,7 +3417,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         const serverVersion = String(j.server_version || j.current_server_version || j.version || "").trim();
                         statusLine.removeAttribute("data-i18n");
                         statusLine.removeAttribute("data-i18n-fallback");
-                        const productShortName = await brandedProductShortNameReady("DNA-Nexus");
+                        const productShortName = await brandedProductShortNameReady("Server");
                         statusLine.textContent = serverVersion ? `${productShortName} v${serverVersion}` : productShortName;
                         versionShown = true;
                     }

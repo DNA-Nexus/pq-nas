@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title data-i18n="admin.settings.title" data-brand-title-suffix=" • Admin Settings">DNA-Nexus NAS • Admin Settings</title>
+    <title data-i18n="admin.settings.title" data-brand-title-suffix=" • Admin Settings">Admin Settings</title>
 
     <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/components.css?v=20260610-components-v1">
@@ -145,7 +145,7 @@
         }
 
         /* Native select dropdown contrast override
-           Browser/OS select popups vary; keep dark/cpunk option lists dark. */
+           Browser/OS select popups vary; keep themed option lists dark. */
         html[data-theme="dark"] select,
         html[data-theme="dark"] select option{
             background-color: #07111f !important;
@@ -1165,7 +1165,7 @@
                     </div>
 
                     <div class="note">
-                        <span data-i18n="admin.backups.note">Backs up critical DNA-Nexus configuration, users/auth data, and Circle Stack databases. User files, media libraries, archives, Drop Zones, Echo Stack data, and file metadata are not included. Protect them separately with storage snapshots, RAID, and/or external backups.</span>
+                        <span data-i18n="admin.backups.note">Backs up critical server configuration, users/auth data, and Circle Stack databases. User files, media libraries, archives, Drop Zones, Echo Stack data, and file metadata are not included. Protect them separately with storage snapshots, RAID, and/or external backups.</span>
                     </div>
 
                     <div class="tableWrap" style="margin-top:12px;">
@@ -1330,7 +1330,7 @@
                     </div>
 
                     <div class="note">
-                        <span data-i18n="admin.nodus.note">Nodus federation is used by Circle Stack’s worldwide public feed to send and receive public messages between DNA-Nexus servers. Nodus carries the federation messages; media previews are fetched directly from the origin DNA-Nexus server.</span>
+                        <span data-i18n="admin.nodus.note">Nodus federation is used by Circle Stack’s worldwide public feed to send and receive public messages between Circle Stack servers. Nodus carries the federation messages; media previews are fetched directly from the origin server.</span>
                     </div>
                 </div>
             </div>
@@ -1365,12 +1365,12 @@
                     </div>
 
                     <div class="row">
-                        <button id="btnDnaAlertsCreateId" class="pq-btn" type="button"><span data-i18n="admin.dna.create_id">Create PQ-NAS ID</span></button>
+                        <button id="btnDnaAlertsCreateId" class="pq-btn" type="button"><span data-i18n="admin.dna.create_id">Create server ID</span></button>
                         <button id="btnDnaAlertsShowId" class="pq-btn" type="button"><span data-i18n="admin.dna.show_id">Show ID info</span></button>
                         <button id="btnDnaAlertsSendRequest" class="pq-btn" type="button"><span data-i18n="admin.dna.send_request">Send contact request</span></button>
 
                         <span class="pill info" id="dnaAlertsIdentityPill">
-                            <span class="k" data-i18n="admin.dna.pqnas_id">PQ-NAS ID:</span>
+                            <span class="k" data-i18n="admin.dna.pqnas_id">Server ID:</span>
                             <span class="v">—</span>
                         </span>
                     </div>
@@ -1405,12 +1405,12 @@
                     </div>
 
                     <div class="note">
-                        PQ-NAS can send warnings to DNA Connect by invoking
+                        The server can send warnings to DNA Connect by invoking
                         <span class="mono">dna-connect-cli</span>.
                     </div>
 
                     <div class="note">
-                        <span data-i18n="admin.dna.note2">A dedicated PQ-NAS DNA identity as a contact.</span>
+                        <span data-i18n="admin.dna.note2">A dedicated server DNA identity must already exist and be accepted as a contact.</span>
                     </div>
 
                     <div class="note">
@@ -1450,7 +1450,7 @@
                     </div>
 
                     <div class="note" data-i18n="admin.language.desc">
-                        Language is saved in this browser and applies instantly across DNA-Nexus pages.
+                        Language is saved in this browser and applies instantly across server pages.
                     </div>
                 </div>
             </div>
@@ -1494,7 +1494,7 @@
 <div id="dnaIdentityModalBackdrop" class="modalBackdrop hidden">
     <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="dnaIdentityModalTitle">
         <div class="modalHd">
-            <div id="dnaIdentityModalTitle" style="font-weight:950;" data-i18n="admin.dna.identity_title">PQ-NAS DNA Identity</div>
+            <div id="dnaIdentityModalTitle" style="font-weight:950;" data-i18n="admin.dna.identity_title">Server DNA Identity</div>
             <button id="btnDnaIdentityModalClose" class="pq-btn" type="button"><span data-i18n="admin.common.close">Close</span></button>
         </div>
         <div class="modalBd">

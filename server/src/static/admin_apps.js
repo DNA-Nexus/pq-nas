@@ -71,7 +71,7 @@
             return tr(
                 "admin.apps.error.incompatible_server",
                 { min, current },
-                `Requires DNA-Nexus Server ${min} or newer. Current server is ${current}.`
+                `Requires server version ${min} or newer. Current server is ${current}.`
             );
         }
 

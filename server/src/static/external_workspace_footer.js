@@ -80,8 +80,8 @@
             footer.innerHTML = `
                 <div class="externalWorkspaceStorage" id="workspaceStorageLine">Workspace storage: —</div>
                 <div class="externalWorkspaceBrand">
-                    <div data-brand-template="{product_short_name} external workspace">DNA-Nexus external workspace</div>
-                    <div data-brand-text="copyright">© CPUNK 2026 • DNA-Nexus</div>
+                    <div data-brand-template="{product_short_name} external workspace">External workspace</div>
+                    <div data-brand-text="copyright">© Server 2026</div>
                 </div>
             `;
 

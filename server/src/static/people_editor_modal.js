@@ -1,5 +1,5 @@
 /* server/src/static/people_editor_modal.js
- * Detached People editor modal for DNA-Nexus People labels.
+ * Detached People editor modal for People labels.
  */
 (function () {
     "use strict";

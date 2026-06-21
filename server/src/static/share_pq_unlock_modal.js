@@ -167,7 +167,7 @@
             }
         } catch (_) {}
 
-        return tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share");
+        return tr("pqshare.eyebrow", null, "Post-Quantum Share");
     }
 
     function showUnlockModal({ mode, alg, purpose, errorMessage = "" }) {

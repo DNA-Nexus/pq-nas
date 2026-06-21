@@ -1,5 +1,5 @@
 /* server/src/static/people.js
- * DNA-Nexus People UI
+ * People UI
  *
  * Private per-user friendly names for fingerprints, workspace collaborators,
  * external DNA Connect members, and future @mentions/locks/activity/access maps.
