@@ -1,8 +1,14 @@
 #include "notifications/notification_routes.h"
 #include "notifications/notification_settings.h"
 
-#include <cstdlib>
+#include <chrono>
+#include <csignal>
+#include <fcntl.h>
 #include <string>
+#include <thread>
+#include <unistd.h>
+#include <vector>
+#include <sys/wait.h>
 
 #include <nlohmann/json.hpp>
 
@@ -100,6 +106,121 @@ std::string notification_test_text(const std::string& kind) {
         return "DNA-Nexus test warning: notification delivery is working.";
     }
     return "DNA-Nexus test notification: notification delivery is working.";
+}
+
+struct ProcessResult {
+    int exit_code = -1;
+    bool timed_out = false;
+    std::string output;
+};
+
+ProcessResult run_process_capture_local(const std::vector<std::string>& argv,
+                                        std::chrono::seconds timeout,
+                                        std::size_t max_output_bytes) {
+    ProcessResult result;
+
+    if (argv.empty() || argv[0].empty()) {
+        result.exit_code = 127;
+        return result;
+    }
+
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        result.exit_code = 127;
+        return result;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child.
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+
+        std::vector<char*> cargv;
+        cargv.reserve(argv.size() + 1);
+        for (const auto& a : argv) {
+            cargv.push_back(const_cast<char*>(a.c_str()));
+        }
+        cargv.push_back(nullptr);
+
+        execv(cargv[0], cargv.data());
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    if (pid < 0) {
+        close(pipefd[0]);
+        result.exit_code = 127;
+        return result;
+    }
+
+    const int flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    int status = 0;
+    bool exited = false;
+
+    while (true) {
+        char buf[512];
+        while (true) {
+            const ssize_t n = read(pipefd[0], buf, sizeof(buf));
+            if (n > 0) {
+                if (result.output.size() < max_output_bytes) {
+                    const std::size_t remaining = max_output_bytes - result.output.size();
+                    result.output.append(buf, buf + std::min<std::size_t>(remaining, static_cast<std::size_t>(n)));
+                }
+                continue;
+            }
+            break;
+        }
+
+        const pid_t w = waitpid(pid, &status, WNOHANG);
+        if (w == pid) {
+            exited = true;
+            break;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            result.timed_out = true;
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+            break;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    // Final drain after process exit/kill.
+    char buf[512];
+    while (true) {
+        const ssize_t n = read(pipefd[0], buf, sizeof(buf));
+        if (n > 0) {
+            if (result.output.size() < max_output_bytes) {
+                const std::size_t remaining = max_output_bytes - result.output.size();
+                result.output.append(buf, buf + std::min<std::size_t>(remaining, static_cast<std::size_t>(n)));
+            }
+            continue;
+        }
+        break;
+    }
+
+    close(pipefd[0]);
+
+    if (result.timed_out) {
+        result.exit_code = 124;
+    } else if (exited && WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else {
+        result.exit_code = 1;
+    }
+
+    return result;
 }
 
 json send_telegram_message(const NotificationSettings& s, const std::string& text) {
@@ -227,12 +348,12 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
 
             (void)req;
 
-            const int rc = std::system(
-                "/usr/local/libexec/pqnas/pqnas_notify.py --test-email "
-                ">/tmp/pqnas_notify_test_email.out 2>&1"
-            );
+            const auto pr = run_process_capture_local(
+                {"/usr/local/libexec/pqnas/pqnas_notify.py", "--test-email"},
+                std::chrono::seconds(30),
+                4096);
 
-            if (rc == 0) {
+            if (pr.exit_code == 0 && !pr.timed_out) {
                 reply_json_local(deps, res, 200, {
                     {"ok", true},
                     {"message", "Email test sent"}
@@ -242,8 +363,10 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
 
             reply_json_local(deps, res, 500, {
                 {"ok", false},
-                {"error", "email_test_failed"},
-                {"message", "Email test failed. Check /tmp/pqnas_notify_test_email.out on the server."}
+                {"error", pr.timed_out ? "email_test_timeout" : "email_test_failed"},
+                {"message", pr.timed_out
+                    ? "Email test timed out."
+                    : "Email test failed. Run pqnas_notify.py --test-email on the server for diagnostics."}
             });
         });
 }
