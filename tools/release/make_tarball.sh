@@ -342,6 +342,24 @@ test -x "$STAGE/libexec/pqnas/pqnas-first-admin" || {
   exit 24
 }
 
+# Notifications + Warnings worker.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas_notify.py
+NOTIFY_WORKER_SRC="$REPO_ROOT/tools/runtime/pqnas_notify.py"
+if [[ ! -f "$NOTIFY_WORKER_SRC" ]]; then
+  echo "ERROR: Missing notification worker: $NOTIFY_WORKER_SRC"
+  exit 25
+fi
+
+install -m 0755 \
+  "$NOTIFY_WORKER_SRC" \
+  "$STAGE/libexec/pqnas/pqnas_notify.py"
+
+test -x "$STAGE/libexec/pqnas/pqnas_notify.py" || {
+  echo "ERROR: notification worker did not stage"
+  exit 26
+}
+
 # Drive-bay locate root wrapper.
 # Package layout expected by installer:
 #   <asset_root>/libexec/pqnas/pqnas-drive-locate
