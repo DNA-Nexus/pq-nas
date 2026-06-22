@@ -101,6 +101,7 @@
       <li><a href="#snapshots-btrfs">Tilannekuvat (Btrfs)</a></li>
       <li><a href="#system-backups">Järjestelmän varmuuskopiot</a></li>
       <li><a href="#uploads-tiering">Lähetykset</a></li>
+      <li><a href="#notifications-warnings">Ilmoitukset ja varoitukset</a></li>
       <li><a href="#language-and-theme">Kieli ja teema</a></li>
       <li><a href="#verify">Ensiasetusten tarkistus</a></li>
     </ol>
@@ -510,6 +511,67 @@
   <div class="callout warning">
     <strong>Tärkeää:</strong> Lähetysten tasotus ei ole varmuuskopiointiominaisuus.
     Se määrittää vain, minne ladatut tiedostot ensin laskeutuvat ja miten ne myöhemmin siirretään.
+  </div>
+
+  <h2 id="notifications-warnings">Ilmoitukset ja varoitukset</h2>
+  <p>
+    Palvelinohjelmisto voidaan konfiguroida antamaan ylläpitäjälle ajantasaista tietoa
+    palvelun tilasta. Tämä on hyödyllistä erityisesti silloin, kun palvelinta käytetään
+    tuotantodatalle, asiakaslatauksille, workspacelle tai muille jatkuvasti käytössä oleville
+    palveluille.
+  </p>
+
+  <img class="wiki-img" src="../../../assets/images/admin_setup/warnings/warn_FI.png" alt="DNA-Nexuksen ilmoitus- ja varoitusasetukset">
+
+  <p>
+    Ylläpitäjää voidaan informoida sähköpostilla, Telegramilla tai molemmilla. Tavalliset
+    ilmoitukset ovat rauhallisia ylläpitoyhteenvetoja, kuten käyttäjämäärien muutoksia,
+    palvelun käyttöaikaa ja datan määrän yhteenvetoja. Varoitukset taas ilmoittavat
+    kiireellisemmistä operatiivisista tapahtumista.
+  </p>
+
+  <h3>Ilmoituskanavat</h3>
+  <p>
+    <strong>Notifications</strong>- ja <strong>Warnings</strong>-osioissa on erilliset valinnat
+    sähköpostille ja Telegramille. Näin viikkoyhteenvedot voidaan lähettää esimerkiksi
+    sähköpostilla ja kiireelliset varoitukset Telegramiin, tai molemmat kanavat voidaan ottaa
+    käyttöön molemmille viestityypeille.
+  </p>
+
+  <h3>Mitä ilmoitukset sisältävät</h3>
+  <p>
+    Viikoittainen ilmoitusyhteenveto on tarkoitettu rauhalliseen ylläpitotietoon. Se voi sisältää
+    käyttäjämäärän, käyttäjämäärän kasvun edelliseen yhteenvetoon verrattuna, palvelun tilan,
+    palvelun käynnistysajan ja tallennustilan käytön yhteenvedon.
+  </p>
+
+  <h3>Mitä varoitukset sisältävät</h3>
+  <p>
+    Nykyinen varoitusworker tarkistaa vähissä olevan vapaan tallennustilan,
+    <span class="mono">pqnas.service</span>-palvelun aktiivisuuden ja tallennustilan tarkistuksen
+    epäonnistumiset. Varoituskanava on myös oikea paikka kiireellisille levyterveys- ja SMART-varoituksille,
+    epäonnistuneille varmuuskopioille, epäonnistuneille päivityksille ja muille palveluvirheille,
+    kun valvontaa laajennetaan.
+  </p>
+
+  <h3>Email-lähetyksen konfigurointi</h3>
+  <p>
+    Email-lähetys määritetään kerran koko palvelimelle <strong>Email delivery</strong> -osiossa.
+    Ylläpitäjä antaa SMTP-palvelimen, portin, TLS-tilan, SMTP-käyttäjänimen, SMTP-salasanan tai
+    app passwordin sekä lähettäjän osoitteen. Kuluttajasähköposteissa, kuten AOL tai Gmail,
+    kannattaa käyttää app passwordia normaalin tilisalasanan sijasta.
+  </p>
+
+  <p>
+    Kun email-lähetys on konfiguroitu, käyttäjille ja ylläpitäjille riittää oma email-osoite ja
+    ilmoitusasetus. Heidän ei tarvitse antaa henkilökohtaisten sähköpostilaatikoidensa salasanoja
+    DNA-Nexukselle.
+  </p>
+
+  <div class="callout">
+    <strong>Turvahuomio:</strong> Telegram bot tokenit ja SMTP-salasanat tallennetaan serverille,
+    eikä niitä palauteta selaimeen raakana. Tallennetut salaisuudet näytetään käyttöliittymässä
+    vain maskattuina arvoina.
   </div>
 
   <h2 id="language-and-theme">Kieli ja teema</h2>

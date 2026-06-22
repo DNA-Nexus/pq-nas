@@ -277,15 +277,16 @@ def email_recipients(settings: Dict[str, Any], users_path: Path) -> list[str]:
     return out
 
 
-def smtp_port(env: Dict[str, str]) -> int:
-    raw = str(env.get("PQNAS_SMTP_PORT") or "").strip()
+def smtp_port(env: Dict[str, str], settings: Dict[str, Any] | None = None) -> int:
+    settings = settings or {}
+    raw = str(settings.get("smtp_port") or env.get("PQNAS_SMTP_PORT") or "").strip()
     if raw:
         try:
             return int(raw)
         except Exception:
             pass
 
-    mode = str(env.get("PQNAS_SMTP_TLS") or "starttls").strip().lower()
+    mode = str(settings.get("smtp_tls") or env.get("PQNAS_SMTP_TLS") or "starttls").strip().lower()
     return 465 if mode == "ssl" else 587
 
 
@@ -307,11 +308,11 @@ def send_email(
         print("[notify] email has no recipients")
         return False
 
-    from_addr = str(env.get("PQNAS_SMTP_FROM") or "dna-nexus@localhost").strip()
-    host = str(env.get("PQNAS_SMTP_HOST") or "").strip()
-    tls_mode = str(env.get("PQNAS_SMTP_TLS") or "starttls").strip().lower()
-    user = str(env.get("PQNAS_SMTP_USER") or "").strip()
-    password = str(env.get("PQNAS_SMTP_PASSWORD") or "")
+    from_addr = str(settings.get("smtp_from") or env.get("PQNAS_SMTP_FROM") or "dna-nexus@localhost").strip()
+    host = str(settings.get("smtp_host") or env.get("PQNAS_SMTP_HOST") or "").strip()
+    tls_mode = str(settings.get("smtp_tls") or env.get("PQNAS_SMTP_TLS") or "starttls").strip().lower()
+    user = str(settings.get("smtp_user") or env.get("PQNAS_SMTP_USER") or "").strip()
+    password = str(settings.get("smtp_password") or env.get("PQNAS_SMTP_PASSWORD") or "")
 
     msg = EmailMessage()
     msg["From"] = from_addr
@@ -320,7 +321,7 @@ def send_email(
     msg.set_content(body)
 
     if host:
-        port = smtp_port(env)
+        port = smtp_port(env, settings)
 
         try:
             ctx = ssl.create_default_context()

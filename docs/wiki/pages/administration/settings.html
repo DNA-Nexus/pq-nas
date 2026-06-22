@@ -109,6 +109,7 @@
       <li><a href="#snapshots-btrfs">Snapshots (Btrfs)</a></li>
       <li><a href="#system-backups">System Backups</a></li>
       <li><a href="#uploads-tiering">Uploads</a></li>
+      <li><a href="#notifications-warnings">Notifications and warnings</a></li>
       <li><a href="#language-and-theme">Language and theme</a></li>
       <li><a href="#verify">Verify initial settings</a></li>
     </ol>
@@ -567,6 +568,62 @@
   <div class="callout warning">
     <strong>Important:</strong> Upload tiering is not a backup feature. It only controls where
     uploaded files land first and how they are later moved.
+  </div>
+
+  <h2 id="notifications-warnings">Notifications and warnings</h2>
+  <p>
+    DNA-Nexus can be configured to keep the administrator informed about the current
+    health and operating status of the server. This is useful especially when the server
+    is used for production data, customer uploads, workspaces or other always-on services.
+  </p>
+
+  <img class="wiki-img" src="../../assets/images/admin_setup/warnings/warn_EN.png" alt="DNA-Nexus notifications and warnings settings">
+
+  <p>
+    The administrator can be informed by email, Telegram, or both. Normal notifications
+    are calm operational summaries, such as user count changes, service uptime and storage
+    usage summaries. Warnings are for more urgent operational events.
+  </p>
+
+  <h3>Notification channels</h3>
+  <p>
+    The <strong>Notifications</strong> and <strong>Warnings</strong> sections have separate
+    channel checkboxes. This makes it possible to send weekly summaries by email while also
+    sending urgent warnings to Telegram, or to use both channels for both message types.
+  </p>
+
+  <h3>What notifications include</h3>
+  <p>
+    The weekly notification summary is intended for calm administrator information. It can
+    include the number of users, growth since the previous summary, service status, service
+    start time and storage usage information.
+  </p>
+
+  <h3>What warnings include</h3>
+  <p>
+    The current warning worker checks for low free storage space, <span class="mono">pqnas.service</span>
+    not being active and storage check failures. The warning channel is also the correct place
+    for urgent disk health and SMART warnings, failed backup checks, failed update checks and
+    other service errors as the monitoring set is expanded.
+  </p>
+
+  <h3>Email delivery</h3>
+  <p>
+    Email delivery is configured once for the server in the <strong>Email delivery</strong>
+    area. The administrator enters the SMTP host, port, TLS mode, SMTP username, SMTP password
+    or app password, and the sender address. Consumer mailbox providers such as AOL or Gmail
+    should normally be used with an app password instead of the normal account password.
+  </p>
+
+  <p>
+    After email delivery is configured, users and administrators only need an email address
+    and a notification preference. They do not need to give their personal mailbox passwords
+    to DNA-Nexus.
+  </p>
+
+  <div class="callout">
+    <strong>Security note:</strong> Telegram bot tokens and SMTP passwords are stored server-side
+    and are not returned raw to the browser. Saved secrets are shown in the UI only as masked values.
   </div>
 
   <h2 id="language-and-theme">Language and theme</h2>

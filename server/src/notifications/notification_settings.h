@@ -20,6 +20,15 @@ struct NotificationSettings {
     // Secret: never return this raw value to browser.
     std::string telegram_bot_token;
     std::string telegram_chat_id;
+
+    // Email delivery settings.
+    // smtp_password is secret: never return this raw value to browser.
+    std::string smtp_host;
+    int smtp_port = 587;
+    std::string smtp_tls = "starttls"; // starttls | ssl | none
+    std::string smtp_user;
+    std::string smtp_password;
+    std::string smtp_from;
 };
 
 std::filesystem::path notification_settings_path();

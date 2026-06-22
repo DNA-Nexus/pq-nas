@@ -29,6 +29,19 @@ std::string json_string_local(const json& j, const char* key, const std::string&
     return j.at(key).get<std::string>();
 }
 
+int json_int_local(const json& j, const char* key, int fallback) {
+    if (!j.contains(key)) return fallback;
+    if (j.at(key).is_number_integer()) return j.at(key).get<int>();
+    if (j.at(key).is_string()) {
+        try {
+            return std::stoi(j.at(key).get<std::string>());
+        } catch (...) {
+            return fallback;
+        }
+    }
+    return fallback;
+}
+
 std::vector<std::string> json_string_array_local(const json& j, const char* key, const std::vector<std::string>& fallback) {
     if (!j.contains(key) || !j.at(key).is_array()) return fallback;
 
@@ -51,7 +64,13 @@ json to_private_json_local(const NotificationSettings& s) {
         {"weekly_summary_enabled", s.weekly_summary_enabled},
         {"extra_emails", s.extra_emails},
         {"telegram_bot_token", s.telegram_bot_token},
-        {"telegram_chat_id", s.telegram_chat_id}
+        {"telegram_chat_id", s.telegram_chat_id},
+        {"smtp_host", s.smtp_host},
+        {"smtp_port", s.smtp_port},
+        {"smtp_tls", s.smtp_tls},
+        {"smtp_user", s.smtp_user},
+        {"smtp_password", s.smtp_password},
+        {"smtp_from", s.smtp_from}
     };
 }
 
@@ -67,6 +86,13 @@ NotificationSettings from_private_json_local(const json& j) {
     s.extra_emails = json_string_array_local(j, "extra_emails", s.extra_emails);
     s.telegram_bot_token = json_string_local(j, "telegram_bot_token", s.telegram_bot_token);
     s.telegram_chat_id = json_string_local(j, "telegram_chat_id", s.telegram_chat_id);
+
+    s.smtp_host = json_string_local(j, "smtp_host", s.smtp_host);
+    s.smtp_port = json_int_local(j, "smtp_port", s.smtp_port);
+    s.smtp_tls = json_string_local(j, "smtp_tls", s.smtp_tls);
+    s.smtp_user = json_string_local(j, "smtp_user", s.smtp_user);
+    s.smtp_password = json_string_local(j, "smtp_password", s.smtp_password);
+    s.smtp_from = json_string_local(j, "smtp_from", s.smtp_from);
 
     return s;
 }
@@ -175,6 +201,23 @@ NotificationSettings notification_settings_from_json_patch(
         if (!v.empty()) s.telegram_bot_token = v;
     }
 
+    s.smtp_host = json_string_local(patch, "smtp_host", s.smtp_host);
+    s.smtp_port = json_int_local(patch, "smtp_port", s.smtp_port);
+    s.smtp_tls = json_string_local(patch, "smtp_tls", s.smtp_tls);
+    s.smtp_user = json_string_local(patch, "smtp_user", s.smtp_user);
+    s.smtp_from = json_string_local(patch, "smtp_from", s.smtp_from);
+
+    // Secret update policy:
+    // - missing/empty password preserves existing password
+    // - smtp_password_clear=true clears it
+    // - non-empty smtp_password replaces it
+    if (json_bool_local(patch, "smtp_password_clear", false)) {
+        s.smtp_password.clear();
+    } else if (patch.contains("smtp_password") && patch.at("smtp_password").is_string()) {
+        const std::string v = patch.at("smtp_password").get<std::string>();
+        if (!v.empty()) s.smtp_password = v;
+    }
+
     return s;
 }
 
@@ -199,7 +242,14 @@ nlohmann::json notification_settings_public_json(
             {"extra_emails", s.extra_emails},
             {"telegram_chat_id", s.telegram_chat_id},
             {"telegram_bot_token_present", !s.telegram_bot_token.empty()},
-            {"telegram_bot_token_masked", mask_secret_for_admin(s.telegram_bot_token)}
+            {"telegram_bot_token_masked", mask_secret_for_admin(s.telegram_bot_token)},
+            {"smtp_host", s.smtp_host},
+            {"smtp_port", s.smtp_port},
+            {"smtp_tls", s.smtp_tls},
+            {"smtp_user", s.smtp_user},
+            {"smtp_from", s.smtp_from},
+            {"smtp_password_present", !s.smtp_password.empty()},
+            {"smtp_password_masked", mask_secret_for_admin(s.smtp_password)}
         }}
     };
 }
