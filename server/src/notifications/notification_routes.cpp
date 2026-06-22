@@ -1,6 +1,7 @@
 #include "notifications/notification_routes.h"
 #include "notifications/notification_settings.h"
 
+#include <cstdlib>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -224,10 +225,25 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
             std::string actor_fp;
             if (!require_admin_local(deps, req, res, &actor_fp)) return;
 
-            reply_json_local(deps, res, 501, {
+            (void)req;
+
+            const int rc = std::system(
+                "/usr/local/libexec/pqnas/pqnas_notify.py --test-email "
+                ">/tmp/pqnas_notify_test_email.out 2>&1"
+            );
+
+            if (rc == 0) {
+                reply_json_local(deps, res, 200, {
+                    {"ok", true},
+                    {"message", "Email test sent"}
+                });
+                return;
+            }
+
+            reply_json_local(deps, res, 500, {
                 {"ok", false},
-                {"error", "email_not_configured"},
-                {"message", "Email delivery backend is not configured yet. Add SMTP or sendmail policy before enabling email tests."}
+                {"error", "email_test_failed"},
+                {"message", "Email test failed. Check /tmp/pqnas_notify_test_email.out on the server."}
             });
         });
 }

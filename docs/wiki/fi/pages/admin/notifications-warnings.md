@@ -10,14 +10,14 @@ Asetukset löytyvät kohdasta:
 
 Viestit jakautuvat kahteen ryhmään:
 
-**Ilmoitukset** ovat rauhallisia ylläpitoyhteenvetoja. Ensimmäinen MVP lähettää viikoittaisen Telegram-yhteenvedon, jossa näkyy:
+**Ilmoitukset** ovat rauhallisia ylläpitoyhteenvetoja. MVP lähettää viikoittaisen yhteenvedon, jossa näkyy:
 
 - käyttäjämäärä ja kasvu edelliseen yhteenvetoon verrattuna
 - `pqnas.service`-palvelun tila
 - palvelun käynnistysaika
 - tallennustilan yhteenveto
 
-**Varoitukset** ovat kiireellisempiä operatiivisia tarkistuksia. Ensimmäinen MVP tarkistaa 15 minuutin välein:
+**Varoitukset** ovat kiireellisempiä operatiivisia tarkistuksia. MVP tarkistaa 15 minuutin välein:
 
 - onko vapaa levytila vähissä
 - onko `pqnas.service` aktiivinen
@@ -27,9 +27,44 @@ Samaa varoitusta ei lähetetä jatkuvasti uudestaan, vaan varoituksissa on throt
 
 ## Lähetyskanavat
 
-Nykyinen MVP tukee Telegram-lähetystä.
+MVP tukee:
 
-Email-valinnat näkyvät jo käyttöliittymässä, mutta email-lähetys ei ole vielä käytössä. Email toteutetaan myöhemmin joko SMTP-asetuksilla tai paikallisella sendmail/msmtp-ratkaisulla.
+- Telegramia
+- email-lähetystä SMTP:n kautta
+- email-lähetystä paikallisen `sendmail` / `msmtp` -komennon kautta, jos sellainen on konfiguroitu serverille
+
+Ylläpitäjä voi ottaa emailin, Telegramin tai molemmat käyttöön erikseen ilmoituksille ja varoituksille.
+
+## Emailin käyttöönotto
+
+Email-lähetys konfiguroidaan serverille keskitetysti. Käyttäjien ja adminien ei tarvitse antaa omien sähköpostitiliensä salasanoja.
+
+SMTP-lähetystä varten lisää nämä arvot tiedostoon `/etc/pqnas/pqnas.env`:
+
+```text
+PQNAS_SMTP_HOST="smtp.example.com"
+PQNAS_SMTP_PORT="587"
+PQNAS_SMTP_TLS="starttls"
+PQNAS_SMTP_USER="admin@example.com"
+PQNAS_SMTP_PASSWORD="app-password-or-smtp-password"
+PQNAS_SMTP_FROM="DNA-Nexus <admin@example.com>"
+```
+
+Jos `PQNAS_SMTP_HOST` ei ole asetettu, worker yrittää käyttää paikallista `sendmail`- tai `msmtp`-komentoa, jos sellainen on asennettu ja konfiguroitu.
+
+Kun `/etc/pqnas/pqnas.env` muuttuu, käynnistä palvelu uudelleen:
+
+```bash
+sudo systemctl restart pqnas.service
+```
+
+Testaa email-lähetys:
+
+```bash
+sudo bash -c 'set -a; . /etc/pqnas/pqnas.env; set +a; exec sudo -E -u pqnas /usr/local/libexec/pqnas/pqnas_notify.py --test-email'
+```
+
+Admin-käyttöliittymässä on myös **Send test email** -painike.
 
 ## Telegramin käyttöönotto
 
@@ -48,7 +83,7 @@ Telegram-token tallennetaan serverille, eikä sitä palauteta selaimeen raakana.
 
 ## Runtime-tiedostot
 
-Asetukset tallennetaan tiedostoon:
+Ilmoitusasetukset tallennetaan tiedostoon:
 
 `/etc/pqnas/notifications.json`
 
@@ -56,6 +91,16 @@ Odotetut oikeudet:
 
 ```text
 600 pqnas:pqnas /etc/pqnas/notifications.json
+```
+
+SMTP-salaisuudet tallennetaan tiedostoon:
+
+`/etc/pqnas/pqnas.env`
+
+Odotetut oikeudet:
+
+```text
+600 root:root /etc/pqnas/pqnas.env
 ```
 
 Varoitusten throttlaus ja viikkoyhteenvetojen laskurit tallennetaan tänne:
@@ -93,14 +138,8 @@ sudo systemctl start pqnas-notify-weekly.service
 sudo journalctl -u pqnas-notify-weekly.service -n 80 --no-pager
 ```
 
-Telegramin voi testata workerillä näin:
-
-```bash
-sudo -u pqnas /usr/local/libexec/pqnas/pqnas_notify.py --test-telegram
-```
-
 ## Turvallisuushuomiot
 
-Telegram bot token on salaisuus. Älä committaa sitä Gitiin, äläkä liitä tuotantotokenia lokeihin, tiketteihin tai julkisiin chatteihin.
+Telegram bot tokenit ja SMTP-salasanat ovat salaisuuksia. Älä committaa niitä Gitiin, äläkä liitä tuotantosalaisuuksia lokeihin, tiketteihin tai julkisiin chatteihin.
 
-Jos token paljastuu, vaihda se BotFatherissa ja päivitä uusi token admin-käyttöliittymästä.
+Kuluttajasähköposteissa, kuten AOL tai Gmail, käytä app passwordia normaalin tilisalasanan sijasta.
