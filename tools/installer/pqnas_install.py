@@ -1534,6 +1534,12 @@ def write_env_file(
         "PQNAS_NODUS_CLI=/usr/local/bin/nodus-cli",
         "PQNAS_NODUS_IDENTITY_DIR=/srv/pqnas/config/nodus/identity",
         "PQNAS_NODUS_SEEDS=US-1=154.38.182.161:4001,EU-4=164.68.105.227:4001,EU-5=164.68.116.180:4001",
+        "",
+        "# Circle Stack / Nodus federation worker.",
+        "# Enabled by default so public Circle Stack federation is active after install.",
+        "PQNAS_CIRCLE_FEDERATION_WORKER=1",
+        "PQNAS_CIRCLE_FEDERATION_WORKER_SEED=all",
+        "PQNAS_CIRCLE_FEDERATION_WORKER_CIRCLE_ID=local-public-feed",
     ]
 
     # URL / relying party settings (used by v4 QR auth)
