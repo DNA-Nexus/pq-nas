@@ -6224,7 +6224,7 @@ static std::unordered_map<std::string, json> g_user_mig_job_meta; // job_id -> s
 static std::atomic<bool> g_user_mig_worker_stop{false};
 // Shared users_path for background user storage workers.
 // Historical name kept temporarily after RAID worker moved to routes_storage_raid.cpp.
-static std::string g_users_path_for_raid;
+static std::string g_users_path_for_user_workers;
 
 static std::thread g_user_mig_worker;
 
@@ -6926,7 +6926,7 @@ static void user_mig_worker_start_once() {
     bool expected = false;
     if (!started.compare_exchange_strong(expected, true)) return;
     g_user_mig_worker_stop.store(false);
-    g_user_mig_worker = std::thread(user_storage_migration_worker_main, g_users_path_for_raid);
+    g_user_mig_worker = std::thread(user_storage_migration_worker_main, g_users_path_for_user_workers);
 }
 
 static void user_mig_worker_stop_and_join() {
@@ -7024,7 +7024,7 @@ static void user_cleanup_worker_start_once() {
     bool expected = false;
     if (!started.compare_exchange_strong(expected, true)) return;
     g_user_cleanup_worker_stop.store(false);
-    g_user_cleanup_worker = std::thread(user_storage_cleanup_worker_main, g_users_path_for_raid);
+    g_user_cleanup_worker = std::thread(user_storage_cleanup_worker_main, g_users_path_for_user_workers);
 }
 
 static void user_cleanup_worker_stop_and_join() {
@@ -10152,7 +10152,7 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
     	}
 	}
 
-	g_users_path_for_raid = users_path;
+	g_users_path_for_user_workers = users_path;
 	pool_mounts_init_default_only();
 	pool_mounts_restore_managed(users_path);
 
