@@ -3183,6 +3183,9 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     const pill = $("notificationsPill");
     if (!pill) return;
 
+    const defaultEmailPill = $("notificationsDefaultEmailPill");
+    const deliveryPill = $("notificationsDeliveryPill");
+
     const infoEmail = $("notifyInfoEmailEnabled");
     const infoTelegram = $("notifyInfoTelegramEnabled");
     const warnEmail = $("notifyWarnEmailEnabled");
@@ -3191,6 +3194,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     const schedule = $("notifyInfoSchedule");
     const telegramToken = $("notifyTelegramToken");
     const telegramChatId = $("notifyTelegramChatId");
+    const smtpHost = $("notifySmtpHost");
+    const smtpPort = $("notifySmtpPort");
+    const smtpTls = $("notifySmtpTls");
+    const smtpUser = $("notifySmtpUser");
+    const smtpPassword = $("notifySmtpPassword");
+    const smtpFrom = $("notifySmtpFrom");
     const btnSave = $("btnNotificationsSave");
     const btnTestEmail = $("btnNotificationsTestEmail");
     const btnTestTelegram = $("btnNotificationsTestTelegram");
@@ -3214,6 +3223,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         pill.className = "pill " + (kind || "");
         pill.innerHTML =
             `<span class="k">${esc(tr("admin.common.status", null, "Status"))}:</span> <span class="v">${esc(text || "—")}</span>`;
+    }
+
+    function setInlinePill(el, kind, labelKey, labelFallback, value) {
+        if (!el) return;
+        el.className = "pill " + (kind || "");
+        el.innerHTML =
+            `<span class="k">${esc(tr(labelKey, null, labelFallback))}</span> <span class="v">${esc(value || "—")}</span>`;
     }
 
     async function apiJson(url, opts = {}) {
@@ -3250,11 +3266,19 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             warnings_telegram_enabled: !!warnTelegram?.checked,
             weekly_summary_enabled: String(schedule?.value || "weekly") !== "disabled",
             extra_emails: splitEmails(extraEmails?.value || ""),
-            telegram_chat_id: String(telegramChatId?.value || "").trim()
+            telegram_chat_id: String(telegramChatId?.value || "").trim(),
+            smtp_host: String(smtpHost?.value || "").trim(),
+            smtp_port: Number(String(smtpPort?.value || "587").trim() || 587),
+            smtp_tls: String(smtpTls?.value || "starttls").trim(),
+            smtp_user: String(smtpUser?.value || "").trim(),
+            smtp_from: String(smtpFrom?.value || "").trim()
         };
 
         const token = String(telegramToken?.value || "").trim();
         if (token) payload.telegram_bot_token = token;
+
+        const smtpPass = String(smtpPassword?.value || "").trim();
+        if (smtpPass) payload.smtp_password = smtpPass;
 
         return payload;
     }
@@ -3280,6 +3304,21 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
                 : "";
         }
 
+        if (smtpHost) smtpHost.value = String(s.smtp_host || "");
+        if (smtpPort) smtpPort.value = String(s.smtp_port || 587);
+        if (smtpTls) smtpTls.value = String(s.smtp_tls || "starttls");
+        if (smtpUser) smtpUser.value = String(s.smtp_user || "");
+        if (smtpFrom) smtpFrom.value = String(s.smtp_from || "");
+
+        if (smtpPassword) {
+            smtpPassword.value = "";
+            const masked = String(s.smtp_password_masked || "");
+            smtpPassword.placeholder = masked || tr("admin.notifications.smtp_password_placeholder", null, "app password");
+            smtpPassword.title = masked
+                ? tr("admin.notifications.smtp_password_saved_masked", { password: masked }, `Saved password: ${masked}`)
+                : "";
+        }
+
         const channels = [];
         if (s.info_email_enabled || s.warnings_email_enabled) channels.push(tr("admin.notifications.email", null, "Email"));
         if (s.info_telegram_enabled || s.warnings_telegram_enabled) channels.push(tr("admin.notifications.telegram", null, "Telegram"));
@@ -3288,6 +3327,22 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         const detail = defaultEmail
             ? tr("admin.notifications.ready_with_email", { email: defaultEmail }, `ready • ${defaultEmail}`)
             : tr("admin.notifications.ready_no_admin_email", null, "ready • admin email missing");
+
+        setInlinePill(
+            defaultEmailPill,
+            defaultEmail ? "info" : "warn",
+            "admin.notifications.default_email",
+            "Default email:",
+            defaultEmail || tr("admin.notifications.admin_email_hint", null, "admin account email")
+        );
+
+        setInlinePill(
+            deliveryPill,
+            channels.length ? "ok" : "warn",
+            "admin.notifications.delivery",
+            "Delivery:",
+            channels.length ? channels.join(" + ") : tr("admin.notifications.not_enabled_yet", null, "not enabled yet")
+        );
 
         setPill(channels.length ? "ok" : "warn", detail);
     }
@@ -3358,14 +3413,24 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     btnTestEmail?.addEventListener("click", async (ev) => {
         ev.preventDefault();
         btnTestEmail.disabled = true;
+        setPill("warn", tr("admin.notifications.testing_email", null, "testing email…"));
         try {
-            await apiJson("/api/v4/admin/notifications/test-email", {
+            const saved = await apiJson("/api/v4/admin/notifications/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(currentPayload())
             });
+            applySettings(saved);
+
+            await apiJson("/api/v4/admin/notifications/test-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})
+            });
             toast("ok", tr("admin.notifications.test_sent", null, "Test sent"), tr("admin.notifications.email_test_sent", null, "Email test sent"));
+            await refreshNotifications();
         } catch (e) {
+            setPill("fail", tr("admin.common.error", null, "error"));
             toast("fail", tr("admin.notifications.email_not_ready", null, "Email not ready"), String(e.message || e));
         } finally {
             btnTestEmail.disabled = false;

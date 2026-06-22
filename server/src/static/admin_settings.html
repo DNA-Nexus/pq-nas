@@ -1392,11 +1392,11 @@
 
                 <div class="bd">
                     <div class="row">
-                        <span class="pill info">
+                        <span class="pill info" id="notificationsDefaultEmailPill">
                             <span class="k" data-i18n="admin.notifications.default_email">Default email:</span>
-                            <span class="v" data-i18n="admin.notifications.admin_email_hint">admin account email</span>
+                            <span class="v">—</span>
                         </span>
-                        <span class="pill warn">
+                        <span class="pill warn" id="notificationsDeliveryPill">
                             <span class="k" data-i18n="admin.notifications.delivery">Delivery:</span>
                             <span class="v" data-i18n="admin.notifications.not_enabled_yet">not enabled yet</span>
                         </span>
@@ -1483,6 +1483,72 @@
                             </div>
                         </section>
                     </div>
+
+                        <section class="notifyBox" style="margin-top:12px;" aria-label="Email delivery" data-i18n-aria-label="admin.notifications.email_delivery">
+                            <h3 data-i18n="admin.notifications.email_delivery">Email delivery</h3>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.smtp_host">SMTP host</span>
+                                <input id="notifySmtpHost"
+                                       class="pq-input mono"
+                                       type="text"
+                                       autocomplete="off"
+                                       placeholder="smtp.aol.com" />
+                            </label>
+
+                            <div style="display:grid; grid-template-columns: minmax(90px, 1fr) minmax(120px, 1fr); gap:10px;">
+                                <label class="notifyField">
+                                    <span class="label" data-i18n="admin.notifications.smtp_port">Port</span>
+                                    <input id="notifySmtpPort"
+                                           class="pq-input mono"
+                                           type="number"
+                                           min="1"
+                                           max="65535"
+                                           step="1"
+                                           placeholder="587" />
+                                </label>
+
+                                <label class="notifyField">
+                                    <span class="label" data-i18n="admin.notifications.smtp_tls">TLS</span>
+                                    <select id="notifySmtpTls" class="pq-select">
+                                        <option value="starttls" selected>STARTTLS</option>
+                                        <option value="ssl">SSL / TLS</option>
+                                        <option value="none">None</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.smtp_user">SMTP username</span>
+                                <input id="notifySmtpUser"
+                                       class="pq-input mono"
+                                       type="text"
+                                       autocomplete="off"
+                                       placeholder="admin@example.com" />
+                            </label>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.smtp_password">SMTP password / app password</span>
+                                <input id="notifySmtpPassword"
+                                       class="pq-input mono"
+                                       type="password"
+                                       autocomplete="new-password"
+                                       placeholder="saved password is masked" />
+                            </label>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.smtp_from">From address</span>
+                                <input id="notifySmtpFrom"
+                                       class="pq-input mono"
+                                       type="text"
+                                       autocomplete="off"
+                                       placeholder="DNA-Nexus <admin@example.com>" />
+                            </label>
+
+                            <div class="note" data-i18n="admin.notifications.email_delivery_note">
+                                Email delivery is configured once for this server. Users only need an email address and notification preference.
+                            </div>
+                        </section>
 
                     <div class="row" style="margin-top:12px;">
                         <button id="btnNotificationsSave" class="pq-btn primary" type="button">
