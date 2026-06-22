@@ -22,6 +22,13 @@ ALLOWED_SAME_AS_BASE_KEYS = {
     "dropzone.brand_logo_url",
     "dropzone.password",
     "dropzone.public.password_placeholder",
+
+    # Notifications: brand names, protocol names and example placeholders.
+    "admin.notifications.telegram",
+    "admin.notifications.smtp_tls",
+    "admin.notifications.extra_emails_placeholder",
+    "admin.notifications.telegram_chat_id_placeholder",
+    "admin.notifications.telegram_token_placeholder",
 }
 
 

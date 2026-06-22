@@ -540,7 +540,7 @@
   "admin.nodus.worker": "Federation worker",
   "admin.nodus.worker_disabled": "Disabled • set {env}=1",
   "admin.notifications.admin_email_hint": "admin account email",
-  "admin.notifications.backend_note": "Backend delivery is intentionally not enabled in this UI-only step. The next backend patch should store secrets server-side, mask Telegram tokens on read, and add test-send endpoints.",
+  "admin.notifications.backend_note": "Notification settings are stored server-side. Telegram tokens and SMTP passwords are never returned raw to the browser; saved secrets are shown only as masked values.",
   "admin.notifications.backend_pending": "backend pending",
   "admin.notifications.default_email": "Default email:",
   "admin.notifications.delivery": "Delivery:",
@@ -4906,5 +4906,16 @@
   "wait.waiting_ellipsis": "Waiting…",
   "wait.what_this_means": "What this means",
   "wait.when_approved": "What happens when approved",
-  "wait.where_approves": "Where the admin approves"
-}\n
+  "wait.where_approves": "Where the admin approves",
+  "admin.notifications.email_delivery": "Email delivery",
+  "admin.notifications.smtp_host": "SMTP host",
+  "admin.notifications.smtp_port": "Port",
+  "admin.notifications.smtp_tls": "TLS",
+  "admin.notifications.smtp_user": "SMTP username",
+  "admin.notifications.smtp_password": "SMTP password / app password",
+  "admin.notifications.smtp_from": "From address",
+  "admin.notifications.email_delivery_note": "Email delivery is configured once for this server. Users only need an email address and notification preference.",
+  "admin.notifications.smtp_password_placeholder": "app password",
+  "admin.notifications.smtp_password_saved_masked": "Saved password: {password}",
+  "admin.notifications.testing_email": "testing email…"
+}
