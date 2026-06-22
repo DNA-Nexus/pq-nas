@@ -1130,6 +1130,132 @@ def ensure_dna_alerts_runtime_dir(log: Optional[Log] = None) -> str:
     return path
 
 
+def ensure_notification_runtime_dir(log: Optional[Log] = None) -> str:
+    """
+    Runtime state directory for notification throttling and weekly counters.
+    """
+    path = "/var/lib/pqnas/notifications"
+    os.makedirs(path, exist_ok=True)
+
+    p = subprocess.run(
+        ["id", "-u", "pqnas"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if p.returncode != 0:
+        raise RuntimeError("pqnas service user does not exist before preparing notification runtime dir")
+
+    subprocess.run(["chown", "-R", "pqnas:pqnas", path], check=True)
+    subprocess.run(["chmod", "750", path], check=True)
+
+    if log:
+        log.write(f"[*] Prepared notification runtime dir: {path}")
+
+    return path
+
+
+def install_notification_worker_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install Notifications + Warnings worker and systemd timers.
+
+    Package layout:
+      <asset_root>/libexec/pqnas/pqnas_notify.py
+
+    Repo/dev layout:
+      <asset_root>/tools/runtime/pqnas_notify.py
+    """
+    src = _first_existing_path([
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas_notify.py"),
+        os.path.join(asset_root, "tools", "runtime", "pqnas_notify.py"),
+    ])
+
+    if not src:
+        raise RuntimeError(
+            "Notification worker not found. Expected libexec/pqnas/pqnas_notify.py "
+            "or tools/runtime/pqnas_notify.py."
+        )
+
+    dst = "/usr/local/libexec/pqnas/pqnas_notify.py"
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    tmp = dst + ".new"
+    shutil.copy2(src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, dst)
+    subprocess.run(["chown", "root:root", dst], check=False)
+    subprocess.run(["chmod", "755", dst], check=False)
+
+    ensure_notification_runtime_dir(log=log)
+
+    units = {
+        "pqnas-notify-warnings.service": """[Unit]
+Description=PQ-NAS Notifications + Warnings check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pqnas
+Group=pqnas
+EnvironmentFile=/etc/pqnas/pqnas.env
+ExecStart=/usr/local/libexec/pqnas/pqnas_notify.py --check-warnings
+""",
+        "pqnas-notify-warnings.timer": """[Unit]
+Description=Run PQ-NAS warning checks every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""",
+        "pqnas-notify-weekly.service": """[Unit]
+Description=PQ-NAS weekly admin notification summary
+After=network-online.target pqnas.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pqnas
+Group=pqnas
+EnvironmentFile=/etc/pqnas/pqnas.env
+ExecStart=/usr/local/libexec/pqnas/pqnas_notify.py --weekly-summary
+""",
+        "pqnas-notify-weekly.timer": """[Unit]
+Description=Run PQ-NAS weekly admin summary
+
+[Timer]
+OnCalendar=Mon *-*-* 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""",
+    }
+
+    for name, content in units.items():
+        unit_path = os.path.join("/etc/systemd/system", name)
+        tmp_unit = unit_path + ".new"
+        with open(tmp_unit, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(tmp_unit, 0o644)
+        os.replace(tmp_unit, unit_path)
+        if log:
+            log.write(f"[*] Installed notification unit: {unit_path}")
+
+    run_systemctl(["daemon-reload"])
+    run_systemctl(["enable", "--now", "pqnas-notify-warnings.timer"])
+    run_systemctl(["enable", "--now", "pqnas-notify-weekly.timer"])
+
+    if log:
+        log.write("[*] Notifications + Warnings timers enabled.")
+
+    return dst
+
+
 def seed_dna_connect_alert_defaults(
         admin_settings_path: str = "/etc/pqnas/admin_settings.json",
         *,
@@ -3639,6 +3765,11 @@ class ExecuteScreen(Screen):
                 text=True,
             )
             self.logw.write((status.stdout or "").strip())
+
+            self.logw.write("")
+            self.logw.write("== Notifications + Warnings ==")
+            notify_worker_path = install_notification_worker_assets(asset_root, log=self.logw)
+            self.logw.write(f"[*] Notification worker ready: {notify_worker_path}")
 
             if st.nginx_enabled:
                 self.logw.write("")
