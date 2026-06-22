@@ -6643,7 +6643,7 @@ static void raid_worker_main(std::string users_path) {
     }
 }
 
-static void raid_worker_start_once() {
+[[maybe_unused]] static void raid_worker_start_once() {
     static std::atomic<bool> started{false};
     bool expected = false;
     if (!started.compare_exchange_strong(expected, true)) return;
@@ -6739,7 +6739,7 @@ static void raid_startup_fail_running_records_best_effort() {
     	throw std::runtime_error("exec_record_write_failed: " + werr);
 	}
     // start worker if needed
-    raid_worker_start_once();
+    // RAID worker moved to routes_storage_raid.cpp; do not start legacy main.cpp worker here.
 
     // enqueue
     RaidJob job;
