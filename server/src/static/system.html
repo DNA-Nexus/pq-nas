@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title data-i18n="system.page_title">DNA-Nexus NAS • System</title>
+    <title data-i18n="system.page_title" data-brand-title-suffix=" • System">System</title>
 
     <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/components.css?v=20260610-components-v1">
@@ -11,6 +11,7 @@
     <script src="/static/theme.js"></script>
     <script src="/static/i18n.js?v=20260518-system-i18n-1"></script>
 
+    <script src="/static/branding.js?v=20260620-branding-admin-1"></script>
     <style>
         .pill{
             display:inline-flex;
@@ -425,7 +426,7 @@
         }
 
 
-        /* CPUNK orange theme: keep open accordion headers orange, not blue */
+        /* Orange theme: keep open accordion headers orange, not blue */
         html[data-theme="cpunk_orange"] .card.systemCollapsible.is-open > .hd{
             background:
                 linear-gradient(
@@ -554,7 +555,7 @@
     <main class="workspace">
         <div class="topbar">
             <div class="crumbs">
-                <div class="title" data-i18n="system.top_title">DNA-Nexus • System</div>
+                <div class="title" data-i18n="system.top_title">System</div>
                 <div class="sub" data-i18n="system.top_sub">CPU • Memory • Disk • Process</div>
             </div>
             <div class="actions">
@@ -739,13 +740,13 @@
                         <div class="kv"><div class="k" data-i18n="system.executable">Executable</div><div class="v mono" id="procExe">—</div></div>
                         <div class="kv"><div class="k" data-i18n="system.rss">RSS</div><div class="v" id="procRss">—</div></div>
                         <div class="kv"><div class="k" data-i18n="system.started">Started</div><div class="v" id="procStart">—</div></div>
-                        <div class="note" data-i18n="system.process_note">This is the DNA-Nexus server process. No admin rights needed to view.</div>
+                        <div class="note" data-i18n="system.process_note">This is the server process. No admin rights needed to view.</div>
                     </div>
                 </section>
             </div>
         </div>
 
-        <div class="footerline">© CPUNK 2026</div>
+        <div class="footerline" data-brand-text="copyright">© Server 2026</div>
     </main>
 </div>
 

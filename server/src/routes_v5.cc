@@ -44,6 +44,7 @@
 //   lock discipline near RoutesV5OpaqueEnrollmentsFileLock.
 
 #include "routes_v5.h"
+#include "branding_config.h"
 #include "allowlist.h"
 #include "users_registry.h"
 #include "password_credentials.h"
@@ -1521,6 +1522,17 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             {"opaque_enabled", mode == "opaque"},
             {"password_scheme", mode == "opaque" ? "opaque" : (mode == "password" ? "argon2id" : "")}
         }.dump());
+    });
+
+    // ---- GET /api/v4/public/branding ----
+    //
+    // Public, unauthenticated, non-sensitive UI branding information.
+    // This is intentionally limited to user-visible names, logos, colors and
+    // presentation/support links. Internal pqnas paths, service names and env
+    // vars are not exposed or renamed by this endpoint.
+    srv.Get("/api/v4/public/branding", [&](const httplib::Request&, httplib::Response& res) {
+        const pqnas::BrandingConfig branding = pqnas::load_branding_config();
+        reply_json(res, 200, pqnas::branding_config_public_json(branding).dump());
     });
 
     // ---- GET /api/admin/auth/opaque/status ----

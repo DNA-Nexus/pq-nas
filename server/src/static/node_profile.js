@@ -115,7 +115,7 @@
 
     const desc = document.createElement("div");
     desc.className = "nodeProfileReplayDesc";
-    desc.textContent = "Admin-only visual identity for this DNA-Nexus node.";
+    desc.textContent = "Admin-only visual identity for this node.";
 
     const grid = document.createElement("div");
     grid.className = "nodeProfileAvatarGrid";
@@ -271,7 +271,7 @@
     win.className = "nodeProfileWindow";
     win.setAttribute("role", "dialog");
     win.setAttribute("aria-modal", "true");
-    win.setAttribute("aria-label", "DNA-Nexus node profile");
+    win.setAttribute("aria-label", "Node profile");
 
     const titlebar = document.createElement("div");
     titlebar.className = "nodeProfileTitlebar";
@@ -385,7 +385,7 @@
 
     const hbody = document.createElement("div");
     const h2 = document.createElement("h2");
-    h2.textContent = node.name || "DNA-Nexus Node";
+    h2.textContent = node.name || "Server Node";
 
     const nodeId = document.createElement("div");
     nodeId.className = "nodeProfileNodeId";

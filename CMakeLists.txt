@@ -237,6 +237,7 @@ add_executable(pqnas_server
         server/src/routes_workspace_external_sessions.cpp
         server/src/workspace_access_shared.cpp
         server/src/runtime_paths.cpp
+        server/src/branding_config.cpp
         server/src/backups/system_backup_worker.cpp
         server/src/backups/system_backup_worker.h
         server/src/backups/system_backup_routes.cpp

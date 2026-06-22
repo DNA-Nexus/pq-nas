@@ -927,6 +927,542 @@ A missing or incompatible browser crypto module should be treated as
 authentication-method unavailable, not as a reason to use a weaker fallback.
 
 
+## 36. Mobile client credential storage and backup safety
+
+Mobile clients must treat access tokens, refresh tokens, device identifiers,
+pairing state, server origins, private keys, recovery material, and cached
+authorization state as secrets.
+
+Rules:
+
+- do not store live tokens in plaintext `SharedPreferences`, DataStore,
+  SQLite, files, logs, screenshots, crash reports, or exported diagnostics
+- use Android Keystore-backed storage for Android secrets when practical
+- exclude all token stores, auth state, pairing state, private keys, and
+  recovery material from Android Auto Backup, cloud backup, and device transfer
+- add explicit backup exclusion rules for the exact file or directory that
+  stores credentials
+- verify backup rules with a guard test or grep-style dev check
+- do not rely on "app private storage" as the only protection for long-lived
+  tokens
+- logout must clear every credential store and any in-memory session cache
+- token migrations must fail closed if encrypted storage setup fails
+
+Dangerous pattern:
+
+```text
+Preferences DataStore contains refresh_token
++
+Android allowBackup=true
++
+no backup exclusion
+```
+
+This can turn a cloud-account compromise into NAS account compromise.
+
+Preferred pattern:
+
+```text
+Android Keystore-backed token storage
++
+explicit backup/device-transfer exclusions
++
+debug verification that credential files are absent from backup artifacts
+```
+
+---
+
+## 37. Mobile transport security must fail closed
+
+Mobile clients must not silently downgrade NAS traffic to cleartext.
+
+Rules:
+
+- require `https://` for configured NAS base URLs unless a documented local
+  development build explicitly opts out
+- reject pairing QR payloads whose origin is not `https://`
+- configure Android network security policy to deny cleartext traffic by default
+- do not allow QR data to silently override a user-entered or previously trusted
+  server origin
+- prefer certificate pinning or trust-on-first-use certificate fingerprint
+  binding for self-hosted NAS deployments
+- surface certificate or origin mismatches as a security warning, not as a
+  generic network error
+- never send access tokens, refresh tokens, pairing tokens, recovery material,
+  file content, or metadata over cleartext HTTP
+
+For self-hosted NAS deployments, the expected pattern is:
+
+```text
+initial pairing establishes or confirms the server origin
++
+the TLS certificate/fingerprint is pinned or explicitly trusted
++
+future API clients enforce that binding
+```
+
+---
+
+## 38. QR pairing must bind token, origin, and device intent
+
+QR pairing is a security boundary, not just a convenience flow.
+
+Rules:
+
+- parse QR payloads with a strict scheme, host, required fields, and length
+  limits
+- require the QR origin to match the configured server origin, or require a
+  clear explicit confirmation before accepting a mismatch
+- do not let attacker-controlled QR data replace trusted local configuration
+  without user-visible security friction
+- pair tokens must be high entropy, short-lived, single-use, and server-side
+  bound to the intended account/admin action
+- pairing requests should include device identity metadata only after the
+  origin has been validated
+- logs must never include full pairing tokens; prefixes are allowed only in
+  debug builds when the token has sufficient entropy and the log is clearly
+  non-production
+- audit pairing success, failure, expiration, reuse, and origin mismatch events
+
+Dangerous pattern:
+
+```text
+user configured https://my-nas.example
+QR says origin=https://attacker.example
+client sends pair-token consume request to QR origin
+```
+
+Preferred pattern:
+
+```text
+configured origin and QR origin must match
+or
+user must explicitly approve a clearly highlighted mismatch
+```
+
+---
+
+## 39. Release mobile builds must be hardened
+
+Release builds must not behave like debug builds.
+
+Rules:
+
+- enable R8/ProGuard minification for Android release builds unless a specific
+  technical reason is documented
+- enable resource shrinking when compatible
+- keep required serialization/Retrofit/Moshi DTO rules explicit
+- remove hardcoded development servers, test endpoints, and sample credentials
+  from release defaults
+- use `BuildConfig.VERSION_NAME` or the platform equivalent instead of
+  hardcoded client version strings
+- debug-only interceptors, verbose logs, test banners, and developer shortcuts
+  must be gated behind `BuildConfig.DEBUG` or equivalent
+- release builds must not contain debug-only trust managers, disabled TLS
+  checks, cleartext fallbacks, or permissive network policies
+
+Verification should include a release build smoke test, not only a debug build.
+
+---
+
+## 40. Production logging must be privacy-minimal
+
+Production client logs must not expose user data or operational metadata.
+
+Avoid logging:
+
+- tokens or token prefixes
+- pairing tokens or pairing-token prefixes
+- Authorization headers
+- full NAS URLs when they include private file paths or query parameters
+- private file paths
+- workspace names when they reveal private context
+- server error bodies that may contain paths, stack traces, SQL details, or
+  internal state
+- device/user metadata beyond what is required for safe diagnostics
+
+Rules:
+
+- attach HTTP logging interceptors only in debug builds
+- prefer structured safe reason codes over raw server messages
+- map server errors to user-friendly messages before showing them in UI
+- keep technical diagnostics behind explicit debug/export flows
+- sanitize logs before crash reporting or support bundles
+
+---
+
+## 41. Mobile file transfer paths must stream large data
+
+Mobile clients must not load unbounded file downloads or uploads fully into
+memory.
+
+Rules:
+
+- stream response bodies directly to the selected output stream
+- stream uploads from content URIs or bounded staging files
+- cap in-memory previews and metadata buffers
+- clean temporary staging files on success, cancellation, and error paths
+- do not keep sensitive file content in process memory longer than necessary
+- use progress reporting that does not require buffering the full file
+
+Dangerous pattern:
+
+```text
+val bytes = responseBody.bytes()
+outputStream.write(bytes)
+```
+
+Preferred pattern:
+
+```text
+responseBody.byteStream().copyTo(outputStream)
+```
+
+---
+
+## 42. Mobile UI must not block security-sensitive flows on the main thread
+
+Security and auth flows should not use blocking disk or network calls on the UI
+thread.
+
+Rules:
+
+- do not use `runBlocking` from Compose/UI event handlers
+- use lifecycle-aware coroutine scopes, ViewModels, or suspend functions
+- keep token refresh and storage access off the main thread
+- avoid deadlocks in HTTP interceptors by keeping token access simple and
+  bounded
+- fail closed if auth state cannot be loaded safely
+
+Availability bugs in auth flows can become security bugs when users are pushed
+toward unsafe retries, screenshots, support dumps, or manual workarounds.
+
+---
+
+## 43. App-level re-authentication for sensitive clients
+
+A paired mobile NAS client should assume that an unlocked phone may still be
+temporarily in another person's hands.
+
+Rules:
+
+- provide an app-level lock for sensitive clients
+- prefer Android `BiometricPrompt` with a system credential fallback when
+  appropriate
+- support a configurable lock timeout
+- keep the "unlocked this session" state in memory, not as a long-lived
+  persisted bypass
+- require re-authentication before destructive operations when practical
+- logout, token revocation, or device removal must clear local unlocked state
+
+This is defense in depth. It does not replace server-side authorization.
+
+
+## 44. URL origins must reject display-spoofing components
+
+Security-sensitive origins must be validated as parsed URL components, not as
+substrings or display strings.
+
+Rules:
+
+- reject userinfo in origins, for example `https://trusted.example@evil.example`
+- reject URL fragments in origins; origins should not contain `#fragment`
+- reject leading/trailing whitespace and control characters before parsing
+- reject encoded delimiter tricks when they change the parsed authority, host,
+  scheme, or path meaning
+- normalize scheme and host for comparison, but do not use prefix, suffix, or
+  substring matching for trust decisions
+- compare canonical origin components: scheme, host, and explicit/default port
+- treat trailing-dot hosts, mixed case, explicit ports, and IDNA/punycode as
+  test cases, not assumptions
+- display the canonical trusted host/origin to the user, not an attacker-chosen
+  raw string
+
+Dangerous pattern:
+
+```text
+QR origin string is shown as: https://my-nas.example@evil.example
+parser host is: evil.example
+user sees familiar text and may approve
+```
+
+Preferred pattern:
+
+```text
+parse URL -> validate components -> canonicalize origin -> compare -> display canonical origin
+```
+
+---
+
+## 45. TLS pinning must be mandatory at client factory boundaries
+
+A TLS pinning design is incomplete if any caller can accidentally construct an
+unpinned API client.
+
+Rules:
+
+- do not give TLS pin parameters empty defaults such as `tlsPinSha256 = ""`
+- do not implement `if pin is blank, skip pinning` in production client factories
+- make the pin required by the function signature or type system when the API
+  requires a pinned server
+- fail during client construction if the pin is missing, malformed, or
+  incompatible
+- ensure pairing, token refresh, file APIs, thumbnails, media streaming, and
+  every authenticated request use the same pinned client factory or equivalent
+- keep dev/test cleartext or unpinned clients in explicit debug-only code paths
+- add grep/static checks for `CertificatePinner`, pin normalization, and any
+  unpinned `OkHttpClient.Builder()` construction
+
+Review question:
+
+```text
+Can a future developer call this factory without a pin and still get a working client?
+```
+
+If the answer is yes, the API is unsafe by default.
+
+---
+
+## 46. Logout and device removal must revoke server-side tokens
+
+Local credential deletion is necessary but not sufficient for long-lived refresh
+tokens.
+
+Rules:
+
+- logout should best-effort revoke the current refresh token on the server, then
+  always clear local state
+- device removal/revoke flows should invalidate every server-side refresh token
+  bound to that device
+- local wipe must still happen if the revoke request fails because the NAS is
+  offline or unreachable
+- token revoke endpoints must require the expected token/device binding and must
+  be rate-limited
+- revoked refresh tokens must not be accepted for session resurrection
+- audit token revoke success, failure, device mismatch, and repeated attempts
+- client and server changes must be coordinated; adding only the mobile API call
+  is not a complete fix if the server endpoint does not exist
+
+Preferred logout sequence:
+
+```text
+load current auth state
+if refresh token + device_id + trusted origin + TLS pin exist:
+    call pinned revoke endpoint best-effort
+clear local token store and in-memory unlocked state regardless of network result
+return to unpaired/login state
+```
+
+---
+
+## 47. Mobile security fixes need adversarial tests and verified builds
+
+A mobile security patch is not complete until the bypass corpus and the affected
+build variant have been tested.
+
+Rules:
+
+- add parser tests for malicious origins such as userinfo, fragments,
+  subdomain tricks, mixed case, whitespace, encoded delimiters, trailing dots,
+  explicit ports, HTTP, missing pins, and malformed pins
+- add pin-normalization tests for every accepted and rejected pin format
+- add logout/revoke tests or mocks that prove local state is cleared even when
+  the server revoke request fails
+- run the relevant unit tests and at least one Android build variant after the
+  patch
+- if the current machine cannot build because the Android SDK or toolchain is
+  missing, report the patch as unverified instead of claiming it compiles
+- keep red-team patches small enough that each finding maps to code and tests
+
+This rule exists because AI-assisted patches can look correct while still being
+uncompiled, untested, or incompatible with the server.
+
+---
+
+## 48. Server-side red-team audit lessons
+
+Full-repository red-team reviews should be converted into durable engineering rules.
+Do not treat a red-team report as only a one-time bug list. If a finding exposes a
+repeatable bug class, add a guardrail here, in tests, or in tooling.
+
+### Native binary and crypto helper rules
+
+Security-sensitive native binaries, crypto helpers, WASM modules, and vendored
+libraries must be auditable and reproducible.
+
+Rules:
+
+- do not load closed-source or unexplained native binaries into the server process
+- do not keep multiple divergent copies of the same security-sensitive binary
+- document source, build inputs, version, and expected checksum
+- verify checksums before loading optional native helpers when practical
+- keep exported symbols minimal for security-sensitive helper libraries
+- avoid environment-variable overrides that allow arbitrary shared-library loading
+  unless the override is development-only, disabled in production, and explicitly
+  documented
+- prefer source-built, reproducible, minimal-purpose helpers over broad binary blobs
+  with unrelated networking, wallet, or transaction functionality
+
+### Debug, audit, and diagnostic endpoint rules
+
+Debug and audit endpoints are security-sensitive even when they look read-only.
+
+Rules:
+
+- no debug endpoint may expose session IDs, pair tokens, fingerprints, audit history,
+  filesystem paths, operational state, or pending authentication state without
+  explicit authorization
+- production builds should not expose temporary debug routes
+- admin-only diagnostic routes must use the same admin authorization helpers as
+  normal admin APIs
+- audit logs may contain sensitive operational metadata, but normal users and
+  unauthenticated callers must never receive raw audit-log contents
+- every new diagnostic endpoint must have an explicit owner, auth rule, rate limit,
+  and removal/production decision
+
+### Server-side plan and command execution rules
+
+Clients may request an outcome, but the server must own privileged execution plans.
+
+Rules:
+
+- never execute client-supplied shell command arrays, install plans, storage plans,
+  restore plans, or helper command strings
+- regenerate privileged commands server-side from validated high-level parameters
+- keep allowlists for device names, mountpoints, service names, tools, and operations
+- remove or hard-disable legacy execute endpoints once safer replacements exist
+- if a plan has a dry-run representation, the apply step must verify that the plan
+  still matches the validated server-side plan
+
+### Streaming quota and size enforcement
+
+Security checks based only on `Content-Length` are not sufficient for streaming
+uploads or generated downloads.
+
+Rules:
+
+- count actual bytes read/written in every streaming upload path
+- abort as soon as actual bytes exceed declared length, configured max size, or user
+  quota
+- apply per-request and per-user limits before and during streaming
+- do not trust missing, malformed, or suspicious `Content-Length` values
+- generated archives and zip downloads should stream output rather than buffering the
+  full artifact in memory
+- version blobs, trash, preview caches, audit logs, and generated exports need
+  pruning, caps, or retention policies
+
+### HTTP response header and browser hardening rules
+
+Every HTML and file-serving route must set safe browser-facing headers.
+
+Rules:
+
+- add a Content-Security-Policy for HTML responses
+- deny framing with `frame-ancestors 'none'` and/or `X-Frame-Options: DENY`
+- add `Referrer-Policy` to prevent leaking private paths in outbound navigation
+- add HSTS when the deployment is HTTPS-only and the proxy topology supports it
+- sanitize `Content-Disposition` filenames before placing them in headers
+- reject or encode quotes, backslashes, CR, LF, and control characters in header
+  values
+- use RFC 5987 / `filename*` encoding for non-ASCII download names when needed
+- never construct response headers by concatenating raw filenames or user strings
+
+### Consume, pairing, and device-binding rules
+
+Authentication consume endpoints must bind the secret to the intended browser,
+device, session, and account state.
+
+Rules:
+
+- QR/browser consume flows should use a pre-auth browser cookie or equivalent binding
+- mobile/app consume flows should bind to the intended device and, where practical,
+  a device-held key or signed challenge
+- one-time consume state changes must be atomic: pop-or-fail, not get-then-pop
+- pair tokens, setup links, reset links, and approval IDs must be single-use,
+  short-lived, and invalidated on account/device state changes
+- status polling identifiers should not be derivable by QR viewers unless that is an
+  explicit, documented design goal
+- missing browser/device binding must be treated as a session-stealing risk
+
+### Constant-time comparison and randomness rules
+
+Secret comparisons and security-adjacent identifiers must not use convenience APIs.
+
+Rules:
+
+- compare tokens, MACs, proof bindings, request bindings, and fingerprints with
+  constant-time comparison helpers when the value is secret or security-sensitive
+- do not use `strcmp()`, `==`, or early-return loops for secret equality checks
+- do not use `std::rand()`, `rand()`, or unseeded PRNGs for job IDs, tokens,
+  workspace IDs, share IDs, or security-adjacent identifiers
+- avoid `mt19937` for identifiers that gate access, uniqueness, privacy, or audit
+  correlation
+- use approved CSPRNG helpers and document entropy size for new token types
+- wipe key material with a function that the compiler cannot optimize away
+
+### Privilege boundary, sudoers, and restore-helper rules
+
+A compromise of the `pqnas` service user must not become trivial root compromise.
+
+Rules:
+
+- the server must not run as root in normal operation
+- sudoers entries for helper tools must be narrow, argument-constrained, and reviewed
+- avoid broad wildcard sudo rules for tools such as `systemctl`, `smartctl`, `btrfs`,
+  restore helpers, and install helpers
+- root helpers must canonicalize paths with symlink-aware checks before operating
+- root helpers must not trust JSON fields written by the service user without
+  validation and allowlists
+- restore/delete/chown/chmod helpers must fail closed on malformed paths
+- systemd hardening should be applied by default where compatible with current
+  functionality
+
+### SQLite and metadata query rules
+
+Parameterized SQL prevents SQL injection, but it does not automatically make query
+semantics safe.
+
+Rules:
+
+- set `PRAGMA busy_timeout` or equivalent retry policy for SQLite databases that can
+  receive concurrent writes
+- protect shared SQLite connections with a mutex or use one connection per thread
+  with documented ownership rules
+- open security-sensitive metadata databases with restrictive permissions
+- escape `%`, `_`, and `\\` when user input is used in `LIKE` patterns, and use an
+  explicit `ESCAPE` clause
+- treat metadata indexes as security-sensitive when they influence file visibility,
+  ownership, sharing, media serving, or quota decisions
+
+### Fail-closed parsing and expiration rules
+
+Malformed security state must not extend access.
+
+Rules:
+
+- expiration parse errors must be treated as expired/invalid, not still valid
+- malformed cookies, tokens, grants, share metadata, invite metadata, and approval
+  records must fail closed
+- user-facing errors should stay generic, while audit logs may record structured
+  reason codes
+- repair tools may exist, but the runtime path must not silently accept malformed
+  authorization state
+
+### Resource-exhaustion and concurrency rules
+
+Every externally reachable path needs a denial-of-service story.
+
+Rules:
+
+- bound pending authentication/session maps and prune them proactively
+- set read, write, and idle timeouts for HTTP clients and servers
+- cap external process input size, runtime, and output size
+- serialize conflicting file operations with path locks, including workspace routes
+- avoid recursive full-directory scans on hot upload paths unless bounded or cached
+- cache quota/accounting carefully, and invalidate or reconcile it on mutations
+- long-running preview, archive, restore, import, and indexing tasks need concurrency
+  limits and cancellation/timeout behavior
+
 ## Summary
 
 New DNA-Nexus / PQ-NAS code should be written with these assumptions:
@@ -943,7 +1479,27 @@ New DNA-Nexus / PQ-NAS code should be written with these assumptions:
 - every multi-step security flow should be owned by the backend when partial
   failure would be unsafe
 - every browser crypto feature should fail closed instead of falling back
+- every security-sensitive URL origin should be parsed, canonicalized, and checked for display-spoofing components
+- every TLS-pinned mobile client factory should make missing pins impossible or fail closed
+- every logout/device-removal flow should revoke server-side refresh tokens when possible and always clear local state
+- every mobile security patch should include adversarial tests and an explicitly verified build status
+- every mobile client token store should be encrypted when practical and excluded from backup
+- every mobile NAS connection should enforce HTTPS or an explicitly trusted TLS binding
+- every QR pairing flow should bind token, origin, and device intent
+- every release mobile build should remove debug logging, debug servers, and cleartext fallbacks
+- every mobile file transfer path should stream large content instead of buffering whole files
 - every multi-file state change needs rollback, repair, or fail-closed behavior
+- every native security helper should have source, provenance, and checksum discipline
+- every debug or audit endpoint should be explicitly authorized or absent from production
+- every privileged plan should be generated and validated server-side, not executed from client-supplied commands
+- every streaming upload/download should enforce limits on actual bytes, not only declared headers
+- every browser-facing response should have safe headers and sanitized header values
+- every consume/pairing flow should bind secrets to the intended browser, device, and account state
+- every secret comparison and security-adjacent identifier should use constant-time comparison and CSPRNG-backed generation
+- every root helper and sudoers rule should preserve a narrow privilege boundary
+- every metadata query should consider wildcard semantics, locking, busy timeouts, and file permissions
+- every malformed expiration or authorization record should fail closed
+- every externally reachable route should have resource caps, timeouts, and concurrency controls
 
 The baseline rule is simple:
 

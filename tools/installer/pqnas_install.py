@@ -1005,6 +1005,7 @@ def create_pqnas_layout(root: str) -> None:
         ensure_dir(os.path.join(root, p))
 
     ensure_dir("/opt/pqnas/static")
+    ensure_dir("/opt/pqnas/static/branding")
 
 
 def find_dna_lib_source(asset_root: str) -> str:

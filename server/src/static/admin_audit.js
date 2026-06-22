@@ -15,7 +15,7 @@ function applyStaticI18n() {
     } catch (_) {}
 }
 
-// PQ-NAS Admin Audit UI (static)
+// Admin Audit UI (static)
 // - Tail:   GET /api/v4/audit/tail?n=200  -> { lines: [...] }
 // - Verify: GET /api/v4/audit/verify     -> { ok: true/false, ... }
 
@@ -110,7 +110,7 @@ function toIp(e) {
 
 // ---------- status mapping ----------
 function inferStatus(e) {
-    // PQ-NAS uses outcome="ok|fail|deny" on most audit lines.
+    // Audit lines use outcome="ok|fail|deny" on most entries.
     const oc = pick(e, ["outcome"]);
     if (typeof oc === "string") {
         const o = oc.toLowerCase();

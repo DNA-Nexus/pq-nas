@@ -545,7 +545,7 @@
     function buildStatsExportPayload() {
         return {
             exported_at_iso: new Date().toISOString(),
-            source: "DNA-Nexus Admin Statistics",
+            source: "Admin Statistics",
             trend_period: currentTrendPeriod,
             summary: latestSummary,
             trends: latestTrendPayload,
@@ -561,7 +561,7 @@
         }
 
         const payload = buildStatsExportPayload();
-        const filename = `dna-nexus-admin-stats-${exportTimestampForFile()}.json`;
+        const filename = `server-admin-stats-${exportTimestampForFile()}.json`;
         downloadTextFile(filename, "application/json;charset=utf-8", JSON.stringify(payload, null, 2));
         setExportStatus(tr("admin.stats.json_downloaded", null, "JSON downloaded"));
     }
@@ -577,7 +577,7 @@
         }
 
         const period = safeExportFilePart(currentTrendPeriod);
-        const filename = `dna-nexus-admin-trends-${period}-${exportTimestampForFile()}.csv`;
+        const filename = `server-admin-trends-${period}-${exportTimestampForFile()}.csv`;
         downloadTextFile(filename, "text/csv;charset=utf-8", trendPointsToCsv(points));
         setExportStatus(tr("admin.stats.csv_downloaded", null, "CSV downloaded"));
     }

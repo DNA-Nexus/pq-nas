@@ -533,7 +533,7 @@
       "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
       "<!-- This is an automatically generated file.",
       "     It can be imported into Chrome, Brave, Edge, Firefox, and other browsers.",
-      "     Exported by DNA-Nexus Echo Stack.",
+      "     Exported by Echo Stack.",
       "     DO NOT EDIT! -->",
       '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
       "<TITLE>Echo Stack Bookmarks</TITLE>",

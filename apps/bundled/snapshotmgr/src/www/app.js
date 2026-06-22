@@ -223,7 +223,7 @@
 
 <pre class="mono">sudo visudo
 
-# PQ-NAS running as:
+# Server running as:
 ${user}
 
 ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
@@ -855,7 +855,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
   <div class="modalPanel">
     <h3>Restore in progress</h3>
     <div class="modalNote">
-      PQ-NAS stops briefly during restore. Behind Cloudflare Tunnel you may see temporary <b>502</b>.
+      The server stops briefly during restore. Behind Cloudflare Tunnel you may see temporary <b>502</b>.
     </div>
     <div class="modalNote mono">job_id=${escapeHtml(jobId || "(pending)")}</div>
     <div class="modalNote">Status: <b>${escapeHtml(phaseText)}</b></div>
@@ -1109,7 +1109,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
                 { label: tr("snapshotmgr.snapshot", null, "Snapshot"), value: id, mono: true },
             ],
             warning: tr("snapshotmgr.restore.confirm1.warning", null, "This will REPLACE the live volume content. Downtime required."),
-            note: tr("snapshotmgr.restore.confirm1.note", null, "A restore job will stop and restart PQ-NAS while the volume is swapped."),
+            note: tr("snapshotmgr.restore.confirm1.note", null, "A restore job will stop and restart the server while the volume is swapped."),
             confirmText: tr("snapshotmgr.restore.continue", null, "Continue"),
             cancelText: tr("common.cancel", null, "Cancel"),
             danger: true,
@@ -1151,7 +1151,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
                     { label: tr("snapshotmgr.plan", null, "Plan"), value: planText, mono: true },
                 ],
                 warning: tr("snapshotmgr.restore.confirm3.warning", null, "Proceeding starts the restore job now."),
-                note: tr("snapshotmgr.restore.confirm3.note", null, "PQ-NAS may be temporarily unreachable during restore."),
+                note: tr("snapshotmgr.restore.confirm3.note", null, "The server may be temporarily unreachable during restore."),
                 confirmText: tr("snapshotmgr.restore.start", null, "Start restore"),
                 cancelText: tr("common.cancel", null, "Cancel"),
                 danger: true,
@@ -1196,7 +1196,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
                     const inGrace = (Date.now() - tGraceStart) < graceMs;
                     if (inGrace && isRetryableDuringRestore(e)) {
                         status.textContent = tr("snapshotmgr.restore.restarting_server_job", { job_id: jobId }, `Restoring… (job ${jobId}) restarting server…`);
-                        setModalHtml(tr("snapshotmgr.restore.title", null, "Restore"), restoreProgressModalHtml(jobId, tr("snapshotmgr.restore.restarting_server", null, "restarting server…"), tr("snapshotmgr.restore.waiting_online", null, "Waiting for PQ-NAS to come back online (temporary 502 is expected).")));
+                        setModalHtml(tr("snapshotmgr.restore.title", null, "Restore"), restoreProgressModalHtml(jobId, tr("snapshotmgr.restore.restarting_server", null, "restarting server…"), tr("snapshotmgr.restore.waiting_online", null, "Waiting for the server to come back online (temporary 502 is expected).")));
                         // IMPORTANT: do NOT set badge to err on retryable errors during restore
                         setBadge("warn", "restoring…");
                         await new Promise(r => setTimeout(r, pollEveryMs));
@@ -1306,7 +1306,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
             // IMPORTANT: if tunnel/origin is flapping, don’t flip to “error”
             if (isRetryableDuringRestore(e)) {
                 setBadge("warn", "waiting…");
-                status.textContent = `Waiting for PQ-NAS… (${msg})`;
+                status.textContent = `Waiting for server… (${msg})`;
                 return;
             }
 

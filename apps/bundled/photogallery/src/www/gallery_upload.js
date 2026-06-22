@@ -158,7 +158,7 @@
             <div class="pgUploadProgressCard" role="dialog" aria-modal="true" aria-labelledby="pgUploadProgressTitle">
                 <div class="pgUploadProgressHead">
                     <div>
-                        <div class="pgUploadProgressKicker">DNA-Nexus upload</div>
+                        <div class="pgUploadProgressKicker">Upload</div>
                         <h2 id="pgUploadProgressTitle">Uploading photos</h2>
                         <p id="pgUploadProgressSub">Preparing upload…</p>
                     </div>

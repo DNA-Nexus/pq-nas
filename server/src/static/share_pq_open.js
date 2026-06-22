@@ -9,6 +9,20 @@
         return String(fallback ?? key);
     }
 
+    function pqShareBrandEyebrow() {
+        try {
+            const api = window.PQNAS_BRANDING;
+            const brand = api && typeof api.current === "function" ? api.current() : null;
+            if (brand && brand.enabled === true) {
+                const name = String(brand.product_short_name || brand.product_name || "").trim();
+                if (name) return `${name} Post-Quantum Share`;
+            }
+        } catch (_) {}
+
+        return tr("pqshare.eyebrow", null, "Post-Quantum Share");
+    }
+
+
     function escapeHtml(s) {
         return String(s ?? "")
             .replaceAll("&", "&amp;")
@@ -212,7 +226,7 @@
 
       <main class="wrap">
         <div id="pqshare-root" class="card">
-          <div class="eyebrow">${escapeHtml(tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share"))}</div>
+          <div class="eyebrow">${escapeHtml(pqShareBrandEyebrow())}</div>
 
           <h1>${escapeHtml(tr("pqshare.open.title", null, "Open Post-Quantum protected share"))}</h1>
 

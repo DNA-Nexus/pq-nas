@@ -479,7 +479,7 @@ html[data-theme="bright"] .systemModalCard{
 
             <div style="padding:16px;">
                 <p class="note" style="margin-top:0;">
-                    ${escapeHtml(tr("system.idrac.help_intro", null, "This optional backend is intended for Dell PowerEdge servers with iDRAC and PERC/RAID controllers. DNA-Nexus uses a dedicated iDRAC user over SSH and runs only RACADM inventory plus drive blink/unblink commands."))}
+                    ${escapeHtml(tr("system.idrac.help_intro", null, "This optional backend is intended for Dell PowerEdge servers with iDRAC and PERC/RAID controllers. The server uses a dedicated iDRAC user over SSH and runs only RACADM inventory plus drive blink/unblink commands."))}
                 </p>
 
                 <div class="note" style="margin-top:12px;">
@@ -493,7 +493,7 @@ html[data-theme="bright"] .systemModalCard{
                 </div>
 
                 <div class="note" style="margin-top:12px;">
-                    ${escapeHtml(tr("system.idrac.help_security_note", null, "Do not use the iDRAC root/Admin account. Upload or paste the DNA-Nexus public key into iDRAC → User Authentication → pqnas-locate → SSH Key Configurations."))}
+                    ${escapeHtml(tr("system.idrac.help_security_note", null, "Do not use the iDRAC root/Admin account. Upload or paste the server public key into iDRAC → User Authentication → pqnas-locate → SSH Key Configurations."))}
                 </div>
 
                 <img src="/static/help/dell-idrac-drive-locate-permissions.png"

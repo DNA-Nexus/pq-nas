@@ -80,8 +80,8 @@
             footer.innerHTML = `
                 <div class="externalWorkspaceStorage" id="workspaceStorageLine">Workspace storage: —</div>
                 <div class="externalWorkspaceBrand">
-                    <div>DNA-Nexus external workspace</div>
-                    <div>© CPUNK 2026 • DNA-Nexus</div>
+                    <div data-brand-template="{product_short_name} external workspace">External workspace</div>
+                    <div data-brand-text="copyright">© Server 2026</div>
                 </div>
             `;
 
@@ -103,6 +103,13 @@
         }
 
         removeLegacyDuplicateLines(line);
+
+        try {
+            if (window.PQNAS_BRANDING && typeof window.PQNAS_BRANDING.apply === "function") {
+                window.PQNAS_BRANDING.apply(footer);
+            }
+        } catch (_) {}
+
         return line;
     }
 

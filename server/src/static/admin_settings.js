@@ -1,6 +1,6 @@
 /* server/src/static/admin_settings.js
  *
- * PQ-NAS Admin Settings UI
+ * Admin Settings UI
  * - Loads/saves: audit_min_level, audit_retention, audit_rotation, ui_theme
  * - Uses /api/v4/admin/settings (+ audit retention/rotation endpoints)
  *
@@ -216,7 +216,7 @@
             "Eligibility": "admin.uploads.eligibility",
             "Warnings": "admin.uploads.warnings",
             "Route": "admin.dna.route",
-            "PQ-NAS ID": "admin.dna.pqnas_id",
+            "Server ID": "admin.dna.pqnas_id",
             "Soft cap": "admin.uploads.soft_cap",
             "Hard cap": "admin.uploads.hard_cap",
             "Effective": "admin.uploads.effective"
@@ -1989,7 +1989,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
                 : tr("admin.settings.not_created", null, "Not created");
             dnaAlertsIdentityPill.className = "pill " + (exists ? "ok" : "warn");
             dnaAlertsIdentityPill.innerHTML =
-                `<span class="k">${escapeHtml(tr("admin.dna.pqnas_id", null, "PQ-NAS ID:"))}</span><span class="v">${escapeHtml(txt)}</span>`;
+                `<span class="k">${escapeHtml(tr("admin.dna.pqnas_id", null, "Server ID:"))}</span><span class="v">${escapeHtml(txt)}</span>`;
         }
 
         if (btnDnaAlertsCreateId) btnDnaAlertsCreateId.disabled = exists;
@@ -2995,7 +2995,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setStatusPill("warn", "creating DNA ID…");
         try {
             const j = await apiCreateDnaAlertIdentity();
-            showToast("ok", tr("admin.dna.id_created", null, "PQ-NAS ID created"), String(j.message || tr("admin.dna.identity_created", null, "DNA identity created")));
+            showToast("ok", tr("admin.dna.id_created", null, "Server ID created"), String(j.message || tr("admin.dna.identity_created", null, "DNA identity created")));
             await refreshAll();
         } catch (e) {
             console.error(e);
@@ -3203,7 +3203,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         setText(rowTitle, "admin.password_user_create.heading", "Create password-auth user with DNA recovery phrase");
 
         const notes = bd.querySelectorAll(".note");
-        setText(notes[0], "admin.password_user_create.desc", "Creates a user with a real CPUNK/DNA fingerprint. Recovery words are shown once and are not stored by the server.");
+        setText(notes[0], "admin.password_user_create.desc", "Creates a user with a real DNA fingerprint. Recovery words are shown once and are not stored by the server.");
         setText(notes[1], "admin.password_user_create.default_status_note", "Default status is disabled, so the user cannot sign in until approved/enabled.");
 
         const labels = bd.querySelectorAll(".passwordUserCreateField .label");

@@ -96,6 +96,20 @@
 
     const host = document.getElementById("pqShareInviteApp") || document.body;
 
+    function pqShareBrandEyebrow() {
+        try {
+            const api = window.PQNAS_BRANDING;
+            const brand = api && typeof api.current === "function" ? api.current() : null;
+            if (brand && brand.enabled === true) {
+                const name = String(brand.product_short_name || brand.product_name || "").trim();
+                if (name) return `${name} Post-Quantum Share`;
+            }
+        } catch (_) {}
+
+        return tr("pqshare.eyebrow", null, "Post-Quantum Share");
+    }
+
+
     function escapeHtml(s) {
         return String(s || "")
             .replace(/&/g, "&amp;")
@@ -353,7 +367,7 @@
 
       <div class="wrap">
         <div class="card">
-        <div class="eyebrow">${escapeHtml(tr("pqshare.eyebrow", null, "DNA-Nexus Post-Quantum Share"))}</div>
+        <div class="eyebrow">${escapeHtml(pqShareBrandEyebrow())}</div>
         <h1>${escapeHtml(tr("pqshare.invite.title", null, "Open post-quantum protected share"))}</h1>
         <p class="lead">
           ${escapeHtml(tr("pqshare.invite.lead", null, "This page enrolls this browser with ML-KEM-768 and then opens the shared file locally."))}

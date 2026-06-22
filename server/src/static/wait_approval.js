@@ -3,7 +3,7 @@
     <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>PQ-NAS • Waiting for admin approval</title>
+    <title>Waiting for admin approval</title>
 
 <style>
 
@@ -277,7 +277,7 @@
     <main class="workspace">
         <div class="topbar">
             <div class="crumbs">
-                <div class="title">PQ-NAS • Waiting for admin approval</div>
+                <div class="title">Waiting for admin approval</div>
                 <div class="sub">Your DNA identity was received. An admin must enable you.</div>
             </div>
             <span class="pq-badge warn"><span class="k">Next:</span> <span class="v">/admin/users</span></span>
@@ -291,7 +291,7 @@
                 </div>
                 <div class="bd">
                     <p class="hint">
-                        This PQ-NAS server is configured to <span class="mono">fail-closed</span> for new identities.
+                        This server is configured to <span class="mono">fail-closed</span> for new identities.
                         Your fingerprint must be enabled by an administrator before the browser can finish sign-in.
                     </p>
 
@@ -310,7 +310,7 @@
                         <div class="v">Open <span class="mono">/admin/users</span> in another tab</div>
                     </div>
                 </div>
-                <div class="footerline">© CPUNK 2026</div>
+                <div class="footerline">© Server 2026</div>
             </section>
         </div>
     </main>

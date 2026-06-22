@@ -42,7 +42,7 @@
 
         // Otherwise ask the server whether this session belongs to an
         // external-workspace-only user. This prevents those users from ever
-        // landing on the normal DNA-Nexus desktop after browser login.
+        // landing on the normal desktop after browser login.
         try {
             const r = await fetch("/api/v4/workspaces/external-session/landing", {
                 credentials: "include",
@@ -82,6 +82,25 @@
         const api = window.PQNAS_I18N;
         if (api && typeof api.apply === "function") {
             api.apply(document);
+        }
+    }
+
+    function applyLoginBranding() {
+        const api = window.PQNAS_BRANDING;
+        if (!api) return;
+
+        if (typeof api.apply === "function") {
+            api.apply(document);
+        }
+
+        if (typeof api.ready === "function") {
+            api.ready()
+                .then(() => {
+                    if (typeof api.apply === "function") {
+                        api.apply(document);
+                    }
+                })
+                .catch(() => {});
         }
     }
 
@@ -173,21 +192,22 @@
 
         card.innerHTML = `
             <div class="loginMark">
-                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
+                <div class="pq-badge loginMarkBadge" data-brand-text="product_short_name">Server</div>
             </div>
 
             <h1 data-i18n="auth.login.title">Sign in</h1>
 
             <div class="hint" data-i18n="auth.login.password_hint">
-                Use your DNA-Nexus username or email address.
+                Use your username or email address.
             </div>
 
-            <div class="presentationLinkWrap">
+            <div class="presentationLinkWrap" data-brand-hide-if-presentation-disabled>
                 <a class="presentationLink"
                    href="/static/nexus-presentation/index.html"
                    target="_blank"
                    rel="noopener"
-                   data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
+                   data-brand-presentation-link
+                   data-i18n="auth.login.presentation_link">What is this service?</a>
             </div>
 
             <form id="passwordLoginForm" class="passwordForm" autocomplete="on">
@@ -221,7 +241,7 @@
 
             <div id="status" class="status" data-i18n="auth.login.ready">Ready.</div>
 
-            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© Server 2026</div>
         `;
 
         const form = el("passwordLoginForm");
@@ -229,6 +249,7 @@
         const passwordInput = el("passwordLoginPassword");
 
         applyStaticI18n();
+        applyLoginBranding();
 
         if (loginInput) loginInput.focus();
 
@@ -366,7 +387,7 @@
 
         card.innerHTML = `
             <div class="loginMark">
-                <div class="pq-badge loginMarkBadge">DNA-Nexus</div>
+                <div class="pq-badge loginMarkBadge" data-brand-text="product_short_name">Server</div>
             </div>
 
             <h1 data-i18n="auth.opaque.title">Zero-knowledge sign in</h1>
@@ -375,12 +396,13 @@
                 Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.
             </div>
 
-            <div class="presentationLinkWrap">
+            <div class="presentationLinkWrap" data-brand-hide-if-presentation-disabled>
                 <a class="presentationLink"
                    href="/static/nexus-presentation/index.html"
                    target="_blank"
                    rel="noopener"
-                   data-i18n="auth.login.presentation_link">What is DNA-Nexus?</a>
+                   data-brand-presentation-link
+                   data-i18n="auth.login.presentation_link">What is this service?</a>
             </div>
 
             <form id="opaqueLoginForm" class="passwordForm" autocomplete="on">
@@ -411,14 +433,9 @@
 
                 <button id="opaqueLoginButton" type="submit" data-i18n="auth.login.sign_in_button">Sign in</button>
             </form>
-
-            <div class="hint" data-i18n="auth.opaque.no_password_fallback_hint">
-                This page never falls back to sending your password to the server.
-            </div>
-
             <div id="status" class="status" data-i18n="auth.opaque.ready">OPAQUE login ready.</div>
 
-            <div class="footer" data-i18n="auth.login.footer">© CPUNK 2026 · DNA-Nexus</div>
+            <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© Server 2026</div>
         `;
 
         const form = el("opaqueLoginForm");
@@ -427,6 +444,7 @@
         const button = el("opaqueLoginButton");
 
         applyStaticI18n();
+        applyLoginBranding();
 
         try {
             const saved =
@@ -1223,8 +1241,8 @@
 
     function applyBaseLoginI18n() {
         setExact("Sign in", "auth.login.title", "Sign in");
-        setExact("Use your DNA-Nexus username or email address.", "auth.login.subtitle", "Use your DNA-Nexus username or email address.");
-        setExact("What Is DNA-Nexus?", "auth.login.what_is", "What Is DNA-Nexus?");
+        setExact("Use your username or email address.", "auth.login.subtitle", "Use your username or email address.");
+        setExact("What is this service?", "auth.login.what_is", "What is this service?");
         setLoginLabel("Email / username", "auth.login.email", "Email / username");
         setLoginLabel("Password", "auth.login.password", "Password");
 

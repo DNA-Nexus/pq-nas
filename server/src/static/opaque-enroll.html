@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title data-i18n="opaque_enroll.page_title">DNA-Nexus OPAQUE setup</title>
+  <title data-i18n="opaque_enroll.page_title" data-brand-title-suffix=" OPAQUE setup">OPAQUE setup</title>
   <script src="/static/i18n.js?v=20260614-opaque-enroll-i18n-1"></script>
+  <script src="/static/branding.js?v=20260620-opaque-enroll-branding-1"></script>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -83,7 +84,7 @@
 </head>
 <body>
   <main class="card">
-    <h1 data-i18n="opaque_enroll.heading">Set your DNA-Nexus password</h1>
+    <h1 data-i18n="opaque_enroll.heading" data-brand-template="Set your {product_short_name} password">Set your password</h1>
     <p data-i18n="opaque_enroll.intro">This page uses OPAQUE zero-knowledge password setup. Your password is processed in this browser and is not sent to the server.</p>
 
     <form id="form">
@@ -147,6 +148,19 @@
     }
 
     await initLanguage();
+
+    async function applyEnrollmentBranding() {
+      try {
+        if (window.PQNAS_BRANDING && typeof window.PQNAS_BRANDING.ready === "function") {
+          await window.PQNAS_BRANDING.ready();
+        }
+        if (window.PQNAS_BRANDING && typeof window.PQNAS_BRANDING.apply === "function") {
+          window.PQNAS_BRANDING.apply(document);
+        }
+      } catch (_) {}
+    }
+
+    await applyEnrollmentBranding();
 
     const form = document.getElementById("form");
     const submit = document.getElementById("submit");

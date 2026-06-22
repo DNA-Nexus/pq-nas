@@ -274,7 +274,7 @@ html[data-theme="bright"] .pqnasFolderPickerPromptInput{
     function isPqnasInternalFolderName(name) {
         const n = String(name || "").trim().toLowerCase();
 
-        // Hide DNA-Nexus/PQ-NAS internal folders from destination pickers.
+        // Hide application-owned internal folders from destination pickers.
         // Examples: .pqnas, .pqnas_activity, .pqnas_versions, .pqnas_locks.
         return n === ".pqnas" || n.startsWith(".pqnas_") || n.startsWith(".pqnas-");
     }
@@ -1063,7 +1063,7 @@ html[data-theme="win_classic"] .pqFolderPicker [data-pqfp-choose]{
 
         const kicker = document.createElement("div");
         kicker.className = "pqFolderPickerKicker";
-        kicker.textContent = tr("folderpicker.kicker", null, "DNA-Nexus folder picker");
+        kicker.textContent = tr("folderpicker.kicker", null, "Folder picker");
         titleEl.parentElement?.insertBefore(kicker, titleEl);
     }
 
@@ -1185,7 +1185,7 @@ function ensureModal() {
             if (newFolderBtn) newFolderBtn.textContent = tr("folderpicker.new_folder_here", null, "New folder here…");
             if (chooseBtn && !opts.chooseLabel) chooseBtn.textContent = tr("folderpicker.choose_folder", null, "Choose folder");
             const kicker = cardEl ? cardEl.querySelector(".pqFolderPickerKicker") : null;
-            if (kicker) kicker.textContent = tr("folderpicker.kicker", null, "DNA-Nexus folder picker");
+            if (kicker) kicker.textContent = tr("folderpicker.kicker", null, "Folder picker");
         } catch (_) {}
     }
 
