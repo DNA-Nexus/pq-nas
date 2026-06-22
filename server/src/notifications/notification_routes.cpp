@@ -1,9 +1,12 @@
 #include "notifications/notification_routes.h"
 #include "notifications/notification_settings.h"
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <fcntl.h>
+#include <map>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -223,6 +226,46 @@ ProcessResult run_process_capture_local(const std::vector<std::string>& argv,
     return result;
 }
 
+bool allow_notification_test_request_local(const std::string& key) {
+    static std::mutex mu;
+    static std::map<std::string, std::vector<std::chrono::steady_clock::time_point>> buckets;
+
+    constexpr std::size_t kMaxHits = 5;
+    constexpr std::size_t kMaxBuckets = 4096;
+    const auto now = std::chrono::steady_clock::now();
+    const auto window = std::chrono::minutes(5);
+
+    std::lock_guard<std::mutex> lock(mu);
+
+    for (auto it = buckets.begin(); it != buckets.end(); ) {
+        auto& hits = it->second;
+        hits.erase(
+            std::remove_if(
+                hits.begin(),
+                hits.end(),
+                [&](const auto& t) { return now - t > window; }),
+            hits.end());
+
+        if (hits.empty()) {
+            it = buckets.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (buckets.size() > kMaxBuckets) {
+        buckets.erase(buckets.begin());
+    }
+
+    auto& hits = buckets[key];
+    if (hits.size() >= kMaxHits) {
+        return false;
+    }
+
+    hits.push_back(now);
+    return true;
+}
+
 json send_telegram_message(const NotificationSettings& s, const std::string& text) {
     if (s.telegram_bot_token.empty() || s.telegram_chat_id.empty()) {
         return {
@@ -330,6 +373,16 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
             std::string actor_fp;
             if (!require_admin_local(deps, req, res, &actor_fp)) return;
 
+            const std::string rate_key = "test-telegram:" + (req.remote_addr.empty() ? std::string("unknown") : req.remote_addr);
+            if (!allow_notification_test_request_local(rate_key)) {
+                reply_json_local(deps, res, 429, {
+                    {"ok", false},
+                    {"error", "rate_limited"},
+                    {"message", "Too many notification test requests. Try again later."}
+                });
+                return;
+            }
+
             std::string load_err;
             NotificationSettings s = load_notification_settings(&load_err);
 
@@ -347,7 +400,15 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
             std::string actor_fp;
             if (!require_admin_local(deps, req, res, &actor_fp)) return;
 
-            (void)req;
+            const std::string rate_key = "test-email:" + (req.remote_addr.empty() ? std::string("unknown") : req.remote_addr);
+            if (!allow_notification_test_request_local(rate_key)) {
+                reply_json_local(deps, res, 429, {
+                    {"ok", false},
+                    {"error", "rate_limited"},
+                    {"message", "Too many notification test requests. Try again later."}
+                });
+                return;
+            }
 
             const auto pr = run_process_capture_local(
                 {"/usr/local/libexec/pqnas/pqnas_notify.py", "--test-email"},
