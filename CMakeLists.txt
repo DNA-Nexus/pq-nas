@@ -180,6 +180,8 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
         server/src/main.cpp
+        server/src/routes_storage_raid.cpp
+        server/src/routes_storage_raid.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 

@@ -2772,7 +2772,7 @@ static std::string url_encode(const std::string& s) {
     return s;
 }
 
-static std::string to_lower_copy(std::string s) {
+[[maybe_unused]] static std::string to_lower_copy(std::string s) {
     for (char& c : s) c = (char)std::tolower((unsigned char)c);
     return s;
 }
@@ -4277,7 +4277,7 @@ static std::string sha256_hex_lower_evp(const std::string& s) {
     return out;
 }
 
-static std::string btrfs_membership_fingerprint(const json& btrfs_j) {
+[[maybe_unused]] static std::string btrfs_membership_fingerprint(const json& btrfs_j) {
     // Stable across "used bytes" changes etc.
     // Fingerprint = sha256("uuid=<uuid>\n<sorted device paths>\n")
     std::string uuid = btrfs_j.value("uuid", "");
@@ -4299,7 +4299,7 @@ static std::string btrfs_membership_fingerprint(const json& btrfs_j) {
     return sha256_hex_lower_evp(material);
 }
 
-static std::string join_commands_for_hash(const json& commands_arr) {
+[[maybe_unused]] static std::string join_commands_for_hash(const json& commands_arr) {
     if (!commands_arr.is_array()) return "";
     std::string s;
     for (size_t i = 0; i < commands_arr.size(); ++i) {
@@ -4520,7 +4520,7 @@ static json load_or_init_pools_cfg(const std::string& users_path) {
 }
 
 // returns true if "btrfs filesystem show <mount>" mentions the given device path
-static bool btrfs_filesystem_has_device(const std::string& mount, const std::string& device_path) {
+[[maybe_unused]] static bool btrfs_filesystem_has_device(const std::string& mount, const std::string& device_path) {
     std::string show;
     int ec = 0;
 
@@ -4560,7 +4560,7 @@ static int run_capture(const std::string& cmd, std::string* out) {
     return rc;
 }
 
-static bool is_abs_path_safe(const std::string& p) {
+[[maybe_unused]] static bool is_abs_path_safe(const std::string& p) {
     if (p.empty()) return false;
     if (p[0] != '/') return false;
     // crude hardening against shell injection + traversal
@@ -4659,7 +4659,7 @@ static void lsblk_collect_mountpoints_recursive(const json& node, json* out_mps)
 
 // Returns ok=true and list of mountpoints for any descendants of a disk.
 // Uses full path /usr/bin/lsblk for consistency with your other code.
-static json lsblk_disk_mountpoints_json(const std::string& disk_path) {
+[[maybe_unused]] static json lsblk_disk_mountpoints_json(const std::string& disk_path) {
     json out;
     out["ok"] = false;
     out["disk"] = disk_path;
@@ -4723,7 +4723,7 @@ static json lsblk_disk_mountpoints_json(const std::string& disk_path) {
 // Convert lsblk JSON into a safer, smaller disk list.
 // - keeps only TYPE=="disk"
 // - by default excludes /dev/loop* (snap loops), unless PQNAS_STORAGE_ALLOW_LOOP=1
-static json storage_list_disks_json(std::string* raw_lsblk_json_out = nullptr) {
+[[maybe_unused]] static json storage_list_disks_json(std::string* raw_lsblk_json_out = nullptr) {
     std::string out;
     // -J JSON, -b bytes, -O all props
     // NOTE: lsblk output is trusted system tool; we still filter hard.
@@ -4981,7 +4981,7 @@ static inline std::string parent_disk_from_dev(const std::string& dev_in) {
 }
 
 // Helper: compute partition path for a whole-disk device (/dev/nvmeXnY -> /dev/nvmeXnYp1, /dev/sdX -> /dev/sdX1)
-static std::string part1_path_from_disk(const std::string& disk) {
+[[maybe_unused]] static std::string part1_path_from_disk(const std::string& disk) {
     if (disk.rfind("/dev/", 0) != 0) return "";
     if (disk.find("/dev/nvme") == 0)   return disk + "p1";
     if (disk.find("/dev/mmcblk") == 0) return disk + "p1";
@@ -5065,7 +5065,7 @@ static inline double round_dp(double value, int decimals) {
     return std::round(value * scale) / scale;
 }
 
-static std::string detect_system_pool_root_disk() {
+[[maybe_unused]] static std::string detect_system_pool_root_disk() {
     std::string root = getenv_str("PQNAS_STORAGE_ROOT");
     if (root.empty()) root = "/srv/pqnas";
 
@@ -5440,7 +5440,7 @@ static inline std::string pqnas_trim_copy(std::string s) {
 
 static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in);
 
-static json parse_btrfs_scrub_status_best_effort(const std::string& raw) {
+[[maybe_unused]] static json parse_btrfs_scrub_status_best_effort(const std::string& raw) {
     // Best-effort only. We do NOT assume exact formatting across btrfs-progs versions.
     // Typical outputs:
     // - "scrub status for <mp>\nno stats available\n" (never run)
@@ -5626,7 +5626,7 @@ std::string pqnas_server_started_at_iso_local() {
 } // namespace
 
 
-static bool validate_create_pool_devices(
+[[maybe_unused]] static bool validate_create_pool_devices(
     const json& devices_json,
     const json& disk_inventory,
     std::vector<std::string>& devices_out,
@@ -5706,7 +5706,7 @@ static bool validate_create_pool_devices(
     return true;
 }
 
-static json build_create_pool_commands_json(
+[[maybe_unused]] static json build_create_pool_commands_json(
     const std::string& pool_id,
     const std::string& mode,
     const std::vector<std::string>& devices,
@@ -5755,7 +5755,7 @@ static json build_create_pool_commands_json(
     return cmds;
 }
 
-static std::string compute_create_pool_plan_id(
+[[maybe_unused]] static std::string compute_create_pool_plan_id(
     const std::string& plan_nonce,
     const std::string& pool_id,
     const std::string& mode,
@@ -5784,7 +5784,7 @@ static int open_excl_lockfile(const std::string& path, std::string* err) {
     return fd;
 }
 
-static bool write_fd_all(int fd, const std::string& s) {
+[[maybe_unused]] static bool write_fd_all(int fd, const std::string& s) {
     const char* p = s.data();
     size_t n = s.size();
     while (n > 0) {
@@ -5808,7 +5808,7 @@ static bool write_fd_all(int fd, const std::string& s) {
 static std::string raid_exec_record_path(const std::string& plan_id) {
     return std::string("/run/pqnas/raid/") + plan_id + ".json";
 }
-static void ensure_dir_best_effort(const std::string& p) {
+[[maybe_unused]] static void ensure_dir_best_effort(const std::string& p) {
     std::error_code ec;
     std::filesystem::create_directories(p, ec);
 }
@@ -5818,7 +5818,7 @@ static std::string raid_mount_lock_path(const std::string& resolved_mount) {
     return std::string("/run/pqnas/raid/lock-mount-") + (h.empty() ? "bad" : h) + ".lock";
 }
 
-static bool is_hex_64_lower_or_upper(const std::string& s) {
+[[maybe_unused]] static bool is_hex_64_lower_or_upper(const std::string& s) {
     if (s.size() != 64) return false;
     for (char c : s) {
         if (!is_hex_lower_or_upper(c)) return false;  // uses your char helper at line ~313
@@ -6711,7 +6711,7 @@ static void raid_startup_fail_running_records_best_effort() {
     }
 }
 
-static json raid_enqueue_job_fail_closed(const std::string& plan_id,
+[[maybe_unused]] static json raid_enqueue_job_fail_closed(const std::string& plan_id,
                                         const std::string& resolved_mount,
                                         const json& plan,
                                         const json& commands) {
@@ -7759,7 +7759,7 @@ static inline std::string to_lower_ascii_copy(std::string s) {
     return s;
 }
 
-static std::string upper_ascii(std::string s) {
+[[maybe_unused]] static std::string upper_ascii(std::string s) {
     for (char& c : s) {
         if (c >= 'a' && c <= 'z')
             c = (char)(c - ('a' - 'A'));
@@ -12252,7 +12252,12 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
         reply_json(res, 200, json({{"ok",true},{"admin",true}}).dump());
     });
 
-    register_storage_raid_routes(srv);
+    register_storage_raid_routes(srv, StorageRaidRoutesContext{
+        COOKIE_KEY,
+        users_path,
+        workspaces_path,
+        pqnas::data_root_dir()
+    });
 
     srv.Get("/api/v4/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {
        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;

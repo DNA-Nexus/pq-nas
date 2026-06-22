@@ -5,7 +5,2410 @@
 
 #include "httplib.h"
 
-void register_storage_raid_routes(httplib::Server& srv) {
+#include "audit_log.h"
+#include "users_registry.h"
+#include "authz.h"
+#include "storage_pools.h"
+#include "storage_info.h"
+
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <cstdio>
+#include <utility>
+
+#include "workspaces.h"
+
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <sys/statvfs.h>
+#include <thread>
+#include <unordered_map>
+#include <sodium.h>
+
+
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <sys/statvfs.h>
+#include <thread>
+#include <unordered_map>
+#include <sodium.h>
+
+
+
+#include "users_registry.h"
+#include "authz.h"
+#include "storage_pools.h"
+#include "storage_info.h"
+#include "workspaces.h"
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
+
+using json = nlohmann::json;
+
+using pqnas::AuditEvent;
+using pqnas::audit_append;
+
+
+
+// -----------------------------------------------------------------------------
+// Copied transitional helpers from main.cpp.
+// TODO: move shared helpers into proper modules after route split is stable.
+// -----------------------------------------------------------------------------
+
+// copied transitional helper from main.cpp: reply_json
+static void reply_json(httplib::Response& res, int code, const std::string& body_json) {
+    res.status = code;
+    res.set_header("Content-Type", "application/json");
+    res.body = body_json;
+}
+
+
+// copied transitional helper from main.cpp: getenv_str
+static std::string getenv_str(const char* k) {
+    const char* v = std::getenv(k);
+    return (v && *v) ? std::string(v) : std::string();
+}
+
+
+// copied transitional helper from main.cpp: getenv_bool
+static bool getenv_bool(const char* k, bool defv) {
+    const char* v = std::getenv(k);
+    if (!v) return defv;
+    std::string s(v);
+    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+    if (s == "1" || s == "true" || s == "yes" || s == "on") return true;
+    if (s == "0" || s == "false" || s == "no" || s == "off") return false;
+    return defv;
+}
+
+
+// copied transitional helper from main.cpp: cap_string
+static inline void cap_string(std::string& s, size_t cap_bytes) {
+    if (s.size() > cap_bytes) {
+        s.resize(cap_bytes);
+    }
+}
+
+
+// copied transitional helper from main.cpp: sh_quote
+static std::string sh_quote(const std::string& s) {
+    // Wrap in single quotes and escape any embedded single quotes safely.
+    return "'" + shell_escape_single_quotes(s) + "'";
+}
+
+
+// copied transitional helper from main.cpp: rtrim_inplace
+static inline void rtrim_inplace(std::string& s) {
+    while (!s.empty()) {
+        char c = s.back();
+        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') s.pop_back();
+        else break;
+    }
+}
+
+
+// copied transitional helper from main.cpp: run_capture
+static int run_capture(const std::string& cmd, std::string* out) {
+    if (out) out->clear();
+    std::array<char, 8192> buf{};
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return -1;
+    while (true) {
+        size_t n = fread(buf.data(), 1, buf.size(), pipe);
+        if (n > 0 && out) out->append(buf.data(), n);
+        if (n < buf.size()) break;
+    }
+    int rc = pclose(pipe);
+    // pclose returns wait status; keep it simple: 0 means success in practice for our uses.
+    return rc;
+}
+
+
+// copied transitional helper from main.cpp: run_cmd_capture
+static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
+    if (out) out->clear();
+    if (exit_code) *exit_code = 127; // default like "command failed"
+
+    // Always capture stderr too.
+    std::string cmd2 = cmd;
+    if (cmd2.find("2>&1") == std::string::npos) {
+        cmd2 += " 2>&1";
+    }
+
+    FILE* fp = popen(cmd2.c_str(), "r");
+    if (!fp) {
+        return false; // popen failed
+    }
+
+    std::string s;
+    char buf[4096];
+    while (true) {
+        size_t n = fread(buf, 1, sizeof(buf), fp);
+        if (n == 0) break;
+        s.append(buf, n);
+    }
+
+    const int rc = pclose(fp);
+
+    if (out) *out = s;
+
+    if (rc == -1) {
+        if (exit_code) *exit_code = 127;
+        return false;
+    }
+
+    if (WIFEXITED(rc)) {
+        if (exit_code) *exit_code = WEXITSTATUS(rc);
+        return true;
+    }
+
+    if (WIFSIGNALED(rc)) {
+        if (exit_code) *exit_code = 128 + WTERMSIG(rc);
+        return true;
+    }
+
+    if (exit_code) *exit_code = 127;
+    return false;
+}
+
+
+// copied transitional helper from main.cpp: trim_copy
+static inline std::string trim_copy(std::string s) {
+    // reuse your rtrim + simple ltrim
+    rtrim_inplace(s);
+    size_t i = 0;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++;
+    if (i > 0) s.erase(0, i);
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: starts_with
+static inline bool starts_with(const std::string& s, const std::string& pfx) {
+    return s.rfind(pfx, 0) == 0;
+}
+
+
+// copied transitional helper from main.cpp: str_contains
+static inline bool str_contains(const std::string& s, const char* needle) {
+    return s.find(needle) != std::string::npos;
+}
+
+
+// copied transitional helper from main.cpp: read_text_file
+static bool read_text_file(const std::string& path, std::string* out) {
+    if (out) out->clear();
+
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+
+    constexpr size_t kMax = 16u * 1024u * 1024u; // 16 MiB hard cap
+
+    std::string s;
+    f.seekg(0, std::ios::end);
+    std::streampos n = f.tellg();
+
+    if (n > 0 && (size_t)n < kMax) {
+        s.resize((size_t)n);
+        f.seekg(0, std::ios::beg);
+        f.read(&s[0], (std::streamsize)s.size());
+        if (!f) return false;
+    } else {
+        f.clear();
+        f.seekg(0, std::ios::beg);
+        char buf[4096];
+        while (f) {
+            f.read(buf, sizeof(buf));
+            std::streamsize got = f.gcount();
+            if (got > 0) {
+                if (s.size() + (size_t)got > kMax) {
+                    s.append(buf, (size_t)(kMax - s.size()));
+                    break;
+                }
+                s.append(buf, (size_t)got);
+            }
+        }
+    }
+
+    if (out) *out = s;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: write_text_file_atomic
+static bool write_text_file_atomic(const std::string& path, const std::string& content) {
+    const std::string tmp = path + ".tmp";
+    std::ofstream f(tmp, std::ios::binary);
+    if (!f) return false;
+    f.write(content.data(), (std::streamsize)content.size());
+    f.close();
+    if (!f) return false;
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::remove(tmp);
+        return false;
+    }
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: sha256_hex_lower_evp
+static std::string sha256_hex_lower_evp(const std::string& s) {
+    EVP_MD_CTX* c = EVP_MD_CTX_new();
+    if (!c) return std::string{};
+    unsigned char md[EVP_MAX_MD_SIZE];
+    unsigned int mdlen = 0;
+
+    if (EVP_DigestInit_ex(c, EVP_sha256(), nullptr) != 1) { EVP_MD_CTX_free(c); return std::string{}; }
+    if (!s.empty()) {
+        if (EVP_DigestUpdate(c, s.data(), s.size()) != 1) { EVP_MD_CTX_free(c); return std::string{}; }
+    }
+    if (EVP_DigestFinal_ex(c, md, &mdlen) != 1) { EVP_MD_CTX_free(c); return std::string{}; }
+    EVP_MD_CTX_free(c);
+
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    out.resize(mdlen * 2);
+    for (unsigned int i = 0; i < mdlen; ++i) {
+        out[i*2 + 0] = hex[(md[i] >> 4) & 0xF];
+        out[i*2 + 1] = hex[(md[i]     ) & 0xF];
+    }
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: rand_hex_16
+static std::string rand_hex_16() {
+    static const char* k = "0123456789abcdef";
+    std::array<unsigned char, 8> b{};
+    randombytes_buf(b.data(), b.size());
+    std::string s;
+    s.reserve(16);
+    for (unsigned char c : b) { s.push_back(k[c >> 4]); s.push_back(k[c & 0x0f]); }
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: iso8601_now
+static std::string iso8601_now() {
+    using namespace std::chrono;
+    auto now = system_clock::now();
+    std::time_t tt = system_clock::to_time_t(now);
+
+    std::tm tm{};
+    gmtime_r(&tt, &tm); // UTC
+
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return std::string(buf);
+}
+
+
+// copied transitional helper from main.cpp: audit_safe_header_value
+static std::string audit_safe_header_value(const std::string& raw, std::size_t max_len = 512) {
+    std::string out;
+    out.reserve(std::min(raw.size(), max_len));
+
+    for (unsigned char c : raw) {
+        if (out.size() >= max_len) break;
+
+        if (c < 0x20 || c == 0x7f) {
+            out.push_back(' ');
+        } else {
+            out.push_back(static_cast<char>(c));
+        }
+    }
+
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: is_sha256_hex_lower
+static bool is_sha256_hex_lower(const std::string& s) {
+    if (s.size() != 64) return false;
+    for (char c : s) {
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: open_excl_lockfile
+static int open_excl_lockfile(const std::string& path, std::string* err) {
+    int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0640);
+    if (fd < 0) {
+        if (err) *err = std::string("open(O_EXCL) failed: ") + std::strerror(errno);
+        return -1;
+    }
+    return fd;
+}
+
+
+// copied transitional helper from main.cpp: ensure_dir_fail_closed
+static bool ensure_dir_fail_closed(const std::string& dir, std::string* err) {
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        if (err) *err = "create_directories failed: " + ec.message();
+        return false;
+    }
+
+    // Verify it exists and is a directory (fail-closed)
+    ec.clear();
+    const bool exists = std::filesystem::exists(dir, ec);
+    if (ec || !exists) {
+        if (err) *err = "dir does not exist after create_directories";
+        return false;
+    }
+
+    ec.clear();
+    const bool isdir = std::filesystem::is_directory(dir, ec);
+    if (ec || !isdir) {
+        if (err) *err = "path is not a directory";
+        return false;
+    }
+
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: statvfs_path
+static bool statvfs_path(const std::string& path, std::uint64_t* total_bytes, std::uint64_t* free_bytes) {
+    if (total_bytes) *total_bytes = 0;
+    if (free_bytes) *free_bytes = 0;
+
+    struct statvfs sv {};
+    if (::statvfs(path.c_str(), &sv) != 0) return false;
+
+    const std::uint64_t frsize = (std::uint64_t)sv.f_frsize;
+    if (total_bytes) *total_bytes = frsize * (std::uint64_t)sv.f_blocks;
+    if (free_bytes)  *free_bytes  = frsize * (std::uint64_t)sv.f_bavail;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: is_abs_path_safe
+[[maybe_unused]] static bool is_abs_path_safe(const std::string& p) {
+    if (p.empty()) return false;
+    if (p[0] != '/') return false;
+    // crude hardening against shell injection + traversal
+    if (p.find("..") != std::string::npos) return false;
+    if (p.find(';') != std::string::npos) return false;
+    if (p.find('|') != std::string::npos) return false;
+    if (p.find('&') != std::string::npos) return false;
+    if (p.find('`') != std::string::npos) return false;
+    if (p.find('$') != std::string::npos) return false;
+    if (p.find('\n') != std::string::npos) return false;
+    if (p.find('\r') != std::string::npos) return false;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: parent_disk_from_dev
+static inline std::string parent_disk_from_dev(const std::string& dev_in) {
+    // Trim whitespace defensively (lsblk/findmnt output can include \n)
+    std::string dev = dev_in;
+    while (!dev.empty() && (dev.back() == '\n' || dev.back() == '\r' || dev.back() == ' ' || dev.back() == '\t'))
+        dev.pop_back();
+    size_t start_ws = 0;
+    while (start_ws < dev.size() && (dev[start_ws] == ' ' || dev[start_ws] == '\t'))
+        start_ws++;
+    if (start_ws > 0) dev.erase(0, start_ws);
+
+    if (dev.rfind("/dev/", 0) != 0) return "";
+
+    auto is_digit = [](char c) { return (c >= '0' && c <= '9'); };
+
+    // nvme: /dev/nvme0n1p1 -> /dev/nvme0n1
+    if (dev.rfind("/dev/nvme", 0) == 0) {
+        // Only strip a trailing "p<digits>" if it exists
+        size_t p = dev.rfind('p');
+        if (p != std::string::npos && p + 1 < dev.size()) {
+            bool all_digits = true;
+            for (size_t i = p + 1; i < dev.size(); ++i) {
+                if (!is_digit(dev[i])) { all_digits = false; break; }
+            }
+            if (all_digits) return dev.substr(0, p);
+        }
+        return dev;
+    }
+
+    // mmcblk: /dev/mmcblk0p2 -> /dev/mmcblk0
+    if (dev.rfind("/dev/mmcblk", 0) == 0) {
+        size_t p = dev.rfind('p');
+        if (p != std::string::npos && p + 1 < dev.size()) {
+            bool all_digits = true;
+            for (size_t i = p + 1; i < dev.size(); ++i) {
+                if (!is_digit(dev[i])) { all_digits = false; break; }
+            }
+            if (all_digits) return dev.substr(0, p);
+        }
+        return dev;
+    }
+
+    // loop: /dev/loop32p1 -> /dev/loop32 (handle explicitly, no heuristic fallback)
+    if (dev.rfind("/dev/loop", 0) == 0) {
+        const size_t base = std::string("/dev/loop").size(); // 9
+        size_t i = base;
+
+        // require at least one digit after /dev/loop
+        if (i >= dev.size() || !is_digit(dev[i])) return dev;
+
+        while (i < dev.size() && is_digit(dev[i])) i++; // consume loop number digits
+
+        // exact disk form: /dev/loop<digits>
+        if (i == dev.size()) return dev;
+
+        // partition form: /dev/loop<digits>p<digits>
+        if (dev[i] == 'p') {
+            size_t ppos = i;
+            size_t j = i + 1;
+            if (j >= dev.size() || !is_digit(dev[j])) {
+                // weird case like /dev/loop32p (no partition digits) -> treat as disk
+                return dev.substr(0, ppos);
+            }
+            while (j < dev.size() && is_digit(dev[j])) j++;
+            if (j == dev.size()) {
+                // clean match -> return parent disk
+                return dev.substr(0, ppos);
+            }
+        }
+
+        // Anything else: don't guess
+        return dev;
+    }
+
+    // sdX / vdX / xvdX / etc: strip trailing digits
+    size_t end = dev.size();
+    while (end > 0 && is_digit(dev[end - 1])) end--;
+    if (end > 5 && end < dev.size()) return dev.substr(0, end);
+
+    return dev;
+}
+
+
+// copied transitional helper from main.cpp: storage_list_disks_json
+[[maybe_unused]] static json storage_list_disks_json(std::string* raw_lsblk_json_out = nullptr) {
+    std::string out;
+    // -J JSON, -b bytes, -O all props
+    // NOTE: lsblk output is trusted system tool; we still filter hard.
+    run_capture("lsblk -J -b -O 2>/dev/null", &out);
+
+    // Only cap the *debug/raw* string, never cap the parsed JSON input
+    if (raw_lsblk_json_out) {
+        std::string raw = out;
+        cap_string(raw, 1024 * 1024); // 1 MiB cap (debug safety)
+        *raw_lsblk_json_out = raw;
+    }
+
+    json root;
+    try {
+        root = json::parse(out);
+    } catch (...) {
+        return json{
+            {"ok", false},
+            {"error", "lsblk_parse_failed"}
+        };
+    }
+
+    const bool allow_loop = getenv_bool("PQNAS_STORAGE_ALLOW_LOOP", false);
+
+    json disks = json::array();
+    json by_path = json::object();
+    json by_name = json::object();
+
+    if (!root.contains("blockdevices") || !root["blockdevices"].is_array()) {
+        return json{{"ok", true}, {"disks", disks}, {"by_path", by_path}, {"by_name", by_name}};
+    }
+
+
+    for (const auto& d : root["blockdevices"]) {
+        // type
+        const std::string type = d.value("type", "");
+        if (type != "disk") {
+            // Allow loop devices only when explicitly enabled (dev/testing)
+            if (!(allow_loop && type == "loop")) continue;
+        }
+
+
+        std::string name = d.value("name", "");
+        if (name.size() > 256) name.resize(256);
+
+        std::string path = d.value("path", "");
+        if (path.size() > 256) path.resize(256);
+
+        if (name.empty()) continue;
+        if (path.empty()) continue;
+
+        // filter loop devices unless explicitly allowed (snap uses tons of /dev/loop*)
+        if (!allow_loop) {
+            if (name.rfind("loop", 0) == 0) continue;
+        }
+
+        // collect mountpoints (lsblk sometimes returns array or string; handle both)
+        json mps = json::array();
+        if (d.contains("mountpoints")) {
+            const auto& mp = d["mountpoints"];
+            if (mp.is_array()) {
+                for (const auto& x : mp) {
+                    if (x.is_string() && !x.get<std::string>().empty()) mps.push_back(x);
+                }
+            } else if (mp.is_string()) {
+                auto s = mp.get<std::string>();
+                if (!s.empty()) mps.push_back(s);
+            }
+        } else if (d.contains("mountpoint") && d["mountpoint"].is_string()) {
+            auto s = d["mountpoint"].get<std::string>();
+            if (!s.empty()) mps.push_back(s);
+        }
+
+        // children count (partitions)
+        int children = 0;
+        if (d.contains("children") && d["children"].is_array()) children = (int)d["children"].size();
+
+        // size: lsblk -b gives size bytes as string or number depending on version; normalize to uint64.
+        uint64_t size_bytes = 0;
+        if (d.contains("size")) {
+            if (d["size"].is_number_unsigned()) size_bytes = d["size"].get<uint64_t>();
+            else if (d["size"].is_number()) size_bytes = (uint64_t)d["size"].get<double>();
+            else if (d["size"].is_string()) {
+                try { size_bytes = (uint64_t)std::stoull(d["size"].get<std::string>()); } catch (...) {}
+            }
+        }
+
+        // Use capped strings consistently in both the object and the index maps
+        const std::string name_c = name;
+        const std::string path_c = path;
+
+        json one{
+            {"path", path_c},
+            {"name", name_c},
+            {"size_bytes", size_bytes},
+
+            {"model",  jstr_cap(d, "model")},
+            {"serial", jstr_cap(d, "serial")},
+            {"vendor", jstr_cap(d, "vendor")},
+            {"tran",   jstr_cap(d, "tran")},
+
+            {"rota", d.contains("rota") ? d["rota"] : json(nullptr)},
+            {"rm",   d.contains("rm")   ? d["rm"]   : json(nullptr)},
+            {"mountpoints", mps},
+            {"children", children},
+
+            {"fstype", jstr_cap(d, "fstype")},
+            {"fsver",  jstr_cap(d, "fsver")},
+            {"label",  jstr_cap(d, "label")},
+            {"uuid",   jstr_cap(d, "uuid")}
+        };
+
+        disks.push_back(one);
+        const int idx = (int)disks.size() - 1;
+
+        by_path[path_c] = idx;
+        by_name[name_c] = idx;
+
+    }
+
+    return json{{"ok", true}, {"disks", disks}, {"by_path", by_path}, {"by_name", by_name}};
+}
+
+
+// copied transitional helper from main.cpp: storage_btrfs_status_json
+static json storage_btrfs_status_json(const std::string& mountpoint) {
+    json j;
+    j["ok"] = true;
+	j["error"] = nullptr;
+    j["btrfs_mount"] = mountpoint;
+
+    const std::string mp = sh_quote(mountpoint);
+
+    std::string show, df, stats;
+
+    // -n = non-interactive (fails fast if sudo not permitted)
+    // Use full paths so sudoers rules can be tight.
+    const std::string cmd_show  = "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + mp;
+    const std::string cmd_df    = "/usr/bin/sudo -n /usr/bin/btrfs filesystem df "   + mp;
+    const std::string cmd_stats = "/usr/bin/sudo -n /usr/bin/btrfs device stats "    + mp;
+
+
+    int rc_show  = run_capture(cmd_show,  &show);
+    int rc_df    = run_capture(cmd_df,    &df);
+    int rc_stats = run_capture(cmd_stats, &stats);
+
+    // Cap outputs
+    cap_string(show,  256 * 1024);
+    cap_string(df,    256 * 1024);
+    cap_string(stats, 256 * 1024);
+
+    j["btrfs_filesystem_show"] = show;
+    j["btrfs_filesystem_df"]   = df;
+    j["btrfs_device_stats"]    = stats;
+    // ---- df_summary (best effort) parsed from "btrfs filesystem df" ----
+    // Example lines:
+    // "Data, single: total=2.01GiB, used=19.12MiB"
+    // "Metadata, DUP: total=1.00GiB, used=1.14MiB"
+    json df_summary = json::object();
+
+    {
+        size_t pos = 0;
+        while (pos < df.size()) {
+            size_t end = df.find('\n', pos);
+            if (end == std::string::npos) end = df.size();
+            std::string line = df.substr(pos, end - pos);
+            rtrim_inplace(line);
+
+            std::string name, total_s, used_s;
+            uint64_t total_b = 0, used_b = 0;
+            if (parse_btrfs_df_line(line, &name, &total_b, &used_b, &total_s, &used_s)) {
+                df_summary[name] = json{
+                        {"total", total_s},
+                        {"used", used_s},
+                        {"total_bytes", total_b},
+                        {"used_bytes", used_b}
+                };
+            }
+
+            if (end == df.size()) break;
+            pos = end + 1;
+        }
+    }
+
+    // Always include for stable schema (may be empty)
+    j["df_summary"] = df_summary;
+    j["rc_show"]  = rc_show;
+    j["rc_df"]    = rc_df;
+    j["rc_stats"] = rc_stats;
+
+    // ---- summary (best effort) parsed from "btrfs filesystem show" ----
+    // Works for lines like:
+    //   Label: 'PQNAS_DATA'  uuid: ...
+    //   Total devices 1 FS bytes used 20.27MiB
+    //   devid 1 size 238.47GiB used 4.02GiB path /dev/nvme0n1p1
+    json summary = json::object();
+
+    // label + uuid
+    {
+        const std::string k1 = "Label:";
+        const std::string k2 = "uuid:";
+        auto p1 = show.find(k1);
+        auto p2 = show.find(k2);
+        if (p1 != std::string::npos && p2 != std::string::npos && p2 > p1) {
+            std::string label_part = show.substr(p1 + k1.size(), p2 - (p1 + k1.size()));
+            // trim label_part
+            while (!label_part.empty() && (label_part.front() == ' ' || label_part.front() == '\t')) label_part.erase(label_part.begin());
+            while (!label_part.empty() && (label_part.back() == ' ' || label_part.back() == '\t')) label_part.pop_back();
+
+            // label_part often looks like "'PQNAS_DATA'"
+            if (!label_part.empty() && label_part.front() == '\'') {
+                size_t q = label_part.find('\'', 1);
+                if (q != std::string::npos && q > 1) {
+                    summary["label"] = label_part.substr(1, q - 1);
+                } else {
+                    summary["label"] = label_part;
+                }
+            } else if (!label_part.empty()) {
+                summary["label"] = label_part;
+            }
+
+            // uuid token until whitespace/newline
+            size_t ustart = p2 + k2.size();
+            while (ustart < show.size() && (show[ustart] == ' ' || show[ustart] == '\t')) ustart++;
+            size_t uend = ustart;
+            while (uend < show.size()) {
+                char c = show[uend];
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r') break;
+                uend++;
+            }
+            if (uend > ustart) summary["uuid"] = show.substr(ustart, uend - ustart);
+        }
+    }
+
+    // total devices + FS bytes used
+    {
+        const std::string key = "Total devices";
+        auto p = show.find(key);
+        if (p != std::string::npos) {
+            // Grab the line
+            size_t line_end = show.find('\n', p);
+            if (line_end == std::string::npos) line_end = show.size();
+            std::string line = show.substr(p, line_end - p);
+
+            // naive token scan
+            // "Total devices 1 FS bytes used 20.27MiB"
+            size_t td = line.find("Total devices");
+            if (td != std::string::npos) {
+                size_t pos = td + std::string("Total devices").size();
+                while (pos < line.size() && line[pos] == ' ') pos++;
+                size_t pos2 = pos;
+                while (pos2 < line.size() && line[pos2] >= '0' && line[pos2] <= '9') pos2++;
+                if (pos2 > pos) {
+                    summary["total_devices"] = std::atoi(line.substr(pos, pos2 - pos).c_str());
+                }
+            }
+
+            const std::string k_used = "FS bytes used";
+            auto pu = line.find(k_used);
+            if (pu != std::string::npos) {
+                size_t pos = pu + k_used.size();
+                while (pos < line.size() && line[pos] == ' ') pos++;
+                size_t pos2 = pos;
+                while (pos2 < line.size() && line[pos2] != ' ' && line[pos2] != '\t') pos2++;
+                if (pos2 > pos) {
+                    const std::string tok = line.substr(pos, pos2 - pos);
+                    uint64_t bytes = 0;
+                    if (parse_human_bytes(tok, &bytes)) {
+                        summary["fs_bytes_used"] = tok;
+                        summary["fs_bytes_used_bytes"] = bytes;
+                    } else {
+                        summary["fs_bytes_used"] = tok;
+                    }
+                }
+            }
+        }
+    }
+
+	// device lines: size/used/path (collect ALL devices)
+	{
+    	json devices = json::array();
+
+	    const std::string key = "devid";
+    	auto p = show.find(key);
+
+    	while (p != std::string::npos) {
+        	size_t line_end = show.find('\n', p);
+	        if (line_end == std::string::npos) line_end = show.size();
+    	    std::string line = show.substr(p, line_end - p);
+
+	        auto ps = line.find("size ");
+    	    auto pu = line.find("used ");
+        	auto pp = line.find("path ");
+	        if (ps != std::string::npos && pu != std::string::npos && pp != std::string::npos) {
+    	        // size token
+        	    size_t s1 = ps + 5;
+	            size_t s2 = line.find(' ', s1);
+    	        if (s2 == std::string::npos) s2 = line.size();
+        	    std::string size_tok = line.substr(s1, s2 - s1);
+
+	            // used token
+    	        size_t u1 = pu + 5;
+        	    size_t u2 = line.find(' ', u1);
+            	if (u2 == std::string::npos) u2 = line.size();
+	            std::string used_tok = line.substr(u1, u2 - u1);
+
+    	        // path token to end
+        	    size_t p1 = pp + 5;
+            	while (p1 < line.size() && (line[p1] == ' ' || line[p1] == '\t')) p1++;
+	            std::string path_tok = (p1 < line.size()) ? line.substr(p1) : std::string();
+
+    	        json one = json::object();
+
+        	    if (!path_tok.empty()) {
+            	    one["path"] = path_tok;
+                	const std::string parent = parent_disk_from_dev(path_tok);
+	                if (!parent.empty()) one["parent_disk"] = parent;
+    	        }
+
+        	    if (!size_tok.empty()) {
+            	    one["size"] = size_tok;
+                	uint64_t bytes = 0;
+	                if (parse_human_bytes(size_tok, &bytes)) one["size_bytes"] = bytes;
+    	        }
+
+        	    if (!used_tok.empty()) {
+            	    one["used"] = used_tok;
+                	uint64_t bytes = 0;
+	                if (parse_human_bytes(used_tok, &bytes)) one["used_bytes"] = bytes;
+    	        }
+
+	            devices.push_back(one);
+    	    }
+
+	        if (line_end == show.size()) break;
+    	    p = show.find(key, line_end + 1);
+    	}
+
+    	// Always include devices array for stable schema
+    	summary["devices"] = devices;
+
+    	// Backward compatibility: keep old single-device fields as "first device"
+    	if (devices.is_array() && !devices.empty() && devices[0].is_object()) {
+        	const auto& d0 = devices[0];
+
+	        if (d0.contains("path"))        summary["device_path"] = d0["path"];
+    	    if (d0.contains("parent_disk")) summary["device_parent_disk"] = d0["parent_disk"];
+
+        	if (d0.contains("size"))        summary["device_size"] = d0["size"];
+	        if (d0.contains("size_bytes"))  summary["device_size_bytes"] = d0["size_bytes"];
+
+    	    if (d0.contains("used"))        summary["device_used"] = d0["used"];
+        	if (d0.contains("used_bytes"))  summary["device_used_bytes"] = d0["used_bytes"];
+	    }
+	}
+
+
+    // Always include summary for stable schema (may be empty if parsing failed)
+    j["summary"] = summary;
+
+    // ---- usage percent (UI-friendly) ----
+    // Prefer filesystem-used vs device-size from the parsed "summary".
+    json usage = json::object();
+
+    // overall: FS bytes used / device size
+    if (j.contains("summary") && j["summary"].is_object()) {
+        const auto& s = j["summary"];
+        if (s.contains("fs_bytes_used_bytes") && s.contains("device_size_bytes") &&
+            s["fs_bytes_used_bytes"].is_number_unsigned() &&
+            s["device_size_bytes"].is_number_unsigned()) {
+
+            const double used = (double)s["fs_bytes_used_bytes"].get<uint64_t>();
+            const double size = (double)s["device_size_bytes"].get<uint64_t>();
+            if (size > 0.0) {
+                double pct = (used * 100.0) / size;
+                if (pct < 0.0) pct = 0.0;
+                if (pct > 100.0) pct = 100.0;
+
+                usage["used_bytes"] = (uint64_t)used;
+                usage["size_bytes"] = (uint64_t)size;
+                usage["used_percent"] = pct;
+                usage["used_percent_1dp"] = round_dp(pct, 1);
+                usage["used_percent_int"] = (int)std::round(pct);
+
+            }
+        }
+    }
+
+    // data profile: df_summary["Data"] used/total (optional, but useful)
+    if (j.contains("df_summary") && j["df_summary"].is_object()) {
+        const auto& ds = j["df_summary"];
+        if (ds.contains("Data") && ds["Data"].is_object()) {
+            const auto& d = ds["Data"];
+            if (d.contains("used_bytes") && d.contains("total_bytes") &&
+                d["used_bytes"].is_number_unsigned() &&
+                d["total_bytes"].is_number_unsigned()) {
+
+                const double used = (double)d["used_bytes"].get<uint64_t>();
+                const double total = (double)d["total_bytes"].get<uint64_t>();
+                if (total > 0.0) {
+                    double pct = (used * 100.0) / total;
+                    if (pct < 0.0) pct = 0.0;
+                    if (pct > 100.0) pct = 100.0;
+
+                    usage["data_used_bytes"] = (uint64_t)used;
+                    usage["data_total_bytes"] = (uint64_t)total;
+                    usage["data_used_percent"] = pct;
+                    usage["data_used_percent_1dp"] = round_dp(pct, 1);
+                    usage["data_used_percent_int"] = (int)std::round(pct);
+
+                }
+                }
+        }
+    }
+	// overall: FS bytes used / total device size (multi-device safe)
+	if (j.contains("summary") && j["summary"].is_object()) {
+    	const auto& s = j["summary"];
+
+	    if (s.contains("fs_bytes_used_bytes") && s["fs_bytes_used_bytes"].is_number_unsigned()) {
+    	    const double fs_used = (double)s["fs_bytes_used_bytes"].get<uint64_t>();
+
+        	// Prefer summed size if we have devices[]
+        	uint64_t denom_size_u64 = 0;
+
+	        if (s.contains("devices") && s["devices"].is_array()) {
+    	        for (const auto& dev : s["devices"]) {
+        	        if (!dev.is_object()) continue;
+            	    if (dev.contains("size_bytes") && dev["size_bytes"].is_number_unsigned())
+                	    denom_size_u64 += dev["size_bytes"].get<uint64_t>();
+	            }
+    	    }
+
+	        // Fallback: old single-device field
+    	    if (denom_size_u64 == 0 &&
+        	    s.contains("device_size_bytes") && s["device_size_bytes"].is_number_unsigned()) {
+            	denom_size_u64 = s["device_size_bytes"].get<uint64_t>();
+        	}
+
+        	if (denom_size_u64 > 0) {
+            	const double size = (double)denom_size_u64;
+	            double pct = (fs_used * 100.0) / size;
+    	        if (pct < 0.0) pct = 0.0;
+        	    if (pct > 100.0) pct = 100.0;
+
+	            usage["used_bytes"] = (uint64_t)fs_used;
+    	        usage["size_bytes"] = denom_size_u64;           // <-- now correct for multi-device
+        	    usage["used_percent"] = pct;
+            	usage["used_percent_1dp"] = round_dp(pct, 1);
+	            usage["used_percent_int"] = (int)std::round(pct);
+    	    }
+    	}
+	}
+
+
+	j["usage"] = usage;
+    // ---- ok/error classification (fail-closed for "ok") ----
+    if (rc_show != 0 || rc_df != 0 || rc_stats != 0) {
+        j["ok"] = false;
+
+        // More specific errors for common cases
+        if (str_contains(show, "sudo:") || str_contains(df, "sudo:") || str_contains(stats, "sudo:")) {
+            j["error"] = "sudo_not_allowed";
+        } else if (str_contains(show, "not a valid btrfs filesystem") ||
+                   str_contains(df, "not a valid btrfs filesystem") ||
+                   str_contains(stats, "not a valid btrfs filesystem")) {
+            j["error"] = "not_btrfs";
+        } else {
+            j["error"] = "btrfs_failed";
+        }
+    }
+
+    return j;
+}
+
+
+// copied transitional helper from main.cpp: lsblk_disk_mountpoints_json
+[[maybe_unused]] static json lsblk_disk_mountpoints_json(const std::string& disk_path) {
+    json out;
+    out["ok"] = false;
+    out["disk"] = disk_path;
+
+    std::string raw;
+    int rc = run_capture("/usr/bin/lsblk -J -b -O " + sh_quote(disk_path) + " 2>/dev/null", &raw);
+
+    out["rc"] = rc;
+
+    if (rc != 0 || raw.empty()) {
+        out["error"] = "lsblk_failed";
+        std::string raw_cap = raw;
+        cap_string(raw_cap, 64 * 1024); // only for error/debug payload
+        out["raw"] = raw_cap;
+        return out;
+    }
+
+    // Safety: lsblk for a single disk should be small. If it's unexpectedly huge,
+    // fail-closed rather than truncating JSON and mis-parsing.
+    if (raw.size() > 2 * 1024 * 1024) { // 2 MiB
+        out["error"] = "lsblk_too_large";
+        out["raw_bytes"] = (uint64_t)raw.size();
+        return out;
+    }
+
+    json root;
+    try { root = json::parse(raw); }
+    catch (...) {
+        out["error"] = "lsblk_parse_failed";
+        std::string raw_cap = raw;
+        cap_string(raw_cap, 64 * 1024); // only for error/debug payload
+        out["raw"] = raw_cap;
+        return out;
+    }
+
+    json mps = json::array();
+
+    if (root.contains("blockdevices") && root["blockdevices"].is_array()) {
+        for (const auto& bd : root["blockdevices"]) {
+            // Disk node + descendants
+            lsblk_collect_mountpoints_recursive(bd, &mps);
+        }
+    }
+
+    // de-dup mountpoints (stable-ish order: first occurrence wins)
+    std::set<std::string> seen;
+    json uniq = json::array();
+    for (const auto& x : mps) {
+        if (!x.is_string()) continue;
+        std::string s = x.get<std::string>();
+        if (s.empty()) continue;
+        if (seen.insert(s).second) uniq.push_back(s);
+    }
+
+    out["ok"] = true;
+    out["mountpoints"] = uniq;
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_filesystem_show
+static inline void parse_btrfs_filesystem_show(const std::string& out,
+                                               std::string* label,
+                                               std::string* uuid,
+                                               int* devices) {
+    if (label) label->clear();
+    if (uuid) uuid->clear();
+    if (devices) *devices = -1;
+
+    for (const std::string& raw : split_lines(out)) {
+        const std::string line = trim_copy(raw);
+
+        // Label + uuid on same line
+        // Label: 'PQNAS_DATA'  uuid: 26a57d77-...
+        if (starts_with(line, "Label:")) {
+            // label between single quotes if present
+            auto q1 = line.find('\'');
+            if (q1 != std::string::npos) {
+                auto q2 = line.find('\'', q1 + 1);
+                if (q2 != std::string::npos && label) {
+                    *label = line.substr(q1 + 1, q2 - (q1 + 1));
+                }
+            }
+            // uuid: token
+            auto up = line.find("uuid:");
+            if (up != std::string::npos && uuid) {
+                std::string u = trim_copy(line.substr(up + 5));
+                // uuid may be followed by more text; take first token
+                auto sp = u.find_first_of(" \t\r\n");
+                if (sp != std::string::npos) u = u.substr(0, sp);
+                *uuid = u;
+            }
+            continue;
+        }
+
+        if (starts_with(line, "Total devices")) {
+            // "Total devices N ..."
+            std::string rest = trim_copy(line.substr(std::string("Total devices").size()));
+            // first token
+            auto sp = rest.find_first_of(" \t\r\n");
+            std::string n = (sp == std::string::npos) ? rest : rest.substr(0, sp);
+            if (devices) {
+                try { *devices = std::stoi(n); } catch (...) { /* ignore */ }
+            }
+            continue;
+        }
+
+        // fallback: if a line contains "uuid:" alone
+        if (uuid && uuid->empty()) {
+            auto up = line.find("uuid:");
+            if (up != std::string::npos) {
+                std::string u = trim_copy(line.substr(up + 5));
+                auto sp = u.find_first_of(" \t\r\n");
+                if (sp != std::string::npos) u = u.substr(0, sp);
+                *uuid = u;
+            }
+        }
+    }
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_df_profiles
+static inline void parse_btrfs_df_profiles(const std::string& out,
+                                           std::string* profile_data,
+                                           std::string* profile_metadata) {
+    if (profile_data) profile_data->clear();
+    if (profile_metadata) profile_metadata->clear();
+
+    for (const std::string& raw : split_lines(out)) {
+        const std::string line = trim_copy(raw);
+
+        auto parse_line = [&](const std::string& prefix, std::string* dst) {
+            if (!dst || !dst->empty()) return;
+            if (!starts_with(line, prefix)) return;
+
+            // Strip "Data," or "Metadata,"
+            std::string rest = trim_copy(line.substr(prefix.size()));
+            // rest starts with profile, then ":".
+            auto colon = rest.find(':');
+            if (colon == std::string::npos) return;
+            std::string prof = trim_copy(rest.substr(0, colon));
+            // Normalize to lower
+            prof = to_lower_ascii_copy(prof);
+            // Some outputs may have "raid1" already or "RAID1"
+            *dst = prof;
+        };
+
+        parse_line("Data,", profile_data);
+        parse_line("Metadata,", profile_metadata);
+    }
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_usage_bytes
+static inline void parse_btrfs_usage_bytes(const std::string& out,
+                                           int64_t* size_bytes,
+                                           int64_t* used_bytes,
+                                           int64_t* free_estimated_bytes) {
+    if (size_bytes) *size_bytes = -1;
+    if (used_bytes) *used_bytes = -1;
+    if (free_estimated_bytes) *free_estimated_bytes = -1;
+
+    auto parse_int_after_key = [&](const std::string& line, const std::string& key, int64_t* dst) {
+        if (!dst || *dst >= 0) return;
+
+        auto pos = line.find(key);
+        if (pos == std::string::npos) return;
+
+        auto colon = line.find(':', pos + key.size());
+        if (colon == std::string::npos) return;
+
+        std::string rest = line.substr(colon + 1);
+
+        size_t i = 0;
+        while (i < rest.size() &&
+               (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\r' || rest[i] == '\n')) {
+            i++;
+               }
+        if (i) rest.erase(0, i);
+
+        auto sp = rest.find_first_of(" \t\r\n");
+        std::string tok = (sp == std::string::npos) ? rest : rest.substr(0, sp);
+
+        try {
+            *dst = std::stoll(tok);
+        } catch (...) {
+        }
+    };
+
+    for (const std::string& raw : split_lines(out)) {
+        if (raw.empty()) continue;
+
+        parse_int_after_key(raw, "Device size", size_bytes);
+        parse_int_after_key(raw, "Used", used_bytes);
+        parse_int_after_key(raw, "Free (estimated)", free_estimated_bytes);
+
+        if (size_bytes && used_bytes && free_estimated_bytes &&
+            *size_bytes >= 0 && *used_bytes >= 0 && *free_estimated_bytes >= 0) {
+            break;
+            }
+    }
+}
+
+
+// copied transitional helper from main.cpp: btrfs_membership_fingerprint
+[[maybe_unused]] static std::string btrfs_membership_fingerprint(const json& btrfs_j) {
+    // Stable across "used bytes" changes etc.
+    // Fingerprint = sha256("uuid=<uuid>\n<sorted device paths>\n")
+    std::string uuid = btrfs_j.value("uuid", "");
+    std::vector<std::string> paths;
+
+    if (btrfs_j.contains("devices") && btrfs_j["devices"].is_array()) {
+        for (const auto& dev : btrfs_j["devices"]) {
+            if (!dev.is_object()) continue;
+            const std::string p = dev.value("path", "");
+            if (!p.empty()) paths.push_back(p);
+        }
+    }
+
+    std::sort(paths.begin(), paths.end());
+
+    std::string material = "uuid=" + uuid + "\n";
+    for (const auto& p : paths) material += p + "\n";
+
+    return sha256_hex_lower_evp(material);
+}
+
+
+// copied transitional helper from main.cpp: join_commands_for_hash
+[[maybe_unused]] static std::string join_commands_for_hash(const json& commands_arr) {
+    if (!commands_arr.is_array()) return "";
+    std::string s;
+    for (size_t i = 0; i < commands_arr.size(); ++i) {
+        if (!commands_arr[i].is_string()) continue;
+        if (!s.empty()) s.push_back('\n');
+        s += commands_arr[i].get<std::string>();
+    }
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: raid_mount_lock_path
+static std::string raid_mount_lock_path(const std::string& resolved_mount) {
+    const std::string h = sha256_hex_lower_evp(resolved_mount);
+    // Keep filename deterministic and safe even if hashing fails (shouldn't).
+    return std::string("/run/pqnas/raid/lock-mount-") + (h.empty() ? "bad" : h) + ".lock";
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_path
+static std::string raid_exec_record_path(const std::string& plan_id) {
+    return std::string("/run/pqnas/raid/") + plan_id + ".json";
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_read
+static bool raid_exec_record_read(const std::string& plan_id, json* out_rec, std::string* err) {
+    if (out_rec) *out_rec = json::object();
+    if (err) err->clear();
+
+    if (!is_sha256_hex_lower(plan_id)) {
+        if (err) *err = "bad plan_id";
+        return false;
+    }
+
+    const std::string path = raid_exec_record_path(plan_id);
+
+    std::string text;
+    if (!read_text_file(path, &text)) {
+        if (err) *err = "record_not_found";
+        return false;
+    }
+
+    cap_string(text, 1024 * 1024);
+
+    json j;
+    try {
+        j = json::parse(text.empty() ? "{}" : text);
+    } catch (...) {
+        if (err) *err = "record_parse_failed";
+        return false;
+    }
+
+    if (!j.is_object()) j = json::object();
+    if (out_rec) *out_rec = j;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_write_atomic
+static bool raid_exec_record_write_atomic(const std::string& plan_id, const json& rec) {
+    if (!is_sha256_hex_lower(plan_id)) return false;
+    const std::string path = raid_exec_record_path(plan_id);
+    return write_text_file_atomic(path, rec.dump(2) + "\n");
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_append_step
+static void raid_exec_record_append_step(json* rec,
+                                        int step_index_1based,
+                                        int step_total,
+                                        const std::string& cmd,
+                                        bool ok,
+                                        int rc,
+                                        const std::string& out) {
+    if (!rec || !rec->is_object()) return;
+
+    if (!rec->contains("results") || !(*rec)["results"].is_array()) {
+        (*rec)["results"] = json::array();
+    }
+
+    json row;
+    row["i"]   = step_index_1based - 1; // 0-based index for UI consistency
+    row["cmd"] = cmd;
+    row["ok"]  = ok;
+    row["rc"]  = rc;
+    row["out"] = out;
+
+    (*rec)["results"].push_back(row);
+
+    (*rec)["ts_last"]    = pqnas::now_iso_utc();
+    (*rec)["step_index"] = step_index_1based;
+    (*rec)["step_total"] = step_total;
+    (*rec)["busy"]       = true;
+    (*rec)["state"]      = "running";
+}
+
+
+// copied transitional helper from main.cpp: raid_enqueue_job_fail_closed
+[[maybe_unused]] static json raid_enqueue_job_fail_closed(const std::string& plan_id,
+                                        const std::string& resolved_mount,
+                                        const json& plan,
+                                        const json& commands) {
+    // Ensure /run/pqnas/raid exists (fail-closed)
+    std::string raid_dir_err;
+    if (!ensure_dir_fail_closed("/run/pqnas/raid", &raid_dir_err)) {
+        throw std::runtime_error("raid_state_dir_failed: " + raid_dir_err);
+    }
+
+    // Replay safety:
+    // - if canonical exists and state==running => refuse
+    // - otherwise archive old canonical to <plan_id>.<ts>.json (best-effort)
+    const std::string canonical = raid_exec_record_path(plan_id);
+    if (std::filesystem::exists(canonical)) {
+        const std::string st = raid_exec_state_best_effort_from_path(canonical);
+        if (st == "running") {
+            throw std::runtime_error("already_running");
+        }
+        const std::string ap = raid_exec_record_archive_path_for_plan(plan_id);
+        try { std::filesystem::rename(canonical, ap); } catch (...) { /* ignore */ }
+    }
+
+	std::string werr;
+	if (!raid_write_queued_record_fail_closed(plan_id, resolved_mount, plan, commands, &werr)) {
+    	throw std::runtime_error("exec_record_write_failed: " + werr);
+	}
+    // start worker if needed
+    raid_worker_start_once();
+
+    // enqueue
+    RaidJob job;
+    job.job_id = raid_job_new_id();
+    job.plan_id = plan_id;
+    job.resolved_mount = resolved_mount;
+    job.plan = plan;
+    job.commands = commands;
+
+	job.record = raid_exec_record_read_best_effort_obj(plan_id, resolved_mount, plan, commands);
+
+    {
+        std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
+        g_raid_jobs_q.push_back(job);
+        g_raid_job_meta[job.job_id] = json{
+            {"job_id", job.job_id},
+            {"plan_id", plan_id},
+            {"resolved_mount", resolved_mount},
+            {"record_path", canonical},
+            {"state", "queued"},
+            {"ts_created", pqnas::now_iso_utc()}
+        };
+    }
+    g_raid_jobs_cv.notify_one();
+
+    return json{
+        {"ok", true},
+        {"job_id", job.job_id},
+        {"plan_id", plan_id},
+        {"record_path", canonical},
+        {"state", "queued"}
+    };
+}
+
+
+// copied transitional helper from main.cpp: validate_create_pool_devices
+[[maybe_unused]] static bool validate_create_pool_devices(
+    const json& devices_json,
+    const json& disk_inventory,
+    std::vector<std::string>& devices_out,
+    std::string& err)
+{
+    devices_out.clear();
+
+    if (!devices_json.is_array() || devices_json.empty()) {
+        err = "devices must be a non-empty array";
+        return false;
+    }
+
+    std::unordered_set<std::string> seen;
+
+    for (const auto& v : devices_json) {
+        if (!v.is_string()) {
+            err = "device entry must be a string";
+            return false;
+        }
+
+        std::string dev = httplib::detail::trim_copy(v.get<std::string>());
+        if (!is_dev_path_basic_safe(dev)) {
+            err = "invalid device path: " + dev;
+            return false;
+        }
+
+        if (!seen.insert(dev).second) {
+            err = "duplicate device: " + dev;
+            return false;
+        }
+
+        if (!disk_inventory.contains("by_path") || !disk_inventory["by_path"].is_object()) {
+            err = "disk inventory missing by_path";
+            return false;
+        }
+
+        const auto& by_path = disk_inventory["by_path"];
+        if (!by_path.contains(dev) || by_path[dev].is_null()) {
+            err = "device not found in disk inventory: " + dev;
+            return false;
+        }
+
+        const auto& dinfo = by_path[dev];
+
+        auto truthy = [&](const char* key) -> bool {
+            if (!dinfo.contains(key) || dinfo[key].is_null()) return false;
+            const auto& x = dinfo[key];
+            if (x.is_boolean()) return x.get<bool>();
+            if (x.is_number_integer()) return x.get<long long>() != 0;
+            if (x.is_number_unsigned()) return x.get<unsigned long long>() != 0;
+            if (x.is_string()) {
+                const std::string s = x.get<std::string>();
+                return s == "1" || s == "true" || s == "yes";
+            }
+            return false;
+        };
+
+        if (truthy("mounted") ||
+            truthy("in_use") ||
+            truthy("busy") ||
+            truthy("has_children") ||
+            truthy("has_partitions")) {
+            err = "device is mounted or in use: " + dev;
+            return false;
+        }
+
+        if (truthy("is_system_disk") ||
+            truthy("is_root_disk")) {
+            err = "refusing system/root disk: " + dev;
+            return false;
+        }
+
+        devices_out.push_back(dev);
+    }
+
+    std::sort(devices_out.begin(), devices_out.end());
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: build_create_pool_commands_json
+[[maybe_unused]] static json build_create_pool_commands_json(
+    const std::string& pool_id,
+    const std::string& mode,
+    const std::vector<std::string>& devices,
+    bool force)
+{
+    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
+    if (root.empty()) root = "/srv/pqnas";
+
+    const std::string mount = root + "/pools/" + pool_id;
+
+    std::string label_pool_id = pool_id;
+    std::transform(label_pool_id.begin(), label_pool_id.end(), label_pool_id.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    const std::string label = "PQNAS_" + label_pool_id;
+
+    json cmds = json::array();
+
+    if (force) {
+        for (const auto& d : devices) {
+            cmds.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(d));
+        }
+    }
+
+    std::string mkfs = "/usr/bin/sudo -n /usr/sbin/mkfs.btrfs -f ";
+    if (mode == "raid1") mkfs += "-d raid1 -m raid1 ";
+    mkfs += "-L " + sh_quote(label);
+    for (const auto& d : devices) mkfs += " " + sh_quote(d);
+    cmds.push_back(mkfs);
+
+    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /bin/mount -t btrfs " +
+                   sh_quote(std::string("LABEL=") + label) + " " +
+                   sh_quote(mount));
+
+    cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
+    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
+    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount));
+
+    const std::string data_dir = mount + "/data";
+    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /bin/chown pqnas:pqnas " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /bin/chmod 0755 " + sh_quote(data_dir));
+
+    return cmds;
+}
+
+
+// copied transitional helper from main.cpp: compute_create_pool_plan_id
+[[maybe_unused]] static std::string compute_create_pool_plan_id(
+    const std::string& plan_nonce,
+    const std::string& pool_id,
+    const std::string& mode,
+    const std::vector<std::string>& devices,
+    bool force,
+    const json& canonical_commands)
+{
+    json basis;
+    basis["op"] = "create-pool";
+    basis["plan_nonce"] = plan_nonce;
+    basis["pool_id"] = pool_id;
+    basis["mode"] = mode;
+    basis["force"] = force;
+    basis["devices"] = devices;
+    basis["commands"] = canonical_commands;
+
+    return sha256_hex_lower_evp(basis.dump());
+}
+
+
+// copied transitional helper from main.cpp: detect_system_pool_root_disk
+[[maybe_unused]] static std::string detect_system_pool_root_disk() {
+    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
+    if (root.empty()) root = "/srv/pqnas";
+
+    std::string source_out;
+    int ec_src = 0;
+
+    run_cmd_capture("/usr/bin/findmnt -no SOURCE --target " + sh_quote(root), &source_out, &ec_src);
+    cap_string(source_out, 4096);
+    rtrim_inplace(source_out);
+
+    if (ec_src != 0 || source_out.empty()) return "";
+
+    return parent_disk_from_dev(source_out);
+}
+
+
+// copied transitional helper from main.cpp: part1_path_from_disk
+[[maybe_unused]] static std::string part1_path_from_disk(const std::string& disk) {
+    if (disk.rfind("/dev/", 0) != 0) return "";
+    if (disk.find("/dev/nvme") == 0)   return disk + "p1";
+    if (disk.find("/dev/mmcblk") == 0) return disk + "p1";
+    if (disk.find("/dev/loop") == 0)   return disk + "p1";
+    return disk + "1";
+}
+
+
+// copied transitional helper from main.cpp: is_dev_path_basic_safe
+static bool is_dev_path_basic_safe(const std::string& s) {
+    if (s.rfind("/dev/", 0) != 0) return false;
+    for (char c : s) {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return false;
+    }
+    if (s.find("..") != std::string::npos) return false;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: is_hex_64_lower_or_upper
+[[maybe_unused]] static bool is_hex_64_lower_or_upper(const std::string& s) {
+    if (s.size() != 64) return false;
+    for (char c : s) {
+        if (!is_hex_lower_or_upper(c)) return false;  // uses your char helper at line ~313
+    }
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: upper_ascii
+[[maybe_unused]] static std::string upper_ascii(std::string s) {
+    for (char& c : s) {
+        if (c >= 'a' && c <= 'z')
+            c = (char)(c - ('a' - 'A'));
+    }
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: to_lower_copy
+[[maybe_unused]] static std::string to_lower_copy(std::string s) {
+    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: write_fd_all
+[[maybe_unused]] static bool write_fd_all(int fd, const std::string& s) {
+    const char* p = s.data();
+    size_t n = s.size();
+    while (n > 0) {
+        ssize_t w = ::write(fd, p, n);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        p += (size_t)w;
+        n -= (size_t)w;
+    }
+
+    // Best-effort flush; if it fails we still return false (caller may decide to fail-closed)
+    if (::fsync(fd) != 0) {
+        // Some filesystems may not support fsync meaningfully, but /run is typically tmpfs and should.
+        return false;
+    }
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: ensure_dir_best_effort
+[[maybe_unused]] static void ensure_dir_best_effort(const std::string& p) {
+    std::error_code ec;
+    std::filesystem::create_directories(p, ec);
+}
+
+
+// copied transitional helper from main.cpp: normalize_storage_pool_id
+static std::string normalize_storage_pool_id(std::string v) {
+    v = trim_copy(v);
+    return v.empty() ? "default" : v;
+}
+
+
+// copied transitional helper from main.cpp: pool_id_from_mount_best_effort
+static std::string pool_id_from_mount_best_effort(const std::string& mount) {
+    // Preferred: /srv/pqnas/pools/<pool_id>
+    // Return basename for anything else (sanitized).
+    std::string m = mount;
+    while (!m.empty() && m.back() == '/') m.pop_back();
+
+    auto base = [&]() -> std::string {
+        auto pos = m.find_last_of('/');
+        if (pos == std::string::npos) return m;
+        return m.substr(pos + 1);
+    }();
+
+    // If it matches /pools/<id>, return <id> (same as basename anyway)
+    std::string id = base;
+
+    // sanitize to [a-z0-9_-], max 32 (server-side)
+    std::string out;
+    out.reserve(id.size());
+    for (char c : id) {
+        char lc = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+        if ((lc >= 'a' && lc <= 'z') || (lc >= '0' && lc <= '9') || lc == '_' || lc == '-') out.push_back(lc);
+    }
+    if (out.empty()) out = "pool";
+    if (out.size() > 32) out.resize(32);
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: load_or_init_pools_cfg
+static json load_or_init_pools_cfg(const std::string& users_path) {
+    const auto cfg_path = pools_cfg_path_from_users_path(users_path);
+
+    std::string txt;
+    json j;
+
+    if (read_text_file(cfg_path.string(), &txt)) {
+        try {
+            j = json::parse(txt);
+        } catch (...) {
+            j = json::object();
+        }
+    }
+
+    if (!j.is_object())
+        j = json::object();
+
+    int version = j.value("version", 0);
+
+    // ---------- INIT ----------
+    if (version == 0) {
+        j["version"] = 2;
+        j["pools"] = json::object();
+    }
+
+    // ---------- MIGRATE v1 → v2 ----------
+    if (version == 1) {
+        json pools = json::object();
+        const auto& names = j.value("names_by_mount", json::object());
+
+        for (auto it = names.begin(); it != names.end(); ++it) {
+            const std::string mount = it.key();
+            const std::string display = it.value().get<std::string>();
+
+            pools[mount] = {
+                {"display_name", display},
+                {"created_ts", iso8601_now()},
+                {"managed", false}
+            };
+        }
+
+        j.clear();
+        j["version"] = 2;
+        j["pools"] = pools;
+
+        write_text_file_atomic(cfg_path.string(), j.dump(2) + "\n");
+        return j;
+    }
+
+    // ---------- Ensure structure ----------
+    if (j.value("version", 0) != 2)
+        j["version"] = 2;
+
+    if (!j.contains("pools") || !j["pools"].is_object())
+        j["pools"] = json::object();
+
+    return j;
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_scrub_status_best_effort
+[[maybe_unused]] static json parse_btrfs_scrub_status_best_effort(const std::string& raw) {
+    // Best-effort only. We do NOT assume exact formatting across btrfs-progs versions.
+    // Typical outputs:
+    // - "scrub status for <mp>\nno stats available\n" (never run)
+    // - "scrub status for <mp>\nscrub started at ...\nstatus: running\n..."
+    // - "scrub status for <mp>\nscrub started at ...\nscrub done at ...\nstatus: finished\nerrors: 0\n..."
+    json j = json::object();
+    j["raw"] = raw;
+
+    const std::string s = raw; // already capped by caller
+
+    auto has = [&](const char* needle)->bool{ return str_contains(s, needle); };
+
+    // running/finished hints
+    bool running = false;
+    bool finished = false;
+
+    // Common keywords
+    if (has("status: running") || (has("running") && has("scrub started"))) running = true;
+    if (has("status: finished") || (has("finished") && has("scrub started"))) finished = true;
+
+
+    // "no stats available" usually means never run (idle)
+    bool no_stats = has("no stats available");
+
+    std::string state = "unknown";
+    if (running) state = "running";
+    else if (finished) state = "finished";
+    else if (no_stats) state = "never";
+    else if (has("scrub started") || has("scrub done")) state = "idle"; // ran before but not running now
+
+    j["state"] = state;
+    j["running"] = running;
+
+    // Parse "errors: N" if present
+    {
+        const std::string key = "errors:";
+        size_t p = s.find(key);
+        if (p != std::string::npos) {
+            p += key.size();
+            while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) p++;
+            size_t p2 = p;
+            while (p2 < s.size() && (s[p2] >= '0' && s[p2] <= '9')) p2++;
+            if (p2 > p) {
+                j["errors"] = std::atoi(s.substr(p, p2 - p).c_str());
+            }
+        }
+    }
+// UUID:
+{
+    const std::string key = "UUID:";
+    size_t p = s.find(key);
+    if (p != std::string::npos) {
+        size_t a = p + key.size();
+        while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
+        size_t b = a;
+        while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
+        if (b > a) j["uuid"] = pqnas_trim_copy(s.substr(a, b - a));
+    }
+}
+
+// no stats available
+j["no_stats_available"] = has("no stats available");
+
+// Total to scrub:
+{
+    const std::string key = "Total to scrub:";
+    size_t p = s.find(key);
+    if (p != std::string::npos) {
+        size_t a = p + key.size();
+        while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
+        size_t b = a;
+        while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
+        if (b > a) {
+            std::string tok = pqnas_trim_copy(s.substr(a, b - a));
+            j["total_to_scrub"] = tok;
+            uint64_t bytes = parse_btrfs_human_bytes_to_u64(tok);
+            if (bytes) j["total_to_scrub_bytes"] = bytes;
+        }
+    }
+}
+
+// Rate:
+{
+    const std::string key = "Rate:";
+    size_t p = s.find(key);
+    if (p != std::string::npos) {
+        size_t a = p + key.size();
+        while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
+        size_t b = a;
+        while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
+        if (b > a) {
+            std::string tok = pqnas_trim_copy(s.substr(a, b - a));
+            j["rate"] = tok; // e.g. "0.00B/s"
+            // parse "XUNIT/s"
+            if (tok.size() > 2 && tok.rfind("/s") == tok.size() - 2) {
+                std::string numu = tok.substr(0, tok.size() - 2);
+                uint64_t bps = parse_btrfs_human_bytes_to_u64(numu);
+                j["rate_bps"] = bps;
+            }
+        }
+    }
+}
+
+// Error summary:
+{
+    const std::string key = "Error summary:";
+    size_t p = s.find(key);
+    if (p != std::string::npos) {
+        size_t a = p + key.size();
+        while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
+        size_t b = a;
+        while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
+        if (b > a) j["error_summary"] = pqnas_trim_copy(s.substr(a, b - a));
+    }
+}
+
+    return j;
+}
+
+
+// -----------------------------------------------------------------------------
+// Additional copied transitional storage/RAID symbols from main.cpp.
+// TODO: move these into proper storage/raid modules after the split is stable.
+// -----------------------------------------------------------------------------
+
+// copied transitional struct from main.cpp: BtrfsShowParsed
+struct BtrfsShowParsed {
+    std::string label;          // capped
+    std::string uuid;           // capped
+    int total_devices = -1;
+    uint64_t fs_bytes_used_bytes = 0;
+    std::vector<BtrfsShowDevice> devices;
+};
+
+
+// copied transitional struct from main.cpp: RaidJob
+struct RaidJob {
+    std::string job_id;
+    std::string plan_id;
+    std::string resolved_mount;
+
+    // Optional: keep some metadata for nicer responses/status
+    json plan;                 // plan payload to echo in response
+    json record;               // execution record JSON we mutate and write
+    json commands;             // array of strings (same as plan["commands"])
+};
+
+
+// copied transitional helper from main.cpp: split_lines
+
+static inline std::vector<std::string> split_lines(const std::string& s) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : s) {
+        if (c == '\n') {
+            out.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: pqnas_trim_copy
+
+static inline std::string pqnas_trim_copy(std::string s) {
+    rtrim_inplace(s);
+    size_t i = 0;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++;
+    if (i > 0) s.erase(0, i);
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: round_dp
+static inline double round_dp(double value, int decimals) {
+    if (decimals <= 0) {
+        return std::round(value);
+    }
+    const double scale = std::pow(10.0, decimals);
+    return std::round(value * scale) / scale;
+}
+
+
+// copied transitional helper from main.cpp: parse_human_bytes
+static inline bool parse_human_bytes(const std::string& tok, uint64_t* out_bytes) {
+    if (!out_bytes) return false;
+    *out_bytes = 0;
+
+    std::string s = tok;
+    // trim whitespace
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    if (s.empty()) return false;
+
+    // split numeric prefix and suffix
+    size_t i = 0;
+    bool seen_digit = false;
+    while (i < s.size()) {
+        char c = s[i];
+        if ((c >= '0' && c <= '9') || c == '.') { seen_digit = true; i++; continue; }
+        break;
+    }
+    if (!seen_digit) return false;
+
+    const std::string num_str = s.substr(0, i);
+    const std::string unit = s.substr(i);
+
+    char* endp = nullptr;
+    const double v = std::strtod(num_str.c_str(), &endp);
+    if (!endp || endp == num_str.c_str()) return false;
+
+    double mul = 1.0;
+    if (unit == "B" || unit.empty()) mul = 1.0;
+    else if (unit == "KiB") mul = 1024.0;
+    else if (unit == "MiB") mul = 1024.0 * 1024.0;
+    else if (unit == "GiB") mul = 1024.0 * 1024.0 * 1024.0;
+    else if (unit == "TiB") mul = 1024.0 * 1024.0 * 1024.0 * 1024.0;
+    else if (unit == "PiB") mul = 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0;
+    else return false;
+
+    const double bytes = v * mul;
+    if (bytes < 0) return false;
+    *out_bytes = static_cast<uint64_t>(bytes + 0.5);
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_human_bytes_to_u64
+
+static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in) {
+    // Best-effort parser for tokens like "123.45GiB", "931.51MiB", "1024.00KiB", "123B"
+    // Returns 0 on failure. Never throws.
+    std::string s = trim_copy(s_in);
+    if (s.empty()) return 0;
+
+    // Split numeric prefix and unit suffix
+    size_t i = 0;
+    bool seen_digit = false;
+    while (i < s.size()) {
+        const char c = s[i];
+        if ((c >= '0' && c <= '9') || c == '.') { seen_digit = true; i++; continue; }
+        break;
+    }
+    if (!seen_digit) return 0;
+
+    std::string num = s.substr(0, i);
+    std::string unit = trim_copy(s.substr(i));
+
+    // If unit is empty, assume bytes
+    if (unit.empty()) unit = "B";
+
+    // Normalize unit (strip spaces)
+    {
+        std::string u2;
+        for (char c : unit) if (c != ' ' && c != '\t') u2.push_back(c);
+        unit = u2;
+    }
+
+    double val = 0.0;
+    try {
+        val = std::stod(num);
+    } catch (...) {
+        return 0;
+    }
+
+    uint64_t mul = 1;
+    if (unit == "B") mul = 1ULL;
+    else if (unit == "KiB") mul = 1024ULL;
+    else if (unit == "MiB") mul = 1024ULL * 1024ULL;
+    else if (unit == "GiB") mul = 1024ULL * 1024ULL * 1024ULL;
+    else if (unit == "TiB") mul = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    else if (unit == "PiB") mul = 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    else {
+        // Unknown unit -> fail safe
+        return 0;
+    }
+
+    const long double bytes_ld = (long double)val * (long double)mul;
+    if (bytes_ld <= 0.0L) return 0;
+    if (bytes_ld > (long double)std::numeric_limits<uint64_t>::max()) return 0;
+    return (uint64_t)(bytes_ld + 0.5L); // round to nearest
+}
+
+
+// copied transitional helper from main.cpp: parse_btrfs_df_line
+static inline bool parse_btrfs_df_line(const std::string& line,
+                                      std::string* out_name,
+                                      uint64_t* out_total_bytes,
+                                      uint64_t* out_used_bytes,
+                                      std::string* out_total_str,
+                                      std::string* out_used_str) {
+    if (out_name) out_name->clear();
+    if (out_total_bytes) *out_total_bytes = 0;
+    if (out_used_bytes) *out_used_bytes = 0;
+    if (out_total_str) out_total_str->clear();
+    if (out_used_str) out_used_str->clear();
+
+    // name is before the first comma or colon
+    size_t name_end = line.find(',');
+    if (name_end == std::string::npos) name_end = line.find(':');
+    if (name_end == std::string::npos || name_end == 0) return false;
+
+    std::string name = line.substr(0, name_end);
+    // trim
+    while (!name.empty() && (name.front() == ' ' || name.front() == '\t')) name.erase(name.begin());
+    while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) name.pop_back();
+    if (name.empty()) return false;
+
+    // find total=... and used=...
+    size_t pt = line.find("total=");
+    size_t pu = line.find("used=");
+    if (pt == std::string::npos || pu == std::string::npos) return false;
+
+    pt += 6;
+    pu += 5;
+
+    size_t pt_end = line.find_first_of(", \t\r\n", pt);
+    if (pt_end == std::string::npos) pt_end = line.size();
+    size_t pu_end = line.find_first_of(", \t\r\n", pu);
+    if (pu_end == std::string::npos) pu_end = line.size();
+
+    if (pt_end <= pt || pu_end <= pu) return false;
+
+    std::string total_tok = line.substr(pt, pt_end - pt);
+    std::string used_tok  = line.substr(pu, pu_end - pu);
+
+    uint64_t total_b = 0, used_b = 0;
+    if (!parse_human_bytes(total_tok, &total_b)) return false;
+    if (!parse_human_bytes(used_tok, &used_b)) return false;
+
+    if (out_name) *out_name = name;
+    if (out_total_bytes) *out_total_bytes = total_b;
+    if (out_used_bytes) *out_used_bytes = used_b;
+    if (out_total_str) *out_total_str = total_tok;
+    if (out_used_str) *out_used_str = used_tok;
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: to_lower_ascii_copy
+
+static inline std::string to_lower_ascii_copy(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+    }
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: shell_escape_single_quotes
+
+static std::string shell_escape_single_quotes(std::string s) {
+    size_t pos = 0;
+    while ((pos = s.find("'", pos)) != std::string::npos) {
+        s.replace(pos, 1, "'\\''");
+        pos += 4;
+    }
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: jstr_cap
+static inline std::string jstr_cap(const json& o, const char* k, size_t max_len = 256) {
+    auto it = o.find(k);
+    if (it == o.end() || it->is_null()) return "";
+
+    std::string s;
+    try {
+        if (it->is_string()) s = it->get<std::string>();
+        else s = it->dump();
+    } catch (...) {
+        return "";
+    }
+
+    if (s.size() > max_len) s.resize(max_len);
+    return s;
+}
+
+
+// copied transitional helper from main.cpp: btrfs_filesystem_has_device
+[[maybe_unused]] static bool btrfs_filesystem_has_device(const std::string& mount, const std::string& device_path) {
+    std::string show;
+    int ec = 0;
+
+    const std::string cmd =
+        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount);
+
+    const bool ok = run_cmd_capture(cmd, &show, &ec);
+    cap_string(show, 256 * 1024);
+
+    if (!ok || ec != 0) return false;
+    return show.find(device_path) != std::string::npos;
+}
+
+
+// copied transitional helper from main.cpp: raid_write_queued_record_fail_closed
+
+static bool raid_write_queued_record_fail_closed(const std::string& plan_id,
+                                                 const std::string& resolved_mount,
+                                                 const json& plan,
+                                                 const json& commands,
+                                                 std::string* err_out) {
+    const std::string ts0 = pqnas::now_iso_utc();
+    const std::string op = plan.is_object() ? plan.value("operation", "") : "";
+
+    json rec = {
+        {"ts_start", ts0},
+        {"ts_last",  ts0},
+        {"ts_end",   nullptr},
+
+        {"plan_id", plan_id},
+        {"record_path", raid_exec_record_path(plan_id)}, // canonical
+        {"operation", op},        // <-- IMPORTANT
+        {"ok", true},             // <-- IMPORTANT (queued == “so far ok”)
+        {"state", "queued"},
+        {"busy", true},
+
+        {"mount", resolved_mount},
+        {"plan", plan},
+
+        {"commands", commands},
+        {"step_index", 0},
+        {"step_total", commands.is_array() ? (int)commands.size() : 0},
+        {"results", json::array()}
+    };
+
+    if (!raid_exec_record_write_atomic(plan_id, rec)) {
+        if (err_out) *err_out = "raid_exec_record_write_atomic failed";
+        return false;
+    }
+    return true;
+}
+
+
+// copied transitional helper from main.cpp: raid_job_new_id
+
+static std::string raid_job_new_id() {
+    // Prefer your existing random hex helper if you have one.
+    // Fallback: SHA256(now+pid+rand) style (best-effort uniqueness).
+    std::string seed = pqnas::now_iso_utc();
+    seed += "|pid=" + std::to_string((int)getpid());
+    seed += "|rnd=" + std::to_string((uint64_t)std::rand());
+    std::string h = sha256_hex_lower_evp(seed);
+    if (h.size() >= 24) return h.substr(0, 24);
+    return h.empty() ? "job_bad" : h;
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_state_best_effort_from_path
+
+static std::string raid_exec_state_best_effort_from_path(const std::string& path) {
+    std::string txt;
+    if (!read_text_file(path, &txt)) return "";
+    if (txt.size() > (512 * 1024)) txt.resize(512 * 1024);
+    try {
+        json j = json::parse(txt);
+        if (j.contains("state") && j["state"].is_string()) return j["state"].get<std::string>();
+    } catch (...) {}
+    return "";
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_read_best_effort_obj
+
+static json raid_exec_record_read_best_effort_obj(const std::string& plan_id,
+                                                 const std::string& resolved_mount,
+                                                 const json& plan,
+                                                 const json& commands) {
+    json rec = json::object();
+    std::string err;
+    if (raid_exec_record_read(plan_id, &rec, &err)) return rec;
+
+    // fallback minimal (but UI-consistent)
+    const std::string ts0 = pqnas::now_iso_utc();
+
+    const std::string op = plan.is_object() ? plan.value("operation", "") : "";
+
+    rec["plan_id"]      = plan_id;
+    rec["record_path"]  = raid_exec_record_path(plan_id); // canonical
+    rec["operation"]    = op;            // <-- IMPORTANT: no more null
+    rec["ok"]           = true;          // <-- IMPORTANT: boolean, not null
+    rec["state"]        = "queued";
+    rec["busy"]         = true;
+
+    rec["mount"]        = resolved_mount;
+    rec["plan"]         = plan;
+    rec["commands"]     = commands;
+
+    rec["step_index"]   = 0;
+    rec["step_total"]   = commands.is_array() ? (int)commands.size() : 0;
+    rec["results"]      = json::array();
+
+    rec["ts_start"]     = ts0;
+    rec["ts_last"]      = ts0;
+    rec["ts_end"]       = nullptr;
+    return rec;
+}
+
+
+// copied transitional helper from main.cpp: raid_exec_record_archive_path_for_plan
+
+static std::string raid_exec_record_archive_path_for_plan(const std::string& plan_id) {
+    // /run/pqnas/raid/<plan_id>.<timestamp>.json
+    std::string ts = pqnas::now_iso_utc(); // e.g. 2026-02-22T02:15:30Z
+    for (char& c : ts) {
+        if (c == ':' || c == '-') c = '_';
+    }
+    return raid_exec_record_path(plan_id + "." + ts);
+}
+
+
+// copied transitional helper from main.cpp: is_hex_lower_or_upper
+
+
+static bool is_hex_lower_or_upper(char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+
+// -----------------------------------------------------------------------------
+// Remaining copied transitional storage/RAID symbols from main.cpp.
+// TODO: move these into proper modules after this split builds cleanly.
+// -----------------------------------------------------------------------------
+
+// copied transitional struct from main.cpp: BtrfsShowDevice
+struct BtrfsShowDevice {
+    int devid = -1;
+    std::string path;           // capped
+    uint64_t size_bytes = 0;
+    uint64_t used_bytes = 0;
+    std::string parent_disk;    // derived (e.g. /dev/nvme0n1)
+};
+
+
+// copied transitional helper from main.cpp: require_same_origin_for_cookie_mutation
+    static bool require_same_origin_for_cookie_mutation(
+        const httplib::Request& req,
+        httplib::Response& res)
+{
+    const std::string authz = header_value(req, "Authorization");
+    const bool has_bearer =
+        authz.size() > 7 &&
+        authz.compare(0, 7, "Bearer ") == 0;
+
+    if (has_bearer) {
+        return true;
+    }
+
+    const std::string origin = header_value(req, "Origin");
+    if (!origin.empty()) {
+        if (origin == ORIGIN) return true;
+
+        reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "origin mismatch"}
+        }.dump());
+        return false;
+    }
+
+    const std::string referer = header_value(req, "Referer");
+    if (!referer.empty()) {
+        const std::string allowed_prefix = ORIGIN + "/";
+        if (referer == ORIGIN || referer.rfind(allowed_prefix, 0) == 0) {
+            return true;
+        }
+
+        reply_json(res, 403, json{
+            {"ok", false},
+            {"error", "forbidden"},
+            {"message", "origin mismatch"}
+        }.dump());
+        return false;
+    }
+
+    reply_json(res, 403, json{
+        {"ok", false},
+        {"error", "forbidden"},
+        {"message", "origin required"}
+    }.dump());
+    return false;
+}
+
+
+// copied transitional helper from main.cpp: btrfs_show_parsed_to_json
+[[maybe_unused]]static json btrfs_show_parsed_to_json(const BtrfsShowParsed& p,
+                                     const json& by_path,
+                                     const json& by_name) {
+    json out;
+    out["label"] = p.label;
+    out["uuid"]  = p.uuid;
+    if (p.total_devices >= 0) out["total_devices"] = p.total_devices;
+    out["fs_bytes_used_bytes"] = p.fs_bytes_used_bytes;
+
+    json devices = json::array();
+    for (const auto& d : p.devices) {
+        json jd;
+
+        // Path (trimmed)
+        std::string path = d.path;
+        rtrim_inplace(path);
+
+        jd["devid"]      = d.devid;
+        jd["path"]       = path;
+        jd["size_bytes"] = d.size_bytes;
+        jd["used_bytes"] = d.used_bytes;
+
+        // IMPORTANT: compute parent_disk from path (do NOT trust parsed parent_disk)
+        std::string parent = parent_disk_from_dev(path);
+        if (!parent.empty()) jd["parent_disk"] = parent;
+
+        // Best-effort mapping to lsblk disk index
+        int idx = -1;
+
+        if (!parent.empty() && by_path.is_object()) {
+            auto it = by_path.find(parent);
+            if (it != by_path.end() && it->is_number_integer()) {
+                idx = it->get<int>();
+            }
+        }
+
+        if (idx < 0 && !parent.empty() && by_name.is_object()) {
+            // try basename: /dev/nvme0n1 -> nvme0n1
+            std::string name = parent;
+            const size_t slash = name.rfind('/');
+            if (slash != std::string::npos) name = name.substr(slash + 1);
+
+            auto it2 = by_name.find(name);
+            if (it2 != by_name.end() && it2->is_number_integer()) {
+                idx = it2->get<int>();
+            }
+        }
+
+        if (idx >= 0) jd["lsblk_disk_index"] = idx;
+
+        devices.push_back(jd);
+    }
+
+    out["devices"] = devices;
+    return out;
+}
+
+
+// copied transitional helper from main.cpp: pools_cfg_path_from_users_path
+static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path) {
+    // Mutable config should live under PQNAS_STORAGE_ROOT/config (default /srv/pqnas/config)
+    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
+    if (root.empty()) root = "/srv/pqnas";
+
+    std::filesystem::path p = std::filesystem::path(root) / "config" / "pools.json";
+
+    // If that doesn't exist yet, still return it (so load_or_init can create it).
+    // Fall back to sibling of users.json only if root looks unusable.
+    std::error_code ec;
+    auto st = std::filesystem::status(std::filesystem::path(root) / "config", ec);
+    if (!ec && std::filesystem::is_directory(st)) return p;
+
+    return std::filesystem::path(users_path).parent_path() / "pools.json";
+}
+
+
+
+// transitional wrapper used by copied storage/RAID routes
+static std::string now_iso_utc() {
+    return iso8601_now();
+}
+
+void register_storage_raid_routes(
+    httplib::Server& srv,
+    const StorageRaidRoutesContext& ctx
+) {
+    const std::string& COOKIE_KEY = ctx.cookie_key;
+    const std::string& users_path = ctx.users_path;
+    const std::string& workspaces_path = ctx.workspaces_path;
+    const std::string& data_root_dir = ctx.data_root_dir;
+
 
 // ----- GET /api/v4/storage/disks (admin-only) --------------------------------
 srv.Get("/api/v4/storage/disks", [&](const httplib::Request& req, httplib::Response& res) {
