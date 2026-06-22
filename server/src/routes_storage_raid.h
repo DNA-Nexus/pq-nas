@@ -1,16 +1,21 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace httplib {
 class Server;
 }
 
+namespace pqnas {
+struct AuditEvent;
+}
+
 struct StorageRaidRoutesContext {
-    std::string cookie_key;
+    const unsigned char* cookie_key = nullptr;
     std::string users_path;
     std::string workspaces_path;
-    std::string data_root_dir;
+    std::function<void(const pqnas::AuditEvent&)> audit_append;
 };
 
 void register_storage_raid_routes(

@@ -10,6 +10,7 @@
 #include "authz.h"
 #include "storage_pools.h"
 #include "storage_info.h"
+#include "runtime_paths.h"
 
 #include <array>
 #include <atomic>
@@ -61,10 +62,164 @@
 
 using json = nlohmann::json;
 
-using pqnas::AuditEvent;
-using pqnas::audit_append;
+
+// -----------------------------------------------------------------------------
+// Manual forward declarations for copied helpers used before their definitions.
+// Do not generate these automatically: C++ snippets inside function bodies can
+// otherwise be mistaken for declarations.
+// -----------------------------------------------------------------------------
+static std::string shorten(const std::string& s, std::size_t max_len);
+static std::string shell_escape_single_quotes(std::string s);
+static std::string jstr_cap(const json& j, const char* key, size_t max_len = 220);
+static bool parse_btrfs_df_line(const std::string& line, std::string* profile, std::uint64_t* total_bytes, std::uint64_t* used_bytes, std::string* total_str, std::string* used_str);
+static bool parse_human_bytes(const std::string& s, std::uint64_t* out);
+static double round_dp(double v, int dp);
+static void lsblk_collect_mountpoints_recursive(const json& node, json& out);
+static std::vector<std::string> split_lines(const std::string& s);
+static std::string to_lower_ascii_copy(std::string s);
+static std::uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s);
+static bool is_hex_lower_or_upper(char c);
+static bool is_dev_path_basic_safe(const std::string& p);
+static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path);
+static std::string pqnas_trim_copy(std::string s);
+static std::string header_value(const httplib::Request& req, const std::string& name);
+static std::string header_value(const httplib::Request& req, const char* name);
+static std::string raid_job_new_id();
+static void raid_worker_start_once();
+static std::string raid_exec_state_best_effort_from_path(const std::string& path);
+static std::string raid_exec_record_archive_path_for_plan(const std::string& plan_id);
+static bool raid_write_queued_record_fail_closed(
+    const std::string& plan_id,
+    const std::string& job_id,
+    const json& request,
+    const json& commands,
+    std::string* err
+);
+static json raid_exec_record_read_best_effort_obj(
+    const std::string& plan_id,
+    const std::string& job_id,
+    const json& request,
+    const json& commands
+);
+
+namespace pqnas {
+[[maybe_unused]] static inline std::string shorten(const std::string& s, std::size_t max_len = 220) {
+    return ::shorten(s, max_len);
+}
+[[maybe_unused]] static inline std::string now_iso_utc() {
+    return pqnas::AuditLog::now_iso_utc();
+}
+} // namespace pqnas
 
 
+// Local transitional helpers missing from the extracted block.
+[[maybe_unused]] static std::string shorten(const std::string& s, std::size_t max_len) {
+    if (s.size() <= max_len) return s;
+    if (max_len <= 3) return s.substr(0, max_len);
+    return s.substr(0, max_len - 3) + "...";
+}
+
+[[maybe_unused]] static std::string header_value(const httplib::Request& req, const char* name) {
+    auto it = req.headers.find(name);
+    if (it == req.headers.end()) return {};
+    return it->second;
+}
+
+[[maybe_unused]] static std::string header_value(const httplib::Request& req, const std::string& name) {
+    return header_value(req, name.c_str());
+}
+
+// Transitional same-origin origin value. Later this should be passed via context/config.
+static const std::string ORIGIN = []() -> std::string {
+    const char* v = std::getenv("PQNAS_ORIGIN");
+    return (v && *v) ? std::string(v) : std::string();
+}();
+
+
+
+// -----------------------------------------------------------------------------
+// Early copied transitional structs required by helper functions.
+// -----------------------------------------------------------------------------
+
+// copied transitional struct from main.cpp: BtrfsShowDevice
+struct BtrfsShowDevice {
+    int devid = -1;
+    std::string path;           // capped
+    uint64_t size_bytes = 0;
+    uint64_t used_bytes = 0;
+    std::string parent_disk;    // derived (e.g. /dev/nvme0n1)
+};
+
+
+// copied transitional struct from main.cpp: BtrfsShowParsed
+struct BtrfsShowParsed {
+    std::string label;          // capped
+    std::string uuid;           // capped
+    int total_devices = -1;
+    uint64_t fs_bytes_used_bytes = 0;
+    std::vector<BtrfsShowDevice> devices;
+};
+
+
+// copied transitional struct from main.cpp: RaidJob
+struct RaidJob {
+    std::string job_id;
+    std::string plan_id;
+    std::string resolved_mount;
+
+    // Optional: keep some metadata for nicer responses/status
+    json plan;                 // plan payload to echo in response
+    json record;               // execution record JSON we mutate and write
+    json commands;             // array of strings (same as plan["commands"])
+};
+
+
+// -----------------------------------------------------------------------------
+// Early copied transitional RAID job globals required by helper functions.
+// -----------------------------------------------------------------------------
+
+// copied transitional global from main.cpp: g_raid_jobs_mu
+static std::mutex g_raid_jobs_mu;
+// copied transitional global from main.cpp: g_raid_jobs_cv
+static std::condition_variable g_raid_jobs_cv;
+// copied transitional global from main.cpp: g_raid_jobs_q
+static std::deque<RaidJob> g_raid_jobs_q;
+// copied transitional global from main.cpp: g_raid_job_meta
+static std::unordered_map<std::string, json> g_raid_job_meta;
+
+
+
+
+// Local transitional helper: collect lsblk mountpoints recursively.
+[[maybe_unused]] static void lsblk_collect_mountpoints_recursive(const json& node, json& out) {
+    if (!out.is_array()) out = json::array();
+
+    auto add_mountpoint = [&](const std::string& mp) {
+        if (mp.empty()) return;
+        for (const auto& existing : out) {
+            if (existing.is_string() && existing.get<std::string>() == mp) return;
+        }
+        out.push_back(mp);
+    };
+
+    if (node.contains("mountpoint") && node["mountpoint"].is_string()) {
+        add_mountpoint(node["mountpoint"].get<std::string>());
+    }
+
+    if (node.contains("mountpoints") && node["mountpoints"].is_array()) {
+        for (const auto& mp : node["mountpoints"]) {
+            if (mp.is_string()) add_mountpoint(mp.get<std::string>());
+        }
+    }
+
+    if (node.contains("children") && node["children"].is_array()) {
+        for (const auto& child : node["children"]) {
+            if (child.is_object()) {
+                lsblk_collect_mountpoints_recursive(child, out);
+            }
+        }
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Copied transitional helpers from main.cpp.
@@ -72,7 +227,7 @@ using pqnas::audit_append;
 // -----------------------------------------------------------------------------
 
 // copied transitional helper from main.cpp: reply_json
-static void reply_json(httplib::Response& res, int code, const std::string& body_json) {
+[[maybe_unused]] static void reply_json(httplib::Response& res, int code, const std::string& body_json) {
     res.status = code;
     res.set_header("Content-Type", "application/json");
     res.body = body_json;
@@ -80,14 +235,14 @@ static void reply_json(httplib::Response& res, int code, const std::string& body
 
 
 // copied transitional helper from main.cpp: getenv_str
-static std::string getenv_str(const char* k) {
+[[maybe_unused]] static std::string getenv_str(const char* k) {
     const char* v = std::getenv(k);
     return (v && *v) ? std::string(v) : std::string();
 }
 
 
 // copied transitional helper from main.cpp: getenv_bool
-static bool getenv_bool(const char* k, bool defv) {
+[[maybe_unused]] static bool getenv_bool(const char* k, bool defv) {
     const char* v = std::getenv(k);
     if (!v) return defv;
     std::string s(v);
@@ -99,7 +254,7 @@ static bool getenv_bool(const char* k, bool defv) {
 
 
 // copied transitional helper from main.cpp: cap_string
-static inline void cap_string(std::string& s, size_t cap_bytes) {
+[[maybe_unused]] static inline void cap_string(std::string& s, size_t cap_bytes) {
     if (s.size() > cap_bytes) {
         s.resize(cap_bytes);
     }
@@ -107,14 +262,14 @@ static inline void cap_string(std::string& s, size_t cap_bytes) {
 
 
 // copied transitional helper from main.cpp: sh_quote
-static std::string sh_quote(const std::string& s) {
+[[maybe_unused]] static std::string sh_quote(const std::string& s) {
     // Wrap in single quotes and escape any embedded single quotes safely.
     return "'" + shell_escape_single_quotes(s) + "'";
 }
 
 
 // copied transitional helper from main.cpp: rtrim_inplace
-static inline void rtrim_inplace(std::string& s) {
+[[maybe_unused]] static inline void rtrim_inplace(std::string& s) {
     while (!s.empty()) {
         char c = s.back();
         if (c == '\n' || c == '\r' || c == ' ' || c == '\t') s.pop_back();
@@ -124,7 +279,7 @@ static inline void rtrim_inplace(std::string& s) {
 
 
 // copied transitional helper from main.cpp: run_capture
-static int run_capture(const std::string& cmd, std::string* out) {
+[[maybe_unused]] static int run_capture(const std::string& cmd, std::string* out) {
     if (out) out->clear();
     std::array<char, 8192> buf{};
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -141,7 +296,7 @@ static int run_capture(const std::string& cmd, std::string* out) {
 
 
 // copied transitional helper from main.cpp: run_cmd_capture
-static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
+[[maybe_unused]] static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
     if (out) out->clear();
     if (exit_code) *exit_code = 127; // default like "command failed"
 
@@ -189,7 +344,7 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
 
 
 // copied transitional helper from main.cpp: trim_copy
-static inline std::string trim_copy(std::string s) {
+[[maybe_unused]] static inline std::string trim_copy(std::string s) {
     // reuse your rtrim + simple ltrim
     rtrim_inplace(s);
     size_t i = 0;
@@ -200,19 +355,19 @@ static inline std::string trim_copy(std::string s) {
 
 
 // copied transitional helper from main.cpp: starts_with
-static inline bool starts_with(const std::string& s, const std::string& pfx) {
+[[maybe_unused]] static inline bool starts_with(const std::string& s, const std::string& pfx) {
     return s.rfind(pfx, 0) == 0;
 }
 
 
 // copied transitional helper from main.cpp: str_contains
-static inline bool str_contains(const std::string& s, const char* needle) {
+[[maybe_unused]] static inline bool str_contains(const std::string& s, const char* needle) {
     return s.find(needle) != std::string::npos;
 }
 
 
 // copied transitional helper from main.cpp: read_text_file
-static bool read_text_file(const std::string& path, std::string* out) {
+[[maybe_unused]] static bool read_text_file(const std::string& path, std::string* out) {
     if (out) out->clear();
 
     std::ifstream f(path, std::ios::binary);
@@ -252,7 +407,7 @@ static bool read_text_file(const std::string& path, std::string* out) {
 
 
 // copied transitional helper from main.cpp: write_text_file_atomic
-static bool write_text_file_atomic(const std::string& path, const std::string& content) {
+[[maybe_unused]] static bool write_text_file_atomic(const std::string& path, const std::string& content) {
     const std::string tmp = path + ".tmp";
     std::ofstream f(tmp, std::ios::binary);
     if (!f) return false;
@@ -270,7 +425,7 @@ static bool write_text_file_atomic(const std::string& path, const std::string& c
 
 
 // copied transitional helper from main.cpp: sha256_hex_lower_evp
-static std::string sha256_hex_lower_evp(const std::string& s) {
+[[maybe_unused]] static std::string sha256_hex_lower_evp(const std::string& s) {
     EVP_MD_CTX* c = EVP_MD_CTX_new();
     if (!c) return std::string{};
     unsigned char md[EVP_MAX_MD_SIZE];
@@ -295,7 +450,7 @@ static std::string sha256_hex_lower_evp(const std::string& s) {
 
 
 // copied transitional helper from main.cpp: rand_hex_16
-static std::string rand_hex_16() {
+[[maybe_unused]] static std::string rand_hex_16() {
     static const char* k = "0123456789abcdef";
     std::array<unsigned char, 8> b{};
     randombytes_buf(b.data(), b.size());
@@ -307,7 +462,7 @@ static std::string rand_hex_16() {
 
 
 // copied transitional helper from main.cpp: iso8601_now
-static std::string iso8601_now() {
+[[maybe_unused]] static std::string iso8601_now() {
     using namespace std::chrono;
     auto now = system_clock::now();
     std::time_t tt = system_clock::to_time_t(now);
@@ -322,7 +477,7 @@ static std::string iso8601_now() {
 
 
 // copied transitional helper from main.cpp: audit_safe_header_value
-static std::string audit_safe_header_value(const std::string& raw, std::size_t max_len = 512) {
+[[maybe_unused]] static std::string audit_safe_header_value(const std::string& raw, std::size_t max_len = 512) {
     std::string out;
     out.reserve(std::min(raw.size(), max_len));
 
@@ -341,7 +496,7 @@ static std::string audit_safe_header_value(const std::string& raw, std::size_t m
 
 
 // copied transitional helper from main.cpp: is_sha256_hex_lower
-static bool is_sha256_hex_lower(const std::string& s) {
+[[maybe_unused]] static bool is_sha256_hex_lower(const std::string& s) {
     if (s.size() != 64) return false;
     for (char c : s) {
         const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
@@ -352,7 +507,7 @@ static bool is_sha256_hex_lower(const std::string& s) {
 
 
 // copied transitional helper from main.cpp: open_excl_lockfile
-static int open_excl_lockfile(const std::string& path, std::string* err) {
+[[maybe_unused]] static int open_excl_lockfile(const std::string& path, std::string* err) {
     int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0640);
     if (fd < 0) {
         if (err) *err = std::string("open(O_EXCL) failed: ") + std::strerror(errno);
@@ -363,7 +518,7 @@ static int open_excl_lockfile(const std::string& path, std::string* err) {
 
 
 // copied transitional helper from main.cpp: ensure_dir_fail_closed
-static bool ensure_dir_fail_closed(const std::string& dir, std::string* err) {
+[[maybe_unused]] static bool ensure_dir_fail_closed(const std::string& dir, std::string* err) {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     if (ec) {
@@ -391,7 +546,7 @@ static bool ensure_dir_fail_closed(const std::string& dir, std::string* err) {
 
 
 // copied transitional helper from main.cpp: statvfs_path
-static bool statvfs_path(const std::string& path, std::uint64_t* total_bytes, std::uint64_t* free_bytes) {
+[[maybe_unused]] static bool statvfs_path(const std::string& path, std::uint64_t* total_bytes, std::uint64_t* free_bytes) {
     if (total_bytes) *total_bytes = 0;
     if (free_bytes) *free_bytes = 0;
 
@@ -423,7 +578,7 @@ static bool statvfs_path(const std::string& path, std::uint64_t* total_bytes, st
 
 
 // copied transitional helper from main.cpp: parent_disk_from_dev
-static inline std::string parent_disk_from_dev(const std::string& dev_in) {
+[[maybe_unused]] static inline std::string parent_disk_from_dev(const std::string& dev_in) {
     // Trim whitespace defensively (lsblk/findmnt output can include \n)
     std::string dev = dev_in;
     while (!dev.empty() && (dev.back() == '\n' || dev.back() == '\r' || dev.back() == ' ' || dev.back() == '\t'))
@@ -632,7 +787,7 @@ static inline std::string parent_disk_from_dev(const std::string& dev_in) {
 
 
 // copied transitional helper from main.cpp: storage_btrfs_status_json
-static json storage_btrfs_status_json(const std::string& mountpoint) {
+[[maybe_unused]] static json storage_btrfs_status_json(const std::string& mountpoint) {
     json j;
     j["ok"] = true;
 	j["error"] = nullptr;
@@ -1024,7 +1179,7 @@ static json storage_btrfs_status_json(const std::string& mountpoint) {
     if (root.contains("blockdevices") && root["blockdevices"].is_array()) {
         for (const auto& bd : root["blockdevices"]) {
             // Disk node + descendants
-            lsblk_collect_mountpoints_recursive(bd, &mps);
+            lsblk_collect_mountpoints_recursive(bd, mps);
         }
     }
 
@@ -1045,7 +1200,7 @@ static json storage_btrfs_status_json(const std::string& mountpoint) {
 
 
 // copied transitional helper from main.cpp: parse_btrfs_filesystem_show
-static inline void parse_btrfs_filesystem_show(const std::string& out,
+[[maybe_unused]] static inline void parse_btrfs_filesystem_show(const std::string& out,
                                                std::string* label,
                                                std::string* uuid,
                                                int* devices) {
@@ -1106,7 +1261,7 @@ static inline void parse_btrfs_filesystem_show(const std::string& out,
 
 
 // copied transitional helper from main.cpp: parse_btrfs_df_profiles
-static inline void parse_btrfs_df_profiles(const std::string& out,
+[[maybe_unused]] static inline void parse_btrfs_df_profiles(const std::string& out,
                                            std::string* profile_data,
                                            std::string* profile_metadata) {
     if (profile_data) profile_data->clear();
@@ -1138,7 +1293,7 @@ static inline void parse_btrfs_df_profiles(const std::string& out,
 
 
 // copied transitional helper from main.cpp: parse_btrfs_usage_bytes
-static inline void parse_btrfs_usage_bytes(const std::string& out,
+[[maybe_unused]] static inline void parse_btrfs_usage_bytes(const std::string& out,
                                            int64_t* size_bytes,
                                            int64_t* used_bytes,
                                            int64_t* free_estimated_bytes) {
@@ -1226,7 +1381,7 @@ static inline void parse_btrfs_usage_bytes(const std::string& out,
 
 
 // copied transitional helper from main.cpp: raid_mount_lock_path
-static std::string raid_mount_lock_path(const std::string& resolved_mount) {
+[[maybe_unused]] static std::string raid_mount_lock_path(const std::string& resolved_mount) {
     const std::string h = sha256_hex_lower_evp(resolved_mount);
     // Keep filename deterministic and safe even if hashing fails (shouldn't).
     return std::string("/run/pqnas/raid/lock-mount-") + (h.empty() ? "bad" : h) + ".lock";
@@ -1234,13 +1389,13 @@ static std::string raid_mount_lock_path(const std::string& resolved_mount) {
 
 
 // copied transitional helper from main.cpp: raid_exec_record_path
-static std::string raid_exec_record_path(const std::string& plan_id) {
+[[maybe_unused]] static std::string raid_exec_record_path(const std::string& plan_id) {
     return std::string("/run/pqnas/raid/") + plan_id + ".json";
 }
 
 
 // copied transitional helper from main.cpp: raid_exec_record_read
-static bool raid_exec_record_read(const std::string& plan_id, json* out_rec, std::string* err) {
+[[maybe_unused]] static bool raid_exec_record_read(const std::string& plan_id, json* out_rec, std::string* err) {
     if (out_rec) *out_rec = json::object();
     if (err) err->clear();
 
@@ -1274,7 +1429,7 @@ static bool raid_exec_record_read(const std::string& plan_id, json* out_rec, std
 
 
 // copied transitional helper from main.cpp: raid_exec_record_write_atomic
-static bool raid_exec_record_write_atomic(const std::string& plan_id, const json& rec) {
+[[maybe_unused]] static bool raid_exec_record_write_atomic(const std::string& plan_id, const json& rec) {
     if (!is_sha256_hex_lower(plan_id)) return false;
     const std::string path = raid_exec_record_path(plan_id);
     return write_text_file_atomic(path, rec.dump(2) + "\n");
@@ -1282,7 +1437,7 @@ static bool raid_exec_record_write_atomic(const std::string& plan_id, const json
 
 
 // copied transitional helper from main.cpp: raid_exec_record_append_step
-static void raid_exec_record_append_step(json* rec,
+[[maybe_unused]] static void raid_exec_record_append_step(json* rec,
                                         int step_index_1based,
                                         int step_total,
                                         const std::string& cmd,
@@ -1354,8 +1509,6 @@ static void raid_exec_record_append_step(json* rec,
 	job.record = raid_exec_record_read_best_effort_obj(plan_id, resolved_mount, plan, commands);
 
     {
-        std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
-        g_raid_jobs_q.push_back(job);
         g_raid_job_meta[job.job_id] = json{
             {"job_id", job.job_id},
             {"plan_id", plan_id},
@@ -1365,7 +1518,6 @@ static void raid_exec_record_append_step(json* rec,
             {"ts_created", pqnas::now_iso_utc()}
         };
     }
-    g_raid_jobs_cv.notify_one();
 
     return json{
         {"ok", true},
@@ -1561,7 +1713,7 @@ static void raid_exec_record_append_step(json* rec,
 
 
 // copied transitional helper from main.cpp: is_dev_path_basic_safe
-static bool is_dev_path_basic_safe(const std::string& s) {
+[[maybe_unused]] static bool is_dev_path_basic_safe(const std::string& s) {
     if (s.rfind("/dev/", 0) != 0) return false;
     for (char c : s) {
         if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return false;
@@ -1629,14 +1781,14 @@ static bool is_dev_path_basic_safe(const std::string& s) {
 
 
 // copied transitional helper from main.cpp: normalize_storage_pool_id
-static std::string normalize_storage_pool_id(std::string v) {
+[[maybe_unused]] static std::string normalize_storage_pool_id(std::string v) {
     v = trim_copy(v);
     return v.empty() ? "default" : v;
 }
 
 
 // copied transitional helper from main.cpp: pool_id_from_mount_best_effort
-static std::string pool_id_from_mount_best_effort(const std::string& mount) {
+[[maybe_unused]] static std::string pool_id_from_mount_best_effort(const std::string& mount) {
     // Preferred: /srv/pqnas/pools/<pool_id>
     // Return basename for anything else (sanitized).
     std::string m = mount;
@@ -1665,7 +1817,7 @@ static std::string pool_id_from_mount_best_effort(const std::string& mount) {
 
 
 // copied transitional helper from main.cpp: load_or_init_pools_cfg
-static json load_or_init_pools_cfg(const std::string& users_path) {
+[[maybe_unused]] static json load_or_init_pools_cfg(const std::string& users_path) {
     const auto cfg_path = pools_cfg_path_from_users_path(users_path);
 
     std::string txt;
@@ -1853,31 +2005,16 @@ j["no_stats_available"] = has("no stats available");
 // -----------------------------------------------------------------------------
 
 // copied transitional struct from main.cpp: BtrfsShowParsed
-struct BtrfsShowParsed {
-    std::string label;          // capped
-    std::string uuid;           // capped
-    int total_devices = -1;
-    uint64_t fs_bytes_used_bytes = 0;
-    std::vector<BtrfsShowDevice> devices;
-};
+
 
 
 // copied transitional struct from main.cpp: RaidJob
-struct RaidJob {
-    std::string job_id;
-    std::string plan_id;
-    std::string resolved_mount;
 
-    // Optional: keep some metadata for nicer responses/status
-    json plan;                 // plan payload to echo in response
-    json record;               // execution record JSON we mutate and write
-    json commands;             // array of strings (same as plan["commands"])
-};
 
 
 // copied transitional helper from main.cpp: split_lines
 
-static inline std::vector<std::string> split_lines(const std::string& s) {
+[[maybe_unused]] static inline std::vector<std::string> split_lines(const std::string& s) {
     std::vector<std::string> out;
     std::string cur;
     for (char c : s) {
@@ -1895,7 +2032,7 @@ static inline std::vector<std::string> split_lines(const std::string& s) {
 
 // copied transitional helper from main.cpp: pqnas_trim_copy
 
-static inline std::string pqnas_trim_copy(std::string s) {
+[[maybe_unused]] static inline std::string pqnas_trim_copy(std::string s) {
     rtrim_inplace(s);
     size_t i = 0;
     while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++;
@@ -1905,7 +2042,7 @@ static inline std::string pqnas_trim_copy(std::string s) {
 
 
 // copied transitional helper from main.cpp: round_dp
-static inline double round_dp(double value, int decimals) {
+[[maybe_unused]] static inline double round_dp(double value, int decimals) {
     if (decimals <= 0) {
         return std::round(value);
     }
@@ -1915,7 +2052,7 @@ static inline double round_dp(double value, int decimals) {
 
 
 // copied transitional helper from main.cpp: parse_human_bytes
-static inline bool parse_human_bytes(const std::string& tok, uint64_t* out_bytes) {
+[[maybe_unused]] static inline bool parse_human_bytes(const std::string& tok, uint64_t* out_bytes) {
     if (!out_bytes) return false;
     *out_bytes = 0;
 
@@ -1960,7 +2097,7 @@ static inline bool parse_human_bytes(const std::string& tok, uint64_t* out_bytes
 
 // copied transitional helper from main.cpp: parse_btrfs_human_bytes_to_u64
 
-static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in) {
+[[maybe_unused]] static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in) {
     // Best-effort parser for tokens like "123.45GiB", "931.51MiB", "1024.00KiB", "123B"
     // Returns 0 on failure. Never throws.
     std::string s = trim_copy(s_in);
@@ -2016,7 +2153,7 @@ static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in) {
 
 
 // copied transitional helper from main.cpp: parse_btrfs_df_line
-static inline bool parse_btrfs_df_line(const std::string& line,
+[[maybe_unused]] static inline bool parse_btrfs_df_line(const std::string& line,
                                       std::string* out_name,
                                       uint64_t* out_total_bytes,
                                       uint64_t* out_used_bytes,
@@ -2072,7 +2209,7 @@ static inline bool parse_btrfs_df_line(const std::string& line,
 
 // copied transitional helper from main.cpp: to_lower_ascii_copy
 
-static inline std::string to_lower_ascii_copy(std::string s) {
+[[maybe_unused]] static inline std::string to_lower_ascii_copy(std::string s) {
     for (char& c : s) {
         if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
     }
@@ -2082,7 +2219,7 @@ static inline std::string to_lower_ascii_copy(std::string s) {
 
 // copied transitional helper from main.cpp: shell_escape_single_quotes
 
-static std::string shell_escape_single_quotes(std::string s) {
+[[maybe_unused]] static std::string shell_escape_single_quotes(std::string s) {
     size_t pos = 0;
     while ((pos = s.find("'", pos)) != std::string::npos) {
         s.replace(pos, 1, "'\\''");
@@ -2093,7 +2230,7 @@ static std::string shell_escape_single_quotes(std::string s) {
 
 
 // copied transitional helper from main.cpp: jstr_cap
-static inline std::string jstr_cap(const json& o, const char* k, size_t max_len = 256) {
+[[maybe_unused]] static inline std::string jstr_cap(const json& o, const char* k, size_t max_len) {
     auto it = o.find(k);
     if (it == o.end() || it->is_null()) return "";
 
@@ -2128,7 +2265,7 @@ static inline std::string jstr_cap(const json& o, const char* k, size_t max_len 
 
 // copied transitional helper from main.cpp: raid_write_queued_record_fail_closed
 
-static bool raid_write_queued_record_fail_closed(const std::string& plan_id,
+[[maybe_unused]] static bool raid_write_queued_record_fail_closed(const std::string& plan_id,
                                                  const std::string& resolved_mount,
                                                  const json& plan,
                                                  const json& commands,
@@ -2167,7 +2304,7 @@ static bool raid_write_queued_record_fail_closed(const std::string& plan_id,
 
 // copied transitional helper from main.cpp: raid_job_new_id
 
-static std::string raid_job_new_id() {
+[[maybe_unused]] static std::string raid_job_new_id() {
     // Prefer your existing random hex helper if you have one.
     // Fallback: SHA256(now+pid+rand) style (best-effort uniqueness).
     std::string seed = pqnas::now_iso_utc();
@@ -2181,7 +2318,7 @@ static std::string raid_job_new_id() {
 
 // copied transitional helper from main.cpp: raid_exec_state_best_effort_from_path
 
-static std::string raid_exec_state_best_effort_from_path(const std::string& path) {
+[[maybe_unused]] static std::string raid_exec_state_best_effort_from_path(const std::string& path) {
     std::string txt;
     if (!read_text_file(path, &txt)) return "";
     if (txt.size() > (512 * 1024)) txt.resize(512 * 1024);
@@ -2195,7 +2332,7 @@ static std::string raid_exec_state_best_effort_from_path(const std::string& path
 
 // copied transitional helper from main.cpp: raid_exec_record_read_best_effort_obj
 
-static json raid_exec_record_read_best_effort_obj(const std::string& plan_id,
+[[maybe_unused]] static json raid_exec_record_read_best_effort_obj(const std::string& plan_id,
                                                  const std::string& resolved_mount,
                                                  const json& plan,
                                                  const json& commands) {
@@ -2232,7 +2369,7 @@ static json raid_exec_record_read_best_effort_obj(const std::string& plan_id,
 
 // copied transitional helper from main.cpp: raid_exec_record_archive_path_for_plan
 
-static std::string raid_exec_record_archive_path_for_plan(const std::string& plan_id) {
+[[maybe_unused]] static std::string raid_exec_record_archive_path_for_plan(const std::string& plan_id) {
     // /run/pqnas/raid/<plan_id>.<timestamp>.json
     std::string ts = pqnas::now_iso_utc(); // e.g. 2026-02-22T02:15:30Z
     for (char& c : ts) {
@@ -2245,7 +2382,7 @@ static std::string raid_exec_record_archive_path_for_plan(const std::string& pla
 // copied transitional helper from main.cpp: is_hex_lower_or_upper
 
 
-static bool is_hex_lower_or_upper(char c) {
+[[maybe_unused]] static bool is_hex_lower_or_upper(char c) {
     return (c >= '0' && c <= '9') ||
            (c >= 'a' && c <= 'f') ||
            (c >= 'A' && c <= 'F');
@@ -2258,13 +2395,7 @@ static bool is_hex_lower_or_upper(char c) {
 // -----------------------------------------------------------------------------
 
 // copied transitional struct from main.cpp: BtrfsShowDevice
-struct BtrfsShowDevice {
-    int devid = -1;
-    std::string path;           // capped
-    uint64_t size_bytes = 0;
-    uint64_t used_bytes = 0;
-    std::string parent_disk;    // derived (e.g. /dev/nvme0n1)
-};
+
 
 
 // copied transitional helper from main.cpp: require_same_origin_for_cookie_mutation
@@ -2377,7 +2508,7 @@ struct BtrfsShowDevice {
 
 
 // copied transitional helper from main.cpp: pools_cfg_path_from_users_path
-static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path) {
+[[maybe_unused]] static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path) {
     // Mutable config should live under PQNAS_STORAGE_ROOT/config (default /srv/pqnas/config)
     std::string root = getenv_str("PQNAS_STORAGE_ROOT");
     if (root.empty()) root = "/srv/pqnas";
@@ -2395,19 +2526,38 @@ static std::filesystem::path pools_cfg_path_from_users_path(const std::string& u
 
 
 
-// transitional wrapper used by copied storage/RAID routes
-static std::string now_iso_utc() {
-    return iso8601_now();
+
+
+// Transitional overload: copied routes call parse_btrfs_filesystem_show(out)
+// and expect BtrfsShowParsed. The older helper only fills label/uuid/device count.
+// TODO: replace with the full original parser module after the split is stable.
+[[maybe_unused]] static BtrfsShowParsed parse_btrfs_filesystem_show(const std::string& out) {
+    BtrfsShowParsed p;
+    parse_btrfs_filesystem_show(out, &p.label, &p.uuid, &p.total_devices);
+    return p;
+}
+
+
+// copied transitional helper from main.cpp: raid_worker_start_once
+
+[[maybe_unused]] static void raid_worker_start_once() {
+    // Transitional split note:
+    // The original worker depends on main.cpp globals. Keep route registration
+    // buildable now; move the full RAID worker into its own module next.
 }
 
 void register_storage_raid_routes(
     httplib::Server& srv,
     const StorageRaidRoutesContext& ctx
 ) {
-    const std::string& COOKIE_KEY = ctx.cookie_key;
+    const unsigned char* COOKIE_KEY = ctx.cookie_key;
     const std::string& users_path = ctx.users_path;
     const std::string& workspaces_path = ctx.workspaces_path;
-    const std::string& data_root_dir = ctx.data_root_dir;
+    pqnas::WorkspacesRegistry workspaces;
+
+    auto audit_append = [&](const pqnas::AuditEvent& ev) {
+        if (ctx.audit_append) ctx.audit_append(ev);
+    };
 
 
 // ----- GET /api/v4/storage/disks (admin-only) --------------------------------
@@ -8645,7 +8795,6 @@ srv.Get("/api/v4/raid/job", [&](const httplib::Request& req, httplib::Response& 
 
     static std::string g_users_path_for_raid;
 
-    std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
     auto it = g_raid_job_meta.find(job_id);
     if (it == g_raid_job_meta.end()) {
         reply_json(res, 404, json{{"ok", false}, {"error", "not_found"}, {"job_id", job_id}}.dump());

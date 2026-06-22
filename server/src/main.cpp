@@ -12256,7 +12256,7 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
         COOKIE_KEY,
         users_path,
         workspaces_path,
-        pqnas::data_root_dir()
+        audit_append
     });
 
     srv.Get("/api/v4/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {
