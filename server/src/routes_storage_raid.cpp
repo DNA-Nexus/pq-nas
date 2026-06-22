@@ -186,6 +186,18 @@ static std::condition_variable g_raid_jobs_cv;
 static std::deque<RaidJob> g_raid_jobs_q;
 // copied transitional global from main.cpp: g_raid_job_meta
 static std::unordered_map<std::string, json> g_raid_job_meta;
+// copied transitional RAID worker globals from main.cpp
+static std::string g_users_path_for_raid;
+static std::atomic<bool> g_raid_worker_stop{false};
+static std::thread g_raid_worker_thr;
+static std::function<void(const pqnas::AuditEvent&)> g_storage_raid_audit_append;
+
+static void audit_append(const pqnas::AuditEvent& ev) {
+    if (g_storage_raid_audit_append) {
+        g_storage_raid_audit_append(ev);
+    }
+}
+
 
 
 
@@ -2538,12 +2550,394 @@ j["no_stats_available"] = has("no stats available");
 }
 
 
-// copied transitional helper from main.cpp: raid_worker_start_once
 
+
+// copied transitional helper from main.cpp: raid_finalize_record
+
+[[maybe_unused]] static void raid_finalize_record(const std::string& plan_id, json* rec,
+                                 bool ok, const std::string& err_msg,
+                                 const json* post_status_or_null) {
+    if (!rec) return;
+
+    const std::string ts_end = pqnas::now_iso_utc();
+
+    // Always fill the lifecycle fields
+    (*rec)["ts_end"]  = ts_end;
+    (*rec)["ts_last"] = ts_end;
+    (*rec)["busy"]    = false;
+    (*rec)["state"]   = ok ? "done" : "failed";
+
+    // FIX: ok must never be null
+    (*rec)["ok"] = ok;
+
+    // Keep operation stable (best-effort)
+    try {
+        if (!rec->contains("operation") || (*rec)["operation"].is_null()) {
+            std::string op;
+            if (rec->contains("plan") && (*rec)["plan"].is_object()) {
+                op = (*rec)["plan"].value("operation", "");
+            }
+            (*rec)["operation"] = op;
+        }
+    } catch (...) {
+        // ignore
+    }
+
+    // Error/post_status hygiene
+    if (!ok) {
+        // prefer provided error message; otherwise leave any existing error (if present)
+        if (!err_msg.empty()) (*rec)["error"] = err_msg;
+        else if (!rec->contains("error")) (*rec)["error"] = "failed";
+
+        // On failure, post_status is misleading
+        if (rec->contains("post_status")) rec->erase("post_status");
+    } else {
+        // On success, error is misleading
+        if (rec->contains("error")) rec->erase("error");
+
+        if (post_status_or_null) (*rec)["post_status"] = *post_status_or_null;
+        else if (rec->contains("post_status")) rec->erase("post_status");
+    }
+
+    (void)raid_exec_record_write_atomic(plan_id, *rec);
+}
+
+
+// copied transitional helper from main.cpp: raid_run_one_step
+
+[[maybe_unused]] static bool raid_run_one_step(const std::string& cmd,
+                              const std::string& users_path,
+                              std::string* out,
+                              int* ec) {
+    if (!out || !ec) return false;
+    out->clear();
+    *ec = 0;
+
+    // Pseudo-command: WAIT_BLOCK <path> <timeout_ms>
+    if (cmd.rfind("WAIT_BLOCK ", 0) == 0) {
+        std::istringstream iss(cmd);
+        std::string tag, path;
+        int timeout_ms = 0;
+        iss >> tag >> path >> timeout_ms;
+
+        if (path.empty() || timeout_ms <= 0) {
+            *out = "err: WAIT_BLOCK format is: WAIT_BLOCK <path> <timeout_ms>\n";
+            *ec = 2;
+            return true;
+        }
+
+        auto is_block = [](const std::string& p) -> bool {
+            struct stat st;
+            if (::stat(p.c_str(), &st) != 0) return false;
+            return S_ISBLK(st.st_mode);
+        };
+
+        const int sleep_step_ms = 50;
+        int waited = 0;
+        while (waited < timeout_ms) {
+            if (is_block(path)) {
+                *out = "ok: block device present: " + path + "\n";
+                *ec = 0;
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_step_ms));
+            waited += sleep_step_ms;
+        }
+
+        *out = "err: timed out waiting for block device: " + path + "\n";
+        *ec = 1;
+        return true;
+    }
+    // Pseudo-command: POOLS_CFG_REMOVE <mount>
+    // Removes mount entry from pools.json so /api/v4/storage/pools stops listing it.
+    if (cmd.rfind("POOLS_CFG_REMOVE ", 0) == 0) {
+        const std::string mount = trim_copy(cmd.substr(std::string("POOLS_CFG_REMOVE ").size()));
+        if (mount.empty()) {
+            *out = "err: POOLS_CFG_REMOVE format is: POOLS_CFG_REMOVE <mount>\n";
+            *ec = 2;
+            return true;
+        }
+
+        try {
+            json cfg = load_or_init_pools_cfg(users_path);
+
+            if (!cfg.contains("names_by_mount") || !cfg["names_by_mount"].is_object())
+                cfg["names_by_mount"] = json::object();
+            const bool had_legacy = cfg["names_by_mount"].contains(mount);
+            cfg["names_by_mount"].erase(mount);
+
+            if (!cfg.contains("pools") || !cfg["pools"].is_object())
+                cfg["pools"] = json::object();
+            const bool had_v2 = cfg["pools"].contains(mount);
+            cfg["pools"].erase(mount);
+
+            const auto cfg_path = pools_cfg_path_from_users_path(users_path);
+            if (!write_text_file_atomic(cfg_path.string(), cfg.dump(2) + "\n")) {
+                *out = "err: failed to write pools.json\n";
+                *ec = 1;
+                return true;
+            }
+
+            *out = std::string("ok: pools.json updated (removed mount=") + mount +
+                   ", legacy=" + (had_legacy ? "yes" : "no") +
+                   ", v2=" + (had_v2 ? "yes" : "no") + ")\n";
+            *ec = 0;
+            return true;
+        } catch (const std::exception& e) {
+            *out = std::string("err: POOLS_CFG_REMOVE exception: ") + e.what() + "\n";
+            *ec = 1;
+            return true;
+        }
+    }
+    // normal command
+    const bool ran = run_cmd_capture(cmd, out, ec);
+    return ran;
+}
+
+// copied transitional helper from main.cpp: raid_worker_main
+static void raid_worker_main(std::string users_path) {
+    // ---- worker audit helper (best-effort; no HTTP request context) ----
+    auto raid_worker_audit = [&](const std::string& event,
+                                 const std::string& outcome,
+                                 const RaidJob& job,
+                                 const json& extra = json::object()) {
+        try {
+            pqnas::AuditEvent ev;
+            ev.event = event;
+            ev.outcome = outcome;
+
+            // actor fingerprint comes from the queued plan (set by execute endpoints)
+            try {
+                if (job.plan.is_object()) {
+                    const std::string actor_fp = job.plan.value("actor_fp", "");
+                    if (!actor_fp.empty()) ev.f["fingerprint"] = actor_fp;
+                }
+            } catch (...) {}
+
+            ev.f["ip"] = "local"; // worker thread
+            ev.f["job_id"] = job.job_id;
+            ev.f["plan_id"] = job.plan_id;
+            ev.f["mount"] = job.resolved_mount;
+
+            // optional: operation name
+            try {
+                if (job.plan.is_object()) {
+                    const std::string op = job.plan.value("operation", "");
+                    if (!op.empty()) ev.f["op"] = pqnas::shorten(op, 64);
+                }
+            } catch (...) {}
+
+            // merge extra fields as x_*
+            if (extra.is_object()) {
+                for (auto it = extra.begin(); it != extra.end(); ++it) {
+                    const std::string k  = pqnas::shorten(it.key(), 64);
+                    const std::string kk = "x_" + k;
+
+                    if (it.value().is_string()) ev.f[kk] = pqnas::shorten(it.value().get<std::string>(), 220);
+                    else if (it.value().is_number_integer() || it.value().is_number_unsigned()) ev.f[kk] = it.value().dump();
+                    else if (it.value().is_boolean()) ev.f[kk] = (it.value().get<bool>() ? "true" : "false");
+                    else ev.f[kk] = pqnas::shorten(it.value().dump(), 220);
+                }
+            }
+
+            // IMPORTANT: audit_append wrapper already calls maybe_auto_rotate_before_append()
+            audit_append(ev);
+        } catch (...) {
+            // never let audit failures break the worker
+        }
+    };
+
+    for (;;) {
+        RaidJob job;
+
+        {
+            std::unique_lock<std::mutex> lk(g_raid_jobs_mu);
+            g_raid_jobs_cv.wait(lk, [&] { return g_raid_worker_stop.load() || !g_raid_jobs_q.empty(); });
+            if (g_raid_worker_stop.load()) return;
+
+            job = std::move(g_raid_jobs_q.front());
+            g_raid_jobs_q.pop_front();
+
+            // mark running in meta
+            g_raid_job_meta[job.job_id]["state"] = "running";
+            g_raid_job_meta[job.job_id]["ts_started"] = pqnas::now_iso_utc();
+        }
+
+        // ---------------- FIX: normalize record fields so they never end up null ----------------
+        {
+            // plan_id / mount are useful invariants
+            job.record["plan_id"] = job.plan_id;
+            job.record["mount"]   = job.resolved_mount;
+
+            // operation should be a string (not null)
+            if (!job.record.contains("operation") || job.record["operation"].is_null()) {
+                const std::string op = job.plan.is_object() ? job.plan.value("operation", "") : "";
+                job.record["operation"] = op;
+            }
+
+            // ok should be a boolean, never null
+            if (!job.record.contains("ok") || job.record["ok"].is_null()) {
+                job.record["ok"] = true; // "so far ok" while running/queued
+            }
+        }
+        // --------------------------------------------------------------------------------------
+
+        // Move record to running (without adding a fake step)
+        job.record["state"]   = "running";
+        job.record["busy"]    = true;
+        job.record["ts_last"] = pqnas::now_iso_utc();
+        (void)raid_exec_record_write_atomic(job.plan_id, job.record);
+
+        // Audit: job start (best-effort)
+        raid_worker_audit("v4.raid_job_start_ok", "ok", job, json{
+            {"state", "running"},
+            {"commands_total", (job.commands.is_array() ? (int)job.commands.size() : 0)}
+        });
+
+        // Acquire per-mount lock inside worker (so HTTP returns immediately)
+        int fd_mount_lock = -1;
+        std::string mount_lockp = raid_mount_lock_path(job.resolved_mount);
+        {
+            std::string mount_lock_err;
+            fd_mount_lock = open_excl_lockfile(mount_lockp, &mount_lock_err);
+            if (fd_mount_lock < 0) {
+                // FIX: ensure record shows failure even if raid_finalize_record forgets to set ok
+                job.record["ok"] = false;
+
+                raid_finalize_record(job.plan_id, &job.record, false,
+                                     "raid_busy: another raid operation is in progress for this mount",
+                                     nullptr);
+
+                // Audit: failed to start due to lock contention
+                raid_worker_audit("v4.raid_job_start_fail", "fail", job, json{
+                    {"reason", "raid_busy"},
+                    {"detail", pqnas::shorten(mount_lock_err, 220)}
+                });
+
+                std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
+                g_raid_job_meta[job.job_id]["state"] = "failed";
+                g_raid_job_meta[job.job_id]["error"] = "raid_busy";
+                g_raid_job_meta[job.job_id]["ts_finished"] = pqnas::now_iso_utc();
+                continue;
+            }
+        }
+
+        auto close_mount_lock = [&]() {
+            if (fd_mount_lock >= 0) { ::close(fd_mount_lock); fd_mount_lock = -1; }
+            if (!mount_lockp.empty()) (void)std::filesystem::remove(mount_lockp);
+        };
+
+        bool all_ok = true;
+        json results = json::array();
+
+        const int total = job.commands.is_array() ? (int)job.commands.size() : 0;
+
+        for (int i = 0; i < total; i++) {
+            if (!job.commands[i].is_string()) continue;
+            const std::string cmd = job.commands[i].get<std::string>();
+
+            std::string out;
+            int ec = 0;
+            const bool ran = raid_run_one_step(cmd, users_path, &out, &ec);
+            const bool step_ok = ran && (ec == 0);
+
+            cap_string(out, 128 * 1024);
+
+            json one = {
+                {"i", i},
+                {"cmd", cmd},
+                {"rc", ec},
+                {"ok", step_ok},
+                {"out", out}
+            };
+            results.push_back(one);
+
+            raid_exec_record_append_step(&job.record, i + 1, total, cmd, step_ok, ec, out);
+            (void)raid_exec_record_write_atomic(job.plan_id, job.record);
+
+            if (!step_ok) { all_ok = false; break; }
+        }
+
+        // finalize (+ post_status if ok and mount still exists)
+        if (all_ok) {
+            json* pst = nullptr;
+            json status;
+
+            std::error_code ec;
+            if (std::filesystem::exists(job.resolved_mount, ec) && !ec) {
+                status = storage_btrfs_status_json(job.resolved_mount);
+                status["resolved_mount"] = job.resolved_mount;
+                pst = &status;
+            }
+
+            // FIX: ensure ok becomes true at least here
+            job.record["ok"] = true;
+
+            raid_finalize_record(job.plan_id, &job.record, true, "", pst);
+        } else {
+            std::string emsg = "command failed";
+            try {
+                if (!results.empty() && results.back().is_object()) {
+                    emsg = std::string("step failed: ") + results.back().value("cmd","") +
+                           " rc=" + std::to_string(results.back().value("rc", -1));
+                }
+            } catch (...) {}
+
+            // FIX: ensure ok becomes false at least here
+            job.record["ok"] = false;
+
+            raid_finalize_record(job.plan_id, &job.record, false, emsg, nullptr);
+        }
+
+        // Audit: job completion (best-effort)
+        if (all_ok) {
+            raid_worker_audit("v4.raid_job_finish_ok", "ok", job, json{
+                {"commands_total", total}
+            });
+        } else {
+            std::string last_cmd = "";
+            int last_rc = -1;
+            try {
+                if (!results.empty() && results.back().is_object()) {
+                    last_cmd = results.back().value("cmd", "");
+                    last_rc  = results.back().value("rc", -1);
+                }
+            } catch (...) {}
+
+            raid_worker_audit("v4.raid_job_finish_fail", "fail", job, json{
+                {"reason", "command_failed"},
+                {"commands_total", total},
+                {"last_cmd", pqnas::shorten(last_cmd, 160)},
+                {"last_rc", last_rc}
+            });
+        }
+
+        close_mount_lock();
+
+        {
+            std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
+            g_raid_job_meta[job.job_id]["state"] = all_ok ? "done" : "failed";
+            g_raid_job_meta[job.job_id]["ts_finished"] = pqnas::now_iso_utc();
+        }
+    }
+}
+
+
+// copied transitional helper from main.cpp: raid_worker_start_once
 [[maybe_unused]] static void raid_worker_start_once() {
-    // Transitional split note:
-    // The original worker depends on main.cpp globals. Keep route registration
-    // buildable now; move the full RAID worker into its own module next.
+    static std::once_flag once;
+    std::call_once(once, [] {
+        g_raid_worker_stop.store(false);
+        g_raid_worker_thr = std::thread(raid_worker_main, g_users_path_for_raid);
+
+        std::atexit([] {
+            g_raid_worker_stop.store(true);
+            g_raid_jobs_cv.notify_all();
+            if (g_raid_worker_thr.joinable()) {
+                g_raid_worker_thr.join();
+            }
+        });
+    });
 }
 
 void register_storage_raid_routes(
@@ -2552,6 +2946,8 @@ void register_storage_raid_routes(
 ) {
     const unsigned char* COOKIE_KEY = ctx.cookie_key;
     const std::string& users_path = ctx.users_path;
+    g_storage_raid_audit_append = ctx.audit_append;
+    g_users_path_for_raid = users_path;
     const std::string& workspaces_path = ctx.workspaces_path;
     pqnas::WorkspacesRegistry workspaces;
 
@@ -8792,8 +9188,6 @@ srv.Get("/api/v4/raid/job", [&](const httplib::Request& req, httplib::Response& 
         reply_json(res, 400, json{{"ok", false}, {"error", "bad_request"}, {"message", "missing job_id"}}.dump());
         return;
     }
-
-    static std::string g_users_path_for_raid;
 
     auto it = g_raid_job_meta.find(job_id);
     if (it == g_raid_job_meta.end()) {
