@@ -346,6 +346,40 @@
     Arkaluonteiset ympäristöarvot redaktoidaan ennen kuin ympäristötiedosto kopioidaan varmuuskopioarkistoon.
   </p>
 
+  <h3>Mihin järjestelmävarmuuskopiot tallennetaan</h3>
+  <p>
+    Järjestelmän varmuuskopiot tallennetaan palvelimella polun
+    <span class="mono">/srv/pqnas/backups/system</span> alle. Jokaisella varmuuskopiotasolla
+    on oma alihakemistonsa, kuten <span class="mono">quarter-hourly</span>,
+    <span class="mono">hourly</span>, <span class="mono">daily</span>,
+    <span class="mono">weekly</span> ja <span class="mono">manual</span>.
+  </p>
+
+  <p>
+    Yksittäinen varmuuskopio on hakemisto, esimerkiksi
+    <span class="mono">/srv/pqnas/backups/system/manual/YYYYMMDD-HHMMSS-admin-ui</span>.
+    Hakemiston sisällä varmuuskopioidut tiedostot ovat varmuuskopion suhteellisissa poluissa,
+    kuten <span class="mono">core/etc/pqnas/pqnas.env</span>,
+    <span class="mono">config/admin_settings.json</span>,
+    <span class="mono">users/users.json</span> ja
+    <span class="mono">notifications/notifications.json</span>.
+  </p>
+
+  <div class="callout warning">
+    <strong>Käsittele kopioituja varmuuskopioita salaisina:</strong> Järjestelmän
+    varmuuskopiot voivat sisältää palautukseen tarvittavaa kirjautumisdataa ja palvelimen
+    salaisuuksia. Ilmoitusasetukset voivat sisältää Telegram-botin tokenin ja SMTP app
+    passwordin. Säilytä kopiot luotetulla medialla ja suojaa ne ulkopuolisilta.
+  </div>
+
+  <p>
+    Ylläpitäjä voi kopioida varmuuskopiohakemistoja erilliselle medialle, esimerkiksi
+    ulkoiselle USB-tikulle, lisävarmuuskopioksi. Kun USB-media on liitetty, manuaaliset
+    järjestelmävarmuuskopiot voi kopioida esimerkiksi näin:
+  </p>
+
+  <pre><code>sudo rsync -aH --numeric-ids /srv/pqnas/backups/system/manual/ /media/admin/USB/pqnas-system-backups/manual/</code></pre>
+
   <h3>Varmuuskopiotasot</h3>
   <p>
     Ajastin luo useita varmuuskopiotasoja. Varmuuskopiolistasta näkee, mihin tasoon kukin varmuuskopio kuuluu.

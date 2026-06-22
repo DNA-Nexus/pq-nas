@@ -402,6 +402,40 @@
     into the backup archive.
   </p>
 
+  <h3>Where system backups are stored</h3>
+  <p>
+    System Backups are stored on the server under
+    <span class="mono">/srv/pqnas/backups/system</span>. Each backup tier has its own
+    subdirectory, such as <span class="mono">quarter-hourly</span>,
+    <span class="mono">hourly</span>, <span class="mono">daily</span>,
+    <span class="mono">weekly</span> and <span class="mono">manual</span>.
+  </p>
+
+  <p>
+    A single backup is stored as a directory, for example
+    <span class="mono">/srv/pqnas/backups/system/manual/YYYYMMDD-HHMMSS-admin-ui</span>.
+    Inside that directory, backed-up files are stored using backup-relative paths such as
+    <span class="mono">core/etc/pqnas/pqnas.env</span>,
+    <span class="mono">config/admin_settings.json</span>,
+    <span class="mono">users/users.json</span> and
+    <span class="mono">notifications/notifications.json</span>.
+  </p>
+
+  <div class="callout warning">
+    <strong>Handle backup copies as sensitive data:</strong> System Backups can contain
+    authentication data and server secrets needed for recovery. Notification settings may
+    include Telegram bot tokens and SMTP app passwords. Store copied backups on trusted
+    media and protect them from unauthorized access.
+  </div>
+
+  <p>
+    Administrators can copy backup directories to separate media, such as an external USB
+    drive, for an additional offline backup. For example, after mounting a USB drive, copy
+    manual system backups with a command similar to:
+  </p>
+
+  <pre><code>sudo rsync -aH --numeric-ids /srv/pqnas/backups/system/manual/ /media/admin/USB/pqnas-system-backups/manual/</code></pre>
+
   <h3>Backup tiers</h3>
   <p>
     The scheduler creates several backup tiers. The backup list shows which tier

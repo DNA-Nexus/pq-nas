@@ -14,6 +14,8 @@
 #include <system_error>
 #include <vector>
 
+extern char **environ;
+
 namespace pqnas::backups {
 namespace {
 
@@ -292,7 +294,60 @@ bool should_redact_env_key_local(const std::string& key) {
            key == "PQNAS_COOKIE_KEY_B64URL" ||
            key.find("PRIVATE_KEY") != std::string::npos ||
            key.find("_SECRET") != std::string::npos ||
-           key.find("_TOKEN") != std::string::npos;
+           key.find("_TOKEN") != std::string::npos ||
+           key.find("_PASSWORD") != std::string::npos ||
+           key.find("PASSPHRASE") != std::string::npos;
+}
+
+void write_redacted_env_line_local(std::ofstream& out, const std::string& line) {
+    const std::string key = env_key_from_line_local(line);
+    if (should_redact_env_key_local(key)) {
+        out << "# " << key << " redacted by PQ-NAS system backup\n";
+    } else {
+        out << line << "\n";
+    }
+}
+
+bool copy_process_env_redacted_safe(const std::filesystem::path& dst,
+                                    std::string* err) {
+    std::error_code ec;
+    std::filesystem::create_directories(dst.parent_path(), ec);
+    if (ec) {
+        if (err) *err = "failed to create destination directory: " + ec.message();
+        return false;
+    }
+
+    std::ofstream out(dst, std::ios::trunc);
+    if (!out.good()) {
+        if (err) *err = "failed to open destination env file";
+        return false;
+    }
+
+    out << "# /etc/pqnas/pqnas.env was not readable by the service user.\n";
+    out << "# This redacted snapshot was reconstructed from the pqnas process environment.\n";
+
+    if (environ) {
+        for (char** e = environ; *e; ++e) {
+            const std::string line(*e);
+            if (line.rfind("PQNAS_", 0) != 0) continue;
+            write_redacted_env_line_local(out, line);
+        }
+    }
+
+    out.flush();
+    if (!out.good()) {
+        if (err) *err = "failed to write redacted process environment";
+        return false;
+    }
+
+    std::filesystem::permissions(
+        dst,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace,
+        ec
+    );
+
+    return true;
 }
 
 bool copy_env_file_redacted_safe(const std::filesystem::path& src,
@@ -307,8 +362,7 @@ bool copy_env_file_redacted_safe(const std::filesystem::path& src,
 
     std::ifstream in(src);
     if (!in.good()) {
-        if (err) *err = "failed to open source env file";
-        return false;
+        return copy_process_env_redacted_safe(dst, err);
     }
 
     std::ofstream out(dst, std::ios::trunc);
@@ -319,12 +373,7 @@ bool copy_env_file_redacted_safe(const std::filesystem::path& src,
 
     std::string line;
     while (std::getline(in, line)) {
-        const std::string key = env_key_from_line_local(line);
-        if (should_redact_env_key_local(key)) {
-            out << "# " << key << " redacted by PQ-NAS system backup\n";
-        } else {
-            out << line << "\n";
-        }
+        write_redacted_env_line_local(out, line);
     }
 
     out.flush();
@@ -421,6 +470,11 @@ std::vector<SystemBackupSource> default_sources() {
         {"/etc/pqnas/app_auth.json", "/srv/pqnas/config/app_auth.json"}
     );
 
+    const std::filesystem::path notifications_path = configured_path_local(
+        "PQNAS_NOTIFICATIONS_PATH",
+        {"/srv/pqnas/config/notifications.json", "/etc/pqnas/notifications.json"}
+    );
+
     const std::filesystem::path password_credentials_path =
         password_credentials_path_for_backup_local(users_path);
 
@@ -443,6 +497,7 @@ std::vector<SystemBackupSource> default_sources() {
     add_regular("shares", "Share registry", shares_path, "shares/shares.json");
     add_regular("storage", "Storage pools", pools_path, "storage/pools.json");
     add_regular("auth", "App auth store", app_auth_path, "auth/app_auth.json");
+    add_regular("notifications", "Notification settings", notifications_path, "notifications/notifications.json");
 
     // Circle Stack
     add_sqlite(
