@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import argparse
 from email.message import EmailMessage
+import fcntl
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 import urllib.parse
 import urllib.request
 import smtplib
@@ -39,6 +41,24 @@ STATE_DIR = Path("/var/lib/pqnas/notifications")
 STATE_PATH = STATE_DIR / "state.json"
 
 WARNING_THROTTLE_SECONDS = 6 * 60 * 60
+
+
+@contextmanager
+def notification_state_lock():
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = STATE_DIR / "state.json.lock"
+
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            os.chmod(lock_path, 0o600)
+        except Exception:
+            pass
+
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def read_env_file(path: Path = ENV_PATH) -> Dict[str, str]:
@@ -517,7 +537,6 @@ def check_warnings() -> int:
     settings = load_settings(env)
     _, users_path, data_root = config_paths(env)
 
-    state = load_state()
     now = int(time.time())
     sent_count = 0
 
@@ -525,62 +544,66 @@ def check_warnings() -> int:
         print("[notify] warning delivery disabled")
         return 0
 
-    svc = pqnas_service_state()
-    if svc != "active":
-        key = "service:pqnas"
-        if should_send_throttled(state, key, now):
-            body = f"⚠️ DNA-Nexus warning\n\npqnas.service is not active: {svc}"
-            if deliver_warning(
-                settings,
-                env,
-                users_path,
-                subject="DNA-Nexus warning: pqnas.service is not active",
-                body=body,
-            ):
-                sent_count += 1
+    with notification_state_lock():
+        state = load_state()
 
-    try:
-        d = disk_summary(data_root)
-        free_pct = float(d["free_pct"])
-        free_gib = float(d["free"]) / (1024 ** 3)
-
-        threshold_pct = float(settings.get("warning_free_percent") or 10)
-        threshold_gib = float(settings.get("warning_free_gib") or 10)
-
-        if free_pct <= threshold_pct or free_gib <= threshold_gib:
-            key = f"disk:{d['path']}"
+        svc = pqnas_service_state()
+        if svc != "active":
+            key = "service:pqnas"
             if should_send_throttled(state, key, now):
-                body = (
-                    "⚠️ DNA-Nexus storage warning\n\n"
-                    f"Path: {d['path']}\n"
-                    f"Free: {human_bytes(d['free'])} ({free_pct:.1f}%)\n"
-                    f"Used: {human_bytes(d['used'])}\n"
-                    f"Total: {human_bytes(d['total'])}\n\n"
-                    f"Threshold: <= {threshold_pct:.1f}% or <= {threshold_gib:.1f} GiB free"
-                )
+                body = f"⚠️ DNA-Nexus warning\n\npqnas.service is not active: {svc}"
                 if deliver_warning(
                     settings,
                     env,
                     users_path,
-                    subject="DNA-Nexus warning: storage space is low",
+                    subject="DNA-Nexus warning: pqnas.service is not active",
                     body=body,
                 ):
                     sent_count += 1
 
-    except Exception as e:
-        key = "disk:check_failed"
-        if should_send_throttled(state, key, now):
-            body = f"⚠️ DNA-Nexus warning\n\nStorage check failed: {e}"
-            if deliver_warning(
-                settings,
-                env,
-                users_path,
-                subject="DNA-Nexus warning: storage check failed",
-                body=body,
-            ):
-                sent_count += 1
+        try:
+            d = disk_summary(data_root)
+            free_pct = float(d["free_pct"])
+            free_gib = float(d["free"]) / (1024 ** 3)
 
-    save_state(state)
+            threshold_pct = float(settings.get("warning_free_percent") or 10)
+            threshold_gib = float(settings.get("warning_free_gib") or 10)
+
+            if free_pct <= threshold_pct or free_gib <= threshold_gib:
+                key = f"disk:{d['path']}"
+                if should_send_throttled(state, key, now):
+                    body = (
+                        "⚠️ DNA-Nexus storage warning\n\n"
+                        f"Path: {d['path']}\n"
+                        f"Free: {human_bytes(d['free'])} ({free_pct:.1f}%)\n"
+                        f"Used: {human_bytes(d['used'])}\n"
+                        f"Total: {human_bytes(d['total'])}\n\n"
+                        f"Threshold: <= {threshold_pct:.1f}% or <= {threshold_gib:.1f} GiB free"
+                    )
+                    if deliver_warning(
+                        settings,
+                        env,
+                        users_path,
+                        subject="DNA-Nexus warning: storage space is low",
+                        body=body,
+                    ):
+                        sent_count += 1
+
+        except Exception as e:
+            key = "disk:check_failed"
+            if should_send_throttled(state, key, now):
+                body = f"⚠️ DNA-Nexus warning\n\nStorage check failed: {e}"
+                if deliver_warning(
+                    settings,
+                    env,
+                    users_path,
+                    subject="DNA-Nexus warning: storage check failed",
+                    body=body,
+                ):
+                    sent_count += 1
+
+        save_state(state)
+
     print(f"[notify] warnings complete, sent={sent_count}")
     return 0
 
@@ -598,12 +621,13 @@ def weekly_summary() -> int:
         print("[notify] notification delivery disabled")
         return 0
 
-    state = load_state()
-    users = users_summary(users_path)
-    disk = disk_summary(data_root)
+    with notification_state_lock():
+        state = load_state()
+        users = users_summary(users_path)
+        disk = disk_summary(data_root)
 
-    last_total = state.get("last_weekly_user_total")
-    growth_text = "first summary" if last_total is None else f"{users['total'] - int(last_total):+d} since previous summary"
+        last_total = state.get("last_weekly_user_total")
+        growth_text = "first summary" if last_total is None else f"{users['total'] - int(last_total):+d} since previous summary"
 
     body = (
         "📊 DNA-Nexus weekly summary\n\n"
@@ -625,9 +649,11 @@ def weekly_summary() -> int:
     )
 
     if ok:
-        state["last_weekly_user_total"] = users["total"]
-        state["last_weekly_summary_epoch"] = int(time.time())
-        save_state(state)
+        with notification_state_lock():
+            state = load_state()
+            state["last_weekly_user_total"] = users["total"]
+            state["last_weekly_summary_epoch"] = int(time.time())
+            save_state(state)
         return 0
 
     return 1
