@@ -2016,12 +2016,6 @@ j["no_stats_available"] = has("no stats available");
 // TODO: move these into proper storage/raid modules after the split is stable.
 // -----------------------------------------------------------------------------
 
-// copied transitional struct from main.cpp: BtrfsShowParsed
-
-
-
-// copied transitional struct from main.cpp: RaidJob
-
 
 
 // copied transitional helper from main.cpp: split_lines
