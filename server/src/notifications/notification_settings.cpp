@@ -1,10 +1,14 @@
 #include "notifications/notification_settings.h"
 
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <system_error>
 
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace pqnas::notifications {
 namespace {
@@ -97,27 +101,78 @@ NotificationSettings from_private_json_local(const json& j) {
     return s;
 }
 
-} // namespace
+class FileLockLocal {
+public:
+    FileLockLocal(const std::filesystem::path& path, std::string* err) {
+        if (err) err->clear();
 
-std::filesystem::path notification_settings_path() {
-    const std::string explicit_path = getenv_str_local("PQNAS_NOTIFICATIONS_PATH", "");
-    if (!explicit_path.empty()) {
-        return std::filesystem::path(explicit_path);
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            if (err) *err = "failed to create lock directory: " + ec.message();
+            return;
+        }
+
+        fd_ = open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+        if (fd_ < 0) {
+            if (err) {
+                *err = "failed to open notification settings lock: ";
+                *err += std::strerror(errno);
+            }
+            return;
+        }
+
+        struct flock fl {};
+        fl.l_type = F_WRLCK;
+        fl.l_whence = SEEK_SET;
+
+        if (fcntl(fd_, F_SETLKW, &fl) != 0) {
+            if (err) {
+                *err = "failed to acquire notification settings lock: ";
+                *err += std::strerror(errno);
+            }
+            close(fd_);
+            fd_ = -1;
+            return;
+        }
+
+        locked_ = true;
     }
 
-    std::string cfg = getenv_str_local("PQNAS_CONFIG_DIR", "");
-    if (cfg.empty()) {
-        cfg = getenv_str_local("PQNAS_CONFIG", "/etc/pqnas");
+    FileLockLocal(const FileLockLocal&) = delete;
+    FileLockLocal& operator=(const FileLockLocal&) = delete;
+
+    ~FileLockLocal() {
+        if (fd_ >= 0) {
+            if (locked_) {
+                struct flock fl {};
+                fl.l_type = F_UNLCK;
+                fl.l_whence = SEEK_SET;
+                (void)fcntl(fd_, F_SETLK, &fl);
+            }
+            close(fd_);
+        }
     }
 
-    return std::filesystem::path(cfg) / "notifications.json";
+    bool ok() const {
+        return locked_;
+    }
+
+private:
+    int fd_ = -1;
+    bool locked_ = false;
+};
+
+std::filesystem::path notification_settings_lock_path_local(const std::filesystem::path& path) {
+    return std::filesystem::path(path.string() + ".lock");
 }
 
-NotificationSettings load_notification_settings(std::string* err) {
+NotificationSettings load_notification_settings_unlocked_local(
+    const std::filesystem::path& path,
+    std::string* err) {
     if (err) err->clear();
 
     NotificationSettings defaults;
-    const auto path = notification_settings_path();
 
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
@@ -139,10 +194,12 @@ NotificationSettings load_notification_settings(std::string* err) {
     return from_private_json_local(j);
 }
 
-bool save_notification_settings(const NotificationSettings& s, std::string* err) {
+bool save_notification_settings_unlocked_local(
+    const std::filesystem::path& path,
+    const NotificationSettings& s,
+    std::string* err) {
     if (err) err->clear();
 
-    const auto path = notification_settings_path();
     const auto dir = path.parent_path();
 
     std::error_code ec;
@@ -174,6 +231,48 @@ bool save_notification_settings(const NotificationSettings& s, std::string* err)
 
     chmod(path.c_str(), 0600);
     return true;
+}
+
+} // namespace
+
+std::filesystem::path notification_settings_path() {
+    const std::string explicit_path = getenv_str_local("PQNAS_NOTIFICATIONS_PATH", "");
+    if (!explicit_path.empty()) {
+        return std::filesystem::path(explicit_path);
+    }
+
+    std::string cfg = getenv_str_local("PQNAS_CONFIG_DIR", "");
+    if (cfg.empty()) {
+        cfg = getenv_str_local("PQNAS_CONFIG", "/etc/pqnas");
+    }
+
+    return std::filesystem::path(cfg) / "notifications.json";
+}
+
+NotificationSettings load_notification_settings(std::string* err) {
+    if (err) err->clear();
+
+    const auto path = notification_settings_path();
+
+    FileLockLocal lock(notification_settings_lock_path_local(path), err);
+    if (!lock.ok()) {
+        return NotificationSettings{};
+    }
+
+    return load_notification_settings_unlocked_local(path, err);
+}
+
+bool save_notification_settings(const NotificationSettings& s, std::string* err) {
+    if (err) err->clear();
+
+    const auto path = notification_settings_path();
+
+    FileLockLocal lock(notification_settings_lock_path_local(path), err);
+    if (!lock.ok()) {
+        return false;
+    }
+
+    return save_notification_settings_unlocked_local(path, s, err);
 }
 
 NotificationSettings notification_settings_from_json_patch(
@@ -219,6 +318,39 @@ NotificationSettings notification_settings_from_json_patch(
     }
 
     return s;
+}
+
+bool update_notification_settings_from_json_patch(
+    const nlohmann::json& patch,
+    NotificationSettings* saved,
+    std::string* err) {
+    if (err) err->clear();
+
+    const auto path = notification_settings_path();
+
+    FileLockLocal lock(notification_settings_lock_path_local(path), err);
+    if (!lock.ok()) {
+        return false;
+    }
+
+    std::string load_err;
+    const auto current = load_notification_settings_unlocked_local(path, &load_err);
+    if (!load_err.empty() && err) {
+        *err = load_err;
+        return false;
+    }
+
+    const auto next = notification_settings_from_json_patch(current, patch);
+
+    if (!save_notification_settings_unlocked_local(path, next, err)) {
+        return false;
+    }
+
+    if (saved) {
+        *saved = next;
+    }
+
+    return true;
 }
 
 std::string mask_secret_for_admin(const std::string& secret) {

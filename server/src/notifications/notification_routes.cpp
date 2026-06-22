@@ -307,12 +307,9 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
 
             const json body = parse_json_body_local(req);
 
-            std::string load_err;
-            const auto current = load_notification_settings(&load_err);
-            const auto next = notification_settings_from_json_patch(current, body);
-
+            NotificationSettings saved;
             std::string save_err;
-            if (!save_notification_settings(next, &save_err)) {
+            if (!update_notification_settings_from_json_patch(body, &saved, &save_err)) {
                 reply_json_local(deps, res, 500, {
                     {"ok", false},
                     {"error", "save_failed"},
@@ -321,7 +318,11 @@ void register_notification_routes(httplib::Server& srv, const NotificationRoutes
                 return;
             }
 
-            reply_json_local(deps, res, 200, settings_response_for_actor(deps, actor_fp));
+            reply_json_local(
+                deps,
+                res,
+                200,
+                notification_settings_public_json(saved, default_email_for_actor(deps, actor_fp)));
         });
 
     srv.Post("/api/v4/admin/notifications/test-telegram",

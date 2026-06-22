@@ -36,6 +36,12 @@ std::filesystem::path notification_settings_path();
 NotificationSettings load_notification_settings(std::string* err = nullptr);
 bool save_notification_settings(const NotificationSettings& s, std::string* err = nullptr);
 
+// Atomically load, patch and save notifications.json under one file lock.
+bool update_notification_settings_from_json_patch(
+    const nlohmann::json& patch,
+    NotificationSettings* saved,
+    std::string* err = nullptr);
+
 NotificationSettings notification_settings_from_json_patch(
     const NotificationSettings& current,
     const nlohmann::json& patch);
