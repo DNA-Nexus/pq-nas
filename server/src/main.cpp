@@ -503,6 +503,7 @@ static bool reelstack_meta_remove_under_prefix_path_local(const std::string& sco
 #include "routes_activity.h"
 #include "backups/system_backup_worker.h"
 #include "backups/system_backup_routes.h"
+#include "notifications/notification_routes.h"
 #include "updates/update_center_routes.h"
 #include "routes_people.h"
 #include "routes_file_annotations.h"
@@ -11332,6 +11333,14 @@ v5.app_pair_build_qr_uri =
     system_backup_deps.reply_json = activity_deps.reply_json;
 
     pqnas::backups::register_system_backup_routes(srv, system_backup_deps);
+
+    pqnas::notifications::NotificationRoutesDeps notificationRoutesDeps;
+    notificationRoutesDeps.users = activity_deps.users;
+    notificationRoutesDeps.cookie_key = activity_deps.cookie_key;
+    notificationRoutesDeps.require_user_auth_users_actor = activity_deps.require_user_auth_users_actor;
+    notificationRoutesDeps.reply_json = activity_deps.reply_json;
+    pqnas::notifications::register_notification_routes(srv, notificationRoutesDeps);
+
     {
         pqnas::updates::UpdateCenterRoutesDeps update_center_deps;
         update_center_deps.static_admin_updates_html = STATIC_ADMIN_UPDATES_HTML;

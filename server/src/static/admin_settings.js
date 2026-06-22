@@ -3176,6 +3176,214 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 })();
 
 
+// pqnas-admin-notifications-backend-v1
+(() => {
+    function $(id) { return document.getElementById(id); }
+
+    const pill = $("notificationsPill");
+    if (!pill) return;
+
+    const infoEmail = $("notifyInfoEmailEnabled");
+    const infoTelegram = $("notifyInfoTelegramEnabled");
+    const warnEmail = $("notifyWarnEmailEnabled");
+    const warnTelegram = $("notifyWarnTelegramEnabled");
+    const extraEmails = $("notifyInfoExtraEmails");
+    const schedule = $("notifyInfoSchedule");
+    const telegramToken = $("notifyTelegramToken");
+    const telegramChatId = $("notifyTelegramChatId");
+    const btnSave = $("btnNotificationsSave");
+    const btnTestEmail = $("btnNotificationsTestEmail");
+    const btnTestTelegram = $("btnNotificationsTestTelegram");
+
+    function tr(key, vars = null, fallback = "") {
+        try {
+            if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+                return window.PQNAS_I18N.t(key, vars, fallback || key);
+            }
+        } catch (_) {}
+        return fallback || key;
+    }
+
+    function esc(s) {
+        return String(s ?? "").replace(/[&<>"']/g, c => ({
+            "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+        }[c]));
+    }
+
+    function setPill(kind, text) {
+        pill.className = "pill " + (kind || "");
+        pill.innerHTML =
+            `<span class="k">${esc(tr("admin.common.status", null, "Status"))}:</span> <span class="v">${esc(text || "—")}</span>`;
+    }
+
+    async function apiJson(url, opts = {}) {
+        const r = await fetch(url, {
+            credentials: "include",
+            cache: "no-store",
+            ...opts
+        });
+        const text = await r.text().catch(() => "");
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) {}
+
+        if (!r.ok || !data || data.ok !== true) {
+            const msg = data && (data.message || data.error)
+                ? (data.message || data.error)
+                : (text.trim() || `HTTP ${r.status}`);
+            throw new Error(msg);
+        }
+        return data;
+    }
+
+    function splitEmails(s) {
+        return String(s || "")
+            .split(/[,\n;]/g)
+            .map(x => x.trim())
+            .filter(Boolean);
+    }
+
+    function currentPayload() {
+        const payload = {
+            info_email_enabled: !!infoEmail?.checked,
+            info_telegram_enabled: !!infoTelegram?.checked,
+            warnings_email_enabled: !!warnEmail?.checked,
+            warnings_telegram_enabled: !!warnTelegram?.checked,
+            weekly_summary_enabled: String(schedule?.value || "weekly") !== "disabled",
+            extra_emails: splitEmails(extraEmails?.value || ""),
+            telegram_chat_id: String(telegramChatId?.value || "").trim()
+        };
+
+        const token = String(telegramToken?.value || "").trim();
+        if (token) payload.telegram_bot_token = token;
+
+        return payload;
+    }
+
+    function applySettings(data) {
+        const s = data && data.settings ? data.settings : {};
+
+        if (infoEmail) infoEmail.checked = !!s.info_email_enabled;
+        if (infoTelegram) infoTelegram.checked = !!s.info_telegram_enabled;
+        if (warnEmail) warnEmail.checked = !!s.warnings_email_enabled;
+        if (warnTelegram) warnTelegram.checked = !!s.warnings_telegram_enabled;
+
+        if (schedule) schedule.value = s.weekly_summary_enabled === false ? "disabled" : "weekly";
+        if (extraEmails) extraEmails.value = Array.isArray(s.extra_emails) ? s.extra_emails.join(", ") : "";
+        if (telegramChatId) telegramChatId.value = String(s.telegram_chat_id || "");
+
+        if (telegramToken) {
+            telegramToken.value = "";
+            const masked = String(s.telegram_bot_token_masked || "");
+            telegramToken.placeholder = masked || tr("admin.notifications.telegram_token_placeholder", null, "123456:ABC...");
+            telegramToken.title = masked
+                ? tr("admin.notifications.token_saved_masked", { token: masked }, `Saved token: ${masked}`)
+                : "";
+        }
+
+        const channels = [];
+        if (s.info_email_enabled || s.warnings_email_enabled) channels.push(tr("admin.notifications.email", null, "Email"));
+        if (s.info_telegram_enabled || s.warnings_telegram_enabled) channels.push(tr("admin.notifications.telegram", null, "Telegram"));
+
+        const defaultEmail = String(data.default_email || "");
+        const detail = defaultEmail
+            ? tr("admin.notifications.ready_with_email", { email: defaultEmail }, `ready • ${defaultEmail}`)
+            : tr("admin.notifications.ready_no_admin_email", null, "ready • admin email missing");
+
+        setPill(channels.length ? "ok" : "warn", detail);
+    }
+
+    async function refreshNotifications() {
+        setPill("warn", tr("admin.common.loading", null, "loading…"));
+        const data = await apiJson("/api/v4/admin/notifications/settings");
+        applySettings(data);
+    }
+
+    function toast(kind, title, message) {
+        try {
+            const t = document.getElementById("toast");
+            const tt = document.getElementById("toastTitle");
+            const tm = document.getElementById("toastMsg");
+            if (t && tt && tm) {
+                t.className = "toast show " + (kind || "");
+                tt.textContent = title || "";
+                tm.textContent = message || "";
+                window.clearTimeout(toast._timer);
+                toast._timer = window.setTimeout(() => { t.className = "toast"; }, 3000);
+                return;
+            }
+        } catch (_) {}
+        console.log(title, message);
+    }
+
+    btnSave?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        btnSave.disabled = true;
+        setPill("warn", tr("admin.common.saving", null, "saving…"));
+        try {
+            const data = await apiJson("/api/v4/admin/notifications/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(currentPayload())
+            });
+            applySettings(data);
+            toast("ok", tr("admin.common.saved", null, "Saved"), tr("admin.notifications.saved", null, "Notification settings saved"));
+        } catch (e) {
+            setPill("fail", tr("admin.common.error", null, "error"));
+            toast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
+        } finally {
+            btnSave.disabled = false;
+        }
+    });
+
+    btnTestTelegram?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        btnTestTelegram.disabled = true;
+        setPill("warn", tr("admin.notifications.testing_telegram", null, "testing Telegram…"));
+        try {
+            await apiJson("/api/v4/admin/notifications/test-telegram", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...currentPayload(), kind: "warning" })
+            });
+            toast("ok", tr("admin.notifications.test_sent", null, "Test sent"), tr("admin.notifications.telegram_test_sent", null, "Telegram test message sent"));
+            await refreshNotifications();
+        } catch (e) {
+            setPill("fail", tr("admin.common.error", null, "error"));
+            toast("fail", tr("admin.notifications.test_failed", null, "Test failed"), String(e.message || e));
+        } finally {
+            btnTestTelegram.disabled = false;
+        }
+    });
+
+    btnTestEmail?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        btnTestEmail.disabled = true;
+        try {
+            await apiJson("/api/v4/admin/notifications/test-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(currentPayload())
+            });
+            toast("ok", tr("admin.notifications.test_sent", null, "Test sent"), tr("admin.notifications.email_test_sent", null, "Email test sent"));
+        } catch (e) {
+            toast("fail", tr("admin.notifications.email_not_ready", null, "Email not ready"), String(e.message || e));
+        } finally {
+            btnTestEmail.disabled = false;
+        }
+    });
+
+    window.addEventListener("pqnas-language-changed", () => {
+        refreshNotifications().catch(e => console.error("[notifications] refresh failed", e));
+    });
+
+    refreshNotifications().catch(e => {
+        console.error(e);
+        setPill("fail", tr("admin.common.error", null, "error"));
+    });
+})();
+
+
+
 // pqnas-admin-create-password-user-i18n-v1
 (() => {
     function t(key, fallback) {

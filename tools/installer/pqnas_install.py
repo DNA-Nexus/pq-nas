@@ -1311,6 +1311,34 @@ def ensure_config_files(root: str, asset_root: str) -> None:
         with open(app_auth_path, "w", encoding="utf-8") as f:
             f.write('{\n  "version": 1,\n  "devices": {},\n  "refresh_tokens": {}\n}\n')
 
+    # Notifications + Warnings settings.
+    # Secrets such as Telegram bot tokens are stored here later by the admin UI.
+    # Create the file with safe defaults and strict permissions so first save
+    # does not depend on directory ownership edge cases.
+    notifications_path = os.path.join(etc_dir, "notifications.json")
+    if not os.path.exists(notifications_path):
+        tmp = notifications_path + ".new"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(
+                '{\n'
+                '  "version": 1,\n'
+                '  "info_email_enabled": true,\n'
+                '  "info_telegram_enabled": false,\n'
+                '  "warnings_email_enabled": true,\n'
+                '  "warnings_telegram_enabled": false,\n'
+                '  "weekly_summary_enabled": true,\n'
+                '  "extra_emails": [],\n'
+                '  "telegram_bot_token": "",\n'
+                '  "telegram_chat_id": ""\n'
+                '}\n'
+            )
+        os.chmod(tmp, 0o600)
+        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
+        os.replace(tmp, notifications_path)
+    else:
+        subprocess.run(["chown", "pqnas:pqnas", notifications_path], check=False)
+        os.chmod(notifications_path, 0o600)
+
     # Optional breadcrumb under storage root
     try:
         marker_dir = os.path.join(root, "config")
@@ -1353,6 +1381,7 @@ def write_env_file(
         "PQNAS_SHARES_PATH=/etc/pqnas/shares.json",
         "PQNAS_POOLS_PATH=/etc/pqnas/pools.json",
         "PQNAS_APP_AUTH_PATH=/etc/pqnas/app_auth.json",
+        "PQNAS_NOTIFICATIONS_PATH=/etc/pqnas/notifications.json",
         "",
         f"PQNAS_AUDIT_DIR={root}/audit",
         f"PQNAS_LOG_DIR={root}/logs",

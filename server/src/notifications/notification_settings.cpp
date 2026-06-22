@@ -1,0 +1,207 @@
+#include "notifications/notification_settings.h"
+
+#include <cstdlib>
+#include <fstream>
+#include <system_error>
+
+#include <sys/stat.h>
+
+namespace pqnas::notifications {
+namespace {
+
+using json = nlohmann::json;
+
+std::string getenv_str_local(const char* key, const std::string& fallback) {
+    const char* v = std::getenv(key);
+    if (!v || !*v) return fallback;
+    return std::string(v);
+}
+
+bool json_bool_local(const json& j, const char* key, bool fallback) {
+    if (!j.contains(key)) return fallback;
+    if (!j.at(key).is_boolean()) return fallback;
+    return j.at(key).get<bool>();
+}
+
+std::string json_string_local(const json& j, const char* key, const std::string& fallback) {
+    if (!j.contains(key)) return fallback;
+    if (!j.at(key).is_string()) return fallback;
+    return j.at(key).get<std::string>();
+}
+
+std::vector<std::string> json_string_array_local(const json& j, const char* key, const std::vector<std::string>& fallback) {
+    if (!j.contains(key) || !j.at(key).is_array()) return fallback;
+
+    std::vector<std::string> out;
+    for (const auto& item : j.at(key)) {
+        if (!item.is_string()) continue;
+        std::string v = item.get<std::string>();
+        if (!v.empty()) out.push_back(v);
+    }
+    return out;
+}
+
+json to_private_json_local(const NotificationSettings& s) {
+    return json{
+        {"version", 1},
+        {"info_email_enabled", s.info_email_enabled},
+        {"info_telegram_enabled", s.info_telegram_enabled},
+        {"warnings_email_enabled", s.warnings_email_enabled},
+        {"warnings_telegram_enabled", s.warnings_telegram_enabled},
+        {"weekly_summary_enabled", s.weekly_summary_enabled},
+        {"extra_emails", s.extra_emails},
+        {"telegram_bot_token", s.telegram_bot_token},
+        {"telegram_chat_id", s.telegram_chat_id}
+    };
+}
+
+NotificationSettings from_private_json_local(const json& j) {
+    NotificationSettings s;
+
+    s.info_email_enabled = json_bool_local(j, "info_email_enabled", s.info_email_enabled);
+    s.info_telegram_enabled = json_bool_local(j, "info_telegram_enabled", s.info_telegram_enabled);
+    s.warnings_email_enabled = json_bool_local(j, "warnings_email_enabled", s.warnings_email_enabled);
+    s.warnings_telegram_enabled = json_bool_local(j, "warnings_telegram_enabled", s.warnings_telegram_enabled);
+    s.weekly_summary_enabled = json_bool_local(j, "weekly_summary_enabled", s.weekly_summary_enabled);
+
+    s.extra_emails = json_string_array_local(j, "extra_emails", s.extra_emails);
+    s.telegram_bot_token = json_string_local(j, "telegram_bot_token", s.telegram_bot_token);
+    s.telegram_chat_id = json_string_local(j, "telegram_chat_id", s.telegram_chat_id);
+
+    return s;
+}
+
+} // namespace
+
+std::filesystem::path notification_settings_path() {
+    const std::string explicit_path = getenv_str_local("PQNAS_NOTIFICATIONS_PATH", "");
+    if (!explicit_path.empty()) {
+        return std::filesystem::path(explicit_path);
+    }
+
+    std::string cfg = getenv_str_local("PQNAS_CONFIG_DIR", "");
+    if (cfg.empty()) {
+        cfg = getenv_str_local("PQNAS_CONFIG", "/etc/pqnas");
+    }
+
+    return std::filesystem::path(cfg) / "notifications.json";
+}
+
+NotificationSettings load_notification_settings(std::string* err) {
+    if (err) err->clear();
+
+    NotificationSettings defaults;
+    const auto path = notification_settings_path();
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return defaults;
+    }
+
+    std::ifstream in(path);
+    if (!in) {
+        if (err) *err = "failed to open notifications settings";
+        return defaults;
+    }
+
+    json j = json::parse(in, nullptr, false);
+    if (!j.is_object()) {
+        if (err) *err = "invalid notifications settings json";
+        return defaults;
+    }
+
+    return from_private_json_local(j);
+}
+
+bool save_notification_settings(const NotificationSettings& s, std::string* err) {
+    if (err) err->clear();
+
+    const auto path = notification_settings_path();
+    const auto dir = path.parent_path();
+
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        if (err) *err = "failed to create config directory: " + ec.message();
+        return false;
+    }
+
+    const auto tmp = path.string() + ".tmp";
+
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
+            if (err) *err = "failed to write temporary notifications settings";
+            return false;
+        }
+        out << to_private_json_local(s).dump(2) << "\n";
+    }
+
+    chmod(tmp.c_str(), 0600);
+
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::remove(tmp);
+        if (err) *err = "failed to replace notifications settings: " + ec.message();
+        return false;
+    }
+
+    chmod(path.c_str(), 0600);
+    return true;
+}
+
+NotificationSettings notification_settings_from_json_patch(
+    const NotificationSettings& current,
+    const nlohmann::json& patch) {
+    NotificationSettings s = current;
+
+    s.info_email_enabled = json_bool_local(patch, "info_email_enabled", s.info_email_enabled);
+    s.info_telegram_enabled = json_bool_local(patch, "info_telegram_enabled", s.info_telegram_enabled);
+    s.warnings_email_enabled = json_bool_local(patch, "warnings_email_enabled", s.warnings_email_enabled);
+    s.warnings_telegram_enabled = json_bool_local(patch, "warnings_telegram_enabled", s.warnings_telegram_enabled);
+    s.weekly_summary_enabled = json_bool_local(patch, "weekly_summary_enabled", s.weekly_summary_enabled);
+
+    s.extra_emails = json_string_array_local(patch, "extra_emails", s.extra_emails);
+    s.telegram_chat_id = json_string_local(patch, "telegram_chat_id", s.telegram_chat_id);
+
+    // Secret update policy:
+    // - missing/empty token preserves existing token
+    // - telegram_bot_token_clear=true clears it
+    // - non-empty telegram_bot_token replaces it
+    if (json_bool_local(patch, "telegram_bot_token_clear", false)) {
+        s.telegram_bot_token.clear();
+    } else if (patch.contains("telegram_bot_token") && patch.at("telegram_bot_token").is_string()) {
+        const std::string v = patch.at("telegram_bot_token").get<std::string>();
+        if (!v.empty()) s.telegram_bot_token = v;
+    }
+
+    return s;
+}
+
+std::string mask_secret_for_admin(const std::string& secret) {
+    if (secret.empty()) return "";
+    if (secret.size() <= 10) return "••••";
+    return secret.substr(0, 6) + "…" + secret.substr(secret.size() - 4);
+}
+
+nlohmann::json notification_settings_public_json(
+    const NotificationSettings& s,
+    const std::string& default_email) {
+    return nlohmann::json{
+        {"ok", true},
+        {"default_email", default_email},
+        {"settings", {
+            {"info_email_enabled", s.info_email_enabled},
+            {"info_telegram_enabled", s.info_telegram_enabled},
+            {"warnings_email_enabled", s.warnings_email_enabled},
+            {"warnings_telegram_enabled", s.warnings_telegram_enabled},
+            {"weekly_summary_enabled", s.weekly_summary_enabled},
+            {"extra_emails", s.extra_emails},
+            {"telegram_chat_id", s.telegram_chat_id},
+            {"telegram_bot_token_present", !s.telegram_bot_token.empty()},
+            {"telegram_bot_token_masked", mask_secret_for_admin(s.telegram_bot_token)}
+        }}
+    };
+}
+
+} // namespace pqnas::notifications

@@ -691,6 +691,51 @@
             align-items:center;
             margin-top:12px;
         }
+
+        .notifyGrid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap:12px;
+            width:100%;
+            margin-top:12px;
+        }
+
+        .notifyBox{
+            border:1px solid rgba(var(--fg-rgb),0.14);
+            border-radius:16px;
+            background:rgba(0,0,0,0.14);
+            padding:12px;
+            min-width:0;
+        }
+
+        .notifyBox h3{
+            margin:0 0 10px 0;
+            font-size:12px;
+            letter-spacing:.06em;
+            text-transform:uppercase;
+            color:rgba(var(--fg-rgb),0.68);
+        }
+
+        .notifyChannels{
+            display:flex;
+            gap:10px;
+            flex-wrap:wrap;
+            align-items:center;
+            margin-bottom:10px;
+        }
+
+        .notifyField{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            margin-top:10px;
+        }
+
+        .notifyField .label{
+            font-size:12px;
+            font-weight:900;
+            color:rgba(var(--fg-rgb),0.70);
+        }
     </style>
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
@@ -1337,84 +1382,122 @@
 
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
-                    <div class="h"><span data-i18n="admin.dna.title">DNA Connect alerts</span></div>
-                    <div class="pill info" id="dnaAlertsPill">
-                        <span class="k" data-i18n="admin.dna.alerts">DNA alerts:</span>
-                        <span class="v">—</span>
+                    <div class="h"><span data-i18n="admin.notifications.title">Notifications + Warnings</span></div>
+                    <div class="pill warn" id="notificationsPill">
+                        <span class="k" data-i18n="admin.common.status">Status:</span>
+                        <span class="v" data-i18n="admin.notifications.backend_pending">backend pending</span>
                     </div>
                     <span class="chev" aria-hidden="true">▸</span>
                 </div>
 
                 <div class="bd">
                     <div class="row">
-                        <label class="pill" style="gap:10px;">
-                            <span class="k" data-i18n="admin.common.enabled">Enabled</span>
-                            <input id="dnaAlertsEnabled" type="checkbox" />
-                        </label>
-
-                        <select id="dnaAlertsMinLevel" class="pq-select" aria-label="DNA alert minimum level">
-                            <option value="security" data-i18n="admin.dna.security">Security</option>
-                            <option value="error" data-i18n="admin.dna.error">Error</option>
-                            <option value="warning" data-i18n="admin.dna.warning">Warning</option>
-                            <option value="info" data-i18n="admin.dna.info">Info</option>
-                        </select>
-
-                        <button id="btnDnaAlertsSave" class="pq-btn primary" type="button"><span data-i18n="admin.dna.save">Save DNA alerts</span></button>
-                        <button id="btnDnaAlertsReload" class="pq-btn" type="button"><span data-i18n="admin.common.reload">Reload</span></button>
-                        <button id="btnDnaAlertsTest" class="pq-btn" type="button"><span data-i18n="admin.dna.send_test">Send test alert</span></button>
-                    </div>
-
-                    <div class="row">
-                        <button id="btnDnaAlertsCreateId" class="pq-btn" type="button"><span data-i18n="admin.dna.create_id">Create server ID</span></button>
-                        <button id="btnDnaAlertsShowId" class="pq-btn" type="button"><span data-i18n="admin.dna.show_id">Show ID info</span></button>
-                        <button id="btnDnaAlertsSendRequest" class="pq-btn" type="button"><span data-i18n="admin.dna.send_request">Send contact request</span></button>
-
-                        <span class="pill info" id="dnaAlertsIdentityPill">
-                            <span class="k" data-i18n="admin.dna.pqnas_id">Server ID:</span>
-                            <span class="v">—</span>
+                        <span class="pill info">
+                            <span class="k" data-i18n="admin.notifications.default_email">Default email:</span>
+                            <span class="v" data-i18n="admin.notifications.admin_email_hint">admin account email</span>
+                        </span>
+                        <span class="pill warn">
+                            <span class="k" data-i18n="admin.notifications.delivery">Delivery:</span>
+                            <span class="v" data-i18n="admin.notifications.not_enabled_yet">not enabled yet</span>
                         </span>
                     </div>
 
-                    <div class="row">
-                        <input id="dnaAlertsRecipient"
-                               class="pq-input mono"
-                               style="min-width:320px; flex:1 1 260px;"
-                               type="text"
-                               placeholder="recipient name or fingerprint" data-i18n-placeholder="admin.dna.recipient_placeholder" />
+                    <div class="notifyGrid">
+                        <section class="notifyBox" aria-label="Notifications" data-i18n-aria-label="admin.notifications.notifications">
+                            <h3 data-i18n="admin.notifications.notifications">Notifications</h3>
 
-                        <input id="dnaAlertsCliPath"
-                               class="pq-input mono"
-                               style="min-width:320px; flex:1 1 260px;"
-                               type="text"
-                               placeholder="/usr/local/bin/dna-connect-cli" data-i18n-placeholder="admin.dna.cli_placeholder" />
+                            <div class="notifyChannels">
+                                <label class="pill" style="gap:10px;">
+                                    <span class="k" data-i18n="admin.notifications.email">Email</span>
+                                    <input id="notifyInfoEmailEnabled" type="checkbox" checked />
+                                </label>
+
+                                <label class="pill" style="gap:10px;">
+                                    <span class="k" data-i18n="admin.notifications.telegram">Telegram</span>
+                                    <input id="notifyInfoTelegramEnabled" type="checkbox" />
+                                </label>
+                            </div>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.extra_emails">Extra recipient emails</span>
+                                <input id="notifyInfoExtraEmails"
+                                       class="pq-input"
+                                       type="text"
+                                      
+                                       placeholder="ops@example.com, admin2@example.com"
+                                       data-i18n-placeholder="admin.notifications.extra_emails_placeholder" />
+                            </label>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.weekly_summary">Weekly summary</span>
+                                <select id="notifyInfoSchedule" class="pq-select">
+                                    <option value="weekly" selected data-i18n="admin.notifications.weekly">Weekly</option>
+                                    <option value="disabled" data-i18n="admin.notifications.disabled">Disabled</option>
+                                </select>
+                            </label>
+
+                            <div class="note" data-i18n="admin.notifications.notifications_note">
+                                Weekly admin summary: user growth, uptime, storage status, backup status, and other calm operational information.
+                            </div>
+                        </section>
+
+                        <section class="notifyBox" aria-label="Warnings" data-i18n-aria-label="admin.notifications.warnings">
+                            <h3 data-i18n="admin.notifications.warnings">Warnings</h3>
+
+                            <div class="notifyChannels">
+                                <label class="pill" style="gap:10px;">
+                                    <span class="k" data-i18n="admin.notifications.email">Email</span>
+                                    <input id="notifyWarnEmailEnabled" type="checkbox" checked />
+                                </label>
+
+                                <label class="pill" style="gap:10px;">
+                                    <span class="k" data-i18n="admin.notifications.telegram">Telegram</span>
+                                    <input id="notifyWarnTelegramEnabled" type="checkbox" />
+                                </label>
+                            </div>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.telegram_token">Telegram bot token</span>
+                                <input id="notifyTelegramToken"
+                                       class="pq-input mono"
+                                       type="password"
+                                      
+                                       autocomplete="off"
+                                       placeholder="123456:ABC..."
+                                       data-i18n-placeholder="admin.notifications.telegram_token_placeholder" />
+                            </label>
+
+                            <label class="notifyField">
+                                <span class="label" data-i18n="admin.notifications.telegram_chat_id">Telegram chat ID</span>
+                                <input id="notifyTelegramChatId"
+                                       class="pq-input mono"
+                                       type="text"
+                                      
+                                       autocomplete="off"
+                                       placeholder="-1001234567890"
+                                       data-i18n-placeholder="admin.notifications.telegram_chat_id_placeholder" />
+                            </label>
+
+                            <div class="note" data-i18n="admin.notifications.warnings_note">
+                                Warnings are for urgent events such as low disk space, disk health problems, failed backups, failed updates, and service errors.
+                            </div>
+                        </section>
                     </div>
 
-                    <div class="row">
-                        <input id="dnaAlertsDataDir"
-                               class="pq-input mono"
-                               style="min-width:520px; flex:1 1 auto;"
-                               type="text"
-                               placeholder="/var/lib/pqnas/dna-alerts" data-i18n-placeholder="admin.dna.data_dir_placeholder" />
+                    <div class="row" style="margin-top:12px;">
+                        <button id="btnNotificationsSave" class="pq-btn primary" type="button">
+                            <span data-i18n="admin.notifications.save">Save notification settings</span>
+                        </button>
+                        <button id="btnNotificationsTestEmail" class="pq-btn" type="button">
+                            <span data-i18n="admin.notifications.test_email">Send test email</span>
+                        </button>
+                        <button id="btnNotificationsTestTelegram" class="pq-btn" type="button">
+                            <span data-i18n="admin.notifications.test_telegram">Send test Telegram</span>
+                        </button>
                     </div>
 
-                    <div class="row">
-                        <span class="pill info" id="dnaAlertsInfoPill">
-                            <span class="k" data-i18n="admin.dna.route">Route:</span>
-                            <span class="v">—</span>
-                        </span>
-                    </div>
-
-                    <div class="note">
-                        The server can send warnings to DNA Connect by invoking
-                        <span class="mono">dna-connect-cli</span>.
-                    </div>
-
-                    <div class="note">
-                        <span data-i18n="admin.dna.note2">A dedicated server DNA identity must already exist and be accepted as a contact.</span>
-                    </div>
-
-                    <div class="note">
-                        <span data-i18n="admin.dna.note3">The test button sends admin-controlled.</span>
+                    <div class="note" data-i18n="admin.notifications.backend_note">
+                        Notification settings are stored server-side. Telegram tokens are never returned raw to the browser; saved tokens are shown only as masked values.
                     </div>
                 </div>
             </div>
@@ -1575,7 +1658,7 @@
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260613-remove-opaque-status-card-1"></script>
+<script src="/static/admin_settings.js?v=20260622-notifications-backend-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

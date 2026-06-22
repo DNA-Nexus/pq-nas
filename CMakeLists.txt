@@ -242,6 +242,10 @@ add_executable(pqnas_server
         server/src/backups/system_backup_worker.h
         server/src/backups/system_backup_routes.cpp
         server/src/backups/system_backup_routes.h
+        server/src/notifications/notification_settings.cpp
+        server/src/notifications/notification_settings.h
+        server/src/notifications/notification_routes.cpp
+        server/src/notifications/notification_routes.h
         server/src/updates/update_center_routes.cpp
         server/src/updates/update_center_routes.h
         server/src/file_versions.cpp
