@@ -46,7 +46,7 @@
         .pane{
             border: 1px solid rgba(var(--fg-rgb),0.12);
             border-radius: var(--radius);
-            background: rgba(255,255,255,0.06);
+            background: var(--panel);
             padding: 14px;
             min-width: 0;
             min-height: 0;
@@ -95,7 +95,7 @@
             border: 1px solid rgba(var(--fg-rgb),0.10);
             border-radius: 16px;
             overflow: visible;
-            background: rgba(0,0,0,0.18);
+            background: var(--panel);
         }
 
         table{
@@ -115,7 +115,7 @@
             letter-spacing: .06em;
             text-transform: uppercase;
             color: rgba(var(--fg-rgb),0.65);
-            background: rgba(0,0,0,0.22);
+            background: var(--panel2);
             border-top: none;
             position: sticky;
             top: 0;
@@ -137,7 +137,7 @@
         }
 
         tbody tr.userRow:hover{
-            background: rgba(255,255,255,0.03);
+            background: rgba(var(--fg-rgb),0.06);
         }
 
         .expBtn{
@@ -148,7 +148,7 @@
             height: 28px;
             border-radius: 10px;
             border: 1px solid rgba(var(--fg-rgb),0.16);
-            background: rgba(0,0,0,0.18);
+            background: var(--panel2);
             color: rgba(var(--fg-rgb),0.85);
             font-weight: 900;
             line-height: 1;
@@ -167,27 +167,36 @@
         }
 
         .detailRow td{
-            background: rgba(0,0,0,0.16);
-            border-top: 1px solid rgba(var(--fg-rgb),0.10);
-            padding: 12px 12px;
+            background: linear-gradient(180deg, var(--panel2), var(--panel));
+            border-top: 1px solid var(--border2);
+            padding: 14px;
         }
 
         .detailGrid{
             display: grid;
-            grid-template-columns: 1.2fr 1fr;
-            gap: 12px;
+            grid-template-columns: minmax(360px, 1.15fr) minmax(340px, .85fr);
+            gap: 14px;
+            align-items: start;
+        }
+
+        .detailBoxActions{
+            grid-column: 1 / -1;
         }
 
         @media (max-width: 980px){
             .detailGrid{ grid-template-columns: 1fr; }
+            .detailBoxActions{ grid-column: auto; }
         }
 
         .detailBox{
-            border: 1px solid rgba(var(--fg-rgb),0.14);
-            border-radius: 14px;
-            background: rgba(0,0,0,0.16);
-            padding: 12px;
+            border: 1px solid var(--border2);
+            border-radius: var(--radius);
+            background:
+                linear-gradient(180deg, rgba(var(--fg-rgb),0.055), rgba(var(--fg-rgb),0.025)),
+                var(--panel);
+            padding: 14px;
             overflow: hidden;
+            box-shadow: var(--shadow);
         }
 
         .detailBox h3{
@@ -199,11 +208,12 @@
         }
 
         .detailKV{
-            display:flex;
+            display: grid;
+            grid-template-columns: 140px minmax(0, 1fr);
             gap: 10px;
-            align-items: baseline;
-            padding: 6px 0;
-            border-top: 1px solid rgba(var(--fg-rgb),0.08);
+            align-items: start;
+            padding: 8px 0;
+            border-top: 1px solid var(--border2);
         }
 
         .detailKV:first-of-type{ border-top: none; }
@@ -226,8 +236,8 @@
             margin: 0;
             padding: 10px 12px;
             border-radius: 12px;
-            background: rgba(0,0,0,0.22);
-            border: 1px solid rgba(var(--fg-rgb),0.14);
+            background: var(--panel2);
+            border: 1px solid var(--border2);
             max-height: 260px;
             overflow: auto;
             color: rgba(var(--fg-rgb),0.92);
@@ -248,14 +258,15 @@
             height: 26px;
             border-radius: 10px;
             border: 1px solid rgba(var(--fg-rgb),0.18);
-            background: rgba(0,0,0,0.16);
+            background: var(--panel2);
             color: var(--fg);
             cursor: pointer;
         }
 
         html[data-theme="win_classic"] .expBtn{
-            background: linear-gradient(180deg,#f2f2f2,#d2d2d2) !important;
-            border: 1px solid var(--border) !important;
+            background: linear-gradient(180deg, var(--panel2), var(--panel));
+            border: 1px solid var(--border);
+            box-shadow: none;
         }
 
         .quotaBox{
@@ -287,8 +298,8 @@
         .quotaBar{
             height: 12px;
             border-radius: 999px;
-            border: 1px solid rgba(var(--fg-rgb),0.14);
-            background: rgba(0,0,0,0.16);
+            border: 1px solid var(--border2);
+            background: var(--panel2);
             overflow: hidden;
         }
 
@@ -581,9 +592,9 @@
         }
 
         .usageMetric{
-            border:1px solid rgba(var(--fg-rgb),0.12);
+            border:1px solid var(--border2);
             border-radius:14px;
-            background:rgba(0,0,0,0.12);
+            background:var(--panel2);
             padding:10px 12px;
             min-width:0;
         }
@@ -619,6 +630,76 @@
 
         .usageExplain .mono{
             font-size:11px;
+        }
+
+        .detailAvatarRow{
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 14px;
+            align-items: center;
+            margin: 10px 0 14px;
+        }
+
+        .detailAvatar{
+            width: 128px;
+            height: 128px;
+            border-radius: var(--radius2);
+            object-fit: cover;
+            border: 1px solid var(--border);
+            background: var(--panel2);
+            cursor: pointer;
+            box-shadow: 0 0 0 3px rgba(var(--fg-rgb),0.035);
+        }
+
+        .detailAvatar:hover{
+            transform: translateY(-1px);
+            border-color: rgba(var(--fg-rgb),0.32);
+        }
+
+        .detailAvatar.avatarLoadFailed{
+            border-color: rgba(var(--fail-rgb),0.68);
+        }
+
+        .detailAvatarMeta{
+            line-height:1.3;
+            min-width:0;
+        }
+
+        .detailAvatarPath{
+            display:block;
+            margin-top:4px;
+            font-size:12px;
+        }
+
+        .detailAvatarEmpty{
+            margin:8px 0 14px;
+        }
+
+        .detailSubhead{
+            margin-top:14px;
+        }
+
+        .detailSelfProtection{
+            margin-top:10px;
+        }
+
+        .selfTag{
+            margin-left:8px;
+        }
+
+        @media (max-width: 640px){
+            .detailAvatarRow{
+                grid-template-columns: 1fr;
+            }
+
+            .detailKV{
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+
+            .detailKV .k{
+                width:auto;
+            }
         }
 
     </style>
@@ -834,7 +915,7 @@
 </div>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_users.js?v=20260621-storage-insight-1"></script>
+<script src="/static/admin_users.js?v=20260622-profile-polish-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>

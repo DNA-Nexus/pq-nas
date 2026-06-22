@@ -1886,7 +1886,7 @@ function render() {
         const isSelf = actorFp && fp === actorFp;
 
         const selfTag = isSelf
-            ? `<span class="pq-badge ok" title="${esc(tr("admin.users.this_is_you", null, "This is you"))}" style="margin-left:8px;">${esc(tr("admin.users.you", null, "you"))}</span>`
+            ? `<span class="pq-badge ok selfTag" title="${esc(tr("admin.users.this_is_you", null, "This is you"))}">${esc(tr("admin.users.you", null, "you"))}</span>`
             : "";
 
         // Disallow self-modification (Allocate is allowed for self)
@@ -1932,25 +1932,25 @@ function render() {
       <div class="detailBox">
         <h3>${esc(tr("admin.users.profile", null, "Profile"))}</h3>
         ${avatarSrc(u) ? `
-          <div style="display:flex; gap:12px; align-items:center; margin:10px 0 14px;">
+          <div class="detailAvatarRow">
             <img
               src="${esc(avatarSrc(u))}"
               alt="${esc(tr("admin.users.avatar_alt", null, "avatar"))}"
               data-avatar-open="1"
               data-fp="${esc(fp)}"
-              style="width:128px; height:128px; border-radius:22px; object-fit:cover; border:1px solid var(--border); background:var(--panel2); cursor:pointer;"
+              class="detailAvatar"
               title="${esc(tr("admin.users.click_preview", null, "Click to preview"))}"
-              onerror="this.style.borderColor='red'; this.title='${esc(tr("admin.users.avatar_failed", null, "Avatar failed to load"))}';"
+              onerror="this.classList.add('avatarLoadFailed'); this.title='${esc(tr("admin.users.avatar_failed", null, "Avatar failed to load"))}';"
             />
 
 
-            <div class="muted" style="line-height:1.25;">
+            <div class="muted detailAvatarMeta">
               ${esc(tr("admin.users.avatar", null, "Avatar"))}<br/>
-              <span class="mono" style="font-size:12px;">${esc(avatarSrc(u))}</span>
+              <span class="mono detailAvatarPath">${esc(avatarSrc(u))}</span>
             </div>
           </div>
         ` : `
-          <div class="muted" style="margin:8px 0 14px;">
+          <div class="muted detailAvatarEmpty">
             ${esc(tr("admin.users.avatar", null, "Avatar"))}: <span class="mono">—</span>
           </div>
         `}
@@ -2016,11 +2016,11 @@ function render() {
           <span class="mono">.pqnas/versions</span>
         </div>
 
-        <h3 style="margin-top:14px;">${esc(tr("admin.users.notes", null, "Notes"))}</h3>
+        <h3 class="detailSubhead">${esc(tr("admin.users.notes", null, "Notes"))}</h3>
         <pre class="detailPre">${esc(u.notes || "—")}</pre>
       </div>
 
-<div class="detailBox">
+<div class="detailBox detailBoxActions">
   <h3>${esc(tr("admin.users.actions", null, "Actions"))}</h3>
   <div class="detailActions">
     <button class="pq-btn secondary"
@@ -2073,7 +2073,7 @@ function render() {
   </div>
 
   ${isSelf
-            ? `<div class="muted" style="margin-top:10px;">
+            ? `<div class="muted detailSelfProtection">
          ${esc(tr("admin.users.self_protection", null, "Self-protection: enable / disable / revoke / delete are blocked for your own fingerprint."))}
        </div>`
             : ``}
