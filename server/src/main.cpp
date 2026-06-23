@@ -106,6 +106,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_snapshots_create.h"
 #include "routes_file_versions_archive_blob.h"
 #include "routes_file_versions_read.h"
+#include "routes_file_versions_manage.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -32938,8 +32939,36 @@ srv.Put("/api/v4/files/put",
         register_file_version_read_routes(srv, file_version_read_ctx);
     }
 
-    // ---- File version remaining routes ----
-    // Transitional split: remaining mutating/summary file-version route/helper block lives in routes_file_versions.inc.
+    // ---- File version manage routes ----
+    {
+        FileVersionManageRoutesContext file_version_manage_ctx;
+        file_version_manage_ctx.file_versions = &file_versions_index;
+        file_version_manage_ctx.users = &users;
+        file_version_manage_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        file_version_manage_ctx.require_user_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fp_hex,
+                std::string* role) {
+                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
+            };
+        file_version_manage_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        file_version_manage_ctx.user_dir_for_fp =
+            [&](const std::string& fp_hex) {
+                return user_dir_for_fp(users, fp_hex);
+            };
+
+        register_file_version_manage_routes(srv, file_version_manage_ctx);
+    }
+
+    // ---- File version restore route ----
+    // Transitional split: restore_version route/helper block lives in routes_file_versions.inc.
 #include "routes_file_versions.inc"
 
 

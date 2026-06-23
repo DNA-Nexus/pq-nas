@@ -200,6 +200,8 @@ add_executable(pqnas_server
         server/src/routes_file_versions_archive_blob.h
         server/src/routes_file_versions_read.cpp
         server/src/routes_file_versions_read.h
+        server/src/routes_file_versions_manage.cpp
+        server/src/routes_file_versions_manage.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 
