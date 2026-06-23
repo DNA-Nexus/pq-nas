@@ -101,6 +101,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_user_lifecycle.h"
 #include "routes_admin_user_status.h"
 #include "routes_admin_user_storage_preview.h"
+#include "routes_admin_user_storage.h"
 #include "routes_auth_debug_approvals.h"
 #include "routes_admin_approvals_ui.h"
 #include "routes_admin_users_overview.h"
@@ -16318,516 +16319,101 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
     }
 
 
-// POST /api/v4/admin/users/storage
-// Body: {"fingerprint":"...","quota_gb":10,"force":false}
-//
-// v1 (still directory-based, not btrfs-qgroup yet):
-//   - REQUIRE user.status == "enabled" (approved) BEFORE doing anything
-//   - Ensure <data_root>/users exists
-//   - Ensure <data_root>/users/<fp> exists
-//   - storage_state="allocated"
-//   - quota_bytes = quota_gb * 1024^3 (GiB)
-//   - root_rel = RELATIVE path that matches the ensured directory
-//   - storage_set_at/by set
-srv.Post("/api/v4/admin/users/storage", [&](const httplib::Request& req, httplib::Response& res) {
-    std::string actor_fp;
-    if (!require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
-        if (!require_same_origin_for_cookie_mutation(req, res)) return;
-
-    res.set_header("Cache-Control", "no-store");
-
-    if (!workspaces.load(workspaces_path)) {
-        reply_json(res, 500, json({
-            {"ok", false},
-            {"error", "workspaces_load_failed"},
-            {"message", "failed to reload workspaces"}
-        }).dump());
-        return;
-    }
-
-    json j;
-    try { j = json::parse(req.body); }
-    catch (...) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","invalid json"}}).dump());
-        return;
-    }
-
-    const std::string fp = j.value("fingerprint", "");
-    if (fp.empty()) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","missing fingerprint"}}).dump());
-        return;
-    }
-
-    if (!is_valid_fingerprint_hex(fp)) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","invalid fingerprint format"}}).dump());
-        return;
-    }
-
-    // pool_id: optional. "default" or empty => use server default data_root.
-    std::string pool_id = j.value("pool_id", "");
-    pool_id = trim_copy(pool_id);
-    if (pool_id.empty()) pool_id = "default";
-
-    if (!users.exists(fp)) {
-        reply_json(res, 404, json({{"ok",false},{"error","not_found"},{"message","user not found"}}).dump());
-        return;
-    }
-
-    const bool force = j.value("force", false);
-
-    // quota_gb: accept integer or float; require >= 0
-    double quota_gb_d = 0.0;
-    try {
-        if (!j.contains("quota_gb")) {
-            reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","missing quota_gb"}}).dump());
-            return;
-        }
-        const auto& v = j["quota_gb"];
-        if (v.is_number_integer()) quota_gb_d = (double)v.get<long long>();
-        else if (v.is_number_unsigned()) quota_gb_d = (double)v.get<unsigned long long>();
-        else if (v.is_number_float()) quota_gb_d = v.get<double>();
-        else {
-            reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","quota_gb must be a number"}}).dump());
-            return;
-        }
-    } catch (...) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","invalid quota_gb"}}).dump());
-        return;
-    }
-
-    if (quota_gb_d < 0.0) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","quota_gb must be >= 0"}}).dump());
-        return;
-    }
-
-    // Convert GB -> bytes using GiB (1024^3). Round to nearest byte and guard overflow.
-    const long double bytes_ld =
-        (long double)quota_gb_d *
-        (long double)1024.0L * (long double)1024.0L * (long double)1024.0L;
-
-    if (bytes_ld > (long double)std::numeric_limits<std::uint64_t>::max()) {
-        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","quota_gb too large"}}).dump());
-        return;
-    }
-    const std::uint64_t quota_bytes = (std::uint64_t)(bytes_ld + 0.5L);
-
-    const std::string now_iso = now_iso_utc();
-
-    // Load user
-    auto cur = users.get(fp);
-    if (!cur.has_value()) {
-        reply_json(res, 500, json({{"ok",false},{"error","server_error"},{"message","user lookup failed"}}).dump());
-        return;
-    }
-    pqnas::UserRec u = *cur;
-    auto sum_allocated_quota_on_pool_local =
-        [&](const std::string& want_pool_id, const std::string& exclude_fp) -> std::uint64_t
+    // ---- Admin user storage allocation routes ----
     {
-        const std::string want_pool = normalize_storage_pool_id(want_pool_id);
-        std::uint64_t total = 0;
+        AdminUserStorageRoutesContext admin_user_storage_ctx;
+        admin_user_storage_ctx.users = &users;
+        admin_user_storage_ctx.workspaces = &workspaces;
+        admin_user_storage_ctx.users_path = users_path;
+        admin_user_storage_ctx.workspaces_path = workspaces_path;
 
-        for (const auto& kv : users.snapshot()) {
-            const auto& it = kv.second;
+        admin_user_storage_ctx.require_admin_auth =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
 
-            if (!exclude_fp.empty() && it.fingerprint == exclude_fp) continue;
-            if (it.storage_state != "allocated") continue;
+        admin_user_storage_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
 
-            const std::string user_pool = normalize_storage_pool_id(it.storage_pool_id);
-            if (user_pool != want_pool) continue;
+        admin_user_storage_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
 
-            const std::uint64_t q = static_cast<std::uint64_t>(it.quota_bytes);
-            if (std::numeric_limits<std::uint64_t>::max() - total < q) {
-                return std::numeric_limits<std::uint64_t>::max();
-            }
-            total += q;
-        }
+        admin_user_storage_ctx.trim_copy =
+            [](const std::string& v) {
+                return trim_copy(v);
+            };
 
-        return total;
-    };
-    // ✅ MUST be approved before allocating/changing storage
-    if (u.status != "enabled") {
-        // Audit (best-effort)
-        try {
-            pqnas::AuditEvent ev;
-            ev.event = "admin.user_storage_allocate_refused";
-            ev.outcome = "fail";
-            ev.f["fingerprint"] = fp;
-            ev.f["reason"] = "user_not_approved";
-            ev.f["status"] = pqnas::shorten(u.status, 40);
-            ev.f["ts"] = now_iso;
-            ev.f["actor_fp"] = actor_fp;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            audit_append(ev);
-        } catch (...) {}
+        admin_user_storage_ctx.is_valid_fingerprint_hex =
+            [](const std::string& fp) {
+                return is_valid_fingerprint_hex(fp);
+            };
 
-        reply_json(res, 403, json({
-            {"ok", false},
-            {"error", "user_not_approved"},
-            {"message", "refusing to allocate storage: user is not enabled/approved"},
-            {"status", u.status}
-        }).dump());
-        return;
-    }
+        admin_user_storage_ctx.normalize_storage_pool_id =
+            [](const std::string& pool_id) {
+                return normalize_storage_pool_id(pool_id);
+            };
 
-    const std::string prev_state = u.storage_state;
-    const std::uint64_t prev_quota = u.quota_bytes;
-    const std::string prev_root = u.root_rel;
+        admin_user_storage_ctx.storage_pool_mount_by_id =
+            [&](const std::string& pool_id, std::string* mount, std::string* err) {
+                return storage_pool_mount_by_id_adminonly(users_path, pool_id, mount, err);
+            };
 
-    const bool already_allocated = (u.storage_state == "allocated");
+        admin_user_storage_ctx.data_root_dir =
+            []() {
+                return pqnas::data_root_dir();
+            };
 
-    if (already_allocated && !force) {
-        // Audit (best-effort)
-        try {
-            pqnas::AuditEvent ev;
-            ev.event = "admin.user_storage_allocate_refused";
-            ev.outcome = "fail";
-            ev.f["fingerprint"] = fp;
-            ev.f["reason"] = "already_allocated";
-            ev.f["ts"] = now_iso;
-            ev.f["actor_fp"] = actor_fp;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            audit_append(ev);
-        } catch (...) {}
+        admin_user_storage_ctx.default_root_rel_for_fp =
+            [](const std::string& fp) {
+                return default_root_rel_for_fp(fp);
+            };
 
-        reply_json(res, 409, json({
-            {"ok", false},
-            {"error", "already_allocated"},
-            {"message", "storage is already allocated; use force=true to change quota"},
-            {"storage_state", u.storage_state},
-            {"quota_bytes", u.quota_bytes},
-            {"root_rel", u.root_rel}
-        }).dump());
-        return;
-    }
+        admin_user_storage_ctx.is_safe_rel_path =
+            [](const std::string& rel) {
+                return is_safe_rel_path(rel);
+            };
 
-    std::filesystem::path data_root = std::filesystem::path(pqnas::data_root_dir());
-    std::string pool_mount;
+        admin_user_storage_ctx.statvfs_path =
+            [](const std::string& path, std::uint64_t* total, std::uint64_t* free) {
+                return statvfs_path(path, total, free);
+            };
 
-    if (pool_id != "default") {
-        std::string err;
-        std::string mp;
-        if (!storage_pool_mount_by_id_adminonly(users_path, pool_id, &mp, &err)) {
-            reply_json(res, 404, json({
-                {"ok", false},
-                {"error", "pool_not_found"},
-                {"message", "pool_id not found"},
-                {"pool_id", pool_id},
-                {"detail", err}
-            }).dump());
-            return;
-        }
-        pool_mount = mp;
+        admin_user_storage_ctx.dir_size_bytes_best_effort =
+            [](const std::filesystem::path& path) -> std::uint64_t {
+                return static_cast<std::uint64_t>(dir_size_bytes_best_effort(path));
+            };
 
-        // Choose PQ-NAS data root inside this pool
-        // (adjust "data" folder name if your pool layout differs)
-        data_root = std::filesystem::path(mp) / "data";
-    }
-    // Refuse allocations that would overcommit the target pool.
-    {
-        const std::string effective_pool_id = normalize_storage_pool_id(pool_id);
+        admin_user_storage_ctx.ensure_dir_exists =
+            [](const std::filesystem::path& path, std::string* err) {
+                return ensure_dir_exists(path, err);
+            };
 
-        std::uint64_t pool_total_bytes = 0;
-        std::uint64_t pool_free_bytes = 0;
+        admin_user_storage_ctx.sum_allocated_workspace_quota_on_pool =
+            [&](const std::string& pool_id, const std::string& exclude_workspace_id) -> std::uint64_t {
+                return pqnas::sum_allocated_workspace_quota_on_pool(
+                    workspaces,
+                    pool_id,
+                    exclude_workspace_id
+                );
+            };
 
-        // Probe the actual filesystem that backs this pool.
-        // For non-default pools use the mount root; for default use data_root.
-        const std::string stat_path =
-            (effective_pool_id == "default")
-                ? data_root.string()
-                : std::filesystem::path(pool_mount).string();
+        admin_user_storage_ctx.now_iso_utc =
+            [&]() {
+                return now_iso_utc();
+            };
 
-        if (!statvfs_path(stat_path, &pool_total_bytes, &pool_free_bytes)) {
-            try {
-                pqnas::AuditEvent ev;
-                ev.event = "admin.user_storage_allocate_refused";
-                ev.outcome = "fail";
-                ev.f["fingerprint"] = fp;
-                ev.f["reason"] = "pool_statvfs_failed";
-                ev.f["pool_id"] = effective_pool_id;
-                ev.f["path"] = pqnas::shorten(stat_path, 200);
-                ev.f["ts"] = now_iso;
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+        admin_user_storage_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
                 audit_append(ev);
-            } catch (...) {}
+            };
 
-            reply_json(res, 500, json({
-                {"ok", false},
-                {"error", "pool_statvfs_failed"},
-                {"message", "failed to read target pool capacity"},
-                {"pool_id", effective_pool_id},
-                {"path", stat_path}
-            }).dump());
-            return;
-        }
-
-        const std::uint64_t allocated_user_bytes =
-            sum_allocated_quota_on_pool_local(effective_pool_id, fp);
-
-        const std::uint64_t allocated_workspace_bytes =
-            pqnas::sum_allocated_workspace_quota_on_pool(workspaces, effective_pool_id, "");
-
-        std::uint64_t allocated_other_bytes = allocated_user_bytes;
-        if (std::numeric_limits<std::uint64_t>::max() - allocated_other_bytes < allocated_workspace_bytes) {
-            allocated_other_bytes = std::numeric_limits<std::uint64_t>::max();
-        } else {
-            allocated_other_bytes += allocated_workspace_bytes;
-        }
-
-        std::uint64_t would_total_bytes = allocated_other_bytes;
-        if (std::numeric_limits<std::uint64_t>::max() - would_total_bytes < quota_bytes) {
-            would_total_bytes = std::numeric_limits<std::uint64_t>::max();
-        } else {
-            would_total_bytes += quota_bytes;
-        }
-
-        if (would_total_bytes > pool_total_bytes) {
-            try {
-                pqnas::AuditEvent ev;
-                ev.event = "admin.user_storage_allocate_refused";
-                ev.outcome = "fail";
-                ev.f["fingerprint"] = fp;
-                ev.f["reason"] = "pool_quota_overcommit";
-                ev.f["pool_id"] = effective_pool_id;
-                ev.f["requested_quota_bytes"] = std::to_string((unsigned long long)quota_bytes);
-                ev.f["allocated_other_bytes"] = std::to_string((unsigned long long)allocated_other_bytes);
-                ev.f["would_total_bytes"] = std::to_string((unsigned long long)would_total_bytes);
-                ev.f["pool_total_bytes"] = std::to_string((unsigned long long)pool_total_bytes);
-                ev.f["pool_free_bytes"] = std::to_string((unsigned long long)pool_free_bytes);
-                ev.f["allocated_user_bytes"] = std::to_string((unsigned long long)allocated_user_bytes);
-                ev.f["allocated_workspace_bytes"] = std::to_string((unsigned long long)allocated_workspace_bytes);
-                ev.f["ts"] = now_iso;
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-                audit_append(ev);
-            } catch (...) {}
-
-            reply_json(res, 409, json({
-                {"ok", false},
-                {"error", "pool_quota_overcommit"},
-                {"message", "requested quota would exceed pool capacity"},
-                {"pool_id", effective_pool_id},
-                {"requested_quota_bytes", quota_bytes},
-                {"allocated_other_bytes", allocated_other_bytes},
-                {"would_total_bytes", would_total_bytes},
-                {"pool_total_bytes", pool_total_bytes},
-                {"allocated_user_bytes", allocated_user_bytes},
-                {"allocated_workspace_bytes", allocated_workspace_bytes},
-                {"pool_free_bytes", pool_free_bytes}
-            }).dump());
-            return;
-        }
-    }
-    // layout: <data_root>/users/<fp>
-	const std::string canonical_root_rel = default_root_rel_for_fp(fp);
-	if (canonical_root_rel.empty() || !is_safe_rel_path(canonical_root_rel)) {
-    	reply_json(res, 500, json({
-        	{"ok", false},
-	        {"error", "server_error"},
-    	    {"message", "computed root_rel is unsafe"},
-        	{"root_rel", canonical_root_rel}
-	    }).dump());
-    	return;
-	}
-
-	const std::filesystem::path udir = data_root / canonical_root_rel;
-	const std::filesystem::path parent = udir.parent_path();
-
-    // Safety: udir must be under data_root
-    {
-    const auto dr = data_root.lexically_normal();
-    const auto ud = udir.lexically_normal();
-    const auto rel_to_root = ud.lexically_relative(dr);
-
-    bool ok = !rel_to_root.empty();
-    if (ok) {
-        for (const auto& part : rel_to_root) {
-            if (part == "..") {
-                ok = false;
-                break;
-            }
-        }
+        register_admin_user_storage_routes(srv, admin_user_storage_ctx);
     }
 
-    if (!ok) {
-        try {
-            pqnas::AuditEvent ev;
-            ev.event = "admin.user_storage_bad_path";
-            ev.outcome = "fail";
-            ev.f["fingerprint"] = fp;
-            ev.f["data_root"] = pqnas::shorten(data_root.string(), 200);
-            ev.f["user_dir"] = pqnas::shorten(udir.string(), 200);
-            ev.f["ts"] = now_iso;
-            ev.f["actor_fp"] = actor_fp;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            audit_append(ev);
-        } catch (...) {}
-
-        reply_json(res, 500, json({
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "refusing to allocate: user_dir is not under data_root"},
-        }).dump());
-        return;
-    }
-}
-
-    // Ensure <data_root>/users exists (or whatever udir.parent is)
-    {
-        std::string fs_err;
-        if (!ensure_dir_exists(parent, &fs_err)) {
-            try {
-                pqnas::AuditEvent ev;
-                ev.event = "admin.user_storage_mkdir_failed";
-                ev.outcome = "fail";
-                ev.f["fingerprint"] = fp;
-                ev.f["path"] = parent.string();
-                ev.f["detail"] = pqnas::shorten(fs_err, 180);
-                ev.f["ts"] = now_iso;
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-                audit_append(ev);
-            } catch (...) {}
-
-            reply_json(res, 500, json({
-                {"ok", false},
-                {"error", "server_error"},
-                {"message", "failed to create storage root"},
-                {"detail", fs_err}
-            }).dump());
-            return;
-        }
-    }
-
-    // Ensure <data_root>/users/<fp> exists
-    {
-        std::string fs_err;
-        if (!ensure_dir_exists(udir, &fs_err)) {
-            try {
-                pqnas::AuditEvent ev;
-                ev.event = "admin.user_storage_mkdir_failed";
-                ev.outcome = "fail";
-                ev.f["fingerprint"] = fp;
-                ev.f["path"] = udir.string();
-                ev.f["detail"] = pqnas::shorten(fs_err, 180);
-                ev.f["ts"] = now_iso;
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-                audit_append(ev);
-            } catch (...) {}
-
-            reply_json(res, 500, json({
-                {"ok", false},
-                {"error", "server_error"},
-                {"message", "failed to create user directory"},
-                {"detail", fs_err}
-            }).dump());
-            return;
-        }
-    }
-    // Refuse quota changes that would set quota below current used bytes.
-{
-    const std::uint64_t used_bytes = dir_size_bytes_best_effort(udir);
-
-    if (quota_bytes < used_bytes) {
-        try {
-            pqnas::AuditEvent ev;
-            ev.event = "admin.user_storage_allocate_refused";
-            ev.outcome = "fail";
-            ev.f["fingerprint"] = fp;
-            ev.f["reason"] = "quota_below_used_bytes";
-            ev.f["pool_id"] = normalize_storage_pool_id(pool_id);
-            ev.f["requested_quota_bytes"] = std::to_string((unsigned long long)quota_bytes);
-            ev.f["used_bytes"] = std::to_string((unsigned long long)used_bytes);
-            ev.f["user_dir"] = pqnas::shorten(udir.string(), 200);
-            ev.f["ts"] = now_iso;
-            ev.f["actor_fp"] = actor_fp;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            audit_append(ev);
-        } catch (...) {}
-
-        reply_json(res, 409, json({
-            {"ok", false},
-            {"error", "quota_below_used_bytes"},
-            {"message", "requested quota is below current storage usage"},
-            {"fingerprint", fp},
-            {"pool_id", normalize_storage_pool_id(pool_id)},
-            {"requested_quota_bytes", quota_bytes},
-            {"used_bytes", used_bytes},
-        }).dump());
-        return;
-    }
-}
-    const std::string root_rel = canonical_root_rel;
-
-    // Audit mkdir success (best-effort)
-    try {
-        pqnas::AuditEvent ev;
-        ev.event = already_allocated ? "admin.user_storage_dir_verified" : "admin.user_storage_dir_created";
-        ev.outcome = "ok";
-        ev.f["fingerprint"] = fp;
-        ev.f["path"] = udir.string();
-        ev.f["ts"] = now_iso;
-        ev.f["actor_fp"] = actor_fp;
-        ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-        audit_append(ev);
-    } catch (...) {}
-
-    // ✅ Only now mutate + persist users.json
-    u.storage_state  = "allocated";
-    u.quota_bytes    = quota_bytes;
-    u.root_rel       = root_rel; // derived from ensured dir
-    u.storage_set_at = now_iso;
-    u.storage_set_by = actor_fp;
-    // Persist selected pool (optional field in users.json)
-    u.storage_pool_id = (pool_id == "default") ? "" : pool_id;
-
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save   = ok_upsert ? users.save(users_path) : false;
-
-    // Audit allocation/update (best-effort)
-    try {
-        pqnas::AuditEvent ev;
-        ev.event = already_allocated ? "admin.user_storage_updated" : "admin.user_storage_allocated";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
-        ev.f["fingerprint"] = fp;
-        ev.f["ts"] = now_iso;
-        ev.f["actor_fp"] = actor_fp;
-        ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-
-        ev.f["quota_gb"] = pqnas::shorten(std::to_string(quota_gb_d), 32);
-        ev.f["quota_bytes"] = pqnas::shorten(std::to_string((unsigned long long)quota_bytes), 32);
-        ev.f["root_rel"] = pqnas::shorten(u.root_rel, 160);
-        if (force) ev.f["force"] = "true";
-        ev.f["user_dir"] = pqnas::shorten(udir.string(), 200);
-
-        if (!prev_state.empty()) ev.f["prev_storage_state"] = pqnas::shorten(prev_state, 40);
-        if (prev_quota != 0) ev.f["prev_quota_bytes"] = pqnas::shorten(std::to_string((unsigned long long)prev_quota), 32);
-        if (!prev_root.empty()) ev.f["prev_root_rel"] = pqnas::shorten(prev_root, 160);
-
-        audit_append(ev);
-    } catch (...) {}
-
-    if (!ok_upsert) {
-        reply_json(res, 500, json({{"ok",false},{"error","server_error"},{"message","upsert failed"}}).dump());
-        return;
-    }
-    if (!ok_save) {
-        reply_json(res, 500, json({{"ok",false},{"error","server_error"},{"message","users save failed"}}).dump());
-        return;
-    }
-
-    reply_json(res, 200, json({
-        {"ok", true},
-        {"fingerprint", fp},
-        {"pool_id", pool_id},
-        {"storage_state", u.storage_state},
-        {"quota_bytes", u.quota_bytes},
-        {"root_rel", u.root_rel},
-        {"storage_set_at", u.storage_set_at},
-        {"storage_set_by", u.storage_set_by},
-    }).dump());
-});
 
     // ---- Admin user storage preview routes ----
     {
