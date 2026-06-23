@@ -99,6 +99,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_storage_raid.h"
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
+#include "routes_admin_approvals_ui.h"
 #include "routes_admin_user_storage_jobs.h"
 #include "routes_admin_user_profile.h"
 #include "routes_user_avatars.h"
@@ -15950,22 +15951,24 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
 	        reply_json(res, 200, out.dump());
     });
 
-	srv.Get("/admin/approvals", [&](const httplib::Request& req, httplib::Response& res) {
-   		std::string actor_fp;
-    	if (!require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
+    // ---- Admin approvals UI routes ----
+    {
+        AdminApprovalsUiRoutesContext admin_approvals_ui_ctx;
+        admin_approvals_ui_ctx.approvals_html_path = STATIC_APPROVALS_HTML;
+        admin_approvals_ui_ctx.approvals_js_path = STATIC_APPROVALS_JS;
 
-    	const std::string body = slurp_file(STATIC_APPROVALS_HTML);
-    	if (body.empty()) { res.status = 404; res.set_content("missing admin_approvals.html","text/plain"); return; }
-    	res.set_header("Cache-Control", "no-store");
-    	res.set_content(body, "text/html; charset=utf-8");
-	});
+        admin_approvals_ui_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
 
-	srv.Get("/static/admin_approvals.js", [&](const httplib::Request&, httplib::Response& res) {
-    	const std::string body = slurp_file(STATIC_APPROVALS_JS);
-	    if (body.empty()) { res.status = 404; res.set_content("missing admin_approvals.js","text/plain"); return; }
-    	res.set_header("Cache-Control", "no-store");
-	    res.set_content(body, "application/javascript; charset=utf-8");
-	});
+        admin_approvals_ui_ctx.slurp_file =
+            [&](const std::string& path) {
+                return slurp_file(path);
+            };
+
+        register_admin_approvals_ui_routes(srv, admin_approvals_ui_ctx);
+    }
 
 
 	// Generic static handler: /static/<anything>
