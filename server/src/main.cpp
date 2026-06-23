@@ -104,6 +104,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_user_avatars.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
+#include "routes_snapshots_restore.h"
 #include "routes_file_versions_archive_blob.h"
 #include "routes_file_versions_read.h"
 #include "routes_file_versions_manage.h"
@@ -4200,27 +4201,6 @@ static bool load_snapshot_volumes_from_admin_settings(const std::string& admin_s
 }
 
 // confirm cache
-struct RestorePlan {
-    std::string volume;
-    std::string snapshot_id;
-    std::string snapshot_path;
-    std::string source_subvolume;
-    std::string mode; // "swap"
-    std::string confirm_phrase; // exact
-    std::string created_iso;
-    std::string expires_iso;
-};
-
-static std::mutex g_restore_mu;
-static std::unordered_map<std::string, RestorePlan> g_restore_by_id;
-
-static void restore_cache_gc_best_effort() {
-    // v1: cheap GC: keep map from growing; remove when > 256
-    std::lock_guard<std::mutex> lk(g_restore_mu);
-    if (g_restore_by_id.size() <= 256) return;
-    // wipe all (simple, safe)
-    g_restore_by_id.clear();
-}
 
 } // namespace
 
@@ -33141,8 +33121,75 @@ srv.Put("/api/v4/files/put",
     }
 
     // ---- Snapshot restore routes ----
-    // Transitional split: restore route/helper block lives in routes_snapshots.inc.
-#include "routes_snapshots.inc"
+    {
+        SnapshotRestoreRoutesContext snapshot_restore_ctx;
+        snapshot_restore_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        snapshot_restore_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        snapshot_restore_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+        snapshot_restore_ctx.load_volumes =
+            [&](std::string* backend,
+                std::vector<SnapshotRestoreVolume>* out,
+                std::string* err) {
+                std::vector<SnapVol> vols;
+                if (!load_snapshot_volumes_from_admin_settings(admin_settings_path, backend, &vols, err)) {
+                    return false;
+                }
+
+                if (out) {
+                    out->clear();
+                    out->reserve(vols.size());
+                    for (const auto& v : vols) {
+                        SnapshotRestoreVolume rec;
+                        rec.name = v.name;
+                        rec.source_subvolume = v.source_subvolume;
+                        rec.snap_root = v.snap_root;
+                        rec.enabled = v.enabled;
+                        out->push_back(rec);
+                    }
+                }
+
+                return true;
+            };
+        snapshot_restore_ctx.is_path_under =
+            [&](const std::string& path, const std::string& root) {
+                return is_path_under(path, root);
+            };
+        snapshot_restore_ctx.is_btrfs_subvolume =
+            [&](const std::string& path) {
+                return is_btrfs_subvolume_sudo_n(path);
+            };
+        snapshot_restore_ctx.realpath_str =
+            [&](const std::string& path) {
+                return realpath_str(path);
+            };
+        snapshot_restore_ctx.now_iso_utc =
+            [&]() {
+                return now_iso_utc();
+            };
+        snapshot_restore_ctx.rand_hex_32 =
+            [&]() {
+                return rand_hex_32();
+            };
+        snapshot_restore_ctx.random_b64url =
+            [&](std::size_t n) {
+                return random_b64url(n);
+            };
+        snapshot_restore_ctx.popen_capture =
+            [&](const std::string& cmd, std::string* out, int* rc) {
+                popen_capture(cmd, out, rc);
+            };
+
+        register_snapshot_restore_routes(srv, snapshot_restore_ctx);
+    }
 
 
 
