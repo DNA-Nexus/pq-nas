@@ -103,6 +103,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_user_profile.h"
 #include "routes_user_avatars.h"
 #include "routes_snapshots_browse.h"
+#include "routes_snapshots_create.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -4231,10 +4232,8 @@ static std::string sh_quote(const std::string& s) {
     // Wrap in single quotes and escape any embedded single quotes safely.
     return "'" + shell_escape_single_quotes(s) + "'";
 }
-static std::string lower_ascii(std::string s) {
-    for (char& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
-}
+
+
 namespace pqnas { struct AuditEvent; }
 static void audit_append(const pqnas::AuditEvent& ev);
 
@@ -32966,8 +32965,59 @@ srv.Put("/api/v4/files/put",
         register_snapshot_browse_routes(srv, snapshot_browse_ctx);
     }
 
-    // ---- Snapshot create/restore routes ----
-    // Transitional split: create/restore route/helper block lives in routes_snapshots.inc.
+    // ---- Snapshot create routes ----
+    {
+        SnapshotCreateRoutesContext snapshot_create_ctx;
+        snapshot_create_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        snapshot_create_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        snapshot_create_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+        snapshot_create_ctx.load_volumes =
+            [&](std::string* backend,
+                std::vector<SnapshotCreateVolume>* out,
+                std::string* err) {
+                std::vector<SnapVol> vols;
+                if (!load_snapshot_volumes_from_admin_settings(admin_settings_path, backend, &vols, err)) {
+                    return false;
+                }
+
+                if (out) {
+                    out->clear();
+                    out->reserve(vols.size());
+                    for (const auto& v : vols) {
+                        SnapshotCreateVolume rec;
+                        rec.name = v.name;
+                        rec.source_subvolume = v.source_subvolume;
+                        rec.snap_root = v.snap_root;
+                        rec.enabled = v.enabled;
+                        out->push_back(rec);
+                    }
+                }
+
+                return true;
+            };
+        snapshot_create_ctx.is_btrfs_subvolume =
+            [&](const std::string& path, std::string* detail) {
+                return is_btrfs_subvolume_sudo_n(path, detail);
+            };
+        snapshot_create_ctx.audit_safe_header_value =
+            [&](const std::string& value, std::size_t maxlen) {
+                return audit_safe_header_value(value, maxlen);
+            };
+
+        register_snapshot_create_routes(srv, snapshot_create_ctx);
+    }
+
+    // ---- Snapshot restore routes ----
+    // Transitional split: restore route/helper block lives in routes_snapshots.inc.
 #include "routes_snapshots.inc"
 
 

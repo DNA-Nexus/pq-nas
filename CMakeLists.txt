@@ -194,6 +194,8 @@ add_executable(pqnas_server
         server/src/routes_user_avatars.h
         server/src/routes_snapshots_browse.cpp
         server/src/routes_snapshots_browse.h
+        server/src/routes_snapshots_create.cpp
+        server/src/routes_snapshots_create.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 
