@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstdio>
 #include <utility>
+#include <stdexcept>
 
 #include "workspaces.h"
 
@@ -2934,19 +2935,29 @@ void register_storage_raid_routes(
     httplib::Server& srv,
     const StorageRaidRoutesContext& ctx
 ) {
-    const unsigned char* COOKIE_KEY = ctx.cookie_key;
-    const std::string& users_path = ctx.users_path;
+    static const unsigned char* COOKIE_KEY = nullptr;
+    static std::string users_path;
+    static std::string workspaces_path;
+    static pqnas::WorkspacesRegistry workspaces;
+
+    COOKIE_KEY = ctx.cookie_key;
+    users_path = ctx.users_path;
+    workspaces_path = ctx.workspaces_path;
+
     g_storage_raid_audit_append = ctx.audit_append;
     g_users_path_for_raid = users_path;
-    const std::string& workspaces_path = ctx.workspaces_path;
-    pqnas::WorkspacesRegistry workspaces;
 
-    auto audit_append = [&](const pqnas::AuditEvent& ev) {
-        if (ctx.audit_append) ctx.audit_append(ev);
+    static auto audit_append = [](const pqnas::AuditEvent& ev) {
+        if (g_storage_raid_audit_append) {
+            g_storage_raid_audit_append(ev);
+        }
     };
 
+    if (!COOKIE_KEY || users_path.empty() || workspaces_path.empty()) {
+        throw std::runtime_error("StorageRaidRoutesContext missing required fields");
+    }
 
-// ----- GET /api/v4/storage/disks (admin-only) --------------------------------
+
 srv.Get("/api/v4/storage/disks", [&](const httplib::Request& req, httplib::Response& res) {
 pqnas::UsersRegistry users;
 
