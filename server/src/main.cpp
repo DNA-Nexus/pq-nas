@@ -100,6 +100,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
 #include "routes_admin_approvals_ui.h"
+#include "routes_admin_users_overview.h"
 #include "routes_admin_user_storage_jobs.h"
 #include "routes_admin_user_profile.h"
 #include "routes_user_avatars.h"
@@ -15886,70 +15887,35 @@ ws_external_session_deps.qr_svg_from_text =
 pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps);
 
 
-	srv.Get("/api/v4/admin/users", [&](const httplib::Request& req, httplib::Response& res) {
-    	std::string actor_fp;
-    	if (!require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
+	    // ---- Admin users overview routes ----
+    {
+        AdminUsersOverviewRoutesContext admin_users_overview_ctx;
+        admin_users_overview_ctx.users = &users;
+        admin_users_overview_ctx.users_path = users_path;
 
-	    if (!users.load(users_path)) {
-    	    reply_json(res, 500, json{
-        	    {"ok", false},
-            	{"error", "users_reload_failed"},
-	            {"message", "failed to reload users"}
-    	    }.dump());
-        	return;
-	    }
+        admin_users_overview_ctx.require_admin_auth =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
 
-    	res.set_header("Cache-Control", "no-store");
+        admin_users_overview_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
 
-    	json out;
-        out["ok"] = true;
-	    out["actor_fp"] = actor_fp;
-        out["users"] = json::array();
+        admin_users_overview_ctx.user_dir_for_fp =
+            [&](const std::string& fp) {
+                return user_dir_for_fp(users, fp);
+            };
 
-		for (auto& kv : users.snapshot()) {
-   			auto& u = kv.second;
+        admin_users_overview_ctx.dir_size_bytes_best_effort =
+            [](const std::filesystem::path& path) -> std::uint64_t {
+                return static_cast<std::uint64_t>(dir_size_bytes_best_effort(path));
+            };
 
-   			// storage usage (best-effort)
-			unsigned long long used_bytes = 0;
-			if (u.storage_state == "allocated") {
-    			const std::filesystem::path abs = user_dir_for_fp(users, u.fingerprint);
-    			used_bytes = dir_size_bytes_best_effort(abs);
-			}
+        register_admin_users_overview_routes(srv, admin_users_overview_ctx);
+    }
 
-		    out["users"].push_back({
-		        {"fingerprint", u.fingerprint},
-		        {"name", u.name},
-		        {"role", u.role},
-		        {"status", u.status},
-		        {"added_at", u.added_at},
-		        {"last_seen", u.last_seen},
-        		{"notes", u.notes},
-
-		        // profile
-		        {"group", u.group},
-		        {"email", u.email},
-		        {"address", u.address},
-				{"avatar_url", u.avatar_url},
-
-        		// storage metadata
-		        {"storage_state", u.storage_state},
-    		    {"quota_bytes", u.quota_bytes},
-        		{"root_rel", u.root_rel},
-		        {"storage_set_at", u.storage_set_at},
-    		    {"storage_set_by", u.storage_set_by},
-
-		        // raw metadata: empty string means logical default pool
-    		    {"storage_pool_id", u.storage_pool_id},
-
-	        	// UI-friendly resolved pool id
-    	    	{"pool_id", u.storage_pool_id.empty() ? "default" : u.storage_pool_id},
-
-		        // NEW: storage usage
-    		    {"storage_used_bytes", used_bytes}
-				    });
-				}
-	        reply_json(res, 200, out.dump());
-    });
 
     // ---- Admin approvals UI routes ----
     {
