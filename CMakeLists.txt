@@ -214,6 +214,8 @@ add_executable(pqnas_server
         server/src/routes_admin_audit_read.h
         server/src/routes_admin_audit_rotate.cpp
         server/src/routes_admin_audit_rotate.h
+        server/src/routes_admin_audit_retention.cpp
+        server/src/routes_admin_audit_retention.h
         server/src/routes_snapshots_browse.cpp
         server/src/routes_snapshots_browse.h
         server/src/routes_snapshots_create.cpp

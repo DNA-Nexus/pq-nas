@@ -113,6 +113,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_core_ui_shell.h"
 #include "routes_admin_audit_read.h"
 #include "routes_admin_audit_rotate.h"
+#include "routes_admin_audit_retention.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
@@ -11387,6 +11388,139 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         register_admin_audit_rotate_routes(srv, admin_audit_rotate_ctx);
     }
 
+    // ---- Admin audit retention routes ----
+    {
+        AdminAuditRetentionRoutesContext admin_audit_retention_ctx;
+
+        admin_audit_retention_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users);
+            };
+
+        admin_audit_retention_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+
+        admin_audit_retention_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        admin_audit_retention_ctx.preview_prune =
+            [&](const nlohmann::json& in, nlohmann::json* out, int* status) -> bool {
+                if (!out || !status) return false;
+
+                nlohmann::json pol = nlohmann::json::object();
+                if (in.contains("audit_retention")) {
+                    pol = in["audit_retention"];
+                }
+
+                pol = normalize_retention_or_default_local(pol);
+
+                const auto archives = list_rotated_archives_local(audit_jsonl_path);
+                *out = build_preview_local(archives, pol);
+                *status = 200;
+                return true;
+            };
+
+        admin_audit_retention_ctx.prune =
+            [&](const httplib::Request& req, nlohmann::json* out, int* status) -> bool {
+                if (!out || !status) return false;
+
+                nlohmann::json persisted = nlohmann::json::object();
+                try {
+                    std::ifstream f(admin_settings_path);
+                    if (f.good()) f >> persisted;
+                    if (!persisted.is_object()) persisted = nlohmann::json::object();
+                } catch (...) {
+                    persisted = nlohmann::json::object();
+                }
+
+                nlohmann::json pol = nlohmann::json::object();
+                if (persisted.contains("audit_retention")) {
+                    pol = persisted["audit_retention"];
+                }
+                pol = normalize_retention_or_default_local(pol);
+
+                const auto archives = list_rotated_archives_local(audit_jsonl_path);
+                const auto preview = build_preview_local(archives, pol);
+
+                long long deleted_bytes = 0;
+                int deleted_files = 0;
+
+                try {
+                    const auto cands = preview.value("candidates", nlohmann::json::array());
+
+                    for (const auto& cj : cands) {
+                        const std::string name = cj.value("name", "");
+                        if (name.empty()) continue;
+
+                        auto it = std::find_if(
+                            archives.begin(),
+                            archives.end(),
+                            [&](const ArchivePair& a) {
+                                return a.name == name;
+                            }
+                        );
+
+                        if (it == archives.end()) continue;
+
+                        std::error_code ec;
+
+                        if (!it->jsonl_path.empty()) {
+                            if (std::filesystem::remove(it->jsonl_path, ec)) deleted_files++;
+                            ec.clear();
+                        }
+
+                        if (!it->state_path.empty()) {
+                            if (std::filesystem::remove(it->state_path, ec)) deleted_files++;
+                            ec.clear();
+                        }
+
+                        deleted_bytes += std::max(0LL, it->size_bytes);
+                    }
+
+                    try {
+                        pqnas::AuditEvent ev;
+                        ev.event = "admin.audit_pruned";
+                        ev.outcome = "ok";
+                        ev.f["deleted_files"] = deleted_files;
+                        ev.f["deleted_bytes"] = deleted_bytes;
+                        ev.f["policy"] = pol;
+                        ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+
+                        auto it_ua = req.headers.find("User-Agent");
+                        ev.f["ua"] = pqnas::shorten(
+                            it_ua == req.headers.end() ? "" : it_ua->second
+                        );
+
+                        audit_append(ev);
+                    } catch (...) {
+                    }
+
+                    *out = nlohmann::json{
+                        {"ok", true},
+                        {"deleted_files", deleted_files},
+                        {"deleted_bytes", deleted_bytes}
+                    };
+                    *status = 200;
+                    return true;
+
+                } catch (...) {
+                    *out = nlohmann::json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "prune failed"}
+                    };
+                    *status = 500;
+                    return true;
+                }
+            };
+
+        register_admin_audit_retention_routes(srv, admin_audit_retention_ctx);
+    }
+
 
 
 
@@ -11486,107 +11620,9 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
 
 
 
-// ---- Admin: audit retention preview (dry-run) ----
-srv.Post("/api/v4/admin/audit/preview-prune", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
-        if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
-    nlohmann::json in = nlohmann::json::object();
-    if (!req.body.empty()) {
-        in = nlohmann::json::parse(req.body, nullptr, false);
-        if (in.is_discarded() || !in.is_object()) in = nlohmann::json::object();
-    }
 
-    // UI sends: { "audit_retention": { ... } }
-    nlohmann::json pol = nlohmann::json::object();
-    if (in.contains("audit_retention")) pol = in["audit_retention"];
-    pol = normalize_retention_or_default_local(pol);
 
-    const auto archives = list_rotated_archives_local(audit_jsonl_path);
-    const auto out = build_preview_local(archives, pol);
-
-    reply_json(res, 200, out.dump());
-});
-
-// ---- Admin: audit retention prune (delete candidates based on SAVED policy) ----
-srv.Post("/api/v4/admin/audit/prune", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
-        if (!require_same_origin_for_cookie_mutation(req, res)) return;
-
-    // Load saved retention policy from admin_settings_path
-    nlohmann::json persisted = nlohmann::json::object();
-    try {
-        std::ifstream f(admin_settings_path);
-        if (f.good()) f >> persisted;
-        if (!persisted.is_object()) persisted = nlohmann::json::object();
-    } catch (...) {
-        persisted = nlohmann::json::object();
-    }
-
-    nlohmann::json pol = nlohmann::json::object();
-    if (persisted.contains("audit_retention")) pol = persisted["audit_retention"];
-    pol = normalize_retention_or_default_local(pol);
-
-    const auto archives = list_rotated_archives_local(audit_jsonl_path);
-    const auto preview = build_preview_local(archives, pol);
-
-    long long deleted_bytes = 0;
-    int deleted_files = 0;
-
-    try {
-        const auto cands = preview.value("candidates", nlohmann::json::array());
-
-        // For each candidate archive name, delete both jsonl + state (if present)
-        for (const auto& cj : cands) {
-            const std::string name = cj.value("name", "");
-            if (name.empty()) continue;
-
-            auto it = std::find_if(archives.begin(), archives.end(),
-                                   [&](const ArchivePair& a) { return a.name == name; });
-            if (it == archives.end()) continue;
-
-            std::error_code ec;
-
-            if (!it->jsonl_path.empty()) {
-                if (std::filesystem::remove(it->jsonl_path, ec)) deleted_files++;
-                ec.clear();
-            }
-            if (!it->state_path.empty()) {
-                if (std::filesystem::remove(it->state_path, ec)) deleted_files++;
-                ec.clear();
-            }
-
-            deleted_bytes += std::max(0LL, it->size_bytes);
-        }
-
-        // Audit (best-effort)
-        try {
-            pqnas::AuditEvent ev;
-            ev.event = "admin.audit_pruned";
-            ev.outcome = "ok";
-            ev.f["deleted_files"] = deleted_files;
-            ev.f["deleted_bytes"] = deleted_bytes;
-            ev.f["policy"] = pol;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            auto it_ua = req.headers.find("User-Agent");
-            ev.f["ua"] = pqnas::shorten(it_ua == req.headers.end() ? "" : it_ua->second);
-            audit_append(ev);
-        } catch (...) {}
-
-        reply_json(res, 200, nlohmann::json{
-            {"ok", true},
-            {"deleted_files", deleted_files},
-            {"deleted_bytes", deleted_bytes},
-        }.dump());
-
-    } catch (...) {
-        reply_json(res, 500, nlohmann::json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "prune failed"},
-        }.dump());
-    }
-});
 
 
 
