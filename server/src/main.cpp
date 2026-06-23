@@ -11259,6 +11259,8 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     {
         AppsPublicRoutesContext apps_public_ctx;
         apps_public_ctx.apps_installed_dir = APPS_INSTALLED_DIR;
+        apps_public_ctx.apps_bundled_dir = APPS_BUNDLED_DIR;
+        apps_public_ctx.server_version = PQNAS_VERSION;
 
         apps_public_ctx.load_app_launch_policy_json =
             [&]() {
@@ -11277,6 +11279,16 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
                 httplib::Response& res,
                 bool no_store) {
                 serve_file_under_root(root, rel, content_type, res, no_store);
+            };
+
+        apps_public_ctx.read_file_to_string =
+            [](const std::string& path, std::string& body) {
+                return read_file_to_string(path, body);
+            };
+
+        apps_public_ctx.rel_to_repo =
+            [](const std::string& path) {
+                return rel_to_repo(path);
             };
 
         register_apps_public_routes(srv, apps_public_ctx);
@@ -11334,194 +11346,7 @@ srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res
     });
 
 
-    const std::string PQNAS_SERVER_VERSION = PQNAS_VERSION;
 
-    auto app_version_component = [](const std::string& v, std::size_t& pos) -> long long {
-        while (pos < v.size() && v[pos] == '.') ++pos;
-
-        long long n = 0;
-        bool any = false;
-
-        while (pos < v.size() && v[pos] >= '0' && v[pos] <= '9') {
-            any = true;
-            n = (n * 10) + (v[pos] - '0');
-            ++pos;
-        }
-
-        while (pos < v.size() && v[pos] != '.') ++pos;
-        if (pos < v.size() && v[pos] == '.') ++pos;
-
-        return any ? n : 0;
-    };
-
-    auto compare_app_versions = [&](const std::string& a, const std::string& b) -> int {
-        std::size_t ia = 0;
-        std::size_t ib = 0;
-
-        for (int i = 0; i < 4; ++i) {
-            const long long av = app_version_component(a, ia);
-            const long long bv = app_version_component(b, ib);
-
-            if (av < bv) return -1;
-            if (av > bv) return 1;
-        }
-
-        return 0;
-    };
-
-    auto app_manifest_min_server_version = [](const json& mani) -> std::string {
-        try {
-            if (mani.is_object() &&
-                mani.contains("min_server_version") &&
-                mani["min_server_version"].is_string()) {
-                return mani["min_server_version"].get<std::string>();
-            }
-        } catch (...) {
-        }
-
-        return "";
-    };
-
-    auto app_server_version_ok = [&](const std::string& minServerVersion) -> bool {
-        if (minServerVersion.empty()) return true;
-        return compare_app_versions(PQNAS_SERVER_VERSION, minServerVersion) >= 0;
-    };
-
-    auto app_compatibility_message = [&](const std::string& minServerVersion) -> std::string {
-        if (minServerVersion.empty()) return "";
-        return std::string("Requires DNA-Nexus Server ") +
-               minServerVersion +
-               " or newer. Current server is " +
-               PQNAS_SERVER_VERSION +
-               ".";
-    };
-
-    auto apply_app_compatibility_fields = [&](json& item, const json& mani) {
-        const std::string minServerVersion = app_manifest_min_server_version(mani);
-        const bool ok = app_server_version_ok(minServerVersion);
-
-        item["server_version"] = PQNAS_SERVER_VERSION;
-        item["min_server_version"] = minServerVersion;
-        item["compatibility_ok"] = ok;
-        item["compatibility_state"] = ok ? "ok" : "server_too_old";
-        item["compatibility_message"] = ok ? "" : app_compatibility_message(minServerVersion);
-    };
-
-    srv.Get("/api/v4/apps", [&](const httplib::Request& req, httplib::Response& res) {
-    namespace fs = std::filesystem;
-    json out;
-    out["ok"] = true;
-    out["bundled"] = json::array();
-    out["installed"] = json::array();
-    out["launch_policy_by_app_id"] = json::object();
-    const bool isAdmin = is_admin_cookie_users(req, COOKIE_KEY, &users);
-
-    json appLaunchPolicy = load_app_launch_policy_json();
-    json appLaunchPolicyById = json::object();
-    if (appLaunchPolicy.contains("by_app_id") && appLaunchPolicy["by_app_id"].is_object()) {
-        appLaunchPolicyById = appLaunchPolicy["by_app_id"];
-    }
-
-    auto app_admin_only = [&](const std::string& appId) -> bool {
-        try {
-            if (!appLaunchPolicyById.contains(appId) || !appLaunchPolicyById[appId].is_object()) return false;
-            const json& entry = appLaunchPolicyById[appId];
-            return entry.contains("admin_only") && entry["admin_only"].is_boolean()
-                ? entry["admin_only"].get<bool>()
-                : false;
-        } catch (...) {
-            return false;
-        }
-    };
-
-    // Bundled: apps/bundled/<id>/*.zip
-        // Bundled: apps/bundled/<id>/*.zip (admin-only visibility)
-        if (isAdmin) {
-            std::error_code ec;
-            fs::path bundled(APPS_BUNDLED_DIR);
-            if (fs::exists(bundled, ec) && fs::is_directory(bundled, ec)) {
-                for (auto& de : fs::directory_iterator(bundled, ec)) {
-                    if (ec) break;
-                    if (!de.is_directory(ec) || ec) continue;
-
-                    const std::string appId = de.path().filename().string();
-                    for (auto& f : fs::directory_iterator(de.path(), ec)) {
-                        if (ec) break;
-                        if (!f.is_regular_file(ec) || ec) continue;
-                        if (f.path().extension() != ".zip") continue;
-
-                        json item;
-                        item["id"] = appId;
-                        item["zip"] = rel_to_repo(f.path().string());
-                        out["bundled"].push_back(item);
-                    }
-                }
-            }
-        }
-
-
-        // Bundled apps: APPS_BUNDLED_DIR/<id>/<ver>/manifest.json
-        // Installed apps: APPS_INSTALLED_DIR/<id>/<ver>/manifest.json
-    {
-        std::error_code ec;
-        fs::path installed(APPS_INSTALLED_DIR);
-        if (fs::exists(installed, ec) && fs::is_directory(installed, ec)) {
-            for (auto& deApp : fs::directory_iterator(installed, ec)) {
-                if (ec) break;
-                if (!deApp.is_directory(ec) || ec) continue;
-
-                const std::string appId = deApp.path().filename().string();
-
-                if (app_admin_only(appId) && !isAdmin) {
-                    continue;
-                }
-
-                for (auto& deVer : fs::directory_iterator(deApp.path(), ec)) {
-                    if (ec) break;
-                    if (!deVer.is_directory(ec) || ec) continue;
-
-                    const std::string ver = deVer.path().filename().string();
-                    fs::path root = deVer.path();
-
-                    // detect entry (prefer manifest, else default)
-                    fs::path manifest = root / "manifest.json";
-                    fs::path defaultEntry = root / "www" / "index.html";
-
-                    if (!fs::exists(manifest, ec) && !fs::exists(defaultEntry, ec)) {
-                        continue; // not a valid install dir
-                    }
-
-                    const bool hasManifest = fs::exists(manifest, ec) && !ec;
-
-                    json mj = json::object();
-                    if (hasManifest) {
-                        std::string mb;
-                        if (read_file_to_string(manifest.string(), mb) && !mb.empty()) {
-                            try { mj = json::parse(mb); } catch (...) { mj = json::object(); }
-                        }
-                    }
-
-                    json item;
-                    item["id"] = appId;
-                    item["version"] = ver;
-                    item["root"] = rel_to_repo(root.string());
-                    item["has_manifest"] = hasManifest;
-                    apply_app_compatibility_fields(item, mj);
-                    out["installed"].push_back(item);
-                }
-            }
-        }
-    }
-        {
-        for (auto it = appLaunchPolicyById.begin(); it != appLaunchPolicyById.end(); ++it) {
-            if (isAdmin || !app_admin_only(it.key())) {
-                out["launch_policy_by_app_id"][it.key()] = it.value();
-            }
-        }
-    }
-    res.set_header("Cache-Control", "no-store");
-    res.set_content(out.dump(2), "application/json; charset=utf-8");
-});
 
 
 
@@ -32754,6 +32579,79 @@ srv.Put("/api/v4/files/put",
 
         register_user_avatar_routes(srv, user_avatar_ctx);
     }
+
+    const std::string PQNAS_SERVER_VERSION = PQNAS_VERSION;
+
+    auto app_version_component = [](const std::string& v, std::size_t& pos) -> long long {
+        while (pos < v.size() && v[pos] == '.') ++pos;
+
+        long long n = 0;
+        bool any = false;
+
+        while (pos < v.size() && v[pos] >= '0' && v[pos] <= '9') {
+            any = true;
+            n = (n * 10) + (v[pos] - '0');
+            ++pos;
+        }
+
+        while (pos < v.size() && v[pos] != '.') ++pos;
+        if (pos < v.size() && v[pos] == '.') ++pos;
+
+        return any ? n : 0;
+    };
+
+    auto compare_app_versions = [&](const std::string& a, const std::string& b) -> int {
+        std::size_t ia = 0;
+        std::size_t ib = 0;
+
+        for (int i = 0; i < 4; ++i) {
+            const long long av = app_version_component(a, ia);
+            const long long bv = app_version_component(b, ib);
+
+            if (av < bv) return -1;
+            if (av > bv) return 1;
+        }
+
+        return 0;
+    };
+
+    auto app_manifest_min_server_version = [](const json& mani) -> std::string {
+        try {
+            if (mani.is_object() &&
+                mani.contains("min_server_version") &&
+                mani["min_server_version"].is_string()) {
+                return mani["min_server_version"].get<std::string>();
+            }
+        } catch (...) {
+        }
+
+        return "";
+    };
+
+    auto app_server_version_ok = [&](const std::string& minServerVersion) -> bool {
+        if (minServerVersion.empty()) return true;
+        return compare_app_versions(PQNAS_SERVER_VERSION, minServerVersion) >= 0;
+    };
+
+    auto app_compatibility_message = [&](const std::string& minServerVersion) -> std::string {
+        if (minServerVersion.empty()) return "";
+        return std::string("Requires DNA-Nexus Server ") +
+               minServerVersion +
+               " or newer. Current server is " +
+               PQNAS_SERVER_VERSION +
+               ".";
+    };
+
+    auto apply_app_compatibility_fields = [&](json& item, const json& mani) {
+        const std::string minServerVersion = app_manifest_min_server_version(mani);
+        const bool ok = app_server_version_ok(minServerVersion);
+
+        item["server_version"] = PQNAS_SERVER_VERSION;
+        item["min_server_version"] = minServerVersion;
+        item["compatibility_ok"] = ok;
+        item["compatibility_state"] = ok ? "ok" : "server_too_old";
+        item["compatibility_message"] = ok ? "" : app_compatibility_message(minServerVersion);
+    };
 
     // ---- Apps management routes ----
     {
