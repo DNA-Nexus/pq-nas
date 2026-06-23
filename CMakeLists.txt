@@ -182,6 +182,8 @@ add_executable(pqnas_server
         server/src/main.cpp
         server/src/routes_storage_raid.cpp
         server/src/routes_storage_raid.h
+        server/src/routes_admin_storage_tiering.cpp
+        server/src/routes_admin_storage_tiering.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 

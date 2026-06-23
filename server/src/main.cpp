@@ -97,6 +97,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "runtime_paths.h"
 #include "policy.h"
 #include "routes_storage_raid.h"
+#include "routes_admin_storage_tiering.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -35889,8 +35890,31 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
 
 
     // ---- Admin storage tiering routes ----
-    // Transitional split: route/helper block lives in routes_admin_storage_tiering.inc.
-#include "routes_admin_storage_tiering.inc"
+    {
+        AdminStorageTieringRoutesContext admin_storage_tiering_ctx;
+        admin_storage_tiering_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        admin_storage_tiering_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        admin_storage_tiering_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        admin_storage_tiering_ctx.migrate_one_landing_file =
+            [&](const std::string& fp, const std::string& rel_norm, std::string* err) {
+                return migrate_one_landing_file(users, fp, rel_norm, err);
+            };
+        admin_storage_tiering_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+
+        register_admin_storage_tiering_routes(srv, admin_storage_tiering_ctx);
+    }
 
     srv.Post("/api/v4/gallery/export_sel_zip", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
