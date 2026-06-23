@@ -109,6 +109,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_user_profile.h"
 #include "routes_user_avatars.h"
 #include "routes_apps_manage.h"
+#include "routes_apps_public.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
@@ -11254,58 +11255,33 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     reply_json(res, 200, out.dump());
 });
 
-    // Serve installed apps (system scope) at: /apps/<appId>/<version>/...
-    // Example: /apps/filemgr/1.0.0/www/index.html
-    srv.Get(R"(/apps/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(.*))",
-            [&](const httplib::Request& req, httplib::Response& res) {
-        const std::string appId = req.matches[1];
-        const std::string ver   = req.matches[2];
-        const std::string tail  = req.matches[3];
+    // ---- Public installed app asset routes ----
+    {
+        AppsPublicRoutesContext apps_public_ctx;
+        apps_public_ctx.apps_installed_dir = APPS_INSTALLED_DIR;
 
-        // Root dir for this app version
-        bool adminOnlyApp = false;
-        try {
-            json pol = load_app_launch_policy_json();
-            if (pol.contains("by_app_id") &&
-                pol["by_app_id"].is_object() &&
-                pol["by_app_id"].contains(appId) &&
-                pol["by_app_id"][appId].is_object()) {
-                const json& entry = pol["by_app_id"][appId];
-                adminOnlyApp =
-                    entry.contains("admin_only") &&
-                    entry["admin_only"].is_boolean() &&
-                    entry["admin_only"].get<bool>();
-            }
-        } catch (...) {
-            adminOnlyApp = false;
-        }
+        apps_public_ctx.load_app_launch_policy_json =
+            [&]() {
+                return load_app_launch_policy_json();
+            };
 
-        if (adminOnlyApp && !is_admin_cookie_users(req, COOKIE_KEY, &users)) {
-            res.status = 403;
-            res.set_header("Cache-Control", "no-store");
-            res.set_content(R"({"ok":false,"error":"forbidden","message":"Admin-only app"})",
-                            "application/json; charset=utf-8");
-            return;
-        }
+        apps_public_ctx.is_admin_cookie =
+            [&](const httplib::Request& req) {
+                return is_admin_cookie_users(req, COOKIE_KEY, &users);
+            };
 
-        const std::string root =
-            (std::filesystem::path(APPS_INSTALLED_DIR) / appId / ver).string();
+        apps_public_ctx.serve_file_under_root =
+            [&](const std::string& root,
+                const std::string& rel,
+                const std::string& content_type,
+                httplib::Response& res,
+                bool no_store) {
+                serve_file_under_root(root, rel, content_type, res, no_store);
+            };
 
-        // Basic content-type mapping (extend later)
-        auto guess_ct = [&](const std::string& p) -> std::string {
-            if (p.size() >= 5 && p.substr(p.size()-5) == ".html") return "text/html; charset=utf-8";
-            if (p.size() >= 3 && p.substr(p.size()-3) == ".js")   return "application/javascript; charset=utf-8";
-            if (p.size() >= 4 && p.substr(p.size()-4) == ".css")  return "text/css; charset=utf-8";
-            if (p.size() >= 4 && p.substr(p.size()-4) == ".png")  return "image/png";
-            if (p.size() >= 4 && p.substr(p.size()-4) == ".svg")  return "image/svg+xml";
-            if (p.size() >= 4 && p.substr(p.size()-4) == ".jpg")  return "image/jpeg";
-            if (p.size() >= 5 && p.substr(p.size()-5) == ".jpeg") return "image/jpeg";
-            if (p.size() >= 4 && p.substr(p.size()-4) == ".webp") return "image/webp";
-            return "application/octet-stream";
-        };
+        register_apps_public_routes(srv, apps_public_ctx);
+    }
 
-        serve_file_under_root(root, tail, guess_ct(tail), res, /*no_store=*/true);
-    });
 
 srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res) {
     std::string body;
