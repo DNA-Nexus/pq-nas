@@ -35687,6 +35687,59 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
             [&](const std::string& fp, const std::string& rel_norm, std::string* err) {
                 return migrate_one_landing_file(users, fp, rel_norm, err);
             };
+        admin_storage_tiering_ctx.tiering_status_json =
+            [&](json* out_json, std::string* err) -> bool {
+                if (out_json) *out_json = json::object();
+                if (err) err->clear();
+
+                auto* idx = pqnas::get_file_location_index();
+                if (!idx) {
+                    if (err) *err = "file location index not initialized";
+                    return false;
+                }
+
+                pqnas::FileLocationTierSummary summary;
+                std::string serr;
+                if (!idx->get_tier_summary(&summary, &serr)) {
+                    if (err) *err = std::string("failed to read tiering status: ") + pqnas::shorten(serr, 180);
+                    return false;
+                }
+
+                const UploadTieringConfig upload_cfg = upload_tiering_config();
+                const TieringWorkerConfig worker_cfg = tiering_worker_config();
+
+                if (out_json) {
+                    *out_json = json{
+                        {"ok", true},
+                        {"tiering_enabled", upload_cfg.enabled},
+                        {"landing_pool_id", upload_cfg.landing_pool_id},
+
+                        {"worker", {
+                            {"enabled", worker_cfg.enabled},
+                            {"interval_sec", worker_cfg.interval_sec},
+                            {"min_age_sec", worker_cfg.min_age_sec},
+                            {"max_candidates_per_pass", worker_cfg.max_candidates_per_pass}
+                        }},
+
+                        {"counts", {
+                            {"landing_files", summary.landing_files},
+                            {"migrating_files", summary.migrating_files},
+                            {"capacity_files", summary.capacity_files},
+                            {"total_files", summary.total_files}
+                        }},
+
+                        {"bytes", {
+                            {"landing_bytes", summary.landing_bytes},
+                            {"migrating_bytes", summary.migrating_bytes},
+                            {"capacity_bytes", summary.capacity_bytes},
+                            {"total_bytes", summary.total_bytes}
+                        }}
+                    };
+                }
+
+                return true;
+            };
+
         admin_storage_tiering_ctx.audit_append =
             [&](const pqnas::AuditEvent& ev) {
                 audit_append(ev);
@@ -36652,62 +36705,7 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
     res.body = std::move(zip_data);
 });
 
-srv.Get("/api/v4/admin/storage/tiering/status", [&](const httplib::Request& req, httplib::Response& res) {
-    std::string actor_fp;
-    if (!require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
 
-    auto* idx = pqnas::get_file_location_index();
-    if (!idx) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "file location index not initialized"}
-        }.dump());
-        return;
-    }
-
-    pqnas::FileLocationTierSummary summary;
-    std::string serr;
-    if (!idx->get_tier_summary(&summary, &serr)) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "failed to read tiering status"},
-            {"detail", pqnas::shorten(serr, 180)}
-        }.dump());
-        return;
-    }
-
-    const UploadTieringConfig upload_cfg = upload_tiering_config();
-    const TieringWorkerConfig worker_cfg = tiering_worker_config();
-
-    reply_json(res, 200, json{
-        {"ok", true},
-        {"tiering_enabled", upload_cfg.enabled},
-        {"landing_pool_id", upload_cfg.landing_pool_id},
-
-        {"worker", {
-            {"enabled", worker_cfg.enabled},
-            {"interval_sec", worker_cfg.interval_sec},
-            {"min_age_sec", worker_cfg.min_age_sec},
-            {"max_candidates_per_pass", worker_cfg.max_candidates_per_pass}
-        }},
-
-        {"counts", {
-            {"landing_files", summary.landing_files},
-            {"migrating_files", summary.migrating_files},
-            {"capacity_files", summary.capacity_files},
-            {"total_files", summary.total_files}
-        }},
-
-        {"bytes", {
-            {"landing_bytes", summary.landing_bytes},
-            {"migrating_bytes", summary.migrating_bytes},
-            {"capacity_bytes", summary.capacity_bytes},
-            {"total_bytes", summary.total_bytes}
-        }}
-    }.dump());
-});
 
     auto public_album_html_escape = [](const std::string& in) -> std::string {
     std::string out;

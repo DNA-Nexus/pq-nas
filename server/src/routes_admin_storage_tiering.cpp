@@ -128,4 +128,45 @@ void register_admin_storage_tiering_routes(
             });
         }
     );
+    srv.Get("/api/v4/admin/storage/tiering/status",
+        [ctx](const httplib::Request& req, httplib::Response& res) {
+            auto reply = [&](int status, const json& body) {
+                if (ctx.reply_json) {
+                    ctx.reply_json(res, status, body.dump());
+                } else {
+                    res.status = status;
+                    res.set_content(body.dump(), "application/json; charset=utf-8");
+                }
+            };
+
+            if (!ctx.require_admin ||
+                !ctx.reply_json ||
+                !ctx.tiering_status_json) {
+                reply(500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "admin storage tiering status route context incomplete"}
+                });
+                return;
+            }
+
+            std::string actor_fp;
+            if (!ctx.require_admin(req, res, &actor_fp)) return;
+
+            json out;
+            std::string err;
+            if (!ctx.tiering_status_json(&out, &err)) {
+                reply(500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", err.empty() ? "failed to read tiering status" : err}
+                });
+                return;
+            }
+
+            reply(200, out);
+        }
+    );
+
+
 }
