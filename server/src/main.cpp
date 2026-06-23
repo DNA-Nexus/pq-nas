@@ -6147,17 +6147,10 @@ static std::string raid_exec_record_path(const std::string& plan_id);
 // - actual phase execution added in next patch
 // ============================================================================
 
-static std::string user_mig_record_path(const std::string& job_id);
-static bool user_mig_record_write_atomic(const std::string& job_id, const json& rec);
-static bool user_mig_record_read(const std::string& job_id, json* out, std::string* err);
 static void user_mig_finalize_record(const std::string& job_id, json* rec, bool ok, const std::string& err_msg);
 static void user_mig_record_set_phase(json* rec, const std::string& phase, int percent, const std::string& message);
-static std::string user_cleanup_record_path(const std::string& job_id);
-static bool user_cleanup_record_write_atomic(const std::string& job_id, const json& rec);
-static bool user_cleanup_record_read(const std::string& job_id, json* out_rec, std::string* err);
 static void user_cleanup_finalize_record(const std::string& job_id, json* rec, bool ok, const std::string& err_msg);
 static void user_cleanup_record_set_phase(json* rec, const std::string& phase, int percent, const std::string& message);
-static void user_storage_cleanup_worker_main(std::string users_path);
 
 struct UserStorageMigrationJob {
     std::string job_id;
