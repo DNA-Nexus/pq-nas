@@ -1,39 +1,67 @@
 /*
-PQ-NAS v4 QR Authentication Server
-=================================
+DNA-Nexus Server Main
+==============================
 
-This server implements a device-mediated login flow:
-- Browser requests a v4 "session token" (st) that is Ed25519-signed by this server.
-- Mobile app approves by producing an ML-DSA-87 (Dilithium-class) signature over a canonical payload
-  that binds: (st_hash, fingerprint/pubkey, origin, rp_id, challenge, timestamps).
-- Server verifies all bindings and mints a short-lived browser session cookie.
+This file is the main server entry point and legacy integration host for
+DNA-Nexus. It wires together process-wide configuration, core helper functions,
+authentication flows, audit logging, storage helpers, background workers, and
+route registration.
 
-Security goals (what v4 is designed to guarantee)
--------------------------------------------------
-1) No shared secrets in the browser: the browser proves approval via a one-time consume + cookie.
-2) Approval is cryptographic: PQ signature (ML-DSA-87) proves possession of the user's private key.
-3) Strong binding:
-   - Approval is bound to the exact session token via SHA-256(st) = st_hash.
-   - Identity is bound via fingerprint <-> public key (SHA3-512(pubkey) hex).
-   - Login is bound to origin + rp_id to prevent cross-site token reuse.
-4) Replay resistance:
-   - session token (st) has expiry and is server-signed (Ed25519).
-   - approval is one-time consumable (consume endpoint) and/or st/checks enforce freshness.
-5) Auditable: every security-relevant decision is logged to a hash-chained JSONL log.
+The file is being gradually split into smaller route/helper modules. Large
+transitional route blocks may live in routes_*.inc files and are included from
+inside main() so they can still access the existing local server context while
+the refactor continues.
 
-Non-goals / limitations (explicit)
-----------------------------------
-- This does not hide metadata from Cloudflare Tunnel / hosting infrastructure.
-- This does not replace WebAuthn; it provides a QR mediated flow with different UX and deployment tradeoffs.
-- If allowlist.json is compromised, authorization policy can be bypassed even though crypto checks still pass.
+## Major responsibilities
 
-Code responsibilities (separation of concerns)
-----------------------------------------------
-- Auth: cryptographic verification and cookie minting.
-- Policy: allowlist roles (user/admin) and endpoint authorization checks.
-- Audit: append-only hash-chained events describing what happened (not why the user intended it).
+* Server startup: environment/config loading, paths, indexes, stores, and workers.
+* Authentication: v4/v5 session, approval, cookie, and authorization helpers.
+* Policy: user/admin role checks and endpoint authorization helpers.
+* Audit: append-only hash-chained JSONL logging for security-sensitive actions.
+* Storage: pool, disk, btrfs, RAID, quota, migration, cleanup, and tiering helpers.
+* Routes: registration of API/static/admin/file/share/gallery/app routes.
 
-All verification is fail-closed: any parse/verify/binding mismatch returns an error and logs the failure.
+## v4 QR authentication model
+
+The v4 QR flow is device-mediated:
+
+* Browser requests a v4 session token (st) signed by this server.
+* Mobile app approves by producing an ML-DSA-87 signature over a canonical payload
+  binding the session token hash, fingerprint/public key, origin, relying party ID,
+  challenge, and timestamps.
+* Server verifies the bindings and mints a short-lived browser session cookie.
+
+## Security goals for the v4 QR flow
+
+1. No shared secrets in the browser: browser login completes via one-time approval
+   and a short-lived session cookie.
+2. Cryptographic approval: ML-DSA-87 proves possession of the user's private key.
+3. Strong binding:
+
+   * Approval is bound to the exact session token via SHA-256(st) = st_hash.
+   * Identity is bound via fingerprint <-> public key.
+   * Login is bound to origin / relying-party context to reduce token reuse risk.
+4. Replay resistance:
+
+   * Session tokens expire.
+   * Approval/consume paths enforce freshness and one-time use where applicable.
+5. Auditability:
+
+   * Security-sensitive decisions and operations should be written to the audit log.
+
+## Explicit limitations
+
+* This does not hide metadata from Cloudflare Tunnel, reverse proxies, or hosting
+  infrastructure.
+* This does not replace WebAuthn; it provides a QR-mediated login flow with a
+  different UX and deployment model.
+* If local authorization policy files or user state are compromised, authorization
+  may be bypassed even when cryptographic checks still work.
+* This file is not yet fully separated by responsibility; ongoing refactoring should
+  continue moving coherent route/helper groups into dedicated modules.
+
+Verification should fail closed: parse, signature, binding, freshness, or policy
+failures must return an error and should emit an audit event when security-relevant.
 */
 
 #include "archive_zip_manifest.h"
