@@ -101,6 +101,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_user_lifecycle.h"
 #include "routes_admin_user_storage_jobs.h"
 #include "routes_admin_user_profile.h"
+#include "routes_user_avatars.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -32938,8 +32939,47 @@ srv.Put("/api/v4/files/put",
     }
 
     // ---- User/avatar routes ----
-    // Transitional split: avatar route/helper block lives in routes_admin_user_profile.inc.
-#include "routes_admin_user_profile.inc"
+    {
+        UserAvatarRoutesContext user_avatar_ctx;
+        user_avatar_ctx.users = &users;
+        user_avatar_ctx.workspaces = &workspaces;
+        user_avatar_ctx.users_path = users_path;
+        user_avatar_ctx.workspaces_path = workspaces_path;
+        user_avatar_ctx.require_admin_cookie =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        user_avatar_ctx.require_user_cookie =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp, std::string* actor_role) {
+                return require_user_cookie_users_actor(req, res, COOKIE_KEY, &users, actor_fp, actor_role);
+            };
+        user_avatar_ctx.require_user_auth =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp, std::string* actor_role) {
+                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, actor_fp, actor_role);
+            };
+        user_avatar_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        user_avatar_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        user_avatar_ctx.b64std_decode_to_bytes =
+            [&](const std::string& b64, std::string& out) {
+                return b64std_decode_to_bytes(b64, out);
+            };
+        user_avatar_ctx.is_valid_fingerprint_hex =
+            [&](const std::string& fp) {
+                return is_valid_fingerprint_hex(fp);
+            };
+        user_avatar_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+
+        register_user_avatar_routes(srv, user_avatar_ctx);
+    }
 
 srv.Post("/api/v4/user/profile/avatar_remove", [&](const httplib::Request& req, httplib::Response& res) {
     std::string actor_fp, actor_role;
