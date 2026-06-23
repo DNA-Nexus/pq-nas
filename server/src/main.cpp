@@ -112,6 +112,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_apps_public.h"
 #include "routes_core_ui_shell.h"
 #include "routes_admin_audit_read.h"
+#include "routes_admin_audit_rotate.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
@@ -11354,6 +11355,38 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         register_admin_audit_read_routes(srv, admin_audit_read_ctx);
     }
 
+    // ---- Admin audit rotate route ----
+    {
+        AdminAuditRotateRoutesContext admin_audit_rotate_ctx;
+
+        admin_audit_rotate_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users);
+            };
+
+        admin_audit_rotate_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+
+        admin_audit_rotate_ctx.rotate_audit =
+            [&](nlohmann::json* out) -> bool {
+                pqnas::AuditLog::RotateOptions opt;
+                pqnas::AuditLog::RotateResult rr;
+
+                const bool ok = audit.rotate(opt, &rr);
+                if (!ok) return false;
+
+                (*out)["ok"] = true;
+                (*out)["rotated_jsonl_path"] = rr.rotated_jsonl_path;
+                (*out)["rotated_state_path"] = rr.rotated_state_path;
+                (*out)["chain_start_prev_hash"] = rr.chain_start_prev_hash_hex;
+                return true;
+            };
+
+        register_admin_audit_rotate_routes(srv, admin_audit_rotate_ctx);
+    }
+
 
 
 
@@ -11451,36 +11484,7 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         res.body = body;
     });
 
-    // ---- Admin: rotate audit log ----
-    srv.Post("/api/v4/admin/rotate-audit", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) {
-            return;
-        }
-        if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
-        pqnas::AuditLog::RotateOptions opt;
-        pqnas::AuditLog::RotateResult rr;
-
-        const bool ok = audit.rotate(opt, &rr);
-
-		nlohmann::json j;
-
-		if (!ok) {
-    		j["ok"] = false;
-    		j["error"] = "rotate_failed";
-    		res.status = 500;
-    		res.set_content(j.dump(2), "application/json; charset=utf-8");
-    		return;
-		}
-
-		j["ok"] = true;
-		j["rotated_jsonl_path"] = rr.rotated_jsonl_path;
-		j["rotated_state_path"] = rr.rotated_state_path;
-		j["chain_start_prev_hash"] = rr.chain_start_prev_hash_hex;
-
-		res.set_content(j.dump(2), "application/json; charset=utf-8");
-
-    });
 
 // ---- Admin: audit retention preview (dry-run) ----
 srv.Post("/api/v4/admin/audit/preview-prune", [&](const httplib::Request& req, httplib::Response& res) {
