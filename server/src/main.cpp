@@ -4202,7 +4202,6 @@ static std::string sh_quote(const std::string& s) {
 
 
 namespace pqnas { struct AuditEvent; }
-static void audit_append(const pqnas::AuditEvent& ev);
 
 #include <functional>
 
