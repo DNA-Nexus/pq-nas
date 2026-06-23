@@ -2759,20 +2759,6 @@ static std::string b64url_enc(const unsigned char* data, size_t len) {
     return out;
 }
 
-static bool b64url_decode_to_bytes(const std::string& in, std::string& out) {
-    out.clear();
-    out.resize(in.size() * 3 / 4 + 8);
-    size_t out_len = 0;
-    if (sodium_base642bin(reinterpret_cast<unsigned char*>(out.data()), out.size(),
-                          in.c_str(), in.size(),
-                          nullptr, &out_len, nullptr,
-                          sodium_base64_VARIANT_URLSAFE_NO_PADDING) != 0) {
-        return false;
-    }
-    out.resize(out_len);
-    return true;
-}
-
 static std::string url_encode(const std::string& s) {
     static const char *hex = "0123456789ABCDEF";
     std::string out;
@@ -3515,21 +3501,6 @@ static bool serve_file_under_root(const std::string& root_dir,
 
 
 
-[[maybe_unused]]
-static bool decode_st_payload_json(const std::string& st, std::string& payload_json_out) {
-    size_t a = st.find('.');
-    if (a == std::string::npos) return false;
-    size_t b = st.find('.', a + 1);
-    if (b == std::string::npos) return false;
-
-    std::string payload_b64 = st.substr(a + 1, b - (a + 1));
-    std::string payload_bytes;
-    if (!b64url_decode_to_bytes(payload_b64, payload_bytes)) return false;
-
-    payload_json_out.assign(payload_bytes.begin(), payload_bytes.end());
-    return true;
-}
-
 static std::string sign_token_v4_ed25519(const json& payload_obj, const unsigned char sk[64]) {
     std::string payload = payload_obj.dump(-1, ' ', false, nlohmann::json::error_handler_t::strict);
 
@@ -3706,7 +3677,6 @@ public:
     ZipStreamer(std::vector<ZipFileItem> items, ZipTotals totals)
         : items_(std::move(items)), totals_(totals) {}
 
-    std::uint64_t total_size() const { return totals_.total_bytes; }
 
     // Called by httplib content provider; must emit sequential bytes.
     bool emit(size_t offset, size_t max_len, httplib::DataSink& sink) {
@@ -4585,25 +4555,6 @@ static inline void rtrim_inplace(std::string& s) {
         if (c == '\n' || c == '\r' || c == ' ' || c == '\t') s.pop_back();
         else break;
     }
-}
-
-static inline std::string dev_path_from_lsblk_obj(const json& o) {
-    // Prefer lsblk's "path" if present (usually "/dev/...")
-    std::string p;
-    try {
-        if (o.contains("path") && !o["path"].is_null()) p = o["path"].get<std::string>();
-    } catch (...) {}
-
-    if (!p.empty()) return p;
-
-    // Fallback: build "/dev/<name>"
-    std::string name;
-    try {
-        if (o.contains("name") && !o["name"].is_null()) name = o["name"].get<std::string>();
-    } catch (...) {}
-
-    if (!name.empty()) return "/dev/" + name;
-    return "";
 }
 
 // Return string value from json, capped to max_len bytes (safe for firmware junk)
