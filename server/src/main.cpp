@@ -111,6 +111,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_apps_manage.h"
 #include "routes_apps_public.h"
 #include "routes_core_ui_shell.h"
+#include "routes_admin_audit_read.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
@@ -11323,26 +11324,40 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         register_core_ui_shell_routes(srv, core_ui_shell_ctx);
     }
 
+    // ---- Admin audit read/UI routes ----
+    {
+        AdminAuditReadRoutesContext admin_audit_read_ctx;
+        admin_audit_read_ctx.static_audit_js = STATIC_AUDIT_JS;
+        admin_audit_read_ctx.audit_jsonl_path = audit_jsonl_path;
+        admin_audit_read_ctx.audit_state_path = audit_state_path;
+
+        admin_audit_read_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users);
+            };
+
+        admin_audit_read_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        admin_audit_read_ctx.slurp_file =
+            [](const std::string& path) {
+                return slurp_file(path);
+            };
+
+        admin_audit_read_ctx.trim_nl =
+            [](const std::string& v) {
+                return trim_nl(v);
+            };
+
+        register_admin_audit_read_routes(srv, admin_audit_read_ctx);
+    }
 
 
 
 
-
-
-    srv.Get("/static/admin_audit.js", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_AUDIT_JS);
-        if (body.empty()) {
-            std::cerr << "[/static/admin_audit.js] ERROR: empty body. path=" << STATIC_AUDIT_JS << std::endl;
-            res.status = 404;
-            res.set_content("missing admin_audit.js", "text/plain");
-            return;
-        }
-        res.set_content(body, "application/javascript; charset=utf-8");
-    });
-
-
-
-
+    
 	srv.Get("/static/pqnas_v5.js", [&](const httplib::Request&, httplib::Response& res) {
     	std::string body;
     	if (!read_file_to_string(STATIC_V5_JS, body) || body.empty()) {
@@ -11414,66 +11429,9 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         audit_append
     });
 
-    srv.Get("/api/v4/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {
-       if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
 
-       int n = 200;
-       if (req.has_param("n")) {
-           try { n = std::stoi(req.get_param_value("n")); } catch (...) {}
-       }
-       n = std::max(1, std::min(1000, n));
 
-        std::ifstream f(audit_jsonl_path);
-        std::deque<json> q;
-        std::string line;
 
-        if (f.good()) {
-            while (std::getline(f, line)) {
-                if (line.empty()) continue;
-                try {
-                    q.push_back(json::parse(line));
-                    if ((int)q.size() > n) q.pop_front();
-                } catch (...) {}
-            }
-        }
-
-        json out;
-        out["ok"] = true;
-        out["lines"] = json::array();
-        for (auto& jj : q) out["lines"].push_back(jj);
-
-        reply_json(res, 200, out.dump());
-    });
-
-    srv.Get("/api/v4/audit/verify", [&](const httplib::Request& req, httplib::Response& res) {
-        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
-
-        std::string state = trim_nl(slurp_file(audit_state_path));
-        std::string last_hash;
-        {
-            std::ifstream f(audit_jsonl_path);
-            std::string line, last;
-            if (f.good()) {
-                while (std::getline(f, line)) {
-                    if (!line.empty()) last = line;
-                }
-            }
-            if (!last.empty()) {
-                try {
-                    json jj = json::parse(last);
-                    last_hash = jj.value("line_hash", "");
-                } catch (...) {}
-            }
-        }
-
-        bool ok = (!state.empty() && !last_hash.empty() && state == last_hash);
-
-        reply_json(res, 200, json{
-            {"ok", ok},
-            {"state", state},
-            {"last_line_hash", last_hash}
-        }.dump());
-    });
 
     // Admin Settings UI
     srv.Get("/admin/settings", [&](const httplib::Request& req, httplib::Response& res) {
