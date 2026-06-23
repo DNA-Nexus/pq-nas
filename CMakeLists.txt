@@ -180,6 +180,58 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
         server/src/main.cpp
+        server/src/routes_storage_raid.cpp
+        server/src/routes_storage_raid.h
+        server/src/routes_admin_storage_tiering.cpp
+        server/src/routes_admin_storage_tiering.h
+        server/src/routes_admin_user_lifecycle.cpp
+        server/src/routes_admin_user_lifecycle.h
+        server/src/routes_admin_user_status.cpp
+        server/src/routes_admin_user_status.h
+        server/src/routes_admin_user_storage_preview.cpp
+        server/src/routes_admin_user_storage_preview.h
+        server/src/routes_admin_user_storage.cpp
+        server/src/routes_admin_user_storage.h
+        server/src/routes_auth_debug_approvals.cpp
+        server/src/routes_auth_debug_approvals.h
+        server/src/routes_admin_approvals_ui.cpp
+        server/src/routes_admin_approvals_ui.h
+        server/src/routes_admin_users_overview.cpp
+        server/src/routes_admin_users_overview.h
+        server/src/routes_admin_user_storage_jobs.cpp
+        server/src/routes_admin_user_storage_jobs.h
+        server/src/routes_admin_user_profile.cpp
+        server/src/routes_admin_user_profile.h
+        server/src/routes_user_avatars.cpp
+        server/src/routes_user_avatars.h
+        server/src/routes_apps_manage.cpp
+        server/src/routes_apps_manage.h
+        server/src/routes_apps_public.cpp
+        server/src/routes_apps_public.h
+        server/src/routes_core_ui_shell.cpp
+        server/src/routes_core_ui_shell.h
+        server/src/routes_admin_audit_read.cpp
+        server/src/routes_admin_audit_read.h
+        server/src/routes_admin_audit_rotate.cpp
+        server/src/routes_admin_audit_rotate.h
+        server/src/routes_admin_audit_retention.cpp
+        server/src/routes_admin_audit_retention.h
+        server/src/routes_snapshots_browse.cpp
+        server/src/routes_snapshots_browse.h
+        server/src/routes_snapshots_create.cpp
+        server/src/routes_snapshots_create.h
+        server/src/routes_snapshots_restore.cpp
+        server/src/routes_snapshots_restore.h
+        server/src/routes_uploads_chunked.cpp
+        server/src/routes_uploads_chunked.h
+        server/src/routes_file_versions_archive_blob.cpp
+        server/src/routes_file_versions_archive_blob.h
+        server/src/routes_file_versions_read.cpp
+        server/src/routes_file_versions_read.h
+        server/src/routes_file_versions_manage.cpp
+        server/src/routes_file_versions_manage.h
+        server/src/routes_file_versions_restore.cpp
+        server/src/routes_file_versions_restore.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 
