@@ -105,6 +105,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
+#include "routes_uploads_chunked.h"
 #include "routes_file_versions_archive_blob.h"
 #include "routes_file_versions_read.h"
 #include "routes_file_versions_manage.h"
@@ -17329,8 +17330,124 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 
     // ---- Chunked Upload API (user storage, My Files) ----
-    // Transitional split: route/helper block lives in routes_uploads.inc.
-#include "routes_uploads.inc"
+    // ---- Chunked Upload API (user storage, My Files) ----
+    {
+        ChunkedUploadRoutesContext uploads_ctx;
+        uploads_ctx.users = &users;
+        uploads_ctx.file_versions = &file_versions_index;
+        uploads_ctx.users_path = users_path;
+        uploads_ctx.cookie_key = COOKIE_KEY;
+
+        uploads_ctx.require_user_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fp_hex,
+                std::string* role) {
+                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
+            };
+
+        uploads_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+
+        uploads_ctx.require_no_live_lock_for_write =
+            [&](httplib::Response& res,
+                const std::string& fp_hex,
+                const std::string& rel_norm,
+                const std::string& action,
+                bool allow_when_locked) {
+                return require_user_no_live_lock_for_write_local(
+                    users,
+                    users_path,
+                    res,
+                    fp_hex,
+                    rel_norm,
+                    action,
+                    allow_when_locked
+                );
+            };
+
+        uploads_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        uploads_ctx.reply_quota_error =
+            [&](httplib::Response& res,
+                const std::string& fp_hex,
+                const pqnas::QuotaCheckResult& qc) {
+                return reply_quota_error_v1(res, fp_hex, qc);
+            };
+
+        uploads_ctx.user_dir_for_fp =
+            [&](const std::string& fp_hex) {
+                return user_dir_for_fp(users, fp_hex);
+            };
+
+        uploads_ctx.random_b64url =
+            [&](std::size_t n) {
+                return random_b64url(n);
+            };
+
+        uploads_ctx.now_epoch_sec =
+            [&]() -> std::int64_t {
+                return static_cast<std::int64_t>(now_epoch_sec());
+            };
+
+        uploads_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+
+        uploads_ctx.upload_tiering_config =
+            [&]() {
+                const auto cfg = upload_tiering_config();
+
+                ChunkedUploadTieringConfig out;
+                out.enabled = cfg.enabled;
+                out.landing_pool_id = cfg.landing_pool_id;
+                return out;
+            };
+
+        uploads_ctx.build_landing_abs_path =
+            [&](const std::string& pool_id,
+                const std::string& fp_hex,
+                const std::string& rel_norm,
+                std::filesystem::path* out_abs,
+                std::string* err) {
+                return build_landing_abs_path(pool_id, fp_hex, rel_norm, out_abs, err);
+            };
+
+        uploads_ctx.ensure_no_symlink_in_existing_path_prefix =
+            [&](const std::filesystem::path& path, std::string* err) {
+                return ensure_no_symlink_in_existing_path_prefix(path, err);
+            };
+
+        uploads_ctx.record_user_file_activity =
+            [&](const std::string& fp_hex,
+                const std::string& event_name,
+                const std::string& logical_rel_path,
+                const std::string& item_type,
+                const std::string& aux,
+                std::uint64_t bytes,
+                int count,
+                const httplib::Request* req) {
+                record_user_file_activity_best_effort_local(
+                    users,
+                    fp_hex,
+                    event_name,
+                    logical_rel_path,
+                    item_type,
+                    aux,
+                    bytes,
+                    count,
+                    req
+                );
+            };
+
+        register_chunked_upload_routes(srv, uploads_ctx);
+    }
 
 srv.Post("/api/v4/files/move", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;

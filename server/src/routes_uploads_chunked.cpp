@@ -1,3 +1,193 @@
+#include "routes_uploads_chunked.h"
+
+#include "httplib.h"
+#include "audit_fields.h"
+#include "audit_log.h"
+#include "file_location_index.h"
+#include "file_versions.h"
+#include "gallery_meta.h"
+#include "path_lock_manager.h"
+#include "runtime_paths.h"
+#include "storage_resolver.h"
+#include "user_quota.h"
+#include "users_registry.h"
+
+#include <nlohmann/json.hpp>
+
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+
+using json = nlohmann::json;
+
+namespace {
+
+ChunkedUploadRoutesContext g_upload_ctx;
+
+std::string audit_safe_header_value(const std::string& value, std::size_t max_len) {
+    std::string out;
+    out.reserve(value.size());
+
+    for (unsigned char ch : value) {
+        if (ch < 0x20 || ch == 0x7f) {
+            out.push_back(' ');
+        } else {
+            out.push_back(static_cast<char>(ch));
+        }
+    }
+
+    return pqnas::shorten(out, max_len);
+}
+
+pqnas::UsersRegistry* upload_users_ptr() {
+    return g_upload_ctx.users;
+}
+
+bool upload_context_ok() {
+    return g_upload_ctx.users &&
+           g_upload_ctx.file_versions &&
+           g_upload_ctx.cookie_key &&
+           g_upload_ctx.require_user_auth &&
+           g_upload_ctx.require_same_origin &&
+           g_upload_ctx.require_no_live_lock_for_write &&
+           g_upload_ctx.reply_json &&
+           g_upload_ctx.reply_quota_error &&
+           g_upload_ctx.user_dir_for_fp &&
+           g_upload_ctx.random_b64url &&
+           g_upload_ctx.now_epoch_sec &&
+           g_upload_ctx.audit_append &&
+           g_upload_ctx.upload_tiering_config &&
+           g_upload_ctx.build_landing_abs_path &&
+           g_upload_ctx.ensure_no_symlink_in_existing_path_prefix &&
+           g_upload_ctx.record_user_file_activity;
+}
+
+void reply_json(httplib::Response& res, int status, const std::string& body) {
+    if (g_upload_ctx.reply_json) {
+        g_upload_ctx.reply_json(res, status, body);
+        return;
+    }
+
+    res.status = status;
+    res.set_content(body, "application/json; charset=utf-8");
+}
+
+bool require_user_auth_users_actor(const httplib::Request& req,
+                                   httplib::Response& res,
+                                   const unsigned char*,
+                                   pqnas::UsersRegistry*,
+                                   std::string* fp_hex,
+                                   std::string* role) {
+    return g_upload_ctx.require_user_auth(req, res, fp_hex, role);
+}
+
+bool require_same_origin_for_cookie_mutation(const httplib::Request& req,
+                                             httplib::Response& res) {
+    return g_upload_ctx.require_same_origin(req, res);
+}
+
+bool require_user_no_live_lock_for_write_local(pqnas::UsersRegistry&,
+                                               const std::filesystem::path&,
+                                               httplib::Response& res,
+                                               const std::string& fp_hex,
+                                               const std::string& rel_norm,
+                                               const std::string& action,
+                                               bool allow_when_locked) {
+    return g_upload_ctx.require_no_live_lock_for_write(res, fp_hex, rel_norm, action, allow_when_locked);
+}
+
+bool reply_quota_error_v1(httplib::Response& res,
+                          const std::string& fp_hex,
+                          const pqnas::QuotaCheckResult& qc) {
+    return g_upload_ctx.reply_quota_error(res, fp_hex, qc);
+}
+
+std::filesystem::path user_dir_for_fp(pqnas::UsersRegistry&,
+                                      const std::string& fp_hex) {
+    return g_upload_ctx.user_dir_for_fp(fp_hex);
+}
+
+std::string random_b64url(std::size_t n) {
+    return g_upload_ctx.random_b64url(n);
+}
+
+std::int64_t now_epoch_sec() {
+    return g_upload_ctx.now_epoch_sec();
+}
+
+void audit_append(const pqnas::AuditEvent& ev) {
+    g_upload_ctx.audit_append(ev);
+}
+
+ChunkedUploadTieringConfig upload_tiering_config() {
+    return g_upload_ctx.upload_tiering_config();
+}
+
+bool build_landing_abs_path(const std::string& pool_id,
+                            const std::string& fp_hex,
+                            const std::string& rel_norm,
+                            std::filesystem::path* out_abs,
+                            std::string* err) {
+    return g_upload_ctx.build_landing_abs_path(pool_id, fp_hex, rel_norm, out_abs, err);
+}
+
+bool ensure_no_symlink_in_existing_path_prefix(const std::filesystem::path& path,
+                                               std::string* err) {
+    return g_upload_ctx.ensure_no_symlink_in_existing_path_prefix(path, err);
+}
+
+void record_user_file_activity_best_effort_local(pqnas::UsersRegistry&,
+                                                 const std::string& fp_hex,
+                                                 const std::string& event_name,
+                                                 const std::string& logical_rel_path,
+                                                 const std::string& item_type,
+                                                 const std::string& aux,
+                                                 std::uint64_t bytes,
+                                                 int count,
+                                                 const httplib::Request* req) {
+    g_upload_ctx.record_user_file_activity(
+        fp_hex,
+        event_name,
+        logical_rel_path,
+        item_type,
+        aux,
+        bytes,
+        count,
+        req
+    );
+}
+
+} // namespace
+
+void register_chunked_upload_routes(
+    httplib::Server& srv,
+    const ChunkedUploadRoutesContext& ctx
+) {
+    g_upload_ctx = ctx;
+
+    if (!upload_context_ok()) {
+        srv.Post("/api/v4/uploads/start", [](const httplib::Request&, httplib::Response& res) {
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "chunked upload route context incomplete"}
+            }.dump());
+        });
+        return;
+    }
+
+#define users_path (g_upload_ctx.users_path)
+#define COOKIE_KEY (g_upload_ctx.cookie_key)
+#define file_versions_index (*g_upload_ctx.file_versions)
+
 // Transitional split from main.cpp.
 // This file is intentionally included inside main() route-registration scope.
 // TODO: convert to routes_uploads.cpp/.h after upload helpers have a clean context.
@@ -31,12 +221,12 @@ auto chunked_upload_id_ok = [](const std::string& s) -> bool {
     return true;
 };
 
-auto chunked_upload_session_dir = [&](const std::string& fp_hex,
+auto chunked_upload_session_dir = [=](const std::string& fp_hex,
                                       const std::string& upload_id) -> std::filesystem::path {
     return chunked_upload_root() / fp_hex / upload_id;
 };
 
-auto chunked_active_temp_bytes_for_user = [&](const std::string& fp_hex) -> std::uint64_t {
+auto chunked_active_temp_bytes_for_user = [=](const std::string& fp_hex) -> std::uint64_t {
     std::uint64_t total = 0;
 
     const std::filesystem::path root = chunked_upload_root() / fp_hex;
@@ -219,7 +409,7 @@ auto chunked_expected_chunk_bytes = [](std::uint64_t size_bytes,
     return size_bytes - already;
 };
 
-auto chunked_audit_headers = [&](const httplib::Request& req, pqnas::AuditEvent& ev) {
+auto chunked_audit_headers = [=](const httplib::Request& req, pqnas::AuditEvent& ev) {
     ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
 
     auto it_cf = req.headers.find("CF-Connecting-IP");
@@ -232,7 +422,7 @@ auto chunked_audit_headers = [&](const httplib::Request& req, pqnas::AuditEvent&
     ev.f["ua"] = pqnas::shorten(it_ua == req.headers.end() ? "" : it_ua->second);
 };
 
-auto chunked_audit_fail = [&](const httplib::Request& req,
+auto chunked_audit_fail = [=](const httplib::Request& req,
                               const std::string& fp_hex,
                               const std::string& event_name,
                               const std::string& reason,
@@ -251,7 +441,7 @@ auto chunked_audit_fail = [&](const httplib::Request& req,
     } catch (...) {}
 };
 
-auto chunked_preflight_new_file = [&](const httplib::Request& req,
+auto chunked_preflight_new_file = [=](const httplib::Request& req,
                                       httplib::Response& res,
                                       const std::string& fp_hex,
                                       const std::string& rel_norm,
@@ -259,11 +449,11 @@ auto chunked_preflight_new_file = [&](const httplib::Request& req,
                                       bool overwrite,
                                       std::filesystem::path* out_abs,
                                       bool* out_tiering_write,
-                                      UploadTieringConfig* out_tier_cfg,
+                                      ChunkedUploadTieringConfig* out_tier_cfg,
                                       std::string* out_old_physical_path) -> bool {
     if (out_abs) *out_abs = std::filesystem::path{};
     if (out_tiering_write) *out_tiering_write = false;
-    if (out_tier_cfg) *out_tier_cfg = UploadTieringConfig{};
+    if (out_tier_cfg) *out_tier_cfg = ChunkedUploadTieringConfig{};
     if (out_old_physical_path) out_old_physical_path->clear();
 
     auto fail = [&](const std::string& reason, int http, const json& body, const std::string& detail = "") -> bool {
@@ -275,7 +465,7 @@ auto chunked_preflight_new_file = [&](const httplib::Request& req,
     std::string found_ancestor;
     std::string aerr;
     const bool ancestor_conflict =
-        pqnas::any_file_ancestor_exists(users, fp_hex, rel_norm, &found_ancestor, &aerr);
+        pqnas::any_file_ancestor_exists((*g_upload_ctx.users), fp_hex, rel_norm, &found_ancestor, &aerr);
 
     if (!aerr.empty()) {
         return fail("ancestor_check_failed", 500, json{
@@ -327,9 +517,9 @@ auto chunked_preflight_new_file = [&](const httplib::Request& req,
         }
     }
 
-    const std::filesystem::path user_dir = user_dir_for_fp(users, fp_hex);
+    const std::filesystem::path user_dir = user_dir_for_fp((*g_upload_ctx.users), fp_hex);
     pqnas::QuotaCheckResult qc = pqnas::quota_check_for_upload_v1(
-        users, fp_hex, user_dir, rel_norm, size_bytes
+        (*g_upload_ctx.users), fp_hex, user_dir, rel_norm, size_bytes
     );
 
     if (!qc.ok) {
@@ -342,7 +532,7 @@ auto chunked_preflight_new_file = [&](const httplib::Request& req,
         }, qc.error);
     }
 
-    UploadTieringConfig tier_cfg = upload_tiering_config();
+    ChunkedUploadTieringConfig tier_cfg = upload_tiering_config();
 
     std::filesystem::path final_abs = qc.abs_path;
     bool tiering_write = false;
@@ -463,9 +653,9 @@ auto chunked_preflight_new_file = [&](const httplib::Request& req,
     return true;
 };
 
-srv.Post("/api/v4/uploads/start", [&](const httplib::Request& req, httplib::Response& res) {
+srv.Post("/api/v4/uploads/start", [=](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
-    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &(*g_upload_ctx.users), &fp_hex, &role)) return;
 
     if (!require_same_origin_for_cookie_mutation(req, res)) {
         chunked_audit_fail(req, fp_hex, "v4.uploads_start_fail", "origin_mismatch", 403);
@@ -538,7 +728,7 @@ srv.Post("/api/v4/uploads/start", [&](const httplib::Request& req, httplib::Resp
 
 
     if (!require_user_no_live_lock_for_write_local(
-            users, users_path, res, fp_hex, rel_norm, "write", false)) {
+            (*g_upload_ctx.users), users_path, res, fp_hex, rel_norm, "write", false)) {
         return;
     }
 
@@ -547,7 +737,7 @@ srv.Post("/api/v4/uploads/start", [&](const httplib::Request& req, httplib::Resp
 
     std::filesystem::path ignored_abs;
     bool ignored_tiering = false;
-    UploadTieringConfig ignored_tier_cfg;
+    ChunkedUploadTieringConfig ignored_tier_cfg;
     std::string ignored_old_physical_path;
     if (!chunked_preflight_new_file(req, res, fp_hex, rel_norm, size_bytes, overwrite,
                                     &ignored_abs, &ignored_tiering, &ignored_tier_cfg,
@@ -626,11 +816,11 @@ srv.Post("/api/v4/uploads/start", [&](const httplib::Request& req, httplib::Resp
 });
 
 srv.Put("/api/v4/uploads/chunk",
-    [&](const httplib::Request& req,
+    [=](const httplib::Request& req,
         httplib::Response& res,
         const httplib::ContentReader& content_reader) {
     std::string fp_hex, role;
-    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &(*g_upload_ctx.users), &fp_hex, &role)) return;
 
     if (!require_same_origin_for_cookie_mutation(req, res)) {
         chunked_audit_fail(req, fp_hex, "v4.uploads_chunk_fail", "origin_mismatch", 403);
@@ -767,7 +957,7 @@ srv.Put("/api/v4/uploads/chunk",
         temp_pressure_bytes += expected_bytes;
     }
 
-    const std::filesystem::path user_dir = user_dir_for_fp(users, fp_hex);
+    const std::filesystem::path user_dir = user_dir_for_fp((*g_upload_ctx.users), fp_hex);
 
     // Use a synthetic non-existing path so quota_check_for_upload_v1 does not
     // subtract the real destination file size. Temporary chunks are extra disk
@@ -776,7 +966,7 @@ srv.Put("/api/v4/uploads/chunk",
         ".pqnas_upload_quota_probe/" + upload_id + "/" + chunked_upload_chunk_name(chunk_index);
 
     pqnas::QuotaCheckResult temp_qc = pqnas::quota_check_for_upload_v1(
-        users,
+        (*g_upload_ctx.users),
         fp_hex,
         user_dir,
         quota_probe_rel,
@@ -891,9 +1081,9 @@ srv.Put("/api/v4/uploads/chunk",
     }.dump());
 });
 
-srv.Post("/api/v4/uploads/cancel", [&](const httplib::Request& req, httplib::Response& res) {
+srv.Post("/api/v4/uploads/cancel", [=](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
-    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &(*g_upload_ctx.users), &fp_hex, &role)) return;
 
     if (!require_same_origin_for_cookie_mutation(req, res)) {
         chunked_audit_fail(req, fp_hex, "v4.uploads_cancel_fail", "origin_mismatch", 403);
@@ -935,9 +1125,9 @@ srv.Post("/api/v4/uploads/cancel", [&](const httplib::Request& req, httplib::Res
     }.dump());
 });
 
-srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Response& res) {
+srv.Post("/api/v4/uploads/finish", [=](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
-    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &(*g_upload_ctx.users), &fp_hex, &role)) return;
 
     if (!require_same_origin_for_cookie_mutation(req, res)) {
         chunked_audit_fail(req, fp_hex, "v4.uploads_finish_fail", "origin_mismatch", 403);
@@ -1051,7 +1241,7 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
     }
 
     if (!require_user_no_live_lock_for_write_local(
-            users, users_path, res, fp_hex, rel_norm, "write", false)) {
+            (*g_upload_ctx.users), users_path, res, fp_hex, rel_norm, "write", false)) {
         return;
     }
 
@@ -1060,7 +1250,7 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
 
     std::filesystem::path out_abs;
     bool tiering_write = false;
-    UploadTieringConfig tier_cfg;
+    ChunkedUploadTieringConfig tier_cfg;
 
     std::string old_physical_path;
     if (!chunked_preflight_new_file(req, res, fp_hex, rel_norm, size_bytes, overwrite,
@@ -1208,7 +1398,7 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
         }
 
         if (overwrite && !old_physical_path.empty()) {
-            const std::filesystem::path user_dir = user_dir_for_fp(users, fp_hex);
+            const std::filesystem::path user_dir = user_dir_for_fp((*g_upload_ctx.users), fp_hex);
 
             pqnas::PreserveLiveFileVersionParams vp;
             vp.scope_type = "user";
@@ -1218,7 +1408,7 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
             vp.live_abs_path = std::filesystem::path(old_physical_path);
             vp.event_kind = "overwrite_preserve";
             vp.actor_fp = fp_hex;
-            vp.users = &users;
+            vp.users = upload_users_ptr();
 
             pqnas::FileVersionRec vrec;
             std::string verr;
@@ -1324,7 +1514,7 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
         } catch (...) {}
 
         record_user_file_activity_best_effort_local(
-            users,
+            (*g_upload_ctx.users),
             fp_hex,
             "file.uploaded",
             rel_norm,
@@ -1362,3 +1552,9 @@ srv.Post("/api/v4/uploads/finish", [&](const httplib::Request& req, httplib::Res
 
 
 // ---- Files API (user storage) ----
+
+
+#undef file_versions_index
+#undef COOKIE_KEY
+#undef users_path
+}

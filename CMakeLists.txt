@@ -198,6 +198,8 @@ add_executable(pqnas_server
         server/src/routes_snapshots_create.h
         server/src/routes_snapshots_restore.cpp
         server/src/routes_snapshots_restore.h
+        server/src/routes_uploads_chunked.cpp
+        server/src/routes_uploads_chunked.h
         server/src/routes_file_versions_archive_blob.cpp
         server/src/routes_file_versions_archive_blob.h
         server/src/routes_file_versions_read.cpp
