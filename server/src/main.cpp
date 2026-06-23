@@ -124,32 +124,32 @@ failures must return an error and should emit an audit event when security-relev
 #include "session_cookie.h"
 #include "runtime_paths.h"
 #include "policy.h"
-#include "routes_storage_raid.h"
-#include "routes_admin_storage_tiering.h"
-#include "routes_admin_user_lifecycle.h"
-#include "routes_admin_user_status.h"
-#include "routes_admin_user_storage_preview.h"
-#include "routes_admin_user_storage.h"
-#include "routes_auth_debug_approvals.h"
-#include "routes_admin_approvals_ui.h"
-#include "routes_admin_users_overview.h"
-#include "routes_admin_user_storage_jobs.h"
-#include "routes_admin_user_profile.h"
-#include "routes_user_avatars.h"
-#include "routes_apps_manage.h"
-#include "routes_apps_public.h"
-#include "routes_core_ui_shell.h"
-#include "routes_admin_audit_read.h"
-#include "routes_admin_audit_rotate.h"
-#include "routes_admin_audit_retention.h"
-#include "routes_snapshots_browse.h"
-#include "routes_snapshots_create.h"
-#include "routes_snapshots_restore.h"
-#include "routes_uploads_chunked.h"
-#include "routes_file_versions_archive_blob.h"
-#include "routes_file_versions_read.h"
-#include "routes_file_versions_manage.h"
-#include "routes_file_versions_restore.h"
+#include "routes/routes_storage_raid.h"
+#include "routes/routes_admin_storage_tiering.h"
+#include "routes/routes_admin_user_lifecycle.h"
+#include "routes/routes_admin_user_status.h"
+#include "routes/routes_admin_user_storage_preview.h"
+#include "routes/routes_admin_user_storage.h"
+#include "routes/routes_auth_debug_approvals.h"
+#include "routes/routes_admin_approvals_ui.h"
+#include "routes/routes_admin_users_overview.h"
+#include "routes/routes_admin_user_storage_jobs.h"
+#include "routes/routes_admin_user_profile.h"
+#include "routes/routes_user_avatars.h"
+#include "routes/routes_apps_manage.h"
+#include "routes/routes_apps_public.h"
+#include "routes/routes_core_ui_shell.h"
+#include "routes/routes_admin_audit_read.h"
+#include "routes/routes_admin_audit_rotate.h"
+#include "routes/routes_admin_audit_retention.h"
+#include "routes/routes_snapshots_browse.h"
+#include "routes/routes_snapshots_create.h"
+#include "routes/routes_snapshots_restore.h"
+#include "routes/routes_uploads_chunked.h"
+#include "routes/routes_file_versions_archive_blob.h"
+#include "routes/routes_file_versions_read.h"
+#include "routes/routes_file_versions_manage.h"
+#include "routes/routes_file_versions_restore.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -163,14 +163,14 @@ failures must return an error and should emit an audit event when security-relev
 #include "workspaces.h"
 #include "workspace_external_invites.h"
 #include "workspace_external_sessions.h"
-#include "routes_workspace_external_sessions.h"
-#include "routes_workspace_external_invites.h"
-#include "routes_workspaces_files.h"
-#include "routes_workspace_links.h"
+#include "routes/routes_workspace_external_sessions.h"
+#include "routes/routes_workspace_external_invites.h"
+#include "routes/routes_workspaces_files.h"
+#include "routes/routes_workspace_links.h"
 //storage health
 #include "drive_health.h"
 #include "drive_health_monitor.h"
-#include "routes_drive_locate.h"
+#include "routes/routes_drive_locate.h"
 
 //sharing
 #include "share_links.h"
@@ -554,14 +554,14 @@ static bool reelstack_meta_remove_under_prefix_path_local(const std::string& sco
 #include "echo_stack_index.h"
 
 // activity
-#include "routes_activity.h"
+#include "routes/routes_activity.h"
 #include "backups/system_backup_worker.h"
 #include "backups/system_backup_routes.h"
 #include "notifications/notification_routes.h"
 #include "updates/update_center_routes.h"
-#include "routes_people.h"
-#include "routes_file_annotations.h"
-#include "routes_file_locks.h"
+#include "routes/routes_people.h"
+#include "routes/routes_file_annotations.h"
+#include "routes/routes_file_locks.h"
 #include "file_locks.h"
 #include "activity_log.h"
 
@@ -11641,7 +11641,7 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     // ---- Admin settings routes ----
     // Transitional bulk split: route/helper block lives in routes_admin_settings.inc.
 
-#include "routes_admin_settings.inc"
+#include "routes/routes_admin_settings.inc"
 
 	srv.Get("/api/v4/me", [&](const httplib::Request& req, httplib::Response& res) {
     	auto audit_ua = [&]() -> std::string {
@@ -12446,7 +12446,7 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     // ---- Admin badges / stats routes ----
     // Transitional bulk split: route/helper block lives in routes_admin_stats_badges.inc.
 
-#include "routes_admin_stats_badges.inc"
+#include "routes/routes_admin_stats_badges.inc"
 
 	srv.Get(R"(/static/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
     	// req.matches[1] is the captured path after /static/
@@ -13353,21 +13353,21 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
     // ---- Files core routes ----
     // Transitional bulk split: route/helper block lives in routes_files_core.inc.
 
-#include "routes_files_core.inc"
+#include "routes/routes_files_core.inc"
 
     // ---- Gallery / ReelStack routes ----
     // Transitional bulk split: route/helper block lives in routes_gallery_reelstack.inc.
-#include "routes_gallery_reelstack.inc"
+#include "routes/routes_gallery_reelstack.inc"
 
 
     // ---- Files PUT upload route ----
     // Transitional bulk split: route/helper block lives in routes_files_put.inc.
-#include "routes_files_put.inc"
+#include "routes/routes_files_put.inc"
 
 
     // ---- Shares / public share / gallery export routes ----
     // Transitional bulk split: route/helper block lives in routes_shares_public.inc.
-#include "routes_shares_public.inc"
+#include "routes/routes_shares_public.inc"
 
 
     // ************************* END OF ROUTES *************************** //
