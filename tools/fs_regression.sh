@@ -3,6 +3,7 @@ set -u
 # "Run : BASE="$BASE" COOKIE="$COOKIE" ./tools/fs_regression.sh"
 : "${BASE:?missing BASE}"
 : "${COOKIE:?missing COOKIE}"
+ORIGIN="${ORIGIN:-$BASE}"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -20,10 +21,12 @@ req() {
   if [[ -n "$body" ]]; then
     curl -sS -X "$method" "$url" \
       -H "Cookie: $COOKIE" \
+      -H "Origin: $ORIGIN" \
       --data-binary "$body"
   else
     curl -sS -X "$method" "$url" \
-      -H "Cookie: $COOKIE"
+      -H "Cookie: $COOKIE" \
+      -H "Origin: $ORIGIN"
   fi
 }
 
@@ -114,6 +117,12 @@ put_text() {
   req PUT "$BASE/api/v4/files/put?path=$path" "$text"
 }
 
+put_text_overwrite() {
+  local path="$1"
+  local text="$2"
+  req PUT "$BASE/api/v4/files/put?path=$path&overwrite=1" "$text"
+}
+
 move_path() {
   local from="$1"
   local to="$2"
@@ -122,7 +131,9 @@ move_path() {
 
 list_path() {
   local path="$1"
-  curl -sS "$BASE/api/v4/files/list?path=$path" -H "Cookie: $COOKIE"
+  curl -sS "$BASE/api/v4/files/list?path=$path" \
+    -H "Cookie: $COOKIE" \
+    -H "Origin: $ORIGIN"
 }
 
 stat_path() {
@@ -363,10 +374,10 @@ expect_error "stat deleted dir returns not_found" "$resp" "not_found"
 # --------------------------------------------------------------------
 cleanup_path "$(tp overwrite.txt)"
 
-resp="$(put_text "$(tp overwrite.txt)" "OLD")"
+resp="$(put_text_overwrite "$(tp overwrite.txt)" "OLD")"
 expect_ok "put overwrite.txt old" "$resp"
 
-resp="$(put_text "$(tp overwrite.txt)" "NEWER")"
+resp="$(put_text_overwrite "$(tp overwrite.txt)" "NEWER")"
 expect_ok "put overwrite.txt overwrite" "$resp"
 
 resp="$(stat_path "$(tp overwrite.txt)")"
