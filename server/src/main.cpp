@@ -5382,8 +5382,8 @@ static inline double round_dp(double value, int decimals) {
     return j;
 }
 
-static inline std::string pqnas_trim_copy(std::string s) {
-    rtrim_inplace(s);
+static inline std::string trim_copy(std::string s) {
+        rtrim_inplace(s);
     size_t i = 0;
     while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++;
     if (i > 0) s.erase(0, i);
@@ -5449,7 +5449,7 @@ static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in);
         while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
         size_t b = a;
         while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
-        if (b > a) j["uuid"] = pqnas_trim_copy(s.substr(a, b - a));
+        if (b > a) j["uuid"] = trim_copy(s.substr(a, b - a));
     }
 }
 
@@ -5466,7 +5466,7 @@ j["no_stats_available"] = has("no stats available");
         size_t b = a;
         while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
         if (b > a) {
-            std::string tok = pqnas_trim_copy(s.substr(a, b - a));
+            std::string tok = trim_copy(s.substr(a, b - a));
             j["total_to_scrub"] = tok;
             uint64_t bytes = parse_btrfs_human_bytes_to_u64(tok);
             if (bytes) j["total_to_scrub_bytes"] = bytes;
@@ -5484,7 +5484,7 @@ j["no_stats_available"] = has("no stats available");
         size_t b = a;
         while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
         if (b > a) {
-            std::string tok = pqnas_trim_copy(s.substr(a, b - a));
+            std::string tok = trim_copy(s.substr(a, b - a));
             j["rate"] = tok; // e.g. "0.00B/s"
             // parse "XUNIT/s"
             if (tok.size() > 2 && tok.rfind("/s") == tok.size() - 2) {
@@ -5505,7 +5505,7 @@ j["no_stats_available"] = has("no stats available");
         while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) a++;
         size_t b = a;
         while (b < s.size() && s[b] != '\n' && s[b] != '\r') b++;
-        if (b > a) j["error_summary"] = pqnas_trim_copy(s.substr(a, b - a));
+        if (b > a) j["error_summary"] = trim_copy(s.substr(a, b - a));
     }
 }
 
@@ -5786,15 +5786,6 @@ static bool is_sha256_hex_lower(const std::string& s) {
         if (!ok) return false;
     }
     return true;
-}
-
-static inline std::string trim_copy(std::string s) {
-    // reuse your rtrim + simple ltrim
-    rtrim_inplace(s);
-    size_t i = 0;
-    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++;
-    if (i > 0) s.erase(0, i);
-    return s;
 }
 
 static uint64_t parse_btrfs_human_bytes_to_u64(const std::string& s_in) {
