@@ -563,6 +563,11 @@ const std::string REPO_ROOT = std::filesystem::weakly_canonical(
 //
 // In dev (run from repo) they fall back to REPO_ROOT paths.
 //
+
+// ============================================================================
+//  STATIC / CONFIG PATH HELPERS
+// ============================================================================
+
 static std::string getenv_str(const char* k) {
     const char* v = std::getenv(k);
     return (v && *v) ? std::string(v) : std::string();
@@ -692,6 +697,11 @@ struct PendingEntry {
 static std::unordered_map<std::string, PendingEntry> g_pending;
 static std::mutex g_pending_mu;
 
+
+// ============================================================================
+//  PENDING LOGIN / APPROVAL STATE
+// ============================================================================
+
 static void pending_prune(long now) {
     std::lock_guard<std::mutex> lk(g_pending_mu);
     for (auto it = g_pending.begin(); it != g_pending.end(); ) {
@@ -714,6 +724,11 @@ static bool pending_get(const std::string& sid, PendingEntry& out) {
     out = it->second;
     return true;
 }
+
+
+// ============================================================================
+//  APP LAUNCH POLICY HELPERS
+// ============================================================================
 
 static json app_launch_policy_defaults_json() {
     return json{
@@ -822,6 +837,11 @@ static std::string build_content_disposition(const std::string& kind, const std:
     return kind + "; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded;
 }
 
+
+
+// ============================================================================
+//  PUBLIC SHARE HELPER FUNCTIONS
+// ============================================================================
 
 static std::string public_share_ext_lower_local(const std::filesystem::path& p) {
     std::string ext = p.extension().string();
@@ -1592,6 +1612,11 @@ static bool save_app_launch_policy_json(const json& j) {
 
 
 // for audit log checking
+
+// ============================================================================
+//  USER STORAGE / POOL HELPERS
+// ============================================================================
+
 static long long file_size_bytes_safe(const std::string& path) {
     std::error_code ec;
     auto sz = std::filesystem::file_size(path, ec);
@@ -1991,6 +2016,11 @@ static void record_user_file_activity_best_effort_local(pqnas::UsersRegistry& us
 }
 
 
+
+
+// ============================================================================
+//  ACTIVITY / AUDIT SUPPORT HELPERS
+// ============================================================================
 
 static std::string user_file_lock_fp_short_local(const std::string& fp) {
     if (fp.size() <= 18) return fp;
@@ -2610,6 +2640,11 @@ static std::string exe_dir() {
 }
 
 // Decode standard base64 (with padding) -> bytes
+
+// ============================================================================
+//  AUTH / SESSION / COOKIE HELPERS
+// ============================================================================
+
 static bool b64std_decode_to_bytes(const std::string& in, std::string& out) {
     out.clear();
     out.resize(in.size() * 3 / 4 + 8);
@@ -3548,6 +3583,11 @@ static std::string hex_encode_lower(const unsigned char* data, size_t len) {
 
 namespace {
 
+
+// ============================================================================
+//  ZIP STREAMING HELPERS
+// ============================================================================
+
 static inline void zip_u16(std::string& out, std::uint16_t v) {
     out.push_back((char)(v & 0xff));
     out.push_back((char)((v >> 8) & 0xff));
@@ -3930,6 +3970,11 @@ static bool sha256_file(const std::filesystem::path& p, std::string* out_hex, st
     return true;
 }
 
+
+// ============================================================================
+//  COMMAND / SHELL / STORAGE PROBE HELPERS
+// ============================================================================
+
 static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
     if (out) out->clear();
     if (exit_code) *exit_code = 127; // default like "command failed"
@@ -4205,6 +4250,11 @@ namespace pqnas { struct AuditEvent; }
 
 #include <functional>
 
+
+// ============================================================================
+//  GLOBAL AUDIT BRIDGE
+// ============================================================================
+
 // Global audit bridge: endpoints can call audit_append(ev) anywhere in main.cpp.
 // It becomes active once we bind it after AuditLog audit(...) is constructed.
 static std::function<void(const pqnas::AuditEvent&)> g_audit_append;
@@ -4214,6 +4264,11 @@ static void audit_append(const pqnas::AuditEvent& ev) {
 }
 
 // ============================================================================
+
+// ============================================================================
+//  STORAGE MANAGER / BTRFS HELPERS
+// ============================================================================
+
 // Storage Manager v1 (read-only): disk + btrfs status helpers
 // ============================================================================
 
@@ -5756,6 +5811,11 @@ static int open_excl_lockfile(const std::string& path, std::string* err) {
     }
     return true;
 }
+
+
+// ============================================================================
+//  RAID / USER STORAGE JOB HELPERS
+// ============================================================================
 
 static std::string raid_exec_record_path(const std::string& plan_id) {
     return std::string("/run/pqnas/raid/") + plan_id + ".json";
@@ -8198,6 +8258,11 @@ static bool migrate_one_landing_file(pqnas::UsersRegistry& users,
     return true;
 }
 
+
+// ============================================================================
+//  PHOTO / GALLERY STATS HELPERS
+// ============================================================================
+
 struct PhotoStatsRow {
     std::string rel_path;
     std::uint64_t size_bytes = 0;
@@ -9298,6 +9363,11 @@ struct DnaAlertSendResult {
 };
 
 
+
+// ============================================================================
+//  DNA-CONNECT / ALERT HELPERS
+// ============================================================================
+
 static json build_dna_connect_identity_status_json() {
     const json persisted = load_admin_settings_json_safe();
 
@@ -9478,9 +9548,12 @@ bool write_text_file_atomic_utf8(const std::filesystem::path& target_abs,
 }
 } // namespace
 
-// -----------------------------------------------------------------------------
-// main
-// -----------------------------------------------------------------------------
+
+
+// ============================================================================
+//  MAIN ENTRY POINT
+// ============================================================================
+
 int main()
 {
     if (sodium_init() < 0) {
@@ -11533,9 +11606,13 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
 
 
 
+// ============================================================================
+//  ADMIN SETTINGS ROUTES
+// ============================================================================
 
     // ---- Admin settings routes ----
     // Transitional bulk split: route/helper block lives in routes_admin_settings.inc.
+
 #include "routes_admin_settings.inc"
 
 	srv.Get("/api/v4/me", [&](const httplib::Request& req, httplib::Response& res) {
@@ -12333,8 +12410,14 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     res.set_content(body, "application/javascript; charset=utf-8");
 	});
 
+
+// ============================================================================
+//  ADMIN STATS / BADGES ROUTES
+// ============================================================================
+
     // ---- Admin badges / stats routes ----
     // Transitional bulk split: route/helper block lives in routes_admin_stats_badges.inc.
+
 #include "routes_admin_stats_badges.inc"
 
 	srv.Get(R"(/static/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
@@ -13234,8 +13317,14 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
         register_chunked_upload_routes(srv, uploads_ctx);
     }
 
+
+// ============================================================================
+//  FILES / GALLERY / SHARES ROUTE INCLUDES
+// ============================================================================
+
     // ---- Files core routes ----
     // Transitional bulk split: route/helper block lives in routes_files_core.inc.
+
 #include "routes_files_core.inc"
 
     // ---- Gallery / ReelStack routes ----
@@ -13243,13 +13332,9 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 #include "routes_gallery_reelstack.inc"
 
 
-
-
     // ---- Files PUT upload route ----
     // Transitional bulk split: route/helper block lives in routes_files_put.inc.
 #include "routes_files_put.inc"
-
-
 
 
     // ---- Shares / public share / gallery export routes ----
