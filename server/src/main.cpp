@@ -99,6 +99,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_storage_raid.h"
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
+#include "routes_admin_user_storage_jobs.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -35947,8 +35948,58 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
 });
 
     // ---- Admin user storage migration/cleanup job routes ----
-    // Transitional split: route/helper block lives in routes_admin_user_storage_jobs.inc.
-#include "routes_admin_user_storage_jobs.inc"
+    {
+        AdminUserStorageJobsRoutesContext admin_user_storage_jobs_ctx;
+        admin_user_storage_jobs_ctx.users = &users;
+        admin_user_storage_jobs_ctx.users_path = users_path;
+        admin_user_storage_jobs_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        admin_user_storage_jobs_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        admin_user_storage_jobs_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        admin_user_storage_jobs_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+        admin_user_storage_jobs_ctx.enqueue_migration_job =
+            [&](const std::string& actor_fp,
+                const std::string& fp,
+                const std::string& pool_id,
+                const std::string& remote_addr) {
+                return user_mig_enqueue_job_fail_closed(actor_fp, fp, pool_id, remote_addr);
+            };
+        admin_user_storage_jobs_ctx.read_migration_record =
+            [&](const std::string& job_id, json* out, std::string* err) {
+                return user_mig_record_read(job_id, out, err);
+            };
+        admin_user_storage_jobs_ctx.enqueue_cleanup_job =
+            [&](const std::string& actor_fp,
+                const std::string& fp,
+                const std::string& expected_active_pool_id,
+                const std::string& old_pool_id,
+                const std::string& remote_addr) {
+                return user_cleanup_enqueue_job_fail_closed(
+                    actor_fp,
+                    fp,
+                    expected_active_pool_id,
+                    old_pool_id,
+                    remote_addr
+                );
+            };
+        admin_user_storage_jobs_ctx.read_cleanup_record =
+            [&](const std::string& job_id, json* out, std::string* err) {
+                return user_cleanup_record_read(job_id, out, err);
+            };
+
+        register_admin_user_storage_jobs_routes(srv, admin_user_storage_jobs_ctx);
+    }
 
 
     // ---- Admin storage tiering routes ----
