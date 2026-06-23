@@ -99,6 +99,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_storage_raid.h"
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
+#include "routes_auth_debug_approvals.h"
 #include "routes_admin_approvals_ui.h"
 #include "routes_admin_users_overview.h"
 #include "routes_admin_user_storage_jobs.h"
@@ -33536,32 +33537,34 @@ srv.Put("/api/v4/files/put",
         register_admin_user_lifecycle_routes(srv, admin_user_lifecycle_ctx);
     }
 
-    srv.Get("/api/debug/auth/approvals", [&](const httplib::Request& req, httplib::Response& res) {
-        const bool auth_debug_enabled = (std::getenv("PQNAS_ENABLE_AUTH_DEBUG") != nullptr);
-        if (!auth_debug_enabled) {
-            reply_json(res, 404, json{
-                {"ok", false},
-                {"error", "not_found"}
-            }.dump());
-            return;
-        }
-        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
+    // ---- Auth debug approval routes ----
+    {
+        AuthDebugApprovalsRoutesContext auth_debug_approvals_ctx;
 
-        res.set_header("Cache-Control", "no-store");
+        auth_debug_approvals_ctx.auth_debug_enabled =
+            []() {
+                return std::getenv("PQNAS_ENABLE_AUTH_DEBUG") != nullptr;
+            };
 
-        json out;
-        out["ok"] = true;
-        out["count"] = 0;
-        out["items_redacted"] = true;
-        out["message"] = "Auth debug approval TTL details are redacted.";
+        auth_debug_approvals_ctx.require_admin_cookie =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users);
+            };
 
-        {
-            std::lock_guard<std::mutex> lk(g_approvals_mu);
-            out["count"] = (int)g_approvals.size();
-        }
+        auth_debug_approvals_ctx.approvals_count =
+            [&]() -> int {
+                std::lock_guard<std::mutex> lk(g_approvals_mu);
+                return static_cast<int>(g_approvals.size());
+            };
 
-        reply_json(res, 200, out.dump());
-    });
+        auth_debug_approvals_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        register_auth_debug_approvals_routes(srv, auth_debug_approvals_ctx);
+    }
+
 
 
 srv.Post("/api/v4/shares/pq/enroll", [&](const httplib::Request& req, httplib::Response& res) {
