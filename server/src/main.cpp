@@ -98,6 +98,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "policy.h"
 #include "routes_storage_raid.h"
 #include "routes_admin_storage_tiering.h"
+#include "routes_admin_user_lifecycle.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -33862,8 +33863,69 @@ srv.Post("/api/v4/apps/uninstall", [&](const httplib::Request& req, httplib::Res
 
 
     // ---- Admin user lifecycle routes ----
-    // Transitional split: route/helper block lives in routes_admin_user_lifecycle.inc.
-#include "routes_admin_user_lifecycle.inc"
+    {
+        AdminUserLifecycleRoutesContext admin_user_lifecycle_ctx;
+        admin_user_lifecycle_ctx.users = &users;
+        admin_user_lifecycle_ctx.users_path = users_path;
+        admin_user_lifecycle_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        admin_user_lifecycle_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        admin_user_lifecycle_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        admin_user_lifecycle_ctx.admin_would_remove_last_enabled_admin =
+            [&](const std::string& fp) {
+                return admin_would_remove_last_enabled_admin(fp);
+            };
+        admin_user_lifecycle_ctx.revoke_devices_for_fingerprint =
+            [&](const std::string& fp) {
+                std::string token_revoke_err;
+                (void)g_app_tokens.revoke_devices_for_fingerprint(fp, &token_revoke_err);
+            };
+        admin_user_lifecycle_ctx.now_iso_utc =
+            [&]() {
+                return now_iso_utc();
+            };
+        admin_user_lifecycle_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+
+        register_admin_user_lifecycle_routes(srv, admin_user_lifecycle_ctx);
+    }
+
+    srv.Get("/api/debug/auth/approvals", [&](const httplib::Request& req, httplib::Response& res) {
+        const bool auth_debug_enabled = (std::getenv("PQNAS_ENABLE_AUTH_DEBUG") != nullptr);
+        if (!auth_debug_enabled) {
+            reply_json(res, 404, json{
+                {"ok", false},
+                {"error", "not_found"}
+            }.dump());
+            return;
+        }
+        if (!require_admin_cookie_users(req, res, COOKIE_KEY, std::string{}, &users)) return;
+
+        res.set_header("Cache-Control", "no-store");
+
+        json out;
+        out["ok"] = true;
+        out["count"] = 0;
+        out["items_redacted"] = true;
+        out["message"] = "Auth debug approval TTL details are redacted.";
+
+        {
+            std::lock_guard<std::mutex> lk(g_approvals_mu);
+            out["count"] = (int)g_approvals.size();
+        }
+
+        reply_json(res, 200, out.dump());
+    });
 
 
 srv.Post("/api/v4/shares/pq/enroll", [&](const httplib::Request& req, httplib::Response& res) {
