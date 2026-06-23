@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <iostream>
 #include <unistd.h>
 
 using json = nlohmann::json;
@@ -243,8 +244,52 @@ Caveats:
     That is likely unintentional. Nlohmann JSON will keep the last duplicate key,
     but it’s confusing and should be removed.
 */
+static std::size_t users_registry_existing_user_count_for_guard(const std::filesystem::path& p) {
+  std::ifstream f(p);
+  if (!f.good()) return 0;
+
+  try {
+    json j;
+    f >> j;
+
+    if (j.is_object() && j.contains("users") && j["users"].is_array()) {
+      return j["users"].size();
+    }
+  } catch (...) {
+  }
+
+  return 0;
+}
+
 bool UsersRegistry::save(const std::string& path) const {
   std::lock_guard<std::mutex> lk(mu_);
+
+  /*
+   * Safety guard:
+   *
+   * users.json is security-critical. A valid but empty {"users":[]} file locks
+   * every normal/admin user out of the server. If an existing registry on disk
+   * contains users, never allow an accidental empty in-memory registry to replace
+   * it through a generic save() call.
+   *
+   * A deliberate "delete all users" operation should use a separate explicit
+   * maintenance path, not the normal registry save primitive.
+   */
+  if (by_fp_.empty()) {
+    const std::filesystem::path target_path(path);
+    const std::size_t existing_count =
+        users_registry_existing_user_count_for_guard(target_path);
+
+    if (existing_count > 0) {
+      std::cerr
+          << "[users] REFUSING to overwrite non-empty users registry with empty list: "
+          << path
+          << " existing_users="
+          << existing_count
+          << std::endl;
+      return false;
+    }
+  }
 
   // Stable ordering makes the registry file deterministic and diff-friendly.
   std::vector<std::string> keys;
