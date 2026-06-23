@@ -99,6 +99,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_storage_raid.h"
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
+#include "routes_admin_user_status.h"
 #include "routes_auth_debug_approvals.h"
 #include "routes_admin_approvals_ui.h"
 #include "routes_admin_users_overview.h"
@@ -16008,9 +16009,6 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
         return std::string(buf);
     };
 
-    // POST /api/v4/admin/users/status
-    // Body: {"fingerprint":"...","status":"enabled|disabled|revoked"}
-	
     // Security: prevent admin lockout when disabling/revoking admins.
     // Returns true only when the target is currently the sole enabled admin.
     auto admin_would_remove_last_enabled_admin = [&](const std::string& target_fp_hex) -> bool {
@@ -16264,134 +16262,60 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
         };
 
 
-srv.Post("/api/v4/admin/users/status", [&](const httplib::Request& req, httplib::Response& res) {
-    	std::string actor_fp;
-	    if (!require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
-        if (!require_same_origin_for_cookie_mutation(req, res)) return;
+    // ---- Admin user status routes ----
+    {
+        AdminUserStatusRoutesContext admin_user_status_ctx;
+        admin_user_status_ctx.users = &users;
+        admin_user_status_ctx.users_path = users_path;
 
-    	json j;
-    	try { j = json::parse(req.body); }
-	    catch (...) {
-        	reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","invalid json"}}).dump());
-        	return;
-    	}
+        admin_user_status_ctx.require_admin_auth =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
 
-    	const std::string fp     = j.value("fingerprint", "");
-	    const std::string status = j.value("status", "");
+        admin_user_status_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
 
-	    if (fp.empty()) {
-        	reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","missing fingerprint"}}).dump());
-    	    return;
-	    }
+        admin_user_status_ctx.reply_json =
+            [](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
 
-    	if (status != "enabled" && status != "disabled" && status != "revoked") {
-	        reply_json(res, 400, json({{"ok",false},{"error","bad_request"},{"message","invalid status"}}).dump());
-        	return;
-    	}
+        admin_user_status_ctx.admin_would_remove_last_enabled_admin =
+            [&](const std::string& fp) {
+                return admin_would_remove_last_enabled_admin(fp);
+            };
 
-    	// Prevent admin self-lockout: do not allow disabling/revoking your own fingerprint.
-    	if (fp == actor_fp && status != "enabled") {
-	        {
-    	        pqnas::AuditEvent ev;
-	            ev.event = "admin.self_lockout_blocked";
-        	    ev.outcome = "fail";
-    	        ev.f["action"] = "status";
-	            ev.f["fingerprint"] = fp;
-        	    ev.f["requested_status"] = status;
-    	        ev.f["ts"] = now_iso_utc();
-	            ev.f["actor_fp"] = actor_fp;
-            	ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-    	        audit_append(ev);
-	        }
-
-        	reply_json(res, 400, json({
-        	    {"ok",false},
-    	        {"error","bad_request"},
-	            {"message","refusing to change your own status (prevents admin lockout)"}
-        	}).dump());
-    	    return;
-	    }
-
-        if ((status == "disabled" || status == "revoked") && admin_would_remove_last_enabled_admin(fp)) {
-            res.status = 400;
-            res.set_content("{\"ok\":false,\"error\":\"last_admin\",\"message\":\"Cannot disable or revoke the last enabled admin.\"}", "application/json");
-            return;
-        }
-
-
-    	if (!users.exists(fp)) {
-        	reply_json(res, 404, json({{"ok",false},{"error","not_found"},{"message","user not found"}}).dump());
-	        return;
-    	}
-
-        if (status == "revoked") {
-            std::size_t opaque_tokens_invalidated = 0;
-            std::string opaque_token_invalidate_err;
-
-            if (!invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke(
+        admin_user_status_ctx.invalidate_opaque_enrollment_tokens_for_revoke =
+            [&](const std::string& fp, std::size_t* invalidated, std::string* err) {
+                return invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke(
                     fp,
-                    &opaque_tokens_invalidated,
-                    &opaque_token_invalidate_err)) {
-                pqnas::AuditEvent ev;
-                ev.event = "opaque.enrollment_tokens_invalidate_on_user_revoke";
-                ev.outcome = "fail";
-                ev.f["fingerprint"] = fp;
-                ev.f["reason"] = opaque_token_invalidate_err;
-                ev.f["ts"] = now_iso_utc();
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                    invalidated,
+                    err
+                );
+            };
+
+        admin_user_status_ctx.revoke_devices_for_fingerprint =
+            [&](const std::string& fp) {
+                std::string token_revoke_err;
+                (void)g_app_tokens.revoke_devices_for_fingerprint(fp, &token_revoke_err);
+            };
+
+        admin_user_status_ctx.now_iso_utc =
+            [&]() {
+                return now_iso_utc();
+            };
+
+        admin_user_status_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
                 audit_append(ev);
+            };
 
-                reply_json(res, 500, json({
-                    {"ok", false},
-                    {"error", "server_error"},
-                    {"message", "opaque enrollment token invalidation failed"},
-                    {"detail", opaque_token_invalidate_err}
-                }).dump());
-                return;
-            }
+        register_admin_user_status_routes(srv, admin_user_status_ctx);
+    }
 
-            pqnas::AuditEvent ev;
-            ev.event = "opaque.enrollment_tokens_invalidate_on_user_revoke";
-            ev.outcome = "ok";
-            ev.f["fingerprint"] = fp;
-            ev.f["invalidated"] = std::to_string(opaque_tokens_invalidated);
-            ev.f["ts"] = now_iso_utc();
-            ev.f["actor_fp"] = actor_fp;
-            ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-            audit_append(ev);
-        }
-
-    	const bool ok_set  = users.set_status(fp, status);
-        if (status == "disabled" || status == "revoked") {
-            std::string token_revoke_err;
-            (void)g_app_tokens.revoke_devices_for_fingerprint(fp, &token_revoke_err);
-        }
-    	const bool ok_save = ok_set ? users.save(users_path) : false;
-
-    	{
-	        pqnas::AuditEvent ev;
-        	ev.event = "admin.user_status_set";
-    	    ev.outcome = (ok_set && ok_save) ? "ok" : "fail";
-	        ev.f["fingerprint"] = fp;
-        	ev.f["status"] = status;
-    	    ev.f["ts"] = now_iso_utc();
-	        ev.f["actor_fp"] = actor_fp;
-        	ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-	        audit_append(ev);
-    	}
-
-	    if (!ok_set) {
-        	reply_json(res, 500, json({{"ok",false},{"error","server_error"},{"message","set_status failed"}}).dump());
-    	    return;
-	    }
-    	if (!ok_save) {
-	        reply_json(res, 500, json({{"ok",false},{"error","server_error"},{"message","users save failed"}}).dump());
-        	return;
-    	}
-
-    	reply_json(res, 200, json({{"ok",true}}).dump());
-	});
 
 // POST /api/v4/admin/users/storage
 // Body: {"fingerprint":"...","quota_gb":10,"force":false}
