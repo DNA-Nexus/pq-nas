@@ -102,6 +102,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_user_storage_jobs.h"
 #include "routes_admin_user_profile.h"
 #include "routes_user_avatars.h"
+#include "routes_snapshots_browse.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -32897,8 +32898,76 @@ srv.Put("/api/v4/files/put",
     // Transitional split: route/helper block lives in routes_file_versions.inc.
 #include "routes_file_versions.inc"
 
-    // ---- Snapshot routes ----
-    // Transitional split: route/helper block lives in routes_snapshots.inc.
+    // ---- Snapshot browse/list/info routes ----
+    {
+        SnapshotBrowseRoutesContext snapshot_browse_ctx;
+        snapshot_browse_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        snapshot_browse_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        snapshot_browse_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+        snapshot_browse_ctx.load_volumes =
+            [&](std::string* backend,
+                std::vector<SnapshotBrowseVolume>* out,
+                std::string* err) {
+                std::vector<SnapVol> vols;
+                if (!load_snapshot_volumes_from_admin_settings(admin_settings_path, backend, &vols, err)) {
+                    return false;
+                }
+
+                if (out) {
+                    out->clear();
+                    out->reserve(vols.size());
+                    for (const auto& v : vols) {
+                        SnapshotBrowseVolume rec;
+                        rec.name = v.name;
+                        rec.source_subvolume = v.source_subvolume;
+                        rec.snap_root = v.snap_root;
+                        rec.enabled = v.enabled;
+                        out->push_back(rec);
+                    }
+                }
+
+                return true;
+            };
+        snapshot_browse_ctx.is_btrfs_subvolume =
+            [&](const std::string& path, std::string* detail) {
+                return is_btrfs_subvolume_sudo_n(path, detail);
+            };
+        snapshot_browse_ctx.is_path_under =
+            [&](const std::string& path, const std::string& root) {
+                return is_path_under(path, root);
+            };
+        snapshot_browse_ctx.btrfs_subvolume_show =
+            [&](const std::string& path, std::string* out, int* rc) {
+                std::string q = path;
+                std::size_t pos = 0;
+                while ((pos = q.find("'", pos)) != std::string::npos) {
+                    q.replace(pos, 1, "'\\''");
+                    pos += 4;
+                }
+
+                int local_rc = 0;
+                popen_capture("sudo -n /usr/bin/btrfs subvolume show '" + q + "' 2>&1", out, &local_rc);
+                if (rc) *rc = local_rc;
+            };
+        snapshot_browse_ctx.audit_safe_header_value =
+            [&](const std::string& value, std::size_t maxlen) {
+                return audit_safe_header_value(value, maxlen);
+            };
+
+        register_snapshot_browse_routes(srv, snapshot_browse_ctx);
+    }
+
+    // ---- Snapshot create/restore routes ----
+    // Transitional split: create/restore route/helper block lives in routes_snapshots.inc.
 #include "routes_snapshots.inc"
 
 
