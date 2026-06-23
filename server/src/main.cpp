@@ -33388,66 +33388,6 @@ srv.Put("/api/v4/files/put",
         register_user_avatar_routes(srv, user_avatar_ctx);
     }
 
-srv.Post("/api/v4/user/profile/avatar_remove", [&](const httplib::Request& req, httplib::Response& res) {
-    std::string actor_fp, actor_role;
-    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &actor_fp, &actor_role)) return;
-
-    if (!users.load(users_path)) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "users_reload_failed"},
-            {"message", "failed to reload users"}
-        }.dump());
-        return;
-    }
-
-    auto cur = users.get(actor_fp);
-    if (!cur.has_value()) {
-        reply_json(res, 404, json{
-            {"ok", false},
-            {"error", "not_found"},
-            {"message", "user not found"}
-        }.dump());
-        return;
-    }
-
-    const std::filesystem::path dir =
-        std::filesystem::path(pqnas::data_root_dir()) / "avatars";
-
-    std::error_code ec;
-    std::filesystem::remove(dir / (actor_fp + ".png"), ec);
-    std::filesystem::remove(dir / (actor_fp + ".jpg"), ec);
-    std::filesystem::remove(dir / (actor_fp + ".webp"), ec);
-
-    pqnas::UserRec u = *cur;
-    u.avatar_url.clear();
-
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save = ok_upsert ? users.save(users_path) : false;
-
-    {
-        pqnas::AuditEvent ev;
-        ev.event = "user.avatar_remove";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
-        ev.f["actor_fp"] = actor_fp;
-        ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-        audit_append(ev);
-    }
-
-    if (!ok_upsert || !ok_save) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "avatar metadata save failed"}
-        }.dump());
-        return;
-    }
-
-    reply_json(res, 200, json{
-        {"ok", true}
-    }.dump());
-});
-
     // GET /api/v4/apps/has?id=dropzone
 // Authenticated app capability probe for mobile/clients.
 // Red-team posture:

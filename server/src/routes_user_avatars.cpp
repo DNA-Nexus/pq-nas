@@ -512,4 +512,72 @@ void register_user_avatar_routes(
             reply(200, json{{"ok", true}, {"avatar_url", url}});
         }
     );
+    srv.Post("/api/v4/user/profile/avatar_remove",
+        [c](const httplib::Request& req, httplib::Response& res) {
+            auto reply = [&](int status, const json& body) {
+                reply_json_ctx(c, res, status, body);
+            };
+
+            if (!context_ok(c)) {
+                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "avatar route context incomplete"}});
+                return;
+            }
+
+            std::string actor_fp;
+            std::string actor_role;
+            if (!c.require_user_auth(req, res, &actor_fp, &actor_role)) return;
+            (void)actor_role;
+
+            if (!c.users->load(c.users_path)) {
+                reply(500, json{
+                    {"ok", false},
+                    {"error", "users_reload_failed"},
+                    {"message", "failed to reload users"}
+                });
+                return;
+            }
+
+            auto cur = c.users->get(actor_fp);
+            if (!cur.has_value()) {
+                reply(404, json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "user not found"}
+                });
+                return;
+            }
+
+            remove_all_avatar_variants(actor_fp);
+
+            pqnas::UserRec u = *cur;
+            u.avatar_url.clear();
+
+            const bool ok_upsert = c.users->upsert(u);
+            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+
+            {
+                pqnas::AuditEvent ev;
+                ev.event = "user.avatar_remove";
+                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.f["actor_fp"] = actor_fp;
+                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                c.audit_append(ev);
+            }
+
+            if (!ok_upsert || !ok_save) {
+                reply(500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "avatar metadata save failed"}
+                });
+                return;
+            }
+
+            reply(200, json{
+                {"ok", true}
+            });
+        }
+    );
+
+
 }
