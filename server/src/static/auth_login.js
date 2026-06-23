@@ -1200,7 +1200,12 @@
         // Do NOT include <label> here. Some login labels contain the <input>
         // as a child, and setting label.textContent would remove that input.
         const all = Array.from(document.querySelectorAll("h1,h2,h3,p,div,span"));
-        return all.find(el => String(el.textContent || "").trim() === wanted) || null;
+        return all.find(el => {
+            if (el.querySelector && el.querySelector("a,input,textarea,select,button")) {
+                return false;
+            }
+            return String(el.textContent || "").trim() === wanted;
+        }) || null;
     }
 
     function setExact(oldText, key, fallback) {
