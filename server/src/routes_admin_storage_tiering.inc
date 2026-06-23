@@ -70,7 +70,6 @@ srv.Post("/api/v4/admin/storage/tiering/migrate_one", [&](const httplib::Request
     }.dump());
 });
 
-    // POST /api/v4/gallery/export_sel_zip
     // Body JSON: { "paths": ["rel/a.jpg", "rel/dir", ...], "max_bytes": 52428800, "base": "rel/dir" }
     // Response: application/zip (in-memory, bounded)
     //
