@@ -110,6 +110,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_user_avatars.h"
 #include "routes_apps_manage.h"
 #include "routes_apps_public.h"
+#include "routes_core_ui_shell.h"
 #include "routes_snapshots_browse.h"
 #include "routes_snapshots_create.h"
 #include "routes_snapshots_restore.h"
@@ -11295,55 +11296,33 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     }
 
 
-srv.Get("/static/system.js", [&](const httplib::Request&, httplib::Response& res) {
-    std::string body;
-    if (!read_file_to_string(STATIC_SYSTEM_JS, body) || body.empty()) {
-        res.status = 404;
-        res.set_header("Content-Type", "text/plain");
-        res.body = "Missing static file: " + STATIC_SYSTEM_JS;
-        return;
+    // ---- Core UI shell routes ----
+    {
+        CoreUiShellRoutesContext core_ui_shell_ctx;
+        core_ui_shell_ctx.static_system_js = STATIC_SYSTEM_JS;
+        core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
+        core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
+        core_ui_shell_ctx.static_app_js = STATIC_APP_JS;
+        core_ui_shell_ctx.static_admin_js = STATIC_ADMIN_JS;
+
+        core_ui_shell_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        core_ui_shell_ctx.read_file_to_string =
+            [](const std::string& path, std::string& body) {
+                return read_file_to_string(path, body);
+            };
+
+        core_ui_shell_ctx.slurp_file =
+            [](const std::string& path) {
+                return slurp_file(path);
+            };
+
+        register_core_ui_shell_routes(srv, core_ui_shell_ctx);
     }
-    res.status = 200;
-    res.set_header("Content-Type", "application/javascript; charset=utf-8");
-    res.body = body;
-});
 
-    srv.Get("/admin/audit", [&](const httplib::Request& req, httplib::Response& res) {
-        std::string actor_fp;
-        if (!require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
-
-        res.set_header("Cache-Control", "no-store");
-        res.set_content(slurp_file(STATIC_AUDIT_HTML), "text/html; charset=utf-8");
-    });
-
-
-    srv.Get("/admin", [&](const httplib::Request& req, httplib::Response& res) {
-        std::string actor_fp;
-        if (!require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, &actor_fp)) return;
-
-        const std::string body = slurp_file(STATIC_ADMIN_HTML);
-        if (body.empty()) {
-            res.status = 404;
-            res.set_content("missing admin.html", "text/plain");
-            return;
-        }
-
-        res.set_header("Cache-Control", "no-store");
-        res.set_content(body, "text/html; charset=utf-8");
-    });
-
-    srv.Get("/static/app.js", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_APP_JS);
-        if (body.empty()) { res.status = 404; res.set_content("missing app.js","text/plain"); return; }
-        res.set_content(body, "application/javascript; charset=utf-8");
-    });
-
-    srv.Get("/static/admin.js", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_ADMIN_JS);
-        if (body.empty()) { res.status = 404; res.set_content("missing admin.js","text/plain"); return; }
-        res.set_header("Cache-Control", "no-store");
-        res.set_content(body, "application/javascript; charset=utf-8");
-    });
 
 
 
