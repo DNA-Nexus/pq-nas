@@ -188,6 +188,8 @@ add_executable(pqnas_server
         server/src/routes_admin_user_lifecycle.h
         server/src/routes_admin_user_storage_jobs.cpp
         server/src/routes_admin_user_storage_jobs.h
+        server/src/routes_admin_user_profile.cpp
+        server/src/routes_admin_user_profile.h
         server/src/user_storage_migration.h
         server/src/user_storage_migration.cpp
 

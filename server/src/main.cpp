@@ -100,6 +100,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_admin_storage_tiering.h"
 #include "routes_admin_user_lifecycle.h"
 #include "routes_admin_user_storage_jobs.h"
+#include "routes_admin_user_profile.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -32903,8 +32904,41 @@ srv.Put("/api/v4/files/put",
 
 // Admin routes
 
-    // ---- Admin/user profile and avatar routes ----
-    // Transitional split: route/helper block lives in routes_admin_user_profile.inc.
+    // ---- Admin user profile routes ----
+    {
+        AdminUserProfileRoutesContext admin_user_profile_ctx;
+        admin_user_profile_ctx.users = &users;
+        admin_user_profile_ctx.users_path = users_path;
+        admin_user_profile_ctx.require_admin_cookie =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        admin_user_profile_ctx.require_admin_auth =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_auth_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        admin_user_profile_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
+        admin_user_profile_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        admin_user_profile_ctx.now_iso_utc =
+            [&]() {
+                return now_iso_utc();
+            };
+        admin_user_profile_ctx.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+            };
+
+        register_admin_user_profile_routes(srv, admin_user_profile_ctx);
+    }
+
+    // ---- User/avatar routes ----
+    // Transitional split: avatar route/helper block lives in routes_admin_user_profile.inc.
 #include "routes_admin_user_profile.inc"
 
 srv.Post("/api/v4/user/profile/avatar_remove", [&](const httplib::Request& req, httplib::Response& res) {
