@@ -107,6 +107,7 @@ All verification is fail-closed: any parse/verify/binding mismatch returns an er
 #include "routes_file_versions_archive_blob.h"
 #include "routes_file_versions_read.h"
 #include "routes_file_versions_manage.h"
+#include "routes_file_versions_restore.h"
 
 // header-only HTTP server
 #include "httplib.h"
@@ -32968,8 +32969,56 @@ srv.Put("/api/v4/files/put",
     }
 
     // ---- File version restore route ----
-    // Transitional split: restore_version route/helper block lives in routes_file_versions.inc.
-#include "routes_file_versions.inc"
+    {
+        FileVersionRestoreRoutesContext file_version_restore_ctx;
+        file_version_restore_ctx.file_versions = &file_versions_index;
+        file_version_restore_ctx.users = &users;
+        file_version_restore_ctx.require_user_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fp_hex,
+                std::string* role) {
+                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
+            };
+        file_version_restore_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+        file_version_restore_ctx.user_dir_for_fp =
+            [&](const std::string& fp_hex) {
+                return user_dir_for_fp(users, fp_hex);
+            };
+        file_version_restore_ctx.file_size_u64 =
+            [&](const std::filesystem::path& path) -> std::uint64_t {
+                return pqnas::file_size_u64_safe(path);
+            };
+        file_version_restore_ctx.file_mtime_epoch =
+            [&](const std::filesystem::path& path) -> std::int64_t {
+                return static_cast<std::int64_t>(file_mtime_epoch_safe(path));
+            };
+        file_version_restore_ctx.touch_gallery_file_facts =
+            [&](const std::string& scope_type,
+                const std::string& scope_id,
+                const std::string& logical_rel_path,
+                std::uint64_t size_bytes,
+                std::int64_t mtime_epoch,
+                std::int64_t now_epoch) {
+                if (auto* gidx = pqnas::get_gallery_meta_index()) {
+                    std::string gerr;
+                    (void)gidx->touch_file_facts(
+                        scope_type,
+                        scope_id,
+                        logical_rel_path,
+                        size_bytes,
+                        mtime_epoch,
+                        now_epoch,
+                        &gerr
+                    );
+                }
+            };
+
+        register_file_version_restore_routes(srv, file_version_restore_ctx);
+    }
 
 
     // ---- Snapshot browse/list/info routes ----
