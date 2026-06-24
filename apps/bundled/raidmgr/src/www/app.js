@@ -3554,12 +3554,42 @@ html[data-theme="bright"] .raidPromptInput{
             host.innerHTML = `<div class="v" style="opacity:.8;">Loading member drives…</div>`;
 
             const disc = await loadPoolDiscoveryOnce(mnt);
-            const bdevs = Array.isArray(disc?.btrfs?.devices) ? disc.btrfs.devices : [];
+
+            let bdevs = Array.isArray(disc?.btrfs?.devices) ? disc.btrfs.devices : [];
+
+            if (!bdevs.length && Array.isArray(p?.runtime_members)) {
+                bdevs = p.runtime_members
+                    .map((d) => ({
+                        path: d?.path || d?.runtime_dev || d?.device || "",
+                        parent_disk: d?.parent_disk || d?.runtime_dev || d?.device || "",
+                        by_id: d?.by_id || "",
+                        by_path: d?.by_path || "",
+                        model: d?.model || "",
+                        size_bytes: d?.size_bytes || 0,
+                        used_bytes: d?.used_bytes || 0
+                    }))
+                    .filter((d) => d.path);
+            }
+
+            if (!bdevs.length && Array.isArray(p?.slots)) {
+                bdevs = p.slots
+                    .filter((slot) => slot && slot.member && slot.present)
+                    .map((slot) => ({
+                        path: slot.runtime_dev || slot.device || "",
+                        parent_disk: slot.device || slot.runtime_dev || "",
+                        by_id: slot.by_id || "",
+                        by_path: slot.by_path || "",
+                        model: slot.model || "",
+                        size_bytes: slot.size_bytes || 0,
+                        used_bytes: slot.used_bytes || 0
+                    }))
+                    .filter((d) => d.path);
+            }
 
             if (!bdevs.length) {
                 host.innerHTML = `
-<div class="v" style="opacity:.85;">No member devices found from discovery.</div>
-<div class="v" style="opacity:.7; margin-top:6px;">(Pool may be non-btrfs or discovery schema differs.)</div>`;
+<div class="v" style="opacity:.85;">${esc(tr("raidmgr.member_drives.none_found", null, "No member devices found."))}</div>
+<div class="v" style="opacity:.7; margin-top:6px;">${esc(tr("raidmgr.member_drives.none_found_hint", null, "Pool discovery did not return member devices."))}</div>`;
                 return;
             }
 
@@ -4899,7 +4929,36 @@ doBtn.onclick = async () => {
 
                 try {
                     const disc = await loadPoolDiscoveryOnce(mount);
-                    const bdevs = Array.isArray(disc?.btrfs?.devices) ? disc.btrfs.devices : [];
+                    let bdevs = Array.isArray(disc?.btrfs?.devices) ? disc.btrfs.devices : [];
+
+                    if (!bdevs.length && Array.isArray(p?.runtime_members)) {
+                        bdevs = p.runtime_members
+                            .map((d) => ({
+                                path: d?.path || d?.runtime_dev || d?.device || "",
+                                parent_disk: d?.parent_disk || d?.runtime_dev || d?.device || "",
+                                by_id: d?.by_id || "",
+                                by_path: d?.by_path || "",
+                                model: d?.model || "",
+                                size_bytes: d?.size_bytes || 0,
+                                used_bytes: d?.used_bytes || 0
+                            }))
+                            .filter((d) => d.path);
+                    }
+
+                    if (!bdevs.length && Array.isArray(p?.slots)) {
+                        bdevs = p.slots
+                            .filter((slot) => slot && slot.member && slot.present)
+                            .map((slot) => ({
+                                path: slot.runtime_dev || slot.device || "",
+                                parent_disk: slot.device || slot.runtime_dev || "",
+                                by_id: slot.by_id || "",
+                                by_path: slot.by_path || "",
+                                model: slot.model || "",
+                                size_bytes: slot.size_bytes || 0,
+                                used_bytes: slot.used_bytes || 0
+                            }))
+                            .filter((d) => d.path);
+                    }
 
                     if (!bdevs.length) {
                         host.innerHTML = `<span class="v" style="opacity:.75;">${esc(tr("raidmgr.no_devices_found", null, "(no devices found)"))}</span>`;
