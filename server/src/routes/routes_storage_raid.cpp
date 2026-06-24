@@ -56,6 +56,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <csignal>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using json = nlohmann::json;
 
@@ -305,7 +309,53 @@ static void audit_append(const pqnas::AuditEvent& ev) {
 
 
 // copied transitional helper from main.cpp: run_cmd_capture
-[[maybe_unused]] static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
+[[maybe_unused]] static bool run_argv_capture_limited(
+    const std::vector<std::string>& argv_s,
+    std::string* out,
+    int* ec,
+    int timeout_ms,
+    std::size_t max_bytes);
+
+static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
+    // hardening: fstab pseudo commands use argv exec, not shell.
+    auto run_fstab_pseudo_argv = [&](const std::string& prefix,
+                                     const std::string& helper) -> bool {
+        if (cmd.rfind(prefix, 0) != 0) return false;
+
+        std::string mount = cmd.substr(prefix.size());
+        while (!mount.empty() && std::isspace(static_cast<unsigned char>(mount.front()))) {
+            mount.erase(mount.begin());
+        }
+        while (!mount.empty() && std::isspace(static_cast<unsigned char>(mount.back()))) {
+            mount.pop_back();
+        }
+
+        const std::string pools_root = "/srv/pqnas/pools/";
+        if (mount.empty() ||
+            mount.rfind(pools_root, 0) != 0 ||
+            mount.find('/', pools_root.size()) != std::string::npos) {
+            if (out) *out = "err: fstab helper only allows /srv/pqnas/pools/<pool_id>\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        // hardening: no shell parsing for root helper arguments.
+        return run_argv_capture_limited({
+            "/usr/bin/sudo",
+            "-n",
+            helper,
+            mount
+        }, out, exit_code, 10000, 64 * 1024);
+    };
+
+    if (run_fstab_pseudo_argv("FSTAB_ADD_BTRFS ", "/usr/local/sbin/pqnas-fstab-add-btrfs")) {
+        return true;
+    }
+    if (run_fstab_pseudo_argv("FSTAB_REMOVE ", "/usr/local/sbin/pqnas-fstab-remove")) {
+        return true;
+    }
+
+
     if (out) out->clear();
     if (exit_code) *exit_code = 127; // default like "command failed"
 
@@ -1672,7 +1722,8 @@ static void audit_append(const pqnas::AuditEvent& ev) {
     cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount));
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-fstab-add-btrfs " + sh_quote(mount));
+    // hardening: pseudo command keeps fstab helper argv-only.
+    cmds.push_back("FSTAB_ADD_BTRFS " + mount);
 
     const std::string data_dir = mount + "/data";
     cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
@@ -2270,6 +2321,7 @@ j["no_stats_available"] = has("no stats available");
     const std::string cmd =
         "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount);
 
+    // hardening: route pseudo commands through guarded runner.
     const bool ok = run_cmd_capture(cmd, &show, &ec);
     cap_string(show, 256 * 1024);
 
@@ -2606,7 +2658,145 @@ j["no_stats_available"] = has("no stats available");
 }
 
 
-// copied transitional helper from main.cpp: raid_run_one_step
+
+// hardening: argv exec avoids shell parsing.
+[[maybe_unused]] static bool run_argv_capture_limited(
+    const std::vector<std::string>& argv_s,
+    std::string* out,
+    int* ec,
+    int timeout_ms = 10000,
+    std::size_t max_bytes = 64 * 1024)
+{
+    if (!out || !ec) return false;
+    out->clear();
+    *ec = 1;
+
+    if (argv_s.empty() || argv_s[0].empty()) {
+        *out = "err: empty argv\n";
+        *ec = 2;
+        return true;
+    }
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        *out = std::string("err: pipe failed: ") + std::strerror(errno) + "\n";
+        *ec = 1;
+        return true;
+    }
+
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        const int e = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        *out = std::string("err: fork failed: ") + std::strerror(e) + "\n";
+        *ec = 1;
+        return true;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        ::dup2(pipefd[1], STDOUT_FILENO);
+        ::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv(argv[0], argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    const int flags = ::fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) {
+        (void)::fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    bool truncated = false;
+
+    auto append_bytes = [&](const char* buf, ssize_t n) {
+        if (n <= 0) return;
+        const std::size_t have = out->size();
+        if (have < max_bytes) {
+            const std::size_t room = max_bytes - have;
+            const std::size_t take = (static_cast<std::size_t>(n) < room)
+                ? static_cast<std::size_t>(n)
+                : room;
+            out->append(buf, take);
+        }
+        if (out->size() >= max_bytes && static_cast<std::size_t>(n) > 0) {
+            truncated = true;
+        }
+    };
+
+    auto drain = [&]() {
+        char buf[4096];
+        for (;;) {
+            const ssize_t n = ::read(pipefd[0], buf, sizeof(buf));
+            if (n > 0) {
+                append_bytes(buf, n);
+                continue;
+            }
+            if (n == 0) return;
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            return;
+        }
+    };
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    int status = 0;
+
+    for (;;) {
+        drain();
+
+        const pid_t w = ::waitpid(pid, &status, WNOHANG);
+        if (w == pid) break;
+
+        if (w < 0 && errno != EINTR) {
+            *ec = 1;
+            break;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            // hardenin: timeout caps external helper runtime.
+            (void)::kill(pid, SIGKILL);
+            (void)::waitpid(pid, &status, 0);
+            drain();
+            ::close(pipefd[0]);
+            if (truncated) out->append("\n[output truncated]\n");
+            out->append("err: command timed out\n");
+            *ec = 124;
+            return true;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    drain();
+    ::close(pipefd[0]);
+
+    if (truncated) out->append("\n[output truncated]\n");
+
+    if (WIFEXITED(status)) {
+        *ec = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        *ec = 128 + WTERMSIG(status);
+    } else {
+        *ec = 1;
+    }
+
+    return true;
+}
+
+
+// copied transitional helpr from main.cpp: raid_run_one_step
 
 [[maybe_unused]] static bool raid_run_one_step(const std::string& cmd,
                               const std::string& users_path,
@@ -2692,6 +2882,33 @@ j["no_stats_available"] = has("no stats available");
             return true;
         }
     }
+    // Pseudo-command: FSTAB_ADD_BTRFS <mount>
+    // hardening: narrow root helper runs through argv, not shell.
+    if (cmd.rfind("FSTAB_ADD_BTRFS ", 0) == 0) {
+        const std::string mount = trim_copy(cmd.substr(std::string("FSTAB_ADD_BTRFS ").size()));
+        if (mount.empty() || !is_abs_path_safe(mount)) {
+            *out = "err: FSTAB_ADD_BTRFS format is: FSTAB_ADD_BTRFS <mount>\n";
+            *ec = 2;
+            return true;
+        }
+
+        const std::string pools_root = "/srv/pqnas/pools/";
+        if (mount.rfind(pools_root, 0) != 0 ||
+            mount.find('/', pools_root.size()) != std::string::npos) {
+            // hardening: reject traversal before root helper.
+            *out = "err: FSTAB_ADD_BTRFS only allows /srv/pqnas/pools/<pool_id>\n";
+            *ec = 2;
+            return true;
+        }
+
+        return run_argv_capture_limited({
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/pqnas-fstab-add-btrfs",
+            mount
+        }, out, ec, 10000, 64 * 1024);
+    }
+
     // Pseudo-command: FSTAB_REMOVE <mount>
     // Removes only /etc/fstab rows whose second field exactly matches the mount.
     // The privileged edit is performed by a guarded root helper.
@@ -2711,11 +2928,13 @@ j["no_stats_available"] = has("no stats available");
             return true;
         }
 
-        const std::string helper_cmd =
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-fstab-remove " + sh_quote(mount);
-
-        const bool ran = run_cmd_capture(helper_cmd, out, ec);
-        return ran;
+        // hardening: narrow root helper runs through argv, not shell.
+        return run_argv_capture_limited({
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/pqnas-fstab-remove",
+            mount
+        }, out, ec, 10000, 64 * 1024);
     }
 
     // Pseudo-command: POOLS_CFG_SET_MODE <mount> <mode>
@@ -5208,6 +5427,7 @@ srv.Get("/api/v4/raid/discovery", [&](const httplib::Request& req, httplib::Resp
     int ec_show = 0;
 
     // NOTE: stderr capture is now inside run_cmd_capture(); do NOT add "2>&1" here.
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
 
     cap_string(show_raw, 256 * 1024);
@@ -5372,6 +5592,7 @@ srv.Get("/api/v4/raid/balance-status", [&](const httplib::Request& req, httplib:
 
     std::string out;
     int rc = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok = run_cmd_capture(cmd, &out, &rc);
     cap_string(out, 256 * 1024);
 
@@ -5508,6 +5729,7 @@ srv.Get("/api/v4/raid/scrub-status", [&](const httplib::Request& req, httplib::R
 
     std::string out;
     int rc = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok = run_cmd_capture(cmd, &out, &rc);
     cap_string(out, 256 * 1024);
 
@@ -6093,6 +6315,7 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
 
         std::string out;
         int ec = 0;
+        // hardening: route pseudo commands through guarded runner.
         const bool okc = run_cmd_capture(cmd, &out, &ec);
         cap_string(out, 128 * 1024);
 
@@ -6236,6 +6459,7 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     auto run = [&](const std::string& cmd, int cap_bytes, std::string* out_txt, int* out_rc) -> json {
         std::string out;
         int rc = 0;
+        // hardening: route pseudo commands through guarded runner.
         const bool ok = run_cmd_capture(cmd, &out, &rc);
         cap_string(out, cap_bytes);
         if (out_txt) *out_txt = out;
@@ -6478,6 +6702,7 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -6813,6 +7038,7 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -7099,6 +7325,7 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -7402,6 +7629,7 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -7941,6 +8169,7 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -8494,6 +8723,7 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
     rtrim_inplace(show_raw);
@@ -8805,6 +9035,7 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
 
     std::string show_raw;
     int ec_show = 0;
+    // hardening: route pseudo commands through guarded runner.
     const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
@@ -9392,6 +9623,7 @@ srv.Post("/api/v4/raid/execute/create-pool", [&](const httplib::Request& req, ht
 
         std::string out;
         int ec = 0;
+        // hardening: route pseudo commands through guarded runner.
         const bool ran = run_cmd_capture(cmd, &out, &ec);
         const bool step_ok = ran && (ec == 0);
 
