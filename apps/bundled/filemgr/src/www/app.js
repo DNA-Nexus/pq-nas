@@ -3598,23 +3598,96 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+  function droppedFileKey(file) {
+    if (!file) return "";
+    return [
+      String(file.name || ""),
+      String(Number(file.size) || 0),
+      String(Number(file.lastModified) || 0)
+    ].join("\\x1f");
+  }
+
+  function appendFlatDroppedFiles(dt, out) {
+    const files = Array.from((dt && dt.files) || []);
+    if (!files.length) return;
+
+    const seen = new Set();
+    for (const it of out) {
+      const key = droppedFileKey(it && it.file);
+      if (key) seen.add(key);
+    }
+
+    for (const f of files) {
+      const key = droppedFileKey(f);
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push({ rel: f.name, file: f, source: "drop" });
+    }
+  }
+
+  function droppedFileKey(file) {
+    if (!file) return "";
+    return [
+      String(file.name || ""),
+      String(Number(file.size) || 0),
+      String(Number(file.lastModified) || 0)
+    ].join("\\x1f");
+  }
+
+  function flatDroppedFiles(dt) {
+    return Array.from((dt && dt.files) || [])
+      .filter((f) => f && f.name)
+      .map((f) => ({ rel: f.name, file: f, source: "drop" }));
+  }
+
+  function appendMissingFlatDroppedFiles(dt, out) {
+    const seen = new Set();
+    for (const it of out) {
+      const key = droppedFileKey(it && it.file);
+      if (key) seen.add(key);
+    }
+
+    for (const it of flatDroppedFiles(dt)) {
+      const key = droppedFileKey(it.file);
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push(it);
+    }
+  }
+
   async function collectDroppedFiles(dt) {
-    const out = [];
     const items = dt && dt.items ? Array.from(dt.items) : [];
-    const hasEntryApi = items.some(it => it && typeof it.webkitGetAsEntry === "function");
-    if (hasEntryApi) {
-      for (const it of items) {
-        if (!it) continue;
-        const entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
-        if (!entry) continue;
+    const flat = flatDroppedFiles(dt);
+
+    const entries = [];
+    for (const it of items) {
+      if (!it || typeof it.webkitGetAsEntry !== "function") continue;
+      const entry = it.webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+
+    const hasDirectoryEntry = entries.some((entry) => entry && entry.isDirectory);
+
+    // For normal multi-file drops, trust DataTransfer.files first.
+    // On some Linux/browser drag sources, webkitGetAsEntry() can expose only the
+    // first selected file even when DataTransfer.files contains the full list.
+    // Keep the entry walker mainly for folder drops.
+    if (flat.length && !hasDirectoryEntry) {
+      return flat;
+    }
+
+    const out = [];
+    if (entries.length) {
+      for (const entry of entries) {
         await walkEntry(entry, "", out);
       }
+
+      // Folder drops may also include flat files; merge any missing ones.
+      appendMissingFlatDroppedFiles(dt, out);
       return out;
     }
 
-    const files = Array.from(dt.files || []);
-    for (const f of files) out.push({ rel: f.name, file: f, source: "drop" });
-    return out;
+    return flat;
   }
 
   gridWrap?.addEventListener("dragenter", (e) => {
