@@ -126,6 +126,9 @@ function adminUsersStorageJobsLoad() {
                     state: String(j.state || "queued"),
                     phase: String(j.phase || ""),
                     percent: Number.isFinite(Number(j.percent)) ? Number(j.percent) : null,
+                    copy_percent: Number.isFinite(Number(j.copy_percent)) ? Number(j.copy_percent) : null,
+                    bytes_done: Number.isFinite(Number(j.bytes_done)) ? Number(j.bytes_done) : null,
+                    bytes_total: Number.isFinite(Number(j.bytes_total)) ? Number(j.bytes_total) : null,
                     message: String(j.message || ""),
                     from_pool_id: String(j.from_pool_id || ""),
                     to_pool_id: String(j.to_pool_id || ""),
@@ -202,10 +205,17 @@ function adminUsersUpdateStorageJobFromRecord(kind, jobId, fp, job) {
     const percentRaw = Number(rec.percent);
     const percent = Number.isFinite(percentRaw) ? Math.max(0, Math.min(100, percentRaw)) : null;
 
+    const copyPercentRaw = Number(rec.copy_percent);
+    const bytesDoneRaw = Number(rec.bytes_done);
+    const bytesTotalRaw = Number(rec.bytes_total);
+
     const patch = {
         state: state || "running",
         phase,
         percent,
+        copy_percent: Number.isFinite(copyPercentRaw) ? copyPercentRaw : null,
+        bytes_done: Number.isFinite(bytesDoneRaw) ? bytesDoneRaw : null,
+        bytes_total: Number.isFinite(bytesTotalRaw) ? bytesTotalRaw : null,
         message: String(rec.message || rec.error || ""),
     };
 
@@ -218,6 +228,90 @@ function adminUsersUpdateStorageJobFromRecord(kind, jobId, fp, job) {
     }
 
     adminUsersUpsertStorageJob(kind, jobId, fp, patch);
+}
+
+function adminUsersStorageJobStateLabel(state) {
+    const s = String(state || "").toLowerCase();
+    if (s === "queued") return tr("admin.users.job_state.queued", null, "queued");
+    if (s === "running") return tr("admin.users.job_state.running", null, "running");
+    if (s === "done") return tr("admin.users.job_state.done", null, "done");
+    if (s === "failed") return tr("admin.users.job_state.failed", null, "failed");
+    return s;
+}
+
+function adminUsersStorageJobPhaseLabel(phase) {
+    const p = String(phase || "").toLowerCase();
+    const map = {
+        queued: "queued",
+        starting: "starting",
+        acquiring_lock: "acquiring_lock",
+        resolving_paths: "resolving_paths",
+        validating_destination_capacity: "validating_destination_capacity",
+        creating_destination: "creating_destination",
+        copying: "copying",
+        verifying: "verifying",
+        switching_metadata: "switching_metadata",
+        reloading_metadata: "reloading_metadata",
+        resolving_paths_cleanup: "resolving_paths",
+        validating_active_mapping: "validating_active_mapping",
+        validating_old_copy: "validating_old_copy",
+        deleting_old_copy: "deleting_old_copy",
+        done: "done",
+    };
+
+    const key = map[p] || p;
+    if (!key) return "";
+    return tr(`admin.users.job_phase.${key}`, null, key.replaceAll("_", " "));
+}
+
+function adminUsersStorageJobPoolLabel(poolId) {
+    const p = String(poolId || "").trim();
+    if (!p || p === "default") return tr("admin.users.pool.default", null, "default");
+    return p;
+}
+
+function adminUsersStorageJobMessage(job) {
+    const j = job || {};
+    const state = String(j.state || "").toLowerCase();
+    const phase = String(j.phase || "").toLowerCase();
+
+    if (state === "failed") {
+        return String(j.message || tr("admin.users.job_state.failed", null, "failed"));
+    }
+
+    if (j.kind === "migration" && phase === "copying") {
+        const done = Number(j.bytes_done);
+        const total = Number(j.bytes_total);
+        const pct = Number(j.copy_percent);
+
+        if (Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+            const vars = {
+                done: fmtBytesShort(done),
+                total: fmtBytesShort(total),
+                percent: Number.isFinite(pct) ? pct.toFixed(pct >= 10 ? 0 : 1) : "",
+            };
+
+            if (vars.percent) {
+                return tr("admin.users.job_message.copy_progress", vars, `${vars.done} / ${vars.total} copied (${vars.percent}%)`);
+            }
+
+            return tr("admin.users.job_message.copy_progress_no_percent", vars, `${vars.done} / ${vars.total} copied`);
+        }
+    }
+
+    if (state === "done" && j.kind === "migration") {
+        return tr("admin.users.job_message.migration_done", null, "migration completed");
+    }
+
+    if (state === "done" && j.kind === "cleanup") {
+        return tr("admin.users.job_message.cleanup_done", null, "old inactive copy deleted");
+    }
+
+    if (phase) {
+        return adminUsersStorageJobPhaseLabel(phase);
+    }
+
+    return String(j.message || "");
 }
 
 function injectAdminUsersStorageJobCss() {
@@ -363,7 +457,10 @@ function renderAdminUsersStorageJobPanel() {
 
         const state = document.createElement("div");
         state.className = "adminUsersJobMeta";
-        state.textContent = [job.state, job.phase].filter(Boolean).join(" · ");
+        state.textContent = [
+            adminUsersStorageJobStateLabel(job.state),
+            adminUsersStorageJobPhaseLabel(job.phase)
+        ].filter(Boolean).join(" · ");
 
         top.appendChild(name);
         top.appendChild(state);
@@ -372,14 +469,15 @@ function renderAdminUsersStorageJobPanel() {
         const meta = document.createElement("div");
         meta.className = "adminUsersJobMeta";
         meta.textContent = job.kind === "migration"
-            ? `${job.from_pool_id || "default"} → ${job.to_pool_id || "?"} · ${job.fingerprint}`
-            : `${job.active_pool_id || "?"} / old ${job.old_pool_id || "?"} · ${job.fingerprint}`;
+            ? `${adminUsersStorageJobPoolLabel(job.from_pool_id || "default")} → ${adminUsersStorageJobPoolLabel(job.to_pool_id || "?")} · ${job.fingerprint}`
+            : `${adminUsersStorageJobPoolLabel(job.active_pool_id || "?")} / ${tr("admin.users.old_pool_label", { pool: adminUsersStorageJobPoolLabel(job.old_pool_id || "?") }, "old {pool}")} · ${job.fingerprint}`;
         item.appendChild(meta);
 
-        if (job.message) {
+        const jobMessage = adminUsersStorageJobMessage(job);
+        if (jobMessage) {
             const message = document.createElement("div");
             message.className = "adminUsersJobMeta";
-            message.textContent = job.message;
+            message.textContent = jobMessage;
             item.appendChild(message);
         }
 
