@@ -1,16 +1,9 @@
-#!/usr/bin/env bash
-# PQ-NAS guarded /etc/fstab mount-entry remover.
-#
-# Narrow by design:
-#   - accepts exactly one argument: /srv/pqnas/pools/<pool_id>
-#   - removes only fstab rows whose second field exactly equals that mount path
-#   - backs up /etc/fstab before any rewrite
-#   - no eval, no broad command execution, no glob-based deletion
-
-set -euo pipefail
+#!/bin/sh
+set -eu
+export LC_ALL=C
 
 die() {
-    echo "ERROR: $*" >&2
+    echo "error: $*" >&2
     exit 1
 }
 
@@ -19,77 +12,52 @@ usage() {
     exit 2
 }
 
-[[ $# -eq 1 ]] || usage
+[ "$#" -eq 1 ] || usage
 
-MOUNT="$1"
+mount="$1"
 
-case "$MOUNT" in
+# hardening: allow only PQ-NAS managed pool mount paths
+case "$mount" in
     /srv/pqnas/pools/*) ;;
-    *) die "mount path is not under /srv/pqnas/pools" ;;
+    *) die "mount must be under /srv/pqnas/pools" ;;
 esac
 
-POOL_ID="${MOUNT#/srv/pqnas/pools/}"
+pool_id="${mount#/srv/pqnas/pools/}"
 
-[[ -n "$POOL_ID" ]] || die "empty pool id"
-[[ "$POOL_ID" != */* ]] || die "pool id must be a single path segment"
-[[ "$POOL_ID" != "." && "$POOL_ID" != ".." ]] || die "invalid pool id"
-[[ "$POOL_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "pool id contains unsafe characters"
-
-case "$MOUNT" in
-    *$'\n'*|*$'\r'*|*$'\t'*) die "mount path contains control whitespace" ;;
+# hardening: strict pool id allowlist prevents path traversal and metacharacters
+case "$pool_id" in
+    ""|*/*|*[!A-Za-z0-9_-]*)
+        die "unsafe pool id"
+        ;;
 esac
 
-[[ -f /etc/fstab ]] || die "/etc/fstab is missing"
-[[ -r /etc/fstab && -w /etc/fstab ]] || die "/etc/fstab is not readable/writable by root"
+[ "${#pool_id}" -le 32 ] || die "pool id too long"
+# hardening: canonical mount string prevents alternate path spellings
+[ "$mount" = "/srv/pqnas/pools/$pool_id" ] || die "non-canonical mount path"
 
-TMP=""
-COUNT_TMP=""
+parent="/srv/pqnas/pools"
+[ -d "$parent" ] || die "pool parent does not exist: $parent"
 
-cleanup() {
-    [[ -n "${TMP:-}" ]] && rm -f -- "$TMP"
-    [[ -n "${COUNT_TMP:-}" ]] && rm -f -- "$COUNT_TMP"
-}
-trap cleanup EXIT
+parent_real="$(cd "$parent" && pwd -P)"
+[ "$parent_real" = "$parent" ] || die "pool parent is not canonical: $parent_real"
 
-TMP="$(mktemp /etc/fstab.pqnas-remove.XXXXXX)"
-COUNT_TMP="$(mktemp /tmp/pqnas-fstab-remove-count.XXXXXX)"
-
-awk -v mp="$MOUNT" -v count_file="$COUNT_TMP" '
-BEGIN { removed = 0 }
-{
-    if ($0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) {
-        print
-        next
-    }
-
-    if ($2 == mp) {
-        removed++
-        next
-    }
-
-    print
-}
-END {
-    print removed > count_file
-}
-' /etc/fstab > "$TMP" || die "failed to filter /etc/fstab"
-
-REMOVED="$(cat "$COUNT_TMP" 2>/dev/null || true)"
-[[ "$REMOVED" =~ ^[0-9]+$ ]] || die "internal error: bad removed count"
-
-BACKUP="/etc/fstab.pqnas-backup.$(date -u +%Y%m%dT%H%M%SZ)"
-if [[ -e "$BACKUP" ]]; then
-    BACKUP="${BACKUP}.$$"
+# hardening: reject symlink mountpoints to reduce symlink/TOCTOU risk
+if [ -e "$mount" ] && [ -L "$mount" ]; then
+    die "mount path is a symlink: $mount"
 fi
 
-cp -a -- /etc/fstab "$BACKUP" || die "failed to back up /etc/fstab"
+# hardening: count matching fstab rows without using a /tmp side file
+removed_count="$(awk -v m="$mount" '$2 == m { c++ } END { print c + 0 }' /etc/fstab)"
 
-if (( REMOVED > 0 )); then
-    chown --reference=/etc/fstab "$TMP" || die "failed to copy owner"
-    chmod --reference=/etc/fstab "$TMP" || die "failed to copy mode"
-    mv -- "$TMP" /etc/fstab || die "failed to replace /etc/fstab"
-    TMP=""
-    echo "ok: removed ${REMOVED} fstab entr$( (( REMOVED == 1 )) && echo y || echo ies ) for ${MOUNT}; backup=${BACKUP}"
-else
-    echo "ok: no fstab entry found for ${MOUNT}; backup=${BACKUP}"
-fi
+# hardening: create temp file under /etc, not global /tmp
+tmp="$(mktemp /etc/fstab.pqnas-remove.XXXXXX)"
+trap 'rm -f "$tmp"' EXIT INT TERM
+
+awk -v m="$mount" '$2 != m { print }' /etc/fstab > "$tmp"
+
+# hardening: atomic-ish root-owned replacement avoids partial fstab writes
+install -m 0644 -o root -g root "$tmp" /etc/fstab
+rm -f "$tmp"
+trap - EXIT INT TERM
+
+echo "ok: fstab updated mount=$mount removed=$removed_count"

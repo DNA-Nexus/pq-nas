@@ -260,7 +260,7 @@ def install_pqnas_fstab_remove_sudoers(log: Optional[Log] = None) -> None:
     The wrapper validates the mount path and removes only /etc/fstab rows whose
     second field exactly equals /srv/pqnas/pools/<pool_id>.
     """
-    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-remove *"
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-remove /srv/pqnas/pools/*"
     install_sudoers_rule("pqnas-fstab-remove", content, log=log)
 
 
@@ -271,7 +271,7 @@ def install_pqnas_fstab_add_btrfs_sudoers(log: Optional[Log] = None) -> None:
     The wrapper validates the mount path and writes only /srv/pqnas/pools/<pool_id>
     Btrfs UUID entries.
     """
-    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-add-btrfs *"
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-add-btrfs /srv/pqnas/pools/*"
     install_sudoers_rule("pqnas-fstab-add-btrfs", content, log=log)
 
 
