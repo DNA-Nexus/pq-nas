@@ -287,6 +287,8 @@ add_executable(pqnas_server
         server/src/workspace_external_sessions.cpp
         server/src/routes/routes_workspace_external_invites.cpp
         server/src/routes/routes_workspace_external_sessions.cpp
+        server/src/routes/routes_workspace_external_messages.cpp
+        server/src/routes/routes_workspace_external_messages.h
         server/src/workspace_access_shared.cpp
         server/src/runtime_paths.cpp
         server/src/branding_config.cpp

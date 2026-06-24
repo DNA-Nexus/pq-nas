@@ -1,0 +1,188 @@
+#externalWorkspaceMessagesFab{
+    position:fixed;
+    left:18px;
+    bottom:54px;
+    z-index:9997;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    min-height:42px;
+    padding:10px 14px;
+    border-radius:999px;
+    border:1px solid rgba(var(--fg-rgb, 20,20,20), .32);
+    background:linear-gradient(180deg, rgba(var(--fg-rgb,20,20,20),.14), rgba(var(--fg-rgb,20,20,20),.06));
+    color:var(--fg, #111);
+    box-shadow:0 18px 55px rgba(0,0,0,.18);
+    cursor:pointer;
+    font-weight:950;
+}
+
+#externalWorkspaceMessagesFab[hidden]{
+    display:none;
+}
+
+#externalWorkspaceMessagesFab .extWsMsgBadge{
+    display:none;
+    min-width:20px;
+    height:20px;
+    align-items:center;
+    justify-content:center;
+    padding:0 6px;
+    border-radius:999px;
+    background:rgba(var(--warn-rgb, 245, 158, 11), .95);
+    color:var(--bg, #fff);
+    font-size:12px;
+    line-height:20px;
+    font-weight:950;
+}
+
+#externalWorkspaceMessagesFab.hasUnread .extWsMsgBadge{
+    display:inline-flex;
+}
+
+#externalWorkspaceMessagesDrawer{
+    position:fixed;
+    left:50%;
+    bottom:16px;
+    transform:translateX(-50%) translateY(16px);
+    z-index:9998;
+    width:min(720px, calc(100vw - 24px));
+    max-height:min(72vh, 640px);
+    display:none;
+    flex-direction:column;
+    overflow:hidden;
+    border:1px solid rgba(var(--fg-rgb,20,20,20), .30);
+    border-radius:22px;
+    background:var(--panel, #fff);
+    color:var(--fg, #111);
+    box-shadow:0 28px 110px rgba(0,0,0,.28);
+}
+
+#externalWorkspaceMessagesDrawer.show{
+    display:flex;
+    transform:translateX(-50%) translateY(0);
+}
+
+.extWsMsgHead{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    padding:14px 16px;
+    border-bottom:1px solid var(--border2, rgba(120,120,120,.26));
+    background:rgba(var(--fg-rgb,20,20,20), .06);
+}
+
+.extWsMsgTitle{
+    font-weight:950;
+}
+
+.extWsMsgSub{
+    margin-top:3px;
+    font-size:12px;
+    color:var(--fg-dim, #666);
+}
+
+.extWsMsgList{
+    flex:1 1 auto;
+    min-height:120px;
+    overflow:auto;
+    padding:14px;
+    display:grid;
+    gap:10px;
+}
+
+.extWsMsgEmpty{
+    border:1px dashed var(--border2, rgba(120,120,120,.35));
+    border-radius:16px;
+    padding:18px;
+    text-align:center;
+    color:var(--fg-dim, #666);
+}
+
+.extWsMsgRow{
+    display:grid;
+    gap:5px;
+    border:1px solid rgba(var(--fg-rgb,20,20,20), .13);
+    border-radius:16px;
+    background:rgba(var(--fg-rgb,20,20,20), .035);
+    padding:10px 12px;
+    justify-self:start;
+    width:min(82%, 620px);
+    max-width:100%;
+}
+
+.extWsMsgRow.own{
+    justify-self:end;
+    background:rgba(var(--fg-rgb,20,20,20), .10);
+    border-color:rgba(var(--fg-rgb,20,20,20), .26);
+}
+
+.extWsMsgMeta{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    font-size:12px;
+    color:var(--fg-dim, #666);
+}
+
+.extWsMsgAuthor{
+    font-weight:950;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.extWsMsgTime{
+    flex:0 0 auto;
+    font-family:var(--mono, monospace);
+    opacity:.76;
+}
+
+.extWsMsgBody{
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    line-height:1.42;
+    font-size:14px;
+}
+
+.extWsMsgFoot{
+    flex:0 0 auto;
+    display:grid;
+    gap:10px;
+    padding:12px 14px 14px;
+    border-top:1px solid var(--border2, rgba(120,120,120,.26));
+    background:rgba(var(--fg-rgb,20,20,20), .06);
+}
+
+.extWsMsgInput{
+    width:100%;
+    min-height:74px;
+    max-height:160px;
+    resize:vertical;
+    padding:10px 12px;
+    border-radius:14px;
+    border:1px solid var(--border2, rgba(120,120,120,.35));
+    background:var(--input-bg, #fff);
+    color:var(--fg, #111);
+    font:inherit;
+    line-height:1.35;
+}
+
+.extWsMsgActions{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+}
+
+.extWsMsgStatus{
+    min-height:18px;
+    font-size:12px;
+    color:var(--fg-dim, #666);
+}
+
+.extWsMsgClose{
+    min-width:38px;
+}

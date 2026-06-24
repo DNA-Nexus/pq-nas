@@ -165,6 +165,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "workspace_external_sessions.h"
 #include "routes/routes_workspace_external_sessions.h"
 #include "routes/routes_workspace_external_invites.h"
+#include "routes/routes_workspace_external_messages.h"
 #include "routes/routes_workspaces_files.h"
 #include "routes/routes_workspace_links.h"
 //storage health
@@ -11394,6 +11395,62 @@ trash_service.set_restore_unindexer(
     gallery_album_deps.reply_json = reply_json;
 
     pqnas::register_gallery_album_routes(srv, gallery_album_deps);
+
+    {
+        pqnas::WorkspaceFileRouteDeps external_message_deps;
+        external_message_deps.users = &users;
+        external_message_deps.workspaces = &workspaces;
+        external_message_deps.users_path = users_path;
+        external_message_deps.workspaces_path = workspaces_path;
+        external_message_deps.origin = &ORIGIN;
+        external_message_deps.cookie_key = COOKIE_KEY;
+
+        external_message_deps.reply_json =
+            [&](httplib::Response& res, int code, const std::string& body) {
+                reply_json(res, code, body);
+        };
+
+        external_message_deps.require_user_auth_users_actor =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                const unsigned char* cookie_key,
+                pqnas::UsersRegistry* users_ptr,
+                std::string* fp_hex,
+                std::string* role) -> bool {
+                return require_user_auth_users_actor(
+                    req,
+                    res,
+                    cookie_key,
+                    users_ptr,
+                    fp_hex,
+                    role
+                );
+        };
+
+        external_message_deps.audit_emit =
+            [&](const std::string& event,
+                const std::string& outcome,
+                const std::map<std::string, std::string>& fields) {
+                pqnas::AuditEvent ev;
+                ev.event = event;
+                ev.outcome = outcome;
+                for (const auto& kv : fields) {
+                    ev.f[kv.first] = kv.second;
+                }
+                audit_append(ev);
+        };
+
+        external_message_deps.now_epoch_sec =
+            []() -> std::int64_t {
+                return static_cast<std::int64_t>(pqnas::now_epoch());
+        };
+
+        pqnas::register_workspace_external_message_routes(
+            srv,
+            external_message_deps
+        );
+    }
+
 
 // GET /api/public/auth_mode
 // Returns installer-selected auth mode for login page: v4 | v5 | auto
