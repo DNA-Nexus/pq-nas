@@ -64,7 +64,7 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/audit/verify` | User session | `server/src/main.cpp:18753` |
 | `GET` | `/api/v4/files/archive_manifest` | User session | `server/src/main.cpp:41065` |
 | `POST` | `/api/v4/files/cat` | User session | `server/src/main.cpp:27641` |
-| `POST` | `/api/v4/files/copy` | User session | `server/src/main.cpp:33411` |
+| `POST` | `/api/v4/files/copy` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/delete` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/du` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/exists` | User session | `server/src/routes/routes_files_core.inc` |
@@ -75,19 +75,19 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/files/hash` | User session | `server/src/main.cpp:26635` |
 | `GET` | `/api/v4/files/list` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/mkdir` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/move` | User session | `server/src/main.cpp:25519` |
+| `POST` | `/api/v4/files/move` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/office_preview` | User session | `server/src/main.cpp:34502` |
-| `PUT` | `/api/v4/files/put` | User session | `server/src/main.cpp:40222` |
+| `PUT` | `/api/v4/files/put` | User session | `server/src/routes/routes_files_put.inc` |
 | `GET` | `/api/v4/files/read_text` | User session | `server/src/main.cpp:28296` |
 | `POST` | `/api/v4/files/restore_version` | User session | `server/src/main.cpp:41766` |
 | `POST` | `/api/v4/files/rmdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/rmrf` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/save_text` | User session | `server/src/main.cpp:27834` |
+| `POST` | `/api/v4/files/save_text` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/search` | User session | `server/src/main.cpp:30545` |
 | `GET` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat_sel` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/touch` | User session | `server/src/main.cpp:27384` |
+| `POST` | `/api/v4/files/touch` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/tree` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/versions/archive_manifest` | User session | `server/src/main.cpp:41136` |
 | `GET` | `/api/v4/files/versions/blob` | User session | `server/src/main.cpp:41202` |
@@ -98,7 +98,7 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/files/versions/read_text` | User session | `server/src/main.cpp:41382` |
 | `GET` | `/api/v4/files/versions/summary` | User session | `server/src/main.cpp:41662` |
 | `POST` | `/api/v4/files/versions/unflag` | User session | `server/src/main.cpp:41657` |
-| `POST` | `/api/v4/files/write_text` | User session | `server/src/main.cpp:28520` |
+| `POST` | `/api/v4/files/write_text` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/zip` | User session | `server/src/main.cpp:34058` |
 | `POST` | `/api/v4/files/zip` | User session | `server/src/main.cpp:28886` |
 | `POST` | `/api/v4/files/zip_sel` | User session | `server/src/main.cpp:29238` |
@@ -1178,19 +1178,59 @@ Source:
 ### POST `/api/v4/files/copy`
 
 Purpose:
-File operation endpoint.
+Copy a user-visible file to a destination path.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `from`: required source user-relative file path
+- `to`: required destination user-relative file path
+
+Validation:
+- `from` and `to` must be present
+- both paths are normalized with strict user-relative path rules
+- source and destination must not be the same path
+- source must resolve through the metadata-aware logical item resolver
+- source must be a regular file
+- destination must not already exist logically
+- physical symlink sources and symlink destinations are rejected
+- destination parent chain is checked before and after directory creation
+- metadata index must be available
+
+Behavior:
+- Only file copy is supported; directory copy is not supported yet.
+- The copy uses a temporary `*.tmp.copy.*` file in the destination directory, then renames it into place.
+- If a physical destination file exists, it may be overwritten after validation.
+- Quota is checked using the byte delta between source size and any existing destination size.
+- Metadata is inserted/updated for the copied file.
+- User file activity is recorded best-effort.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `from`: requested source path
+- `to`: requested destination path
+- `type`: `file`
+- `src_bytes`: source file size
+- `dst_old_bytes`: previous destination file size, if overwritten
+- `delta_bytes`: additional quota impact
+- `overwrote`: whether an existing physical destination file was overwritten
+
+Errors:
+- `400 bad_request` for missing paths, invalid paths, same path, non-file source, non-file destination, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `403 quota_exceeded` when the copy would exceed quota
+- `404 not_found` when the source path does not exist
+- `409 dest_exists` when the destination exists logically
+- `409 path_conflict` when destination parent, temporary path, or destination state is unsafe
+- `500 server_error` when metadata access, destination stat, directory creation, copy, rename, overwrite, or metadata upsert fails
 
 Source:
-`server/src/main.cpp:33411`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1589,19 +1629,68 @@ Source:
 ### POST `/api/v4/files/move`
 
 Purpose:
-File operation endpoint.
+Move or rename a user-visible file or directory.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `from`: required source user-relative path
+- `to`: required destination user-relative path
+
+Validation:
+- `from` and `to` must be present
+- both paths are normalized with strict user-relative path rules
+- source and destination must not be the same path
+- destination ancestor paths must not resolve to an existing file
+- source must resolve through the metadata-aware logical item resolver
+- destination must not already exist logically
+- moving a directory into itself or one of its descendants is refused
+- live file locks are checked for both source and destination
+- metadata index must be available
+- symlinks in source or destination parent chains are rejected
+- mixed storage-root directory moves are currently rejected
+
+Behavior:
+- Files are moved by physical rename when possible.
+- Directories are moved by physical rename when possible.
+- Cross-device moves may fall back to copy-and-remove after symlink scanning.
+- File version history is moved best-effort after successful filesystem rename.
+- Metadata is renamed after the physical move.
+- Favorites, gallery metadata, gallery albums, and Reel Stack metadata are renamed best-effort where applicable.
+- User file activity is recorded best-effort.
 
 Response:
-TODO.
+For file move, `200 OK` JSON:
+
+- `ok`: `true`
+- `from`: requested source path
+- `to`: requested destination path
+- `type`: `file`
+- `bytes`: moved file size
+
+For directory move, `200 OK` JSON:
+
+- `ok`: `true`
+- `from`: requested source path
+- `to`: requested destination path
+- `type`: `dir`
+- `bytes`: `0`
+
+Errors:
+- `400 bad_request` for missing paths, invalid paths, same path, moving a directory into itself, unsupported source type, non-file source in file branch, non-dir source in dir branch, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the source path does not exist
+- `409 dest_exists` when the destination already exists
+- `409 locked` when source or destination is locked
+- `409 path_conflict` when destination parent conflicts or path changes unsafely
+- `409 unsupported` when moving a directory layout is not supported
+- `500 server_error` when lock checks, metadata access, filesystem move, or metadata rename fails
 
 Source:
-`server/src/main.cpp:25519`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1627,19 +1716,67 @@ Source:
 ### PUT `/api/v4/files/put`
 
 Purpose:
-File operation endpoint.
+Upload raw bytes to a user-relative file path.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `overwrite`: optional boolean-like value. Accepted true values include `1`, `true`, and `yes`.
+
+Body:
+Raw bytes streamed from the request body.
+
+Required headers:
+
+- `Content-Length`: required so upload size and quota can be checked before writing
+
+Validation:
+- `path` must be present and normalized with strict user-relative path rules
+- live write locks are checked for the target path
+- uploading under a path whose ancestor is an existing file is rejected
+- uploading to a logical directory path is rejected
+- metadata index must be available
+- transport max upload size is enforced
+- quota is checked before writing
+- symlinked parent paths, symlink targets, and unsafe temp paths are rejected
+- existing file conflicts return `409 file_exists` unless overwrite is enabled
+- target is rechecked before final rename
+
+Behavior:
+- Streams request body to a temporary file.
+- Verifies written byte count matches `Content-Length`.
+- Preserves previous live file version before overwrite.
+- Renames temporary file into place.
+- Updates file location metadata.
+- Supports storage tiering landing pool when enabled.
+- Cleans up old physical file after successful overwrite if the logical file moved to a different physical path.
+- Records best-effort `file.uploaded` activity.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `fingerprint_hex`: authenticated user's fingerprint
+- `path`: requested user-relative path
+- `bytes`: bytes written
+- `overwrite`: whether overwrite mode was enabled
+
+Errors:
+- `400 bad_request` for invalid path, content-length mismatch, stream errors, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `403 quota_exceeded` or related quota response when upload would exceed quota
+- `409 file_exists` when target exists and overwrite is not enabled
+- `409 path_conflict` when ancestor, target, or temp path is unsafe
+- `411 length_required` when `Content-Length` is missing
+- `413 transport_limit_exceeded` when request body exceeds transport max
+- `500 server_error` when metadata access, destination inspection, directory creation, temp preparation, version preservation, rename, metadata upsert, or write fails
 
 Source:
-`server/src/main.cpp:40222`
+`server/src/routes/routes_files_put.inc`
 
 ---
 
@@ -1791,19 +1928,55 @@ Source:
 ### POST `/api/v4/files/save_text`
 
 Purpose:
-File operation endpoint.
+Save raw UTF-8 text request body to a file path.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+
+Body:
+Raw UTF-8 text content. Empty content is allowed.
+
+Validation:
+- `path` must be present
+- request body must not contain NUL bytes
+- path is resolved with strict user path containment rules
+- symlinked parent paths and symlink destinations are rejected
+- existing destination must be a regular file
+- quota is checked using only the byte delta when overwriting
+- destination is rechecked before overwrite and before final rename
+
+Behavior:
+- Writes to a temporary file in the same directory.
+- Renames the temporary file into place.
+- Existing files are overwritten after validation.
+- This route does not use the JSON body shape used by `/api/v4/files/write_text`.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `new_bytes`: new file size
+- `old_bytes`: previous file size
+- `delta_bytes`: quota delta
+- `overwrote`: whether an existing file was overwritten
+
+Errors:
+- `400 bad_request` for missing path, invalid path, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `403 forbidden` for quota policy denial
+- `409 path_conflict` when the destination changes before save or parent path is unsafe
+- `413 quota_exceeded` when saving would exceed quota
+- `415 unsupported_media_type` when body contains binary/NUL content
+- `500 server_error` when destination inspection, parent creation, temp write, overwrite removal, or final rename fails
 
 Source:
-`server/src/main.cpp:27834`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1975,19 +2148,40 @@ Source:
 ### POST `/api/v4/files/touch`
 
 Purpose:
-File operation endpoint.
+Create a new empty file under the authenticated user's storage.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+
+Validation:
+- `path` must be present
+- path is resolved with strict user path containment rules
+- parent directories are created as needed
+- parent directory chain is checked before and after creation so symlinks are not used
+- target must not already exist
+- symlink targets are rejected
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `action`: `created`
+
+Errors:
+- `400 bad_request` for missing path, invalid path, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `409 already_exists` when the file already exists
+- `409 path_conflict` when the parent path is unsafe
+- `500 server_error` when parent creation, target inspection, or file creation fails
 
 Source:
-`server/src/main.cpp:27384`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -2215,19 +2409,58 @@ Source:
 ### POST `/api/v4/files/write_text`
 
 Purpose:
-File operation endpoint.
+Overwrite an existing text file using JSON input with optional optimistic concurrency checks.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative existing file path
+- `text`: required/optional text value; defaults to empty string
+- `expected_mtime_epoch`: optional previous modification timestamp
+- `expected_sha256`: optional previous SHA-256 digest
+
+Validation:
+- body must be valid JSON object
+- `path` must be present
+- `text` must be valid UTF-8
+- text size must not exceed browser text-edit limit
+- target must resolve to an existing regular file
+- symlinks are rejected
+- existing file must look like text
+- optional mtime/SHA-256 checks must still match current file state
+- quota is checked because text edits can increase file size
+- target is rechecked immediately before writing
+
+Behavior:
+- Uses atomic UTF-8 text write helper.
+- Computes SHA-256 before and after the write.
+- Rejects stale edits with `changed_on_server`.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: normalized user-relative path
+- `bytes`: new file size
+- `mtime_epoch`: new modification timestamp
+- `sha256`: new SHA-256 digest
+
+Errors:
+- `400 bad_request` for invalid JSON, missing path, invalid UTF-8, invalid path, or symlink use
+- `400 not_text` when the file does not look like text
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the file does not exist
+- `409 changed_on_server` when optimistic concurrency checks fail
+- `409 path_conflict` when target changes before write
+- `413 too_large` when input or existing file is too large for browser editing
+- `413 quota_exceeded` when write would exceed quota
+- `500 server_error` when hashing, quota checking, writing, or post-write hashing fails
 
 Source:
-`server/src/main.cpp:28520`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
