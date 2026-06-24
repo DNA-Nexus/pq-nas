@@ -63,7 +63,7 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/audit/tail` | User session | `server/src/main.cpp:18722` |
 | `GET` | `/api/v4/audit/verify` | User session | `server/src/main.cpp:18753` |
 | `GET` | `/api/v4/files/archive_manifest` | User session | `server/src/main.cpp:41065` |
-| `POST` | `/api/v4/files/cat` | User session | `server/src/main.cpp:27641` |
+| `POST` | `/api/v4/files/cat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/copy` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/delete` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/du` | User session | `server/src/routes/routes_files_core.inc` |
@@ -72,18 +72,18 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/files/favorites/add` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/favorites/remove` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/get` | User session | `server/src/main.cpp:34770` |
-| `POST` | `/api/v4/files/hash` | User session | `server/src/main.cpp:26635` |
+| `POST` | `/api/v4/files/hash` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/list` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/mkdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/move` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/office_preview` | User session | `server/src/main.cpp:34502` |
 | `PUT` | `/api/v4/files/put` | User session | `server/src/routes/routes_files_put.inc` |
-| `GET` | `/api/v4/files/read_text` | User session | `server/src/main.cpp:28296` |
+| `GET` | `/api/v4/files/read_text` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/restore_version` | User session | `server/src/main.cpp:41766` |
 | `POST` | `/api/v4/files/rmdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/rmrf` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/save_text` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/search` | User session | `server/src/main.cpp:30545` |
+| `POST` | `/api/v4/files/search` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat_sel` | User session | `server/src/routes/routes_files_core.inc` |
@@ -100,8 +100,8 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/files/versions/unflag` | User session | `server/src/main.cpp:41657` |
 | `POST` | `/api/v4/files/write_text` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/zip` | User session | `server/src/main.cpp:34058` |
-| `POST` | `/api/v4/files/zip` | User session | `server/src/main.cpp:28886` |
-| `POST` | `/api/v4/files/zip_sel` | User session | `server/src/main.cpp:29238` |
+| `POST` | `/api/v4/files/zip` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/zip_sel` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/gallery/export_sel_zip` | User session | `server/src/main.cpp:47131` |
 | `GET` | `/api/v4/gallery/list` | User session | `server/src/main.cpp:34993` |
 | `POST` | `/api/v4/gallery/meta/embedded_get` | User session | `server/src/main.cpp:49072` |
@@ -1159,19 +1159,43 @@ Source:
 ### POST `/api/v4/files/cat`
 
 Purpose:
-File operation endpoint.
+Return a bounded text preview of an existing file.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `max_bytes`: optional maximum bytes to return. Defaults to 65536 and is clamped to 1..1048576.
+
+Validation:
+- `path` must be present
+- path must resolve under the user's storage
+- symlinks are rejected
+- target must exist and be a regular file
+- returned preview bytes must not contain NUL bytes
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `bytes_total`: full file size
+- `bytes_returned`: returned byte count
+- `truncated`: whether the preview was truncated
+- `text`: returned text preview
+
+Errors:
+- `400 bad_request` for missing path, invalid path, non-file target, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the file does not exist
+- `415 unsupported_media_type` when binary/NUL content is detected
+- `500 server_error` when opening or reading fails
 
 Source:
-`server/src/main.cpp:27641`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1521,19 +1545,40 @@ Source:
 ### POST `/api/v4/files/hash`
 
 Purpose:
-File operation endpoint.
+Calculate a digest for an existing user-visible file.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `algo`: optional digest algorithm. Currently only `sha256` is supported.
+
+Validation:
+- `path` must be present
+- unsupported algorithms are rejected
+- path must resolve to an existing regular file
+- symlinks are rejected
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `algo`: digest algorithm
+- `bytes`: file size in bytes
+- `digest_hex`: digest as lowercase hex
+
+Errors:
+- `400 bad_request` for missing path, invalid path, unsupported algorithm, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the file does not exist or is not a regular file
+- `500 server_error` when hashing fails
 
 Source:
-`server/src/main.cpp:26635`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1783,19 +1828,49 @@ Source:
 ### GET `/api/v4/files/read_text`
 
 Purpose:
-File operation endpoint.
+Read a full UTF-8 text file for browser editing.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative existing file path
+
+Validation:
+- `path` must be present
+- target must resolve to an existing regular file
+- symlinks are rejected
+- file size must not exceed the browser text-edit limit
+- file must look like text
+- file content must be valid UTF-8 after optional UTF-8 BOM stripping
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: normalized user-relative path
+- `name`: file name
+- `mime`: guessed text MIME type
+- `encoding`: `utf-8`
+- `had_utf8_bom`: whether a UTF-8 BOM was stripped
+- `bytes`: file size in bytes
+- `mtime_epoch`: modification timestamp
+- `sha256`: file SHA-256 digest
+- `text`: decoded UTF-8 text content
+
+Errors:
+- `400 bad_request` for missing path, invalid path, symlink use, or non-file target
+- `400 not_text` when the file does not look like text
+- `400 decode_failed` when the file is not valid UTF-8 text
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the file does not exist
+- `413 too_large` when the file exceeds the browser text-edit limit
+- `500 server_error` when reading or hashing fails
 
 Source:
-`server/src/main.cpp:28296`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1983,19 +2058,51 @@ Source:
 ### POST `/api/v4/files/search`
 
 Purpose:
-File operation endpoint.
+Search file and directory names under a user-visible directory.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: optional user-relative directory path. Empty, `.`, or `./` means the authenticated user's storage root.
+- `q`: required search query
+- `max`: optional maximum results. Defaults to 200 and is clamped to 1..2000.
+
+Validation:
+- `q` must be present
+- `q` length must not exceed 128 bytes
+- base path must resolve to an existing directory
+- symlinked base paths are rejected
+- symlink children are skipped
+- recursive scan is hard-capped
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: searched path, or `.`
+- `q`: query
+- `max`: effective result cap
+- `scanned`: number of entries scanned
+- `matched`: number of matching entries found
+- `truncated`: whether results were truncated
+- `scan_capped`: whether the hard scan cap was hit
+- `results`: array of matching items:
+  - `path`
+  - `name`
+  - `type`
+  - `bytes` for files
+
+Errors:
+- `400 bad_request` for missing/too-long query, invalid path, non-directory path, or symlinked base path
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the base path does not exist
+- `500 server_error` when directory walking fails
 
 Source:
-`server/src/main.cpp:30545`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -2486,38 +2593,101 @@ Source:
 ### POST `/api/v4/files/zip`
 
 Purpose:
-File operation endpoint.
+Build and return a zip archive for a single selected file or directory.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file or directory path
+- `max_bytes`: optional input byte limit. Defaults to 50 MiB and is clamped to 1..250 MiB.
+
+Validation:
+- `path` must be present
+- leading `-` paths are rejected before calling `zip`
+- path must resolve under the user's storage
+- target must exist and be a regular file or directory
+- symlinks are rejected at the selected path and inside directory trees
+- selected content must not exceed `max_bytes`
+- zip output is bounded by `max_bytes` plus overhead
 
 Response:
-TODO.
+`200 OK` binary response:
+
+- `Content-Type: application/zip`
+- `Content-Disposition: attachment; filename=...`
+- `Cache-Control: no-store`
+
+Behavior:
+- Pre-walks the selected content to count files/directories, input bytes, and reject symlinks.
+- Runs `/usr/bin/zip` via `execvp`.
+- Captures zip output in memory with a bounded limit.
+
+Errors:
+- `400 bad_request` for missing path, invalid path, unsupported type, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the selected path does not exist
+- `413 too_large` when input or zip output exceeds limits
+- `500 server_error` when walking, pipe/fork/exec/read, or zip execution fails
 
 Source:
-`server/src/main.cpp:28886`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/zip_sel`
 
 Purpose:
-File operation endpoint.
+Build and return a zip archive for multiple selected files/directories.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `paths`: required array of user-relative file or directory paths
+- `max_bytes`: optional input byte limit. Defaults to 50 MiB and is clamped to 1..250 MiB.
+- `base`: optional user-relative base directory used to make zip entries relative to the current folder
+
+Validation:
+- body must be valid JSON object
+- `paths` must be an array
+- path entries are normalized, deduplicated, and sanitized
+- empty, traversal, CR/LF, and leading `-` paths are rejected
+- selection count is capped at 500 paths
+- children are dropped when their parent directory is already selected
+- optional `base` must resolve to an existing directory
+- selected paths must be inside `base` when `base` is provided
+- all selected paths must resolve under the user's storage
+- symlinks are rejected at selected paths and inside directory trees
+- selected content must not exceed `max_bytes`
+- zip output is bounded by `max_bytes` plus overhead
 
 Response:
-TODO.
+`200 OK` binary response:
+
+- `Content-Type: application/zip`
+- `Content-Disposition: attachment; filename="selection.zip"`
+- `Cache-Control: no-store`
+
+Behavior:
+- Pre-walks all selections to count files/directories, input bytes, and reject symlinks.
+- Runs `/usr/bin/zip` via `execvp` using `zip -r -q - -@`.
+- Feeds selected paths to zip over stdin.
+- Captures zip output in memory with a bounded limit.
+
+Errors:
+- `400 bad_request` for invalid JSON, missing paths, invalid base, invalid path, path outside base, unsupported type, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when a selected path does not exist
+- `413 too_large` when there are too many selected paths, input exceeds limits, or zip output exceeds limits
+- `500 server_error` when walking, pipe/fork/stdin/write/read, or zip execution fails
 
 Source:
-`server/src/main.cpp:29238`
+`server/src/routes/routes_files_core.inc`
 
 ---
 

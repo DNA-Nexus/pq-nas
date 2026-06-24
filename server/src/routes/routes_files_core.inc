@@ -3722,6 +3722,7 @@ srv.Post("/api/v4/files/zip", [&](const httplib::Request& req, httplib::Response
 srv.Post("/api/v4/files/zip_sel", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto audit_ua = [&]() -> std::string {
         auto it = req.headers.find("User-Agent");
