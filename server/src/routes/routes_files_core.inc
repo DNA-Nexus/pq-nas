@@ -4302,6 +4302,7 @@ srv.Post("/api/v4/files/zip_sel", [&](const httplib::Request& req, httplib::Resp
 srv.Post("/api/v4/files/rmrf", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto audit_ua = [&]() -> std::string {
         auto it = req.headers.find("User-Agent");
@@ -6281,6 +6282,7 @@ srv.Get("/api/v4/files/favorites", [&](const httplib::Request& req, httplib::Res
 srv.Post("/api/v4/files/favorites/add", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto uopt = users.get(fp_hex);
     if (!uopt.has_value() || uopt->storage_state != "allocated") {
@@ -6348,6 +6350,7 @@ srv.Post("/api/v4/files/favorites/add", [&](const httplib::Request& req, httplib
 srv.Post("/api/v4/files/favorites/remove", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto uopt = users.get(fp_hex);
     if (!uopt.has_value() || uopt->storage_state != "allocated") {
@@ -6403,6 +6406,7 @@ srv.Post("/api/v4/files/favorites/remove", [&](const httplib::Request& req, http
 srv.Post("/api/v4/files/delete", [&](const httplib::Request& req, httplib::Response& res) {
     std::string fp_hex, role;
     if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &fp_hex, &role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
 
     auto audit_ua = [&]() -> std::string {
         auto it = req.headers.find("User-Agent");

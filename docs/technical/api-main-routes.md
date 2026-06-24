@@ -5,6 +5,8 @@ Status: generated draft.
 This document is an initial route inventory generated from source code.
 Descriptions and auth classifications should be reviewed manually before treating this as authoritative API documentation.
 
+Source values should use stable source file paths, not line numbers, because route line numbers drift during refactors.
+
 Generated: 2026-06-10 12:10:46
 
 ## Route Summary
@@ -63,30 +65,30 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/files/archive_manifest` | User session | `server/src/main.cpp:41065` |
 | `POST` | `/api/v4/files/cat` | User session | `server/src/main.cpp:27641` |
 | `POST` | `/api/v4/files/copy` | User session | `server/src/main.cpp:33411` |
-| `POST` | `/api/v4/files/delete` | User session | `server/src/main.cpp:31921` |
-| `POST` | `/api/v4/files/du` | User session | `server/src/main.cpp:31543` |
-| `POST` | `/api/v4/files/exists` | User session | `server/src/main.cpp:33253` |
-| `GET` | `/api/v4/files/favorites` | User session | `server/src/main.cpp:31757` |
-| `POST` | `/api/v4/files/favorites/add` | User session | `server/src/main.cpp:31799` |
-| `POST` | `/api/v4/files/favorites/remove` | User session | `server/src/main.cpp:31866` |
+| `POST` | `/api/v4/files/delete` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/du` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/exists` | User session | `server/src/routes/routes_files_core.inc` |
+| `GET` | `/api/v4/files/favorites` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/favorites/add` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/favorites/remove` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/get` | User session | `server/src/main.cpp:34770` |
 | `POST` | `/api/v4/files/hash` | User session | `server/src/main.cpp:26635` |
-| `GET` | `/api/v4/files/list` | User session | `server/src/main.cpp:32767` |
-| `POST` | `/api/v4/files/mkdir` | User session | `server/src/main.cpp:26412` |
+| `GET` | `/api/v4/files/list` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/mkdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/move` | User session | `server/src/main.cpp:25519` |
 | `GET` | `/api/v4/files/office_preview` | User session | `server/src/main.cpp:34502` |
 | `PUT` | `/api/v4/files/put` | User session | `server/src/main.cpp:40222` |
 | `GET` | `/api/v4/files/read_text` | User session | `server/src/main.cpp:28296` |
 | `POST` | `/api/v4/files/restore_version` | User session | `server/src/main.cpp:41766` |
-| `POST` | `/api/v4/files/rmdir` | User session | `server/src/main.cpp:26810` |
-| `POST` | `/api/v4/files/rmrf` | User session | `server/src/main.cpp:29820` |
+| `POST` | `/api/v4/files/rmdir` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/rmrf` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/save_text` | User session | `server/src/main.cpp:27834` |
 | `POST` | `/api/v4/files/search` | User session | `server/src/main.cpp:30545` |
-| `GET` | `/api/v4/files/stat` | User session | `server/src/main.cpp:31217` |
-| `POST` | `/api/v4/files/stat` | User session | `server/src/main.cpp:31216` |
-| `POST` | `/api/v4/files/stat_sel` | User session | `server/src/main.cpp:31222` |
+| `GET` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/stat_sel` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/touch` | User session | `server/src/main.cpp:27384` |
-| `POST` | `/api/v4/files/tree` | User session | `server/src/main.cpp:27125` |
+| `POST` | `/api/v4/files/tree` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/versions/archive_manifest` | User session | `server/src/main.cpp:41136` |
 | `GET` | `/api/v4/files/versions/blob` | User session | `server/src/main.cpp:41202` |
 | `POST` | `/api/v4/files/versions/delete` | User session | `server/src/main.cpp:41689` |
@@ -1195,114 +1197,265 @@ Source:
 ### POST `/api/v4/files/delete`
 
 Purpose:
-File operation endpoint.
+Move a file or directory to trash.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file or directory path
+
+Validation:
+- `path` must be present
+- path is normalized with strict user-relative path rules
+- live file locks are checked before delete/trash movement
+- path is resolved through the metadata-aware logical item resolver
+- metadata index must be available
+- root deletion is refused
+- symlinks are rejected
+- directory trees are scanned before trash movement and rejected if symlinks are found
+- target is rechecked immediately before trash movement to avoid symlink/type-swap races
+- mixed storage-root directory deletes are currently rejected
 
 Response:
-TODO.
+For file trash movement, `200 OK` JSON:
+
+- `ok`: `true`
+- `fingerprint_hex`: authenticated user's fingerprint
+- `path`: requested user-relative path
+- `type`: `file`
+- `freed_bytes`: file size moved to trash
+- `trash_id`: trash entry identifier
+
+For directory trash movement, `200 OK` JSON:
+
+- `ok`: `true`
+- `fingerprint_hex`: authenticated user's fingerprint
+- `path`: requested user-relative path
+- `type`: `dir`
+- `freed_bytes`: total file bytes moved to trash
+- `trash_id`: trash entry identifier
+
+Notes:
+- Despite the source comment saying `DELETE`, this route is currently registered as `POST /api/v4/files/delete`.
+- This route uses `TrashService` and records best-effort `file.trashed` activity.
+- Metadata, favorites, gallery metadata, and Reel Stack metadata are cleaned up best-effort or transactionally depending on the item path/source.
+- This route enforces same-origin cookie mutation protection.
+
+Errors:
+- `400 bad_request` for missing path, invalid path, root deletion attempt, unsupported type, non-file/non-directory target, or symlink use
+- `403 forbidden` when the user record is missing
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the target path does not exist
+- `409 path_conflict` for locks, symlinks in directory trees, type changes before delete, or unsafe path conflicts
+- `409 unsupported` when deleting a directory across mixed storage roots is not supported
+- `500 server_error` when metadata access, tree scanning, trash movement, or cleanup fails
 
 Source:
-`server/src/main.cpp:31921`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/du`
 
 Purpose:
-File operation endpoint.
+Calculate disk-usage style metadata for a user-visible file or directory.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file or directory path
+
+Validation:
+- `path` must be present
+- `path` is resolved with strict user path containment rules
+- symlinked parent chains and symlink targets are rejected
+- the target must exist
+- the target must be a regular file or directory
 
 Response:
-TODO.
+For a regular file, `200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `type`: `file`
+- `bytes_total`: file size in bytes
+- `files`: `1`
+- `dirs`: `0`
+
+For a directory, `200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `type`: `dir`
+- `bytes_total`: total bytes of regular files under the directory
+- `files`: number of regular files counted
+- `dirs`: number of directories counted, including the root directory
+
+Notes:
+- Directory traversal skips permission-denied entries where possible.
+- Symlinks are not followed or counted.
+- If traversal fails, the route fails closed with a server error.
+
+Errors:
+- `400 bad_request` for missing path, invalid path, symlink use, or unsupported target type
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the path does not exist
+- `500 server_error` when directory traversal fails
 
 Source:
-`server/src/main.cpp:31543`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/exists`
 
 Purpose:
-File operation endpoint.
+Check whether a user-relative path exists and return its basic type metadata.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative path
+
+Validation:
+- `path` must be present
+- invalid paths are rejected with `400 bad_request`
+- missing but syntactically valid paths return `exists: false`
+- symlinked paths are treated as missing rather than exposed
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `exists`: boolean
+- `type`: `file`, `dir`, `other`, or `missing`
+- `bytes`: file size in bytes for regular files, otherwise `0`
+
+Errors:
+- `400 bad_request` for missing or invalid path
+- `403 storage_unallocated` when the authenticated user has no allocated storage
 
 Source:
-`server/src/main.cpp:33253`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### GET `/api/v4/files/favorites`
 
 Purpose:
-File operation endpoint.
+List the authenticated user's favorite file and folder entries.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+No JSON body. Uses the current authenticated user session.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `items`: array of favorite entries:
+  - `path`: user-relative path
+  - `type`: `file` or `dir`
+  - `added_at`: timestamp stored by the favorites backend
+
+Errors:
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `500 server_error` when favorites storage cannot be read
 
 Source:
-`server/src/main.cpp:31757`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/favorites/add`
 
 Purpose:
-File operation endpoint.
+Add a file or folder to the authenticated user's favorites.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: user-relative file or folder path
+- `type`: `file` or `dir`
+
+Validation:
+- request body must be valid JSON
+- `path` is normalized with strict user-relative path rules
+- `type` must be `file` or `dir`
+- the target path must resolve to an existing logical item
+- the resolved item type must match the requested `type`
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: normalized user-relative path
+- `type`: `file` or `dir`
+
+Errors:
+- `400 bad_request` for invalid JSON, invalid path, or invalid type
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the path does not exist
+- `409 type_mismatch` when the requested type does not match the resolved item
+- `500 server_error` when adding the favorite fails
 
 Source:
-`server/src/main.cpp:31799`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/favorites/remove`
 
 Purpose:
-File operation endpoint.
+Remove a file or folder from the authenticated user's favorites.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: user-relative file or folder path
+- `type`: `file` or `dir`
+
+Validation:
+- request body must be valid JSON
+- `path` is normalized with strict user-relative path rules
+- `type` must be `file` or `dir`
+
+Notes:
+- This route removes the favorite entry by normalized path and type.
+- It does not require the target item to still exist, which allows stale favorites to be removed cleanly.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: normalized user-relative path
+- `type`: `file` or `dir`
+
+Errors:
+- `400 bad_request` for invalid JSON, invalid path, or invalid type
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `500 server_error` when removing the favorite fails
 
 Source:
-`server/src/main.cpp:31866`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1347,38 +1500,89 @@ Source:
 ### GET `/api/v4/files/list`
 
 Purpose:
-File operation endpoint.
+List the immediate children of a user-visible directory.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: optional user-relative directory path. Empty or omitted means the authenticated user's storage root.
+
+Validation:
+- `path` is normalized with strict user-relative path rules when provided
+- symlinked directories and symlink children are not exposed
+- reserved internal names such as `.pqnas` are skipped
+- non-root paths must resolve either as a physical directory or as metadata-backed children
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `fingerprint_hex`: authenticated user's fingerprint
+- `path`: normalized listed path
+- `items`: array of immediate children:
+  - `name`: item name
+  - `type`: `file` or `dir`
+  - `size_bytes`: file size for files, `0` for directories
+  - `mtime_unix`: best-effort modification time as Unix timestamp
+
+Notes:
+- This route does not recurse.
+- It merges legacy filesystem children and metadata-backed immediate children.
+- Metadata entries win over legacy entries when names overlap.
+- The response is capped at 5000 items.
+
+Errors:
+- `400 bad_request` for invalid paths or unsupported symlink use
+- `403 forbidden` when the user record is missing
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when a non-root directory cannot be found
+- `500 server_error` when metadata listing fails
 
 Source:
-`server/src/main.cpp:32767`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/mkdir`
 
 Purpose:
-File operation endpoint.
+Create a directory under the authenticated user's storage.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative directory path
+
+Validation:
+- `path` must be present
+- `path` is resolved with strict user path containment rules
+- existing directory chains are checked so symlinked path components are not used
+- after creation, the resulting directory chain is checked again
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+
+Notes:
+- Parent directories are created as needed.
+- A best-effort `folder.created` file activity entry is recorded when a new directory was actually created.
+
+Errors:
+- `400 bad_request` for missing or invalid path
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `409 path_conflict` when the directory chain is invalid or contains unsafe components
+- `500 server_error` when directory creation fails
 
 Source:
-`server/src/main.cpp:26412`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1480,38 +1684,107 @@ Source:
 ### POST `/api/v4/files/rmdir`
 
 Purpose:
-File operation endpoint.
+Remove an empty directory from the authenticated user's storage.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative directory path
+
+Validation:
+- `path` must be present
+- root or root-like paths are refused
+- path is normalized with strict user-relative path rules
+- live file locks are checked before removal
+- target must resolve to an existing logical directory
+- metadata-backed directory descendants are checked first
+- physical directory must be empty
+- target is rechecked immediately before removal to avoid symlink/type-swap races
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+
+Notes:
+- This is empty-directory removal only.
+- Favorites under the removed directory are cleaned up best-effort.
+
+Errors:
+- `400 bad_request` for missing path, invalid path, root deletion attempt, non-directory target, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the directory does not exist
+- `409 not_empty` when the directory has contents
+- `409 path_conflict` when the path changes before deletion
+- `500 server_error` when metadata inspection or directory removal fails
 
 Source:
-`server/src/main.cpp:26810`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/rmrf`
 
 Purpose:
-File operation endpoint.
+Permanently remove a file or directory tree from the authenticated user's storage.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file or directory path
+
+Validation:
+- `path` must be present
+- root or root-like paths are refused
+- path is resolved through the metadata-aware logical item resolver
+- the route serializes writes for the target logical path
+- metadata index must be available
+- symlinks are rejected
+- directory trees are scanned before deletion and rejected if symlinks are found
+- target is rechecked immediately before deletion to avoid symlink/type-swap races
+- mixed storage-root directory deletes are currently rejected
 
 Response:
-TODO.
+For file deletion, `200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `type`: `file`
+- `removed_files`: `1`
+- `removed_dirs`: `0`
+- `removed_bytes`: removed file size
+
+For directory deletion, `200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested user-relative path
+- `type`: `dir`
+- `removed_files`: number of removed files
+- `removed_dirs`: number of removed directories
+- `removed_bytes`: removed file bytes
+
+Notes:
+- Unlike `/api/v4/files/delete`, this route removes files/directories directly instead of moving them to trash.
+- Metadata and favorites are cleaned up after deletion.
+- This route enforces same-origin cookie mutation protection.
+
+Errors:
+- `400 bad_request` for missing path, root deletion attempt, unsupported type, non-file/non-directory target, or symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the target path does not exist
+- `409 path_conflict` for symlinks in directory trees, type changes before delete, or unsafe path conflicts
+- `409 unsupported` when deleting a directory across mixed storage roots is not supported
+- `500 server_error` when metadata access, tree scanning, remove/remove_all, or cleanup fails
 
 Source:
-`server/src/main.cpp:29820`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1556,57 +1829,146 @@ Source:
 ### GET `/api/v4/files/stat`
 
 Purpose:
-File operation endpoint.
+Return metadata for a user-visible file, directory, or storage root.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: optional user-relative path. `.`, `./`, `/`, empty, or omitted means the authenticated user's storage root.
+
+Validation:
+- non-root paths are resolved through the metadata-aware logical item resolver
+- symlinks are rejected
+- missing paths return `404 not_found`
 
 Response:
-TODO.
+`200 OK` JSON common fields:
+
+- `ok`: `true`
+- `path`: requested path, or `.` for root
+- `path_norm`: normalized UI path beginning with `/`
+- `name`: item display name
+- `type`: `file`, `dir`, or `other`
+- `exists`: `true`
+- `mtime_epoch`: best-effort modification time when available
+- `mode_octal`: best-effort permission mode
+
+For files, additional fields:
+
+- `bytes`: file size in bytes
+- `mime`: guessed MIME type from file extension
+- `is_text`: boolean lightweight text/binary check
+
+For directories, additional fields:
+
+- `children`: immediate child counts:
+  - `files`
+  - `dirs`
+  - `other`
+- `bytes_recursive`: recursive byte count of regular files
+- `recursive_scanned_entries`: number of recursive entries scanned
+- `recursive_complete`: whether recursive scan completed within limits
+- `scan_cap`: hard recursive entry cap
+- `time_cap_ms`: soft recursive scan time cap
+
+Notes:
+- Recursive directory aggregation skips symlinks and regular-file bytes only are counted.
+- Recursive aggregation is bounded by a hard entry cap and a soft time cap to keep the UI responsive.
+- `POST /api/v4/files/stat` uses the same handler and behavior.
+
+Errors:
+- `400 bad_request` for symlink use
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the path does not exist
+- `500 server_error` when metadata or directory traversal fails
 
 Source:
-`server/src/main.cpp:31217`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/stat`
 
 Purpose:
-File operation endpoint.
+Return metadata for a user-visible file, directory, or storage root.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Same as `GET /api/v4/files/stat`.
 
 Response:
-TODO.
+Same as `GET /api/v4/files/stat`.
+
+Notes:
+This route is registered to the same server-side handler as `GET /api/v4/files/stat`.
 
 Source:
-`server/src/main.cpp:31216`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
 ### POST `/api/v4/files/stat_sel`
 
 Purpose:
-File operation endpoint.
+Return aggregate metadata for a selected set of user-visible files and directories.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+JSON body:
+
+- `paths`: array of user-relative paths. `.`, `./`, or `/` means the authenticated user's storage root.
+
+Validation:
+- request body must be valid JSON
+- body must be an object containing `paths` as an array
+- each item in `paths` must be a string
+- each path is resolved through the metadata-aware logical item resolver
+- symlinks are rejected
+- selection processing is capped at 200 input paths
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `count`: number of successfully returned item stats
+- `files`: number of selected files counted
+- `dirs`: number of selected directories counted
+- `other`: number of other selected item types
+- `bytes_total`: aggregate bytes for files plus recursive directory bytes
+- `partial`: boolean indicating whether some inputs were skipped, incomplete, unsupported, or capped
+- `limits`: server-side limits:
+  - `max_items`
+  - `scan_cap`
+  - `time_cap_ms`
+- `items`: array of per-item stats
+- `errors`: array of per-path errors
+
+Per-item fields include:
+
+- `path`
+- `path_norm`
+- `type`
+- `mode_octal`
+- `bytes` for files
+- `bytes_recursive`, `recursive_scanned_entries`, and `recursive_complete` for directories
+
+Notes:
+- Directory byte aggregation uses the same bounded recursive scan behavior as `/api/v4/files/stat`.
+- The route returns `200 OK` with `partial: true` when some selected paths fail while others succeed.
+
+Errors:
+- `400 bad_request` for invalid JSON or invalid body shape
+- `403 storage_unallocated` when the authenticated user has no allocated storage
 
 Source:
-`server/src/main.cpp:31222`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
@@ -1632,19 +1994,50 @@ Source:
 ### POST `/api/v4/files/tree`
 
 Purpose:
-File operation endpoint.
+Return a bounded tree representation for a file or directory under the authenticated user's storage.
 
 Auth:
-User session
+User session. Requires the authenticated user to have allocated storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: optional user-relative base path. Defaults to `.` for the user's storage root.
+- `max`: optional maximum entry count. Defaults to `500` and is clamped to the range `1..5000`.
+
+Validation:
+- base path is resolved with strict user path containment rules
+- symlinked base paths are rejected
+- target path must exist
+- symlink children are skipped and not followed
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `path`: requested base path
+- `max`: effective max entry count
+- `truncated`: boolean indicating whether output was capped
+- `entries`: number of entries counted, including the root node
+- `files`: number of file nodes counted
+- `dirs`: number of directory nodes counted
+- `tree`: root node object
+
+Tree node fields:
+
+- `name`: display name
+- `path`: user-relative path
+- `type`: `file`, `dir`, or `other`
+- `bytes`: file size for regular files
+- `children`: array for directory nodes
+
+Errors:
+- `400 bad_request` for invalid path or symlinked base path
+- `403 storage_unallocated` when the authenticated user has no allocated storage
+- `404 not_found` when the base path does not exist
 
 Source:
-`server/src/main.cpp:27125`
+`server/src/routes/routes_files_core.inc`
 
 ---
 
