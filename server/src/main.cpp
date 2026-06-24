@@ -6227,6 +6227,75 @@ static std::string raid_exec_record_path(const std::string& plan_id);
 // ============================================================================
 
 static void user_mig_finalize_record(const std::string& job_id, json* rec, bool ok, const std::string& err_msg);
+
+static std::uint64_t user_mig_compute_tree_bytes_best_effort(const std::filesystem::path& root) {
+    std::uint64_t total = 0;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || ec) return 0;
+
+    const auto opts = std::filesystem::directory_options::skip_permission_denied;
+    std::filesystem::recursive_directory_iterator it(root, opts, ec);
+    std::filesystem::recursive_directory_iterator end;
+
+    while (!ec && it != end) {
+        std::error_code st_ec;
+        const auto st = it->symlink_status(st_ec);
+        if (!st_ec && std::filesystem::is_regular_file(st)) {
+            std::error_code sz_ec;
+            const auto sz = std::filesystem::file_size(it->path(), sz_ec);
+            if (!sz_ec) {
+                if (std::numeric_limits<std::uint64_t>::max() - total < sz) {
+                    total = std::numeric_limits<std::uint64_t>::max();
+                } else {
+                    total += static_cast<std::uint64_t>(sz);
+                }
+            }
+        }
+
+        it.increment(ec);
+    }
+
+    return total;
+}
+
+static std::string user_mig_format_bytes_short(std::uint64_t bytes) {
+    static constexpr const char* units[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB"};
+    double value = static_cast<double>(bytes);
+    std::size_t unit = 0;
+
+    while (value >= 1024.0 && unit + 1 < (sizeof(units) / sizeof(units[0]))) {
+        value /= 1024.0;
+        ++unit;
+    }
+
+    std::ostringstream oss;
+    if (unit == 0) {
+        oss << static_cast<unsigned long long>(bytes) << " " << units[unit];
+    } else {
+        oss << std::fixed << std::setprecision(2) << value << " " << units[unit];
+    }
+    return oss.str();
+}
+
+static int user_mig_copy_absolute_percent(std::uint64_t done, std::uint64_t total) {
+    if (total == 0) return 20;
+
+    const double ratio = std::max(
+        0.0,
+        std::min(1.0, static_cast<double>(done) / static_cast<double>(total))
+    );
+
+    // Overall migration progress:
+    //  0..20  = resolving/validation/destination creation
+    // 20..79  = copy bytes
+    // 80..100 = verify/metadata/done
+    int pct = 20 + static_cast<int>(std::floor(ratio * 59.0));
+    if (pct < 20) pct = 20;
+    if (pct > 79) pct = 79;
+    return pct;
+}
+
 static void user_mig_record_set_phase(json* rec, const std::string& phase, int percent, const std::string& message);
 static void user_cleanup_finalize_record(const std::string& job_id, json* rec, bool ok, const std::string& err_msg);
 static void user_cleanup_record_set_phase(json* rec, const std::string& phase, int percent, const std::string& message);
@@ -6639,10 +6708,77 @@ static void user_storage_migration_worker_main(std::string users_path) {
             }
 
             fail_phase = "copying";
-            user_mig_record_set_phase(&job.record, "copying", 60, "copying data");
-            (void)user_mig_record_write_atomic(job.job_id, job.record);
 
-            if (!pqnas::run_user_storage_migration_copy(plan, &err)) {
+            const std::uint64_t copy_total_bytes = user_mig_compute_tree_bytes_best_effort(plan.src_user_dir);
+
+            auto update_copy_progress_record = [&](bool force_write) {
+                const std::uint64_t copy_done_raw =
+                    user_mig_compute_tree_bytes_best_effort(plan.dst_user_dir);
+
+                const std::uint64_t copy_done_bytes =
+                    (copy_total_bytes > 0 && copy_done_raw > copy_total_bytes)
+                        ? copy_total_bytes
+                        : copy_done_raw;
+
+                const int copy_percent =
+                    user_mig_copy_absolute_percent(copy_done_bytes, copy_total_bytes);
+
+                job.record["phase"] = "copying";
+                job.record["percent"] = copy_percent;
+                job.record["bytes_total"] = copy_total_bytes;
+                job.record["bytes_done"] = copy_done_bytes;
+                job.record["copy_percent"] =
+                    copy_total_bytes > 0
+                        ? std::round((static_cast<double>(copy_done_bytes) * 1000.0) /
+                                     static_cast<double>(copy_total_bytes)) / 10.0
+                        : 0.0;
+                job.record["message"] =
+                    user_mig_format_bytes_short(copy_done_bytes) + " / " +
+                    user_mig_format_bytes_short(copy_total_bytes) + " copied";
+                job.record["updated_at"] = pqnas::now_iso_utc();
+
+                if (force_write || copy_total_bytes == 0 || copy_done_bytes <= copy_total_bytes) {
+                    (void)user_mig_record_write_atomic(job.job_id, job.record);
+                }
+            };
+
+            update_copy_progress_record(true);
+
+            std::atomic<bool> copy_progress_stop{false};
+            std::thread copy_progress_thread([&]() {
+                while (!copy_progress_stop.load(std::memory_order_relaxed)) {
+                    try {
+                        update_copy_progress_record(false);
+                    } catch (...) {
+                        // Progress reporting must never affect migration correctness.
+                    }
+
+                    for (int i = 0; i < 10; ++i) {
+                        if (copy_progress_stop.load(std::memory_order_relaxed)) break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    }
+                }
+            });
+
+            bool copy_ok = false;
+            try {
+                copy_ok = pqnas::run_user_storage_migration_copy(plan, &err);
+            } catch (...) {
+                copy_progress_stop.store(true, std::memory_order_relaxed);
+                if (copy_progress_thread.joinable()) {
+                    copy_progress_thread.join();
+                }
+                throw;
+            }
+
+            copy_progress_stop.store(true, std::memory_order_relaxed);
+            if (copy_progress_thread.joinable()) {
+                copy_progress_thread.join();
+            }
+
+            update_copy_progress_record(true);
+
+            if (!copy_ok) {
                 fail_reason = "copy_failed: " + err;
                 break;
             }
