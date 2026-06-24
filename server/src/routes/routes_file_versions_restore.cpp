@@ -25,6 +25,7 @@ bool context_ok(const FileVersionRestoreRoutesContext& c) {
     return c.file_versions &&
            c.users &&
            c.require_user_auth &&
+           c.require_same_origin &&
            c.reply_json &&
            c.user_dir_for_fp &&
            c.file_size_u64 &&
@@ -68,6 +69,8 @@ void register_file_version_restore_routes(
                 });
                 return;
             }
+
+            if (!c.require_same_origin(req, res)) return;
 
             std::string fp_hex;
             std::string role;

@@ -919,6 +919,10 @@ srv.Put("/api/v4/files/put",
         FileVersionRestoreRoutesContext file_version_restore_ctx;
         file_version_restore_ctx.file_versions = &file_versions_index;
         file_version_restore_ctx.users = &users;
+        file_version_restore_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
         file_version_restore_ctx.require_user_auth =
             [&](const httplib::Request& req,
                 httplib::Response& res,

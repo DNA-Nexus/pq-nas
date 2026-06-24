@@ -21,6 +21,7 @@ struct FileVersionRestoreRoutesContext {
     pqnas::UsersRegistry* users = nullptr;
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_user_auth;
+    std::function<bool(const httplib::Request&, httplib::Response&)> require_same_origin;
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
     std::function<std::filesystem::path(const std::string&)> user_dir_for_fp;
 

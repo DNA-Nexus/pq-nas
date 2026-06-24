@@ -226,6 +226,8 @@ void register_file_version_manage_routes(
                 return;
             }
 
+            if (!c.require_same_origin(req, res)) return;
+
             std::string fp_hex;
             std::string role;
             if (!c.require_user_auth(req, res, &fp_hex, &role)) return;

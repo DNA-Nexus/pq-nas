@@ -79,7 +79,7 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/files/office_preview` | User session | `server/src/main.cpp:34502` |
 | `PUT` | `/api/v4/files/put` | User session | `server/src/routes/routes_files_put.inc` |
 | `GET` | `/api/v4/files/read_text` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/restore_version` | User session | `server/src/main.cpp:41766` |
+| `POST` | `/api/v4/files/restore_version` | User session | `server/src/routes/routes_file_versions_restore.cpp` |
 | `POST` | `/api/v4/files/rmdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/rmrf` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/save_text` | User session | `server/src/routes/routes_files_core.inc` |
@@ -91,13 +91,13 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/files/tree` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/versions/archive_manifest` | User session | `server/src/main.cpp:41136` |
 | `GET` | `/api/v4/files/versions/blob` | User session | `server/src/main.cpp:41202` |
-| `POST` | `/api/v4/files/versions/delete` | User session | `server/src/main.cpp:41689` |
-| `GET` | `/api/v4/files/versions/download` | User session | `server/src/main.cpp:41472` |
-| `POST` | `/api/v4/files/versions/flag` | User session | `server/src/main.cpp:41653` |
-| `GET` | `/api/v4/files/versions/list` | User session | `server/src/main.cpp:41291` |
-| `GET` | `/api/v4/files/versions/read_text` | User session | `server/src/main.cpp:41382` |
-| `GET` | `/api/v4/files/versions/summary` | User session | `server/src/main.cpp:41662` |
-| `POST` | `/api/v4/files/versions/unflag` | User session | `server/src/main.cpp:41657` |
+| `POST` | `/api/v4/files/versions/delete` | User session | `server/src/routes/routes_file_versions_manage.cpp` |
+| `GET` | `/api/v4/files/versions/download` | User session | `server/src/routes/routes_file_versions_read.cpp` |
+| `POST` | `/api/v4/files/versions/flag` | User session | `server/src/routes/routes_file_versions_manage.cpp` |
+| `GET` | `/api/v4/files/versions/list` | User session | `server/src/routes/routes_file_versions_read.cpp` |
+| `GET` | `/api/v4/files/versions/read_text` | User session | `server/src/routes/routes_file_versions_read.cpp` |
+| `GET` | `/api/v4/files/versions/summary` | User session | `server/src/routes/routes_file_versions_manage.cpp` |
+| `POST` | `/api/v4/files/versions/unflag` | User session | `server/src/routes/routes_file_versions_manage.cpp` |
 | `POST` | `/api/v4/files/write_text` | User session | `server/src/routes/routes_files_core.inc` |
 | `GET` | `/api/v4/files/zip` | User session | `server/src/main.cpp:34058` |
 | `POST` | `/api/v4/files/zip` | User session | `server/src/routes/routes_files_core.inc` |
@@ -1877,19 +1877,46 @@ Source:
 ### POST `/api/v4/files/restore_version`
 
 Purpose:
-File operation endpoint.
+Restore a stored file version back to a live file path.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative destination path
+- `version_id`: required version identifier
+
+Validation and behavior:
+- path and version id must be present
+- destination path is normalized and resolved under the user's storage
+- restoring under an existing file ancestor is rejected
+- current live file is preserved as a new version before restore when applicable
+- missing parent directories are created as needed
+- restored file facts are propagated to gallery metadata best-effort
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `scope_type`: `user`
+- `scope_id`: authenticated user's fingerprint
+- `path`: normalized user-relative path
+- `restored_version_id`
+- `bytes`
+- `mtime_epoch`
+- `sha256_hex`
+
+Errors:
+- `400 bad_request` for invalid JSON, missing fields, invalid path, or unsafe destination
+- `403 storage_unallocated` when storage is not allocated
+- `404 not_found` when the selected version does not exist
+- `409 path_conflict` when a parent path is an existing file
+- `500 server_error` when preserving current version, creating directories, or restoring fails
 
 Source:
-`server/src/main.cpp:41766`
+`server/src/routes/routes_file_versions_restore.cpp`
 
 ---
 
@@ -2383,133 +2410,244 @@ Source:
 ### POST `/api/v4/files/versions/delete`
 
 Purpose:
-File operation endpoint.
+Delete a single stored file version.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative file path
+- `version_id`: required version identifier
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `scope_type`: `user`
+- `scope_id`: authenticated user's fingerprint
+- `path`: normalized user-relative path
+- `version_id`
+- `versions_deleted`
+- `version_bytes_deleted`
+- `version_blobs_missing`
+
+Errors:
+- `400 bad_request` for invalid JSON, missing fields, or invalid path
+- `403 storage_unallocated` when storage is not allocated
+- `404 not_found` when the version does not exist
+- `500 server_error` when deletion fails
 
 Source:
-`server/src/main.cpp:41689`
+`server/src/routes/routes_file_versions_manage.cpp`
 
 ---
 
 ### GET `/api/v4/files/versions/download`
 
 Purpose:
-File operation endpoint.
+Download a stored file-version blob as an attachment.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `version_id`: required version identifier
 
 Response:
-TODO.
+`200 OK` binary response:
+
+- `Content-Type: application/octet-stream`
+- `Content-Disposition: attachment`
+- `X-PQNAS-Version-Id`
+- `X-PQNAS-SHA256`
+
+Errors:
+- `400 bad_request` for missing or invalid parameters
+- `403 storage_unallocated` when storage is not allocated
+- `404 not_found` when the version blob does not exist
+- `415 unsupported` when download is unsupported for the selected version
+- `500 server_error` when resolving, opening, or reading the blob fails
 
 Source:
-`server/src/main.cpp:41472`
+`server/src/routes/routes_file_versions_read.cpp`
 
 ---
 
 ### POST `/api/v4/files/versions/flag`
 
 Purpose:
-File operation endpoint.
+Flag a stored file version for the authenticated user.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative file path
+- `version_id`: required version identifier
+- `note`: optional note
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `flagged`: `true`
+- `flag_count`
+- `flagged_by_me`
+
+Errors:
+- `400 bad_request` for invalid JSON, missing fields, or invalid path
+- `404 not_found` when the version does not exist
+- `500 server_error` when flagging fails
 
 Source:
-`server/src/main.cpp:41653`
+`server/src/routes/routes_file_versions_manage.cpp`
 
 ---
 
 ### GET `/api/v4/files/versions/list`
 
 Purpose:
-File operation endpoint.
+List stored file versions for one user-visible file path.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `limit`: optional maximum version rows. Defaults to 100 and is clamped to 500.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `scope_type`: `user`
+- `scope_id`: authenticated user's fingerprint
+- `path`: normalized user-relative path
+- `versions`: version rows including version id, event kind, actor display, byte size, SHA-256, deletion marker, and flag metadata
+
+Errors:
+- `400 bad_request` for missing or invalid path
+- `500 server_error` when version listing fails
 
 Source:
-`server/src/main.cpp:41291`
+`server/src/routes/routes_file_versions_read.cpp`
 
 ---
 
 ### GET `/api/v4/files/versions/read_text`
 
 Purpose:
-File operation endpoint.
+Read a stored file-version blob as UTF-8 text.
 
 Auth:
-User session
+User session. Requires allocated user storage.
 
 Request:
-TODO.
+Query parameters:
+
+- `path`: required user-relative file path
+- `version_id`: required version identifier
+
+Validation:
+- `path` and `version_id` must be present
+- path must normalize under the user's storage
+- selected version blob must exist
+- text read is capped at 2 MiB
+- unsupported/binary/invalid text returns an error
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `scope_type`: `user`
+- `scope_id`: authenticated user's fingerprint
+- `path`
+- `version_id`
+- `created_at`
+- `bytes`
+- `sha256`
+- `sha256_hex`
+- `encoding`
+- `had_utf8_bom`
+- `text`
+
+Errors:
+- `400 bad_request` for missing or invalid parameters
+- `403 storage_unallocated` when storage is not allocated
+- `404 not_found` when the version blob does not exist
+- `413 too_large` when the version text exceeds the read cap
+- `415 unsupported` when the blob cannot be read as supported text
+- `500 server_error` for internal read failures
 
 Source:
-`server/src/main.cpp:41382`
+`server/src/routes/routes_file_versions_read.cpp`
 
 ---
 
 ### GET `/api/v4/files/versions/summary`
 
 Purpose:
-File operation endpoint.
+Return aggregate file-version storage statistics for the authenticated user.
 
 Auth:
-User session
-
-Request:
-TODO.
+User session.
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `scope_type`: `user`
+- `scope_id`: authenticated user's fingerprint
+- `versions_count`
+- `versions_bytes`
+
+Errors:
+- `500 server_error` when summary calculation fails
 
 Source:
-`server/src/main.cpp:41662`
+`server/src/routes/routes_file_versions_manage.cpp`
 
 ---
 
 ### POST `/api/v4/files/versions/unflag`
 
 Purpose:
-File operation endpoint.
+Remove the authenticated user's flag from a stored file version.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative file path
+- `version_id`: required version identifier
+- `note`: optional, ignored by unflag behavior
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `flagged`: `false`
+- `flag_count`
+- `flagged_by_me`
+
+Errors:
+- `400 bad_request` for invalid JSON, missing fields, or invalid path
+- `404 not_found` when the version does not exist
+- `500 server_error` when unflagging fails
 
 Source:
-`server/src/main.cpp:41657`
+`server/src/routes/routes_file_versions_manage.cpp`
 
 ---
 
