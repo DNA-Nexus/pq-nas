@@ -1180,9 +1180,7 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
 
             const pollEveryMs = 1200;
             const timeoutMs = 10 * 60 * 1000;
-            const graceMs = 90 * 1000;
             const t0 = Date.now();
-            const tGraceStart = Date.now();
 
             while (true) {
                 if (Date.now() - t0 > timeoutMs) {
@@ -1193,11 +1191,27 @@ ${user} ALL=(root) NOPASSWD: /usr/bin/btrfs subvolume show *</pre>
                 try {
                     st = await apiGet(`/api/v4/snapshots/restore/status?job_id=${encodeURIComponent(jobId)}`);
                 } catch (e) {
-                    const inGrace = (Date.now() - tGraceStart) < graceMs;
-                    if (inGrace && isRetryableDuringRestore(e)) {
-                        status.textContent = tr("snapshotmgr.restore.restarting_server_job", { job_id: jobId }, `Restoring… (job ${jobId}) restarting server…`);
-                        setModalHtml(tr("snapshotmgr.restore.title", null, "Restore"), restoreProgressModalHtml(jobId, tr("snapshotmgr.restore.restarting_server", null, "restarting server…"), tr("snapshotmgr.restore.waiting_online", null, "Waiting for the server to come back online (temporary 502 is expected).")));
-                        // IMPORTANT: do NOT set badge to err on retryable errors during restore
+                    if (isRetryableDuringRestore(e)) {
+                        const elapsedSec = Math.floor((Date.now() - t0) / 1000);
+                        status.textContent = tr(
+                            "snapshotmgr.restore.waiting_for_server_job",
+                            { job_id: jobId, seconds: elapsedSec },
+                            `Restoring… (job ${jobId}) waiting for server… ${elapsedSec}s`
+                        );
+                        setModalHtml(
+                            tr("snapshotmgr.restore.title", null, "Restore"),
+                            restoreProgressModalHtml(
+                                jobId,
+                                tr("snapshotmgr.restore.waiting_for_server", null, "waiting for server…"),
+                                tr(
+                                    "snapshotmgr.restore.waiting_online",
+                                    null,
+                                    "Waiting for the server to come back online (temporary 502/503/504 is expected during restore)."
+                                )
+                            )
+                        );
+                        // IMPORTANT: retryable tunnel/origin errors are normal while pqnas.service restarts.
+                        // Keep polling until the normal restore timeout instead of failing after a short grace window.
                         setBadge("warn", "restoring…");
                         await new Promise(r => setTimeout(r, pollEveryMs));
                         continue;
