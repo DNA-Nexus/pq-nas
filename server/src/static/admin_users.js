@@ -78,6 +78,413 @@ function quotaUsagePct(usedBytes, quotaBytes) {
 // allow multiple open rows
 const openUsers = new Set(); // fingerprints
 
+const ADMIN_USERS_STORAGE_JOBS_KEY = "pqnas.adminUsers.storageJobs.v1";
+const adminUsersStorageJobPolls = new Map();
+
+function adminUsersValidStorageJobKind(kind) {
+    return kind === "migration" || kind === "cleanup";
+}
+
+function adminUsersSafeJobId(jobId) {
+    const s = String(jobId || "").trim();
+    return /^[a-f0-9]{64}$/.test(s) ? s : "";
+}
+
+function adminUsersSafeFingerprint(fp) {
+    const s = String(fp || "").trim();
+    return /^[a-f0-9]{32,160}$/.test(s) ? s : "";
+}
+
+function adminUsersStorageJobKey(kind, jobId) {
+    return `${kind}:${jobId}`;
+}
+
+function adminUsersStorageJobsLoad() {
+    try {
+        const raw = localStorage.getItem(ADMIN_USERS_STORAGE_JOBS_KEY);
+        const arr = JSON.parse(raw || "[]");
+        if (!Array.isArray(arr)) return [];
+
+        const now = Date.now();
+        const maxAgeMs = 24 * 60 * 60 * 1000;
+
+        return arr
+            .filter(j => j && typeof j === "object")
+            .map(j => {
+                const kind = String(j.kind || "");
+                const job_id = adminUsersSafeJobId(j.job_id);
+                const fingerprint = adminUsersSafeFingerprint(j.fingerprint);
+                if (!adminUsersValidStorageJobKind(kind) || !job_id || !fingerprint) return null;
+
+                const updatedAt = Date.parse(String(j.updated_at || j.created_at || "")) || now;
+                if ((now - updatedAt) > maxAgeMs) return null;
+
+                return {
+                    kind,
+                    job_id,
+                    fingerprint,
+                    state: String(j.state || "queued"),
+                    phase: String(j.phase || ""),
+                    percent: Number.isFinite(Number(j.percent)) ? Number(j.percent) : null,
+                    message: String(j.message || ""),
+                    from_pool_id: String(j.from_pool_id || ""),
+                    to_pool_id: String(j.to_pool_id || ""),
+                    active_pool_id: String(j.active_pool_id || ""),
+                    old_pool_id: String(j.old_pool_id || ""),
+                    created_at: String(j.created_at || new Date(now).toISOString()),
+                    updated_at: String(j.updated_at || new Date(now).toISOString()),
+                };
+            })
+            .filter(Boolean)
+            .slice(0, 25);
+    } catch (_) {
+        return [];
+    }
+}
+
+function adminUsersStorageJobsSave(jobs) {
+    try {
+        localStorage.setItem(ADMIN_USERS_STORAGE_JOBS_KEY, JSON.stringify((Array.isArray(jobs) ? jobs : []).slice(0, 25)));
+    } catch (_) {}
+}
+
+function adminUsersUpsertStorageJob(kind, jobId, fp, patch = {}) {
+    if (!adminUsersValidStorageJobKind(kind)) return;
+    const job_id = adminUsersSafeJobId(jobId);
+    const fingerprint = adminUsersSafeFingerprint(fp);
+    if (!job_id || !fingerprint) return;
+
+    const nowIso = new Date().toISOString();
+    const jobs = adminUsersStorageJobsLoad();
+    const key = adminUsersStorageJobKey(kind, job_id);
+    const idx = jobs.findIndex(j => adminUsersStorageJobKey(j.kind, j.job_id) === key);
+
+    const prev = idx >= 0 ? jobs[idx] : {
+        kind,
+        job_id,
+        fingerprint,
+        created_at: nowIso,
+        state: "queued",
+        phase: "queued",
+    };
+
+    const next = {
+        ...prev,
+        ...patch,
+        kind,
+        job_id,
+        fingerprint,
+        updated_at: nowIso,
+    };
+
+    if (idx >= 0) jobs[idx] = next;
+    else jobs.unshift(next);
+
+    adminUsersStorageJobsSave(jobs);
+    renderAdminUsersStorageJobPanel();
+}
+
+function adminUsersRemoveStorageJob(kind, jobId) {
+    const job_id = adminUsersSafeJobId(jobId);
+    if (!adminUsersValidStorageJobKind(kind) || !job_id) return;
+
+    const key = adminUsersStorageJobKey(kind, job_id);
+    adminUsersStorageJobsSave(
+        adminUsersStorageJobsLoad().filter(j => adminUsersStorageJobKey(j.kind, j.job_id) !== key)
+    );
+    renderAdminUsersStorageJobPanel();
+}
+
+function adminUsersUpdateStorageJobFromRecord(kind, jobId, fp, job) {
+    const rec = job || {};
+    const state = String(rec.state || "");
+    const phase = String(rec.phase || "");
+    const percentRaw = Number(rec.percent);
+    const percent = Number.isFinite(percentRaw) ? Math.max(0, Math.min(100, percentRaw)) : null;
+
+    const patch = {
+        state: state || "running",
+        phase,
+        percent,
+        message: String(rec.message || rec.error || ""),
+    };
+
+    if (kind === "migration") {
+        patch.from_pool_id = String(rec.resolved_source_pool_id || rec.from_pool_id || "default");
+        patch.to_pool_id = String(rec.resolved_dest_pool_id || rec.requested_target_pool_id || rec.to_pool_id || "");
+    } else if (kind === "cleanup") {
+        patch.active_pool_id = String(rec.resolved_active_pool_id || rec.expected_active_pool_id || "");
+        patch.old_pool_id = String(rec.resolved_old_pool_id || rec.old_pool_id || "");
+    }
+
+    adminUsersUpsertStorageJob(kind, jobId, fp, patch);
+}
+
+function injectAdminUsersStorageJobCss() {
+    if (document.getElementById("adminUsersStorageJobCss")) return;
+
+    const style = document.createElement("style");
+    style.id = "adminUsersStorageJobCss";
+    style.textContent = `
+.adminUsersJobPanel{
+    border:1px solid var(--border2);
+    border-radius:var(--radius);
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    color:var(--fg);
+    padding:12px;
+    display:grid;
+    gap:10px;
+    box-shadow:var(--shadow);
+}
+.adminUsersJobPanelHead{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+}
+.adminUsersJobPanelTitle{
+    font-weight:950;
+    letter-spacing:.02em;
+}
+.adminUsersJobList{
+    display:grid;
+    gap:8px;
+}
+.adminUsersJobItem{
+    border:1px solid var(--border2);
+    border-radius:14px;
+    background:var(--panel);
+    padding:10px;
+    display:grid;
+    gap:7px;
+}
+.adminUsersJobTop{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+}
+.adminUsersJobName{
+    font-weight:900;
+    overflow-wrap:anywhere;
+}
+.adminUsersJobMeta{
+    color:var(--fg-dim);
+    font-size:12px;
+    overflow-wrap:anywhere;
+}
+.adminUsersJobBar{
+    height:9px;
+    overflow:hidden;
+    border-radius:999px;
+    border:1px solid var(--border2);
+    background:var(--panel2);
+}
+.adminUsersJobFill{
+    height:100%;
+    width:var(--pct, 0%);
+    border-radius:999px;
+    background:var(--accent, var(--fg));
+    transition:width .25s ease;
+}
+.adminUsersJobFill.indeterminate{
+    width:36%;
+    animation:adminUsersJobSweep 1.4s ease-in-out infinite;
+}
+.adminUsersJobFill.failed{
+    background:rgba(var(--fail-rgb),0.72);
+}
+@keyframes adminUsersJobSweep{
+    from{ transform:translateX(-120%); }
+    to{ transform:translateX(300%); }
+}
+.adminUsersJobActions{
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+}
+`;
+    document.head.appendChild(style);
+}
+
+function renderAdminUsersStorageJobPanel() {
+    injectAdminUsersStorageJobCss();
+
+    const jobs = adminUsersStorageJobsLoad();
+    let panel = document.getElementById("adminUsersStorageJobsPanel");
+
+    if (!jobs.length) {
+        if (panel) panel.remove();
+        return;
+    }
+
+    if (!panel) {
+        panel = document.createElement("section");
+        panel.id = "adminUsersStorageJobsPanel";
+        panel.className = "adminUsersJobPanel";
+        panel.setAttribute("aria-live", "polite");
+
+        const content = document.querySelector(".content") || document.body;
+        content.insertBefore(panel, content.firstChild || null);
+    }
+
+    panel.replaceChildren();
+
+    const head = document.createElement("div");
+    head.className = "adminUsersJobPanelHead";
+
+    const title = document.createElement("div");
+    title.className = "adminUsersJobPanelTitle";
+    title.textContent = tr("admin.users.storage_jobs_title", null, "Storage jobs");
+
+    const hint = document.createElement("div");
+    hint.className = "adminUsersJobMeta";
+    hint.textContent = tr("admin.users.storage_jobs_hint", null, "Server-side jobs continue even if this page is closed.");
+
+    head.appendChild(title);
+    head.appendChild(hint);
+    panel.appendChild(head);
+
+    const list = document.createElement("div");
+    list.className = "adminUsersJobList";
+
+    for (const job of jobs) {
+        const item = document.createElement("article");
+        item.className = "adminUsersJobItem";
+
+        const top = document.createElement("div");
+        top.className = "adminUsersJobTop";
+
+        const name = document.createElement("div");
+        name.className = "adminUsersJobName";
+        name.textContent = job.kind === "cleanup"
+            ? tr("admin.users.cleanup_job", null, "Old storage cleanup")
+            : tr("admin.users.migration_job", null, "Storage migration");
+
+        const state = document.createElement("div");
+        state.className = "adminUsersJobMeta";
+        state.textContent = [job.state, job.phase].filter(Boolean).join(" · ");
+
+        top.appendChild(name);
+        top.appendChild(state);
+        item.appendChild(top);
+
+        const meta = document.createElement("div");
+        meta.className = "adminUsersJobMeta";
+        meta.textContent = job.kind === "migration"
+            ? `${job.from_pool_id || "default"} → ${job.to_pool_id || "?"} · ${job.fingerprint}`
+            : `${job.active_pool_id || "?"} / old ${job.old_pool_id || "?"} · ${job.fingerprint}`;
+        item.appendChild(meta);
+
+        if (job.message) {
+            const message = document.createElement("div");
+            message.className = "adminUsersJobMeta";
+            message.textContent = job.message;
+            item.appendChild(message);
+        }
+
+        const bar = document.createElement("div");
+        bar.className = "adminUsersJobBar";
+
+        const fill = document.createElement("div");
+        fill.className = "adminUsersJobFill";
+
+        const stateLower = String(job.state || "").toLowerCase();
+        const pctRaw = Number(job.percent);
+        const hasUsefulPercent =
+            Number.isFinite(pctRaw) &&
+            pctRaw > 0 &&
+            pctRaw < 100;
+
+        if (stateLower === "done") {
+            fill.style.setProperty("--pct", "100%");
+        } else if (stateLower === "failed") {
+            fill.style.setProperty("--pct", "100%");
+            fill.classList.add("failed");
+        } else if (hasUsefulPercent) {
+            fill.style.setProperty("--pct", `${Math.max(0, Math.min(100, pctRaw))}%`);
+        } else {
+            fill.classList.add("indeterminate");
+        }
+
+        bar.appendChild(fill);
+        item.appendChild(bar);
+
+        const actions = document.createElement("div");
+        actions.className = "adminUsersJobActions";
+
+        const hideBtn = document.createElement("button");
+        hideBtn.type = "button";
+        hideBtn.className = "pq-btn secondary small";
+        hideBtn.textContent = tr("admin.users.hide", null, "Hide");
+        hideBtn.addEventListener("click", () => adminUsersRemoveStorageJob(job.kind, job.job_id));
+
+        actions.appendChild(hideBtn);
+        item.appendChild(actions);
+        list.appendChild(item);
+    }
+
+    panel.appendChild(list);
+}
+
+async function adminUsersFetchStorageJobStatus(kind, jobId) {
+    if (kind === "migration") return await apiGetMigrationStatus(jobId);
+    if (kind === "cleanup") return await apiGetCleanupStatus(jobId);
+    throw new Error("bad storage job kind");
+}
+
+function adminUsersStartStorageJobMonitor(kind, jobId, fp) {
+    if (!adminUsersValidStorageJobKind(kind)) return;
+    const safeJobId = adminUsersSafeJobId(jobId);
+    const safeFp = adminUsersSafeFingerprint(fp);
+    if (!safeJobId || !safeFp) return;
+
+    const key = adminUsersStorageJobKey(kind, safeJobId);
+    if (adminUsersStorageJobPolls.has(key)) return;
+
+    const control = { stopped: false };
+    adminUsersStorageJobPolls.set(key, control);
+
+    (async () => {
+        try {
+            for (;;) {
+                if (control.stopped) return;
+
+                const j = await adminUsersFetchStorageJobStatus(kind, safeJobId);
+                const job = j?.job || {};
+                adminUsersUpdateStorageJobFromRecord(kind, safeJobId, safeFp, job);
+
+                const state = String(job.state || "").toLowerCase();
+                if (state === "done" || state === "failed") {
+                    try { await refresh(); } catch (_) {}
+                    return;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        } catch (e) {
+            adminUsersUpsertStorageJob(kind, safeJobId, safeFp, {
+                state: "status_error",
+                message: String(e?.message || e),
+            });
+        } finally {
+            adminUsersStorageJobPolls.delete(key);
+            renderAdminUsersStorageJobPanel();
+        }
+    })();
+}
+
+function adminUsersRestoreStorageJobMonitors() {
+    renderAdminUsersStorageJobPanel();
+
+    for (const job of adminUsersStorageJobsLoad()) {
+        const state = String(job.state || "").toLowerCase();
+        if (state === "done" || state === "failed") continue;
+        adminUsersStartStorageJobMonitor(job.kind, job.job_id, job.fingerprint);
+    }
+}
+
+
 
 async function apiPost(path, body) {
     const r = await fetch(path, {
@@ -782,7 +1189,7 @@ function injectAdminUsersPromptCss() {
     align-items:center;
     justify-content:center;
     padding:18px;
-    background:rgba(0,0,0,0.55);
+    background:rgba(var(--fg-rgb),0.38);
     backdrop-filter:blur(6px);
     -webkit-backdrop-filter:blur(6px);
 }
@@ -792,26 +1199,27 @@ function injectAdminUsersPromptCss() {
     display:flex;
     flex-direction:column;
     overflow:hidden;
-    border:1px solid var(--border2, rgba(120,120,120,0.45));
+    border:1px solid var(--border2);
     border-radius:18px;
-    background:linear-gradient(180deg, var(--panel2, #f8f8f8), var(--panel, #eeeeee));
-    box-shadow:0 18px 70px rgba(0,0,0,0.42);
-    color:var(--fg, #111);
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    box-shadow:var(--shadow);
+    color:var(--fg);
 }
 .adminUsersPromptHead{
     padding:14px 16px;
-    border-bottom:1px solid var(--border2, rgba(120,120,120,0.35));
-    background:rgba(0,0,0,0.08);
+    border-bottom:1px solid var(--border2);
+    background:var(--panel2);
 }
 .adminUsersPromptTitle{
     font-weight:950;
     letter-spacing:.2px;
     font-size:16px;
+    color:var(--fg);
 }
 .adminUsersPromptSub{
     margin-top:4px;
     font-size:12px;
-    color:var(--fg-dim, rgba(0,0,0,0.65));
+    color:var(--fg-dim);
 }
 .adminUsersPromptBody{
     padding:16px;
@@ -822,11 +1230,11 @@ function injectAdminUsersPromptCss() {
     min-height:0;
 }
 .adminUsersPromptKey{
-    color:var(--fg-dim, rgba(0,0,0,0.68));
+    color:var(--fg-dim);
     font-weight:850;
 }
 .adminUsersPromptValue{
-    color:var(--fg, #111);
+    color:var(--fg);
     overflow-wrap:anywhere;
     white-space:pre-wrap;
 }
@@ -838,29 +1246,29 @@ function injectAdminUsersPromptCss() {
     width:100%;
     padding:10px 12px;
     border-radius:12px;
-    border:1px solid var(--border2, rgba(120,120,120,0.45));
-    background:rgba(0,0,0,0.18);
-    color:var(--fg, #111);
+    border:1px solid var(--border2);
+    background:var(--panel2);
+    color:var(--fg);
     font:inherit;
     font-family:var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 .adminUsersPromptNote{
     grid-column:1 / -1;
     padding:10px 12px;
-    border:1px solid rgba(var(--warn-rgb, 180,120,20),0.35);
+    border:1px solid rgba(var(--warn-rgb),0.35);
     border-radius:14px;
-    background:rgba(var(--warn-rgb, 180,120,20),0.10);
-    color:var(--fg, #111);
+    background:rgba(var(--warn-rgb),0.10);
+    color:var(--fg);
     font-weight:850;
 }
 .adminUsersPromptErr{
     grid-column:1 / -1;
     display:none;
     padding:8px 10px;
-    border:1px solid rgba(var(--fail-rgb, 180,40,40),0.35);
+    border:1px solid rgba(var(--fail-rgb),0.35);
     border-radius:12px;
-    background:rgba(var(--fail-rgb, 180,40,40),0.10);
-    color:var(--fg, #111);
+    background:rgba(var(--fail-rgb),0.10);
+    color:var(--fg);
     font-weight:850;
 }
 .adminUsersPromptFoot{
@@ -868,52 +1276,26 @@ function injectAdminUsersPromptCss() {
     align-items:center;
     gap:12px;
     padding:12px 16px;
-    border-top:1px solid var(--border2, rgba(120,120,120,0.35));
-    background:rgba(0,0,0,0.08);
+    border-top:1px solid var(--border2);
+    background:var(--panel2);
 }
 .adminUsersPromptBtn{
-    border:1px solid var(--border2, rgba(120,120,120,0.45));
+    border:1px solid var(--border2);
     border-radius:14px;
     padding:9px 14px;
     font:inherit;
     font-weight:850;
-    color:var(--fg, #111);
-    background:linear-gradient(180deg, rgba(255,255,255,0.20), rgba(0,0,0,0.04));
+    color:var(--fg);
+    background:var(--panel);
     cursor:pointer;
 }
 .adminUsersPromptBtn.warn{
-    border-color:rgba(var(--warn-rgb, 180,120,20),0.48);
-    background:rgba(var(--warn-rgb, 180,120,20),0.16);
+    border-color:rgba(var(--warn-rgb),0.48);
+    background:rgba(var(--warn-rgb),0.16);
 }
-html[data-theme="bright"] .adminUsersPromptBackdrop{
-    background:rgba(0,0,0,0.30);
-}
-html[data-theme="bright"] .adminUsersPromptCard{
-    background:linear-gradient(180deg, #ffffff, #f2f4f7) !important;
-    border-color:rgba(70,80,95,0.32) !important;
-    color:#111827 !important;
-    box-shadow:0 22px 80px rgba(0,0,0,0.28) !important;
-}
-html[data-theme="bright"] .adminUsersPromptHead,
-html[data-theme="bright"] .adminUsersPromptFoot{
-    background:rgba(15,23,42,0.045) !important;
-    border-color:rgba(70,80,95,0.22) !important;
-}
-html[data-theme="bright"] .adminUsersPromptTitle,
-html[data-theme="bright"] .adminUsersPromptValue,
-html[data-theme="bright"] .adminUsersPromptBtn,
-html[data-theme="bright"] .adminUsersPromptInput{
-    color:#111827 !important;
-}
-html[data-theme="bright"] .adminUsersPromptSub,
-html[data-theme="bright"] .adminUsersPromptKey{
-    color:rgba(17,24,39,0.68) !important;
-}
-html[data-theme="bright"] .adminUsersPromptInput{
-    background:#fff !important;
-}
-html[data-theme="win_classic"] .adminUsersPromptBackdrop{
-    background:rgba(0,0,0,0.38);
+.adminUsersPromptBtn.danger{
+    border-color:rgba(var(--fail-rgb),0.48);
+    background:rgba(var(--fail-rgb),0.14);
 }
 `;
     document.head.appendChild(style);
@@ -1145,13 +1527,8 @@ function openAdminUsersConfirmModal(opts = {}) {
 
         const okBtn = document.createElement("button");
         okBtn.type = "button";
-        okBtn.className = options.danger ? "adminUsersPromptBtn warn" : "adminUsersPromptBtn";
+        okBtn.className = options.danger ? "adminUsersPromptBtn danger" : (options.warn ? "adminUsersPromptBtn warn" : "adminUsersPromptBtn");
         okBtn.textContent = options.confirmText || tr("admin.users.ok", null, "OK");
-
-        if (options.danger) {
-            okBtn.style.borderColor = "rgba(var(--fail-rgb, 180,40,40),0.48)";
-            okBtn.style.background = "rgba(var(--fail-rgb, 180,40,40),0.14)";
-        }
 
         foot.appendChild(spacer);
         foot.appendChild(cancelBtn);
@@ -1233,14 +1610,13 @@ function fmtMigText(job) {
 }
 
 async function pollMigrationJob(jobId, fp) {
-    const startedAt = Date.now();
-    const timeoutMs = 10 * 60 * 1000; // 10 min safety cap for UI polling
     let lastShownState = "";
 
     for (;;) {
         const j = await apiGetMigrationStatus(jobId);
         const job = j?.job || {};
 
+        adminUsersUpdateStorageJobFromRecord("migration", jobId, fp, job);
         const state = String(job.state || "");
         const phase = String(job.phase || "");
         const percent = Number(job.percent);
@@ -1273,14 +1649,7 @@ async function pollMigrationJob(jobId, fp) {
             return;
         }
 
-        if ((Date.now() - startedAt) > timeoutMs) {
-            setMigrateError(tr("admin.users.migration_timeout_detail", null, "Migration polling timed out. Job is still on server; reopen status later."));
-            showToast(tr("admin.users.migration_timeout_toast", { job: jobId }, `Migration still in progress\nJob: ${jobId}`), 15000);
-            setMsg(tr("admin.users.migration_timeout", null, "Migration polling timed out"));
-            return;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
 }
 
@@ -1310,13 +1679,12 @@ function fmtCleanupText(job) {
 }
 
 async function pollCleanupJob(jobId, fp) {
-    const startedAt = Date.now();
-    const timeoutMs = 10 * 60 * 1000;
 
     for (;;) {
         const j = await apiGetCleanupStatus(jobId);
         const job = j?.job || {};
 
+        adminUsersUpdateStorageJobFromRecord("cleanup", jobId, fp, job);
         const state = String(job.state || "");
         const phase = String(job.phase || "");
         const percent = Number(job.percent);
@@ -1348,13 +1716,7 @@ async function pollCleanupJob(jobId, fp) {
             return;
         }
 
-        if ((Date.now() - startedAt) > timeoutMs) {
-            showToast(tr("admin.users.cleanup_timeout_toast", { job: jobId }, `Cleanup still in progress\nJob: ${jobId}`), 15000);
-            setMsg(tr("admin.users.cleanup_timeout", null, "Cleanup polling timed out"));
-            return;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
 }
 
@@ -1416,6 +1778,14 @@ async function submitMigrationFromModal() {
             throw new Error(tr("admin.users.migration_job_missing", null, "Migration job_id missing from server response"));
         }
 
+
+        adminUsersUpsertStorageJob("migration", jobId, fp, {
+            state: "queued",
+            phase: "queued",
+            from_pool_id: curPoolId || "default",
+            to_pool_id: pool_id || "default",
+            message: tr("admin.users.migration_queued", null, "Migration queued"),
+        });
         showToast(
             tr("admin.users.migration_queued_toast", { job: jobId, user: fp, to: dstName }, `Storage migration queued\nJob: ${jobId}\nUser: ${fp}\nTo: ${dstName}`)
         );
@@ -1535,6 +1905,14 @@ async function submitCleanupOldCopy(fp) {
         const jobId = String(j?.job_id || "").trim();
         if (!jobId) throw new Error(tr("admin.users.cleanup_job_missing", null, "Cleanup job_id missing from server response"));
 
+
+        adminUsersUpsertStorageJob("cleanup", jobId, fp, {
+            state: "queued",
+            phase: "queued",
+            active_pool_id: activePoolId || "default",
+            old_pool_id: oldPoolId || "default",
+            message: tr("admin.users.cleanup_queued", null, "Cleanup queued"),
+        });
         showToast(
             tr("admin.users.cleanup_queued_toast", { job: jobId, user: fp, active: activePoolId, old: oldPoolId }, `Old storage cleanup queued\nJob: ${jobId}\nUser: ${fp}\nActive pool: ${activePoolId}\nOld pool: ${oldPoolId}`)
         );
@@ -2307,7 +2685,8 @@ async function refresh() {
     actorFp = String(j.actor_fp || "");
     allUsers = (j.users || []).sort((a,b) => (a.fingerprint||"").localeCompare(b.fingerprint||""));
     render();
-    setMsg(adminUsersLoadedMessage());
+        renderAdminUsersStorageJobPanel();
+setMsg(adminUsersLoadedMessage());
 }
 
 async function upsertFromForm() {
@@ -2480,7 +2859,10 @@ window.addEventListener("load", async () => {
 
     // ------------------------------------------------------
 
-    try { await refresh(); }
+    try {
+        await refresh();
+        adminUsersRestoreStorageJobMonitors();
+    }
     catch (e) { setMsg(tr("admin.users.failed", { error: e.message }, "Failed: " + e.message)); }
 });
 
@@ -2491,5 +2873,6 @@ window.addEventListener("pqnas-language-changed", () => {
     try {
         setProfileEditorOpen(isProfileEditorOpen());
         render();
+        renderAdminUsersStorageJobPanel();
     } catch (_) {}
 });

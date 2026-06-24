@@ -15,20 +15,20 @@
     <style>
         :root{
             /* solid modal surfaces */
-            --admin-modal-bg: rgba(20,20,24,0.98);
-            --admin-modal-bg2: rgba(255,255,255,0.04);
-            --admin-modal-border: rgba(255,255,255,0.16);
+            --admin-modal-bg: var(--panel);
+            --admin-modal-bg2: var(--panel2);
+            --admin-modal-border: var(--border2);
         }
         html[data-theme="bright"]{
-            --admin-modal-bg: rgba(255,255,255,0.985);
-            --admin-modal-bg2: rgba(0,0,0,0.03);
-            --admin-modal-border: rgba(0,0,0,0.14);
+            --admin-modal-bg: var(--panel);
+            --admin-modal-bg2: var(--panel2);
+            --admin-modal-border: var(--border2);
         }
 
         html[data-theme="win_classic"]{
-            --admin-modal-bg: rgba(245,245,245,0.99);
-            --admin-modal-bg2: rgba(0,0,0,0.04);
-            --admin-modal-border: rgba(0,0,0,0.20);
+            --admin-modal-bg: var(--panel);
+            --admin-modal-bg2: var(--panel2);
+            --admin-modal-border: var(--border2);
         }
         /* buttons: uses .pq-btn from components.css */
 
@@ -341,7 +341,7 @@
             align-items: center;
             justify-content: center;
             padding: 18px;
-            background: rgba(0,0,0,0.55);
+            background: rgba(var(--fg-rgb),0.38);
             backdrop-filter: blur(6px);
         }
 
@@ -399,7 +399,7 @@
             align-items: center;
             justify-content: center;
             padding: 18px;
-            background: rgba(0,0,0,0.55);
+            background: rgba(var(--fg-rgb),0.38);
             backdrop-filter: blur(6px);
         }
 
@@ -461,7 +461,7 @@
             padding: 12px;
             border: 1px solid var(--elevated-border2, rgba(var(--fg-rgb),0.14));
             border-radius: 14px;
-            background: var(--elevated-soft, rgba(255,255,255,0.04));
+            background: var(--elevated-soft, var(--panel2));
         }
 
         .allocPreviewGrid{
@@ -505,7 +505,7 @@
             border:1px solid rgba(var(--fg-rgb),0.18);
             border-radius:12px;
             padding:8px 12px;
-            background:rgba(0,0,0,0.12);
+            background:rgba(var(--fg-rgb),0.12);
             color:rgba(var(--fg-rgb),0.92);
             font-weight:850;
             cursor:pointer;
