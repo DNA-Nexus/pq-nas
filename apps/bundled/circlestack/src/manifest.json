@@ -1,7 +1,7 @@
 {
   "id": "circlestack",
   "name": "Circle Stack",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entry": "www/index.html",
   "api_base": "/api/v4/circlestack",
   "category": "social",
@@ -25,5 +25,5 @@
     "sidebar": "www/nav_icon.svg",
     "nav": "www/nav_icon.svg"
   },
-  "min_server_version": "1.1.3"
+  "min_server_version": "1.2.1"
 }

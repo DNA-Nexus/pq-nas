@@ -1,7 +1,7 @@
 {
   "id": "dropzone",
   "name": "Drop Zone",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "entry": "www/index.html",
   "api_base": "/api/v4/dropzones",
   "permissions": [],
@@ -28,5 +28,5 @@
     "bright": "www/icon.svg",
     "default": "www/icon.svg"
   },
-  "min_server_version": "1.2.0"
+  "min_server_version": "1.2.1"
 }

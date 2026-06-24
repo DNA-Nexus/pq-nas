@@ -1,7 +1,7 @@
 {
   "id": "neonwave",
   "name": "NeonWave",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "entry": "www/index.html",
   "icons": {
     "win_classic": "www/icon.svg",
