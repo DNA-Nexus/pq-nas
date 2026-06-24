@@ -1517,20 +1517,31 @@ static void audit_append(const pqnas::AuditEvent& ev) {
 
 	job.record = raid_exec_record_read_best_effort_obj(plan_id, resolved_mount, plan, commands);
 
+    const std::string job_id = job.job_id;
+
     {
-        g_raid_job_meta[job.job_id] = json{
-            {"job_id", job.job_id},
+        std::lock_guard<std::mutex> lk(g_raid_jobs_mu);
+
+        g_raid_job_meta[job_id] = json{
+            {"job_id", job_id},
             {"plan_id", plan_id},
             {"resolved_mount", resolved_mount},
             {"record_path", canonical},
             {"state", "queued"},
             {"ts_created", pqnas::now_iso_utc()}
         };
+
+        g_raid_jobs_q.push_back(std::move(job));
     }
+
+    // Ensure worker exists, then wake it. If this is the first job, the
+    // predicate in raid_worker_main will see the already-populated queue.
+    raid_worker_start_once();
+    g_raid_jobs_cv.notify_one();
 
     return json{
         {"ok", true},
-        {"job_id", job.job_id},
+        {"job_id", job_id},
         {"plan_id", plan_id},
         {"record_path", canonical},
         {"state", "queued"}
@@ -3327,8 +3338,41 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
         BtrfsShowParsed parsed_show = parse_btrfs_filesystem_show(show_out);
         json show_j = btrfs_show_parsed_to_json(parsed_show, by_path, by_name);
 
-        const std::vector<std::string> runtime_member_parents =
+        std::vector<std::string> runtime_member_parents =
             pqnas::runtime_member_parent_disks_from_show_json(show_j);
+
+        auto add_runtime_member_parent = [&](const std::string& dev_path_raw) {
+            const std::string dev_path = trim_copy(dev_path_raw);
+            if (dev_path.empty()) return;
+            if (!is_dev_path_basic_safe(dev_path)) return;
+
+            std::string parent = parent_disk_from_dev(dev_path);
+            if (parent.empty()) parent = dev_path;
+
+            if (std::find(runtime_member_parents.begin(),
+                          runtime_member_parents.end(),
+                          parent) == runtime_member_parents.end()) {
+                runtime_member_parents.push_back(parent);
+            }
+        };
+
+        // Fallback: some btrfs-show JSON shapes do not expose devices in the
+        // form expected by runtime_member_parent_disks_from_show_json().
+        // Parse the already-captured `btrfs filesystem show` text instead.
+        if (runtime_member_parents.empty()) {
+            const std::string needle = " path ";
+            for (const std::string& raw_line : split_lines(show_out)) {
+                const std::string line = trim_copy(raw_line);
+                const std::size_t pos = line.rfind(needle);
+                if (pos == std::string::npos) continue;
+                add_runtime_member_parent(line.substr(pos + needle.size()));
+            }
+        }
+
+        // Final fallback for simple single-device pools.
+        if (runtime_member_parents.empty()) {
+            add_runtime_member_parent(source);
+        }
 
         bool busy = false;
         std::string busy_lock;
