@@ -70,11 +70,15 @@
             return brand.logo_dark || brand.logo_bright || fallback || DEFAULT_BRAND.logo_dark;
         }
 
-        return fallback || (
-            theme === "bright" || theme === "win_classic"
-                ? DEFAULT_BRAND.logo_bright
-                : DEFAULT_BRAND.logo_dark
-        );
+        if (theme === "bright" || theme === "win_classic") {
+            return DEFAULT_BRAND.logo_bright || fallback || DEFAULT_BRAND.logo_dark;
+        }
+
+        if (theme === "cpunk_orange") {
+            return "/static/img/logo/Nexus_logo_orange.png";
+        }
+
+        return DEFAULT_BRAND.logo_dark || fallback || DEFAULT_BRAND.logo_bright;
     }
 
     function setFavicon(href) {
