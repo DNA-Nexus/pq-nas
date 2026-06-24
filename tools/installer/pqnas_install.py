@@ -253,6 +253,28 @@ def install_pqnas_drive_locate_sudoers(log: Optional[Log] = None) -> None:
     install_sudoers_rule("pqnas-drive-locate", content, log=log)
 
 
+def install_pqnas_fstab_remove_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded fstab mount-entry remover as root.
+
+    The wrapper validates the mount path and removes only /etc/fstab rows whose
+    second field exactly equals /srv/pqnas/pools/<pool_id>.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-remove *"
+    install_sudoers_rule("pqnas-fstab-remove", content, log=log)
+
+
+def install_pqnas_fstab_add_btrfs_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded fstab Btrfs mount-entry adder as root.
+
+    The wrapper validates the mount path and writes only /srv/pqnas/pools/<pool_id>
+    Btrfs UUID entries.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-fstab-add-btrfs *"
+    install_sudoers_rule("pqnas-fstab-add-btrfs", content, log=log)
+
+
 def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
     """
     Prepare server-writable Update Center staging directories.
@@ -329,6 +351,90 @@ def install_drive_locate_assets(asset_root: str, log: Optional[Log] = None) -> s
         log.write(f"[*] Installed drive locate wrapper: {wrapper_dst}")
 
     return wrapper_dst
+
+
+def install_fstab_add_btrfs_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install guarded fstab Btrfs mount-entry adder.
+
+    Package layout supported:
+      <asset_root>/sbin/pqnas-fstab-add-btrfs
+      <asset_root>/libexec/pqnas/pqnas-fstab-add-btrfs
+
+    Repo layout supported:
+      <asset_root>/server/src/storage/pqnas_fstab_add_btrfs_root.sh
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-fstab-add-btrfs"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-fstab-add-btrfs"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_fstab_add_btrfs_root.sh"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "fstab add helper not found in package/repo assets. "
+            "Expected pqnas-fstab-add-btrfs under sbin/libexec or "
+            "server/src/storage/pqnas_fstab_add_btrfs_root.sh."
+        )
+
+    helper_dst = "/usr/local/sbin/pqnas-fstab-add-btrfs"
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    install_pqnas_fstab_add_btrfs_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed fstab add helper: {helper_dst}")
+
+    return helper_dst
+
+
+def install_fstab_remove_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install guarded fstab mount-entry remover.
+
+    Package layout supported:
+      <asset_root>/sbin/pqnas-fstab-remove
+      <asset_root>/libexec/pqnas/pqnas-fstab-remove
+
+    Repo layout supported:
+      <asset_root>/server/src/storage/pqnas_fstab_remove_root.sh
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-fstab-remove"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-fstab-remove"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_fstab_remove_root.sh"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "fstab remove helper not found in package/repo assets. "
+            "Expected pqnas-fstab-remove under sbin/libexec or "
+            "server/src/storage/pqnas_fstab_remove_root.sh."
+        )
+
+    helper_dst = "/usr/local/sbin/pqnas-fstab-remove"
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    install_pqnas_fstab_remove_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed fstab remove helper: {helper_dst}")
+
+    return helper_dst
 
 
 def install_first_admin_helper_assets(asset_root: str, log: Optional[Log] = None) -> str:
@@ -3739,8 +3845,12 @@ class ExecuteScreen(Screen):
             ensure_update_center_runtime_dirs(log=self.logw)
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
             install_drive_locate_assets(asset_root, log=self.logw)
+            fstab_add_helper_path = install_fstab_add_btrfs_assets(asset_root, log=self.logw)
+            fstab_remove_helper_path = install_fstab_remove_assets(asset_root, log=self.logw)
             first_admin_helper_path = install_first_admin_helper_assets(asset_root, log=self.logw)
             self.logw.write(f"[*] First-admin helper ready: {first_admin_helper_path}")
+            self.logw.write(f"[*] fstab add helper ready: {fstab_add_helper_path}")
+            self.logw.write(f"[*] fstab remove helper ready: {fstab_remove_helper_path}")
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")

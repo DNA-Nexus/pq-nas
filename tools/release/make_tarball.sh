@@ -90,6 +90,8 @@ SYSTEMD_DIR="$REL_ROOT/systemd"
 UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
 DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
+FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
+FSTAB_REMOVE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_remove_root.sh"
 
 # DNA Connect runtime for alerts
 # Override from environment if needed:
@@ -373,6 +375,36 @@ install -m 0755   "$DRIVE_LOCATE_WRAPPER_SRC"   "$STAGE/libexec/pqnas/pqnas-driv
 test -x "$STAGE/libexec/pqnas/pqnas-drive-locate" || {
   echo "ERROR: Drive locate root wrapper did not stage"
   exit 22
+}
+
+# fstab Btrfs mount-entry add root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-fstab-add-btrfs
+if [[ ! -f "$FSTAB_ADD_BTRFS_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing fstab add wrapper: $FSTAB_ADD_BTRFS_WRAPPER_SRC"
+  exit 25
+fi
+
+install -m 0755 "$FSTAB_ADD_BTRFS_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-fstab-add-btrfs"
+
+test -x "$STAGE/libexec/pqnas/pqnas-fstab-add-btrfs" || {
+  echo "ERROR: fstab add root wrapper did not stage"
+  exit 26
+}
+
+# fstab mount-entry remove root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-fstab-remove
+if [[ ! -f "$FSTAB_REMOVE_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing fstab remove wrapper: $FSTAB_REMOVE_WRAPPER_SRC"
+  exit 27
+fi
+
+install -m 0755 "$FSTAB_REMOVE_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-fstab-remove"
+
+test -x "$STAGE/libexec/pqnas/pqnas-fstab-remove" || {
+  echo "ERROR: fstab remove root wrapper did not stage"
+  exit 28
 }
 
 # Staging update manifest at tarball root:

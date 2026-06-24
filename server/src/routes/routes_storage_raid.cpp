@@ -1672,6 +1672,7 @@ static void audit_append(const pqnas::AuditEvent& ev) {
     cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-fstab-add-btrfs " + sh_quote(mount));
 
     const std::string data_dir = mount + "/data";
     cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
@@ -2691,6 +2692,84 @@ j["no_stats_available"] = has("no stats available");
             return true;
         }
     }
+    // Pseudo-command: FSTAB_REMOVE <mount>
+    // Removes only /etc/fstab rows whose second field exactly matches the mount.
+    // The privileged edit is performed by a guarded root helper.
+    if (cmd.rfind("FSTAB_REMOVE ", 0) == 0) {
+        const std::string mount = trim_copy(cmd.substr(std::string("FSTAB_REMOVE ").size()));
+        if (mount.empty() || !is_abs_path_safe(mount)) {
+            *out = "err: FSTAB_REMOVE format is: FSTAB_REMOVE <mount>\n";
+            *ec = 2;
+            return true;
+        }
+
+        const std::string pools_root = "/srv/pqnas/pools/";
+        if (mount.rfind(pools_root, 0) != 0 ||
+            mount.find('/', pools_root.size()) != std::string::npos) {
+            *out = "err: FSTAB_REMOVE only allows /srv/pqnas/pools/<pool_id>\n";
+            *ec = 2;
+            return true;
+        }
+
+        const std::string helper_cmd =
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-fstab-remove " + sh_quote(mount);
+
+        const bool ran = run_cmd_capture(helper_cmd, out, ec);
+        return ran;
+    }
+
+    // Pseudo-command: POOLS_CFG_SET_MODE <mount> <mode>
+    // Updates pools.json only after a successful storage operation.
+    if (cmd.rfind("POOLS_CFG_SET_MODE ", 0) == 0) {
+        std::istringstream iss(cmd);
+        std::string tag, mount, mode;
+        iss >> tag >> mount >> mode;
+
+        if (mount.empty() || mode.empty()) {
+            *out = "err: POOLS_CFG_SET_MODE format is: POOLS_CFG_SET_MODE <mount> <mode>\n";
+            *ec = 2;
+            return true;
+        }
+
+        if (mode != "single" && mode != "raid1") {
+            *out = "err: POOLS_CFG_SET_MODE invalid mode: " + mode + "\n";
+            *ec = 2;
+            return true;
+        }
+
+        try {
+            json cfg = load_or_init_pools_cfg(users_path);
+
+            if (!cfg.contains("pools") || !cfg["pools"].is_object()) {
+                cfg["pools"] = json::object();
+            }
+
+            if (!cfg["pools"].contains(mount) || !cfg["pools"][mount].is_object()) {
+                *out = "err: pool not found in pools.json: " + mount + "\n";
+                *ec = 1;
+                return true;
+            }
+
+            cfg["pools"][mount]["mode"] = mode;
+            cfg["pools"][mount]["updated_ts"] = pqnas::now_iso_utc();
+
+            const auto cfg_path = pools_cfg_path_from_users_path(users_path);
+            if (!write_text_file_atomic(cfg_path.string(), cfg.dump(2) + "\n")) {
+                *out = "err: failed to write pools.json\n";
+                *ec = 1;
+                return true;
+            }
+
+            *out = "ok: pools.json mode updated mount=" + mount + " mode=" + mode + "\n";
+            *ec = 0;
+            return true;
+        } catch (const std::exception& e) {
+            *out = std::string("err: POOLS_CFG_SET_MODE exception: ") + e.what() + "\n";
+            *ec = 1;
+            return true;
+        }
+    }
+
     // normal command
     const bool ran = run_cmd_capture(cmd, out, ec);
     return ran;
@@ -2940,6 +3019,234 @@ static void raid_worker_main(std::string users_path) {
             }
         });
     });
+}
+
+// ----- Pool layout diff helpers ------------------------------------------------
+// Layout apply must compare saved slots against runtime btrfs members by identity,
+// not only by one /dev/... string. The same disk may appear as /dev/sda,
+// /dev/sda1, runtime_dev, parent_disk, by-id, or by-path depending on the source.
+static std::string poolmgr_json_string_trim(const json& j, const char* key) {
+    if (!j.is_object() || !j.contains(key) || !j[key].is_string()) return {};
+    return trim_copy(j[key].get<std::string>());
+}
+
+static void poolmgr_add_identity_value(std::set<std::string>& vals, const std::string& v) {
+    const std::string t = trim_copy(v);
+    if (!t.empty()) vals.insert(t);
+}
+
+static std::set<std::string> poolmgr_slot_identity_values(const json& slot) {
+    std::set<std::string> vals;
+    if (!slot.is_object()) return vals;
+
+    const char* keys[] = {
+        "device",
+        "runtime_dev",
+        "by_id",
+        "by_path",
+        "disk_id",
+        "id_serial_short"
+    };
+
+    for (const char* k : keys) {
+        poolmgr_add_identity_value(vals, poolmgr_json_string_trim(slot, k));
+    }
+
+    return vals;
+}
+
+static std::set<std::string> poolmgr_runtime_identity_values(const json& member) {
+    std::set<std::string> vals;
+    if (!member.is_object()) return vals;
+
+    const char* keys[] = {
+        "path",
+        "parent_disk",
+        "runtime_dev",
+        "device",
+        "by_id",
+        "by_path",
+        "disk_id",
+        "id_serial_short"
+    };
+
+    for (const char* k : keys) {
+        poolmgr_add_identity_value(vals, poolmgr_json_string_trim(member, k));
+    }
+
+    return vals;
+}
+
+static bool poolmgr_slot_matches_runtime_member(const json& slot, const json& member) {
+    const auto a = poolmgr_slot_identity_values(slot);
+    const auto b = poolmgr_runtime_identity_values(member);
+
+    for (const auto& v : a) {
+        if (b.find(v) != b.end()) return true;
+    }
+
+    return false;
+}
+
+static std::string poolmgr_desired_slot_device(const json& slot) {
+    std::string dev = poolmgr_json_string_trim(slot, "runtime_dev");
+    if (dev.empty()) dev = poolmgr_json_string_trim(slot, "device");
+    return dev;
+}
+
+static std::string poolmgr_runtime_member_device(const json& member) {
+    std::string dev = poolmgr_json_string_trim(member, "parent_disk");
+    if (dev.empty()) dev = poolmgr_json_string_trim(member, "runtime_dev");
+    if (dev.empty()) dev = poolmgr_json_string_trim(member, "path");
+    if (dev.empty()) dev = poolmgr_json_string_trim(member, "device");
+    return dev;
+}
+
+static std::vector<json> poolmgr_runtime_member_infos_from_show(const json& show_j) {
+    std::vector<json> out;
+    std::set<std::string> seen;
+
+    auto push_member = [&](json one) {
+        if (!one.is_object()) return;
+
+        std::string chosen = poolmgr_runtime_member_device(one);
+        if (chosen.empty()) return;
+
+        // Normalize partitions to parent disks for layout matching.
+        const std::string parent = parent_disk_from_dev(chosen);
+        if (!parent.empty()) {
+            chosen = parent;
+        }
+
+        one["runtime_dev"] = chosen;
+        one["device"] = chosen;
+        one["parent_disk"] = chosen;
+
+        if (seen.insert(chosen).second) {
+            out.push_back(std::move(one));
+        }
+    };
+
+    if (!show_j.is_object()) return out;
+
+    // Shape 1: direct devices[]
+    if (show_j.contains("devices") && show_j["devices"].is_array()) {
+        for (const auto& d : show_j["devices"]) {
+            if (d.is_object()) push_member(d);
+        }
+    }
+
+    // Shape 2: summary.devices[]
+    if (show_j.contains("summary") &&
+        show_j["summary"].is_object() &&
+        show_j["summary"].contains("devices") &&
+        show_j["summary"]["devices"].is_array()) {
+        for (const auto& d : show_j["summary"]["devices"]) {
+            if (d.is_object()) push_member(d);
+        }
+    }
+
+    // Shape 3: raw btrfs filesystem show output.
+    // Example:
+    //   devid    1 size 57.67GiB used 2.02GiB path /dev/sda
+    if (show_j.contains("btrfs_filesystem_show") && show_j["btrfs_filesystem_show"].is_string()) {
+        const std::string raw = show_j["btrfs_filesystem_show"].get<std::string>();
+        size_t pos = 0;
+
+        while (pos < raw.size()) {
+            size_t endline = raw.find('\n', pos);
+            if (endline == std::string::npos) endline = raw.size();
+
+            std::string line = trim_copy(raw.substr(pos, endline - pos));
+
+            if (line.find("devid") != std::string::npos) {
+                const std::string key = "path ";
+                size_t pp = line.find(key);
+                if (pp != std::string::npos) {
+                    std::string path = trim_copy(line.substr(pp + key.size()));
+                    if (!path.empty()) {
+                        json one = json::object();
+                        one["path"] = path;
+                        one["runtime_dev"] = path;
+                        const std::string parent = parent_disk_from_dev(path);
+                        if (!parent.empty()) one["parent_disk"] = parent;
+                        push_member(one);
+                    }
+                }
+            }
+
+            if (endline == raw.size()) break;
+            pos = endline + 1;
+        }
+    }
+
+    return out;
+}
+
+static void poolmgr_compute_layout_diff_identity_aware(
+    const json& cfg_pool,
+    const json& show_j,
+    std::vector<std::string>* runtime_members_out,
+    std::set<std::string>* desired_set_out,
+    std::vector<std::string>* to_add_out,
+    std::vector<std::string>* to_remove_out
+) {
+    if (runtime_members_out) runtime_members_out->clear();
+    if (desired_set_out) desired_set_out->clear();
+    if (to_add_out) to_add_out->clear();
+    if (to_remove_out) to_remove_out->clear();
+
+    std::vector<json> desired_slots;
+
+    if (cfg_pool.contains("slots") && cfg_pool["slots"].is_array()) {
+        for (const auto& s : cfg_pool["slots"]) {
+            if (!s.is_object()) continue;
+
+            const std::string dev = poolmgr_desired_slot_device(s);
+            if (dev.empty()) continue;
+
+            desired_slots.push_back(s);
+            if (desired_set_out) desired_set_out->insert(dev);
+        }
+    }
+
+    const std::vector<json> runtime_infos = poolmgr_runtime_member_infos_from_show(show_j);
+    std::set<size_t> matched_runtime;
+
+    for (const auto& rt : runtime_infos) {
+        const std::string dev = poolmgr_runtime_member_device(rt);
+        if (!dev.empty() && runtime_members_out) {
+            runtime_members_out->push_back(dev);
+        }
+    }
+
+    for (const auto& slot : desired_slots) {
+        const std::string wanted = poolmgr_desired_slot_device(slot);
+        bool matched = false;
+
+        for (size_t i = 0; i < runtime_infos.size(); ++i) {
+            if (matched_runtime.find(i) != matched_runtime.end()) continue;
+
+            if (poolmgr_slot_matches_runtime_member(slot, runtime_infos[i])) {
+                matched_runtime.insert(i);
+                matched = true;
+                break;
+            }
+        }
+
+        if (!matched && !wanted.empty() && to_add_out) {
+            to_add_out->push_back(wanted);
+        }
+    }
+
+    for (size_t i = 0; i < runtime_infos.size(); ++i) {
+        if (matched_runtime.find(i) != matched_runtime.end()) continue;
+
+        const std::string dev = poolmgr_runtime_member_device(runtime_infos[i]);
+        if (!dev.empty() && to_remove_out) {
+            to_remove_out->push_back(dev);
+        }
+    }
 }
 
 void register_storage_raid_routes(
@@ -3337,6 +3644,7 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
 
         BtrfsShowParsed parsed_show = parse_btrfs_filesystem_show(show_out);
         json show_j = btrfs_show_parsed_to_json(parsed_show, by_path, by_name);
+        show_j["btrfs_filesystem_show"] = show_out;
 
         std::vector<std::string> runtime_member_parents =
             pqnas::runtime_member_parent_disks_from_show_json(show_j);
@@ -4276,6 +4584,7 @@ srv.Post("/api/v4/poolmgr/set-layout", [&](const httplib::Request& req, httplib:
     }.dump());
 });
 
+
 // ----- POST /api/v4/poolmgr/plan-layout (admin-only) ------------------------
 srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib::Response& res) {
     pqnas::UsersRegistry users;
@@ -4363,30 +4672,20 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
 
     BtrfsShowParsed parsed_show = parse_btrfs_filesystem_show(show_out);
     json show_j = btrfs_show_parsed_to_json(parsed_show, by_path, by_name);
-    const std::vector<std::string> runtime_members =
-        pqnas::runtime_member_parent_disks_from_show_json(show_j);
-
+    show_j["btrfs_filesystem_show"] = show_out;
+    std::vector<std::string> runtime_members;
     std::set<std::string> desired_set;
-    if (cfg_pool.contains("slots") && cfg_pool["slots"].is_array()) {
-        for (const auto& s : cfg_pool["slots"]) {
-            if (s.is_object() && s.contains("device") && s["device"].is_string()) {
-                const std::string d = trim_copy(s["device"].get<std::string>());
-                if (!d.empty()) desired_set.insert(d);
-            }
-        }
-    }
-
-    std::set<std::string> runtime_set(runtime_members.begin(), runtime_members.end());
-
     std::vector<std::string> to_add;
     std::vector<std::string> to_remove;
 
-    for (const auto& d : desired_set) {
-        if (runtime_set.find(d) == runtime_set.end()) to_add.push_back(d);
-    }
-    for (const auto& d : runtime_set) {
-        if (desired_set.find(d) == desired_set.end()) to_remove.push_back(d);
-    }
+    poolmgr_compute_layout_diff_identity_aware(
+        cfg_pool,
+        show_j,
+        &runtime_members,
+        &desired_set,
+        &to_add,
+        &to_remove
+    );
 
     json warnings = json::array();
     json ops = json::array();
@@ -4397,6 +4696,8 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
             {"ok", false},
             {"error", "multiple_changes_not_supported_yet"},
             {"mount", mount},
+            {"diff_impl", "identity_aware_raw_show_v2"},
+            {"runtime_members", runtime_members},
             {"to_add", to_add},
             {"to_remove", to_remove},
             {"warnings", warnings}
@@ -4435,7 +4736,7 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
         {"to_remove", to_remove},
         {"ops", ops},
         {"warnings", warnings},
-        {"layout_drift", desired_set != runtime_set}
+        {"layout_drift", (!to_add.empty() || !to_remove.empty())}
     }.dump());
 });
 
@@ -4504,36 +4805,28 @@ srv.Post("/api/v4/poolmgr/apply-layout", [&](const httplib::Request& req, httpli
 
     BtrfsShowParsed parsed_show = parse_btrfs_filesystem_show(show_out);
     json show_j = btrfs_show_parsed_to_json(parsed_show, by_path, by_name);
-    const std::vector<std::string> runtime_members =
-        pqnas::runtime_member_parent_disks_from_show_json(show_j);
-
+    show_j["btrfs_filesystem_show"] = show_out;
+    std::vector<std::string> runtime_members;
     std::set<std::string> desired_set;
-    if (cfg_pool.contains("slots") && cfg_pool["slots"].is_array()) {
-        for (const auto& s : cfg_pool["slots"]) {
-            if (s.is_object() && s.contains("device") && s["device"].is_string()) {
-                const std::string d = trim_copy(s["device"].get<std::string>());
-                if (!d.empty()) desired_set.insert(d);
-            }
-        }
-    }
-
-    std::set<std::string> runtime_set(runtime_members.begin(), runtime_members.end());
-
     std::vector<std::string> to_add;
     std::vector<std::string> to_remove;
 
-    for (const auto& d : desired_set) {
-        if (runtime_set.find(d) == runtime_set.end()) to_add.push_back(d);
-    }
-    for (const auto& d : runtime_set) {
-        if (desired_set.find(d) == desired_set.end()) to_remove.push_back(d);
-    }
+    poolmgr_compute_layout_diff_identity_aware(
+        cfg_pool,
+        show_j,
+        &runtime_members,
+        &desired_set,
+        &to_add,
+        &to_remove
+    );
 
     if (to_add.size() > 1 || to_remove.size() > 1 || (to_add.size() + to_remove.size()) > 1) {
         reply_json(res, 400, json{
             {"ok", false},
             {"error", "multiple_changes_not_supported_yet"},
             {"mount", mount},
+            {"diff_impl", "identity_aware_raw_show_v2"},
+            {"runtime_members", runtime_members},
             {"to_add", to_add},
             {"to_remove", to_remove}
         }.dump());
@@ -6368,10 +6661,14 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     // Wait for partition node to appear (handled internally by executor)
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
 
+    // Wipe the newly-created partition too. Old btrfs signatures may live
+    // inside the partition range even after wiping the parent disk.
+    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_part));
     commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
 
     if (mode == "raid1") {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
         steps.push_back("No profile conversion requested (mode=single). Filesystem will remain in its current profiles until converted.");
@@ -6589,6 +6886,7 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
 
     if (mode == "raid1") {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start --force -dconvert=single -mconvert=single -sconvert=single " + sh_quote(resolved_mount));
@@ -6859,6 +7157,7 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     json commands = json::array();
     if (mode == "raid1") {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     } else {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start --force -dconvert=single -mconvert=single -sconvert=single " + sh_quote(resolved_mount));
     }
@@ -7771,9 +8070,13 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
     commands.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(new_disk));
     commands.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
+    // Wipe the newly-created partition too. Old btrfs signatures may live
+    // inside the partition range even after wiping the parent disk.
+    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_part));
     commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
     if (mode == "raid1") {
         commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     }
 
     // plan_id check (must match exactly)
@@ -8251,6 +8554,7 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
     }
 
     commands.push_back(std::string("POOLS_CFG_REMOVE ") + resolved_mount);
+    commands.push_back(std::string("FSTAB_REMOVE ") + resolved_mount);
     commands.push_back("/usr/bin/sudo -n /bin/rmdir " + sh_quote(resolved_mount));
 
     // Enqueue (fail-closed)
@@ -9161,16 +9465,30 @@ srv.Post("/api/v4/raid/execute/create-pool", [&](const httplib::Request& req, ht
                 }
             }
 
+            json initial_slots = json::array();
+            for (size_t i = 0; i < devices.size(); ++i) {
+                initial_slots.push_back(json{
+                    {"index", static_cast<int>(i)},
+                    {"device", devices[i]},
+                    {"runtime_dev", devices[i]}
+                });
+            }
+
             cfg["pools"][mount] = json{
                 {"pool_id", pool_id},
                 {"display_name", pool_id},
                 {"created_ts", iso8601_now()},
                 {"managed", true},
+                {"mode", mode},
+                {"slot_count", static_cast<int>(initial_slots.size())},
+                {"slots", initial_slots},
                 {"fs_label", fs_label_detected.empty() ? label : fs_label_detected},
                 {"fs_uuid", fs_uuid_detected}
             };
 
-            cfg["version"] = 2;
+            pqnas::enrich_pool_slots_with_runtime_identity_v3(&cfg["pools"][mount]);
+
+            cfg["version"] = 3;
 
             const auto cfg_path = pools_cfg_path_from_users_path(users_path);
             if (!write_text_file_atomic(cfg_path.string(), cfg.dump(2) + "\n")) {
