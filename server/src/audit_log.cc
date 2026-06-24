@@ -115,6 +115,10 @@ static std::string level_to_string(int lvl) {
   if (ev.find("verify")  != std::string::npos) return (int)AuditLog::MinLevel::SECURITY;
   if (ev.find("revoke")  != std::string::npos) return (int)AuditLog::MinLevel::SECURITY;
 
+  // Snapshot create/restore changes are admin/storage security events.
+  // They must remain visible even when audit_min_level=SECURITY.
+  if (ev.find("snapshots.") != std::string::npos) return (int)AuditLog::MinLevel::SECURITY;
+
   // Noisy lifecycle events:
   if (ev.find("cookie")  != std::string::npos) return (int)AuditLog::MinLevel::INFO;
   if (ev.find("session") != std::string::npos) return (int)AuditLog::MinLevel::INFO;
