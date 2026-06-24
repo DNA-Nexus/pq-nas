@@ -2724,3 +2724,13 @@ html[data-theme="win_classic"] .externalTrashDetachedEmpty{
 }
 /* /external-trash-detached-modal-v2 */
 
+
+
+/* external-links-v1 */
+.fileRow.linkRow .fileIcon {
+    font-size: 1.35rem;
+}
+
+.fileRow.linkRow .fileMeta {
+    overflow-wrap: anywhere;
+}

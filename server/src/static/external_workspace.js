@@ -1807,6 +1807,277 @@ html[data-theme="bright"] .externalDialogInput{
         location.href = zipUrl(rel);
     }
 
+    /* external-links-v1 */
+    function workspaceLinksListUrl(relPath) {
+        const qs = new URLSearchParams();
+        qs.set("workspace_id", workspaceId);
+        qs.set("path", normalizeRelPath(relPath || ""));
+        return `/api/v4/workspaces/files/links/list?${qs.toString()}`;
+    }
+
+    function isWorkspaceLinkItem(it) {
+        const type = String((it && it.type) || "").toLowerCase();
+        return type === "link" || type === "pqnas_link" || !!(it && it.url && (it.link_id || it.id));
+    }
+
+    function isPhotoGalleryLinkItem(it) {
+        const detected = String((it && it.detected_type) || "").toLowerCase();
+        const url = String((it && it.url) || "").toLowerCase();
+        return detected.includes("photo_gallery") ||
+               ((url.includes("photo-gallery") || url.includes("photo_gallery") || url.includes("/photos/")) &&
+                url.includes("share"));
+    }
+
+    function externalLinkIconHtml(it) {
+        return `<div class="fileIcon">${isPhotoGalleryLinkItem(it) ? "🖼️" : "🔗"}</div>`;
+    }
+
+    function externalLinkMeta(it) {
+        const detected = String((it && it.detected_type) || "").trim();
+        const label = isPhotoGalleryLinkItem(it)
+            ? tr("external.links.photo_gallery", null, "Photo Gallery link")
+            : tr("external.links.link", null, "Link");
+
+        const t = fmtTime((it && (it.updated_at_epoch || it.mtime_unix || it.created_at_epoch)) || 0);
+        const url = String((it && it.url) || "").trim();
+
+        const parts = [label];
+        if (t) parts.push(t);
+        if (url) parts.push(url);
+        if (detected && detected !== "web_link" && detected !== "internal_link" && detected !== "photo_gallery_share") {
+            parts.push(detected);
+        }
+        return parts.join(" · ");
+    }
+
+    function defaultNameForLinkUrl(rawUrl) {
+        const url = String(rawUrl || "").trim();
+        if (!url) return "";
+        if ((url.toLowerCase().includes("photo-gallery") ||
+             url.toLowerCase().includes("photo_gallery") ||
+             url.toLowerCase().includes("/photos/")) &&
+            url.toLowerCase().includes("share")) {
+            return "Photo Gallery";
+        }
+
+        try {
+            if (url.startsWith("/")) {
+                const clean = url.split("?")[0].split("#")[0].split("/").filter(Boolean).pop();
+                return clean || "Internal link";
+            }
+
+            const u = new URL(url);
+            const tail = u.pathname.split("/").filter(Boolean).pop();
+            return tail || u.hostname || "Link";
+        } catch (_) {
+            return "Link";
+        }
+    }
+
+    async function loadWorkspaceLinksForCurrentPath() {
+        const j = await apiJson(workspaceLinksListUrl(currentPath));
+        const links = Array.isArray(j.links) ? j.links : [];
+        return links.map((link) => Object.assign({}, link, {
+            type: "link",
+            is_link: true
+        }));
+    }
+
+    function workspaceLinkRowHtml(it) {
+        const name = String((it && (it.name || it.path)) || "Link");
+        const id = String((it && (it.link_id || it.id)) || "");
+        const url = String((it && it.url) || "");
+        const meta = externalLinkMeta(it);
+        const mtime = String((it && (it.updated_at_epoch || it.mtime_unix || "")) || "");
+        return `
+            <div class="fileRow clickable linkRow"
+                 data-link-id="${escapeHtml(id)}"
+                 data-url="${escapeHtml(url)}"
+                 data-detected-type="${escapeHtml(String((it && it.detected_type) || ""))}"
+                 data-name="${escapeHtml(name)}"
+                 data-type="link"
+                 data-size="0"
+                 data-mtime="${escapeHtml(mtime)}"
+                 title="${escapeHtml(url || name)}">
+                <div class="fileMain">
+                    ${externalLinkIconHtml(it)}
+                    <div class="fileText">
+                        <div class="fileName">${escapeHtml(name)}</div>
+                        <div class="fileMeta">${escapeHtml(meta)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function openWorkspaceLinkItem(item) {
+        const url = String((item && item.url) || "").trim();
+        if (!url) {
+            setStatus(tr("external.links.missing_url", null, "Link URL is missing."), "bad");
+            return;
+        }
+
+        window.open(url, "_blank", "noopener");
+    }
+
+    async function createWorkspaceLink() {
+        if (!canEdit) {
+            setStatus(tr("external.readonly", null, "This workspace session is view-only."), "bad");
+            return;
+        }
+
+        const urlRaw = await openExternalPromptModal({
+            title: tr("external.links.new_title", null, "New link"),
+            subtitle: currentPath ? "/" + currentPath : tr("external.workspace_root", null, "workspace root"),
+            label: tr("external.links.url", null, "URL"),
+            placeholder: "https://example.com or /static/photo-gallery...",
+            confirmText: tr("external.links.next", null, "Next"),
+            cancelText: tr("external.modal.cancel", null, "Cancel")
+        });
+
+        if (urlRaw == null) {
+            setStatus(tr("external.links.create_cancelled", null, "New link cancelled."));
+            return;
+        }
+
+        const url = String(urlRaw || "").trim();
+        if (!url) {
+            setStatus(tr("external.links.url_required", null, "URL is required."), "bad");
+            return;
+        }
+
+        const nameRaw = await openExternalPromptModal({
+            title: tr("external.links.name_title", null, "Link name"),
+            subtitle: url,
+            label: tr("external.links.name", null, "Name"),
+            value: defaultNameForLinkUrl(url),
+            placeholder: tr("external.links.name_placeholder", null, "Name shown in the workspace"),
+            confirmText: tr("external.links.create", null, "Create link"),
+            cancelText: tr("external.modal.cancel", null, "Cancel")
+        });
+
+        if (nameRaw == null) {
+            setStatus(tr("external.links.create_cancelled", null, "New link cancelled."));
+            return;
+        }
+
+        const name = String(nameRaw || "").trim();
+        if (!name) {
+            setStatus(tr("external.links.name_required", null, "Link name is required."), "bad");
+            return;
+        }
+
+        setStatus(tr("external.links.creating", null, "Creating link…"));
+
+        await apiJson("/api/v4/workspaces/files/links/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                parent_path: normalizeRelPath(currentPath),
+                name,
+                url
+            })
+        });
+
+        setStatus(tr("external.links.created", { name }, `Created link ${name}.`), "good");
+        await loadFiles(currentPath);
+    }
+
+    async function editWorkspaceLink(item) {
+        if (!canEdit) {
+            setStatus(tr("external.readonly", null, "This workspace session is view-only."), "bad");
+            return;
+        }
+
+        if (!item || !item.linkId) {
+            setStatus(tr("external.links.no_link_selected", null, "No link selected."), "bad");
+            return;
+        }
+
+        const urlRaw = await openExternalPromptModal({
+            title: tr("external.links.edit_title", null, "Edit link"),
+            subtitle: item.name || "",
+            label: tr("external.links.url", null, "URL"),
+            value: item.url || "",
+            confirmText: tr("external.links.next", null, "Next"),
+            cancelText: tr("external.modal.cancel", null, "Cancel")
+        });
+        if (urlRaw == null) return;
+
+        const nameRaw = await openExternalPromptModal({
+            title: tr("external.links.name_title", null, "Link name"),
+            subtitle: String(urlRaw || "").trim(),
+            label: tr("external.links.name", null, "Name"),
+            value: item.name || defaultNameForLinkUrl(urlRaw),
+            confirmText: tr("external.links.save", null, "Save link"),
+            cancelText: tr("external.modal.cancel", null, "Cancel")
+        });
+        if (nameRaw == null) return;
+
+        const url = String(urlRaw || "").trim();
+        const name = String(nameRaw || "").trim();
+        if (!url || !name) {
+            setStatus(tr("external.links.name_url_required", null, "Name and URL are required."), "bad");
+            return;
+        }
+
+        setStatus(tr("external.links.saving", null, "Saving link…"));
+
+        await apiJson("/api/v4/workspaces/files/links/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                id: item.linkId,
+                name,
+                url,
+                parent_path: normalizeRelPath(currentPath)
+            })
+        });
+
+        setStatus(tr("external.links.saved", null, "Link saved."), "good");
+        await loadFiles(currentPath);
+    }
+
+    async function deleteWorkspaceLink(item) {
+        if (!canEdit) {
+            setStatus(tr("external.readonly", null, "This workspace session is view-only."), "bad");
+            return;
+        }
+
+        if (!item || !item.linkId) {
+            setStatus(tr("external.links.no_link_selected", null, "No link selected."), "bad");
+            return;
+        }
+
+        const ok = await openExternalConfirmModal({
+            title: tr("external.links.delete_title", null, "Delete link?"),
+            subtitle: item.name || "",
+            message: item.url || "",
+            confirmText: tr("external.links.delete", null, "Delete link"),
+            cancelText: tr("external.modal.cancel", null, "Cancel"),
+            danger: true
+        });
+
+        if (!ok) {
+            setStatus(tr("external.links.delete_cancelled", null, "Delete link cancelled."));
+            return;
+        }
+
+        await apiJson("/api/v4/workspaces/files/links/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workspace_id: workspaceId,
+                id: item.linkId
+            })
+        });
+
+        setStatus(tr("external.links.deleted", null, "Link deleted."), "good");
+        await loadFiles(currentPath);
+    }
+
     function filenameFromContentDisposition(headerValue, fallback) {
         const h = String(headerValue || "");
         const star = /filename\*=UTF-8''([^;]+)/i.exec(h);
@@ -2001,13 +2272,18 @@ html[data-theme="bright"] .externalDialogInput{
 
     function itemFromRow(row) {
         if (!row) return null;
-        const isDir = row.hasAttribute("data-dir");
+        const isLink = row.hasAttribute("data-link-id");
+        const isDir = !isLink && row.hasAttribute("data-dir");
         const rel = isDir ? (row.dataset.dir || "") : (row.dataset.file || "");
         return {
             isDir,
+            isLink,
             rel,
+            linkId: row.dataset.linkId || "",
+            url: row.dataset.url || "",
+            detectedType: row.dataset.detectedType || "",
             name: row.dataset.name || rel.split("/").pop() || "item",
-            type: row.dataset.type || (isDir ? "dir" : "file"),
+            type: row.dataset.type || (isLink ? "link" : (isDir ? "dir" : "file")),
             size: row.dataset.size || "",
             mtime: row.dataset.mtime || ""
         };
@@ -2078,6 +2354,49 @@ html[data-theme="bright"] .externalDialogInput{
 
         const openBtn = itemContextMenu.querySelector('[data-action="open"]');
         const previewBtn = itemContextMenu.querySelector('[data-action="preview"]');
+        const downloadBtn = itemContextMenu.querySelector('[data-action="download"]');
+        const versionsBtn = itemContextMenu.querySelector('[data-action="versions"]');
+        const copyBtn = itemContextMenu.querySelector('[data-action="copy"]');
+        const moveBtn = itemContextMenu.querySelector('[data-action="move"]');
+        const renameBtn = itemContextMenu.querySelector('[data-action="rename"]');
+        const trashBtn = itemContextMenu.querySelector('[data-action="trash-item"]');
+        const propsBtn = itemContextMenu.querySelector('[data-action="properties"]');
+
+        if (item.isLink) {
+            if (openBtn) {
+                openBtn.classList.remove("hidden");
+                openBtn.style.display = "";
+                openBtn.disabled = false;
+                openBtn.textContent = isPhotoGalleryLinkItem(item)
+                    ? tr("external.links.open_photo_gallery", null, "Open Photo Gallery")
+                    : tr("external.links.open_link", null, "Open link");
+            }
+
+            if (previewBtn) {
+                previewBtn.classList.add("hidden");
+                previewBtn.style.display = "none";
+                previewBtn.disabled = true;
+            }
+
+            if (downloadBtn) downloadBtn.disabled = true;
+            if (versionsBtn) versionsBtn.disabled = true;
+            if (copyBtn) copyBtn.disabled = true;
+            if (moveBtn) moveBtn.disabled = true;
+            if (propsBtn) propsBtn.disabled = false;
+
+            if (renameBtn) {
+                renameBtn.disabled = !canEdit;
+                renameBtn.textContent = tr("external.links.edit_link", null, "Edit link...");
+            }
+
+            if (trashBtn) {
+                trashBtn.disabled = !canEdit;
+                trashBtn.textContent = tr("external.links.delete_link", null, "Delete link...");
+            }
+
+            return;
+        }
+
         const isText = isTextFileItem(item);
 
         if (previewBtn) {
@@ -2091,8 +2410,6 @@ html[data-theme="bright"] .externalDialogInput{
 
         if (openBtn) {
             if (isText) {
-                // For text/code files, this old row must disappear.
-                // The preview action becomes the smart File Manager-style Open / edit text? row.
                 openBtn.classList.add("hidden");
                 openBtn.style.display = "none";
                 openBtn.disabled = true;
@@ -2105,7 +2422,21 @@ html[data-theme="bright"] .externalDialogInput{
                     : tr("external.menu.open_original", null, "Open original");
             }
         }
+
+        if (downloadBtn) downloadBtn.disabled = false;
+        if (versionsBtn) versionsBtn.disabled = false;
+        if (copyBtn) copyBtn.disabled = !canEdit;
+        if (moveBtn) moveBtn.disabled = !canEdit;
+        if (renameBtn) {
+            renameBtn.disabled = !canEdit;
+            renameBtn.textContent = tr("external.menu.rename", null, "Rename...");
+        }
+        if (trashBtn) {
+            trashBtn.disabled = !canEdit;
+            trashBtn.textContent = tr("external.menu.move_to_trash", null, "Move to trash...");
+        }
     }
+
 
     function textPreviewUrl(relPath) {
         const qs = new URLSearchParams();
@@ -3314,6 +3645,23 @@ resetMarqueeVisual();
         applyExternalViewPrefs();
 
         const items = Array.isArray(j.items) ? j.items.slice() : [];
+
+        try {
+            const linkItems = await loadWorkspaceLinksForCurrentPath();
+            for (const link of linkItems) {
+                items.push(link);
+            }
+        } catch (e) {
+            setStatus(
+                tr(
+                    "external.links.list_failed",
+                    { error: String(e && e.message ? e.message : e) },
+                    `Files loaded, but links could not be loaded: ${String(e && e.message ? e.message : e)}`
+                ),
+                "bad"
+            );
+        }
+
         const pathLabel = currentPath || "workspace root";
         const countLabel = `${items.length} item${items.length === 1 ? "" : "s"} in ${pathLabel}.`;
         if (fileSub && !canEdit) {
@@ -3335,11 +3683,14 @@ resetMarqueeVisual();
         for (const it of items) {
             const name = String(it.name || it.path || "item");
             const type = String(it.type || (it.is_dir ? "dir" : "file")).toLowerCase();
-            const isDir = type === "dir" || type === "folder" || it.is_dir === true;
+            const isLink = isWorkspaceLinkItem(it);
+            const isDir = !isLink && (type === "dir" || type === "folder" || it.is_dir === true);
             const rel = childPath(currentPath, name);
-            const mtime = fmtTime(it.mtime_unix);
-            const size = isDir ? tr("external.trash.type_folder", null, "Folder") : fmtSize(it.size_bytes || it.size || it.bytes || 0);
-            const meta = mtime ? `${size} · ${mtime}` : size;
+            const mtime = fmtTime(it.mtime_unix || it.updated_at_epoch);
+            const size = isDir
+                ? tr("external.trash.type_folder", null, "Folder")
+                : (isLink ? tr("external.links.link", null, "Link") : fmtSize(it.size_bytes || it.size || it.bytes || 0));
+            const meta = isLink ? externalLinkMeta(it) : (mtime ? `${size} · ${mtime}` : size);
 
             if (isDir) {
                 rows.push(`
@@ -3353,6 +3704,8 @@ resetMarqueeVisual();
                         </div>
                     </div>
                 `);
+            } else if (isLink) {
+                rows.push(workspaceLinkRowHtml(it));
             } else {
                 rows.push(`
                     <div class="fileRow clickable" data-file="${escapeHtml(rel)}" data-name="${escapeHtml(name)}" data-type="file" data-size="${escapeHtml(it.size_bytes || it.size || it.bytes || 0)}" data-mtime="${escapeHtml(it.mtime_unix || "")}" title="${escapeHtml(name)}">
@@ -3835,7 +4188,7 @@ resetMarqueeVisual();
     function selectableRows() {
         if (!filesEl) return [];
         return Array.from(filesEl.querySelectorAll(".fileRow"))
-            .filter((row) => row && (row.dataset.file || row.dataset.dir) && row.dataset.name);
+            .filter((row) => row && (row.dataset.file || row.dataset.dir || row.dataset.linkId) && row.dataset.name);
     }
 
     function isSelectionTypingTarget(el) {
@@ -3856,6 +4209,7 @@ resetMarqueeVisual();
         if (!row) return "";
         if (row.dataset.dir) return "dir:" + normalizeRelPath(row.dataset.dir);
         if (row.dataset.file) return "file:" + normalizeRelPath(row.dataset.file);
+        if (row.dataset.linkId) return "link:" + String(row.dataset.linkId || "");
         return "";
     }
 
@@ -3968,6 +4322,10 @@ resetMarqueeVisual();
 
     function openItem(item) {
         if (!item) return;
+        if (item.isLink) {
+            openWorkspaceLinkItem(item);
+            return;
+        }
         if (item.isDir) {
             clearSelection();
             loadFiles(item.rel).catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
@@ -4810,6 +5168,12 @@ resetMarqueeVisual();
             return;
         }
 
+        const rowLink = ev.target.closest(".fileRow[data-link-id]");
+        if (rowLink) {
+            openWorkspaceLinkItem(itemFromRow(rowLink));
+            return;
+        }
+
         const rowFile = ev.target.closest(".fileRow[data-file]");
         if (rowFile) {
             location.href = downloadUrl(rowFile.dataset.file || "");
@@ -4855,7 +5219,7 @@ resetMarqueeVisual();
             return;
         }
 
-        const editorOnly = emptyContextMenu.querySelectorAll('[data-action="upload"], [data-action="upload-folder"], [data-action="new-folder"]');
+        const editorOnly = emptyContextMenu.querySelectorAll('[data-action="upload"], [data-action="upload-folder"], [data-action="new-folder"], [data-action="new-link"]');
         editorOnly.forEach((btn) => { btn.disabled = !canEdit; });
         placeContextMenu(emptyContextMenu, ev.clientX, ev.clientY);
     });
@@ -4900,6 +5264,12 @@ resetMarqueeVisual();
             return;
         }
 
+        if (action === "new-link") {
+            if (!canEdit) return setStatus(tr("external.readonly", null, "This workspace session is view-only."), "bad");
+            createWorkspaceLink().catch((e) => setStatus(`Create link failed: ${e.message || e}`, "bad"));
+            return;
+        }
+
         if (action === "refresh") {
             refreshCurrent();
             return;
@@ -4931,6 +5301,11 @@ resetMarqueeVisual();
         hideContextMenus();
 
         if (action === "open") {
+            if (item.isLink) {
+                openWorkspaceLinkItem(item);
+                return;
+            }
+
             if (item.isDir) {
                 loadFiles(item.rel).catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
             } else {
@@ -4989,10 +5364,20 @@ resetMarqueeVisual();
             return;
         }
         if (action === "rename") {
+            if (item.isLink) {
+                editWorkspaceLink(item).catch((e) => setStatus(`Edit link failed: ${e.message || e}`, "bad"));
+                return;
+            }
+
             renameItem(item).catch((e) => setStatus(`Rename failed: ${e.message || e}`, "bad"));
             return;
         }
         if (action === "trash-item") {
+            if (item.isLink) {
+                deleteWorkspaceLink(item).catch((e) => setStatus(`Delete link failed: ${e.message || e}`, "bad"));
+                return;
+            }
+
             trashItem(item).catch((e) => setStatus(tr("external.trash.move_failed", { error: String(e && e.message ? e.message : e) }, `Move to trash failed: ${e.message || e}`), "bad"));
             return;
         }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <string>
 #include <system_error>
 
@@ -291,8 +292,14 @@ void audit_workspace_link(const WorkspaceFileRouteDeps& deps,
 
 void register_workspace_link_routes(httplib::Server& srv,
                                     const WorkspaceFileRouteDeps& deps) {
+    // httplib stores route lambdas and calls them after this registration
+    // function returns. Keep a route-owned dependency copy; do not capture
+    // the stack reference parameter by reference.
+    auto route_deps = std::make_shared<WorkspaceFileRouteDeps>(deps);
+
     srv.Get("/api/v4/workspaces/files/links/list",
-            [&](const httplib::Request& req, httplib::Response& res) {
+            [route_deps](const httplib::Request& req, httplib::Response& res) {
+        const WorkspaceFileRouteDeps& deps = *route_deps;
         res.set_header("Cache-Control", "no-store");
 
         const std::string workspace_id =
@@ -357,7 +364,8 @@ void register_workspace_link_routes(httplib::Server& srv,
     });
 
     srv.Post("/api/v4/workspaces/files/links/create",
-             [&](const httplib::Request& req, httplib::Response& res) {
+             [route_deps](const httplib::Request& req, httplib::Response& res) {
+        const WorkspaceFileRouteDeps& deps = *route_deps;
         res.set_header("Cache-Control", "no-store");
 
         if (!require_same_origin_workspace_link_mutation(deps, req, res)) return;
@@ -449,7 +457,8 @@ void register_workspace_link_routes(httplib::Server& srv,
     });
 
     srv.Post("/api/v4/workspaces/files/links/update",
-             [&](const httplib::Request& req, httplib::Response& res) {
+             [route_deps](const httplib::Request& req, httplib::Response& res) {
+        const WorkspaceFileRouteDeps& deps = *route_deps;
         res.set_header("Cache-Control", "no-store");
 
         if (!require_same_origin_workspace_link_mutation(deps, req, res)) return;
@@ -594,7 +603,8 @@ void register_workspace_link_routes(httplib::Server& srv,
     });
 
     srv.Post("/api/v4/workspaces/files/links/delete",
-             [&](const httplib::Request& req, httplib::Response& res) {
+             [route_deps](const httplib::Request& req, httplib::Response& res) {
+        const WorkspaceFileRouteDeps& deps = *route_deps;
         res.set_header("Cache-Control", "no-store");
 
         if (!require_same_origin_workspace_link_mutation(deps, req, res)) return;
