@@ -38,6 +38,7 @@ std::unordered_map<std::string, RestorePlan> g_restore_by_id;
 
 bool context_ok(const SnapshotRestoreRoutesContext& c) {
     return c.require_admin &&
+           c.require_same_origin &&
            c.reply_json &&
            c.audit_append &&
            c.load_volumes &&
@@ -143,6 +144,7 @@ void register_snapshot_restore_routes(
 
             std::string actor_fp;
             if (!c.require_admin(req, res, &actor_fp)) return;
+            if (!c.require_same_origin(req, res)) return;
 
             json j;
             try {
@@ -410,6 +412,7 @@ void register_snapshot_restore_routes(
 
             std::string actor_fp;
             if (!c.require_admin(req, res, &actor_fp)) return;
+            if (!c.require_same_origin(req, res)) return;
 
             json j;
             try {

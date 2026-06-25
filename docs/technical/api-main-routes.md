@@ -152,13 +152,13 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/shares/pq/open/init` | User session | `server/src/main.cpp:45262` |
 | `POST` | `/api/v4/shares/pq/recipient/update` | User session | `server/src/main.cpp:45768` |
 | `POST` | `/api/v4/shares/revoke` | User session | `server/src/main.cpp:46515` |
-| `POST` | `/api/v4/snapshots/create` | User session | `server/src/main.cpp:41948` |
-| `GET` | `/api/v4/snapshots/info` | User session | `server/src/main.cpp:42448` |
-| `GET` | `/api/v4/snapshots/list` | User session | `server/src/main.cpp:42280` |
-| `POST` | `/api/v4/snapshots/restore/confirm` | User session | `server/src/main.cpp:42785` |
-| `POST` | `/api/v4/snapshots/restore/prepare` | User session | `server/src/main.cpp:42515` |
-| `GET` | `/api/v4/snapshots/restore/status` | User session | `server/src/main.cpp:42647` |
-| `GET` | `/api/v4/snapshots/volumes` | User session | `server/src/main.cpp:42220` |
+| `POST` | `/api/v4/snapshots/create` | User session | `server/src/routes/routes_snapshots_create.cpp` |
+| `GET` | `/api/v4/snapshots/info` | User session | `server/src/routes/routes_snapshots_browse.cpp` |
+| `GET` | `/api/v4/snapshots/list` | User session | `server/src/routes/routes_snapshots_browse.cpp` |
+| `POST` | `/api/v4/snapshots/restore/confirm` | User session | `server/src/routes/routes_snapshots_restore.cpp` |
+| `POST` | `/api/v4/snapshots/restore/prepare` | User session | `server/src/routes/routes_snapshots_restore.cpp` |
+| `GET` | `/api/v4/snapshots/restore/status` | User session | `server/src/routes/routes_snapshots_restore.cpp` |
+| `GET` | `/api/v4/snapshots/volumes` | User session | `server/src/routes/routes_snapshots_browse.cpp` |
 | `GET` | `/api/v4/storage/disks` | User session | `server/src/main.cpp:12243` |
 | `GET` | `/api/v4/storage/overview` | User session | `server/src/main.cpp:13835` |
 | `GET` | `/api/v4/storage/pools` | User session | `server/src/main.cpp:12376` |
@@ -3809,133 +3809,282 @@ Source:
 ### POST `/api/v4/snapshots/create`
 
 Purpose:
-TODO: describe purpose.
+Create a read-only Btrfs snapshot for one configured snapshot volume.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `volume`: required snapshot volume name
+- `id`: optional snapshot id. If omitted, a `MANUAL_<utc>` id is generated.
+
+Validation and behavior:
+- requires admin authentication
+- requires same-origin before mutation
+- validates volume against snapshot settings
+- requires snapshots to be enabled for the volume
+- only allows live source paths under `/srv/pqnas/`
+- only allows legacy global snapshot roots or pool-local `.snapshots` roots
+- validates snapshot id character set
+- creates snapshot root if needed
+- runs `sudo -n /usr/bin/btrfs subvolume snapshot -r`
+- probes whether the created target is a Btrfs subvolume
+- writes audit event
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `volume`
+- `id`
+- `path`
+- `is_btrfs_subvolume`
+- `probe_detail`
+
+Errors:
+- `400 bad_request`
+- `403 no_privs`
+- `404 not_found`
+- `409 disabled`
+- `409 already_exists`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:41948`
+`server/src/routes/routes_snapshots_create.cpp`
 
 ---
 
 ### GET `/api/v4/snapshots/info`
 
 Purpose:
-TODO: describe purpose.
+Return Btrfs details for one snapshot.
 
 Auth:
-User session
+Admin session. This is a read route.
 
 Request:
-TODO.
+Query parameters:
+
+- `volume`: required snapshot volume name
+- `id`: required snapshot id
+
+Validation and behavior:
+- requires admin authentication
+- validates volume against snapshot settings
+- resolves snapshot path under the configured snapshot root
+- requires snapshot path to exist
+- runs Btrfs subvolume show through the configured helper
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `volume`
+- `id`
+- `snapshot_path`
+- `btrfs_show_ok`
+- `btrfs_show_rc`
+- `btrfs_show`
+- `hint`
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:42448`
+`server/src/routes/routes_snapshots_browse.cpp`
 
 ---
 
 ### GET `/api/v4/snapshots/list`
 
 Purpose:
-TODO: describe purpose.
+List snapshots for one configured snapshot volume.
 
 Auth:
-User session
+Admin session. This is a read route.
 
 Request:
-TODO.
+Query parameters:
+
+- `volume`: required snapshot volume name
+
+Validation and behavior:
+- requires admin authentication
+- validates volume against snapshot settings
+- requires snapshot root to exist
+- scans snapshot root for directory entries
+- probes whether each entry is a Btrfs subvolume
+- sorts newest entries first
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `volume`
+- `snap_root`
+- `snapshots[]`
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:42280`
+`server/src/routes/routes_snapshots_browse.cpp`
 
 ---
 
 ### POST `/api/v4/snapshots/restore/confirm`
 
 Purpose:
-TODO: describe purpose.
+Confirm and start a prepared snapshot restore job.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `confirm_id`: required id returned by restore prepare
+- `confirm_text`: required exact confirmation phrase
+
+Validation and behavior:
+- requires admin authentication
+- requires same-origin before mutation
+- validates confirmation id and exact confirmation phrase
+- removes the confirmation plan once used
+- revalidates snapshot path and Btrfs subvolume status
+- writes a restore job JSON under `/run/pqnas/restore`
+- starts `pqnas-restore@<job_id>.service`
+- writes audit event
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `job_id`
+- `volume`
+- `id`
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `500 restore_start_failed` / `server_error`
 
 Source:
-`server/src/main.cpp:42785`
+`server/src/routes/routes_snapshots_restore.cpp`
 
 ---
 
 ### POST `/api/v4/snapshots/restore/prepare`
 
 Purpose:
-TODO: describe purpose.
+Prepare a high-impact snapshot restore plan and return a confirmation challenge.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `volume`: required snapshot volume name
+- `id`: required snapshot id
+- `mode`: currently must be `swap`
+- `force_stop`: must be `true` in v1
+
+Validation and behavior:
+- requires admin authentication
+- requires same-origin before mutation
+- validates volume and snapshot id
+- requires snapshot to be a Btrfs subvolume
+- creates an in-memory restore confirmation plan with short expiry
+- returns required confirmation phrase and planned restore steps
+- warns that restore replaces live volume content and requires downtime
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `confirm_id`
+- `expires_in_sec`
+- `plan`
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:42515`
+`server/src/routes/routes_snapshots_restore.cpp`
 
 ---
 
 ### GET `/api/v4/snapshots/restore/status`
 
 Purpose:
-Health/status endpoint.
+Read the status or result of a snapshot restore job.
 
 Auth:
-User session
+Admin session. This is a read/status route.
 
 Request:
-TODO.
+Query parameters:
+
+- `job_id`: required restore job id beginning with `RJOB_`
+
+Validation and behavior:
+- requires admin authentication
+- validates `job_id` prefix
+- reads result JSON from `/run/pqnas/restore/<job_id>.result.json` when available
+- otherwise queries the corresponding systemd unit status
+- reports queued/running/done/failed-style status
 
 Response:
-TODO.
+`200 OK` JSON on known job.
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:42647`
+`server/src/routes/routes_snapshots_restore.cpp`
 
 ---
 
 ### GET `/api/v4/snapshots/volumes`
 
 Purpose:
-TODO: describe purpose.
+List configured snapshot volumes.
 
 Auth:
-User session
+Admin session. This is a read route.
 
 Request:
-TODO.
+No required query parameters.
+
+Validation and behavior:
+- requires admin authentication
+- loads snapshot volume settings
+- returns configured volume names, live source subvolume paths, snapshot roots, enabled flags, backend, and runtime user
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `backend`
+- `volumes[]`
+- `runtime_user`
+
+Errors:
+- `500 server_error` when snapshot settings cannot be loaded
 
 Source:
-`server/src/main.cpp:42220`
+`server/src/routes/routes_snapshots_browse.cpp`
 
 ---
 

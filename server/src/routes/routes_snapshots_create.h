@@ -23,6 +23,7 @@ struct SnapshotCreateVolume {
 
 struct SnapshotCreateRoutesContext {
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*)> require_admin;
+    std::function<bool(const httplib::Request&, httplib::Response&)> require_same_origin;
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
     std::function<void(const pqnas::AuditEvent&)> audit_append;
 

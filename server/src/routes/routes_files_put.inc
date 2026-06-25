@@ -1032,6 +1032,10 @@ srv.Put("/api/v4/files/put",
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
             };
+        snapshot_create_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
+            };
         snapshot_create_ctx.reply_json =
             [&](httplib::Response& res, int status, const std::string& body) {
                 reply_json(res, status, body);
@@ -1082,6 +1086,10 @@ srv.Put("/api/v4/files/put",
         snapshot_restore_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+        snapshot_restore_ctx.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) {
+                return require_same_origin_for_cookie_mutation(req, res);
             };
         snapshot_restore_ctx.reply_json =
             [&](httplib::Response& res, int status, const std::string& body) {

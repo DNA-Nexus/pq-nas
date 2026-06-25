@@ -40,6 +40,7 @@ void reply_json_ctx(
 
 bool context_ok(const SnapshotCreateRoutesContext& c) {
     return c.require_admin &&
+           c.require_same_origin &&
            c.reply_json &&
            c.audit_append &&
            c.load_volumes &&
@@ -241,6 +242,7 @@ void register_snapshot_create_routes(
 
             std::string actor_fp;
             if (!c.require_admin(req, res, &actor_fp)) return;
+            if (!c.require_same_origin(req, res)) return;
 
             auto audit_fail = [&](const std::string& reason, int http, const std::string& detail = "") {
                 pqnas::AuditEvent ev;
