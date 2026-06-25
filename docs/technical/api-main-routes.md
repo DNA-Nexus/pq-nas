@@ -24,15 +24,15 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/debug/auth/approvals` | Unknown | `server/src/main.cpp:44648` |
 | `GET` | `/api/public/auth_mode` | Public token/link | `server/src/main.cpp:11836` |
 | `GET` | `/api/public/gallery/album/image` | Public token/link | `server/src/main.cpp:48290` |
-| `POST` | `/api/v4/admin/audit/preview-prune` | Admin session | `server/src/main.cpp:18833` |
-| `POST` | `/api/v4/admin/audit/prune` | Admin session | `server/src/main.cpp:18855` |
+| `POST` | `/api/v4/admin/audit/preview-prune` | Admin session | `server/src/routes/routes_admin_audit_retention.cpp` |
+| `POST` | `/api/v4/admin/audit/prune` | Admin session | `server/src/routes/routes_admin_audit_retention.cpp` |
 | `GET` | `/api/v4/admin/ping` | Admin session | `server/src/main.cpp:12235` |
-| `POST` | `/api/v4/admin/rotate-audit` | Admin session | `server/src/main.cpp:18802` |
-| `GET` | `/api/v4/admin/settings` | Admin session | `server/src/main.cpp:18952` |
-| `POST` | `/api/v4/admin/settings` | Admin session | `server/src/main.cpp:19271` |
-| `POST` | `/api/v4/admin/settings/create-dna-alert-identity` | Admin session | `server/src/main.cpp:20339` |
-| `GET` | `/api/v4/admin/settings/dna-alert-identity-info` | Admin session | `server/src/main.cpp:20426` |
-| `POST` | `/api/v4/admin/settings/send-dna-alert-contact-request` | Admin session | `server/src/main.cpp:19197` |
+| `POST` | `/api/v4/admin/rotate-audit` | Admin session | `server/src/routes/routes_admin_audit_rotate.cpp` |
+| `GET` | `/api/v4/admin/settings` | Admin session | `server/src/routes/routes_admin_settings.inc` |
+| `POST` | `/api/v4/admin/settings` | Admin session | `server/src/routes/routes_admin_settings.inc` |
+| `POST` | `/api/v4/admin/settings/create-dna-alert-identity` | Admin session | `server/src/routes/routes_admin_settings.inc` |
+| `GET` | `/api/v4/admin/settings/dna-alert-identity-info` | Admin session | `server/src/routes/routes_admin_settings.inc` |
+| `POST` | `/api/v4/admin/settings/send-dna-alert-contact-request` | Admin session | `server/src/routes/routes_admin_settings.inc` |
 | `POST` | `/api/v4/admin/settings/send-dna-alert-contact-request` | Admin session | `server/src/main.cpp:20436` |
 | `GET` | `/api/v4/admin/stats/summary` | Admin session | `server/src/main.cpp:22663` |
 | `GET` | `/api/v4/admin/stats/trends` | Admin session | `server/src/main.cpp:22064` |
@@ -60,8 +60,8 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/apps/list` | User session | `server/src/main.cpp:43831` |
 | `POST` | `/api/v4/apps/uninstall` | User session | `server/src/main.cpp:44495` |
 | `POST` | `/api/v4/apps/upload_install` | User session | `server/src/main.cpp:43959` |
-| `GET` | `/api/v4/audit/tail` | User session | `server/src/main.cpp:18722` |
-| `GET` | `/api/v4/audit/verify` | User session | `server/src/main.cpp:18753` |
+| `GET` | `/api/v4/audit/tail` | User session | `server/src/routes/routes_admin_audit_read.cpp` |
+| `GET` | `/api/v4/audit/verify` | User session | `server/src/routes/routes_admin_audit_read.cpp` |
 | `GET` | `/api/v4/files/archive_manifest` | User session | `server/src/main.cpp:41065` |
 | `POST` | `/api/v4/files/cat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/copy` | User session | `server/src/routes/routes_files_core.inc` |
@@ -418,38 +418,56 @@ Source:
 ### POST `/api/v4/admin/audit/preview-prune`
 
 Purpose:
-Admin management endpoint.
+Preview audit retention prune results without deleting files.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- preview route
+- uses POST but should not delete files
+- kept same-origin-protected because it is an admin POST route
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18833`
+`server/src/routes/routes_admin_audit_retention.cpp`
 
 ---
 
 ### POST `/api/v4/admin/audit/prune`
 
 Purpose:
-Admin management endpoint.
+Apply audit retention pruning.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- destructive audit-log retention operation
+- can delete old audit log files according to retention policy
+- must remain admin-only and same-origin-protected
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18855`
+`server/src/routes/routes_admin_audit_retention.cpp`
 
 ---
 
@@ -475,114 +493,168 @@ Source:
 ### POST `/api/v4/admin/rotate-audit`
 
 Purpose:
-Admin management endpoint.
+Rotate the active audit log.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- mutates audit log files
+- does not prune old logs
+- returns rotate implementation JSON
 
 Response:
-TODO.
+- `200 ok`
+- `500 rotate_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18802`
+`server/src/routes/routes_admin_audit_rotate.cpp`
 
 ---
 
 ### GET `/api/v4/admin/settings`
 
 Purpose:
-Admin management endpoint.
+Read admin settings, audit config, theme, snapshots, tiering, upload limits, DNA Alert config and identity status.
 
 Auth:
-Admin session
+Admin session.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read/admin settings route
+- returns audit settings and runtime audit level
+- returns UI theme, snapshot config, storage roots, tiering config, DNA Connect alert config, identity status and upload limits
+- sets no-store via reply helper/page flow where applicable
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18952`
+`server/src/routes/routes_admin_settings.inc`
 
 ---
 
 ### POST `/api/v4/admin/settings`
 
 Purpose:
-Admin management endpoint.
+Save a validated patch of admin settings.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- validates and merges selected settings only
+- supports audit_min_level, audit_retention, audit_rotation, ui_theme, snapshots, tiering, dna_connect_alerts and transport_max_upload_bytes
+- writes settings atomically through temporary file and rename
+- writes best-effort audit events for changed settings
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:19271`
+`server/src/routes/routes_admin_settings.inc`
 
 ---
 
 ### POST `/api/v4/admin/settings/create-dna-alert-identity`
 
 Purpose:
-Admin management endpoint.
+Create the PQ-NAS DNA Alert identity using the configured dna-connect CLI and data directory.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- uses configured dna_connect_alerts.cli_path
+- uses configured dna_connect_alerts.data_dir
+- creates directory if needed
+- returns existing identity without recreating when already present
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:20339`
+`server/src/routes/routes_admin_settings.inc`
 
 ---
 
 ### GET `/api/v4/admin/settings/dna-alert-identity-info`
 
 Purpose:
-Admin management endpoint.
+Read DNA Alert identity status.
 
 Auth:
-Admin session
+Admin session.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read/status route
+- returns dna_connect_identity status from configured DNA Alert data directory
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:20426`
+`server/src/routes/routes_admin_settings.inc`
 
 ---
 
 ### POST `/api/v4/admin/settings/send-dna-alert-contact-request`
 
 Purpose:
-Admin management endpoint.
+Send a DNA Connect contact request from the PQ-NAS alerts identity to the configured recipient.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- requires dna_connect_alerts.recipient in settings
+- requires PQ-NAS DNA identity to exist
+- runs dna-connect-cli contact request with configured data directory
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:19197`
+`server/src/routes/routes_admin_settings.inc`
 
 ---
 
@@ -1364,38 +1436,54 @@ Source:
 ### GET `/api/v4/audit/tail`
 
 Purpose:
-TODO: describe purpose.
+Read the last N audit log entries.
 
 Auth:
-User session
+Admin session.
 
 Request:
-TODO.
+- `n`: Number of audit lines to return, clamped to 1..1000. Defaults to 200.
+
+No request body.
+
+Validation and behavior:
+- read/admin audit route
+- parses JSONL audit file best-effort
+- returns at most 1000 entries
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18722`
+`server/src/routes/routes_admin_audit_read.cpp`
 
 ---
 
 ### GET `/api/v4/audit/verify`
 
 Purpose:
-TODO: describe purpose.
+Compare audit state hash with the last audit line hash.
 
 Auth:
-User session
+Admin session.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read/admin audit route
+- returns ok, state and last_line_hash
+- used to detect audit hash-chain mismatch
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18753`
+`server/src/routes/routes_admin_audit_read.cpp`
 
 ---
 
