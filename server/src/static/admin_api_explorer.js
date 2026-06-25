@@ -9,6 +9,23 @@
 
     const $ = (id) => document.getElementById(id);
 
+    function tr(key, vars, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, vars || null, fallback);
+        }
+        return String(fallback ?? key);
+    }
+
+    function riskLabel(risk) {
+        const key = "admin.api_explorer.risk." + String(risk || "read");
+        return tr(key, null, String(risk || "read"));
+    }
+
+    function routeCountText(count) {
+        return tr("admin.api_explorer.route_count", { count }, count === 1 ? "1 route" : `${count} routes`);
+    }
+
     function text(v) {
         if (v === null || v === undefined) return "";
         return String(v);
@@ -47,7 +64,7 @@
 
         const all = document.createElement("option");
         all.value = "";
-        all.textContent = "All categories";
+        all.textContent = tr("admin.api_explorer.all_categories", null, "All categories");
         sel.appendChild(all);
 
         for (const cat of uniqueCategories(state.routes)) {
@@ -96,9 +113,9 @@
         if (!state.filtered.length) {
             const empty = document.createElement("div");
             empty.className = "empty";
-            empty.textContent = "No API routes matched the current filters.";
+            empty.textContent = tr("admin.api_explorer.no_matches", null, "No API routes matched the current filters.");
             list.appendChild(empty);
-            setStatus("0 routes");
+            setStatus(routeCountText(0));
             return;
         }
 
@@ -129,7 +146,7 @@
             const meta = document.createElement("div");
             meta.className = "metaRow";
             meta.appendChild(badge(r.category || "Other"));
-            meta.appendChild(badge(r.risk || "read", r.risk || ""));
+            meta.appendChild(badge(riskLabel(r.risk || "read"), r.risk || ""));
 
             btn.appendChild(top);
             btn.appendChild(title);
@@ -144,7 +161,7 @@
             list.appendChild(btn);
         }
 
-        setStatus(`${state.filtered.length} route${state.filtered.length === 1 ? "" : "s"}`);
+        setStatus(routeCountText(state.filtered.length));
     }
 
     function addKv(parent, key, value) {
@@ -171,12 +188,12 @@
     }
 
     function renderParams(params) {
-        const box = section("Parameters");
+        const box = section(tr("admin.api_explorer.parameters", null, "Parameters"));
 
         if (!Array.isArray(params) || params.length === 0) {
             const p = document.createElement("div");
             p.className = "hint";
-            p.textContent = "No query/path parameters documented for this route.";
+            p.textContent = tr("admin.api_explorer.no_params", null, "No query/path parameters documented for this route.");
             box.appendChild(p);
             return box;
         }
@@ -185,7 +202,7 @@
         kv.className = "kv";
 
         for (const p of params) {
-            addKv(kv, `${p.name} (${p.in})`, `${p.required === "yes" ? "required" : "optional"} — ${p.description || ""}`);
+            addKv(kv, `${p.name} (${p.in})`, `${p.required === "yes" ? tr("admin.api_explorer.required", null, "required") : tr("admin.api_explorer.optional", null, "optional")} — ${p.description || ""}`);
         }
 
         box.appendChild(kv);
@@ -201,19 +218,19 @@
     }
 
     function renderCurl(r) {
-        const box = section("Curl template");
+        const box = section(tr("admin.api_explorer.curl_template", null, "Curl template"));
 
         const row = document.createElement("div");
         row.className = "copyRow";
 
         const hint = document.createElement("div");
         hint.className = "hint";
-        hint.textContent = "Uses placeholders: $BASE, $COOKIE and optional $UPLOAD_ID.";
+        hint.textContent = tr("admin.api_explorer.curl_hint", null, "Uses placeholders: $BASE, $COOKIE and optional $UPLOAD_ID.");
 
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "pq-btn secondary";
-        btn.textContent = "Copy";
+        btn.textContent = tr("admin.api_explorer.copy", null, "Copy");
 
         row.appendChild(hint);
         row.appendChild(btn);
@@ -224,11 +241,11 @@
         btn.addEventListener("click", async () => {
             try {
                 await navigator.clipboard.writeText(r.curl || "");
-                btn.textContent = "Copied";
-                setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+                btn.textContent = tr("admin.api_explorer.copied", null, "Copied");
+                setTimeout(() => { btn.textContent = tr("admin.api_explorer.copy", null, "Copy"); }, 1200);
             } catch {
-                btn.textContent = "Copy failed";
-                setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+                btn.textContent = tr("admin.api_explorer.copy_failed", null, "Copy failed");
+                setTimeout(() => { btn.textContent = tr("admin.api_explorer.copy", null, "Copy"); }, 1200);
             }
         });
 
@@ -247,10 +264,10 @@
         const r = state.routes.find((item) => item.id === state.selectedId);
 
         if (!r) {
-            if (hint) hint.textContent = "Select a route from the list.";
+            if (hint) hint.textContent = tr("admin.api_explorer.select_route", null, "Select a route from the list.");
             const empty = document.createElement("div");
             empty.className = "empty";
-            empty.textContent = "No route selected.";
+            empty.textContent = tr("admin.api_explorer.no_route_selected", null, "No route selected.");
             detail.appendChild(empty);
             return;
         }
@@ -277,21 +294,21 @@
         head.appendChild(risk);
         detail.appendChild(head);
 
-        const overview = section("Overview");
+        const overview = section(tr("admin.api_explorer.overview", null, "Overview"));
         const kv = document.createElement("div");
         kv.className = "kv";
-        addKv(kv, "Purpose", r.purpose || "");
-        addKv(kv, "Auth", r.auth || "");
-        addKv(kv, "Category", r.category || "");
-        addKv(kv, "Source", r.source || "");
+        addKv(kv, tr("admin.api_explorer.purpose", null, "Purpose"), r.purpose || "");
+        addKv(kv, tr("admin.api_explorer.auth", null, "Auth"), r.auth || "");
+        addKv(kv, tr("admin.api_explorer.category", null, "Category"), r.category || "");
+        addKv(kv, tr("admin.api_explorer.source", null, "Source"), r.source || "");
         overview.appendChild(kv);
         detail.appendChild(overview);
 
         detail.appendChild(renderParams(r.params));
-        detail.appendChild(renderJsonSection("Body", r.body));
-        detail.appendChild(renderJsonSection("Responses", r.responses));
+        detail.appendChild(renderJsonSection(tr("admin.api_explorer.body", null, "Body"), r.body));
+        detail.appendChild(renderJsonSection(tr("admin.api_explorer.responses", null, "Responses"), r.responses));
 
-        const tags = section("Tags");
+        const tags = section(tr("admin.api_explorer.tags", null, "Tags"));
         const tagList = document.createElement("div");
         tagList.className = "tagList";
         for (const tag of Array.isArray(r.tags) ? r.tags : []) {
@@ -300,7 +317,7 @@
         if (!tagList.children.length) {
             const p = document.createElement("div");
             p.className = "hint";
-            p.textContent = "No tags.";
+            p.textContent = tr("admin.api_explorer.no_tags", null, "No tags.");
             tags.appendChild(p);
         } else {
             tags.appendChild(tagList);
@@ -311,7 +328,7 @@
     }
 
     async function loadRoutes() {
-        setStatus("Loading…");
+        setStatus(tr("admin.api_explorer.loading", null, "Loading…"));
 
         const res = await fetch("/api/v4/admin/api-explorer/routes", {
             cache: "no-store",
@@ -320,7 +337,7 @@
 
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || data.ok !== true || !Array.isArray(data.routes)) {
-            throw new Error((data && data.message) || "Failed to load API routes");
+            throw new Error((data && data.message) || tr("admin.api_explorer.load_failed_detail", null, "Failed to load API routes"));
         }
 
         state.routes = data.routes.slice().sort((a, b) => {
@@ -337,15 +354,19 @@
         $("q")?.addEventListener("input", applyFilters);
         $("categoryFilter")?.addEventListener("change", applyFilters);
         $("riskFilter")?.addEventListener("change", applyFilters);
+        window.addEventListener("pqnas-language-changed", () => {
+            fillCategoryFilter();
+            applyFilters();
+        });
         $("btnRefresh")?.addEventListener("click", () => {
             loadRoutes().catch((err) => {
-                setStatus("Load failed");
+                setStatus(tr("admin.api_explorer.load_failed", null, "Load failed"));
                 const detail = $("detail");
                 if (detail) {
                     detail.innerHTML = "";
                     const box = document.createElement("div");
                     box.className = "empty";
-                    box.textContent = err.message || "Failed to load API routes";
+                    box.textContent = err.message || tr("admin.api_explorer.load_failed_detail", null, "Failed to load API routes");
                     detail.appendChild(box);
                 }
             });
@@ -355,13 +376,13 @@
     document.addEventListener("DOMContentLoaded", () => {
         wire();
         loadRoutes().catch((err) => {
-            setStatus("Load failed");
+            setStatus(tr("admin.api_explorer.load_failed", null, "Load failed"));
             const detail = $("detail");
             if (detail) {
                 detail.innerHTML = "";
                 const box = document.createElement("div");
                 box.className = "empty";
-                box.textContent = err.message || "Failed to load API routes";
+                box.textContent = err.message || tr("admin.api_explorer.load_failed_detail", null, "Failed to load API routes");
                 detail.appendChild(box);
             }
         });
