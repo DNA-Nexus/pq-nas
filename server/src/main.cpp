@@ -132,6 +132,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_admin_user_storage.h"
 #include "routes/routes_auth_debug_approvals.h"
 #include "routes/routes_admin_approvals_ui.h"
+#include "routes/routes_admin_api_explorer.h"
 #include "routes/routes_admin_users_overview.h"
 #include "routes/routes_admin_user_storage_jobs.h"
 #include "routes/routes_admin_user_profile.h"

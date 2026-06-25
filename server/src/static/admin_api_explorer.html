@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title data-brand-title-suffix=" • Admin • API Explorer">Admin • API Explorer</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/components.css?v=20260610-components-v1">
+    <link rel="stylesheet" href="/static/shell_menu.css">
+    <script src="/static/theme.js"></script>
+    <script src="/static/branding.js?v=20260620-branding-admin-1"></script>
+
+    <style>
+        .content{
+            padding: 14px 20px 20px 20px;
+            min-height: 0;
+            min-width: 0;
+            overflow: auto;
+            display: grid;
+            grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
+            gap: 14px;
+            flex: 1 1 auto;
+        }
+
+        .pane{
+            border: 1px solid var(--border2);
+            border-radius: var(--radius);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .paneHead{
+            border-bottom: 1px solid var(--border2);
+            background: var(--panel2);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .paneBody{
+            padding: 14px;
+            min-width: 0;
+        }
+
+        .searchGrid{
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .filterRow{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        input, select{
+            width: 100%;
+            min-width: 0;
+            border: 1px solid var(--field-border);
+            border-radius: 14px;
+            background: var(--field-bg);
+            color: var(--field-fg);
+            padding: 10px 12px;
+            font: inherit;
+            outline: none;
+        }
+
+        input::placeholder{
+            color: var(--field-ph);
+        }
+
+        input:focus, select:focus{
+            border-color: var(--field-border2);
+            box-shadow: 0 0 0 4px var(--field-focus-ring);
+        }
+
+        .hint{
+            color: var(--fg-dim);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .routeList{
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: calc(100vh - 250px);
+            overflow: auto;
+            padding-right: 2px;
+        }
+
+        .routeCard{
+            width: 100%;
+            text-align: left;
+            border: 1px solid var(--border2);
+            border-radius: 16px;
+            background: var(--panel2);
+            color: var(--fg);
+            padding: 12px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .routeCard:hover,
+        .routeCard[aria-selected="true"]{
+            border-color: var(--border);
+        }
+
+        .routeTop{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .method{
+            font-family: var(--mono);
+            font-weight: 950;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 3px 8px;
+            flex: 0 0 auto;
+        }
+
+        .path{
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--fg);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        .title{
+            font-weight: 950;
+            line-height: 1.25;
+        }
+
+        .metaRow{
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .badge{
+            border: 1px solid var(--border2);
+            background: var(--panel);
+            border-radius: 999px;
+            color: var(--fg-dim);
+            padding: 3px 8px;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .badge.mutating,
+        .badge.upload{
+            color: var(--warn);
+            border-color: var(--warn);
+        }
+
+        .badge.destructive,
+        .badge.danger{
+            color: var(--err);
+            border-color: var(--err);
+        }
+
+        .detailGrid{
+            display: grid;
+            gap: 14px;
+        }
+
+        .detailTitle{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .detailTitle h2{
+            margin: 0;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+
+        .section{
+            border: 1px solid var(--border2);
+            border-radius: 16px;
+            background: var(--panel2);
+            padding: 12px;
+            min-width: 0;
+        }
+
+        .section h3{
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--fg-dim);
+        }
+
+        .kv{
+            display: grid;
+            grid-template-columns: 130px 1fr;
+            gap: 8px 12px;
+            font-size: 13px;
+        }
+
+        .kvKey{
+            color: var(--fg-dim);
+            font-weight: 800;
+        }
+
+        .mono{
+            font-family: var(--mono);
+        }
+
+        pre{
+            margin: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            font-family: var(--mono);
+            color: var(--fg);
+        }
+
+        .copyRow{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .tagList{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .empty{
+            color: var(--fg-dim);
+            padding: 12px;
+            border: 1px dashed var(--border2);
+            border-radius: 16px;
+        }
+
+        [hidden]{
+            display: none;
+        }
+
+        @media (max-width: 980px){
+            .content{
+                grid-template-columns: 1fr;
+            }
+
+            .routeList{
+                max-height: none;
+            }
+
+            .filterRow{
+                grid-template-columns: 1fr;
+            }
+
+            .kv{
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="desktop">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logoDot" aria-hidden="true"></div>
+            <div style="min-width:0">
+                <h1>Admin</h1>
+                <div class="sub">API Explorer</div>
+            </div>
+        </div>
+
+        <nav class="nav" aria-label="Admin navigation">
+            <div class="sectionLabel">Admin</div>
+            <a class="navbtn" href="/admin"><span>Overview</span><span class="k">O</span></a>
+            <a class="navbtn" href="/admin/users"><span>User profiles</span><span class="k">U</span></a>
+            <a class="navbtn" href="/admin/stats"><span>Statistics</span><span class="k">Σ</span></a>
+            <a class="navbtn" href="/admin/approvals"><span>Approvals</span><span class="k">A</span></a>
+            <a class="navbtn" href="/admin/apps"><span>Apps</span><span class="k">📦</span></a>
+            <a class="navbtn" href="/admin/updates"><span>Update Center</span><span class="k">⬆</span></a>
+            <a class="navbtn" href="/admin/audit"><span>Audit log UI</span><span class="k">D</span></a>
+            <a class="navbtn active" href="/admin/api-explorer"><span>API Explorer</span><span class="k">API</span></a>
+            <a class="navbtn" href="/admin/settings"><span>Settings</span><span class="k">S</span></a>
+            <a class="navbtn" href="/system"><span>System</span><span class="k">Y</span></a>
+            <div class="sectionLabel"> </div>
+            <a class="navbtn" href="/app"><span>Back...</span><span class="k">↩</span></a>
+        </nav>
+
+        <div class="bottom">
+            <div class="statusCard">
+                <div style="font-weight:900;">API Explorer</div>
+                <div class="mini" id="statusText">Loading…</div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="workspace">
+        <div class="topbar">
+            <div class="crumbs">
+                <div class="title">Admin — API Explorer</div>
+                <div class="sub">Search internal admin/developer API routes and copy safe curl templates.</div>
+            </div>
+
+            <div class="actions">
+                <button class="pq-btn secondary" id="btnRefresh" type="button">Refresh</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <section class="pane" aria-label="API route search">
+                <div class="paneHead">
+                    <div class="searchGrid">
+                        <input id="q" type="search" placeholder="Search: file move, delete version, chunk upload…">
+                        <div class="filterRow">
+                            <select id="categoryFilter" aria-label="Category filter">
+                                <option value="">All categories</option>
+                            </select>
+                            <select id="riskFilter" aria-label="Risk filter">
+                                <option value="">All risk levels</option>
+                                <option value="read">Read</option>
+                                <option value="mutating">Mutating</option>
+                                <option value="upload">Upload</option>
+                                <option value="destructive">Destructive</option>
+                                <option value="danger">Danger</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="hint">This page is admin-only. Curl examples use placeholders and never display live cookies.</div>
+                </div>
+
+                <div class="paneBody">
+                    <div id="routeList" class="routeList"></div>
+                </div>
+            </section>
+
+            <section class="pane" aria-label="API route details">
+                <div class="paneHead">
+                    <div class="hint" id="detailHint">Select a route from the list.</div>
+                </div>
+                <div class="paneBody">
+                    <div id="detail" class="detailGrid"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<script src="/static/admin_api_explorer.js?v=api-explorer-v1"></script>
+</body>
+</html>

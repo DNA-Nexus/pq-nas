@@ -1722,6 +1722,32 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
         register_admin_approvals_ui_routes(srv, admin_approvals_ui_ctx);
     }
 
+    // ---- Admin API Explorer UI routes ----
+    {
+        AdminApiExplorerRoutesContext admin_api_explorer_ctx;
+        admin_api_explorer_ctx.html_path =
+            (std::filesystem::path(static_root_dir()) / "admin_api_explorer.html").string();
+        admin_api_explorer_ctx.js_path =
+            (std::filesystem::path(static_root_dir()) / "admin_api_explorer.js").string();
+
+        admin_api_explorer_ctx.require_admin =
+            [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
+                return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        admin_api_explorer_ctx.slurp_file =
+            [&](const std::string& path) {
+                return slurp_file(path);
+            };
+
+        admin_api_explorer_ctx.reply_json =
+            [&](httplib::Response& res, int status, const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        register_admin_api_explorer_routes(srv, admin_api_explorer_ctx);
+    }
+
 
 	// Generic static handler: /static/<anything>
 	// Must come AFTER specific /static/*.js handlers so those remain unchanged.
