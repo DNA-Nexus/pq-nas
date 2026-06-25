@@ -4,27 +4,209 @@
   "generated_by": "admin_api_catalog_v1_static_json",
   "routes": [
     {
-      "id": "files.move",
-      "category": "Files",
+      "id": "versions.restore",
+      "category": "File Versions",
       "risk": "mutating",
       "method": "POST",
-      "path": "/api/v4/files/move",
-      "title": "Move or rename file/directory",
-      "purpose": "Move or rename a user-visible file or directory.",
+      "path": "/api/v4/files/restore_version",
+      "title": "Restore file version",
+      "purpose": "Restore a stored file version back to the live file path.",
       "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
-      "source": "server/src/routes/routes_files_core.inc",
+      "source": "server/src/routes/routes_file_versions_restore.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "$VERSION_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "403 forbidden",
+        "404 not_found",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "restore",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/restore_version\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"'$VERSION_ID'\"}'"
+    },
+    {
+      "id": "versions.delete",
+      "category": "File Versions",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/files/versions/delete",
+      "title": "Delete file version",
+      "purpose": "Delete one stored file version.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "$VERSION_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "403 forbidden",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "delete",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/versions/delete\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"'$VERSION_ID'\"}'"
+    },
+    {
+      "id": "versions.download",
+      "category": "File Versions",
+      "risk": "download",
+      "method": "GET",
+      "path": "/api/v4/files/versions/download",
+      "title": "Download version blob",
+      "purpose": "Download one stored file version blob as application/octet-stream.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_file_versions_read.cpp",
       "params": [
         {
-          "name": "from",
+          "name": "path",
           "in": "query",
           "required": "yes",
-          "description": "Source user-relative path."
+          "description": "User-relative path."
         },
         {
-          "name": "to",
+          "name": "version_id",
           "in": "query",
           "required": "yes",
-          "description": "Destination user-relative path."
+          "description": "Version id returned by versions/list."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 application/octet-stream",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "415 unsupported",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "download",
+        "blob"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/versions/download?path=docs/readme.txt&version_id=$VERSION_ID\" -H \"Cookie: $COOKIE\" -o readme.version"
+    },
+    {
+      "id": "versions.flag",
+      "category": "File Versions",
+      "risk": "metadata-mutation",
+      "method": "POST",
+      "path": "/api/v4/files/versions/flag",
+      "title": "Flag version",
+      "purpose": "Flag/bookmark one stored file version for the authenticated user.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "$VERSION_ID",
+          "note": "keep this one"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "flag",
+        "bookmark"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/versions/flag\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"'$VERSION_ID'\",\"note\":\"keep this one\"}'"
+    },
+    {
+      "id": "versions.list",
+      "category": "File Versions",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/versions/list",
+      "title": "List file versions",
+      "purpose": "List stored versions for one user-visible file path.",
+      "auth": "User session.",
+      "source": "server/src/routes/routes_file_versions_read.cpp",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative path."
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": "no",
+          "description": "Maximum number of versions. Default 100, clamped to 500."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "list",
+        "file"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/versions/list?path=docs/readme.txt&limit=100\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "versions.read_text",
+      "category": "File Versions",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/versions/read_text",
+      "title": "Read version as text",
+      "purpose": "Read one stored file version as UTF-8 text.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_file_versions_read.cpp",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative path."
+        },
+        {
+          "name": "version_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Version id returned by versions/list."
         }
       ],
       "body": {},
@@ -33,17 +215,110 @@
         "400 bad_request",
         "403 storage_unallocated",
         "404 not_found",
-        "409 dest_exists",
-        "409 locked",
+        "413 too_large",
+        "415 unsupported",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "read",
+        "text"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/versions/read_text?path=docs/readme.txt&version_id=$VERSION_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "versions.summary",
+      "category": "File Versions",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/versions/summary",
+      "title": "Version storage summary",
+      "purpose": "Return aggregate file-version count and byte usage for the authenticated user.",
+      "auth": "User session.",
+      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "summary",
+        "usage"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/versions/summary\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "versions.unflag",
+      "category": "File Versions",
+      "risk": "metadata-mutation",
+      "method": "POST",
+      "path": "/api/v4/files/versions/unflag",
+      "title": "Unflag version",
+      "purpose": "Remove the authenticated user's flag/bookmark from one stored file version.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "$VERSION_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "history",
+        "unflag",
+        "bookmark"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/versions/unflag\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"'$VERSION_ID'\"}'"
+    },
+    {
+      "id": "files.cat",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/cat",
+      "title": "Preview text file",
+      "purpose": "Return a text preview for a user-visible file.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "413 too_large",
+        "415 unsupported",
         "500 server_error"
       ],
       "tags": [
         "file",
-        "move",
-        "rename",
-        "mv"
+        "cat",
+        "preview",
+        "text"
       ],
-      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/move?from=old.txt&to=new.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/cat?path=docs/readme.txt\" -H \"Cookie: $COOKIE\""
     },
     {
       "id": "files.copy",
@@ -120,6 +395,434 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/delete?path=test.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
     },
     {
+      "id": "files.du",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/du",
+      "title": "Calculate disk usage",
+      "purpose": "Calculate recursive disk usage for one file or directory.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file or directory path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "du",
+        "size",
+        "directory"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/du?path=photos\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.exists",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/exists",
+      "title": "Check path existence",
+      "purpose": "Check whether a user-visible path exists and whether it is a file, directory, other, or missing.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file or directory path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated"
+      ],
+      "tags": [
+        "file",
+        "exists",
+        "check",
+        "metadata"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/exists?path=docs/readme.txt\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.favorites.list",
+      "category": "Files",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/favorites",
+      "title": "List favorites",
+      "purpose": "List the authenticated user's favorite files and directories.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "403 storage_unallocated",
+        "500 server_error"
+      ],
+      "tags": [
+        "favorites",
+        "star",
+        "file",
+        "list"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/favorites\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.favorites.add",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/favorites/add",
+      "title": "Add favorite",
+      "purpose": "Add a file or directory to the authenticated user's favorites.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "type": "file"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 type_mismatch",
+        "500 server_error"
+      ],
+      "tags": [
+        "favorites",
+        "star",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/favorites/add\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"type\":\"file\"}'"
+    },
+    {
+      "id": "files.favorites.remove",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/favorites/remove",
+      "title": "Remove favorite",
+      "purpose": "Remove a file or directory from the authenticated user's favorites.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "type": "file"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "500 server_error"
+      ],
+      "tags": [
+        "favorites",
+        "star",
+        "file",
+        "remove"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/favorites/remove\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"type\":\"file\"}'"
+    },
+    {
+      "id": "files.hash",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/hash",
+      "title": "Hash file",
+      "purpose": "Calculate SHA-256 for one existing regular user-visible file.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file path."
+        },
+        {
+          "name": "algo",
+          "in": "query",
+          "required": "no",
+          "description": "Hash algorithm. Currently sha256."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "hash",
+        "sha256",
+        "integrity"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/hash?path=docs/readme.txt&algo=sha256\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.list",
+      "category": "Files",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/list",
+      "title": "List directory",
+      "purpose": "List user-visible files and directories under a user-relative directory path.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "no",
+          "description": "User-relative directory path. Empty or omitted means root."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "list",
+        "directory",
+        "ls"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/list?path=.\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.mkdir",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/mkdir",
+      "title": "Create directory",
+      "purpose": "Create one or more user-visible directories under the authenticated user's storage.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative directory path to create."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "mkdir",
+        "directory",
+        "folder",
+        "create"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/mkdir?path=new-folder\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.move",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/move",
+      "title": "Move or rename file/directory",
+      "purpose": "Move or rename a user-visible file or directory.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "from",
+          "in": "query",
+          "required": "yes",
+          "description": "Source user-relative path."
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "required": "yes",
+          "description": "Destination user-relative path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 dest_exists",
+        "409 locked",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "move",
+        "rename",
+        "mv"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/move?from=old.txt&to=new.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.put",
+      "category": "Files",
+      "risk": "upload",
+      "method": "PUT",
+      "path": "/api/v4/files/put",
+      "title": "Upload raw file",
+      "purpose": "Stream raw bytes into a user-visible file using a temp-file-and-rename write path.",
+      "auth": "User session. Requires same-origin cookie mutation protection, Content-Length, quota approval, and allocated user storage.",
+      "source": "server/src/routes/routes_files_put.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative destination file path."
+        },
+        {
+          "name": "overwrite",
+          "in": "query",
+          "required": "no",
+          "description": "Set to 1, true, or yes to allow overwriting an existing file."
+        }
+      ],
+      "body": {
+        "content_type": "application/octet-stream"
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "403 quota_exceeded",
+        "409 file_exists",
+        "409 path_conflict",
+        "411 length_required",
+        "413 transport_limit_exceeded",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "put",
+        "upload",
+        "raw",
+        "stream"
+      ],
+      "curl": "curl -k -i -sS -X PUT \"$BASE/api/v4/files/put?path=upload.bin&overwrite=0\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" --data-binary '@upload.bin'"
+    },
+    {
+      "id": "files.read_text",
+      "category": "Files",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/read_text",
+      "title": "Read text file",
+      "purpose": "Read a user-visible text file with metadata such as SHA-256 and mtime.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "413 too_large",
+        "415 unsupported",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "read",
+        "text",
+        "editor"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/read_text?path=docs/readme.txt\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.rmdir",
+      "category": "Files",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/files/rmdir",
+      "title": "Remove empty directory",
+      "purpose": "Remove an empty user-visible directory. Refuses root-like paths and non-empty directories.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative empty directory path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 not_empty",
+        "409 locked",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "rmdir",
+        "directory",
+        "folder",
+        "remove",
+        "empty"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/rmdir?path=empty-folder\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
       "id": "files.rmrf",
       "category": "Files",
       "risk": "danger",
@@ -156,71 +859,377 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/rmrf?path=test.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
     },
     {
-      "id": "files.favorites.add",
+      "id": "files.save_text",
       "category": "Files",
       "risk": "mutating",
       "method": "POST",
-      "path": "/api/v4/files/favorites/add",
-      "title": "Add favorite",
-      "purpose": "Add a file or directory to the authenticated user's favorites.",
+      "path": "/api/v4/files/save_text",
+      "title": "Save text file",
+      "purpose": "Create or overwrite a user-visible text file from the raw request body.",
       "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative text file path."
+        }
+      ],
+      "body": {
+        "content_type": "text/plain; charset=utf-8",
+        "example": "hello from DNA-Nexus"
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "403 quota_exceeded",
+        "404 not_found",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "save",
+        "text",
+        "editor",
+        "write"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/save_text?path=notes.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" --data-binary 'hello from DNA-Nexus'"
+    },
+    {
+      "id": "files.search",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/search",
+      "title": "Search files",
+      "purpose": "Search user-visible files by name/path under the authenticated user's storage.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "q",
+          "in": "query",
+          "required": "yes",
+          "description": "Search query, maximum 128 characters."
+        },
+        {
+          "name": "max",
+          "in": "query",
+          "required": "no",
+          "description": "Maximum results, clamped."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "search",
+        "find"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/search?q=invoice&max=100\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.stat.get",
+      "category": "Files",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/files/stat",
+      "title": "Stat file/directory",
+      "purpose": "Return metadata and bounded recursive directory statistics for one user-visible path.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "no",
+          "description": "User-relative file or directory path. Empty or omitted means root."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "stat",
+        "metadata",
+        "size"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/files/stat?path=docs/readme.txt\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.stat.post",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/stat",
+      "title": "Stat file/directory",
+      "purpose": "POST alias for statting one user-visible path.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "no",
+          "description": "User-relative file or directory path. Empty or omitted means root."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "stat",
+        "metadata",
+        "size"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/stat?path=docs/readme.txt\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.stat_sel",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/stat_sel",
+      "title": "Stat selected paths",
+      "purpose": "Return aggregate stats for up to 200 selected user-visible paths.",
+      "auth": "User session. Requires allocated user storage.",
       "source": "server/src/routes/routes_files_core.inc",
       "params": [],
       "body": {
         "content_type": "application/json",
         "example": {
-          "path": "docs/readme.txt",
-          "type": "file"
+          "paths": [
+            "docs/readme.txt",
+            "photos"
+          ]
         }
       },
       "responses": [
         "200 ok",
         "400 bad_request",
         "403 storage_unallocated",
-        "404 not_found",
-        "409 type_mismatch",
         "500 server_error"
       ],
       "tags": [
-        "favorites",
-        "star",
-        "file"
+        "file",
+        "stat",
+        "selection",
+        "metadata"
       ],
-      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/favorites/add\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"type\":\"file\"}'"
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/stat_sel\" -H \"Cookie: $COOKIE\" -H \"Content-Type: application/json\" --data '{\"paths\":[\"docs/readme.txt\",\"photos\"]}'"
     },
     {
-      "id": "uploads.start",
-      "category": "Uploads",
-      "risk": "upload",
+      "id": "files.touch",
+      "category": "Files",
+      "risk": "mutating",
       "method": "POST",
-      "path": "/api/v4/uploads/start",
-      "title": "Start chunked upload",
-      "purpose": "Start a chunked upload session for a user-storage file.",
+      "path": "/api/v4/files/touch",
+      "title": "Create empty file",
+      "purpose": "Create a new empty user-visible file. Existing files are rejected.",
       "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
-      "source": "server/src/routes/routes_uploads_chunked.cpp",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file path to create."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "409 already_exists",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "touch",
+        "create",
+        "empty"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/touch?path=new.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.tree",
+      "category": "Files",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/files/tree",
+      "title": "Read directory tree",
+      "purpose": "Return a bounded recursive tree for a user-visible directory or file path.",
+      "auth": "User session. Requires allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "no",
+          "description": "User-relative path. Defaults to root."
+        },
+        {
+          "name": "max",
+          "in": "query",
+          "required": "no",
+          "description": "Maximum number of entries. Defaults to 500 and is clamped."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "tree",
+        "directory",
+        "recursive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/tree?path=photos&max=500\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "files.write_text",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/write_text",
+      "title": "Write existing text file",
+      "purpose": "Overwrite an existing user-visible UTF-8 text file with optimistic mtime/SHA conflict protection.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
       "params": [],
       "body": {
         "content_type": "application/json",
         "example": {
-          "path": "big/video.mp4",
-          "size_bytes": 104857600,
-          "overwrite": false
+          "path": "notes.txt",
+          "text": "updated text",
+          "expected_mtime_epoch": 0,
+          "expected_sha256": ""
         }
       },
       "responses": [
         "200 ok",
         "400 bad_request",
+        "403 storage_unallocated",
         "403 quota_exceeded",
-        "409 file_exists",
-        "413 upload_too_large",
+        "404 not_found",
+        "409 changed_on_server",
+        "413 too_large",
         "500 server_error"
       ],
       "tags": [
-        "upload",
-        "chunked",
-        "file"
+        "file",
+        "write",
+        "text",
+        "editor",
+        "optimistic-lock"
       ],
-      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"big/video.mp4\",\"size_bytes\":104857600,\"overwrite\":false}'"
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/write_text\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"notes.txt\",\"text\":\"updated text\",\"expected_mtime_epoch\":0,\"expected_sha256\":\"\"}'"
+    },
+    {
+      "id": "files.zip",
+      "category": "Files",
+      "risk": "export",
+      "method": "POST",
+      "path": "/api/v4/files/zip",
+      "title": "Download path as ZIP",
+      "purpose": "Create and return a ZIP archive for one user-visible path.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file or directory path."
+        },
+        {
+          "name": "max_bytes",
+          "in": "query",
+          "required": "no",
+          "description": "Maximum input bytes. Default is 50 MiB and clamped."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 application/zip",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "413 too_large",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "zip",
+        "download",
+        "export"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/zip?path=photos&max_bytes=52428800\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -o photos.zip"
+    },
+    {
+      "id": "files.zip_sel",
+      "category": "Files",
+      "risk": "export",
+      "method": "POST",
+      "path": "/api/v4/files/zip_sel",
+      "title": "Download selection as ZIP",
+      "purpose": "Create and return a ZIP archive for selected user-visible paths.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "paths": [
+            "docs/readme.txt",
+            "photos"
+          ],
+          "max_bytes": 52428800
+        }
+      },
+      "responses": [
+        "200 application/zip",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "413 too_large",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "zip",
+        "selection",
+        "download",
+        "export"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/zip_sel\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"paths\":[\"docs/readme.txt\",\"photos\"],\"max_bytes\":52428800}' -o selection.zip"
     },
     {
       "id": "uploads.chunk",
@@ -297,69 +1306,38 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/finish\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"upload_id\":\"'$UPLOAD_ID'\"}'"
     },
     {
-      "id": "versions.delete",
-      "category": "File Versions",
-      "risk": "destructive",
+      "id": "uploads.start",
+      "category": "Uploads",
+      "risk": "upload",
       "method": "POST",
-      "path": "/api/v4/files/versions/delete",
-      "title": "Delete stored file version",
-      "purpose": "Delete one stored file version for a user-visible path.",
+      "path": "/api/v4/uploads/start",
+      "title": "Start chunked upload",
+      "purpose": "Start a chunked upload session for a user-storage file.",
       "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
-      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "source": "server/src/routes/routes_uploads_chunked.cpp",
       "params": [],
       "body": {
         "content_type": "application/json",
         "example": {
-          "path": "docs/readme.txt",
-          "version_id": "v-example"
+          "path": "big/video.mp4",
+          "size_bytes": 104857600,
+          "overwrite": false
         }
       },
       "responses": [
         "200 ok",
         "400 bad_request",
-        "403 storage_unallocated",
-        "404 not_found",
+        "403 quota_exceeded",
+        "409 file_exists",
+        "413 upload_too_large",
         "500 server_error"
       ],
       "tags": [
-        "version",
-        "delete",
-        "history"
+        "upload",
+        "chunked",
+        "file"
       ],
-      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/versions/delete\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"v-example\"}'"
-    },
-    {
-      "id": "versions.restore",
-      "category": "File Versions",
-      "risk": "mutating",
-      "method": "POST",
-      "path": "/api/v4/files/restore_version",
-      "title": "Restore file version",
-      "purpose": "Restore a stored file version back to a live file path.",
-      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
-      "source": "server/src/routes/routes_file_versions_restore.cpp",
-      "params": [],
-      "body": {
-        "content_type": "application/json",
-        "example": {
-          "path": "docs/readme.txt",
-          "version_id": "v-example"
-        }
-      },
-      "responses": [
-        "200 ok",
-        "400 bad_request",
-        "403 storage_unallocated",
-        "404 not_found",
-        "409 path_conflict",
-        "500 server_error"
-      ],
-      "tags": [
-        "version",
-        "restore",
-        "history"
-      ],
-      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/restore_version\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"v-example\"}'"
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"big/video.mp4\",\"size_bytes\":104857600,\"overwrite\":false}'"
     }
   ]
 }

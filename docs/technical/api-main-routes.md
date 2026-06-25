@@ -1877,7 +1877,7 @@ Source:
 ### POST `/api/v4/files/restore_version`
 
 Purpose:
-Restore a stored file version back to a live file path.
+Restore a stored file version back to the live file path.
 
 Auth:
 User session. Requires same-origin cookie mutation protection and allocated user storage.
@@ -1885,35 +1885,28 @@ User session. Requires same-origin cookie mutation protection and allocated user
 Request:
 JSON body:
 
-- `path`: required user-relative destination path
-- `version_id`: required version identifier
+- `path`: required user-relative path
+- `version_id`: required version id
 
 Validation and behavior:
-- path and version id must be present
-- destination path is normalized and resolved under the user's storage
-- restoring under an existing file ancestor is rejected
-- current live file is preserved as a new version before restore when applicable
-- missing parent directories are created as needed
-- restored file facts are propagated to gallery metadata best-effort
+- requires same-origin before auth/body processing
+- validates JSON body
+- validates and normalizes `path`
+- checks that the user's storage is allocated
+- resolves the requested version blob
+- preserves or handles the current live file according to restore implementation
+- restores the version to the live path and updates live metadata
 
 Response:
-`200 OK` JSON:
-
-- `ok`: `true`
-- `scope_type`: `user`
-- `scope_id`: authenticated user's fingerprint
-- `path`: normalized user-relative path
-- `restored_version_id`
-- `bytes`
-- `mtime_epoch`
-- `sha256_hex`
+`200 OK` JSON on successful restore.
 
 Errors:
-- `400 bad_request` for invalid JSON, missing fields, invalid path, or unsafe destination
-- `403 storage_unallocated` when storage is not allocated
-- `404 not_found` when the selected version does not exist
-- `409 path_conflict` when a parent path is an existing file
-- `500 server_error` when preserving current version, creating directories, or restoring fails
+- `400 bad_request`
+- `403 storage_unallocated`
+- `403 forbidden` / origin mismatch
+- `404 not_found`
+- `409 path_conflict`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_restore.cpp`
@@ -2410,7 +2403,7 @@ Source:
 ### POST `/api/v4/files/versions/delete`
 
 Purpose:
-Delete a single stored file version.
+Delete one stored file version.
 
 Auth:
 User session. Requires same-origin cookie mutation protection and allocated user storage.
@@ -2418,26 +2411,35 @@ User session. Requires same-origin cookie mutation protection and allocated user
 Request:
 JSON body:
 
-- `path`: required user-relative file path
-- `version_id`: required version identifier
+- `path`: required user-relative path
+- `version_id`: required version id
+
+Validation and behavior:
+- requires same-origin before auth/body processing
+- validates JSON body
+- validates and normalizes `path`
+- checks that the user's storage is allocated
+- deletes exactly one stored version blob/index record
+- returns deletion counters
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `scope_type`: `user`
-- `scope_id`: authenticated user's fingerprint
-- `path`: normalized user-relative path
+- `ok`
+- `scope_type`
+- `scope_id`
+- `path`
 - `version_id`
 - `versions_deleted`
 - `version_bytes_deleted`
 - `version_blobs_missing`
 
 Errors:
-- `400 bad_request` for invalid JSON, missing fields, or invalid path
-- `403 storage_unallocated` when storage is not allocated
-- `404 not_found` when the version does not exist
-- `500 server_error` when deletion fails
+- `400 bad_request`
+- `403 storage_unallocated`
+- `403 forbidden` / origin mismatch
+- `404 not_found`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_manage.cpp`
@@ -2447,31 +2449,33 @@ Source:
 ### GET `/api/v4/files/versions/download`
 
 Purpose:
-Download a stored file-version blob as an attachment.
+Download one stored file version blob.
 
 Auth:
-User session. Requires allocated user storage.
+User session. Requires allocated user storage. This is a read/download route and does not require same-origin mutation protection.
 
 Request:
 Query parameters:
 
-- `path`: required user-relative file path
-- `version_id`: required version identifier
+- `path`: required user-relative path
+- `version_id`: required version id
+
+Validation and behavior:
+- validates and normalizes `path`
+- checks that the user's storage is allocated
+- resolves the requested version blob
+- returns the blob as `application/octet-stream`
+- sets `Content-Disposition`, `X-PQNAS-Version-Id`, and `X-PQNAS-SHA256`
 
 Response:
-`200 OK` binary response:
-
-- `Content-Type: application/octet-stream`
-- `Content-Disposition: attachment`
-- `X-PQNAS-Version-Id`
-- `X-PQNAS-SHA256`
+`200 OK` binary body.
 
 Errors:
-- `400 bad_request` for missing or invalid parameters
-- `403 storage_unallocated` when storage is not allocated
-- `404 not_found` when the version blob does not exist
-- `415 unsupported` when download is unsupported for the selected version
-- `500 server_error` when resolving, opening, or reading the blob fails
+- `400 bad_request`
+- `403 storage_unallocated`
+- `404 not_found`
+- `415 unsupported`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_read.cpp`
@@ -2481,7 +2485,7 @@ Source:
 ### POST `/api/v4/files/versions/flag`
 
 Purpose:
-Flag a stored file version for the authenticated user.
+Flag/bookmark one stored file version for the authenticated user.
 
 Auth:
 User session. Requires same-origin cookie mutation protection.
@@ -2489,22 +2493,30 @@ User session. Requires same-origin cookie mutation protection.
 Request:
 JSON body:
 
-- `path`: required user-relative file path
-- `version_id`: required version identifier
+- `path`: required user-relative path
+- `version_id`: required version id
 - `note`: optional note
+
+Validation and behavior:
+- requires same-origin before auth/body processing
+- validates JSON body
+- validates and normalizes `path`
+- flags the version for the authenticated user
+- returns updated flag count and whether the authenticated user has flagged the version
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `flagged`: `true`
+- `ok`
+- `flagged`
 - `flag_count`
 - `flagged_by_me`
 
 Errors:
-- `400 bad_request` for invalid JSON, missing fields, or invalid path
-- `404 not_found` when the version does not exist
-- `500 server_error` when flagging fails
+- `400 bad_request`
+- `403 forbidden` / origin mismatch
+- `404 not_found`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_manage.cpp`
@@ -2514,25 +2526,31 @@ Source:
 ### GET `/api/v4/files/versions/list`
 
 Purpose:
-List stored file versions for one user-visible file path.
+List stored versions for one user-visible file path.
 
 Auth:
-User session. Requires allocated user storage.
+User session. Requires allocated user storage indirectly through the version scope. This is a read route and does not require same-origin mutation protection.
 
 Request:
 Query parameters:
 
-- `path`: required user-relative file path
-- `limit`: optional maximum version rows. Defaults to 100 and is clamped to 500.
+- `path`: required user-relative path
+- `limit`: optional maximum number of versions. Default is `100`, clamped to `500`.
+
+Validation and behavior:
+- validates and normalizes `path`
+- lists versions for scope `user` and the authenticated user's fingerprint
+- includes flag metadata for each returned version
+- does not return version blob contents
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `scope_type`: `user`
-- `scope_id`: authenticated user's fingerprint
-- `path`: normalized user-relative path
-- `versions`: version rows including version id, event kind, actor display, byte size, SHA-256, deletion marker, and flag metadata
+- `ok`
+- `scope_type`
+- `scope_id`
+- `path`
+- `versions[]`
 
 Errors:
 - `400 bad_request` for missing or invalid path
@@ -2546,47 +2564,46 @@ Source:
 ### GET `/api/v4/files/versions/read_text`
 
 Purpose:
-Read a stored file-version blob as UTF-8 text.
+Read one stored file version as UTF-8 text.
 
 Auth:
-User session. Requires allocated user storage.
+User session. Requires allocated user storage. This is a read route and does not require same-origin mutation protection.
 
 Request:
 Query parameters:
 
-- `path`: required user-relative file path
-- `version_id`: required version identifier
+- `path`: required user-relative path
+- `version_id`: required version id
 
-Validation:
-- `path` and `version_id` must be present
-- path must normalize under the user's storage
-- selected version blob must exist
-- text read is capped at 2 MiB
-- unsupported/binary/invalid text returns an error
+Validation and behavior:
+- validates and normalizes `path`
+- checks that the user's storage is allocated
+- resolves the requested version blob
+- reads at most the route's text-read cap
+- rejects unsupported, missing, too-large, or non-text/invalid content through the version read helper
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `scope_type`: `user`
-- `scope_id`: authenticated user's fingerprint
+- `ok`
+- `scope_type`
+- `scope_id`
 - `path`
 - `version_id`
 - `created_at`
 - `bytes`
-- `sha256`
-- `sha256_hex`
+- `sha256` / `sha256_hex`
 - `encoding`
 - `had_utf8_bom`
 - `text`
 
 Errors:
-- `400 bad_request` for missing or invalid parameters
-- `403 storage_unallocated` when storage is not allocated
-- `404 not_found` when the version blob does not exist
-- `413 too_large` when the version text exceeds the read cap
-- `415 unsupported` when the blob cannot be read as supported text
-- `500 server_error` for internal read failures
+- `400 bad_request`
+- `403 storage_unallocated`
+- `404 not_found`
+- `413 too_large`
+- `415 unsupported`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_read.cpp`
@@ -2596,22 +2613,25 @@ Source:
 ### GET `/api/v4/files/versions/summary`
 
 Purpose:
-Return aggregate file-version storage statistics for the authenticated user.
+Return aggregate version statistics for the authenticated user's file-version scope.
 
 Auth:
-User session.
+User session. This is a read route and does not require same-origin mutation protection.
+
+Request:
+No required query parameters.
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `scope_type`: `user`
-- `scope_id`: authenticated user's fingerprint
+- `ok`
+- `scope_type`
+- `scope_id`
 - `versions_count`
 - `versions_bytes`
 
 Errors:
-- `500 server_error` when summary calculation fails
+- `500 server_error` when summary generation fails
 
 Source:
 `server/src/routes/routes_file_versions_manage.cpp`
@@ -2621,7 +2641,7 @@ Source:
 ### POST `/api/v4/files/versions/unflag`
 
 Purpose:
-Remove the authenticated user's flag from a stored file version.
+Remove the authenticated user's flag/bookmark from one stored file version.
 
 Auth:
 User session. Requires same-origin cookie mutation protection.
@@ -2629,22 +2649,29 @@ User session. Requires same-origin cookie mutation protection.
 Request:
 JSON body:
 
-- `path`: required user-relative file path
-- `version_id`: required version identifier
-- `note`: optional, ignored by unflag behavior
+- `path`: required user-relative path
+- `version_id`: required version id
+
+Validation and behavior:
+- requires same-origin before auth/body processing
+- validates JSON body
+- validates and normalizes `path`
+- removes the authenticated user's flag from the version
+- returns updated flag count and whether the authenticated user has flagged the version
 
 Response:
 `200 OK` JSON:
 
-- `ok`: `true`
-- `flagged`: `false`
+- `ok`
+- `flagged`
 - `flag_count`
 - `flagged_by_me`
 
 Errors:
-- `400 bad_request` for invalid JSON, missing fields, or invalid path
-- `404 not_found` when the version does not exist
-- `500 server_error` when unflagging fails
+- `400 bad_request`
+- `403 forbidden` / origin mismatch
+- `404 not_found`
+- `500 server_error`
 
 Source:
 `server/src/routes/routes_file_versions_manage.cpp`

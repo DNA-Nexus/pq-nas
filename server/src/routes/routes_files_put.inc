@@ -139,13 +139,7 @@ srv.Put("/api/v4/files/put",
             overwrite = (ov == "1" || ov == "true" || ov == "yes");
         }
 
-        std::cerr << "[put] rel_norm=" << rel_norm
-                  << " overwrite=" << (overwrite ? 1 : 0)
-                  << " overwrite_param="
-                  << (req.has_param("overwrite") ? req.get_param_value("overwrite") : "<missing>")
-                  << "\n";
-
-    // Serialize writes on overlapping logical paths for this user.
+     // Serialize writes on overlapping logical paths for this user.
     // This prevents PUT/MOVE/DELETE races on the same file/subtree.
     if (!require_user_no_live_lock_for_write_local(
             users, users_path, res, fp_hex, rel_norm, "write", false)) {
@@ -284,15 +278,10 @@ srv.Put("/api/v4/files/put",
 
     const UploadTieringConfig tier_cfg = upload_tiering_config();
 
-    std::cerr << "[tiering] enabled=" << (tier_cfg.enabled ? 1 : 0)
-              << " landing_pool_id=" << tier_cfg.landing_pool_id << "\n";
-
-    std::filesystem::path out_abs = qc.abs_path;
+     std::filesystem::path out_abs = qc.abs_path;
     bool tiering_write = false;
 
-    std::cerr << "[put] qc.abs_path=" << qc.abs_path.string() << "\n";
-
-    if (tier_cfg.enabled) {
+     if (tier_cfg.enabled) {
         std::string terr;
         if (!build_landing_abs_path(tier_cfg.landing_pool_id, fp_hex, rel_norm, &out_abs, &terr)) {
             audit_fail("tiering_landing_pool_invalid", 500, terr);
@@ -307,10 +296,7 @@ srv.Put("/api/v4/files/put",
         tiering_write = true;
     }
 
-    std::cerr << "[put] tiering_write=" << (tiering_write ? 1 : 0) << "\n";
-    std::cerr << "[put] final out_abs=" << out_abs.string() << "\n";
-
-    {
+     {
         std::string serr;
         if (!ensure_no_symlink_in_existing_path_prefix(out_abs.parent_path(), &serr)) {
 
