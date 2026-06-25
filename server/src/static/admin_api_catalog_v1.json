@@ -1514,6 +1514,75 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/zip_sel\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"paths\":[\"docs/readme.txt\",\"photos\"],\"max_bytes\":52428800}' -o selection.zip"
     },
     {
+      "id": "poolmgr.add_slot",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/poolmgr/add-slot",
+      "title": "Add pool slot",
+      "purpose": "Add a pool slot/tracked pool mount to the Pool Manager configuration.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "poolmgr",
+        "slot",
+        "pool",
+        "config",
+        "raidmgr"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/add-slot\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\"}'"
+    },
+    {
+      "id": "poolmgr.apply_layout",
+      "category": "RAID / Storage Manager",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/poolmgr/apply-layout",
+      "title": "Apply pool layout",
+      "purpose": "Apply a planned pool layout change.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "poolmgr",
+        "layout",
+        "apply",
+        "btrfs",
+        "danger"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/apply-layout\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
       "id": "poolmgr.plan_layout",
       "category": "RAID / Storage Manager",
       "risk": "plan",
@@ -1542,6 +1611,75 @@
         "btrfs"
       ],
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/plan-layout\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\"}'"
+    },
+    {
+      "id": "poolmgr.remove_slot",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/poolmgr/remove-slot",
+      "title": "Remove pool slot",
+      "purpose": "Remove a pool slot/tracked pool mount from the Pool Manager configuration.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "poolmgr",
+        "slot",
+        "pool",
+        "config",
+        "raidmgr"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/remove-slot\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\"}'"
+    },
+    {
+      "id": "poolmgr.set_layout",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/poolmgr/set-layout",
+      "title": "Set pool layout",
+      "purpose": "Save or update desired pool layout metadata.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "layout": "raid1"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "poolmgr",
+        "layout",
+        "pool",
+        "config",
+        "raidmgr"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/set-layout\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"layout\":\"raid1\"}'"
     },
     {
       "id": "raid.balance_status",
@@ -1634,6 +1772,225 @@
         "job"
       ],
       "curl": "curl -k -i -sS \"$BASE/api/v4/raid/exec-record?plan_id=$PLAN_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.execute.add_device",
+      "category": "RAID / Storage Manager",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/add-device",
+      "title": "Execute add device",
+      "purpose": "Execute adding a device to a Btrfs pool.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "device": "/dev/sdX",
+          "mode": "raid1",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "add-device",
+        "execute",
+        "btrfs",
+        "danger"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/add-device\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"device\":\"/dev/sdX\",\"mode\":\"raid1\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
+      "id": "raid.execute.convert_mode",
+      "category": "RAID / Storage Manager",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/convert-mode",
+      "title": "Execute convert mode",
+      "purpose": "Execute a Btrfs pool profile/mode conversion.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "mode": "raid1",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "convert",
+        "mode",
+        "execute",
+        "btrfs",
+        "danger"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/convert-mode\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"mode\":\"raid1\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
+      "id": "raid.execute.create_pool",
+      "category": "RAID / Storage Manager",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/create-pool",
+      "title": "Execute create pool",
+      "purpose": "Execute creating a new Btrfs storage pool.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "devices": [
+            "/dev/sdX"
+          ],
+          "label": "pool1",
+          "mode": "single",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "create-pool",
+        "execute",
+        "btrfs",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/create-pool\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"devices\":[\"/dev/sdX\"],\"label\":\"pool1\",\"mode\":\"single\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
+      "id": "raid.execute.destroy_pool",
+      "category": "RAID / Storage Manager",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/destroy-pool",
+      "title": "Execute destroy pool",
+      "purpose": "Execute destroying/removing a storage pool.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "confirm": "DESTROY",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "destroy-pool",
+        "execute",
+        "btrfs",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/destroy-pool\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"confirm\":\"DESTROY\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
+      "id": "raid.execute.remove_device",
+      "category": "RAID / Storage Manager",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/remove-device",
+      "title": "Execute remove device",
+      "purpose": "Execute removing a device from a Btrfs pool.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "device": "/dev/sdX",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "remove-device",
+        "execute",
+        "btrfs",
+        "danger"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/remove-device\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"device\":\"/dev/sdX\",\"plan_id\":\"'$PLAN_ID'\"}'"
+    },
+    {
+      "id": "raid.execute.scrub",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/raid/execute/scrub",
+      "title": "Execute scrub",
+      "purpose": "Start or execute a scrub operation for a pool.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "plan_id": "$PLAN_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "scrub",
+        "execute",
+        "btrfs"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/execute/scrub\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"plan_id\":\"'$PLAN_ID'\"}'"
     },
     {
       "id": "raid.health",
@@ -1984,6 +2341,76 @@
         "read"
       ],
       "curl": "curl -k -i -sS \"$BASE/api/v4/storage/pools\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "storage.pools.rename",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/storage/pools/rename",
+      "title": "Rename storage pool",
+      "purpose": "Rename a storage pool or pool label/display identity as implemented by Storage Manager.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "name": "New Pool Name"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "pool",
+        "rename",
+        "metadata",
+        "raidmgr"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/storage/pools/rename\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"name\":\"New Pool Name\"}'"
+    },
+    {
+      "id": "storage.pools.set_name",
+      "category": "RAID / Storage Manager",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/storage/pools/set-name",
+      "title": "Set pool display name",
+      "purpose": "Set or update a storage pool display name.",
+      "auth": "Admin/session route used by Storage Manager. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "name": "Media Pool"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "pool",
+        "name",
+        "metadata",
+        "raidmgr"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/storage/pools/set-name\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"name\":\"Media Pool\"}'"
     },
     {
       "id": "storage.status",

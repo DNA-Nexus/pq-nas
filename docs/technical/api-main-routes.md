@@ -114,21 +114,21 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/me/storage` | User session | `server/src/main.cpp:33050` |
 | `GET` | `/api/v4/music/cover` | User session | `server/src/main.cpp:35570` |
 | `GET` | `/api/v4/photogallery/stats` | User session | `server/src/main.cpp:39973` |
-| `POST` | `/api/v4/poolmgr/add-slot` | User session | `server/src/main.cpp:13189` |
-| `POST` | `/api/v4/poolmgr/apply-layout` | User session | `server/src/main.cpp:13681` |
+| `POST` | `/api/v4/poolmgr/add-slot` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/poolmgr/apply-layout` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `POST` | `/api/v4/poolmgr/plan-layout` | User session | `server/src/routes/routes_storage_raid.cpp` |
-| `POST` | `/api/v4/poolmgr/remove-slot` | User session | `server/src/main.cpp:13277` |
-| `POST` | `/api/v4/poolmgr/set-layout` | User session | `server/src/main.cpp:13391` |
+| `POST` | `/api/v4/poolmgr/remove-slot` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/poolmgr/set-layout` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/balance-status` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/discovery` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/exec-record` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/exec-record` | User session | `server/src/main.cpp:18489` |
-| `POST` | `/api/v4/raid/execute/add-device` | User session | `server/src/main.cpp:16642` |
-| `POST` | `/api/v4/raid/execute/convert-mode` | User session | `server/src/main.cpp:15858` |
-| `POST` | `/api/v4/raid/execute/create-pool` | User session | `server/src/main.cpp:18020` |
-| `POST` | `/api/v4/raid/execute/destroy-pool` | User session | `server/src/main.cpp:17190` |
-| `POST` | `/api/v4/raid/execute/remove-device` | User session | `server/src/main.cpp:17538` |
-| `POST` | `/api/v4/raid/execute/scrub` | User session | `server/src/main.cpp:14650` |
+| `POST` | `/api/v4/raid/execute/add-device` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/execute/convert-mode` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/execute/create-pool` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/execute/destroy-pool` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/execute/remove-device` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/execute/scrub` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/health` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/job` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `POST` | `/api/v4/raid/plan/add-device` | User session | `server/src/routes/routes_storage_raid.cpp` |
@@ -162,8 +162,8 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/storage/disks` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/storage/overview` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/storage/pools` | User session | `server/src/routes/routes_storage_raid.cpp` |
-| `POST` | `/api/v4/storage/pools/rename` | User session | `server/src/main.cpp:12936` |
-| `POST` | `/api/v4/storage/pools/set-name` | User session | `server/src/main.cpp:12754` |
+| `POST` | `/api/v4/storage/pools/rename` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/storage/pools/set-name` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/storage/status` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/system` | User session | `server/src/main.cpp:11853` |
 | `GET` | `/api/v4/system/drives` | User session | `server/src/main.cpp:23979` |
@@ -3254,38 +3254,58 @@ Source:
 ### POST `/api/v4/poolmgr/add-slot`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Add a pool slot/tracked pool mount to the Pool Manager configuration.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- configuration mutation
+- does not by itself format disks
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13189`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/poolmgr/apply-layout`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Apply a planned pool layout change.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- high-impact storage operation
+- may start actual disk/pool changes
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13681`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -3321,38 +3341,58 @@ Source:
 ### POST `/api/v4/poolmgr/remove-slot`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Remove a pool slot/tracked pool mount from the Pool Manager configuration.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- configuration mutation
+- removes tracked UI/config entry rather than deleting pool data unless implementation says otherwise
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13277`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/poolmgr/set-layout`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Save or update desired pool layout metadata.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- configuration/layout mutation
+- not the same as executing a Btrfs conversion unless implementation does so
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13391`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -3465,114 +3505,174 @@ Source:
 ### POST `/api/v4/raid/execute/add-device`
 
 Purpose:
-TODO: describe purpose.
+Execute adding a device to a Btrfs pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- high-impact storage operation
+- selected device may be erased/consumed by the pool depending on implementation and flags
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:16642`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/execute/convert-mode`
 
 Purpose:
-TODO: describe purpose.
+Execute a Btrfs pool profile/mode conversion.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- high-impact Btrfs conversion
+- can run for a long time and affects redundancy/capacity profile
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:15858`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/execute/create-pool`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Execute creating a new Btrfs storage pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- destructive storage operation
+- formatting/creating a pool can erase selected devices
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18020`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/execute/destroy-pool`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Execute destroying/removing a storage pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- destructive storage operation
+- can make pool data unavailable or erase pool metadata depending on implementation
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:17190`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/execute/remove-device`
 
 Purpose:
-TODO: describe purpose.
+Execute removing a device from a Btrfs pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- high-impact storage operation
+- migrates data off the selected device and can take a long time
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:17538`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/execute/scrub`
 
 Purpose:
-TODO: describe purpose.
+Start or execute a scrub operation for a pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- starts a Btrfs maintenance operation
+- less destructive than add/remove/create/destroy, but still changes system state
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:14650`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -4471,38 +4571,58 @@ Source:
 ### POST `/api/v4/storage/pools/rename`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Rename a storage pool or pool label/display identity as implemented by Storage Manager.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- pool metadata/config mutation
+- may affect how the pool is shown or identified in UI
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:12936`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/storage/pools/set-name`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Set or update a storage pool display name.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. Mutating storage routes must require same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- metadata/config mutation
+- does not format disks
+- should require admin/session auth and same-origin cookie mutation protection
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:12754`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
