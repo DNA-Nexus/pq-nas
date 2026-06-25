@@ -184,6 +184,8 @@ add_executable(pqnas_server
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
         server/src/routes/routes_admin_storage_tiering.h
+        server/src/routes/routes_service_notices.cpp
+        server/src/routes/routes_service_notices.h
         server/src/routes/routes_admin_user_lifecycle.cpp
         server/src/routes/routes_admin_user_lifecycle.h
         server/src/routes/routes_admin_user_status.cpp
@@ -274,6 +276,8 @@ add_executable(pqnas_server
         server/src/file_location_index.cpp
         server/src/path_lock_manager.cpp
         server/src/storage_pools.cc
+        server/src/service_notices.cpp
+        server/src/service_notices.h
         server/src/app_tokens.cpp
         server/src/app_pairing.cpp
         server/src/share_pq_v1.cpp

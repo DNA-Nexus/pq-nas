@@ -126,6 +126,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
+#include "routes/routes_service_notices.h"
 #include "routes/routes_admin_user_lifecycle.h"
 #include "routes/routes_admin_user_status.h"
 #include "routes/routes_admin_user_storage_preview.h"
@@ -677,6 +678,7 @@ const std::string STATIC_LOGIN               = static_path("login.html");
 const std::string STATIC_V5_JS               = static_path("pqnas_v5.js");
 const std::string STATIC_ADMIN_SETTINGS_HTML = static_path("admin_settings.html");
 const std::string STATIC_ADMIN_SETTINGS_JS   = static_path("admin_settings.js");
+const std::string STATIC_ADMIN_SERVICE_NOTICES_HTML = static_path("admin_service_notices.html");
 const std::string STATIC_APPROVALS_HTML      = static_path("admin_approvals.html");
 const std::string STATIC_APPROVALS_JS        = static_path("admin_approvals.js");
 const std::string STATIC_BADGES_JS           = static_path("admin_badges.js");
@@ -10099,6 +10101,10 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     httplib::Server srv;
 
+    pqnas::ServiceNoticesStore service_notices_store(
+        std::filesystem::path(config_root_dir()) / "service_notices.json"
+    );
+
     pqnas::backups::SystemBackupWorker system_backup_worker(
         pqnas::backups::SystemBackupWorker::default_config()
     );
@@ -10879,6 +10885,63 @@ v5.app_pair_build_qr_uri =
     pqnas::register_activity_routes(srv, activity_deps);
 
     pqnas::backups::SystemBackupRoutesDeps system_backup_deps;
+    {
+        pqnas::ServiceNoticeRoutesDeps service_notice_deps;
+        service_notice_deps.store = &service_notices_store;
+        service_notice_deps.static_admin_service_notices_html = STATIC_ADMIN_SERVICE_NOTICES_HTML;
+
+        service_notice_deps.require_user =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fp_hex,
+                std::string* role) -> bool {
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    fp_hex,
+                    role
+                );
+        };
+
+        service_notice_deps.require_admin =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+        };
+
+        service_notice_deps.require_same_origin =
+            [&](const httplib::Request& req, httplib::Response& res) -> bool {
+                return require_same_origin_for_cookie_mutation(req, res);
+        };
+
+        service_notice_deps.reply_json =
+            [&](httplib::Response& res, int code, const std::string& body) {
+                reply_json(res, code, body);
+        };
+
+        service_notice_deps.audit_append =
+            [&](const pqnas::AuditEvent& ev) {
+                audit_append(ev);
+        };
+
+        service_notice_deps.now_epoch =
+            []() -> std::int64_t {
+                return static_cast<std::int64_t>(pqnas::now_epoch());
+        };
+
+        pqnas::register_service_notice_routes(srv, service_notice_deps);
+    }
+
     system_backup_deps.users = activity_deps.users;
     system_backup_deps.cookie_key = activity_deps.cookie_key;
     system_backup_deps.worker = &system_backup_worker;
