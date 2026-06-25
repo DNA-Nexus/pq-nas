@@ -15,6 +15,10 @@ struct DriveLocateRoutesDeps {
                        httplib::Response&,
                        std::string*)> require_admin_actor;
 
+    // Same-origin guard for cookie-authenticated POST mutations/actions.
+    std::function<bool(const httplib::Request&,
+                       httplib::Response&)> require_same_origin;
+
     // Shared JSON response helper from main.cpp.
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
 

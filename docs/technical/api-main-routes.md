@@ -165,11 +165,11 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/storage/pools/rename` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `POST` | `/api/v4/storage/pools/set-name` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/storage/status` | User session | `server/src/routes/routes_storage_raid.cpp` |
-| `GET` | `/api/v4/system` | User session | `server/src/main.cpp:11853` |
-| `GET` | `/api/v4/system/drives` | User session | `server/src/main.cpp:23979` |
-| `POST` | `/api/v4/system/drives/refresh-now` | User session | `server/src/main.cpp:24094` |
-| `POST` | `/api/v4/system/drives/selftest/start` | User session | `server/src/main.cpp:24114` |
-| `GET` | `/api/v4/system/storage` | User session | `server/src/main.cpp:23949` |
+| `GET` | `/api/v4/system` | User session | `server/src/main.cpp` |
+| `GET` | `/api/v4/system/drives` | User session | `server/src/main.cpp` |
+| `POST` | `/api/v4/system/drives/refresh-now` | User session | `server/src/main.cpp` |
+| `POST` | `/api/v4/system/drives/selftest/start` | User session | `server/src/main.cpp` |
+| `GET` | `/api/v4/system/storage` | User session | `server/src/main.cpp` |
 | `POST` | `/api/v4/uploads/cancel` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
 | `PUT` | `/api/v4/uploads/chunk` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
 | `POST` | `/api/v4/uploads/finish` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
@@ -4840,95 +4840,138 @@ Source:
 ### GET `/api/v4/system`
 
 Purpose:
-TODO: describe purpose.
+Return system overview for the System page.
 
 Auth:
-User session
+Authenticated session/admin page route depending on implementation.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read-only system overview route
+- used by the System page
 
 Response:
-TODO.
+- `200 ok`
+- `401 unauthorized`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:11853`
+`server/src/main.cpp`
 
 ---
 
 ### GET `/api/v4/system/drives`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Return drive inventory and SMART-style metadata for the System page.
 
 Auth:
-User session
+Authenticated session/admin page route depending on implementation.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read-only drive inventory route
+- used before SMART/selftest UI actions
 
 Response:
-TODO.
+- `200 ok`
+- `401 unauthorized`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:23979`
+`server/src/main.cpp`
 
 ---
 
 ### POST `/api/v4/system/drives/refresh-now`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Trigger drive inventory/SMART refresh now.
 
 Auth:
-User session
+Admin/session route. Should require same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- starts/requests a refresh action
+- does not erase disks
+- must remain same-origin protected when cookie-authenticated
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:24094`
+`server/src/main.cpp`
 
 ---
 
 ### POST `/api/v4/system/drives/selftest/start`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Start a SMART self-test for a selected drive.
 
 Auth:
-User session
+Admin/session route. Should require same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- starts a SMART self-test
+- validates selected device/type in implementation
+- must remain same-origin protected when cookie-authenticated
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:24114`
+`server/src/main.cpp`
 
 ---
 
 ### GET `/api/v4/system/storage`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Return system storage summary.
 
 Auth:
-User session
+Authenticated session/admin page route depending on implementation.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read-only storage/system summary route
 
 Response:
-TODO.
+- `200 ok`
+- `401 unauthorized`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:23949`
+`server/src/main.cpp`
 
 ---
 
@@ -5824,5 +5867,230 @@ Errors:
 
 Source:
 `server/src/trash_routes.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/start`
+
+Purpose:
+Turn on physical drive locate/identify action for a selected device.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- runs guarded root wrapper
+- device must be /dev/... path
+- writes audit event
+
+Response:
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/stop`
+
+Purpose:
+Turn off physical drive locate/identify action for a selected device.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- runs guarded root wrapper
+- device must be /dev/... path
+- writes audit event
+
+Response:
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### GET `/api/v4/system/drives/locate/idrac/config`
+
+Purpose:
+Read iDRAC drive locate backend configuration/status.
+
+Auth:
+Admin session.
+
+Request:
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read/status wrapper action
+- admin-only
+
+Response:
+- `200 ok`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/idrac/save`
+
+Purpose:
+Save iDRAC drive locate backend configuration.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- validates host, port and user
+- runs guarded root wrapper
+- writes audit event
+
+Response:
+- `200 ok`
+- `400 bad_request`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/idrac/generate-key`
+
+Purpose:
+Generate or refresh SSH key material for iDRAC locate backend.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- runs guarded root wrapper
+- mutates local iDRAC key/config state
+- writes audit event
+
+Response:
+- `200 ok`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### GET `/api/v4/system/drives/locate/idrac/public-key`
+
+Purpose:
+Read public key to install into iDRAC SSH key configuration.
+
+Auth:
+Admin session.
+
+Request:
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read-only public key output
+- admin-only
+
+Response:
+- `200 ok`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/idrac/test-connection`
+
+Purpose:
+Run iDRAC backend connection test.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- runs guarded root wrapper
+- does not save config but executes an admin backend action
+- writes audit event
+
+Response:
+- `200 ok`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
+
+---
+
+### POST `/api/v4/system/drives/locate/idrac/test-inventory`
+
+Purpose:
+Run iDRAC inventory test for drive locate backend.
+
+Auth:
+Admin session. Requires same-origin cookie mutation protection.
+
+Request:
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- runs guarded root wrapper
+- does not save config but executes an admin backend action
+- writes audit event
+
+Response:
+- `200 ok`
+- `403 forbidden`
+- `500 server_error`
+
+Source:
+`server/src/routes/routes_drive_locate.cpp`
 
 ---

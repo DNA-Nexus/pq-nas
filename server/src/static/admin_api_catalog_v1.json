@@ -3260,6 +3260,381 @@
       "curl": "curl -k -i -sS \"$BASE/api/v4/snapshots/volumes\" -H \"Cookie: $COOKIE\""
     },
     {
+      "id": "system.info",
+      "category": "System",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/system",
+      "title": "System info",
+      "purpose": "Return system overview for the System page.",
+      "auth": "Authenticated session/admin page route depending on implementation.",
+      "source": "server/src/main.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "401 unauthorized",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "overview",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/system\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "system.drives",
+      "category": "System",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/system/drives",
+      "title": "System drives",
+      "purpose": "Return drive inventory and SMART-style metadata for the System page.",
+      "auth": "Authenticated session/admin page route depending on implementation.",
+      "source": "server/src/main.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "401 unauthorized",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "smart",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/system/drives\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "system.drives.idrac_config",
+      "category": "System",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/system/drives/locate/idrac/config",
+      "title": "Read iDRAC locate config",
+      "purpose": "Read iDRAC drive locate backend configuration/status.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "locate",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/system/drives/locate/idrac/config\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "system.drives.idrac_generate_key",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/idrac/generate-key",
+      "title": "Generate iDRAC locate key",
+      "purpose": "Generate or refresh SSH key material for iDRAC locate backend.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {}
+      },
+      "responses": [
+        "200 ok",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "ssh-key",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/idrac/generate-key\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{}'"
+    },
+    {
+      "id": "system.drives.idrac_public_key",
+      "category": "System",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/system/drives/locate/idrac/public-key",
+      "title": "Read iDRAC public key",
+      "purpose": "Read public key to install into iDRAC SSH key configuration.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "ssh-key",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/system/drives/locate/idrac/public-key\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "system.drives.idrac_save",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/idrac/save",
+      "title": "Save iDRAC locate config",
+      "purpose": "Save iDRAC drive locate backend configuration.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "enabled": true,
+          "host": "idrac.local",
+          "port": "22",
+          "user": "root"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "locate",
+        "config",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/idrac/save\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"enabled\":true,\"host\":\"idrac.local\",\"port\":\"22\",\"user\":\"root\"}'"
+    },
+    {
+      "id": "system.drives.idrac_test_connection",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/idrac/test-connection",
+      "title": "Test iDRAC connection",
+      "purpose": "Run iDRAC backend connection test.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {}
+      },
+      "responses": [
+        "200 ok",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "test",
+        "connection"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/idrac/test-connection\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{}'"
+    },
+    {
+      "id": "system.drives.idrac_test_inventory",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/idrac/test-inventory",
+      "title": "Test iDRAC inventory",
+      "purpose": "Run iDRAC inventory test for drive locate backend.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {}
+      },
+      "responses": [
+        "200 ok",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "idrac",
+        "test",
+        "inventory"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/idrac/test-inventory\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{}'"
+    },
+    {
+      "id": "system.drives.locate_start",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/start",
+      "title": "Start drive locate LED",
+      "purpose": "Turn on physical drive locate/identify action for a selected device.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "device": "/dev/disk/by-id/..."
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "locate",
+        "identify",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"device\":\"/dev/sdX\"}'"
+    },
+    {
+      "id": "system.drives.locate_stop",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/locate/stop",
+      "title": "Stop drive locate LED",
+      "purpose": "Turn off physical drive locate/identify action for a selected device.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_drive_locate.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "device": "/dev/disk/by-id/..."
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "locate",
+        "identify",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/locate/stop\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"device\":\"/dev/sdX\"}'"
+    },
+    {
+      "id": "system.drives.refresh_now",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/refresh-now",
+      "title": "Refresh drive inventory now",
+      "purpose": "Trigger drive inventory/SMART refresh now.",
+      "auth": "Admin/session route. Should require same-origin cookie mutation protection.",
+      "source": "server/src/main.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {}
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "refresh",
+        "smart",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/refresh-now\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{}'"
+    },
+    {
+      "id": "system.drives.selftest_start",
+      "category": "System",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/system/drives/selftest/start",
+      "title": "Start drive self-test",
+      "purpose": "Start a SMART self-test for a selected drive.",
+      "auth": "Admin/session route. Should require same-origin cookie mutation protection.",
+      "source": "server/src/main.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "dev": "/dev/sdX",
+          "type": "short"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "drives",
+        "smart",
+        "selftest",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/system/drives/selftest/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"dev\":\"/dev/sdX\",\"type\":\"short\"}'"
+    },
+    {
+      "id": "system.storage",
+      "category": "System",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/system/storage",
+      "title": "System storage",
+      "purpose": "Return system storage summary.",
+      "auth": "Authenticated session/admin page route depending on implementation.",
+      "source": "server/src/main.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "401 unauthorized",
+        "500 server_error"
+      ],
+      "tags": [
+        "system",
+        "storage",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/system/storage\" -H \"Cookie: $COOKIE\""
+    },
+    {
       "id": "trash.list",
       "category": "Trash",
       "risk": "read",

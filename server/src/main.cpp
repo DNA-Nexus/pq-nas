@@ -10973,7 +10973,11 @@ v5.app_pair_build_qr_uri =
 drive_locate_deps.reply_json = reply_json;
             drive_locate_deps.audit_emit = update_center_deps.audit_emit;
             drive_locate_deps.wrapper_path = "/usr/local/sbin/pqnas-drive-locate";
-            pqnas::register_drive_locate_routes(srv, drive_locate_deps);
+                drive_locate_deps.require_same_origin = [&](const httplib::Request& req, httplib::Response& res) {
+        return require_same_origin_for_cookie_mutation(req, res);
+    };
+
+pqnas::register_drive_locate_routes(srv, drive_locate_deps);
         }
 
     }

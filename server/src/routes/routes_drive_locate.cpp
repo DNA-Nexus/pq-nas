@@ -203,7 +203,7 @@ void handle_idrac_backend_action(const DriveLocateRoutesDeps& deps,
                                  const httplib::Request& req,
                                  httplib::Response& res,
                                  const std::string& action) {
-    if (!deps.require_admin_actor || !deps.reply_json) {
+    if (!deps.require_admin_actor || !deps.require_same_origin || !deps.reply_json) {
         reply_json_local(deps, res, 500, json{
             {"ok", false},
             {"error", "server_error"},
@@ -214,6 +214,9 @@ void handle_idrac_backend_action(const DriveLocateRoutesDeps& deps,
 
     std::string actor_fp;
     if (!deps.require_admin_actor(req, res, &actor_fp)) {
+        return;
+    }
+    if (req.method == "POST" && !deps.require_same_origin(req, res)) {
         return;
     }
 
@@ -301,7 +304,7 @@ void handle_drive_locate(const DriveLocateRoutesDeps& deps,
                          const httplib::Request& req,
                          httplib::Response& res,
                          const std::string& action) {
-    if (!deps.require_admin_actor || !deps.reply_json) {
+    if (!deps.require_admin_actor || !deps.require_same_origin || !deps.reply_json) {
         reply_json_local(deps, res, 500, json{
             {"ok", false},
             {"error", "server_error"},
@@ -312,6 +315,9 @@ void handle_drive_locate(const DriveLocateRoutesDeps& deps,
 
     std::string actor_fp;
     if (!deps.require_admin_actor(req, res, &actor_fp)) {
+        return;
+    }
+    if (!deps.require_same_origin(req, res)) {
         return;
     }
 
