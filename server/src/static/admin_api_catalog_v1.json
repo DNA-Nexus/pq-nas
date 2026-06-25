@@ -1232,6 +1232,131 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/zip_sel\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"paths\":[\"docs/readme.txt\",\"photos\"],\"max_bytes\":52428800}' -o selection.zip"
     },
     {
+      "id": "trash.list",
+      "category": "Trash",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/trash/list",
+      "title": "List trash entries",
+      "purpose": "List active or historical trash entries for the authenticated user's own trash scope, or for a workspace trash scope.",
+      "auth": "User session.",
+      "source": "server/src/trash_routes.cpp",
+      "params": [
+        {
+          "name": "scope",
+          "in": "query",
+          "required": "no",
+          "description": "user by default. Use workspace for workspace trash."
+        },
+        {
+          "name": "workspace_id",
+          "in": "query",
+          "required": "conditional",
+          "description": "Required when scope=workspace."
+        },
+        {
+          "name": "include_inactive",
+          "in": "query",
+          "required": "no",
+          "description": "true/false. Defaults to false."
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": "no",
+          "description": "Defaults to 200 and is clamped to 1..500."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "trash",
+        "list",
+        "restore",
+        "deleted",
+        "workspace"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/trash/list?scope=user&include_inactive=false&limit=200\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "trash.purge",
+      "category": "Trash",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/trash/purge",
+      "title": "Permanently purge trash item",
+      "purpose": "Permanently purge one active trash entry and remove its payload.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/trash_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "trash_id": "$TRASH_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "404 not_found",
+        "409 trash_inactive",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "trash",
+        "purge",
+        "delete",
+        "permanent",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/trash/purge\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"trash_id\":\"'$TRASH_ID'\"}'"
+    },
+    {
+      "id": "trash.restore",
+      "category": "Trash",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/trash/restore",
+      "title": "Restore trash item",
+      "purpose": "Restore one active trash entry back into its live user or workspace root.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/trash_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "trash_id": "$TRASH_ID",
+          "rename_if_conflict": true
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 forbidden",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 trash_inactive",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "trash",
+        "restore",
+        "undelete",
+        "file",
+        "workspace"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/trash/restore\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"trash_id\":\"'$TRASH_ID'\",\"rename_if_conflict\":true}'"
+    },
+    {
       "id": "uploads.chunk",
       "category": "Uploads",
       "risk": "upload",

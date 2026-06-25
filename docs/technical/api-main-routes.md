@@ -4884,3 +4884,142 @@ Source:
 
 ---
 
+### GET `/api/v4/trash/list`
+
+Purpose:
+List active or historical trash entries for the authenticated user's own trash scope, or for a workspace trash scope.
+
+Auth:
+User session.
+
+Request:
+Query parameters:
+
+- `scope`: optional. `user` by default. Use `workspace` for workspace trash.
+- `workspace_id`: required when `scope=workspace`
+- `include_inactive`: optional boolean. Defaults to `false`.
+- `limit`: optional result limit. Defaults to `200` and is clamped to `1..500`.
+
+Validation and behavior:
+- authenticates the actor
+- user scope lists only the authenticated user's trash
+- workspace scope reloads workspace metadata and requires enabled workspace membership
+- non-workspace `scope` values intentionally fall back to user scope
+- returns public trash metadata and does not expose internal payload physical paths
+
+Response:
+`200 OK` JSON:
+
+- `ok`
+- `scope_type`
+- `scope_id`
+- `include_inactive`
+- `items[]`
+
+Errors:
+- `400 bad_request` for missing `workspace_id` when `scope=workspace`
+- `403 forbidden` when workspace access is denied
+- `404 not_found` when workspace lookup fails
+- `500 server_error` when trash index/listing fails
+
+Source:
+`server/src/trash_routes.cpp`
+
+---
+
+### POST `/api/v4/trash/restore`
+
+Purpose:
+Restore one active trash entry back into its live user or workspace root.
+
+Auth:
+User session. Requires same-origin cookie mutation protection.
+
+Request:
+JSON body:
+
+- `trash_id`: required trash entry id
+- `rename_if_conflict`: optional boolean. When true, restore may rename on destination conflict.
+
+Validation and behavior:
+- authenticates the actor
+- requires same-origin before mutation
+- loads the trash row by `trash_id`
+- user-scope trash can only be restored by the owning user
+- workspace-scope trash can only be restored by a write-capable workspace member
+- resolves the restore destination under the live user/workspace root
+- delegates race-safe restore state transition and filesystem coordination to `TrashService`
+- records audit and activity events best-effort
+
+Response:
+`200 OK` JSON:
+
+- `ok`
+- `trash_id`
+- `item_type`
+- `original_rel_path`
+- `restored_rel_path`
+- `size_bytes`
+- `file_count`
+- `renamed`
+
+Errors:
+- `400 bad_request`
+- `403 forbidden`
+- `403 storage_unallocated`
+- `404 not_found`
+- `409 trash_inactive`
+- `409 path_conflict`
+- `500 server_error`
+
+Source:
+`server/src/trash_routes.cpp`
+
+---
+
+### POST `/api/v4/trash/purge`
+
+Purpose:
+Permanently purge one active trash entry.
+
+Auth:
+User session. Requires same-origin cookie mutation protection.
+
+Request:
+JSON body:
+
+- `trash_id`: required trash entry id
+
+Validation and behavior:
+- authenticates the actor
+- requires same-origin before destructive mutation
+- loads the trash row by `trash_id`
+- user-scope trash can only be purged by the owning user
+- workspace-scope trash can only be purged by a write-capable workspace member
+- delegates race-safe purge state transition and payload removal to `TrashService`
+- also returns version cleanup counters when related file versions are deleted
+
+Response:
+`200 OK` JSON:
+
+- `ok`
+- `trash_id`
+- `size_bytes`
+- `file_count`
+- `versions_deleted`
+- `version_bytes_deleted`
+- `version_blobs_missing`
+- `version_cleanup_error`
+
+Errors:
+- `400 bad_request`
+- `403 forbidden`
+- `404 not_found`
+- `409 trash_inactive`
+- `409 path_conflict`
+- `500 server_error`
+
+Source:
+`server/src/trash_routes.cpp`
+
+---
