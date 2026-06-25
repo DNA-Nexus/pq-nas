@@ -4,6 +4,288 @@
   "generated_by": "admin_api_catalog_v1_static_json",
   "routes": [
     {
+      "id": "admin.storage.tiering.migrate_one",
+      "category": "Admin Storage",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/storage/tiering/migrate_one",
+      "title": "Migrate one tiering file",
+      "purpose": "Migrate one landed tiering file from the landing tier to its final storage tier.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_storage_tiering.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "path": "docs/file.bin"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 migration_failed",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "tiering",
+        "migration",
+        "landing",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/storage/tiering/migrate_one\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"path\":\"docs/file.bin\"}'"
+    },
+    {
+      "id": "admin.storage.tiering.status",
+      "category": "Admin Storage",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/storage/tiering/status",
+      "title": "Storage tiering status",
+      "purpose": "Read storage tiering status.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_storage_tiering.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "tiering",
+        "status",
+        "landing"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/storage/tiering/status\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.users.cleanup_old_storage",
+      "category": "Admin Storage",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/admin/users/cleanup_old_storage",
+      "title": "Start old-storage cleanup",
+      "purpose": "Create a background cleanup job for a user's old storage copy after migration.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_storage_jobs.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "expected_active_pool_id": "pool2",
+          "old_pool_id": "default"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "409 same_pool",
+        "500 enqueue_failed",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "cleanup",
+        "delete",
+        "pool",
+        "job"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/cleanup_old_storage\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"expected_active_pool_id\":\"pool2\",\"old_pool_id\":\"default\"}'"
+    },
+    {
+      "id": "admin.users.cleanup_old_storage_status",
+      "category": "Admin Storage",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/users/cleanup_old_storage_status",
+      "title": "Old-storage cleanup status",
+      "purpose": "Read one old-storage cleanup job record.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_user_storage_jobs.cpp",
+      "params": [
+        {
+          "name": "job_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Lowercase 64-character SHA-256 style job id."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_job_id",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "cleanup",
+        "status",
+        "job"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users/cleanup_old_storage_status?job_id=$JOB_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.users.migrate_storage",
+      "category": "Admin Storage",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/admin/users/migrate_storage",
+      "title": "Start user storage migration",
+      "purpose": "Create a background job to migrate a user's storage to another pool.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_storage_jobs.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "pool_id": "pool2"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 resolve_failed",
+        "409 same_pool",
+        "500 enqueue_failed",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "migration",
+        "pool",
+        "user",
+        "job"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/migrate_storage\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"pool_id\":\"pool2\"}'"
+    },
+    {
+      "id": "admin.users.migrate_storage_status",
+      "category": "Admin Storage",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/users/migrate_storage_status",
+      "title": "User storage migration status",
+      "purpose": "Read one user storage migration job record.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_user_storage_jobs.cpp",
+      "params": [
+        {
+          "name": "job_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Lowercase 64-character SHA-256 style job id."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_job_id",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "migration",
+        "status",
+        "job"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users/migrate_storage_status?job_id=$JOB_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.users.storage",
+      "category": "Admin Storage",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/users/storage",
+      "title": "Allocate or update user storage",
+      "purpose": "Allocate or update storage/quota for one user.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_storage.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "quota_gb": 100,
+          "pool_id": "default",
+          "force": false
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 user_not_approved",
+        "404 not_found",
+        "404 pool_not_found",
+        "409 already_allocated",
+        "409 pool_quota_overcommit",
+        "409 quota_below_used_bytes",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "quota",
+        "allocate",
+        "pool",
+        "user"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/storage\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"quota_gb\":100,\"pool_id\":\"default\",\"force\":false}'"
+    },
+    {
+      "id": "admin.users.storage_preview",
+      "category": "Admin Storage",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/users/storage_preview",
+      "title": "Preview user storage allocation",
+      "purpose": "Preview storage/quota allocation impact for one user and target storage pool.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_user_storage_preview.cpp",
+      "params": [
+        {
+          "name": "fingerprint",
+          "in": "query",
+          "required": "yes",
+          "description": "User fingerprint."
+        },
+        {
+          "name": "pool_id",
+          "in": "query",
+          "required": "no",
+          "description": "Target pool id. Defaults to default."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "404 pool_not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "storage",
+        "quota",
+        "preview",
+        "pool",
+        "user"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users/storage_preview?fingerprint=$FP&pool_id=default\" -H \"Cookie: $COOKIE\""
+    },
+    {
       "id": "versions.restore",
       "category": "File Versions",
       "risk": "mutating",

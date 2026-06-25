@@ -36,22 +36,22 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/admin/settings/send-dna-alert-contact-request` | Admin session | `server/src/main.cpp:20436` |
 | `GET` | `/api/v4/admin/stats/summary` | Admin session | `server/src/main.cpp:22663` |
 | `GET` | `/api/v4/admin/stats/trends` | Admin session | `server/src/main.cpp:22064` |
-| `POST` | `/api/v4/admin/storage/tiering/migrate_one` | Admin session | `server/src/main.cpp:47053` |
-| `GET` | `/api/v4/admin/storage/tiering/status` | Admin session | `server/src/main.cpp:48088` |
+| `POST` | `/api/v4/admin/storage/tiering/migrate_one` | Admin session | `server/src/routes/routes_admin_storage_tiering.cpp` |
+| `GET` | `/api/v4/admin/storage/tiering/status` | Admin session | `server/src/routes/routes_admin_storage_tiering.cpp` |
 | `GET` | `/api/v4/admin/users` | Admin session | `server/src/main.cpp:22978` |
 | `GET` | `/api/v4/admin/users/avatar` | Admin session | `server/src/main.cpp:43323` |
 | `POST` | `/api/v4/admin/users/avatar_remove` | Admin session | `server/src/main.cpp:43418` |
 | `POST` | `/api/v4/admin/users/avatar_upload` | Admin session | `server/src/main.cpp:43215` |
-| `POST` | `/api/v4/admin/users/cleanup_old_storage` | Admin session | `server/src/main.cpp:46926` |
-| `GET` | `/api/v4/admin/users/cleanup_old_storage_status` | Admin session | `server/src/main.cpp:47020` |
+| `POST` | `/api/v4/admin/users/cleanup_old_storage` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
+| `GET` | `/api/v4/admin/users/cleanup_old_storage_status` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
 | `POST` | `/api/v4/admin/users/delete` | Admin session | `server/src/main.cpp:44677` |
 | `POST` | `/api/v4/admin/users/disable` | Admin session | `server/src/main.cpp:44583` |
 | `POST` | `/api/v4/admin/users/enable` | Admin session | `server/src/main.cpp:43155` |
-| `POST` | `/api/v4/admin/users/migrate_storage` | Admin session | `server/src/main.cpp:46775` |
-| `GET` | `/api/v4/admin/users/migrate_storage_status` | Admin session | `server/src/main.cpp:46893` |
+| `POST` | `/api/v4/admin/users/migrate_storage` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
+| `GET` | `/api/v4/admin/users/migrate_storage_status` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
 | `POST` | `/api/v4/admin/users/status` | Admin session | `server/src/main.cpp:23160` |
-| `POST` | `/api/v4/admin/users/storage` | Admin session | `server/src/main.cpp:23262` |
-| `GET` | `/api/v4/admin/users/storage_preview` | Admin session | `server/src/main.cpp:23762` |
+| `POST` | `/api/v4/admin/users/storage` | Admin session | `server/src/routes/routes_admin_user_storage.cpp` |
+| `GET` | `/api/v4/admin/users/storage_preview` | Admin session | `server/src/routes/routes_admin_user_storage_preview.cpp` |
 | `POST` | `/api/v4/admin/users/upsert` | Admin session | `server/src/main.cpp:43060` |
 | `GET` | `/api/v4/apps` | User session | `server/src/main.cpp:12046` |
 | `GET` | `/api/v4/apps/has` | User session | `server/src/main.cpp:43693` |
@@ -646,38 +646,67 @@ Source:
 ### POST `/api/v4/admin/storage/tiering/migrate_one`
 
 Purpose:
-Admin management endpoint.
+Migrate one landed tiering file from the landing tier to its final storage tier.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `fingerprint`: required user fingerprint
+- `path`: required user-relative file path
+
+Validation and behavior:
+- requires admin auth
+- requires same-origin before mutation
+- validates request JSON
+- trims and validates `fingerprint` and `path`
+- normalizes the user-relative path with strict path rules
+- calls the configured one-file tiering migration implementation
+- writes audit event
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `fingerprint`
+- `path`
+
+Errors:
+- `400 bad_request`
+- `500 migration_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:47053`
+`server/src/routes/routes_admin_storage_tiering.cpp`
 
 ---
 
 ### GET `/api/v4/admin/storage/tiering/status`
 
 Purpose:
-Admin management endpoint.
+Read storage tiering status.
 
 Auth:
-Admin session
+Admin session. This is a read/status route.
 
 Request:
-TODO.
+No required query parameters.
+
+Validation and behavior:
+- requires admin auth
+- calls the configured tiering status provider
+- returns provider JSON as-is
 
 Response:
-TODO.
+`200 OK` JSON from the tiering status provider.
+
+Errors:
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:48088`
+`server/src/routes/routes_admin_storage_tiering.cpp`
 
 ---
 
@@ -760,38 +789,71 @@ Source:
 ### POST `/api/v4/admin/users/cleanup_old_storage`
 
 Purpose:
-User management or user profile related endpoint.
+Create a background cleanup job for a user's old storage copy after migration.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `fingerprint`: required user fingerprint
+- `expected_active_pool_id`: required pool id expected to be the user's current active pool
+- `old_pool_id`: required old pool id to clean up
+
+Validation and behavior:
+- requires admin auth
+- requires same-origin before mutation
+- validates request JSON
+- refuses cleanup when active and old pool are the same
+- enqueues a cleanup job
+- writes audit event with job id and pool ids
 
 Response:
-TODO.
+`200 OK` JSON from the cleanup job enqueue implementation.
+
+Errors:
+- `400 bad_request`
+- `409 same_pool`
+- `500 enqueue_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:46926`
+`server/src/routes/routes_admin_user_storage_jobs.cpp`
 
 ---
 
 ### GET `/api/v4/admin/users/cleanup_old_storage_status`
 
 Purpose:
-User management or user profile related endpoint.
+Read one old-storage cleanup job record.
 
 Auth:
-Admin session
+Admin session. This is a read/status route.
 
 Request:
-TODO.
+Query parameters:
+
+- `job_id`: required lowercase 64-character SHA-256 style job id
+
+Validation and behavior:
+- requires admin auth
+- validates job id format
+- reads the cleanup job record
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `job`
+
+Errors:
+- `400 bad_job_id`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:47020`
+`server/src/routes/routes_admin_user_storage_jobs.cpp`
 
 ---
 
@@ -855,38 +917,72 @@ Source:
 ### POST `/api/v4/admin/users/migrate_storage`
 
 Purpose:
-User management or user profile related endpoint.
+Create a background job to migrate a user's storage to another pool.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `fingerprint`: required user fingerprint
+- `pool_id`: required destination pool id
+
+Validation and behavior:
+- requires admin auth
+- requires same-origin before mutation
+- validates request JSON
+- resolves a user storage migration plan
+- refuses missing users, unallocated storage, invalid destination, or same-pool migration
+- enqueues a migration job
+- writes audit event with job id and pool transition
 
 Response:
-TODO.
+`200 OK` JSON from the migration job enqueue implementation.
+
+Errors:
+- `400 bad_request`
+- `404 resolve_failed`
+- `409 same_pool`
+- `500 enqueue_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:46775`
+`server/src/routes/routes_admin_user_storage_jobs.cpp`
 
 ---
 
 ### GET `/api/v4/admin/users/migrate_storage_status`
 
 Purpose:
-User management or user profile related endpoint.
+Read one user storage migration job record.
 
 Auth:
-Admin session
+Admin session. This is a read/status route.
 
 Request:
-TODO.
+Query parameters:
+
+- `job_id`: required lowercase 64-character SHA-256 style job id
+
+Validation and behavior:
+- requires admin auth
+- validates job id format
+- reads the migration job record
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `job`
+
+Errors:
+- `400 bad_job_id`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:46893`
+`server/src/routes/routes_admin_user_storage_jobs.cpp`
 
 ---
 
@@ -912,38 +1008,109 @@ Source:
 ### POST `/api/v4/admin/users/storage`
 
 Purpose:
-User management or user profile related endpoint.
+Allocate or update storage/quota for one user.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `fingerprint`: required user fingerprint
+- `quota_gb`: required numeric quota in GiB
+- `pool_id`: optional target storage pool. Defaults to `default`.
+- `force`: optional boolean. Required to update an already allocated user.
+
+Validation and behavior:
+- requires admin auth
+- requires same-origin before mutation
+- validates fingerprint and user existence
+- refuses users that are not enabled/approved
+- validates quota and prevents negative/overflow values
+- validates pool existence and pool capacity
+- prevents quota overcommit across users and workspaces on the target pool
+- computes canonical user root path and ensures it stays under the selected data root
+- creates the user directory if needed
+- refuses quota below current usage
+- updates `storage_state`, `quota_bytes`, `root_rel`, `storage_pool_id`, `storage_set_at`, and `storage_set_by`
+- writes audit events
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `fingerprint`
+- `pool_id`
+- `storage_state`
+- `quota_bytes`
+- `root_rel`
+- `storage_set_at`
+- `storage_set_by`
+
+Errors:
+- `400 bad_request`
+- `403 user_not_approved`
+- `404 not_found`
+- `404 pool_not_found`
+- `409 already_allocated`
+- `409 pool_quota_overcommit`
+- `409 quota_below_used_bytes`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:23262`
+`server/src/routes/routes_admin_user_storage.cpp`
 
 ---
 
 ### GET `/api/v4/admin/users/storage_preview`
 
 Purpose:
-User management or user profile related endpoint.
+Preview storage/quota allocation impact for one user and target storage pool.
 
 Auth:
-Admin session
+Admin session. This is a read/preview route.
 
 Request:
-TODO.
+Query parameters:
+
+- `fingerprint`: required user fingerprint
+- `pool_id`: optional target pool id. Defaults to `default`.
+
+Validation and behavior:
+- requires admin authentication
+- validates fingerprint format
+- validates/resolves the requested pool
+- computes the canonical user root path
+- reads pool total/free bytes
+- estimates current user used bytes
+- reports already allocated user/workspace quota on the target pool
+- does not mutate user storage or quota settings
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`
+- `fingerprint`
+- `pool_id`
+- `used_bytes`
+- `current_quota_bytes`
+- `pool_total_bytes`
+- `pool_free_bytes`
+- `allocated_other_bytes`
+- `allocated_total_bytes`
+- `allocated_user_bytes`
+- `allocated_workspace_bytes`
+- `remaining_allocatable_bytes`
+
+Errors:
+- `400 bad_request`
+- `404 not_found`
+- `404 pool_not_found`
+- `500 pool_statvfs_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:23762`
+`server/src/routes/routes_admin_user_storage_preview.cpp`
 
 ---
 
