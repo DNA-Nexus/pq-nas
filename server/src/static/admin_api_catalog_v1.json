@@ -1514,6 +1514,502 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/zip_sel\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"paths\":[\"docs/readme.txt\",\"photos\"],\"max_bytes\":52428800}' -o selection.zip"
     },
     {
+      "id": "poolmgr.plan_layout",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/poolmgr/plan-layout",
+      "title": "Plan pool layout",
+      "purpose": "Prepare/preview a pool layout plan without executing it.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "poolmgr",
+        "plan",
+        "layout",
+        "btrfs"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/poolmgr/plan-layout\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\"}'"
+    },
+    {
+      "id": "raid.balance_status",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/balance-status",
+      "title": "Btrfs balance status",
+      "purpose": "Return Btrfs balance status for a pool.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [
+        {
+          "name": "mount",
+          "in": "query",
+          "required": "conditional",
+          "description": "Pool mount path when required by implementation."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "btrfs",
+        "balance",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/balance-status?mount=$MOUNT\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.discovery",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/discovery",
+      "title": "RAID discovery",
+      "purpose": "Discover RAID/Btrfs-capable devices and topology for the UI.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "discovery",
+        "btrfs",
+        "devices",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/discovery\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.exec_record",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/exec-record",
+      "title": "RAID exec record",
+      "purpose": "Read a RAID/pool operation execution record.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [
+        {
+          "name": "plan_id",
+          "in": "query",
+          "required": "yes",
+          "description": "64-character plan/job id."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "poolmgr",
+        "exec",
+        "status",
+        "job"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/exec-record?plan_id=$PLAN_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.health",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/health",
+      "title": "RAID health",
+      "purpose": "Return RAID/storage health status.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "health",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/health\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.job",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/job",
+      "title": "RAID job status",
+      "purpose": "Read RAID job status.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [
+        {
+          "name": "job_id",
+          "in": "query",
+          "required": "conditional",
+          "description": "Job id when required by implementation."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "job",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/job?job_id=$JOB_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.plan_add_device",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/raid/plan/add-device",
+      "title": "Plan add device",
+      "purpose": "Prepare/preview adding a device to a Btrfs pool.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "device": "/dev/sdX",
+          "mode": "raid1"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "plan",
+        "add-device",
+        "btrfs",
+        "pool"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/plan/add-device\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"device\":\"/dev/sdX\",\"mode\":\"raid1\"}'"
+    },
+    {
+      "id": "raid.plan_convert_mode",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/raid/plan/convert-mode",
+      "title": "Plan convert mode",
+      "purpose": "Prepare/preview converting a pool profile/mode.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "mode": "raid1"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "plan",
+        "convert",
+        "mode",
+        "btrfs"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/plan/convert-mode\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"mode\":\"raid1\"}'"
+    },
+    {
+      "id": "raid.plan_create_pool",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/raid/plan/create-pool",
+      "title": "Plan create pool",
+      "purpose": "Prepare/preview creating a new Btrfs storage pool.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "devices": [
+            "/dev/sdX"
+          ],
+          "label": "pool1",
+          "mode": "single"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "plan",
+        "create-pool",
+        "btrfs",
+        "pool"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/plan/create-pool\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"devices\":[\"/dev/sdX\"],\"label\":\"pool1\",\"mode\":\"single\"}'"
+    },
+    {
+      "id": "raid.plan_remove_device",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/raid/plan/remove-device",
+      "title": "Plan remove device",
+      "purpose": "Prepare/preview removing a device from a Btrfs pool.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT",
+          "device": "/dev/sdX"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "plan",
+        "remove-device",
+        "btrfs",
+        "pool"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/plan/remove-device\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\",\"device\":\"/dev/sdX\"}'"
+    },
+    {
+      "id": "raid.plan_scrub",
+      "category": "RAID / Storage Manager",
+      "risk": "plan",
+      "method": "POST",
+      "path": "/api/v4/raid/plan/scrub",
+      "title": "Plan scrub",
+      "purpose": "Prepare/preview a scrub operation.",
+      "auth": "Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mount": "$MOUNT"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "scrub",
+        "plan",
+        "btrfs"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/raid/plan/scrub\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mount\":\"'$MOUNT'\"}'"
+    },
+    {
+      "id": "raid.scrub_status",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/scrub-status",
+      "title": "Btrfs scrub status",
+      "purpose": "Return Btrfs scrub status for a pool.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [
+        {
+          "name": "mount",
+          "in": "query",
+          "required": "conditional",
+          "description": "Pool mount path when required by implementation."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "btrfs",
+        "scrub",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/scrub-status?mount=$MOUNT\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "raid.status",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/raid/status",
+      "title": "RAID status",
+      "purpose": "Return RAID/Btrfs status for the Storage Manager UI.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "raid",
+        "status",
+        "btrfs",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/raid/status\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "storage.disks",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/storage/disks",
+      "title": "List disks",
+      "purpose": "List detected disks/devices for the Storage Manager UI.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "disks",
+        "drives",
+        "raidmgr",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/storage/disks\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "storage.overview",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/storage/overview",
+      "title": "Storage overview",
+      "purpose": "Return high-level storage overview.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "overview",
+        "raidmgr",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/storage/overview\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "storage.pools",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/storage/pools",
+      "title": "List storage pools",
+      "purpose": "List configured/detected storage pools.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "pools",
+        "btrfs",
+        "raidmgr",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/storage/pools\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "storage.status",
+      "category": "RAID / Storage Manager",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/storage/status",
+      "title": "Storage status",
+      "purpose": "Return storage status for the Storage Manager UI.",
+      "auth": "Admin/session route used by Storage Manager.",
+      "source": "server/src/routes/routes_storage_raid.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 server_error"
+      ],
+      "tags": [
+        "storage",
+        "status",
+        "raidmgr",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/storage/status\" -H \"Cookie: $COOKIE\""
+    },
+    {
       "id": "snapshots.create",
       "category": "Snapshots",
       "risk": "mutating",

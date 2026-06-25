@@ -116,12 +116,12 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/photogallery/stats` | User session | `server/src/main.cpp:39973` |
 | `POST` | `/api/v4/poolmgr/add-slot` | User session | `server/src/main.cpp:13189` |
 | `POST` | `/api/v4/poolmgr/apply-layout` | User session | `server/src/main.cpp:13681` |
-| `POST` | `/api/v4/poolmgr/plan-layout` | User session | `server/src/main.cpp:13518` |
+| `POST` | `/api/v4/poolmgr/plan-layout` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `POST` | `/api/v4/poolmgr/remove-slot` | User session | `server/src/main.cpp:13277` |
 | `POST` | `/api/v4/poolmgr/set-layout` | User session | `server/src/main.cpp:13391` |
-| `GET` | `/api/v4/raid/balance-status` | User session | `server/src/main.cpp:14224` |
-| `GET` | `/api/v4/raid/discovery` | User session | `server/src/main.cpp:14036` |
-| `GET` | `/api/v4/raid/exec-record` | User session | `server/src/main.cpp:13965` |
+| `GET` | `/api/v4/raid/balance-status` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/raid/discovery` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/raid/exec-record` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/raid/exec-record` | User session | `server/src/main.cpp:18489` |
 | `POST` | `/api/v4/raid/execute/add-device` | User session | `server/src/main.cpp:16642` |
 | `POST` | `/api/v4/raid/execute/convert-mode` | User session | `server/src/main.cpp:15858` |
@@ -129,15 +129,15 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/raid/execute/destroy-pool` | User session | `server/src/main.cpp:17190` |
 | `POST` | `/api/v4/raid/execute/remove-device` | User session | `server/src/main.cpp:17538` |
 | `POST` | `/api/v4/raid/execute/scrub` | User session | `server/src/main.cpp:14650` |
-| `GET` | `/api/v4/raid/health` | User session | `server/src/main.cpp:18587` |
-| `GET` | `/api/v4/raid/job` | User session | `server/src/main.cpp:18460` |
-| `POST` | `/api/v4/raid/plan/add-device` | User session | `server/src/main.cpp:15307` |
-| `POST` | `/api/v4/raid/plan/convert-mode` | User session | `server/src/main.cpp:15645` |
-| `POST` | `/api/v4/raid/plan/create-pool` | User session | `server/src/main.cpp:16530` |
-| `POST` | `/api/v4/raid/plan/remove-device` | User session | `server/src/main.cpp:16219` |
-| `POST` | `/api/v4/raid/plan/scrub` | User session | `server/src/main.cpp:14506` |
-| `GET` | `/api/v4/raid/scrub-status` | User session | `server/src/main.cpp:14378` |
-| `GET` | `/api/v4/raid/status` | User session | `server/src/main.cpp:15108` |
+| `GET` | `/api/v4/raid/health` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/raid/job` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/plan/add-device` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/plan/convert-mode` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/plan/create-pool` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/plan/remove-device` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `POST` | `/api/v4/raid/plan/scrub` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/raid/scrub-status` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/raid/status` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/reelstack/index` | User session | `server/src/main.cpp:37179` |
 | `GET` | `/api/v4/reelstack/meta` | User session | `server/src/main.cpp:37956` |
 | `POST` | `/api/v4/reelstack/meta/set` | User session | `server/src/main.cpp:38523` |
@@ -159,12 +159,12 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/snapshots/restore/prepare` | User session | `server/src/routes/routes_snapshots_restore.cpp` |
 | `GET` | `/api/v4/snapshots/restore/status` | User session | `server/src/routes/routes_snapshots_restore.cpp` |
 | `GET` | `/api/v4/snapshots/volumes` | User session | `server/src/routes/routes_snapshots_browse.cpp` |
-| `GET` | `/api/v4/storage/disks` | User session | `server/src/main.cpp:12243` |
-| `GET` | `/api/v4/storage/overview` | User session | `server/src/main.cpp:13835` |
-| `GET` | `/api/v4/storage/pools` | User session | `server/src/main.cpp:12376` |
+| `GET` | `/api/v4/storage/disks` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/storage/overview` | User session | `server/src/routes/routes_storage_raid.cpp` |
+| `GET` | `/api/v4/storage/pools` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `POST` | `/api/v4/storage/pools/rename` | User session | `server/src/main.cpp:12936` |
 | `POST` | `/api/v4/storage/pools/set-name` | User session | `server/src/main.cpp:12754` |
-| `GET` | `/api/v4/storage/status` | User session | `server/src/main.cpp:12269` |
+| `GET` | `/api/v4/storage/status` | User session | `server/src/routes/routes_storage_raid.cpp` |
 | `GET` | `/api/v4/system` | User session | `server/src/main.cpp:11853` |
 | `GET` | `/api/v4/system/drives` | User session | `server/src/main.cpp:23979` |
 | `POST` | `/api/v4/system/drives/refresh-now` | User session | `server/src/main.cpp:24094` |
@@ -3292,19 +3292,29 @@ Source:
 ### POST `/api/v4/poolmgr/plan-layout`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Prepare/preview a pool layout plan without executing it.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13518`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -3349,57 +3359,87 @@ Source:
 ### GET `/api/v4/raid/balance-status`
 
 Purpose:
-Health/status endpoint.
+Return Btrfs balance status for a pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+- `mount`: Pool mount path when required by implementation.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:14224`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/raid/discovery`
 
 Purpose:
-TODO: describe purpose.
+Discover RAID/Btrfs-capable devices and topology for the UI.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:14036`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/raid/exec-record`
 
 Purpose:
-TODO: describe purpose.
+Read a RAID/pool operation execution record.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+- `plan_id`: 64-character plan/job id.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13965`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -3539,171 +3579,260 @@ Source:
 ### GET `/api/v4/raid/health`
 
 Purpose:
-Health/status endpoint.
+Return RAID/storage health status.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18587`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/raid/job`
 
 Purpose:
-TODO: describe purpose.
+Read RAID job status.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+- `job_id`: Job id when required by implementation.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:18460`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/plan/add-device`
 
 Purpose:
-TODO: describe purpose.
+Prepare/preview adding a device to a Btrfs pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:15307`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/plan/convert-mode`
 
 Purpose:
-TODO: describe purpose.
+Prepare/preview converting a pool profile/mode.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:15645`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/plan/create-pool`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Prepare/preview creating a new Btrfs storage pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:16530`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/plan/remove-device`
 
 Purpose:
-TODO: describe purpose.
+Prepare/preview removing a device from a Btrfs pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:16219`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### POST `/api/v4/raid/plan/scrub`
 
 Purpose:
-TODO: describe purpose.
+Prepare/preview a scrub operation.
 
 Auth:
-User session
+Admin/session route used by Storage Manager. POST route should use same-origin protection when cookie-authenticated.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for the current shape.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:14506`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/raid/scrub-status`
 
 Purpose:
-Health/status endpoint.
+Return Btrfs scrub status for a pool.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+- `mount`: Pool mount path when required by implementation.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:14378`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/raid/status`
 
 Purpose:
-Health/status endpoint.
+Return RAID/Btrfs status for the Storage Manager UI.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:15108`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -4258,57 +4387,84 @@ Source:
 ### GET `/api/v4/storage/disks`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+List detected disks/devices for the Storage Manager UI.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:12243`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/storage/overview`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Return high-level storage overview.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:13835`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
 ### GET `/api/v4/storage/pools`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+List configured/detected storage pools.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:12376`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
@@ -4353,19 +4509,28 @@ Source:
 ### GET `/api/v4/storage/status`
 
 Purpose:
-Storage, pool, or drive management endpoint.
+Return storage status for the Storage Manager UI.
 
 Auth:
-User session
+Admin/session route used by Storage Manager.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- used by the Storage Manager / RAID Manager UI
+- `read` routes do not mutate disks or pools
+- `plan` routes prepare/preview an operation and should not execute the storage change
+- execute/destructive storage operations are documented separately
 
 Response:
-TODO.
+- `200 ok`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:12269`
+`server/src/routes/routes_storage_raid.cpp`
 
 ---
 
