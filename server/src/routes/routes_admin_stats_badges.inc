@@ -1729,6 +1729,8 @@ pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps)
             (std::filesystem::path(static_root_dir()) / "admin_api_explorer.html").string();
         admin_api_explorer_ctx.js_path =
             (std::filesystem::path(static_root_dir()) / "admin_api_explorer.js").string();
+        admin_api_explorer_ctx.catalog_path =
+            (std::filesystem::path(static_root_dir()) / "admin_api_catalog_v1.json").string();
 
         admin_api_explorer_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {

@@ -12,6 +12,7 @@ struct Response;
 struct AdminApiExplorerRoutesContext {
     std::string html_path;
     std::string js_path;
+    std::string catalog_path;
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*)> require_admin;
     std::function<std::string(const std::string&)> slurp_file;

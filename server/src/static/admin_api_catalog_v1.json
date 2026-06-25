@@ -1,0 +1,365 @@
+{
+  "ok": true,
+  "version": 1,
+  "generated_by": "admin_api_catalog_v1_static_json",
+  "routes": [
+    {
+      "id": "files.move",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/move",
+      "title": "Move or rename file/directory",
+      "purpose": "Move or rename a user-visible file or directory.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "from",
+          "in": "query",
+          "required": "yes",
+          "description": "Source user-relative path."
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "required": "yes",
+          "description": "Destination user-relative path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 dest_exists",
+        "409 locked",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "move",
+        "rename",
+        "mv"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/move?from=old.txt&to=new.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.copy",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/copy",
+      "title": "Copy file",
+      "purpose": "Copy a user-visible file to a destination path.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "from",
+          "in": "query",
+          "required": "yes",
+          "description": "Source user-relative file path."
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "required": "yes",
+          "description": "Destination user-relative file path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 quota_exceeded",
+        "404 not_found",
+        "409 dest_exists",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "copy",
+        "duplicate"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/copy?from=old.txt&to=copy.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.delete",
+      "category": "Files",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/files/delete",
+      "title": "Move file/directory to trash",
+      "purpose": "Move a user-visible file or directory to trash.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file or directory path."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 locked",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "delete",
+        "trash"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/delete?path=test.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.rmrf",
+      "category": "Files",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/files/rmrf",
+      "title": "Permanently remove file/directory",
+      "purpose": "Directly remove a user-visible file or directory without trash.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": "yes",
+          "description": "User-relative file or directory path. Root-like paths are refused."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 locked",
+        "500 server_error"
+      ],
+      "tags": [
+        "file",
+        "delete",
+        "rmrf",
+        "danger",
+        "permanent"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/rmrf?path=test.txt\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\""
+    },
+    {
+      "id": "files.favorites.add",
+      "category": "Files",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/favorites/add",
+      "title": "Add favorite",
+      "purpose": "Add a file or directory to the authenticated user's favorites.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_files_core.inc",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "type": "file"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 type_mismatch",
+        "500 server_error"
+      ],
+      "tags": [
+        "favorites",
+        "star",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/favorites/add\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"type\":\"file\"}'"
+    },
+    {
+      "id": "uploads.start",
+      "category": "Uploads",
+      "risk": "upload",
+      "method": "POST",
+      "path": "/api/v4/uploads/start",
+      "title": "Start chunked upload",
+      "purpose": "Start a chunked upload session for a user-storage file.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_uploads_chunked.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "big/video.mp4",
+          "size_bytes": 104857600,
+          "overwrite": false
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 quota_exceeded",
+        "409 file_exists",
+        "413 upload_too_large",
+        "500 server_error"
+      ],
+      "tags": [
+        "upload",
+        "chunked",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"big/video.mp4\",\"size_bytes\":104857600,\"overwrite\":false}'"
+    },
+    {
+      "id": "uploads.chunk",
+      "category": "Uploads",
+      "risk": "upload",
+      "method": "PUT",
+      "path": "/api/v4/uploads/chunk",
+      "title": "Upload chunk",
+      "purpose": "Upload one raw chunk for an existing chunked upload session.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_uploads_chunked.cpp",
+      "params": [
+        {
+          "name": "upload_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Upload session id from /api/v4/uploads/start."
+        },
+        {
+          "name": "index",
+          "in": "query",
+          "required": "yes",
+          "description": "Zero-based chunk index."
+        }
+      ],
+      "body": {
+        "content_type": "application/octet-stream"
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 quota_exceeded",
+        "404 not_found",
+        "411 length_required",
+        "500 server_error"
+      ],
+      "tags": [
+        "upload",
+        "chunked",
+        "file"
+      ],
+      "curl": "curl -k -i -sS -X PUT \"$BASE/api/v4/uploads/chunk?upload_id=$UPLOAD_ID&index=0\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" --data-binary '@chunk-000.part'"
+    },
+    {
+      "id": "uploads.finish",
+      "category": "Uploads",
+      "risk": "upload",
+      "method": "POST",
+      "path": "/api/v4/uploads/finish",
+      "title": "Finish chunked upload",
+      "purpose": "Assemble uploaded chunks and commit the completed file into user storage.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_uploads_chunked.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "upload_id": "$UPLOAD_ID"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 quota_exceeded",
+        "404 not_found",
+        "409 file_exists",
+        "500 server_error"
+      ],
+      "tags": [
+        "upload",
+        "chunked",
+        "finish"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/finish\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"upload_id\":\"'$UPLOAD_ID'\"}'"
+    },
+    {
+      "id": "versions.delete",
+      "category": "File Versions",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/files/versions/delete",
+      "title": "Delete stored file version",
+      "purpose": "Delete one stored file version for a user-visible path.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_file_versions_manage.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "v-example"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "delete",
+        "history"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/versions/delete\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"v-example\"}'"
+    },
+    {
+      "id": "versions.restore",
+      "category": "File Versions",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/files/restore_version",
+      "title": "Restore file version",
+      "purpose": "Restore a stored file version back to a live file path.",
+      "auth": "User session. Requires same-origin cookie mutation protection and allocated user storage.",
+      "source": "server/src/routes/routes_file_versions_restore.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "path": "docs/readme.txt",
+          "version_id": "v-example"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "403 storage_unallocated",
+        "404 not_found",
+        "409 path_conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "version",
+        "restore",
+        "history"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/restore_version\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"docs/readme.txt\",\"version_id\":\"v-example\"}'"
+    }
+  ]
+}
