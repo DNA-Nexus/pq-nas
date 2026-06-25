@@ -170,10 +170,10 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/system/drives/refresh-now` | User session | `server/src/main.cpp:24094` |
 | `POST` | `/api/v4/system/drives/selftest/start` | User session | `server/src/main.cpp:24114` |
 | `GET` | `/api/v4/system/storage` | User session | `server/src/main.cpp:23949` |
-| `POST` | `/api/v4/uploads/cancel` | User session | `server/src/main.cpp:25047` |
-| `PUT` | `/api/v4/uploads/chunk` | User session | `server/src/main.cpp:24781` |
-| `POST` | `/api/v4/uploads/finish` | User session | `server/src/main.cpp:25091` |
-| `POST` | `/api/v4/uploads/start` | User session | `server/src/main.cpp:24619` |
+| `POST` | `/api/v4/uploads/cancel` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
+| `PUT` | `/api/v4/uploads/chunk` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
+| `POST` | `/api/v4/uploads/finish` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
+| `POST` | `/api/v4/uploads/start` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
 | `GET` | `/api/v4/user/profile` | User session | `server/src/main.cpp:20635` |
 | `POST` | `/api/v4/user/profile/avatar_remove` | User session | `server/src/main.cpp:43626` |
 | `POST` | `/api/v4/user/profile/avatar_upload` | User session | `server/src/main.cpp:43465` |
@@ -4124,76 +4124,185 @@ Source:
 ### POST `/api/v4/uploads/cancel`
 
 Purpose:
-TODO: describe purpose.
+Cancel a chunked upload session and remove its temporary files.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+JSON body:
+
+- `upload_id`: required upload session id
+
+Validation and behavior:
+- `upload_id` format is validated
+- session directory for the authenticated user is removed recursively
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `upload_id`
+- `removed_entries`: number of removed filesystem entries
+
+Errors:
+- `400 bad_request` for invalid upload id
+- `500 server_error` when removing the upload session fails
 
 Source:
-`server/src/main.cpp:25047`
+`server/src/routes/routes_uploads_chunked.cpp`
 
 ---
 
 ### PUT `/api/v4/uploads/chunk`
 
 Purpose:
-TODO: describe purpose.
+Upload one raw chunk for an existing chunked upload session.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+Query parameters:
+
+- `upload_id`: required upload session id
+- `index`: required zero-based chunk index
+
+Body:
+Raw chunk bytes streamed from the request body.
+
+Required headers:
+
+- `Content-Length`: required and must match the expected chunk size for this index
+
+Validation and behavior:
+- `upload_id` format is validated
+- chunk index must be valid for the session
+- session metadata must exist and be internally consistent
+- stored destination path in session metadata must normalize exactly
+- `Content-Length` must equal expected chunk byte count
+- temporary upload-session disk pressure is checked against user quota
+- chunk is written to a temporary file and renamed into place
+- per-chunk size is fixed by the session chunk size, normally 16 MiB except possibly the last chunk
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `upload_id`
+- `index`
+- `bytes`: written chunk bytes
+
+Errors:
+- `400 bad_request` for invalid upload id, missing/invalid index, invalid session metadata, invalid session path, or chunk size mismatch
+- `403 quota_exceeded` or quota policy denial when temporary chunk storage would exceed quota
+- `404 not_found` when the upload session does not exist
+- `411 length_required` when `Content-Length` is missing
+- `500 server_error` when preparing the chunk directory, writing the chunk, or renaming the chunk fails
 
 Source:
-`server/src/main.cpp:24781`
+`server/src/routes/routes_uploads_chunked.cpp`
 
 ---
 
 ### POST `/api/v4/uploads/finish`
 
 Purpose:
-TODO: describe purpose.
+Assemble uploaded chunks and commit the completed file into user storage.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `upload_id`: required upload session id
+
+Validation and behavior:
+- upload session metadata must exist and be internally consistent
+- destination path in metadata must normalize exactly
+- all expected chunks must exist, must not be symlinks, and must have the expected byte sizes
+- live write locks are checked before final commit
+- destination is preflighted again before writing
+- destination parent is checked before and after directory creation to avoid symlink races
+- chunks are assembled into a temporary file in the destination directory
+- overwrite mode preserves the previous live file version before replacing it
+- final file is renamed into place
+- file location metadata is updated
+- gallery file facts are updated best-effort
+- storage tiering landing metadata is recorded when tiering is enabled
+- old physical file is cleaned up after successful overwrite when needed
+- upload session directory is removed after successful finish
+- file upload activity is recorded best-effort
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `chunked`: `true`
+- `fingerprint_hex`: authenticated user's fingerprint
+- `path`: normalized user-relative path
+- `bytes`: assembled file size
+- `overwrite`: whether overwrite mode was enabled
+
+Errors:
+- `400 bad_request` for invalid JSON, invalid upload id, bad session metadata, invalid path, missing chunks, wrong chunk sizes, or symlink use
+- `403 storage_unallocated` when storage is not allocated
+- `403 quota_exceeded` or quota policy denial when final file would exceed quota
+- `404 not_found` when the upload session does not exist
+- `409 file_exists` when destination exists and overwrite is not enabled
+- `409 path_conflict` when destination is unsafe or has changed unexpectedly
+- `500 server_error` when preserving a version, assembling chunks, creating directories, renaming, updating metadata, or committing fails
 
 Source:
-`server/src/main.cpp:25091`
+`server/src/routes/routes_uploads_chunked.cpp`
 
 ---
 
 ### POST `/api/v4/uploads/start`
 
 Purpose:
-TODO: describe purpose.
+Start a chunked upload session for a user-storage file.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection and allocated user storage.
 
 Request:
-TODO.
+JSON body:
+
+- `path`: required user-relative destination file path
+- `size_bytes`: required total upload size
+- `overwrite`: optional boolean. Defaults to `false`.
+
+Validation and behavior:
+- total upload size is capped at 64 GiB
+- destination path is normalized with strict user-relative path rules
+- live write locks are checked for the destination
+- quota, target conflicts, metadata conflicts, symlink-safe destination parent, and storage tiering target are preflighted before session creation
+- creates an upload session under the server upload sessions directory
+- chunk size is fixed to 16 MiB
 
 Response:
-TODO.
+`200 OK` JSON:
+
+- `ok`: `true`
+- `upload_id`
+- `path`: normalized user-relative destination path
+- `size_bytes`
+- `chunk_size`
+- `chunks_total`
+
+Errors:
+- `400 bad_request` for invalid JSON, missing path, missing/invalid size, or invalid path
+- `403 storage_unallocated` when storage is not allocated
+- `403 quota_exceeded` or quota policy denial when upload would exceed quota
+- `409 file_exists` when destination exists and overwrite is not enabled
+- `409 path_conflict` when destination is unsafe or conflicts with an existing logical directory/file ancestor
+- `413 upload_too_large` when total upload size exceeds the session cap
+- `500 server_error` when metadata lookup, tiering target resolution, session directory creation, or metadata write fails
 
 Source:
-`server/src/main.cpp:24619`
+`server/src/routes/routes_uploads_chunked.cpp`
 
 ---
 
