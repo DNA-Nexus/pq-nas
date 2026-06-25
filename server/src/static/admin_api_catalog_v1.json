@@ -286,6 +286,305 @@
       "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users/storage_preview?fingerprint=$FP&pool_id=default\" -H \"Cookie: $COOKIE\""
     },
     {
+      "id": "admin.users.list",
+      "category": "Admin Users",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/users",
+      "title": "List admin users",
+      "purpose": "List users and admin-facing user metadata.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_users_overview.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 users_reload_failed",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "list",
+        "overview"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.users.avatar",
+      "category": "Admin Users",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/users/avatar",
+      "title": "Admin read user avatar",
+      "purpose": "Read a user's avatar as admin.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_user_avatars.cpp",
+      "params": [
+        {
+          "name": "fingerprint",
+          "in": "query",
+          "required": "yes",
+          "description": "Target user fingerprint."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 image",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "avatar",
+        "read",
+        "image"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/users/avatar?fingerprint=$FP\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.users.avatar_remove",
+      "category": "Admin Users",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/users/avatar_remove",
+      "title": "Admin remove user avatar",
+      "purpose": "Remove a user's avatar as admin.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_user_avatars.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "avatar",
+        "remove",
+        "image"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/avatar_remove\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\"}'"
+    },
+    {
+      "id": "admin.users.avatar_upload",
+      "category": "Admin Users",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/users/avatar_upload",
+      "title": "Admin upload user avatar",
+      "purpose": "Upload or replace a user's avatar as admin.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_user_avatars.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "mime": "image/png",
+          "data_b64": "..."
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "avatar",
+        "upload",
+        "image"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/avatar_upload\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"mime\":\"image/png\",\"data_b64\":\"...\"}'"
+    },
+    {
+      "id": "admin.users.delete",
+      "category": "Admin Users",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/admin/users/delete",
+      "title": "Delete user",
+      "purpose": "Delete a user entry.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_lifecycle.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "delete",
+        "lifecycle",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/delete\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\"}'"
+    },
+    {
+      "id": "admin.users.disable",
+      "category": "Admin Users",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/admin/users/disable",
+      "title": "Disable user",
+      "purpose": "Disable one user via lifecycle route.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_lifecycle.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "400 self_disable",
+        "400 last_admin",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "disable",
+        "lockout",
+        "lifecycle"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/disable\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\"}'"
+    },
+    {
+      "id": "admin.users.enable",
+      "category": "Admin Users",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/users/enable",
+      "title": "Enable user",
+      "purpose": "Enable an existing user and optionally set role/name/notes.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_profile.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "role": "user",
+          "name": "Alice",
+          "notes": ""
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "enable",
+        "approval",
+        "status"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/enable\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"role\":\"user\",\"name\":\"Alice\",\"notes\":\"\"}'"
+    },
+    {
+      "id": "admin.users.status",
+      "category": "Admin Users",
+      "risk": "danger",
+      "method": "POST",
+      "path": "/api/v4/admin/users/status",
+      "title": "Set user status",
+      "purpose": "Set user status to enabled, disabled, or revoked.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_status.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "status": "disabled"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "400 last_admin",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "status",
+        "disable",
+        "revoke",
+        "lockout"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/status\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"status\":\"disabled\"}'"
+    },
+    {
+      "id": "admin.users.upsert",
+      "category": "Admin Users",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/users/upsert",
+      "title": "Update user profile",
+      "purpose": "Update an existing user's admin-managed profile metadata.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_user_profile.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "name": "Alice",
+          "role": "user",
+          "notes": "",
+          "email": "",
+          "group": "",
+          "address": "",
+          "avatar_url": ""
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "400 fingerprint_immutable",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "users",
+        "profile",
+        "upsert",
+        "metadata"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/users/upsert\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"name\":\"Alice\",\"role\":\"user\",\"notes\":\"\",\"email\":\"\",\"group\":\"\",\"address\":\"\",\"avatar_url\":\"\"}'"
+    },
+    {
       "id": "versions.restore",
       "category": "File Versions",
       "risk": "mutating",
@@ -2902,6 +3201,68 @@
         "file"
       ],
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/uploads/start\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"path\":\"big/video.mp4\",\"size_bytes\":104857600,\"overwrite\":false}'"
+    },
+    {
+      "id": "user.profile.avatar_remove",
+      "category": "User Profile",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/user/profile/avatar_remove",
+      "title": "Remove own avatar",
+      "purpose": "Remove the authenticated user's own avatar.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_user_avatars.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {}
+      },
+      "responses": [
+        "200 ok",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "user",
+        "profile",
+        "avatar",
+        "remove",
+        "image"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/user/profile/avatar_remove\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{}'"
+    },
+    {
+      "id": "user.profile.avatar_upload",
+      "category": "User Profile",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/user/profile/avatar_upload",
+      "title": "Upload own avatar",
+      "purpose": "Upload or replace the authenticated user's own avatar.",
+      "auth": "User session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_user_avatars.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "mime": "image/png",
+          "data_b64": "..."
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "500 server_error"
+      ],
+      "tags": [
+        "user",
+        "profile",
+        "avatar",
+        "upload",
+        "image"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/user/profile/avatar_upload\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"mime\":\"image/png\",\"data_b64\":\"...\"}'"
     }
   ]
 }

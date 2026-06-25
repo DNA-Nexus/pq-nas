@@ -425,6 +425,7 @@ void register_user_avatar_routes(
             std::string actor_fp;
             std::string actor_role;
             if (!c.require_user_auth(req, res, &actor_fp, &actor_role)) return;
+            if (!c.require_same_origin(req, res)) return;
             (void)actor_role;
 
             if (!c.is_valid_fingerprint_hex(actor_fp)) {
@@ -526,6 +527,7 @@ void register_user_avatar_routes(
             std::string actor_fp;
             std::string actor_role;
             if (!c.require_user_auth(req, res, &actor_fp, &actor_role)) return;
+            if (!c.require_same_origin(req, res)) return;
             (void)actor_role;
 
             if (!c.users->load(c.users_path)) {

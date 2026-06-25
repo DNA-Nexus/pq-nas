@@ -38,21 +38,21 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/admin/stats/trends` | Admin session | `server/src/main.cpp:22064` |
 | `POST` | `/api/v4/admin/storage/tiering/migrate_one` | Admin session | `server/src/routes/routes_admin_storage_tiering.cpp` |
 | `GET` | `/api/v4/admin/storage/tiering/status` | Admin session | `server/src/routes/routes_admin_storage_tiering.cpp` |
-| `GET` | `/api/v4/admin/users` | Admin session | `server/src/main.cpp:22978` |
-| `GET` | `/api/v4/admin/users/avatar` | Admin session | `server/src/main.cpp:43323` |
-| `POST` | `/api/v4/admin/users/avatar_remove` | Admin session | `server/src/main.cpp:43418` |
-| `POST` | `/api/v4/admin/users/avatar_upload` | Admin session | `server/src/main.cpp:43215` |
+| `GET` | `/api/v4/admin/users` | Admin session | `server/src/routes/routes_admin_users_overview.cpp` |
+| `GET` | `/api/v4/admin/users/avatar` | Admin session | `server/src/routes/routes_user_avatars.cpp` |
+| `POST` | `/api/v4/admin/users/avatar_remove` | Admin session | `server/src/routes/routes_user_avatars.cpp` |
+| `POST` | `/api/v4/admin/users/avatar_upload` | Admin session | `server/src/routes/routes_user_avatars.cpp` |
 | `POST` | `/api/v4/admin/users/cleanup_old_storage` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
 | `GET` | `/api/v4/admin/users/cleanup_old_storage_status` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
-| `POST` | `/api/v4/admin/users/delete` | Admin session | `server/src/main.cpp:44677` |
-| `POST` | `/api/v4/admin/users/disable` | Admin session | `server/src/main.cpp:44583` |
-| `POST` | `/api/v4/admin/users/enable` | Admin session | `server/src/main.cpp:43155` |
+| `POST` | `/api/v4/admin/users/delete` | Admin session | `server/src/routes/routes_admin_user_lifecycle.cpp` |
+| `POST` | `/api/v4/admin/users/disable` | Admin session | `server/src/routes/routes_admin_user_lifecycle.cpp` |
+| `POST` | `/api/v4/admin/users/enable` | Admin session | `server/src/routes/routes_admin_user_profile.cpp` |
 | `POST` | `/api/v4/admin/users/migrate_storage` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
 | `GET` | `/api/v4/admin/users/migrate_storage_status` | Admin session | `server/src/routes/routes_admin_user_storage_jobs.cpp` |
-| `POST` | `/api/v4/admin/users/status` | Admin session | `server/src/main.cpp:23160` |
+| `POST` | `/api/v4/admin/users/status` | Admin session | `server/src/routes/routes_admin_user_status.cpp` |
 | `POST` | `/api/v4/admin/users/storage` | Admin session | `server/src/routes/routes_admin_user_storage.cpp` |
 | `GET` | `/api/v4/admin/users/storage_preview` | Admin session | `server/src/routes/routes_admin_user_storage_preview.cpp` |
-| `POST` | `/api/v4/admin/users/upsert` | Admin session | `server/src/main.cpp:43060` |
+| `POST` | `/api/v4/admin/users/upsert` | Admin session | `server/src/routes/routes_admin_user_profile.cpp` |
 | `GET` | `/api/v4/apps` | User session | `server/src/main.cpp:12046` |
 | `GET` | `/api/v4/apps/has` | User session | `server/src/main.cpp:43693` |
 | `POST` | `/api/v4/apps/install_bundled` | User session | `server/src/main.cpp:44215` |
@@ -175,8 +175,8 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/uploads/finish` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
 | `POST` | `/api/v4/uploads/start` | User session | `server/src/routes/routes_uploads_chunked.cpp` |
 | `GET` | `/api/v4/user/profile` | User session | `server/src/main.cpp:20635` |
-| `POST` | `/api/v4/user/profile/avatar_remove` | User session | `server/src/main.cpp:43626` |
-| `POST` | `/api/v4/user/profile/avatar_upload` | User session | `server/src/main.cpp:43465` |
+| `POST` | `/api/v4/user/profile/avatar_remove` | User session | `server/src/routes/routes_user_avatars.cpp` |
+| `POST` | `/api/v4/user/profile/avatar_upload` | User session | `server/src/routes/routes_user_avatars.cpp` |
 | `POST` | `/api/v4/user/profile/update` | User session | `server/src/main.cpp:20679` |
 | `GET` | `/api/v4/users/avatar` | User session | `server/src/main.cpp:43341` |
 | `POST` | `/api/v5/verify` | Unknown | `server/src/main.cpp:21152` |
@@ -713,76 +713,114 @@ Source:
 ### GET `/api/v4/admin/users`
 
 Purpose:
-User management or user profile related endpoint.
+List users and admin-facing user metadata.
 
 Auth:
-Admin session
+Admin session.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read/admin overview route
+- returns user profile fields, role/status, storage allocation metadata and best-effort storage usage
+- sets no-store
 
 Response:
-TODO.
+- `200 ok`
+- `500 users_reload_failed`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:22978`
+`server/src/routes/routes_admin_users_overview.cpp`
 
 ---
 
 ### GET `/api/v4/admin/users/avatar`
 
 Purpose:
-User management or user profile related endpoint.
+Read a user's avatar as admin.
 
 Auth:
-Admin session
+Admin session.
 
 Request:
-TODO.
+- `fingerprint`: Target user fingerprint.
+
+No request body.
+
+Validation and behavior:
+- returns image bytes
+- sets no-store
+- admin-only avatar read route
 
 Response:
-TODO.
+- `200 image`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43323`
+`server/src/routes/routes_user_avatars.cpp`
 
 ---
 
 ### POST `/api/v4/admin/users/avatar_remove`
 
 Purpose:
-User management or user profile related endpoint.
+Remove a user's avatar as admin.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- removes png/jpg/webp avatar variants
+- clears avatar_url in user metadata
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43418`
+`server/src/routes/routes_user_avatars.cpp`
 
 ---
 
 ### POST `/api/v4/admin/users/avatar_upload`
 
 Purpose:
-User management or user profile related endpoint.
+Upload or replace a user's avatar as admin.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- supports png/jpeg/webp
+- base64 image payload
+- size limit 256 KiB
+- writes avatar file under server avatar storage
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43215`
+`server/src/routes/routes_user_avatars.cpp`
 
 ---
 
@@ -860,57 +898,91 @@ Source:
 ### POST `/api/v4/admin/users/delete`
 
 Purpose:
-User management or user profile related endpoint.
+Delete a user entry.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- blocks deleting your own admin entry
+- refuses deleting an enabled admin
+- deletes user registry entry and writes audit event
+- does not imply storage data deletion unless implemented elsewhere
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:44677`
+`server/src/routes/routes_admin_user_lifecycle.cpp`
 
 ---
 
 ### POST `/api/v4/admin/users/disable`
 
 Purpose:
-User management or user profile related endpoint.
+Disable one user via lifecycle route.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- blocks disabling your own admin account
+- blocks disabling the last enabled admin
+- revokes device/app tokens for the disabled user
+- writes audit event
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `400 self_disable`
+- `400 last_admin`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:44583`
+`server/src/routes/routes_admin_user_lifecycle.cpp`
 
 ---
 
 ### POST `/api/v4/admin/users/enable`
 
 Purpose:
-User management or user profile related endpoint.
+Enable an existing user and optionally set role/name/notes.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- sets user status to enabled
+- sets role and optionally name/notes
+- writes audit event
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43155`
+`server/src/routes/routes_admin_user_profile.cpp`
 
 ---
 
@@ -989,19 +1061,32 @@ Source:
 ### POST `/api/v4/admin/users/status`
 
 Purpose:
-User management or user profile related endpoint.
+Set user status to enabled, disabled, or revoked.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- valid statuses: enabled, disabled, revoked
+- blocks changing the actor's own status away from enabled
+- blocks disabling/revoking the last enabled admin
+- revoked users invalidate OPAQUE enrollment tokens
+- disabled/revoked users revoke app/device tokens
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `400 last_admin`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:23160`
+`server/src/routes/routes_admin_user_status.cpp`
 
 ---
 
@@ -1117,19 +1202,29 @@ Source:
 ### POST `/api/v4/admin/users/upsert`
 
 Purpose:
-User management or user profile related endpoint.
+Update an existing user's admin-managed profile metadata.
 
 Auth:
-Admin session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- fingerprint is immutable and must already exist
+- updates admin-managed profile fields
+- blocks self role change by keeping effective role unchanged
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `400 fingerprint_immutable`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43060`
+`server/src/routes/routes_admin_user_profile.cpp`
 
 ---
 
@@ -4956,38 +5051,57 @@ Source:
 ### POST `/api/v4/user/profile/avatar_remove`
 
 Purpose:
-User management or user profile related endpoint.
+Remove the authenticated user's own avatar.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- only changes the authenticated user's own avatar
+- removes png/jpg/webp avatar variants
+- clears avatar_url in user metadata
 
 Response:
-TODO.
+- `200 ok`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43626`
+`server/src/routes/routes_user_avatars.cpp`
 
 ---
 
 ### POST `/api/v4/user/profile/avatar_upload`
 
 Purpose:
-User management or user profile related endpoint.
+Upload or replace the authenticated user's own avatar.
 
 Auth:
-User session
+User session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON body. See API Explorer curl example for current shape.
+
+Validation and behavior:
+- supports png/jpeg/webp
+- size limit 256 KiB
+- only changes the authenticated user's own avatar
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43465`
+`server/src/routes/routes_user_avatars.cpp`
 
 ---
 
