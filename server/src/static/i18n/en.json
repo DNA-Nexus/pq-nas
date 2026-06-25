@@ -100,7 +100,6 @@
   "admin.api_explorer.route_count": "{count} routes",
   "admin.api_explorer.route_details": "API route details",
   "admin.api_explorer.route_search": "API route search",
-  "admin.api_explorer.safe_hint": "This page is admin-only. Curl examples use placeholders and never display live cookies.",
   "admin.api_explorer.search_placeholder": "Search: file move, delete version, chunk upload…",
   "admin.api_explorer.select_route": "Select a route from the list.",
   "admin.api_explorer.source": "Source",
