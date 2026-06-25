@@ -22,7 +22,9 @@
             disabled: "disabled",
             pinned: "pinned",
             activeWindow: "window",
-            titleRequired: "Title is required."
+            titleRequired: "Title is required.",
+            editButton: "Edit",
+            deleteButton: "Delete"
         },
         fi: {
             pageTitle: "Tiedotteet / Service Notices",
@@ -44,16 +46,264 @@
             disabled: "pois käytöstä",
             pinned: "kiinnitetty",
             activeWindow: "voimassa",
-            titleRequired: "Otsikko on pakollinen."
+            titleRequired: "Otsikko on pakollinen.",
+            editButton: "Muokkaa",
+            deleteButton: "Poista"
+        },
+        sv: {
+            pageTitle: "Servicemeddelanden",
+            pageLead: "Publicera operatörsmeddelanden, underhållsnotiser och tjänsteuppdateringar på kundernas startsida.",
+            newNotice: "Nytt meddelande",
+            editNotice: "Redigera meddelande",
+            notices: "Meddelanden",
+            refresh: "Uppdatera",
+            save: "Spara",
+            fresh: "Ny",
+            saved: "Sparat.",
+            deleted: "Raderat.",
+            loadFailed: "Det gick inte att läsa meddelanden.",
+            saveFailed: "Det gick inte att spara meddelandet.",
+            deleteFailed: "Det gick inte att radera meddelandet.",
+            empty: "Inga meddelanden ännu.",
+            confirmDelete: "Radera detta meddelande?",
+            enabled: "aktiv",
+            disabled: "inaktiv",
+            pinned: "fäst",
+            activeWindow: "giltighet",
+            titleRequired: "Rubrik krävs.",
+            editButton: "Redigera",
+            deleteButton: "Radera"
+        },
+        uk: {
+            pageTitle: "Сервісні повідомлення",
+            pageLead: "Публікуйте повідомлення оператора, технічні роботи та оновлення сервісу на головному екрані клієнта.",
+            newNotice: "Нове повідомлення",
+            editNotice: "Редагувати повідомлення",
+            notices: "Повідомлення",
+            refresh: "Оновити",
+            save: "Зберегти",
+            fresh: "Нове",
+            saved: "Збережено.",
+            deleted: "Видалено.",
+            loadFailed: "Не вдалося завантажити повідомлення.",
+            saveFailed: "Не вдалося зберегти повідомлення.",
+            deleteFailed: "Не вдалося видалити повідомлення.",
+            empty: "Повідомлень ще немає.",
+            confirmDelete: "Видалити це повідомлення?",
+            enabled: "увімкнено",
+            disabled: "вимкнено",
+            pinned: "закріплено",
+            activeWindow: "період",
+            titleRequired: "Потрібен заголовок.",
+            editButton: "Редагувати",
+            deleteButton: "Видалити"
+        },
+        zh: {
+            pageTitle: "服务通知",
+            pageLead: "将运营商消息、维护通知和服务更新发布到客户主页。",
+            newNotice: "新通知",
+            editNotice: "编辑通知",
+            notices: "通知",
+            refresh: "刷新",
+            save: "保存",
+            fresh: "新建",
+            saved: "已保存。",
+            deleted: "已删除。",
+            loadFailed: "无法加载通知。",
+            saveFailed: "无法保存通知。",
+            deleteFailed: "无法删除通知。",
+            empty: "暂无通知。",
+            confirmDelete: "删除此通知？",
+            enabled: "已启用",
+            disabled: "已禁用",
+            pinned: "已置顶",
+            activeWindow: "有效期",
+            titleRequired: "标题为必填项。",
+            editButton: "编辑",
+            deleteButton: "删除"
+        },
+        de: {
+            pageTitle: "Servicehinweise",
+            pageLead: "Veröffentliche Betreibermeldungen, Wartungshinweise und Service-Updates auf dem Startbildschirm der Kunden.",
+            newNotice: "Neuer Hinweis",
+            editNotice: "Hinweis bearbeiten",
+            notices: "Hinweise",
+            refresh: "Aktualisieren",
+            save: "Speichern",
+            fresh: "Neu",
+            saved: "Gespeichert.",
+            deleted: "Gelöscht.",
+            loadFailed: "Hinweise konnten nicht geladen werden.",
+            saveFailed: "Hinweis konnte nicht gespeichert werden.",
+            deleteFailed: "Hinweis konnte nicht gelöscht werden.",
+            empty: "Noch keine Hinweise.",
+            confirmDelete: "Diesen Hinweis löschen?",
+            enabled: "aktiv",
+            disabled: "inaktiv",
+            pinned: "angeheftet",
+            activeWindow: "Zeitraum",
+            titleRequired: "Titel ist erforderlich.",
+            editButton: "Bearbeiten",
+            deleteButton: "Löschen"
+        },
+        et: {
+            pageTitle: "Teenuse teated",
+            pageLead: "Avalda operaatori sõnumeid, hooldusteateid ja teenuseuuendusi kliendi avalehel.",
+            newNotice: "Uus teade",
+            editNotice: "Muuda teadet",
+            notices: "Teated",
+            refresh: "Värskenda",
+            save: "Salvesta",
+            fresh: "Uus",
+            saved: "Salvestatud.",
+            deleted: "Kustutatud.",
+            loadFailed: "Teadete laadimine ebaõnnestus.",
+            saveFailed: "Teate salvestamine ebaõnnestus.",
+            deleteFailed: "Teate kustutamine ebaõnnestus.",
+            empty: "Teateid veel pole.",
+            confirmDelete: "Kustutada see teade?",
+            enabled: "lubatud",
+            disabled: "keelatud",
+            pinned: "kinnitatud",
+            activeWindow: "kehtivus",
+            titleRequired: "Pealkiri on kohustuslik.",
+            editButton: "Muuda",
+            deleteButton: "Kustuta"
+        },
+        pl: {
+            pageTitle: "Komunikaty serwisowe",
+            pageLead: "Publikuj komunikaty operatora, informacje o pracach serwisowych i aktualizacje usług na ekranie głównym klienta.",
+            newNotice: "Nowy komunikat",
+            editNotice: "Edytuj komunikat",
+            notices: "Komunikaty",
+            refresh: "Odśwież",
+            save: "Zapisz",
+            fresh: "Nowy",
+            saved: "Zapisano.",
+            deleted: "Usunięto.",
+            loadFailed: "Nie udało się wczytać komunikatów.",
+            saveFailed: "Nie udało się zapisać komunikatu.",
+            deleteFailed: "Nie udało się usunąć komunikatu.",
+            empty: "Brak komunikatów.",
+            confirmDelete: "Usunąć ten komunikat?",
+            enabled: "włączony",
+            disabled: "wyłączony",
+            pinned: "przypięty",
+            activeWindow: "okres",
+            titleRequired: "Tytuł jest wymagany.",
+            editButton: "Edytuj",
+            deleteButton: "Usuń"
+        },
+        es: {
+            pageTitle: "Avisos de servicio",
+            pageLead: "Publica mensajes del operador, avisos de mantenimiento y actualizaciones del servicio en la pantalla de inicio del cliente.",
+            newNotice: "Nuevo aviso",
+            editNotice: "Editar aviso",
+            notices: "Avisos",
+            refresh: "Actualizar",
+            save: "Guardar",
+            fresh: "Nuevo",
+            saved: "Guardado.",
+            deleted: "Eliminado.",
+            loadFailed: "No se pudieron cargar los avisos.",
+            saveFailed: "No se pudo guardar el aviso.",
+            deleteFailed: "No se pudo eliminar el aviso.",
+            empty: "No hay avisos todavía.",
+            confirmDelete: "¿Eliminar este aviso?",
+            enabled: "activo",
+            disabled: "inactivo",
+            pinned: "fijado",
+            activeWindow: "vigencia",
+            titleRequired: "El título es obligatorio.",
+            editButton: "Editar",
+            deleteButton: "Eliminar"
+        },
+        fr: {
+            pageTitle: "Avis de service",
+            pageLead: "Publiez les messages opérateur, avis de maintenance et mises à jour de service sur l’écran d’accueil du client.",
+            newNotice: "Nouvel avis",
+            editNotice: "Modifier l’avis",
+            notices: "Avis",
+            refresh: "Actualiser",
+            save: "Enregistrer",
+            fresh: "Nouveau",
+            saved: "Enregistré.",
+            deleted: "Supprimé.",
+            loadFailed: "Impossible de charger les avis.",
+            saveFailed: "Impossible d’enregistrer l’avis.",
+            deleteFailed: "Impossible de supprimer l’avis.",
+            empty: "Aucun avis pour le moment.",
+            confirmDelete: "Supprimer cet avis ?",
+            enabled: "activé",
+            disabled: "désactivé",
+            pinned: "épinglé",
+            activeWindow: "période",
+            titleRequired: "Le titre est obligatoire.",
+            editButton: "Modifier",
+            deleteButton: "Supprimer"
+        },
+        it: {
+            pageTitle: "Avvisi di servizio",
+            pageLead: "Pubblica messaggi dell’operatore, avvisi di manutenzione e aggiornamenti del servizio nella schermata iniziale del cliente.",
+            newNotice: "Nuovo avviso",
+            editNotice: "Modifica avviso",
+            notices: "Avvisi",
+            refresh: "Aggiorna",
+            save: "Salva",
+            fresh: "Nuovo",
+            saved: "Salvato.",
+            deleted: "Eliminato.",
+            loadFailed: "Impossibile caricare gli avvisi.",
+            saveFailed: "Impossibile salvare l’avviso.",
+            deleteFailed: "Impossibile eliminare l’avviso.",
+            empty: "Nessun avviso.",
+            confirmDelete: "Eliminare questo avviso?",
+            enabled: "attivo",
+            disabled: "disattivato",
+            pinned: "fissato",
+            activeWindow: "periodo",
+            titleRequired: "Il titolo è obbligatorio.",
+            editButton: "Modifica",
+            deleteButton: "Elimina"
+        },
+        tr: {
+            pageTitle: "Servis Bildirimleri",
+            pageLead: "Operatör mesajlarını, bakım bildirimlerini ve servis güncellemelerini müşterinin ana ekranında yayınlayın.",
+            newNotice: "Yeni bildirim",
+            editNotice: "Bildirimi düzenle",
+            notices: "Bildirimler",
+            refresh: "Yenile",
+            save: "Kaydet",
+            fresh: "Yeni",
+            saved: "Kaydedildi.",
+            deleted: "Silindi.",
+            loadFailed: "Bildirimler yüklenemedi.",
+            saveFailed: "Bildirim kaydedilemedi.",
+            deleteFailed: "Bildirim silinemedi.",
+            empty: "Henüz bildirim yok.",
+            confirmDelete: "Bu bildirim silinsin mi?",
+            enabled: "etkin",
+            disabled: "devre dışı",
+            pinned: "sabitlendi",
+            activeWindow: "geçerlilik",
+            titleRequired: "Başlık zorunludur.",
+            editButton: "Düzenle",
+            deleteButton: "Sil"
         }
     };
 
     function lang() {
         try {
             const api = window.PQNAS_I18N;
-            const l = api && typeof api.getLanguage === "function" ? api.getLanguage() : "";
-            if (String(l).toLowerCase().startsWith("fi")) return "fi";
+            const raw = api && typeof api.getLanguage === "function" ? api.getLanguage() : "";
+            const value = String(raw || "").toLowerCase();
+
+            if (value && i18n[value]) return value;
+
+            const short = value.split("-")[0].split("_")[0];
+            if (short && i18n[short]) return short;
         } catch (_) {}
+
         return "en";
     }
 
@@ -90,6 +340,11 @@
     let notices = [];
 
     function applyText() {
+        try {
+            const api = window.PQNAS_I18N;
+            if (api && typeof api.apply === "function") api.apply(document);
+        } catch (_) {}
+
         if (refs.pageTitle) refs.pageTitle.textContent = t("pageTitle");
         if (refs.pageLead) refs.pageLead.textContent = t("pageLead");
         if (refs.formTitle && !refs.id.value) refs.formTitle.textContent = t("newNotice");
@@ -279,13 +534,13 @@
             const edit = document.createElement("button");
             edit.type = "button";
             edit.className = "btn secondary";
-            edit.textContent = lang() === "fi" ? "Muokkaa" : "Edit";
+            edit.textContent = t("editButton");
             edit.addEventListener("click", () => fillForm(notice));
 
             const del = document.createElement("button");
             del.type = "button";
             del.className = "btn secondary";
-            del.textContent = lang() === "fi" ? "Poista" : "Delete";
+            del.textContent = t("deleteButton");
             del.addEventListener("click", () => deleteNotice(notice.id));
 
             actions.appendChild(edit);
@@ -371,6 +626,14 @@
         renderList();
     });
 
-    applyText();
-    loadNotices();
+    function boot() {
+        applyText();
+        loadNotices();
+    }
+
+    if (window.PQNAS_I18N && typeof window.PQNAS_I18N.ready === "function") {
+        window.PQNAS_I18N.ready().then(boot).catch(boot);
+    } else {
+        boot();
+    }
 })();

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Service Notices • Admin</title>
+    <title data-i18n="admin.service_notices.page_title">Service Notices • Admin</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
 
     <link rel="stylesheet" href="/static/theme.css">
@@ -237,26 +237,26 @@
         <div class="brand">
             <div class="logoDot" aria-hidden="true"></div>
             <div style="min-width:0">
-                <h1>Admin</h1>
-                <div class="sub">Service Notices</div>
+                <h1 data-i18n="admin.settings.nav.admin">Admin</h1>
+                <div class="sub" data-i18n="admin.settings.nav.service_notices">Service Notices</div>
             </div>
         </div>
 
         <nav class="nav" aria-label="Admin navigation">
             <div class="sectionLabel">Admin</div>
-            <a class="navbtn" href="/admin"><span>Overview</span><span class="k">O</span></a>
-            <a class="navbtn" href="/admin/users"><span>User profiles</span><span class="k">U</span></a>
-            <a class="navbtn" href="/admin/stats"><span>Statistics</span><span class="k">Σ</span></a>
-            <a class="navbtn" href="/admin/approvals"><span>Approvals</span><span class="k">A</span></a>
-            <a class="navbtn" href="/admin/apps"><span>Apps</span><span class="k">📦</span></a>
-            <a class="navbtn active" href="/admin/service-notices"><span>Service Notices</span><span class="k">N</span></a>
-            <a class="navbtn" href="/admin/updates"><span>Update Center</span><span class="k">⬆</span></a>
-            <a class="navbtn" href="/admin/audit"><span>Audit log UI</span><span class="k">D</span></a>
+            <a class="navbtn" href="/admin"><span data-i18n="admin.settings.nav.overview">Overview</span><span class="k">O</span></a>
+            <a class="navbtn" href="/admin/users"><span data-i18n="admin.settings.nav.user_profiles">User profiles</span><span class="k">U</span></a>
+            <a class="navbtn" href="/admin/stats"><span data-i18n="admin.settings.nav.statistics">Statistics</span><span class="k">Σ</span></a>
+            <a class="navbtn" href="/admin/approvals"><span data-i18n="admin.settings.nav.approvals">Approvals</span><span class="k">A</span></a>
+            <a class="navbtn" href="/admin/apps"><span data-i18n="admin.settings.nav.apps">Apps</span><span class="k">📦</span></a>
+            <a class="navbtn active" href="/admin/service-notices"><span data-i18n="admin.settings.nav.service_notices">Service Notices</span><span class="k">N</span></a>
+            <a class="navbtn" href="/admin/updates"><span data-i18n="admin.settings.nav.updates">Update Center</span><span class="k">⬆</span></a>
+            <a class="navbtn" href="/admin/audit"><span data-i18n="admin.settings.nav.audit">Audit log UI</span><span class="k">D</span></a>
             <a class="navbtn" href="/admin/api-explorer"><span>API Explorer</span><span class="k">API</span></a>
-            <a class="navbtn" href="/admin/settings"><span>Settings</span><span class="k">S</span></a>
-            <a class="navbtn" href="/system"><span>System</span><span class="k">Y</span></a>
+            <a class="navbtn" href="/admin/settings"><span data-i18n="admin.settings.nav.settings">Settings</span><span class="k">S</span></a>
+            <a class="navbtn" href="/system"><span data-i18n="admin.settings.nav.system">System</span><span class="k">Y</span></a>
             <div class="sectionLabel"> </div>
-            <a class="navbtn" href="/app"><span>Back...</span><span class="k">↩</span></a>
+            <a class="navbtn" href="/app"><span data-i18n="admin.settings.nav.back">Back...</span><span class="k">↩</span></a>
         </nav>
 
         <div class="bottom">
@@ -271,74 +271,74 @@
         <div class="content">
             <div class="noticePage">
                 <section class="noticeHero">
-                    <h2 id="noticePageTitle">Service Notices / Tiedotteet</h2>
-                    <p id="noticePageLead">
+                    <h2 id="noticePageTitle" data-i18n="admin.service_notices.heading">Service Notices / Tiedotteet</h2>
+                    <p id="noticePageLead" data-i18n="admin.service_notices.lead">
                         Publish operator messages, maintenance notices and service updates to the customer home screen.
                     </p>
                 </section>
 
                 <div class="noticeGrid">
                     <section class="noticeCard">
-                        <h3 id="noticeFormTitle">New notice</h3>
+                        <h3 id="noticeFormTitle" data-i18n="admin.service_notices.new_notice">New notice</h3>
 
                         <form class="noticeForm" id="noticeForm">
                             <input type="hidden" id="noticeId">
 
                             <div class="noticeField">
-                                <label for="noticeTitle">Title</label>
+                                <label for="noticeTitle" data-i18n="admin.service_notices.field.title">Title</label>
                                 <input id="noticeTitle" maxlength="160" autocomplete="off" required>
                             </div>
 
                             <div class="noticeField">
-                                <label for="noticeBody">Text</label>
+                                <label for="noticeBody" data-i18n="admin.service_notices.field.text">Text</label>
                                 <textarea id="noticeBody" maxlength="4000"></textarea>
                             </div>
 
                             <div class="noticeField">
-                                <label for="noticeKind">Type</label>
+                                <label for="noticeKind" data-i18n="admin.service_notices.field.type">Type</label>
                                 <select id="noticeKind">
-                                    <option value="notice">Notice</option>
-                                    <option value="maintenance">Maintenance</option>
-                                    <option value="outage">Outage</option>
-                                    <option value="update">Update</option>
-                                    <option value="service">Service</option>
+                                    <option value="notice" data-i18n="admin.service_notices.kind.notice">Notice</option>
+                                    <option value="maintenance" data-i18n="admin.service_notices.kind.maintenance">Maintenance</option>
+                                    <option value="outage" data-i18n="admin.service_notices.kind.outage">Outage</option>
+                                    <option value="update" data-i18n="admin.service_notices.kind.update">Update</option>
+                                    <option value="service" data-i18n="admin.service_notices.kind.service">Service</option>
                                 </select>
                             </div>
 
                             <div class="noticeField">
-                                <label for="noticeSeverity">Severity</label>
+                                <label for="noticeSeverity" data-i18n="admin.service_notices.field.severity">Severity</label>
                                 <select id="noticeSeverity">
-                                    <option value="info">Info</option>
-                                    <option value="important">Important</option>
-                                    <option value="critical">Critical</option>
+                                    <option value="info" data-i18n="admin.service_notices.severity.info">Info</option>
+                                    <option value="important" data-i18n="admin.service_notices.severity.important">Important</option>
+                                    <option value="critical" data-i18n="admin.service_notices.severity.critical">Critical</option>
                                 </select>
                             </div>
 
                             <div class="noticeField">
-                                <label for="noticeStarts">Visible from</label>
+                                <label for="noticeStarts" data-i18n="admin.service_notices.field.visible_from">Visible from</label>
                                 <input id="noticeStarts" type="datetime-local">
                             </div>
 
                             <div class="noticeField">
-                                <label for="noticeEnds">Visible until</label>
+                                <label for="noticeEnds" data-i18n="admin.service_notices.field.visible_until">Visible until</label>
                                 <input id="noticeEnds" type="datetime-local">
                             </div>
 
                             <div class="noticeChecks">
                                 <label class="noticeCheck">
                                     <input id="noticeEnabled" type="checkbox" checked>
-                                    <span>Enabled</span>
+                                    <span data-i18n="admin.service_notices.field.enabled">Enabled</span>
                                 </label>
 
                                 <label class="noticeCheck">
                                     <input id="noticePinned" type="checkbox">
-                                    <span>Pinned</span>
+                                    <span data-i18n="admin.service_notices.field.pinned">Pinned</span>
                                 </label>
                             </div>
 
                             <div class="noticeActions">
-                                <button class="btn" id="noticeSaveBtn" type="submit">Save</button>
-                                <button class="btn secondary" id="noticeResetBtn" type="button">New</button>
+                                <button class="btn" id="noticeSaveBtn" type="submit" data-i18n="common.save">Save</button>
+                                <button class="btn secondary" id="noticeResetBtn" type="button" data-i18n="admin.service_notices.new_button">New</button>
                             </div>
 
                             <div class="noticeStatus" id="noticeStatus"></div>
@@ -347,8 +347,8 @@
 
                     <section class="noticeCard">
                         <div class="noticeItemTop">
-                            <h3 id="noticeListTitle">Notices</h3>
-                            <button class="btn secondary" id="noticeRefreshBtn" type="button">Refresh</button>
+                            <h3 id="noticeListTitle" data-i18n="admin.service_notices.notices">Notices</h3>
+                            <button class="btn secondary" id="noticeRefreshBtn" type="button" data-i18n="common.refresh">Refresh</button>
                         </div>
 
                         <div class="noticeStatus" id="noticeListStatus"></div>
@@ -363,7 +363,7 @@
 </div>
 
 <script src="/static/admin_badges.js?v=20260518-admin-service-notices-1"></script>
-<script src="/static/admin_service_notices.js?v=20260625-service-notices-3"></script>
+<script src="/static/admin_service_notices.js?v=20260625-service-notices-6"></script>
 <script src="/static/shell_sidebar.js"></script>
 </body>
 </html>

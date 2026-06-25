@@ -18,15 +18,91 @@
             open: "Avaa",
             close: "Sulje",
             updated: "Päivitetty"
+        },
+        sv: {
+            title: "Servicemeddelanden",
+            empty: "Inga aktiva meddelanden.",
+            open: "Öppna",
+            close: "Stäng",
+            updated: "Uppdaterad"
+        },
+        uk: {
+            title: "Сервісні повідомлення",
+            empty: "Немає активних повідомлень.",
+            open: "Відкрити",
+            close: "Закрити",
+            updated: "Оновлено"
+        },
+        zh: {
+            title: "服务通知",
+            empty: "没有活动通知。",
+            open: "打开",
+            close: "关闭",
+            updated: "已更新"
+        },
+        de: {
+            title: "Servicehinweise",
+            empty: "Keine aktiven Hinweise.",
+            open: "Öffnen",
+            close: "Schließen",
+            updated: "Aktualisiert"
+        },
+        et: {
+            title: "Teenuse teated",
+            empty: "Aktiivseid teateid pole.",
+            open: "Ava",
+            close: "Sulge",
+            updated: "Uuendatud"
+        },
+        pl: {
+            title: "Komunikaty serwisowe",
+            empty: "Brak aktywnych komunikatów.",
+            open: "Otwórz",
+            close: "Zamknij",
+            updated: "Zaktualizowano"
+        },
+        es: {
+            title: "Avisos de servicio",
+            empty: "No hay avisos activos.",
+            open: "Abrir",
+            close: "Cerrar",
+            updated: "Actualizado"
+        },
+        fr: {
+            title: "Avis de service",
+            empty: "Aucun avis actif.",
+            open: "Ouvrir",
+            close: "Fermer",
+            updated: "Mis à jour"
+        },
+        it: {
+            title: "Avvisi di servizio",
+            empty: "Nessun avviso attivo.",
+            open: "Apri",
+            close: "Chiudi",
+            updated: "Aggiornato"
+        },
+        tr: {
+            title: "Servis Bildirimleri",
+            empty: "Etkin bildirim yok.",
+            open: "Aç",
+            close: "Kapat",
+            updated: "Güncellendi"
         }
     };
 
     function lang() {
         try {
             const api = window.PQNAS_I18N;
-            const l = api && typeof api.getLanguage === "function" ? api.getLanguage() : "";
-            if (String(l).toLowerCase().startsWith("fi")) return "fi";
+            const raw = api && typeof api.getLanguage === "function" ? api.getLanguage() : "";
+            const value = String(raw || "").toLowerCase();
+
+            if (value && labels[value]) return value;
+
+            const short = value.split("-")[0].split("_")[0];
+            if (short && labels[short]) return short;
         } catch (_) {}
+
         return "en";
     }
 
