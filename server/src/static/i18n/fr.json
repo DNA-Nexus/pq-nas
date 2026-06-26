@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "Service",
   "admin.service_notices.severity.info": "Info",
   "admin.service_notices.severity.important": "Important",
-  "admin.service_notices.severity.critical": "Critique"
+  "admin.service_notices.severity.critical": "Critique",
+  "activity.kind.service_notice": "avis de service",
+  "activity.msg.service_notice_created": "{actor} a publié l’avis de service : {target}",
+  "activity.msg.service_notice_updated": "{actor} a mis à jour l’avis de service : {target}",
+  "activity.msg.service_notice_deleted": "{actor} a supprimé l’avis de service : {target}"
 }

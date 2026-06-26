@@ -3601,6 +3601,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (type === "file.purged") return "✕";
         if (type === "security.device_paired") return "◇";
         if (type === "security.session_revoked") return "⏻";
+        if (type === "service_notice.created") return "📣";
+        if (type === "service_notice.updated") return "✎";
+        if (type === "service_notice.deleted") return "✕";
         if (String(type || "").startsWith("security.")) return "◇";
         if (String(type || "").startsWith("dropzone.")) return "↓";
         if (String(type || "").startsWith("circlestack.")) return activitySocialIcon();
@@ -3655,6 +3658,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (k === "session") return tr("activity.kind.session", null, "session");
         if (k === "device") return tr("activity.kind.device", null, "device");
         if (k === "update_center") return tr("activity.kind.update_center", null, "Update Center");
+        if (k === "service_notice") return tr("activity.kind.service_notice", null, "service notice");
         return String(kind || "");
     }
 
@@ -3759,6 +3763,30 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             return target && target !== "session"
                 ? tr("activity.msg.session_revoked_for", { actor, target }, "{actor} revoked session for {target}")
                 : tr("activity.msg.session_revoked", { actor }, "{actor} revoked a session");
+        }
+
+        if (type === "service_notice.created") {
+            return tr(
+                "activity.msg.service_notice_created",
+                { actor, target },
+                "{actor} published service notice: {target}"
+            );
+        }
+
+        if (type === "service_notice.updated") {
+            return tr(
+                "activity.msg.service_notice_updated",
+                { actor, target },
+                "{actor} updated service notice: {target}"
+            );
+        }
+
+        if (type === "service_notice.deleted") {
+            return tr(
+                "activity.msg.service_notice_deleted",
+                { actor, target },
+                "{actor} deleted service notice: {target}"
+            );
         }
 
         if (type.startsWith("update.")) {

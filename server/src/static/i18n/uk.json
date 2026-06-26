@@ -4984,5 +4984,9 @@
   "admin.service_notices.kind.service": "Сервіс",
   "admin.service_notices.severity.info": "Інфо",
   "admin.service_notices.severity.important": "Важливо",
-  "admin.service_notices.severity.critical": "Критично"
+  "admin.service_notices.severity.critical": "Критично",
+  "activity.kind.service_notice": "сервісне повідомлення",
+  "activity.msg.service_notice_created": "{actor} опублікував сервісне повідомлення: {target}",
+  "activity.msg.service_notice_updated": "{actor} оновив сервісне повідомлення: {target}",
+  "activity.msg.service_notice_deleted": "{actor} видалив сервісне повідомлення: {target}"
 }

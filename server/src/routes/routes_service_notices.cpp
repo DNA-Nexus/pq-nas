@@ -13,6 +13,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -281,6 +282,15 @@ void register_service_notice_routes(httplib::Server& srv,
                 "ok"
             );
 
+            if (deps.record_activity) {
+                deps.record_activity(
+                    req,
+                    actor_fp,
+                    notice,
+                    created ? "created" : "updated"
+                );
+            }
+
             reply_json_local(deps, res, 200, json{
                 {"ok", true},
                 {"notice", ServiceNoticesStore::notice_to_json(notice)}
@@ -323,6 +333,22 @@ void register_service_notice_routes(httplib::Server& srv,
                 return;
             }
 
+            ServiceNotice notice_before_delete;
+            notice_before_delete.id = id;
+
+            {
+                std::vector<ServiceNotice> all_notices;
+                std::string list_err;
+                if (deps.store->list_all(&all_notices, &list_err)) {
+                    for (const auto& candidate : all_notices) {
+                        if (candidate.id == id) {
+                            notice_before_delete = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+
             bool removed = false;
             std::string err;
             if (!deps.store->erase(id, &removed, &err)) {
@@ -343,6 +369,15 @@ void register_service_notice_routes(httplib::Server& srv,
                 "",
                 removed ? "ok" : "noop"
             );
+
+            if (removed && deps.record_activity) {
+                deps.record_activity(
+                    req,
+                    actor_fp,
+                    notice_before_delete,
+                    "deleted"
+                );
+            }
 
             reply_json_local(deps, res, 200, json{
                 {"ok", true},

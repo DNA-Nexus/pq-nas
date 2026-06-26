@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "Teenus",
   "admin.service_notices.severity.info": "Info",
   "admin.service_notices.severity.important": "Tähtis",
-  "admin.service_notices.severity.critical": "Kriitiline"
+  "admin.service_notices.severity.critical": "Kriitiline",
+  "activity.kind.service_notice": "teenuse teade",
+  "activity.msg.service_notice_created": "{actor} avaldas teenuse teate: {target}",
+  "activity.msg.service_notice_updated": "{actor} uuendas teenuse teadet: {target}",
+  "activity.msg.service_notice_deleted": "{actor} kustutas teenuse teate: {target}"
 }

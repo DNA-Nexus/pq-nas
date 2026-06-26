@@ -36,6 +36,12 @@ struct ServiceNoticeRoutesDeps {
     std::function<void(const AuditEvent&)>
         audit_append;
 
+    std::function<void(const httplib::Request&,
+                       const std::string&,
+                       const ServiceNotice&,
+                       const std::string&)>
+        record_activity;
+
     std::function<std::int64_t()>
         now_epoch;
 };

@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "Servis",
   "admin.service_notices.severity.info": "Bilgi",
   "admin.service_notices.severity.important": "Önemli",
-  "admin.service_notices.severity.critical": "Kritik"
+  "admin.service_notices.severity.critical": "Kritik",
+  "activity.kind.service_notice": "servis bildirimi",
+  "activity.msg.service_notice_created": "{actor} servis bildirimini yayımladı: {target}",
+  "activity.msg.service_notice_updated": "{actor} servis bildirimini güncelledi: {target}",
+  "activity.msg.service_notice_deleted": "{actor} servis bildirimini sildi: {target}"
 }

@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "Tjänst",
   "admin.service_notices.severity.info": "Info",
   "admin.service_notices.severity.important": "Viktig",
-  "admin.service_notices.severity.critical": "Kritisk"
+  "admin.service_notices.severity.critical": "Kritisk",
+  "activity.kind.service_notice": "servicemeddelande",
+  "activity.msg.service_notice_created": "{actor} publicerade servicemeddelandet: {target}",
+  "activity.msg.service_notice_updated": "{actor} uppdaterade servicemeddelandet: {target}",
+  "activity.msg.service_notice_deleted": "{actor} raderade servicemeddelandet: {target}"
 }

@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "Usługa",
   "admin.service_notices.severity.info": "Info",
   "admin.service_notices.severity.important": "Ważny",
-  "admin.service_notices.severity.critical": "Krytyczny"
+  "admin.service_notices.severity.critical": "Krytyczny",
+  "activity.kind.service_notice": "komunikat serwisowy",
+  "activity.msg.service_notice_created": "{actor} opublikował komunikat serwisowy: {target}",
+  "activity.msg.service_notice_updated": "{actor} zaktualizował komunikat serwisowy: {target}",
+  "activity.msg.service_notice_deleted": "{actor} usunął komunikat serwisowy: {target}"
 }

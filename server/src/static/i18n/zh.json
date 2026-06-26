@@ -5013,5 +5013,9 @@
   "admin.service_notices.kind.service": "服务",
   "admin.service_notices.severity.info": "信息",
   "admin.service_notices.severity.important": "重要",
-  "admin.service_notices.severity.critical": "紧急"
+  "admin.service_notices.severity.critical": "紧急",
+  "activity.kind.service_notice": "服务通知",
+  "activity.msg.service_notice_created": "{actor} 发布了服务通知：{target}",
+  "activity.msg.service_notice_updated": "{actor} 更新了服务通知：{target}",
+  "activity.msg.service_notice_deleted": "{actor} 删除了服务通知：{target}"
 }

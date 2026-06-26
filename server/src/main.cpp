@@ -10934,6 +10934,84 @@ v5.app_pair_build_qr_uri =
                 audit_append(ev);
         };
 
+        service_notice_deps.record_activity =
+            [&](const httplib::Request& req,
+                const std::string& actor_fp,
+                const pqnas::ServiceNotice& notice,
+                const std::string& action) {
+                if (actor_fp.empty()) return;
+
+                std::filesystem::path user_root;
+                try {
+                    user_root = user_dir_for_fp(users, actor_fp);
+                } catch (...) {
+                    return;
+                }
+
+                if (user_root.empty()) return;
+
+                pqnas::activity::ActivityEvent ev;
+                ev.owner_user_id = actor_fp;
+
+                ev.actor.user_id = actor_fp;
+                ev.actor.kind = "user";
+                ev.actor.fingerprint_short =
+                    actor_fp.size() > 12 ? actor_fp.substr(0, 12) : actor_fp;
+
+                try {
+                    auto uopt = users.get(actor_fp);
+                    if (uopt.has_value() && !uopt->name.empty()) {
+                        ev.actor.display_name = uopt->name;
+                    }
+                } catch (...) {
+                }
+
+                if (action == "created") {
+                    ev.event_type = "service_notice.created";
+                    ev.message = "Published service notice: " +
+                        pqnas::shorten(notice.title.empty() ? notice.id : notice.title, 160);
+                } else if (action == "updated") {
+                    ev.event_type = "service_notice.updated";
+                    ev.message = "Updated service notice: " +
+                        pqnas::shorten(notice.title.empty() ? notice.id : notice.title, 160);
+                } else if (action == "deleted") {
+                    ev.event_type = "service_notice.deleted";
+                    ev.message = "Deleted service notice: " +
+                        pqnas::shorten(notice.title.empty() ? notice.id : notice.title, 160);
+                } else {
+                    ev.event_type = "service_notice.changed";
+                    ev.message = "Changed service notice: " +
+                        pqnas::shorten(notice.title.empty() ? notice.id : notice.title, 160);
+                }
+
+                ev.scope_type = "security";
+                ev.scope_id = actor_fp;
+                ev.target_kind = "service_notice";
+                ev.target_name = pqnas::shorten(
+                    notice.title.empty() ? notice.id : notice.title,
+                    180
+                );
+
+                ev.details = nlohmann::json::object();
+                ev.details["action"] = action;
+                ev.details["notice_id"] = notice.id;
+                if (!notice.title.empty()) ev.details["title"] = notice.title;
+                if (!notice.kind.empty()) ev.details["kind"] = notice.kind;
+                if (!notice.severity.empty()) ev.details["severity"] = notice.severity;
+                ev.details["enabled"] = notice.enabled;
+                ev.details["pinned"] = notice.pinned;
+                ev.details["starts_at"] = notice.starts_at;
+                ev.details["ends_at"] = notice.ends_at;
+                if (!req.remote_addr.empty()) ev.details["ip"] = req.remote_addr;
+
+                std::string activity_err;
+                (void)pqnas::activity::record_user_activity(
+                    user_root,
+                    ev,
+                    &activity_err
+                );
+        };
+
         service_notice_deps.now_epoch =
             []() -> std::int64_t {
                 return static_cast<std::int64_t>(pqnas::now_epoch());

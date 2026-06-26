@@ -5019,5 +5019,9 @@
   "admin.service_notices.kind.service": "Palvelu",
   "admin.service_notices.severity.info": "Info",
   "admin.service_notices.severity.important": "Tärkeä",
-  "admin.service_notices.severity.critical": "Kriittinen"
+  "admin.service_notices.severity.critical": "Kriittinen",
+  "activity.kind.service_notice": "tiedote",
+  "activity.msg.service_notice_created": "{actor} julkaisi tiedotteen: {target}",
+  "activity.msg.service_notice_updated": "{actor} päivitti tiedotteen: {target}",
+  "activity.msg.service_notice_deleted": "{actor} poisti tiedotteen: {target}"
 }
