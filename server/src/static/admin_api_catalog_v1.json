@@ -3948,6 +3948,335 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/trash/restore\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"trash_id\":\"'$TRASH_ID'\",\"rename_if_conflict\":true}'"
     },
     {
+      "id": "updates.page",
+      "category": "Update Center",
+      "risk": "read",
+      "method": "GET",
+      "path": "/admin/updates",
+      "title": "Update Center page",
+      "purpose": "Serve the admin Update Center UI.",
+      "auth": "Admin session.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 HTML",
+        "401/403 unauthorized",
+        "404 missing static file"
+      ],
+      "tags": [
+        "updates",
+        "admin",
+        "ui"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/admin/updates\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "updates.apply",
+      "category": "Update Center",
+      "risk": "install",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/apply",
+      "title": "Apply update",
+      "purpose": "Apply a validated update plan through the update helper.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "plan_id": "plan_id_here"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 validation errors",
+        "404 plan_not_found",
+        "500 helper/apply errors"
+      ],
+      "tags": [
+        "updates",
+        "apply",
+        "install",
+        "helper",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/apply\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"plan_id\":\"plan_id_here\"}'"
+    },
+    {
+      "id": "updates.delete",
+      "category": "Update Center",
+      "risk": "destructive",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/delete",
+      "title": "Delete staged update package",
+      "purpose": "Delete a staged update package and its metadata.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "stored_name": "package.tgz"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_json/missing_stored_name/bad_stored_name",
+        "404 package_not_found",
+        "500 delete_failed"
+      ],
+      "tags": [
+        "updates",
+        "delete",
+        "destructive",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/delete\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"stored_name\":\"package.tgz\"}'"
+    },
+    {
+      "id": "updates.dry_run",
+      "category": "Update Center",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/dry-run",
+      "title": "Dry-run update plan",
+      "purpose": "Run an update helper dry-run for a saved update plan.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "plan_id": "plan_id_here"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 validation errors",
+        "404 plan_not_found",
+        "500 helper errors"
+      ],
+      "tags": [
+        "updates",
+        "dry-run",
+        "helper",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/dry-run\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"plan_id\":\"plan_id_here\"}'"
+    },
+    {
+      "id": "updates.github_download",
+      "category": "Update Center",
+      "risk": "download",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/github-download",
+      "title": "Download GitHub update asset",
+      "purpose": "Start a server-side download of a DNA-Nexus/pq-nas GitHub release asset into the staged update area.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "url": "https://github.com/DNA-Nexus/pq-nas/releases/download/v0.0.0/pqnas-0.0.0-linux-x86_64.tgz",
+          "name": "pqnas-0.0.0-linux-x86_64.tgz",
+          "size": 123
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_json/missing_url/unsupported_url/bad_filename",
+        "413 download_too_large"
+      ],
+      "tags": [
+        "updates",
+        "github",
+        "download",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/github-download\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"url\":\"https://github.com/DNA-Nexus/pq-nas/releases/download/v0.0.0/pqnas-0.0.0-linux-x86_64.tgz\",\"name\":\"pqnas-0.0.0-linux-x86_64.tgz\",\"size\":123}'"
+    },
+    {
+      "id": "updates.github_download_status",
+      "category": "Update Center",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/updates/github-download/status",
+      "title": "GitHub download status",
+      "purpose": "Read the status of a GitHub update package download job.",
+      "auth": "Admin session.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [
+        {
+          "name": "job_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Download job id returned by github-download."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 missing_job_id",
+        "404 job_not_found"
+      ],
+      "tags": [
+        "updates",
+        "github",
+        "download",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/updates/github-download/status?job_id=$JOB_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "updates.install",
+      "category": "Update Center",
+      "risk": "install",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/install",
+      "title": "Install update plan",
+      "purpose": "Validate and install an update plan.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "plan_id": "plan_id_here"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 validation errors",
+        "404 plan_not_found/package_not_found",
+        "500 helper/install errors"
+      ],
+      "tags": [
+        "updates",
+        "install",
+        "server-update",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/install\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"plan_id\":\"plan_id_here\"}'"
+    },
+    {
+      "id": "updates.plan",
+      "category": "Update Center",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/plan",
+      "title": "Build update install plan",
+      "purpose": "Build and save an update install plan for a staged package.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "stored_name": "package.tgz"
+        }
+      },
+      "responses": [
+        "200 plan_built",
+        "400 bad_json/bad_stored_name/tar_list_failed",
+        "404 package_not_found",
+        "500 plan save errors"
+      ],
+      "tags": [
+        "updates",
+        "plan",
+        "install-plan",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/plan\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"stored_name\":\"package.tgz\"}'"
+    },
+    {
+      "id": "updates.status",
+      "category": "Update Center",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/updates/status",
+      "title": "List staged update packages",
+      "purpose": "List incoming staged update packages.",
+      "auth": "Admin session.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "500 create_incoming_failed"
+      ],
+      "tags": [
+        "updates",
+        "status",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/updates/status\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "updates.upload",
+      "category": "Update Center",
+      "risk": "upload",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/upload",
+      "title": "Upload update package",
+      "purpose": "Upload a server update package into the staged update area.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/octet-stream",
+        "headers": {
+          "X-PQNAS-Filename": "pqnas-0.0.0-linux-x86_64.tgz"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 empty_upload/bad_filename",
+        "413 upload_too_large",
+        "500 write/rename errors"
+      ],
+      "tags": [
+        "updates",
+        "upload",
+        "package",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/upload\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/octet-stream\" -H \"X-PQNAS-Filename: pqnas-0.0.0-linux-x86_64.tgz\" --data-binary @pqnas-0.0.0-linux-x86_64.tgz"
+    },
+    {
+      "id": "updates.verify",
+      "category": "Update Center",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/updates/verify",
+      "title": "Verify staged update package",
+      "purpose": "Verify a staged update archive before planning or installing.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/updates/update_center_routes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "stored_name": "package.tgz"
+        }
+      },
+      "responses": [
+        "200 verified",
+        "400 bad_json/bad_stored_name/tar_list_failed/unsafe",
+        "404 package_not_found"
+      ],
+      "tags": [
+        "updates",
+        "verify",
+        "tar",
+        "admin"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/updates/verify\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"stored_name\":\"package.tgz\"}'"
+    },
+    {
       "id": "uploads.chunk",
       "category": "Uploads",
       "risk": "upload",

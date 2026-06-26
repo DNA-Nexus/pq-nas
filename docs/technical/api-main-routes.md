@@ -6150,3 +6150,110 @@ Source:
 `server/src/routes/routes_drive_locate.cpp`
 
 ---
+
+<!-- BEGIN GENERATED UPDATE CENTER API ROUTES -->
+
+## Update Center API routes
+
+These routes are admin-only. Mutating, upload, destructive and install routes require same-origin cookie mutation protection.
+
+### GET `/admin/updates`
+
+- Purpose: Serve the admin Update Center UI.
+- Auth: Admin session.
+- Risk: `read`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 HTML, 401/403 unauthorized, 404 missing static file
+
+### GET `/api/v4/admin/updates/status`
+
+- Purpose: List incoming staged update packages.
+- Auth: Admin session.
+- Risk: `read`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 500 create_incoming_failed
+
+### POST `/api/v4/admin/updates/github-download`
+
+- Purpose: Start a server-side download of a DNA-Nexus/pq-nas GitHub release asset into the staged update area.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `download`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 bad_json/missing_url/unsupported_url/bad_filename, 413 download_too_large
+
+### GET `/api/v4/admin/updates/github-download/status`
+
+- Purpose: Read the status of a GitHub update package download job.
+- Auth: Admin session.
+- Risk: `read`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: `job_id` (query, required=yes)
+- Responses: 200 ok, 400 missing_job_id, 404 job_not_found
+
+### POST `/api/v4/admin/updates/upload`
+
+- Purpose: Upload a server update package into the staged update area.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `upload`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 empty_upload/bad_filename, 413 upload_too_large, 500 write/rename errors
+
+### POST `/api/v4/admin/updates/delete`
+
+- Purpose: Delete a staged update package and its metadata.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `destructive`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 bad_json/missing_stored_name/bad_stored_name, 404 package_not_found, 500 delete_failed
+
+### POST `/api/v4/admin/updates/verify`
+
+- Purpose: Verify a staged update archive before planning or installing.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `mutating`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 verified, 400 bad_json/bad_stored_name/tar_list_failed/unsafe, 404 package_not_found
+
+### POST `/api/v4/admin/updates/plan`
+
+- Purpose: Build and save an update install plan for a staged package.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `mutating`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 plan_built, 400 bad_json/bad_stored_name/tar_list_failed, 404 package_not_found, 500 plan save errors
+
+### POST `/api/v4/admin/updates/install`
+
+- Purpose: Validate and install an update plan.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `install`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 validation errors, 404 plan_not_found/package_not_found, 500 helper/install errors
+
+### POST `/api/v4/admin/updates/dry-run`
+
+- Purpose: Run an update helper dry-run for a saved update plan.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `mutating`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 validation errors, 404 plan_not_found, 500 helper errors
+
+### POST `/api/v4/admin/updates/apply`
+
+- Purpose: Apply a validated update plan through the update helper.
+- Auth: Admin session. Requires same-origin cookie mutation protection.
+- Risk: `install`
+- Source: `server/src/updates/update_center_routes.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 validation errors, 404 plan_not_found, 500 helper/apply errors
+
+<!-- END GENERATED UPDATE CENTER API ROUTES -->
