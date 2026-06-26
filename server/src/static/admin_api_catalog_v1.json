@@ -1063,6 +1063,122 @@
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/apps/upload_install\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/zip\" -H \"X-PQNAS-Filename: app.zip\" --data-binary @app.zip"
     },
     {
+      "id": "workspace_external_messages.list",
+      "category": "External Workspace Messages",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/workspaces/external-messages/list",
+      "title": "List external workspace messages",
+      "purpose": "List chat/messages for an external workspace member.",
+      "auth": "Workspace member access. Read-only route; no same-origin required.",
+      "source": "server/src/routes/routes_workspace_external_messages.cpp",
+      "params": [
+        {
+          "name": "workspace_id",
+          "in": "query",
+          "required": "yes",
+          "description": "Workspace id."
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": "no",
+          "description": "Maximum messages to return."
+        },
+        {
+          "name": "after_id",
+          "in": "query",
+          "required": "no",
+          "description": "Only return messages after this id."
+        }
+      ],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "400 bad request",
+        "401/403 unauthorized",
+        "429 rate_limited",
+        "500 server_error"
+      ],
+      "tags": [
+        "workspace",
+        "external-workspace",
+        "messages",
+        "chat",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/workspaces/external-messages/list?workspace_id=$WORKSPACE_ID\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "workspace_external_messages.post",
+      "category": "External Workspace Messages",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/workspaces/external-messages/post",
+      "title": "Post external workspace message",
+      "purpose": "Post a chat/message into an external workspace.",
+      "auth": "Workspace member access. Cookie-authenticated requests require same-origin protection; Bearer-authenticated requests may be used by external clients.",
+      "source": "server/src/routes/routes_workspace_external_messages.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "workspace_id": "workspace_id_here",
+          "body": "hello"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "401/403 unauthorized",
+        "413 payload_too_large",
+        "429 rate_limited",
+        "500 server_error"
+      ],
+      "tags": [
+        "workspace",
+        "external-workspace",
+        "messages",
+        "chat",
+        "post",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/workspaces/external-messages/post\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"workspace_id\":\"workspace_id_here\",\"body\":\"hello\"}'"
+    },
+    {
+      "id": "workspace_external_messages.read",
+      "category": "External Workspace Messages",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/workspaces/external-messages/read",
+      "title": "Mark external workspace messages read",
+      "purpose": "Update the current member's last-seen message id for an external workspace.",
+      "auth": "Workspace member access. Cookie-authenticated requests require same-origin protection; Bearer-authenticated requests may be used by external clients.",
+      "source": "server/src/routes/routes_workspace_external_messages.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "workspace_id": "workspace_id_here",
+          "last_seen_id": 1
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "401/403 unauthorized",
+        "500 server_error"
+      ],
+      "tags": [
+        "workspace",
+        "external-workspace",
+        "messages",
+        "read-receipt",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/workspaces/external-messages/read\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"workspace_id\":\"workspace_id_here\",\"last_seen_id\":1}'"
+    },
+    {
       "id": "versions.restore",
       "category": "File Versions",
       "risk": "mutating",

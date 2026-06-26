@@ -6257,3 +6257,38 @@ These routes are admin-only. Mutating, upload, destructive and install routes re
 - Responses: 200 ok, 400 validation errors, 404 plan_not_found, 500 helper/apply errors
 
 <!-- END GENERATED UPDATE CENTER API ROUTES -->
+
+<!-- BEGIN GENERATED EXTERNAL WORKSPACE MESSAGES API ROUTES -->
+
+## External Workspace Messages API routes
+
+These routes provide chat/message functionality for external workspace members. Read-only listing does not require same-origin protection. Cookie-authenticated mutating routes require same-origin protection; Bearer-authenticated external clients may be allowed by the route guard.
+
+### GET `/api/v4/workspaces/external-messages/list`
+
+- Purpose: List chat/messages for an external workspace member.
+- Auth: Workspace member access. Read-only route; no same-origin required.
+- Risk: `read`
+- Source: `server/src/routes/routes_workspace_external_messages.cpp`
+- Params: `workspace_id` (query, required=yes), `limit` (query, required=no), `after_id` (query, required=no)
+- Responses: 200 ok, 400 bad request, 401/403 unauthorized, 429 rate_limited, 500 server_error
+
+### POST `/api/v4/workspaces/external-messages/post`
+
+- Purpose: Post a chat/message into an external workspace.
+- Auth: Workspace member access. Cookie-authenticated requests require same-origin protection; Bearer-authenticated requests may be used by external clients.
+- Risk: `mutating`
+- Source: `server/src/routes/routes_workspace_external_messages.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 bad_request, 401/403 unauthorized, 413 payload_too_large, 429 rate_limited, 500 server_error
+
+### POST `/api/v4/workspaces/external-messages/read`
+
+- Purpose: Update the current member's last-seen message id for an external workspace.
+- Auth: Workspace member access. Cookie-authenticated requests require same-origin protection; Bearer-authenticated requests may be used by external clients.
+- Risk: `mutating`
+- Source: `server/src/routes/routes_workspace_external_messages.cpp`
+- Params: none documented
+- Responses: 200 ok, 400 bad_request, 401/403 unauthorized, 500 server_error
+
+<!-- END GENERATED EXTERNAL WORKSPACE MESSAGES API ROUTES -->
