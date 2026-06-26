@@ -1,12 +1,19 @@
-# DNA-Nexus Server Upload API
+# DNA-Nexus Server Upload API Security Notes
 
 ## Status
 
-Draft.
+Reference / security design note.
+
+This document is not the canonical route inventory. The canonical API route list lives in:
+
+```text
+docs/technical/api-main-routes.md
+server/src/static/admin_api_catalog_v1.json
+```
 
 ## Purpose
 
-This document describes the chunked upload API used by DNA-Nexus Server.
+This document describes the trust model, security requirements, and implementation checklist for the chunked upload API used by DNA-Nexus Server.
 
 The Upload API is used when the frontend needs to upload files in a controlled staged flow instead of sending a full file directly through a single request.
 
@@ -18,6 +25,10 @@ docs/security/file-access-security.md
 ```
 
 ## Main Routes
+
+The canonical route inventory is maintained in `docs/technical/api-main-routes.md` and `server/src/static/admin_api_catalog_v1.json`.
+
+For convenience, the Upload API currently consists of:
 
 ```text
 POST /api/v4/uploads/start
