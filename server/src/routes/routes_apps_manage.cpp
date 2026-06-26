@@ -27,6 +27,7 @@ bool apps_context_ok() {
            !g_apps_ctx.server_version.empty() &&
            g_apps_ctx.require_user_auth &&
            g_apps_ctx.require_admin_cookie &&
+            g_apps_ctx.require_same_origin &&
            g_apps_ctx.is_admin_cookie &&
            g_apps_ctx.safe_app_id &&
            g_apps_ctx.safe_app_ver &&
@@ -462,6 +463,7 @@ srv.Get("/api/v4/apps/has", [=](const httplib::Request& req, httplib::Response& 
 
     srv.Post("/api/v4/apps/upload_install", [=](const httplib::Request& req, httplib::Response& res) {
         if (!require_admin_cookie_users(req, res, g_apps_ctx.cookie_key, std::string{}, g_apps_ctx.users)) return;
+        if (!g_apps_ctx.require_same_origin(req, res)) return;
 
         auto reply = [&](int status, const json& j) {
             res.status = status;
@@ -724,6 +726,7 @@ srv.Post("/api/v4/apps/install_bundled", [=](const httplib::Request& req, httpli
     };
     //only admins can install apps
     if (!require_admin_cookie_users(req, res, g_apps_ctx.cookie_key, std::string{}, g_apps_ctx.users)) return;
+    if (!g_apps_ctx.require_same_origin(req, res)) return;
 
     auto audit_fail = [&](const std::string& why) {
         pqnas::AuditEvent ev;
@@ -901,6 +904,7 @@ srv.Post("/api/v4/apps/launch_policy", [=](const httplib::Request& req, httplib:
         });
         return;
     }
+    if (!g_apps_ctx.require_same_origin(req, res)) return;
 
     json body = json::object();
     try {
@@ -1005,6 +1009,7 @@ srv.Post("/api/v4/apps/uninstall", [=](const httplib::Request& req, httplib::Res
 
     // only admins can uninstall apps
     if (!require_admin_cookie_users(req, res, g_apps_ctx.cookie_key, std::string{}, g_apps_ctx.users)) return;
+    if (!g_apps_ctx.require_same_origin(req, res)) return;
 
     json in;
     try { in = json::parse(req.body); }

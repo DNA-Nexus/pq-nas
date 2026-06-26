@@ -1445,7 +1445,11 @@ srv.Put("/api/v4/files/put",
                 audit_append(ev);
             };
 
-        register_apps_manage_routes(srv, apps_ctx);
+                apps_ctx.require_same_origin = [&](const httplib::Request& req, httplib::Response& res) {
+            return require_same_origin_for_cookie_mutation(req, res);
+        };
+
+register_apps_manage_routes(srv, apps_ctx);
     }
 
     // ---- Admin user lifecycle routes ----

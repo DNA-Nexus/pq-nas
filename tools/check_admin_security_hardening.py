@@ -78,6 +78,7 @@ target_prefixes = (
     "/api/v4/raid/",
     "/api/v4/poolmgr/",
     "/api/v4/system/",
+    "/api/v4/apps/",
 )
 
 def has_admin_auth(block):
@@ -86,7 +87,9 @@ def has_admin_auth(block):
         "require_admin(" in block or
         "ctx.require_admin" in block or
         "c.require_admin" in block or
-        "require_admin_actor" in block
+        "require_admin_actor" in block or
+        "require_admin_cookie_users" in block or
+        "is_admin_cookie_users" in block
     )
 
 def has_same_origin_guard(block):
@@ -95,7 +98,8 @@ def has_same_origin_guard(block):
         "require_same_origin(req, res)" in block or
         "ctx.require_same_origin(req, res)" in block or
         "c.require_same_origin(req, res)" in block or
-        "deps.require_same_origin(req, res)" in block
+        "deps.require_same_origin(req, res)" in block or
+        "g_apps_ctx.require_same_origin(req, res)" in block
     )
 
 scan_units = [(MAIN, main)]

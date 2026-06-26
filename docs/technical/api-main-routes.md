@@ -54,12 +54,12 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/admin/users/storage_preview` | Admin session | `server/src/routes/routes_admin_user_storage_preview.cpp` |
 | `POST` | `/api/v4/admin/users/upsert` | Admin session | `server/src/routes/routes_admin_user_profile.cpp` |
 | `GET` | `/api/v4/apps` | User session | `server/src/main.cpp:12046` |
-| `GET` | `/api/v4/apps/has` | User session | `server/src/main.cpp:43693` |
-| `POST` | `/api/v4/apps/install_bundled` | User session | `server/src/main.cpp:44215` |
-| `POST` | `/api/v4/apps/launch_policy` | User session | `server/src/main.cpp:44385` |
-| `GET` | `/api/v4/apps/list` | User session | `server/src/main.cpp:43831` |
-| `POST` | `/api/v4/apps/uninstall` | User session | `server/src/main.cpp:44495` |
-| `POST` | `/api/v4/apps/upload_install` | User session | `server/src/main.cpp:43959` |
+| `GET` | `/api/v4/apps/has` | User session | `server/src/routes/routes_apps_manage.cpp` |
+| `POST` | `/api/v4/apps/install_bundled` | User session | `server/src/routes/routes_apps_manage.cpp` |
+| `POST` | `/api/v4/apps/launch_policy` | User session | `server/src/routes/routes_apps_manage.cpp` |
+| `GET` | `/api/v4/apps/list` | User session | `server/src/routes/routes_apps_manage.cpp` |
+| `POST` | `/api/v4/apps/uninstall` | User session | `server/src/routes/routes_apps_manage.cpp` |
+| `POST` | `/api/v4/apps/upload_install` | User session | `server/src/routes/routes_apps_manage.cpp` |
 | `GET` | `/api/v4/audit/tail` | User session | `server/src/routes/routes_admin_audit_read.cpp` |
 | `GET` | `/api/v4/audit/verify` | User session | `server/src/routes/routes_admin_audit_read.cpp` |
 | `GET` | `/api/v4/files/archive_manifest` | User session | `server/src/main.cpp:41065` |
@@ -1322,114 +1322,170 @@ Source:
 ### GET `/api/v4/apps/has`
 
 Purpose:
-TODO: describe purpose.
+Check whether an app is installed, mobile-capable and visible to the current user.
 
 Auth:
-User session
+Authenticated user session.
 
 Request:
-TODO.
+- `id`: Safe app id.
+
+No request body.
+
+Validation and behavior:
+- read-only capability route
+- respects admin-only app launch policy
 
 Response:
-TODO.
+- `200 ok`
+- `400 invalid_app_id`
+- `401 unauthorized`
 
 Source:
-`server/src/main.cpp:43693`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 
 ### POST `/api/v4/apps/install_bundled`
 
 Purpose:
-TODO: describe purpose.
+Install a bundled app zip from the server bundled-apps directory.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON/body shape documented in API Explorer curl example.
+
+Validation and behavior:
+- installs from bundled zip
+- validates id/zip
+- writes/updates launch policy
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:44215`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 
 ### POST `/api/v4/apps/launch_policy`
 
 Purpose:
-TODO: describe purpose.
+Update app launch mode, window profile, user override setting and admin-only visibility.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON/body shape documented in API Explorer curl example.
+
+Validation and behavior:
+- mutates app launch policy JSON
+- validates default_launch and window_profile
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_json`
+- `403 forbidden`
+- `500 save_failed`
 
 Source:
-`server/src/main.cpp:44385`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 
 ### GET `/api/v4/apps/list`
 
 Purpose:
-TODO: describe purpose.
+List installed and bundled apps visible to the current user/admin.
 
 Auth:
-User session
+Authenticated session; admin sees admin-only apps.
 
 Request:
-TODO.
+No required query parameters.
+
+No request body.
+
+Validation and behavior:
+- read-only app inventory route
+- includes installed and bundled app metadata
 
 Response:
-TODO.
+- `200 ok`
+- `401 unauthorized`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43831`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 
 ### POST `/api/v4/apps/uninstall`
 
 Purpose:
-TODO: describe purpose.
+Remove an installed app version from the runtime app area.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON/body shape documented in API Explorer curl example.
+
+Validation and behavior:
+- destructive app removal route
+- removes installed app version directory
+- writes audit events
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `404 not_found`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:44495`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 
 ### POST `/api/v4/apps/upload_install`
 
 Purpose:
-TODO: describe purpose.
+Upload an app zip, validate manifest and install it into the runtime app area.
 
 Auth:
-User session
+Admin session. Requires same-origin cookie mutation protection.
 
 Request:
-TODO.
+No required query parameters.
+
+JSON/body shape documented in API Explorer curl example.
+
+Validation and behavior:
+- validates zip entry paths against zip-slip
+- requires manifest.json and www/index.html
+- writes audit events
 
 Response:
-TODO.
+- `200 ok`
+- `400 bad_request`
+- `409 conflict`
+- `500 server_error`
 
 Source:
-`server/src/main.cpp:43959`
+`server/src/routes/routes_apps_manage.cpp`
 
 ---
 

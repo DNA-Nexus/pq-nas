@@ -27,6 +27,7 @@ struct AppsManageRoutesContext {
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_user_auth;
     std::function<bool(const httplib::Request&, httplib::Response&)> require_admin_cookie;
+    std::function<bool(const httplib::Request&, httplib::Response&)> require_same_origin;
     std::function<bool(const httplib::Request&)> is_admin_cookie;
 
     std::function<bool(const std::string&)> safe_app_id;
