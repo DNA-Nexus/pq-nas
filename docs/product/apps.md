@@ -241,6 +241,7 @@ myapp/
 Current shipped app versions:
 
 ```text
+contacts      1.0.1
 dropzone      1.0.0
 echostack     1.0.0
 filemgr       1.0.0
@@ -253,6 +254,7 @@ snapshotmgr   1.0.1
 
 Current bundled apps include:
 
+- Contacts
 - Drop Zone
 - Echo Stack
 - File Manager
@@ -652,6 +654,7 @@ If no sidebar icon exists, shell code may fall back to initials or a missing/bla
 Current bundled app source includes:
 
 ```text
+apps/bundled/contacts/src/www/nav_icon.svg
 apps/bundled/dropzone/src/www/nav_icon.svg
 apps/bundled/echostack/src/www/nav_icon.svg
 apps/bundled/filemgr/src/www/nav_icon.svg

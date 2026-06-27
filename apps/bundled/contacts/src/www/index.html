@@ -1,0 +1,140 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DNA-Nexus • Contacts</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/components.css">
+  <link rel="stylesheet" href="./app.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <main class="contacts-shell" data-app="contacts">
+    <header class="contacts-hero pq-card">
+      <div class="contacts-heroText">
+        <p class="contacts-eyebrow">DNA-Nexus</p>
+        <h1>Contacts</h1>
+        <p class="contacts-subtitle">
+          Private address book for known DNA-Nexus people, workspace collaborators and customer notes.
+        </p>
+      </div>
+
+      <div class="contacts-heroActions">
+        <span id="versionBadge" class="pq-badge muted">Contacts</span>
+        <button id="refreshBtn" class="pq-btn secondary" type="button">Refresh</button>
+        <button id="newBtn" class="pq-btn primary" type="button">Add known person</button>
+      </div>
+    </header>
+
+    <section class="contacts-toolbar pq-toolbar" aria-label="Contact controls">
+      <label class="contacts-field contacts-searchField">
+        <span>Search</span>
+        <input id="searchInput" class="pq-input" type="search" autocomplete="off" placeholder="Name, nickname, notes or identity">
+      </label>
+
+      <label class="contacts-field">
+        <span>Kind</span>
+        <select id="kindFilter" class="pq-select">
+          <option value="">All</option>
+          <option value="fingerprint">Fingerprint</option>
+          <option value="local_user">Local user</option>
+          <option value="external_dna">External DNA</option>
+        </select>
+      </label>
+
+      <button id="exportBtn" class="pq-btn secondary" type="button">Export vCard</button>
+
+      <label class="contacts-fileBtn pq-btn secondary">
+        Import vCard
+        <input id="importInput" type="file" accept=".vcf,text/vcard,text/x-vcard">
+      </label>
+    </section>
+
+    <section id="notice" class="contacts-notice pq-empty-state" hidden></section>
+
+    <section class="contacts-layout" aria-label="Contacts workspace">
+      <section class="contacts-listCard pq-card" aria-label="Contacts list">
+        <div class="contacts-sectionHead">
+          <div>
+            <h2>Address book</h2>
+            <p id="countText">Loading contacts…</p>
+          </div>
+        </div>
+        <div id="contactsList" class="contacts-list" role="list"></div>
+        <section id="emptyState" class="contacts-empty pq-empty-state" hidden>
+          No contacts yet. Add the first DNA contact from the form.
+        </section>
+      </section>
+
+      <section class="contacts-editor pq-card" aria-label="Contact editor">
+        <div class="contacts-sectionHead">
+          <div>
+            <h2 id="editorTitle">New contact</h2>
+            <p>Saved to your private People list.</p>
+          </div>
+          <span id="selectedBadge" class="pq-badge info">new</span>
+        </div>
+
+
+        <form id="contactForm" class="contacts-form">
+          <label class="contacts-field contacts-personField">
+            <span>Known person</span>
+            <select id="identitySelect" class="pq-select">
+              <option value="">Choose a known DNA-Nexus person…</option>
+            </select>
+          </label>
+
+          <label class="contacts-field">
+            <span>Display name</span>
+            <input id="displayNameInput" class="pq-input" type="text" autocomplete="name" required>
+          </label>
+
+          <label class="contacts-field">
+            <span>Nickname</span>
+            <input id="nicknameInput" class="pq-input" type="text" autocomplete="off">
+          </label>
+
+          <label class="contacts-field contacts-notesField">
+            <span>Private notes</span>
+            <textarea id="notesInput" class="pq-textarea" rows="8" placeholder="Customer notes, context, reminders or workspace relation."></textarea>
+          </label>
+
+          <details class="contacts-advanced">
+            <summary>Technical identity</summary>
+
+            <div class="contacts-advancedGrid">
+              <label class="contacts-field">
+                <span>Fingerprint</span>
+                <input id="fingerprintInput" class="pq-input contacts-mono" type="text" autocomplete="off" spellcheck="false" readonly>
+              </label>
+
+              <label class="contacts-field">
+                <span>Kind</span>
+                <select id="kindInput" class="pq-select" disabled>
+                  <option value="fingerprint">Fingerprint</option>
+                  <option value="local_user">Local user</option>
+                  <option value="external_dna">External DNA</option>
+                </select>
+              </label>
+
+              <p class="contacts-help">
+                Fingerprint is an internal DNA-Nexus identity anchor. New contacts must come from a known local user or another trusted DNA-Nexus flow.
+              </p>
+            </div>
+          </details>
+
+          <div class="contacts-formActions">
+            <button id="deleteBtn" class="pq-btn danger" type="button" disabled>Delete</button>
+            <span class="contacts-spacer"></span>
+            <button id="resetBtn" class="pq-btn secondary" type="button">Clear</button>
+            <button id="saveBtn" class="pq-btn primary" type="submit">Save contact</button>
+          </div>
+        </form>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,34 @@
+
+{
+  "id": "contacts",
+  "name": "Contacts",
+  "version": "1.0.1",
+  "entry": "www/index.html",
+  "api_base": "/api/v4/people",
+  "permissions": [],
+  "category": "people",
+  "surfaces": {
+    "desktop": {
+      "enabled": true
+    },
+    "launcher": {
+      "enabled": true
+    },
+    "sidebar": {
+      "enabled": false,
+      "user_pinnable": true,
+      "section": "people",
+      "label": "Contacts",
+      "order": 60
+    }
+  },
+  "icons": {
+    "win_classic": "www/icon.svg",
+    "cpunk_orange": "www/icon.svg",
+    "dark": "www/icon.svg",
+    "bright": "www/icon.svg",
+    "default": "www/icon.svg",
+    "sidebar": "www/nav_icon.svg"
+  },
+  "min_server_version": "1.2.0"
+}

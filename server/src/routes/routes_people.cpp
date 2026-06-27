@@ -81,6 +81,53 @@ std::string json_string_local(const json& j, const char* key) {
 } // namespace
 
 void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) {
+    srv.Get("/api/v4/people/local-users", [deps](const httplib::Request& req, httplib::Response& res) {
+        std::string actor_fp;
+        std::string actor_role;
+        if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
+
+        actor_fp = people_canonical_fingerprint(actor_fp);
+        if (!people_valid_fingerprint(actor_fp)) {
+            reply_json_local(deps, res, 403, json{
+                {"ok", false},
+                {"error", "forbidden"},
+                {"message", "invalid authenticated fingerprint"}
+            });
+            return;
+        }
+
+        json arr = json::array();
+        const auto snapshot = deps.users->snapshot();
+
+        for (const auto& kv : snapshot) {
+            const UserRec& u = kv.second;
+
+            if (u.status != "enabled") continue;
+
+            std::string fp = !u.fingerprint.empty() ? u.fingerprint : kv.first;
+            fp = people_canonical_fingerprint(fp);
+
+            if (!people_valid_fingerprint(fp)) continue;
+            if (fp == actor_fp) continue;
+
+            std::string display_name = u.name;
+            if (display_name.empty()) display_name = people_fingerprint_short(fp);
+
+            arr.push_back(json{
+                {"fingerprint", fp},
+                {"fingerprint_short", people_fingerprint_short(fp)},
+                {"display_name", display_name},
+                {"subject_kind", "local_user"}
+            });
+        }
+
+        reply_json_local(deps, res, 200, json{
+            {"ok", true},
+            {"candidates", arr},
+            {"count", arr.size()}
+        });
+    });
+
     srv.Get("/api/v4/people/list", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
