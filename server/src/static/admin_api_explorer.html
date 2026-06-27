@@ -274,7 +274,60 @@
                 grid-template-columns: 1fr;
             }
         }
-    </style>
+    
+
+/* DNA-Nexus API Explorer structural detail scrollfix v3
+   The right-side selected API detail pane has its own header and body.
+   The pane itself clips overflow, so the body must become the scroll area. */
+.apiDetailPane {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 250px);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.apiDetailPane > .paneHead {
+    flex: 0 0 auto;
+}
+
+.apiDetailPane > .paneBody {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 12px;
+    padding-bottom: 24px;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+}
+
+.apiDetailPane #detail {
+    min-height: 0;
+}
+
+.apiDetailPane pre {
+    max-width: 100%;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 980px){
+    .apiDetailPane {
+        display: block;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .apiDetailPane > .paneBody {
+        overflow: visible;
+        padding-right: 14px;
+    }
+}
+
+</style>
 </head>
 
 <body>
@@ -351,7 +404,7 @@
                 </div>
             </section>
 
-            <section class="pane" aria-label="API route details" data-i18n-aria-label="admin.api_explorer.route_details">
+            <section class="pane apiDetailPane" aria-label="API route details" data-i18n-aria-label="admin.api_explorer.route_details">
                 <div class="paneHead">
                     <div class="hint" id="detailHint" data-i18n="admin.api_explorer.select_route">Select a route from the list.</div>
                 </div>
@@ -364,5 +417,8 @@
 </div>
 
 <script src="/static/admin_api_explorer.js?v=api-explorer-i18n-v1"></script>
+
+
+
 </body>
 </html>
