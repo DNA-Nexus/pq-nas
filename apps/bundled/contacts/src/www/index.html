@@ -18,30 +18,43 @@
         <p class="contacts-eyebrow">DNA-Nexus</p>
         <h1>Contacts</h1>
         <p class="contacts-subtitle">
-          Private address book for known DNA-Nexus people, workspace collaborators and customer notes.
+          Private customer, supplier and address book records that follow you everywhere.
         </p>
       </div>
 
       <div class="contacts-heroActions">
         <span id="versionBadge" class="pq-badge muted">Contacts</span>
         <button id="refreshBtn" class="pq-btn secondary" type="button">Refresh</button>
-        <button id="newBtn" class="pq-btn primary" type="button">Add known person</button>
+        <button id="newBtn" class="pq-btn primary" type="button">New contact</button>
       </div>
     </header>
 
     <section class="contacts-toolbar pq-toolbar" aria-label="Contact controls">
       <label class="contacts-field contacts-searchField">
         <span>Search</span>
-        <input id="searchInput" class="pq-input" type="search" autocomplete="off" placeholder="Name, nickname, notes or identity">
+        <input id="searchInput" class="pq-input" type="search" autocomplete="off" placeholder="Name, company, email, phone, city, tags or notes">
       </label>
 
       <label class="contacts-field">
-        <span>Kind</span>
-        <select id="kindFilter" class="pq-select">
+        <span>Type</span>
+        <select id="typeFilter" class="pq-select">
           <option value="">All</option>
-          <option value="fingerprint">Fingerprint</option>
-          <option value="local_user">Local user</option>
-          <option value="external_dna">External DNA</option>
+          <option value="person">Person</option>
+          <option value="company">Company</option>
+          <option value="customer">Customer</option>
+          <option value="supplier">Supplier</option>
+          <option value="family">Family / relatives</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+
+      <label class="contacts-field">
+        <span>Status</span>
+        <select id="statusFilter" class="pq-select">
+          <option value="">All</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="archived">Archived</option>
         </select>
       </label>
 
@@ -65,7 +78,7 @@
         </div>
         <div id="contactsList" class="contacts-list" role="list"></div>
         <section id="emptyState" class="contacts-empty pq-empty-state" hidden>
-          No contacts yet. Add the first DNA contact from the form.
+          No contacts yet. Add your first customer, supplier, relative or other contact.
         </section>
       </section>
 
@@ -73,47 +86,149 @@
         <div class="contacts-sectionHead">
           <div>
             <h2 id="editorTitle">New contact</h2>
-            <p>Saved to your private People list.</p>
+            <p>Saved to your private DNA-Nexus Contacts list.</p>
           </div>
           <span id="selectedBadge" class="pq-badge info">new</span>
         </div>
 
-
         <form id="contactForm" class="contacts-form">
-          <label class="contacts-field contacts-personField">
-            <span>Known person</span>
-            <select id="identitySelect" class="pq-select">
-              <option value="">Choose a known DNA-Nexus person…</option>
-            </select>
-          </label>
+          <section class="contacts-formSection">
+            <h3>Basic</h3>
 
-          <label class="contacts-field">
-            <span>Display name</span>
-            <input id="displayNameInput" class="pq-input" type="text" autocomplete="name" required>
-          </label>
+            <label class="contacts-field">
+              <span>Contact type</span>
+              <select id="contactTypeInput" class="pq-select">
+                <option value="person">Person</option>
+                <option value="company">Company</option>
+                <option value="customer">Customer</option>
+                <option value="supplier">Supplier</option>
+                <option value="family">Family / relatives</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
 
-          <label class="contacts-field">
-            <span>Nickname</span>
-            <input id="nicknameInput" class="pq-input" type="text" autocomplete="off">
-          </label>
+            <label class="contacts-field">
+              <span>Source</span>
+              <select id="identityModeSelect" class="pq-select">
+                <option value="manual_contact">Manual contact</option>
+                <option value="local_user">Known DNA-Nexus user</option>
+              </select>
+            </label>
 
-          <label class="contacts-field contacts-notesField">
-            <span>Private notes</span>
-            <textarea id="notesInput" class="pq-textarea" rows="8" placeholder="Customer notes, context, reminders or workspace relation."></textarea>
-          </label>
+            <label id="identitySelectField" class="contacts-field" hidden>
+              <span>Known person</span>
+              <select id="identitySelect" class="pq-select">
+                <option value="">Choose a known DNA-Nexus person…</option>
+              </select>
+            </label>
+
+            <label class="contacts-field">
+              <span>Display name</span>
+              <input id="displayNameInput" class="pq-input" type="text" autocomplete="name" required>
+            </label>
+
+            <label class="contacts-field">
+              <span>Company / organization</span>
+              <input id="companyInput" class="pq-input" type="text" autocomplete="organization">
+            </label>
+
+            <label class="contacts-field">
+              <span>Title / role</span>
+              <input id="titleInput" class="pq-input" type="text" autocomplete="organization-title">
+            </label>
+
+            <label class="contacts-field">
+              <span>Nickname</span>
+              <input id="nicknameInput" class="pq-input" type="text" autocomplete="off">
+            </label>
+
+            <label class="contacts-field">
+              <span>Status</span>
+              <select id="statusInput" class="pq-select">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+
+            <label class="contacts-field">
+              <span>Tags</span>
+              <input id="tagsInput" class="pq-input" type="text" placeholder="customer, supplier, christmas-card">
+            </label>
+          </section>
+
+          <section class="contacts-formSection">
+            <h3>Contact details</h3>
+
+            <label class="contacts-field">
+              <span>Email</span>
+              <input id="emailInput" class="pq-input" type="email" autocomplete="email">
+            </label>
+
+            <label class="contacts-field">
+              <span>Phone</span>
+              <input id="phoneInput" class="pq-input" type="tel" autocomplete="tel">
+            </label>
+
+            <label class="contacts-field">
+              <span>Mobile</span>
+              <input id="mobileInput" class="pq-input" type="tel" autocomplete="tel">
+            </label>
+
+            <label class="contacts-field">
+              <span>Website</span>
+              <input id="websiteInput" class="pq-input" type="url" autocomplete="url">
+            </label>
+          </section>
+
+          <section class="contacts-formSection">
+            <h3>Address</h3>
+
+            <label class="contacts-field contacts-wideField">
+              <span>Street address</span>
+              <input id="streetInput" class="pq-input" type="text" autocomplete="street-address">
+            </label>
+
+            <label class="contacts-field">
+              <span>Postal code</span>
+              <input id="postalCodeInput" class="pq-input" type="text" autocomplete="postal-code">
+            </label>
+
+            <label class="contacts-field">
+              <span>City</span>
+              <input id="cityInput" class="pq-input" type="text" autocomplete="address-level2">
+            </label>
+
+            <label class="contacts-field">
+              <span>Country</span>
+              <input id="countryInput" class="pq-input" type="text" autocomplete="country-name">
+            </label>
+          </section>
+
+
+
+          <section class="contacts-formSection">
+            <h3>Notes</h3>
+
+            <label class="contacts-field contacts-wideField">
+              <span>Private notes</span>
+              <textarea id="notesInput" class="pq-textarea" rows="8" placeholder="Customer notes, supplier context, delivery instructions or Christmas card reminders."></textarea>
+            </label>
+          </section>
 
           <details class="contacts-advanced">
             <summary>Technical identity</summary>
 
             <div class="contacts-advancedGrid">
               <label class="contacts-field">
-                <span>Fingerprint</span>
+                <span>Identity anchor</span>
                 <input id="fingerprintInput" class="pq-input contacts-mono" type="text" autocomplete="off" spellcheck="false" readonly>
               </label>
 
               <label class="contacts-field">
                 <span>Kind</span>
                 <select id="kindInput" class="pq-select" disabled>
+                  <option value="manual_contact">Manual contact</option>
                   <option value="fingerprint">Fingerprint</option>
                   <option value="local_user">Local user</option>
                   <option value="external_dna">External DNA</option>
@@ -121,7 +236,7 @@
               </label>
 
               <p class="contacts-help">
-                Fingerprint is an internal DNA-Nexus identity anchor. New contacts must come from a known local user or another trusted DNA-Nexus flow.
+                This identity anchor is internal. Manual contacts get an automatically generated private anchor. DNA-Nexus users and workspace members can use real DNA identity fingerprints.
               </p>
             </div>
           </details>

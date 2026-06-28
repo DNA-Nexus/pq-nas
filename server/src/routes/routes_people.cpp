@@ -1,3 +1,4 @@
+
 #include "routes_people.h"
 
 #include "people_contacts.h"
@@ -64,9 +65,33 @@ json contact_to_json_local(const PeopleContactRecord& c) {
         {"subject_fingerprint", c.subject_fingerprint},
         {"subject_fingerprint_short", people_fingerprint_short(c.subject_fingerprint)},
         {"subject_kind", c.subject_kind},
+
         {"display_name", c.display_name},
         {"nickname", c.nickname},
+        {"contact_type", c.contact_type},
+        {"company", c.company},
+        {"title", c.title},
+
+        {"email", c.email},
+        {"phone", c.phone},
+        {"mobile", c.mobile},
+        {"website", c.website},
+
+        {"street", c.street},
+        {"postal_code", c.postal_code},
+        {"city", c.city},
+        {"country", c.country},
+
+        {"delivery_name", c.delivery_name},
+        {"delivery_street", c.delivery_street},
+        {"delivery_postal_code", c.delivery_postal_code},
+        {"delivery_city", c.delivery_city},
+        {"delivery_country", c.delivery_country},
+
+        {"tags", c.tags},
+        {"status", c.status},
         {"notes", c.notes},
+
         {"created_at_epoch", c.created_at_epoch},
         {"updated_at_epoch", c.updated_at_epoch}
     };
@@ -243,9 +268,33 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         if (input.subject_fingerprint.empty()) {
             input.subject_fingerprint = json_string_local(body, "fingerprint");
         }
+
         input.subject_kind = json_string_local(body, "subject_kind");
+
         input.display_name = json_string_local(body, "display_name");
         input.nickname = json_string_local(body, "nickname");
+        input.contact_type = json_string_local(body, "contact_type");
+        input.company = json_string_local(body, "company");
+        input.title = json_string_local(body, "title");
+
+        input.email = json_string_local(body, "email");
+        input.phone = json_string_local(body, "phone");
+        input.mobile = json_string_local(body, "mobile");
+        input.website = json_string_local(body, "website");
+
+        input.street = json_string_local(body, "street");
+        input.postal_code = json_string_local(body, "postal_code");
+        input.city = json_string_local(body, "city");
+        input.country = json_string_local(body, "country");
+
+        input.delivery_name = json_string_local(body, "delivery_name");
+        input.delivery_street = json_string_local(body, "delivery_street");
+        input.delivery_postal_code = json_string_local(body, "delivery_postal_code");
+        input.delivery_city = json_string_local(body, "delivery_city");
+        input.delivery_country = json_string_local(body, "delivery_country");
+
+        input.tags = json_string_local(body, "tags");
+        input.status = json_string_local(body, "status");
         input.notes = json_string_local(body, "notes");
 
         input.subject_fingerprint = people_canonical_fingerprint(input.subject_fingerprint);
@@ -263,10 +312,14 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         PeopleContactRecord saved;
         std::string err;
         if (!store.upsert_for_owner(actor_fp, input, &saved, &err)) {
+            const std::string detail = err.empty()
+                ? std::string("failed to save person")
+                : std::string("failed to save person: ") + err;
+
             reply_json_local(deps, res, 500, json{
                 {"ok", false},
                 {"error", "server_error"},
-                {"message", "failed to save person"}
+                {"message", detail}
             });
             return;
         }

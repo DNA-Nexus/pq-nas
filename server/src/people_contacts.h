@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cstdint>
@@ -16,16 +17,39 @@ struct PeopleContactRecord {
     // Optional future link to a local DNA-Nexus user account.
     std::string subject_user_id;
 
-    // Stable identity anchor. Local users and external DNA Connect members both resolve here.
+    // Stable identity anchor. Local users, external DNA members and manual contacts all resolve here.
     std::string subject_fingerprint;
 
-    // fingerprint | local_user | external_dna
-    std::string subject_kind = "fingerprint";
+    // manual_contact | fingerprint | local_user | external_dna
+    std::string subject_kind = "manual_contact";
 
-    // Private label chosen by owner_fingerprint.
+    // Address book / lightweight CRM fields.
+    std::string contact_type = "person"; // person | company | customer | supplier | family | other
     std::string display_name;
-
     std::string nickname;
+
+    std::string company;
+    std::string title;
+
+    std::string email;
+    std::string phone;
+    std::string mobile;
+    std::string website;
+
+    std::string street;
+    std::string postal_code;
+    std::string city;
+    std::string country;
+
+    std::string delivery_name;
+    std::string delivery_street;
+    std::string delivery_postal_code;
+    std::string delivery_city;
+    std::string delivery_country;
+
+    std::string tags;
+    std::string status = "active"; // active | inactive | archived
+
     std::string notes;
 
     std::int64_t created_at_epoch = 0;
@@ -66,6 +90,8 @@ private:
 std::string people_canonical_fingerprint(const std::string& input);
 bool people_valid_fingerprint(const std::string& fp);
 std::string people_normalize_subject_kind(const std::string& input);
+std::string people_normalize_contact_type(const std::string& input);
+std::string people_normalize_status(const std::string& input);
 std::string people_fingerprint_short(const std::string& fp);
 
 } // namespace pqnas

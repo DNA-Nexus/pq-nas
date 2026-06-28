@@ -32,8 +32,12 @@ body {
   font-family: var(--contacts-font);
 }
 
+[hidden] {
+  display: none;
+}
+
 .contacts-shell {
-  width: min(1240px, calc(100% - 32px));
+  width: min(1320px, calc(100% - 32px));
   margin: 0 auto;
   padding: 32px 0;
 }
@@ -66,7 +70,7 @@ body {
 }
 
 .contacts-subtitle {
-  max-width: 720px;
+  max-width: 760px;
   margin: 10px 0 0;
   color: var(--contacts-muted);
   font-size: 15px;
@@ -88,7 +92,7 @@ body {
 .contacts-field {
   display: grid;
   gap: 6px;
-  min-width: min(260px, 100%);
+  min-width: min(240px, 100%);
 }
 
 .contacts-field span {
@@ -100,7 +104,7 @@ body {
 }
 
 .contacts-searchField {
-  flex: 1 1 320px;
+  flex: 1 1 340px;
 }
 
 .contacts-fileBtn {
@@ -119,13 +123,9 @@ body {
   margin-bottom: 16px;
 }
 
-.contacts-notice[hidden] {
-  display: none;
-}
-
 .contacts-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -208,13 +208,26 @@ body {
 
 .contacts-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
-.contacts-personField,
-.contacts-notesField,
-.contacts-advanced {
+.contacts-formSection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border: 1px solid var(--contacts-line);
+  border-radius: var(--contacts-radius-sm);
+  background: var(--contacts-panel);
+  padding: 14px;
+}
+
+.contacts-formSection h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 15px;
+}
+
+.contacts-wideField {
   grid-column: 1 / -1;
 }
 
@@ -250,7 +263,6 @@ body {
 }
 
 .contacts-formActions {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -266,12 +278,12 @@ body {
   font-family: var(--contacts-mono-font);
 }
 
-.contacts-empty[hidden] {
+.contacts-shell [hidden] {
   display: none;
 }
 
 html[data-theme="win_classic"] .contacts-shell {
-  width: min(1240px, calc(100% - 24px));
+  width: min(1320px, calc(100% - 24px));
 }
 
 html[data-theme="win_classic"] .contacts-hero,
@@ -280,11 +292,12 @@ html[data-theme="win_classic"] .contacts-listCard,
 html[data-theme="win_classic"] .contacts-editor,
 html[data-theme="win_classic"] .contacts-row,
 html[data-theme="win_classic"] .contacts-notice,
-html[data-theme="win_classic"] .contacts-advanced {
+html[data-theme="win_classic"] .contacts-advanced,
+html[data-theme="win_classic"] .contacts-formSection {
   border-radius: 0;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 980px) {
   .contacts-hero {
     flex-direction: column;
   }
@@ -297,7 +310,7 @@ html[data-theme="win_classic"] .contacts-advanced {
     grid-template-columns: 1fr;
   }
 
-  .contacts-form,
+  .contacts-formSection,
   .contacts-advancedGrid {
     grid-template-columns: 1fr;
   }
