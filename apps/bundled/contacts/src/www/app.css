@@ -14,6 +14,14 @@
   --contacts-shadow: var(--shadow);
   --contacts-font: var(--sans);
   --contacts-mono-font: var(--mono);
+
+  --contacts-info: var(--info);
+  --contacts-info-faint: rgba(var(--info-rgb), 0.06);
+  --contacts-info-soft: rgba(var(--info-rgb), 0.10);
+  --contacts-info-panel: rgba(var(--info-rgb), 0.14);
+  --contacts-info-border: rgba(var(--info-rgb), 0.28);
+  --contacts-info-border-strong: rgba(var(--info-rgb), 0.42);
+  --contacts-info-ring: rgba(var(--info-rgb), 0.16);
 }
 
 * {
@@ -43,11 +51,48 @@ body {
 }
 
 .contacts-hero {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 20px;
   margin-bottom: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 220px at 8% 0%, var(--contacts-info-panel), transparent 62%),
+    linear-gradient(135deg, var(--contacts-info-soft), transparent 42%),
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-card);
+  border-color: var(--contacts-info-border-strong);
+  box-shadow:
+    var(--contacts-shadow),
+    inset 0 1px 0 var(--contacts-info-border);
+}
+
+.contacts-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  background: linear-gradient(180deg, var(--contacts-info), var(--contacts-info-border-strong));
+}
+
+.contacts-hero::after {
+  content: "";
+  position: absolute;
+  right: 20px;
+  bottom: -32px;
+  width: 180px;
+  height: 80px;
+  border-radius: 999px;
+  background: var(--contacts-info-faint);
+  pointer-events: none;
+}
+
+.contacts-heroText,
+.contacts-heroActions {
+  position: relative;
+  z-index: 1;
 }
 
 .contacts-heroText {
@@ -87,6 +132,10 @@ body {
 
 .contacts-toolbar {
   margin-bottom: 16px;
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-card);
+  border-color: var(--contacts-info-border);
 }
 
 .contacts-field {
@@ -133,6 +182,10 @@ body {
 .contacts-listCard,
 .contacts-editor {
   min-width: 0;
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-card);
+  border-color: var(--contacts-info-border);
 }
 
 .contacts-sectionHead {
@@ -172,17 +225,35 @@ body {
   text-align: left;
   cursor: pointer;
   font: inherit;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 .contacts-row:hover,
 .contacts-row:focus-visible {
-  border-color: var(--contacts-line-strong);
-  outline: 2px solid var(--contacts-accent);
+  border-color: var(--contacts-info-border-strong);
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-panel);
+  outline: 2px solid var(--contacts-info-ring);
   outline-offset: 2px;
 }
 
+.contacts-row:hover {
+  transform: translateY(-1px);
+}
+
 .contacts-row.is-selected {
-  border-color: var(--contacts-accent);
+  border-color: var(--contacts-info-border-strong);
+  background:
+    linear-gradient(180deg, var(--contacts-info-soft), var(--contacts-info-faint)),
+    var(--contacts-panel);
+  box-shadow:
+    inset 4px 0 0 var(--contacts-info),
+    0 10px 28px var(--contacts-info-ring);
 }
 
 .contacts-rowTop {
@@ -206,6 +277,11 @@ body {
   overflow-wrap: anywhere;
 }
 
+.contacts-row .pq-badge {
+  border-color: var(--contacts-info-border);
+  background: var(--contacts-info-soft);
+}
+
 .contacts-form {
   display: grid;
   gap: 14px;
@@ -215,16 +291,30 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  border: 1px solid var(--contacts-line);
+  border: 1px solid var(--contacts-info-border);
   border-radius: var(--contacts-radius-sm);
-  background: var(--contacts-panel);
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-panel);
   padding: 14px;
 }
 
 .contacts-formSection h3 {
   grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 15px;
+}
+
+.contacts-formSection h3::before {
+  content: "";
+  width: 8px;
+  height: 1.15em;
+  border-radius: 999px;
+  background: var(--contacts-info);
+  box-shadow: 0 0 0 4px var(--contacts-info-ring);
 }
 
 .contacts-wideField {
@@ -232,9 +322,11 @@ body {
 }
 
 .contacts-advanced {
-  border: 1px solid var(--contacts-line);
+  border: 1px solid var(--contacts-info-border);
   border-radius: var(--contacts-radius-sm);
-  background: var(--contacts-panel);
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-panel);
   padding: 12px;
 }
 
@@ -282,6 +374,62 @@ body {
   display: none;
 }
 
+/* Dark-like themes: keep native fields and opened select menus on-theme.
+   Bright and Win Classic intentionally keep their lighter system look. */
+html[data-theme="dark"] .contacts-shell .pq-input,
+html[data-theme="dark"] .contacts-shell .pq-select,
+html[data-theme="dark"] .contacts-shell .pq-textarea,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-input,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-select,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-textarea {
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--field-bg);
+  color: var(--field-fg);
+  border-color: var(--field-border);
+}
+
+html[data-theme="dark"] .contacts-shell .pq-input:focus,
+html[data-theme="dark"] .contacts-shell .pq-select:focus,
+html[data-theme="dark"] .contacts-shell .pq-textarea:focus,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-input:focus,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-select:focus,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-textarea:focus {
+  background:
+    linear-gradient(180deg, var(--contacts-info-soft), transparent),
+    var(--field-bg2);
+  color: var(--field-fg);
+  border-color: var(--field-border2);
+  box-shadow: 0 0 0 3px var(--field-focus-ring);
+}
+
+html[data-theme="dark"] .contacts-shell .pq-input::placeholder,
+html[data-theme="dark"] .contacts-shell .pq-textarea::placeholder,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-input::placeholder,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-textarea::placeholder {
+  color: var(--field-ph);
+}
+
+html[data-theme="dark"] .contacts-shell .pq-select option,
+html[data-theme="dark"] .contacts-shell .pq-select optgroup,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-select option,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-select optgroup {
+  background: var(--contacts-bg);
+  color: var(--contacts-fg);
+}
+
+html[data-theme="dark"] .contacts-shell .pq-input:-webkit-autofill,
+html[data-theme="dark"] .contacts-shell .pq-textarea:-webkit-autofill,
+html[data-theme="dark"] .contacts-shell .pq-select:-webkit-autofill,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-input:-webkit-autofill,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-textarea:-webkit-autofill,
+html[data-theme="cpunk_orange"] .contacts-shell .pq-select:-webkit-autofill {
+  -webkit-text-fill-color: var(--field-fg);
+  caret-color: var(--field-fg);
+  box-shadow: 0 0 0 1000px var(--field-bg) inset;
+  transition: background-color 9999s ease-out;
+}
+
 html[data-theme="win_classic"] .contacts-shell {
   width: min(1320px, calc(100% - 24px));
 }
@@ -295,6 +443,10 @@ html[data-theme="win_classic"] .contacts-notice,
 html[data-theme="win_classic"] .contacts-advanced,
 html[data-theme="win_classic"] .contacts-formSection {
   border-radius: 0;
+}
+
+html[data-theme="win_classic"] .contacts-row:hover {
+  transform: none;
 }
 
 @media (max-width: 980px) {

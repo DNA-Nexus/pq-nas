@@ -241,7 +241,7 @@ myapp/
 Current shipped app versions:
 
 ```text
-contacts      1.1.1
+contacts      1.1.3
 dropzone      1.0.0
 echostack     1.0.0
 filemgr       1.0.0
