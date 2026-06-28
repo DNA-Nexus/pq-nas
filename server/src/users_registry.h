@@ -20,6 +20,10 @@ struct UserRec {
     std::string notes;
     std::string avatar_url;
 
+    // User preferences persisted across browsers/devices.
+    // Stored as a compact JSON object string; schema is validated by callers.
+    std::string app_prefs_json;
+
     // New: admin profile metadata (non-security)
     std::string group;         // e.g. "Family", "Work"
     std::string email;

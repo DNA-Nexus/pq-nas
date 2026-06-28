@@ -389,6 +389,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     let installedApps = [];     // [{id, ver, name?, title?, ...}, ...]
     let meFpHex = "";           // fingerprint_hex from /api/v4/me (for desktop layout storage)
     let launchPolicyByAppId = {}; // { [appId]: { default_launch, window_profile, allow_user_override, admin_only, show_in_sidebar } }
+    let appUserPrefs = {};       // server-persisted app preferences for current user
+    let appUserPrefsLoaded = false;
+    let appUserPrefsLoadInFlight = null;
 
     const ACTIVITY_PAGE_SIZE = 25;
     let activityOffset = 0;
@@ -1323,7 +1326,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return `pqnas_app_user_prefs_v1::${fp}`;
     }
 
-    function loadAppUserPrefs() {
+    function readLocalAppUserPrefs() {
         try {
             const raw = localStorage.getItem(appUserPrefsStorageKey());
             const j = raw ? JSON.parse(raw) : {};
@@ -1333,10 +1336,94 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         }
     }
 
-    function saveAppUserPrefs(prefs) {
+    function writeLocalAppUserPrefs(prefs) {
         try {
             localStorage.setItem(appUserPrefsStorageKey(), JSON.stringify(prefs || {}));
         } catch {}
+    }
+
+    function loadAppUserPrefs() {
+        return appUserPrefs && typeof appUserPrefs === "object" ? appUserPrefs : {};
+    }
+
+    async function loadAppUserPrefsFromServer(force = false) {
+        if (!authed) {
+            appUserPrefs = readLocalAppUserPrefs();
+            appUserPrefsLoaded = true;
+            return appUserPrefs;
+        }
+
+        if (appUserPrefsLoaded && !force) return appUserPrefs;
+
+        if (appUserPrefsLoadInFlight && !force) {
+            return appUserPrefsLoadInFlight;
+        }
+
+        appUserPrefsLoadInFlight = (async () => {
+            try {
+                const r = await fetch("/api/v4/user/app_prefs", {
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: { "Accept": "application/json" }
+                });
+
+                const j = await r.json().catch(() => null);
+                if (!r.ok || !j || j.ok === false) {
+                    throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+                }
+
+                const serverPrefs =
+                    j.app_prefs && typeof j.app_prefs === "object"
+                        ? j.app_prefs
+                        : {};
+
+                // Migration aid: if server has no prefs yet, keep old browser-local prefs
+                // until the user presses Save. The Save writes them to the server.
+                const localPrefs = readLocalAppUserPrefs();
+                appUserPrefs = Object.keys(serverPrefs).length ? serverPrefs : localPrefs;
+                writeLocalAppUserPrefs(appUserPrefs);
+            } catch (_) {
+                // Offline/old server fallback: keep local settings working.
+                appUserPrefs = readLocalAppUserPrefs();
+            } finally {
+                appUserPrefsLoaded = true;
+                appUserPrefsLoadInFlight = null;
+            }
+
+            return appUserPrefs;
+        })();
+
+        return appUserPrefsLoadInFlight;
+    }
+
+    function saveAppUserPrefs(prefs) {
+        appUserPrefs = prefs && typeof prefs === "object" ? prefs : {};
+        writeLocalAppUserPrefs(appUserPrefs);
+    }
+
+    async function saveAppUserPrefsToServer(prefs) {
+        const bodyPrefs = prefs && typeof prefs === "object" ? prefs : {};
+
+        const r = await fetch("/api/v4/user/app_prefs", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify({ app_prefs: bodyPrefs })
+        });
+
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j || j.ok === false) {
+            throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+        }
+
+        appUserPrefs = j.app_prefs && typeof j.app_prefs === "object" ? j.app_prefs : bodyPrefs;
+        appUserPrefsLoaded = true;
+        writeLocalAppUserPrefs(appUserPrefs);
+        return appUserPrefs;
     }
 
     function appUserPrefForAppId(appId) {
@@ -2658,6 +2745,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             });
         }
 
+        if (!appUserPrefsLoaded && authed) {
+            loadAppUserPrefsFromServer().then(() => {
+                if (currentView === "user_settings") renderUserSettings(messageText, messageKind);
+            });
+        }
+
         const p = userProfile || {};
 
         const passwordLoginHint = (() => {
@@ -3061,6 +3154,20 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 }
 
                 saveAppUserPrefs(prefs);
+
+                try {
+                    await saveAppUserPrefsToServer(prefs);
+                } catch (e) {
+                    renderUserSettings(
+                        tr(
+                            "settings.apps.save_failed",
+                            { error: String(e && e.message ? e.message : e) },
+                            `App settings save failed: ${String(e && e.message ? e.message : e)}`
+                        ),
+                        "err"
+                    );
+                    return;
+                }
 
                 lastAppsKey = "";
                 await loadApps();
@@ -3550,6 +3657,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 if (ai !== bi) return ai.localeCompare(bi);
                 return compareAppVersions(a.ver, b.ver);
             });
+
+            await loadAppUserPrefsFromServer();
 
             const key = JSON.stringify({
                 apps: usable.map(x => [x.id, x.ver, x.name || x.title || ""]),

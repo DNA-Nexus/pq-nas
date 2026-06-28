@@ -8,6 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -185,6 +186,75 @@ void serve_avatar_for_fingerprint(
 
     res.set_header("Cache-Control", "no-store");
     res.set_content(bytes, ct.c_str());
+}
+
+
+bool app_pref_app_id_ok(const std::string& id) {
+    if (id.empty() || id.size() > 96) return false;
+
+    for (unsigned char ch : id) {
+        if (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '.') continue;
+        return false;
+    }
+
+    return true;
+}
+
+bool app_pref_launch_ok(const std::string& v) {
+    return v == "auto" || v == "embedded" || v == "detached";
+}
+
+bool app_pref_window_ok(const std::string& v) {
+    return v == "auto" || v == "small" || v == "normal" || v == "large" || v == "full";
+}
+
+json sanitize_app_prefs_json(const json& in) {
+    json out = json::object();
+    if (!in.is_object()) return out;
+
+    std::size_t count = 0;
+
+    for (auto it = in.begin(); it != in.end(); ++it) {
+        if (count >= 128) break;
+
+        const std::string app_id = it.key();
+        if (!app_pref_app_id_ok(app_id)) continue;
+        if (!it.value().is_object()) continue;
+
+        const json& src = it.value();
+        json one = json::object();
+
+        if (src.contains("show_in_sidebar") && src["show_in_sidebar"].is_boolean()) {
+            one["show_in_sidebar"] = src["show_in_sidebar"].get<bool>();
+        }
+
+        if (src.contains("default_launch") && src["default_launch"].is_string()) {
+            const std::string v = src["default_launch"].get<std::string>();
+            if (app_pref_launch_ok(v)) one["default_launch"] = v;
+        }
+
+        if (src.contains("window_profile") && src["window_profile"].is_string()) {
+            const std::string v = src["window_profile"].get<std::string>();
+            if (app_pref_window_ok(v)) one["window_profile"] = v;
+        }
+
+        if (!one.empty()) {
+            out[app_id] = one;
+            ++count;
+        }
+    }
+
+    return out;
+}
+
+json parse_stored_app_prefs_json(const std::string& raw) {
+    try {
+        if (raw.empty()) return json::object();
+        const json parsed = json::parse(raw);
+        return sanitize_app_prefs_json(parsed);
+    } catch (...) {
+        return json::object();
+    }
 }
 
 } // namespace
@@ -408,6 +478,117 @@ void register_user_avatar_routes(
             }
 
             reply(200, json{{"ok", true}});
+        }
+    );
+
+    srv.Get("/api/v4/user/app_prefs",
+        [c](const httplib::Request& req, httplib::Response& res) {
+            auto reply = [&](int status, const json& body) {
+                reply_json_ctx(c, res, status, body);
+            };
+
+            if (!context_ok(c)) {
+                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "app prefs route context incomplete"}});
+                return;
+            }
+
+            std::string actor_fp;
+            std::string actor_role;
+            if (!c.require_user_auth(req, res, &actor_fp, &actor_role)) return;
+            (void)actor_role;
+
+            if (!c.users->load(c.users_path)) {
+                reply(500, json{{"ok", false}, {"error", "users_reload_failed"}, {"message", "failed to reload users"}});
+                return;
+            }
+
+            auto cur = c.users->get(actor_fp);
+            if (!cur.has_value()) {
+                reply(404, json{{"ok", false}, {"error", "not_found"}, {"message", "user not found"}});
+                return;
+            }
+
+            reply(200, json{
+                {"ok", true},
+                {"app_prefs", parse_stored_app_prefs_json(cur->app_prefs_json)}
+            });
+        }
+    );
+
+    srv.Post("/api/v4/user/app_prefs",
+        [c](const httplib::Request& req, httplib::Response& res) {
+            auto reply = [&](int status, const json& body) {
+                reply_json_ctx(c, res, status, body);
+            };
+
+            if (!context_ok(c)) {
+                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "app prefs route context incomplete"}});
+                return;
+            }
+
+            std::string actor_fp;
+            std::string actor_role;
+            if (!c.require_user_auth(req, res, &actor_fp, &actor_role)) return;
+            if (!c.require_same_origin(req, res)) return;
+            (void)actor_role;
+
+            if (req.body.size() > 64 * 1024) {
+                reply(413, json{{"ok", false}, {"error", "too_large"}, {"message", "app prefs payload too large"}});
+                return;
+            }
+
+            json j;
+            try {
+                j = json::parse(req.body);
+            } catch (...) {
+                reply(400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid json"}});
+                return;
+            }
+
+            const json raw = (j.is_object() && j.contains("app_prefs")) ? j["app_prefs"] : j;
+            if (!raw.is_object()) {
+                reply(400, json{{"ok", false}, {"error", "bad_request"}, {"message", "app_prefs must be an object"}});
+                return;
+            }
+
+            const json prefs = sanitize_app_prefs_json(raw);
+
+            if (!c.users->load(c.users_path)) {
+                reply(500, json{{"ok", false}, {"error", "users_reload_failed"}, {"message", "failed to reload users"}});
+                return;
+            }
+
+            auto cur = c.users->get(actor_fp);
+            if (!cur.has_value()) {
+                reply(404, json{{"ok", false}, {"error", "not_found"}, {"message", "user not found"}});
+                return;
+            }
+
+            pqnas::UserRec u = *cur;
+            u.app_prefs_json = prefs.dump();
+
+            const bool ok_upsert = c.users->upsert(u);
+            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+
+            {
+                pqnas::AuditEvent ev;
+                ev.event = "user.app_prefs_update";
+                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.f["actor_fp"] = actor_fp;
+                ev.f["app_count"] = std::to_string(prefs.size());
+                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                c.audit_append(ev);
+            }
+
+            if (!ok_upsert || !ok_save) {
+                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "app prefs save failed"}});
+                return;
+            }
+
+            reply(200, json{
+                {"ok", true},
+                {"app_prefs", prefs}
+            });
         }
     );
 

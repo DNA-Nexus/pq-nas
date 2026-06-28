@@ -213,6 +213,12 @@ bool UsersRegistry::load(const std::string& path) {
     u.address = it.value("address", "");
     u.avatar_url = it.value("avatar_url", "");
 
+    if (it.contains("app_prefs") && it["app_prefs"].is_object()) {
+      u.app_prefs_json = it["app_prefs"].dump();
+    } else {
+      u.app_prefs_json = "{}";
+    }
+
     // New: storage metadata (defaults for backward compatibility)
     u.storage_state  = norm_storage_state(it.value("storage_state", "unallocated"));
     u.quota_bytes    = safe_u64_from_json(it, "quota_bytes", 0);
@@ -302,6 +308,16 @@ bool UsersRegistry::save(const std::string& path) const {
   for (const auto& k : keys) {
     const auto& u = by_fp_.at(k);
 
+    json app_prefs = json::object();
+    try {
+      if (!u.app_prefs_json.empty()) {
+        json parsed = json::parse(u.app_prefs_json);
+        if (parsed.is_object()) app_prefs = parsed;
+      }
+    } catch (...) {
+      app_prefs = json::object();
+    }
+
     j["users"].push_back(json{
       // Existing
       {"fingerprint", u.fingerprint},
@@ -317,6 +333,7 @@ bool UsersRegistry::save(const std::string& path) const {
       {"email", u.email},
       {"address", u.address},
       {"avatar_url", u.avatar_url},
+      {"app_prefs", app_prefs},
 
       // New: storage metadata
       {"storage_state", norm_storage_state(u.storage_state)},
@@ -443,6 +460,7 @@ bool UsersRegistry::ensure_present_disabled_user(const std::string& fp_hex, cons
   u.email = "";
   u.address = "";
   u.avatar_url = "";
+  u.app_prefs_json = "{}";
 
   // Storage defaults: user cannot use File Manager until allocated.
   u.storage_state = "unallocated";
@@ -472,6 +490,7 @@ bool UsersRegistry::upsert(const UserRec& in) {
   u.role = norm_role(u.role);
   u.status = norm_status(u.status);
   u.storage_state = norm_storage_state(u.storage_state);
+  if (u.app_prefs_json.empty()) u.app_prefs_json = "{}";
 
   by_fp_[u.fingerprint] = u;
   return true;
