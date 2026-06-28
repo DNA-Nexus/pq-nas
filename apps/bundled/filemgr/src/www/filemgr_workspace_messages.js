@@ -362,6 +362,89 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         font-size:14px;
       }
 
+      .wsMsgContactWrap{
+        display:grid;
+        gap:8px;
+      }
+
+      .wsMsgContactText{
+        white-space:pre-wrap;
+        overflow-wrap:anywhere;
+        line-height:1.42;
+        color:rgba(var(--fg-rgb),.96);
+        font-size:14px;
+      }
+
+      .wsMsgContactCard{
+        display:grid;
+        gap:9px;
+        border:1px solid rgba(var(--fg-rgb),0.22);
+        border-radius:16px;
+        background:
+          linear-gradient(180deg, rgba(var(--fg-rgb),0.10), transparent),
+          var(--wsmsg-card-bg);
+        padding:11px 12px;
+      }
+
+      .wsMsgContactTop{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:10px;
+      }
+
+      .wsMsgContactName{
+        min-width:0;
+        font-weight:950;
+        overflow-wrap:anywhere;
+      }
+
+      .wsMsgContactBadge{
+        flex:0 0 auto;
+        border:1px solid rgba(var(--fg-rgb),0.22);
+        border-radius:999px;
+        padding:3px 8px;
+        background:rgba(var(--fg-rgb),0.08);
+        font-size:11px;
+        font-weight:950;
+      }
+
+      .wsMsgContactMeta,
+      .wsMsgContactLine{
+        color:var(--fg-dim);
+        font-size:12px;
+        line-height:1.42;
+        overflow-wrap:anywhere;
+      }
+
+      .wsMsgContactLine strong{
+        color:var(--fg);
+      }
+
+      .wsMsgContactActions{
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+        margin-top:2px;
+      }
+
+      .wsMsgContactAction{
+        border:1px solid rgba(var(--fg-rgb),0.18);
+        border-radius:999px;
+        background:var(--wsmsg-soft-layer);
+        color:var(--fg);
+        cursor:pointer;
+        min-height:26px;
+        padding:0 9px;
+        font-size:11px;
+        font-weight:950;
+      }
+
+      .wsMsgContactAction:hover{
+        border-color:rgba(var(--fg-rgb),0.36);
+        background:rgba(var(--fg-rgb),0.10);
+      }
+
       .wsMsgFoot{
         flex:0 0 auto;
         display:grid;
@@ -719,6 +802,261 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+  function parseContactCardText(text) {
+    const raw = String(text || "");
+    const start = raw.indexOf("[DNA-NEXUS-CONTACT]");
+    const end = raw.indexOf("[/DNA-NEXUS-CONTACT]");
+    if (start < 0 || end < 0 || end <= start) return null;
+
+    const before = raw.slice(0, start).trim();
+    const body = raw.slice(start + "[DNA-NEXUS-CONTACT]".length, end).trim();
+    const after = raw.slice(end + "[/DNA-NEXUS-CONTACT]".length).trim();
+
+    const card = {};
+    for (const line of body.split(/\r?\n/)) {
+      const idx = line.indexOf(":");
+      if (idx <= 0) continue;
+
+      const key = line.slice(0, idx).trim().toLowerCase();
+      const value = line.slice(idx + 1).trim();
+      if (!key || !value) continue;
+
+      if (key === "name") card.name = value;
+      else if (key === "company") card.company = value;
+      else if (key === "title") card.title = value;
+      else if (key === "email") card.email = value;
+      else if (key === "phone") card.phone = value;
+      else if (key === "mobile") card.mobile = value;
+      else if (key === "website") card.website = value;
+      else if (key === "address") card.address = value;
+      else if (key === "tags") card.tags = value;
+      else if (key === "identity") card.identity = value;
+    }
+
+    if (!card.name && !card.company && !card.email && !card.phone && !card.mobile) return null;
+
+    return { before, after, card };
+  }
+
+  function formatContactCardForClipboard(card) {
+    const c = card || {};
+    const lines = [
+      "[DNA-NEXUS-CONTACT]",
+      `Name: ${c.name || ""}`,
+      `Company: ${c.company || ""}`,
+      `Title: ${c.title || ""}`,
+      `Email: ${c.email || ""}`,
+      `Phone: ${c.phone || ""}`,
+      `Mobile: ${c.mobile || ""}`,
+      `Website: ${c.website || ""}`,
+      `Address: ${c.address || ""}`,
+      `Tags: ${c.tags || ""}`,
+      `Identity: ${c.identity || ""}`,
+      "[/DNA-NEXUS-CONTACT]"
+    ];
+    return lines.filter((line) => !line.endsWith(": ")).join("\n");
+  }
+
+  function copyWorkspaceText(value, okText) {
+    const text = String(value || "").trim();
+    if (!text) {
+      setStatus(tr("filemgr.ws.messages.nothing_to_copy", null, "Nothing to copy."));
+      return;
+    }
+
+    const done = () => {
+      setStatus(okText || tr("filemgr.ws.messages.copied", null, "Copied."));
+      setTimeout(() => {
+        if (els && els.status.textContent === (okText || tr("filemgr.ws.messages.copied", null, "Copied."))) {
+          setStatus("");
+        }
+      }, 1200);
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        fallbackCopyWorkspaceText(text, done);
+      });
+      return;
+    }
+
+    fallbackCopyWorkspaceText(text, done);
+  }
+
+  function fallbackCopyWorkspaceText(text, done) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-1000px";
+    area.style.top = "-1000px";
+    document.body.appendChild(area);
+    area.select();
+
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (_) {
+      setStatus(tr("filemgr.ws.messages.copy_failed", null, "Copy failed."), true);
+    } finally {
+      area.remove();
+    }
+  }
+
+  function appendContactLine(parent, label, value) {
+    const v = String(value || "").trim();
+    if (!v) return;
+
+    const line = document.createElement("div");
+    line.className = "wsMsgContactLine";
+
+    const strong = document.createElement("strong");
+    strong.textContent = label + ": ";
+
+    const span = document.createElement("span");
+    span.textContent = v;
+
+    line.appendChild(strong);
+    line.appendChild(span);
+    parent.appendChild(line);
+  }
+
+  function contactCardNode(parsed) {
+    const wrap = document.createElement("div");
+    wrap.className = "wsMsgContactWrap";
+
+    if (parsed.before) {
+      const before = document.createElement("div");
+      before.className = "wsMsgContactText";
+      before.textContent = parsed.before;
+      wrap.appendChild(before);
+    }
+
+    const card = parsed.card || {};
+    const box = document.createElement("div");
+    box.className = "wsMsgContactCard";
+
+    const top = document.createElement("div");
+    top.className = "wsMsgContactTop";
+
+    const name = document.createElement("div");
+    name.className = "wsMsgContactName";
+    name.textContent = card.name || card.company || card.email || tr("filemgr.ws.messages.contact_card", null, "Contact card");
+
+    const badge = document.createElement("div");
+    badge.className = "wsMsgContactBadge";
+    badge.textContent = tr("filemgr.ws.messages.contact", null, "Contact");
+
+    top.appendChild(name);
+    top.appendChild(badge);
+    box.appendChild(top);
+
+    const metaParts = [card.company, card.title].filter(Boolean);
+    if (metaParts.length) {
+      const meta = document.createElement("div");
+      meta.className = "wsMsgContactMeta";
+      meta.textContent = metaParts.join(" • ");
+      box.appendChild(meta);
+    }
+
+    appendContactLine(box, tr("filemgr.ws.messages.email", null, "Email"), card.email);
+    appendContactLine(box, tr("filemgr.ws.messages.phone", null, "Phone"), card.phone);
+    appendContactLine(box, tr("filemgr.ws.messages.mobile", null, "Mobile"), card.mobile);
+    appendContactLine(box, tr("filemgr.ws.messages.website", null, "Website"), card.website);
+    appendContactLine(box, tr("filemgr.ws.messages.address", null, "Address"), card.address);
+    appendContactLine(box, tr("filemgr.ws.messages.tags", null, "Tags"), card.tags);
+
+    const actions = document.createElement("div");
+    actions.className = "wsMsgContactActions";
+
+    const copyCard = document.createElement("button");
+    copyCard.type = "button";
+    copyCard.className = "wsMsgContactAction";
+    copyCard.textContent = tr("filemgr.ws.messages.copy_contact", null, "Copy contact");
+    copyCard.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      copyWorkspaceText(formatContactCardForClipboard(card), tr("filemgr.ws.messages.contact_copied", null, "Contact copied."));
+    });
+    actions.appendChild(copyCard);
+
+    if (card.address) {
+      const copyAddress = document.createElement("button");
+      copyAddress.type = "button";
+      copyAddress.className = "wsMsgContactAction";
+      copyAddress.textContent = tr("filemgr.ws.messages.copy_address", null, "Copy address");
+      copyAddress.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        copyWorkspaceText(card.address, tr("filemgr.ws.messages.address_copied", null, "Address copied."));
+      });
+      actions.appendChild(copyAddress);
+    }
+
+    if (card.email) {
+      const copyEmail = document.createElement("button");
+      copyEmail.type = "button";
+      copyEmail.className = "wsMsgContactAction";
+      copyEmail.textContent = tr("filemgr.ws.messages.copy_email", null, "Copy email");
+      copyEmail.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        copyWorkspaceText(card.email, tr("filemgr.ws.messages.email_copied", null, "Email copied."));
+      });
+      actions.appendChild(copyEmail);
+    }
+
+    if (card.phone || card.mobile) {
+      const copyPhone = document.createElement("button");
+      copyPhone.type = "button";
+      copyPhone.className = "wsMsgContactAction";
+      copyPhone.textContent = tr("filemgr.ws.messages.copy_phone", null, "Copy phone");
+      copyPhone.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        copyWorkspaceText(card.phone || card.mobile, tr("filemgr.ws.messages.phone_copied", null, "Phone copied."));
+      });
+      actions.appendChild(copyPhone);
+    }
+
+    if (card.website) {
+      const openWebsite = document.createElement("button");
+      openWebsite.type = "button";
+      openWebsite.className = "wsMsgContactAction";
+      openWebsite.textContent = tr("filemgr.ws.messages.open_website", null, "Open website");
+      openWebsite.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        let url = String(card.website || "").trim();
+        if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+        window.open(url, "_blank", "noopener,noreferrer");
+      });
+      actions.appendChild(openWebsite);
+    }
+
+    box.appendChild(actions);
+    wrap.appendChild(box);
+
+    if (parsed.after) {
+      const after = document.createElement("div");
+      after.className = "wsMsgContactText";
+      after.textContent = parsed.after;
+      wrap.appendChild(after);
+    }
+
+    return wrap;
+  }
+
+  function messageBodyNode(text) {
+    const parsed = parseContactCardText(text);
+    if (parsed) return contactCardNode(parsed);
+
+    const body = document.createElement("div");
+    body.className = "wsMsgBody";
+    body.textContent = String(text || "");
+    return body;
+  }
+
   function normalizeAttachmentRef(raw) {
     if (!raw || typeof raw !== "object") return null;
 
@@ -1057,6 +1395,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     });
 
+    els.input.addEventListener("paste", () => {
+      setTimeout(() => {
+        if (parseContactCardText(els.input.value)) {
+          setStatus(tr("filemgr.ws.messages.contact_card_detected", null, "Contact card detected. Send to share it with workspace members."));
+        }
+      }, 0);
+    });
+
     installAttachmentDropHandlers();
 
     return els;
@@ -1315,9 +1661,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       meta.appendChild(author);
       meta.appendChild(metaRight);
 
-      const body = document.createElement("div");
-      body.className = "wsMsgBody";
-      body.textContent = String(msg.body || "");
+      const body = messageBodyNode(msg.body || "");
 
       row.appendChild(meta);
       row.appendChild(body);
