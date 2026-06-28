@@ -3,8 +3,12 @@
 
 #include "people_contacts.h"
 
+#include <chrono>
+#include <deque>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -101,6 +105,116 @@ std::string json_string_local(const json& j, const char* key) {
     auto it = j.find(key);
     if (it == j.end() || !it->is_string()) return {};
     return it->get<std::string>();
+}
+
+std::string people_request_ip_local(const httplib::Request& req) {
+    return req.remote_addr.empty() ? "?" : req.remote_addr;
+}
+
+bool people_rate_limit_allow_local(const std::string& route,
+                                  const std::string& actor_fp,
+                                  const std::string& ip,
+                                  int max_hits,
+                                  std::chrono::seconds window) {
+    using Clock = std::chrono::steady_clock;
+
+    static std::mutex mu;
+    static std::unordered_map<std::string, std::deque<Clock::time_point>> hits;
+
+    const auto now = Clock::now();
+    const auto cutoff = now - window;
+    const std::string actor = actor_fp.empty() ? "?" : actor_fp;
+    const std::string remote = ip.empty() ? "?" : ip;
+    const std::string key = route + "\n" + actor + "\n" + remote;
+
+    std::lock_guard<std::mutex> lock(mu);
+
+    auto& q = hits[key];
+    while (!q.empty() && q.front() < cutoff) q.pop_front();
+
+    if (static_cast<int>(q.size()) >= max_hits) return false;
+
+    q.push_back(now);
+
+    if (hits.size() > 4096) {
+        for (auto it = hits.begin(); it != hits.end(); ) {
+            auto& bucket = it->second;
+            while (!bucket.empty() && bucket.front() < cutoff) bucket.pop_front();
+
+            if (bucket.empty()) {
+                it = hits.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return true;
+}
+
+void reply_people_rate_limited_local(const PeopleRoutesDeps& deps, httplib::Response& res) {
+    reply_json_local(deps, res, 429, json{
+        {"ok", false},
+        {"error", "rate_limited"},
+        {"message", "too many requests"}
+    });
+}
+
+bool reject_people_body_too_large_local(const PeopleRoutesDeps& deps,
+                                       const httplib::Request& req,
+                                       httplib::Response& res,
+                                       std::size_t max_bytes) {
+    if (req.body.size() <= max_bytes) return false;
+
+    reply_json_local(deps, res, 413, json{
+        {"ok", false},
+        {"error", "payload_too_large"},
+        {"message", "request body too large"}
+    });
+    return true;
+}
+
+bool people_check_len_local(const std::string& value,
+                            std::size_t max_bytes,
+                            const char* field,
+                            std::string* bad_field) {
+    if (value.size() <= max_bytes) return true;
+    if (bad_field) *bad_field = field ? field : "field";
+    return false;
+}
+
+bool people_contact_lengths_ok_local(const PeopleContactRecord& input, std::string* bad_field) {
+    constexpr std::size_t kTiny = 64;
+    constexpr std::size_t kShort = 256;
+    constexpr std::size_t kMedium = 512;
+    constexpr std::size_t kLong = 1024;
+    constexpr std::size_t kNotes = 8192;
+
+    return
+        people_check_len_local(input.subject_user_id, kShort, "subject_user_id", bad_field) &&
+        people_check_len_local(input.subject_fingerprint, 128, "subject_fingerprint", bad_field) &&
+        people_check_len_local(input.subject_kind, kTiny, "subject_kind", bad_field) &&
+        people_check_len_local(input.display_name, kShort, "display_name", bad_field) &&
+        people_check_len_local(input.nickname, kShort, "nickname", bad_field) &&
+        people_check_len_local(input.contact_type, kTiny, "contact_type", bad_field) &&
+        people_check_len_local(input.company, kShort, "company", bad_field) &&
+        people_check_len_local(input.title, kShort, "title", bad_field) &&
+        people_check_len_local(input.email, kMedium, "email", bad_field) &&
+        people_check_len_local(input.phone, kShort, "phone", bad_field) &&
+        people_check_len_local(input.mobile, kShort, "mobile", bad_field) &&
+        people_check_len_local(input.website, kMedium, "website", bad_field) &&
+        people_check_len_local(input.street, kMedium, "street", bad_field) &&
+        people_check_len_local(input.postal_code, kShort, "postal_code", bad_field) &&
+        people_check_len_local(input.city, kShort, "city", bad_field) &&
+        people_check_len_local(input.country, kShort, "country", bad_field) &&
+        people_check_len_local(input.delivery_name, kShort, "delivery_name", bad_field) &&
+        people_check_len_local(input.delivery_street, kMedium, "delivery_street", bad_field) &&
+        people_check_len_local(input.delivery_postal_code, kShort, "delivery_postal_code", bad_field) &&
+        people_check_len_local(input.delivery_city, kShort, "delivery_city", bad_field) &&
+        people_check_len_local(input.delivery_country, kShort, "delivery_country", bad_field) &&
+        people_check_len_local(input.tags, kLong, "tags", bad_field) &&
+        people_check_len_local(input.status, kTiny, "status", bad_field) &&
+        people_check_len_local(input.notes, kNotes, "notes", bad_field);
 }
 
 } // namespace
@@ -250,6 +364,27 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
 
         actor_fp = people_canonical_fingerprint(actor_fp);
 
+        if (!people_valid_fingerprint(actor_fp)) {
+            reply_json_local(deps, res, 403, json{
+                {"ok", false},
+                {"error", "forbidden"},
+                {"message", "invalid authenticated fingerprint"}
+            });
+            return;
+        }
+
+        if (!people_rate_limit_allow_local(
+                "people.upsert",
+                actor_fp,
+                people_request_ip_local(req),
+                30,
+                std::chrono::minutes(1))) {
+            reply_people_rate_limited_local(deps, res);
+            return;
+        }
+
+        if (reject_people_body_too_large_local(deps, req, res, 64 * 1024)) return;
+
         json body;
         try {
             body = json::parse(req.body.empty() ? "{}" : req.body);
@@ -299,6 +434,17 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
 
         input.subject_fingerprint = people_canonical_fingerprint(input.subject_fingerprint);
 
+        std::string bad_field;
+        if (!people_contact_lengths_ok_local(input, &bad_field)) {
+            reply_json_local(deps, res, 400, json{
+                {"ok", false},
+                {"error", "field_too_large"},
+                {"message", "contact field is too large"},
+                {"field", bad_field}
+            });
+            return;
+        }
+
         if (!people_valid_fingerprint(actor_fp) || !people_valid_fingerprint(input.subject_fingerprint)) {
             reply_json_local(deps, res, 400, json{
                 {"ok", false},
@@ -332,6 +478,27 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
 
         actor_fp = people_canonical_fingerprint(actor_fp);
+
+        if (!people_valid_fingerprint(actor_fp)) {
+            reply_json_local(deps, res, 403, json{
+                {"ok", false},
+                {"error", "forbidden"},
+                {"message", "invalid authenticated fingerprint"}
+            });
+            return;
+        }
+
+        if (!people_rate_limit_allow_local(
+                "people.delete",
+                actor_fp,
+                people_request_ip_local(req),
+                60,
+                std::chrono::minutes(1))) {
+            reply_people_rate_limited_local(deps, res);
+            return;
+        }
+
+        if (reject_people_body_too_large_local(deps, req, res, 16 * 1024)) return;
 
         json body;
         try {
