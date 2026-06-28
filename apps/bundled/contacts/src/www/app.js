@@ -777,15 +777,27 @@
     return hits;
   }
 
+  function duplicateReasonLabel(reason) {
+    const r = String(reason || "");
+    if (r === "same email") return tr("contacts.duplicate.reason.same_email", null, "same email");
+    if (r === "same phone") return tr("contacts.duplicate.reason.same_phone", null, "same phone");
+    if (r === "same mobile") return tr("contacts.duplicate.reason.same_mobile", null, "same mobile");
+    if (r === "same name and company") return tr("contacts.duplicate.reason.same_name_company", null, "same name and company");
+    if (r === "same name") return tr("contacts.duplicate.reason.same_name", null, "same name");
+    return r;
+  }
+
   function duplicateItems(hits) {
     const items = hits.slice(0, 5).map((hit) => {
       const c = hit.contact || {};
       const label = c.display_name || c.company || shortFingerprint(c.subject_fingerprint);
-      return `${label}: ${hit.reasons.join(", ")}`;
+      const reasons = (hit.reasons || []).map(duplicateReasonLabel).join(", ");
+      return `${label}: ${reasons}`;
     });
 
     if (hits.length > 5) {
-      items.push(`plus ${hits.length - 5} more`);
+      const count = hits.length - 5;
+      items.push(tr("contacts.duplicate.plus_more", { count }, `plus ${count} more`));
     }
 
     return items;
@@ -846,13 +858,13 @@
   async function copyText(text, successMessage) {
     const value = String(text || "").trim();
     if (!value) {
-      setNotice("Nothing to copy.", "warn");
+      setNotice(tr("contacts.copy_nothing", null, "Nothing to copy."), "warn");
       return;
     }
 
     try {
       await navigator.clipboard.writeText(value);
-      setNotice(successMessage || "Copied.", "ok");
+      setNotice(successMessage || tr("contacts.copied", null, "Copied."), "ok");
       return;
     } catch (_) {}
 
@@ -867,9 +879,9 @@
 
     try {
       document.execCommand("copy");
-      setNotice(successMessage || "Copied.", "ok");
+      setNotice(successMessage || tr("contacts.copied", null, "Copied."), "ok");
     } catch (_) {
-      setNotice("Copy failed. Select and copy manually.", "err");
+      setNotice(tr("contacts.copy_failed_manual", null, "Copy failed. Select and copy manually."), "err");
     } finally {
       area.remove();
     }
@@ -880,26 +892,26 @@
   }
 
   function copyContactCard() {
-    copyText(formatContactCard(currentContactForAction()), "Contact card copied.");
+    copyText(formatContactCard(currentContactForAction()), tr("contacts.contact_card_copied", null, "Contact card copied."));
   }
 
   function copyContactAddress() {
-    copyText(formatAddress(currentContactForAction()), "Address copied.");
+    copyText(formatAddress(currentContactForAction()), tr("contacts.address_copied", null, "Address copied."));
   }
 
   function copyContactEmail() {
-    copyText(currentContactForAction().email, "Email copied.");
+    copyText(currentContactForAction().email, tr("contacts.email_copied", null, "Email copied."));
   }
 
   function copyContactPhone() {
     const c = currentContactForAction();
-    copyText(c.phone || c.mobile, "Phone copied.");
+    copyText(c.phone || c.mobile, tr("contacts.phone_copied", null, "Phone copied."));
   }
 
   function openContactWebsite() {
     let url = String(currentContactForAction().website || "").trim();
     if (!url) {
-      setNotice("No website saved for this contact.", "warn");
+      setNotice(tr("contacts.no_website", null, "No website saved for this contact."), "warn");
       return;
     }
 
@@ -930,7 +942,8 @@
 
       renderList();
     } catch (error) {
-      setNotice(`Failed to load contacts: ${error.message || error}`, "err");
+      const detail = String(error && error.message ? error.message : error);
+      setNotice(tr("contacts.load_failed", { error: detail }, `Failed to load contacts: ${detail}`), "err");
     } finally {
       state.loading = false;
       renderList();
@@ -944,23 +957,23 @@
     const existing = selectedContact();
 
     if (!payload.subject_fingerprint) {
-      setNotice("Identity anchor is missing.", "err");
+      setNotice(tr("contacts.identity_missing", null, "Identity anchor is missing."), "err");
       return;
     }
 
     if (!existing && payload.subject_kind === "local_user" && !knownIdentityByFingerprint(payload.subject_fingerprint)) {
-      setNotice("Choose a known DNA-Nexus user first.", "err");
+      setNotice(tr("contacts.choose_known_user_first", null, "Choose a known DNA-Nexus user first."), "err");
       $("identitySelect").focus();
       return;
     }
 
     if (!existing && contactByFingerprint(payload.subject_fingerprint)) {
-      setNotice("This identity is already saved. Select it from the address book.", "warn");
+      setNotice(tr("contacts.identity_already_saved", null, "This identity is already saved. Select it from the address book."), "warn");
       return;
     }
 
     if (!payload.display_name) {
-      setNotice("Display name is required.", "err");
+      setNotice(tr("contacts.display_name_required", null, "Display name is required."), "err");
       $("displayNameInput").focus();
       return;
     }
@@ -968,16 +981,16 @@
     const dupes = duplicateCandidates(payload);
     if (dupes.length) {
       const ok = await askConfirm({
-        title: "Possible duplicate",
-        message: "A similar contact already exists.",
+        title: tr("contacts.duplicate_title", null, "Possible duplicate"),
+        message: tr("contacts.duplicate_message", null, "A similar contact already exists."),
         items: duplicateItems(dupes),
-        detail: "Save this contact anyway?",
-        confirmText: "Save anyway",
-        cancelText: "Review"
+        detail: tr("contacts.duplicate_detail", null, "Save this contact anyway?"),
+        confirmText: tr("contacts.duplicate_save_anyway", null, "Save anyway"),
+        cancelText: tr("contacts.duplicate_review", null, "Review")
       });
 
       if (!ok) {
-        setNotice("Save cancelled because a possible duplicate was found.", "warn");
+        setNotice(tr("contacts.save_cancelled_duplicate", null, "Save cancelled because a possible duplicate was found."), "warn");
         return;
       }
     }
@@ -991,10 +1004,11 @@
 
       const saved = body.contact || payload;
       state.selectedFingerprint = normalizeFingerprint(saved.subject_fingerprint || payload.subject_fingerprint);
-      setNotice("Contact saved.", "ok");
+      setNotice(tr("contacts.contact_saved", null, "Contact saved."), "ok");
       await loadContacts();
     } catch (error) {
-      setNotice(`Save failed: ${error.message || error}`, "err");
+      const detail = String(error && error.message ? error.message : error);
+      setNotice(tr("contacts.save_failed", { error: detail }, `Save failed: ${detail}`), "err");
     }
   }
 
@@ -1005,11 +1019,11 @@
     const fp = normalizeFingerprint(contact.subject_fingerprint);
     const label = contact.display_name || shortFingerprint(fp);
     const ok = await askConfirm({
-      title: "Delete contact?",
-      message: `Delete ${label} from Contacts?`,
-      detail: "This removes the contact from your private address book.",
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      title: tr("contacts.delete_contact_title", null, "Delete contact?"),
+      message: tr("contacts.delete_contact_message", { label }, `Delete ${label} from Contacts?`),
+      detail: tr("contacts.delete_contact_detail", null, "This removes the contact from your private address book."),
+      confirmText: tr("contacts.delete", null, "Delete"),
+      cancelText: tr("contacts.cancel", null, "Cancel"),
       danger: true
     });
     if (!ok) return;
@@ -1021,11 +1035,12 @@
         body: JSON.stringify({ subject_fingerprint: fp })
       });
 
-      setNotice("Contact deleted.", "ok");
+      setNotice(tr("contacts.contact_deleted", null, "Contact deleted."), "ok");
       clearForm();
       await loadContacts();
     } catch (error) {
-      setNotice(`Delete failed: ${error.message || error}`, "err");
+      const detail = String(error && error.message ? error.message : error);
+      setNotice(tr("contacts.delete_failed", { error: detail }, `Delete failed: ${detail}`), "err");
     }
   }
 
@@ -1040,7 +1055,7 @@
   function exportVCard() {
     const contacts = filteredContacts();
     if (!contacts.length) {
-      setNotice("No contacts to export.", "warn");
+      setNotice(tr("contacts.no_contacts_export", null, "No contacts to export."), "warn");
       return;
     }
 
@@ -1110,7 +1125,7 @@
   function exportCSV() {
     const contacts = filteredContacts();
     if (!contacts.length) {
-      setNotice("No contacts to export.", "warn");
+      setNotice(tr("contacts.no_contacts_export", null, "No contacts to export."), "warn");
       return;
     }
 
@@ -1463,19 +1478,31 @@
     });
   }
 
+  async function waitForI18nReady() {
+    try {
+      const i18n = window.PQNAS_I18N;
+      if (i18n && typeof i18n.ready === "function") {
+        await i18n.ready();
+      }
+    } catch (_) {}
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
     bindConfirmModalEvents();
-    translateStaticContactsUi();
-    bindEvents();
-    setEditorMode("new");
-    clearForm();
-    await initVersionBadge();
-    await loadContacts();
 
     window.addEventListener("pqnas-language-changed", () => {
       translateStaticContactsUi();
       renderList();
       initVersionBadge().catch(() => {});
     });
+
+    await waitForI18nReady();
+    translateStaticContactsUi();
+
+    bindEvents();
+    setEditorMode("new");
+    clearForm();
+    await initVersionBadge();
+    await loadContacts();
   });
 })();
