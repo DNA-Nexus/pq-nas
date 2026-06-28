@@ -388,7 +388,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     // app state
     let installedApps = [];     // [{id, ver, name?, title?, ...}, ...]
     let meFpHex = "";           // fingerprint_hex from /api/v4/me (for desktop layout storage)
-    let launchPolicyByAppId = {}; // { [appId]: { default_launch, window_profile, allow_user_override } }
+    let launchPolicyByAppId = {}; // { [appId]: { default_launch, window_profile, allow_user_override, admin_only, show_in_sidebar } }
 
     const ACTIVITY_PAGE_SIZE = 25;
     let activityOffset = 0;
@@ -1243,9 +1243,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     }
 
     function appDesktopEnabled(app, mani) {
-        // Old manifests without "surfaces" stay visible on desktop.
-        if (!manifestHasSurfaces(mani)) return true;
-        return manifestSurfaceEnabled(mani, "desktop", true);
+        // Product decision: every installed app gets a desktop shortcut.
+        // Server/API visibility still controls which apps the current user can see.
+        return true;
     }
 
     function appSidebarEnabled(app, mani) {
@@ -1313,12 +1313,71 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             default_launch: (p && p.default_launch) || "auto",
             window_profile: (p && p.window_profile) || "auto",
             allow_user_override: !!(p && p.allow_user_override),
-            admin_only: !!(p && p.admin_only)
+            admin_only: !!(p && p.admin_only),
+            show_in_sidebar: (p && typeof p.show_in_sidebar === "boolean") ? p.show_in_sidebar : undefined
+        };
+    }
+
+    function appUserPrefsStorageKey() {
+        const fp = meFpHex ? meFpHex : "anon";
+        return `pqnas_app_user_prefs_v1::${fp}`;
+    }
+
+    function loadAppUserPrefs() {
+        try {
+            const raw = localStorage.getItem(appUserPrefsStorageKey());
+            const j = raw ? JSON.parse(raw) : {};
+            return j && typeof j === "object" ? j : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function saveAppUserPrefs(prefs) {
+        try {
+            localStorage.setItem(appUserPrefsStorageKey(), JSON.stringify(prefs || {}));
+        } catch {}
+    }
+
+    function appUserPrefForAppId(appId) {
+        const all = loadAppUserPrefs();
+        const p = all && all[appId];
+        return p && typeof p === "object" ? p : {};
+    }
+
+    function effectiveLaunchPolicyForApp(app, mani = null) {
+        const pol = launchPolicyForAppId(app.id);
+        const pref = appUserPrefForAppId(app.id);
+        const canOverride = !!pol.allow_user_override;
+        const manifestSidebarDefault = appSidebarEnabled(app, mani);
+
+        return {
+            default_launch:
+                canOverride && typeof pref.default_launch === "string"
+                    ? pref.default_launch
+                    : pol.default_launch,
+
+            window_profile:
+                canOverride && typeof pref.window_profile === "string"
+                    ? pref.window_profile
+                    : pol.window_profile,
+
+            show_in_sidebar:
+                canOverride && typeof pref.show_in_sidebar === "boolean"
+                    ? pref.show_in_sidebar
+                    : (
+                        typeof pol.show_in_sidebar === "boolean"
+                            ? pol.show_in_sidebar
+                            : manifestSidebarDefault
+                    ),
+
+            allow_user_override: canOverride,
+            admin_only: !!pol.admin_only
         };
     }
 
     function resolveLaunchMode(app) {
-        const pol = launchPolicyForAppId(app.id);
+        const pol = effectiveLaunchPolicyForApp(app);
         if (pol.default_launch === "detached") return "detached";
         if (pol.default_launch === "embedded") return "embedded";
         return "embedded"; // auto for now
@@ -1360,7 +1419,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     }
 
     function openAppDetached(app) {
-        const pol = launchPolicyForAppId(app.id);
+        const pol = effectiveLaunchPolicyForApp(app);
         const url = appUrl(app, "window");
         const name = `pqnas_app_${app.id}`;
         const features = popupFeaturesForProfile(pol.window_profile || "auto");
@@ -2803,6 +2862,111 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         `;
         }).join("");
 
+        function renderUserAppPrefsCard() {
+            const apps = Array.isArray(installedApps) ? installedApps.slice() : [];
+
+            if (!apps.length) {
+                return `
+                    <div class="card" style="padding:14px; margin-top:12px;">
+                        <h3 style="margin:0 0 8px 0; font-size:18px;">
+                            ${escapeHtml(tr("settings.apps.title", null, "Apps"))}
+                        </h3>
+                        <div class="mini">${escapeHtml(tr("settings.apps.none", null, "No installed apps found."))}</div>
+                    </div>
+                `;
+            }
+
+            const rows = apps.map((app) => {
+                const id = String(app.id || "");
+                if (!id) return "";
+
+                const label = escapeHtml(app.name || app.title || id);
+                const pol = launchPolicyForAppId(id);
+                const pref = appUserPrefForAppId(id);
+                const can = !!pol.allow_user_override;
+
+                const sidebar =
+                    typeof pref.show_in_sidebar === "boolean"
+                        ? pref.show_in_sidebar
+                        : (
+                            typeof pol.show_in_sidebar === "boolean"
+                                ? pol.show_in_sidebar
+                                : true
+                        );
+
+                const launch = pref.default_launch || pol.default_launch || "auto";
+                const win = pref.window_profile || pol.window_profile || "auto";
+                const disabled = can ? "" : "disabled";
+
+                return `
+                    <div
+                        class="card"
+                        data-settings-app-row="${escapeHtml(id)}"
+                        style="padding:12px; margin-top:10px; border-radius:14px;"
+                    >
+                        <div style="font-weight:900;">${label}</div>
+                        <div class="mini mono">${escapeHtml(id)} · ${escapeHtml(app.ver || app.version || "")}</div>
+
+                        ${can ? "" : `
+                            <div class="mini" style="margin-top:6px;">
+                                ${escapeHtml(tr("settings.apps.admin_locked", null, "Admin has disabled user override for this app."))}
+                            </div>
+                        `}
+
+                        <label style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+                            <input
+                                type="checkbox"
+                                class="settingsAppSidebar"
+                                data-app-id="${escapeHtml(id)}"
+                                ${sidebar ? "checked" : ""}
+                                ${disabled}
+                            >
+                            <span>${escapeHtml(tr("settings.apps.show_in_sidebar", null, "Show in left quick menu"))}</span>
+                        </label>
+
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px;">
+                            <label>
+                                <div class="mini">${escapeHtml(tr("settings.apps.open_mode", null, "Open mode"))}</div>
+                                <select class="settingsAppLaunch" data-app-id="${escapeHtml(id)}" ${disabled}>
+                                    <option value="auto" ${launch === "auto" ? "selected" : ""}>${escapeHtml(tr("settings.apps.auto", null, "Auto"))}</option>
+                                    <option value="embedded" ${launch === "embedded" ? "selected" : ""}>${escapeHtml(tr("settings.apps.embedded", null, "Embedded"))}</option>
+                                    <option value="detached" ${launch === "detached" ? "selected" : ""}>${escapeHtml(tr("settings.apps.detached", null, "Own window"))}</option>
+                                </select>
+                            </label>
+
+                            <label>
+                                <div class="mini">${escapeHtml(tr("settings.apps.window_size", null, "Window size"))}</div>
+                                <select class="settingsAppWindow" data-app-id="${escapeHtml(id)}" ${disabled}>
+                                    <option value="auto" ${win === "auto" ? "selected" : ""}>${escapeHtml(tr("settings.apps.auto", null, "Auto"))}</option>
+                                    <option value="small" ${win === "small" ? "selected" : ""}>${escapeHtml(tr("settings.apps.small", null, "Small"))}</option>
+                                    <option value="normal" ${win === "normal" ? "selected" : ""}>${escapeHtml(tr("settings.apps.normal", null, "Normal"))}</option>
+                                    <option value="large" ${win === "large" ? "selected" : ""}>${escapeHtml(tr("settings.apps.large", null, "Large"))}</option>
+                                    <option value="full" ${win === "full" ? "selected" : ""}>${escapeHtml(tr("settings.apps.full", null, "Full"))}</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            return `
+                <div class="card" style="padding:14px; margin-top:12px;">
+                    <h3 style="margin:0 0 8px 0; font-size:18px;">
+                        ${escapeHtml(tr("settings.apps.title", null, "Apps"))}
+                    </h3>
+                    <div class="mini" style="line-height:1.5;">
+                        ${escapeHtml(tr("settings.apps.desc", null, "Choose which installed apps appear in the left quick menu and how they open."))}
+                    </div>
+                    ${rows}
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+                        <button class="btn" id="settingsAppPrefsSaveBtn" type="button">
+                            ${escapeHtml(tr("settings.apps.save", null, "Save app settings"))}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
         const homeContent = setHomeContentHtml(`
         <div style="max-width:760px; font-family:var(--sans);">
             <h3 style="margin:0 0 8px 0; font-size:18px; font-family:inherit;">
@@ -2822,6 +2986,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             
         ${profileCard}
         ${passwordCard}
+        ${renderUserAppPrefsCard()}
         
             <div class="card" style="padding:14px; margin-top:12px;">
                 <h3 style="margin:0 0 8px 0; font-size:18px;">
@@ -2868,6 +3033,45 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         </div>
     `);
         fitHomeContentToViewport();
+
+        const appPrefsSaveBtn = (homeContent || homeBlurb).querySelector("#settingsAppPrefsSaveBtn");
+        if (appPrefsSaveBtn) {
+            appPrefsSaveBtn.addEventListener("click", async () => {
+                const prefs = loadAppUserPrefs();
+
+                for (const app of installedApps || []) {
+                    const id = String(app && app.id ? app.id : "");
+                    if (!id) continue;
+
+                    const pol = launchPolicyForAppId(id);
+                    if (!pol.allow_user_override) continue;
+
+                    const escAttr = (v) => String(v).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+                    const selectorId = escAttr(id);
+
+                    const sidebar = (homeContent || homeBlurb).querySelector(`.settingsAppSidebar[data-app-id="${selectorId}"]`);
+                    const launch = (homeContent || homeBlurb).querySelector(`.settingsAppLaunch[data-app-id="${selectorId}"]`);
+                    const win = (homeContent || homeBlurb).querySelector(`.settingsAppWindow[data-app-id="${selectorId}"]`);
+
+                    prefs[id] = {
+                        show_in_sidebar: !!(sidebar && sidebar.checked),
+                        default_launch: launch ? launch.value : "auto",
+                        window_profile: win ? win.value : "auto"
+                    };
+                }
+
+                saveAppUserPrefs(prefs);
+
+                lastAppsKey = "";
+                await loadApps();
+
+                if (currentView === "home") {
+                    await renderDesktopIcons();
+                }
+
+                renderUserSettings(tr("settings.apps.saved", null, "App settings saved."), "ok");
+            });
+        }
 
         const profileSaveBtn = (homeContent || homeBlurb).querySelector("#userProfileSaveBtn");
         if (profileSaveBtn) {
@@ -3347,7 +3551,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 return compareAppVersions(a.ver, b.ver);
             });
 
-            const key = JSON.stringify(usable.map(x => [x.id, x.ver, x.name || x.title || ""]));
+            const key = JSON.stringify({
+                apps: usable.map(x => [x.id, x.ver, x.name || x.title || ""]),
+                policy: launchPolicyByAppId || {},
+                user_prefs: loadAppUserPrefs()
+            });
             installedApps = usable;
 
             if (key === lastAppsKey) return;
@@ -3360,7 +3568,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             for (const a of usable) {
                 const mani = await fetchManifest(a.id, a.ver);
 
-                if (!appSidebarEnabled(a, mani)) {
+                const effective = effectiveLaunchPolicyForApp(a, mani);
+                if (!effective.show_in_sidebar) {
                     continue;
                 }
 

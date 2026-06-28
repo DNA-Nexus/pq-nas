@@ -767,7 +767,8 @@ static json app_launch_policy_defaults_json() {
         {"default_launch", "embedded"},
         {"window_profile", "auto"},
         {"allow_user_override", true},
-        {"admin_only", false}
+        {"admin_only", false},
+        {"show_in_sidebar", true}
     };
 }
 
@@ -802,10 +803,16 @@ static json normalize_app_launch_policy_entry(const json& in) {
             ? in["admin_only"].get<bool>()
             : false;
 
+    const bool show_in_sidebar =
+        (in.is_object() && in.contains("show_in_sidebar") && in["show_in_sidebar"].is_boolean())
+            ? in["show_in_sidebar"].get<bool>()
+            : true;
+
     if (app_launch_value_ok(default_launch)) out["default_launch"] = default_launch;
     if (app_window_profile_ok(window_profile)) out["window_profile"] = window_profile;
     out["allow_user_override"] = allow_user_override;
     out["admin_only"] = admin_only;
+    out["show_in_sidebar"] = show_in_sidebar;
 
     return out;
 }

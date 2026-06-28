@@ -943,6 +943,11 @@ srv.Post("/api/v4/apps/launch_policy", [=](const httplib::Request& req, httplib:
             ? body["admin_only"].get<bool>()
             : false;
 
+    const bool showInSidebar =
+        (body.contains("show_in_sidebar") && body["show_in_sidebar"].is_boolean())
+            ? body["show_in_sidebar"].get<bool>()
+            : true;
+
     if (appId.empty()) {
         reply(400, {
             {"ok", false},
@@ -979,7 +984,8 @@ srv.Post("/api/v4/apps/launch_policy", [=](const httplib::Request& req, httplib:
         {"default_launch", defaultLaunch},
         {"window_profile", windowProfile},
         {"allow_user_override", allowUserOverride},
-        {"admin_only", adminOnly}
+        {"admin_only", adminOnly},
+        {"show_in_sidebar", showInSidebar}
     };
 
     pol = normalize_app_launch_policy_json(pol);

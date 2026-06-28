@@ -106,7 +106,8 @@
             default_launch: (p && p.default_launch) || "auto",
             window_profile: (p && p.window_profile) || "auto",
             allow_user_override: !!(p && p.allow_user_override),
-            admin_only: !!(p && p.admin_only)
+            admin_only: !!(p && p.admin_only),
+            show_in_sidebar: (p && typeof p.show_in_sidebar === "boolean") ? p.show_in_sidebar : true
         };
     }
 
@@ -120,7 +121,8 @@
                 default_launch: policy.default_launch,
                 window_profile: policy.window_profile,
                 allow_user_override: !!policy.allow_user_override,
-                admin_only: !!policy.admin_only
+                admin_only: !!policy.admin_only,
+                show_in_sidebar: !!policy.show_in_sidebar
             })
         });
 
@@ -459,6 +461,7 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             launchMeta.textContent =
                 `${tr("admin.apps.launch", null, "Launch")}: ${launchLabel(pol.default_launch)} · ` +
                 `${tr("admin.apps.window", null, "Window")}: ${windowLabel(pol.window_profile)} · ` +
+                `${tr("admin.apps.sidebar", null, "Sidebar")}: ${pol.show_in_sidebar ? tr("admin.apps.yes", null, "yes") : tr("admin.apps.no", null, "no")} · ` +
                 `${tr("admin.apps.user_override", null, "User override")}: ${pol.allow_user_override ? tr("admin.apps.yes", null, "yes") : tr("admin.apps.no", null, "no")} · ` +
                 `${tr("admin.apps.visibility", null, "Visibility")}: ${pol.admin_only ? tr("admin.apps.admin_only", null, "admin only") : tr("admin.apps.all_users", null, "all users")}`;
 
@@ -505,6 +508,10 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             adminOnlyChk.type = "checkbox";
             adminOnlyChk.checked = !!pol.admin_only;
 
+            const sidebarChk = document.createElement("input");
+            sidebarChk.type = "checkbox";
+            sidebarChk.checked = !!pol.show_in_sidebar;
+
             launchSel.value = pol.default_launch;
             windowSel.value = pol.window_profile;
 
@@ -545,6 +552,11 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
                 tr("admin.apps.admin_only", null, "Admin only")
             );
 
+            const sidebarPolicyBtn = makePolicyToggleButton(
+                sidebarChk,
+                tr("admin.apps.show_in_sidebar", null, "Show in sidebar")
+            );
+
             const saveBtn = document.createElement("button");
             saveBtn.className = "pq-btn secondary";
             saveBtn.type = "button";
@@ -559,7 +571,8 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
                         default_launch: launchSel.value,
                         window_profile: windowSel.value,
                         allow_user_override: overrideChk.checked,
-                        admin_only: adminOnlyChk.checked
+                        admin_only: adminOnlyChk.checked,
+                        show_in_sidebar: sidebarChk.checked
                     });
 
                     await load();
@@ -627,6 +640,7 @@ html[data-theme="win_classic"] .adminAppsConfirmBackdrop{
             });
 
             actions.appendChild(overridePolicyBtn);
+            actions.appendChild(sidebarPolicyBtn);
             actions.appendChild(adminOnlyPolicyBtn);
             actions.appendChild(saveBtn);
             actions.appendChild(openBtn);
