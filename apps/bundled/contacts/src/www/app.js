@@ -29,6 +29,13 @@
     "notesInput", "fingerprintInput", "kindInput"
   ];
 
+  const CSV_FIELDS = [
+    "display_name", "company", "title", "nickname", "contact_type", "status", "tags",
+    "email", "phone", "mobile", "website",
+    "street", "postal_code", "city", "country",
+    "notes", "subject_kind", "subject_fingerprint"
+  ];
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -48,6 +55,21 @@
       .trim()
       .replace(/[\s:-]+/g, "")
       .toLowerCase();
+  }
+
+  function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function normalizePhone(value) {
+    return String(value || "").replace(/[^0-9+]/g, "");
+  }
+
+  function normalizeNameKey(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
   }
 
   function randomHex(bytes) {
@@ -438,6 +460,181 @@
     };
   }
 
+  function duplicateCandidates(payload) {
+    const fp = normalizeFingerprint(payload.subject_fingerprint);
+    const email = normalizeEmail(payload.email);
+    const phone = normalizePhone(payload.phone);
+    const mobile = normalizePhone(payload.mobile);
+    const displayName = normalizeNameKey(payload.display_name);
+    const company = normalizeNameKey(payload.company);
+
+    const hits = [];
+
+    for (const c of state.contacts) {
+      const cfp = normalizeFingerprint(c.subject_fingerprint);
+      if (cfp && cfp === fp) continue;
+
+      const reasons = [];
+
+      if (email && normalizeEmail(c.email) === email) reasons.push("same email");
+      if (phone && normalizePhone(c.phone) === phone) reasons.push("same phone");
+      if (mobile && normalizePhone(c.mobile) === mobile) reasons.push("same mobile");
+
+      const cName = normalizeNameKey(c.display_name);
+      const cCompany = normalizeNameKey(c.company);
+      if (displayName && cName === displayName && company && cCompany === company) {
+        reasons.push("same name and company");
+      } else if (displayName && cName === displayName && !company && !cCompany) {
+        reasons.push("same name");
+      }
+
+      if (reasons.length) {
+        hits.push({
+          contact: c,
+          reasons
+        });
+      }
+    }
+
+    return hits;
+  }
+
+  function duplicateMessage(hits) {
+    const lines = hits.slice(0, 5).map((hit) => {
+      const c = hit.contact || {};
+      const label = c.display_name || c.company || shortFingerprint(c.subject_fingerprint);
+      return `- ${label}: ${hit.reasons.join(", ")}`;
+    });
+
+    if (hits.length > 5) {
+      lines.push(`- plus ${hits.length - 5} more`);
+    }
+
+    return [
+      "Possible duplicate contact found.",
+      "",
+      ...lines,
+      "",
+      "Save anyway?"
+    ].join("\n");
+  }
+
+  function contactLikeFromForm() {
+    return {
+      display_name: val("displayNameInput"),
+      company: val("companyInput"),
+      title: val("titleInput"),
+      nickname: val("nicknameInput"),
+      contact_type: val("contactTypeInput") || "person",
+      status: val("statusInput") || "active",
+      tags: val("tagsInput"),
+      email: val("emailInput"),
+      phone: val("phoneInput"),
+      mobile: val("mobileInput"),
+      website: val("websiteInput"),
+      street: val("streetInput"),
+      postal_code: val("postalCodeInput"),
+      city: val("cityInput"),
+      country: val("countryInput"),
+      notes: val("notesInput"),
+      subject_kind: val("kindInput") || "manual_contact",
+      subject_fingerprint: normalizeFingerprint(val("fingerprintInput"))
+    };
+  }
+
+  function formatAddress(c) {
+    const lines = [
+      c.street,
+      [c.postal_code, c.city].filter(Boolean).join(" "),
+      c.country
+    ].filter((line) => String(line || "").trim());
+
+    return lines.join("\n");
+  }
+
+  function formatContactCard(c) {
+    const lines = [
+      "[DNA-NEXUS-CONTACT]",
+      `Name: ${c.display_name || ""}`,
+      `Company: ${c.company || ""}`,
+      `Title: ${c.title || ""}`,
+      `Email: ${c.email || ""}`,
+      `Phone: ${c.phone || ""}`,
+      `Mobile: ${c.mobile || ""}`,
+      `Website: ${c.website || ""}`,
+      `Address: ${formatAddress(c).replace(/\n/g, ", ")}`,
+      `Tags: ${c.tags || ""}`,
+      `Identity: ${normalizeFingerprint(c.subject_fingerprint) || ""}`,
+      "[/DNA-NEXUS-CONTACT]"
+    ];
+
+    return lines.filter((line) => !line.endsWith(": ")).join("\n");
+  }
+
+  async function copyText(text, successMessage) {
+    const value = String(text || "").trim();
+    if (!value) {
+      setNotice("Nothing to copy.", "warn");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setNotice(successMessage || "Copied.", "ok");
+      return;
+    } catch (_) {}
+
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-1000px";
+    area.style.top = "-1000px";
+    document.body.appendChild(area);
+    area.select();
+
+    try {
+      document.execCommand("copy");
+      setNotice(successMessage || "Copied.", "ok");
+    } catch (_) {
+      setNotice("Copy failed. Select and copy manually.", "err");
+    } finally {
+      area.remove();
+    }
+  }
+
+  function currentContactForAction() {
+    return selectedContact() || contactLikeFromForm();
+  }
+
+  function copyContactCard() {
+    copyText(formatContactCard(currentContactForAction()), "Contact card copied.");
+  }
+
+  function copyContactAddress() {
+    copyText(formatAddress(currentContactForAction()), "Address copied.");
+  }
+
+  function copyContactEmail() {
+    copyText(currentContactForAction().email, "Email copied.");
+  }
+
+  function copyContactPhone() {
+    const c = currentContactForAction();
+    copyText(c.phone || c.mobile, "Phone copied.");
+  }
+
+  function openContactWebsite() {
+    let url = String(currentContactForAction().website || "").trim();
+    if (!url) {
+      setNotice("No website saved for this contact.", "warn");
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   async function loadContacts() {
     state.loading = true;
     setNotice("", "info");
@@ -493,6 +690,12 @@
     if (!payload.display_name) {
       setNotice("Display name is required.", "err");
       $("displayNameInput").focus();
+      return;
+    }
+
+    const dupes = duplicateCandidates(payload);
+    if (dupes.length && !window.confirm(duplicateMessage(dupes))) {
+      setNotice("Save cancelled because a possible duplicate was found.", "warn");
       return;
     }
 
@@ -598,6 +801,144 @@
     URL.revokeObjectURL(url);
   }
 
+  function csvEscape(value) {
+    const s = String(value || "");
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  function exportCSV() {
+    const contacts = filteredContacts();
+    if (!contacts.length) {
+      setNotice("No contacts to export.", "warn");
+      return;
+    }
+
+    const rows = [
+      CSV_FIELDS.join(","),
+      ...contacts.map((c) => CSV_FIELDS.map((field) => csvEscape(c[field])).join(","))
+    ];
+
+    const blob = new Blob([rows.join("\n") + "\n"], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "dna-nexus-contacts.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+
+    const s = String(text || "");
+    for (let i = 0; i < s.length; i += 1) {
+      const ch = s[i];
+
+      if (quoted) {
+        if (ch === '"' && s[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else if (ch === '"') {
+          quoted = false;
+        } else {
+          cell += ch;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        quoted = true;
+      } else if (ch === ",") {
+        row.push(cell);
+        cell = "";
+      } else if (ch === "\n") {
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = "";
+      } else if (ch !== "\r") {
+        cell += ch;
+      }
+    }
+
+    if (cell || row.length) {
+      row.push(cell);
+      rows.push(row);
+    }
+
+    return rows.filter((r) => r.some((c) => String(c || "").trim()));
+  }
+
+  function normalizeCsvHeader(value) {
+    const raw = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "");
+
+    const aliases = {
+      name: "display_name",
+      fullname: "display_name",
+      full_name: "display_name",
+      organization: "company",
+      organisation: "company",
+      company_name: "company",
+      job_title: "title",
+      role: "title",
+      telephone: "phone",
+      cell: "mobile",
+      cellphone: "mobile",
+      postalcode: "postal_code",
+      zip: "postal_code",
+      zip_code: "postal_code",
+      address: "street",
+      address_line: "street",
+      country_name: "country",
+      categories: "tags"
+    };
+
+    return aliases[raw] || raw;
+  }
+
+  function parseCSVContacts(text) {
+    const rows = parseCsvRows(text);
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(normalizeCsvHeader);
+    const contacts = [];
+
+    for (const row of rows.slice(1)) {
+      const c = {
+        subject_fingerprint: "",
+        subject_kind: "manual_contact",
+        contact_type: "person",
+        status: "active"
+      };
+
+      headers.forEach((header, idx) => {
+        if (!header) return;
+        c[header] = String(row[idx] || "").trim();
+      });
+
+      if (!c.subject_fingerprint) c.subject_fingerprint = randomHex(32);
+      c.subject_fingerprint = normalizeFingerprint(c.subject_fingerprint);
+      if (!c.subject_kind) c.subject_kind = "manual_contact";
+      if (!c.contact_type) c.contact_type = "person";
+      if (!c.status) c.status = "active";
+      if (!c.display_name) c.display_name = c.company || c.email || c.phone || c.mobile || "Imported contact";
+
+      contacts.push(c);
+    }
+
+    return contacts.filter((c) => c.subject_fingerprint && c.display_name);
+  }
+
   function unescapeVCardValue(value) {
     return String(value || "")
       .replace(/\\n/gi, "\n")
@@ -691,27 +1032,43 @@
     }).filter((c) => c.subject_fingerprint && c.display_name);
   }
 
-  async function importVCard(file) {
+  async function importContactsFromList(contacts, label) {
+    if (!contacts.length) {
+      setNotice(`No importable contacts found in ${label}.`, "warn");
+      return;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const contact of contacts) {
+      const dupes = duplicateCandidates(contact);
+      if (dupes.length) {
+        skipped += 1;
+        continue;
+      }
+
+      await apiJson(API.upsert, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contact)
+      });
+      imported += 1;
+    }
+
+    setNotice(`Imported ${imported} contact(s). Skipped ${skipped} possible duplicate(s).`, skipped ? "warn" : "ok");
+    await loadContacts();
+  }
+
+  async function importFile(file) {
     if (!file) return;
 
     try {
       const text = await file.text();
-      const contacts = parseVCard(text);
-      if (!contacts.length) {
-        setNotice("No importable contacts found in vCard.", "warn");
-        return;
-      }
-
-      for (const contact of contacts) {
-        await apiJson(API.upsert, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(contact)
-        });
-      }
-
-      setNotice(`Imported ${contacts.length} contact(s).`, "ok");
-      await loadContacts();
+      const name = String(file.name || "").toLowerCase();
+      const looksLikeVCard = /BEGIN:VCARD/i.test(text) || name.endsWith(".vcf");
+      const contacts = looksLikeVCard ? parseVCard(text) : parseCSVContacts(text);
+      await importContactsFromList(contacts, looksLikeVCard ? "vCard" : "CSV");
     } catch (error) {
       setNotice(`Import failed: ${error.message || error}`, "err");
     }
@@ -773,10 +1130,17 @@
     $("resetBtn").addEventListener("click", clearForm);
     $("deleteBtn").addEventListener("click", deleteSelected);
     $("exportBtn").addEventListener("click", exportVCard);
+    $("exportCsvBtn").addEventListener("click", exportCSV);
+
+    $("copyCardBtn").addEventListener("click", copyContactCard);
+    $("copyAddressBtn").addEventListener("click", copyContactAddress);
+    $("copyEmailBtn").addEventListener("click", copyContactEmail);
+    $("copyPhoneBtn").addEventListener("click", copyContactPhone);
+    $("openWebsiteBtn").addEventListener("click", openContactWebsite);
 
     $("importInput").addEventListener("change", async (event) => {
       const file = event.target.files && event.target.files[0];
-      await importVCard(file);
+      await importFile(file);
       event.target.value = "";
     });
   }

@@ -321,6 +321,40 @@ body {
   grid-column: 1 / -1;
 }
 
+.contacts-actionsPanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--contacts-info-border);
+  border-radius: var(--contacts-radius-sm);
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-panel);
+  padding: 14px;
+}
+
+.contacts-actionsPanel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.contacts-actionsPanel h3::before {
+  content: "";
+  width: 8px;
+  height: 1.15em;
+  border-radius: 999px;
+  background: var(--contacts-info);
+  box-shadow: 0 0 0 4px var(--contacts-info-ring);
+}
+
+.contacts-actionGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .contacts-advanced {
   border: 1px solid var(--contacts-info-border);
   border-radius: var(--contacts-radius-sm);
@@ -441,6 +475,7 @@ html[data-theme="win_classic"] .contacts-editor,
 html[data-theme="win_classic"] .contacts-row,
 html[data-theme="win_classic"] .contacts-notice,
 html[data-theme="win_classic"] .contacts-advanced,
+html[data-theme="win_classic"] .contacts-actionsPanel,
 html[data-theme="win_classic"] .contacts-formSection {
   border-radius: 0;
 }

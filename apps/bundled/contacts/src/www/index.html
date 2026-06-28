@@ -56,10 +56,11 @@
       </label>
 
       <button id="exportBtn" class="pq-btn secondary" type="button">Export vCard</button>
+      <button id="exportCsvBtn" class="pq-btn secondary" type="button">Export CSV</button>
 
       <label class="contacts-fileBtn pq-btn secondary">
-        Import vCard
-        <input id="importInput" type="file" accept=".vcf,text/vcard,text/x-vcard">
+        Import file
+        <input id="importInput" type="file" accept=".vcf,.csv,text/vcard,text/x-vcard,text/csv">
       </label>
     </section>
 
@@ -211,6 +212,17 @@
               <span>Private notes</span>
               <textarea id="notesInput" class="pq-textarea" rows="8" placeholder="Customer notes, supplier context, delivery instructions or Christmas card reminders."></textarea>
             </label>
+          </section>
+
+          <section class="contacts-actionsPanel">
+            <h3>Quick actions</h3>
+            <div class="contacts-actionGrid">
+              <button id="copyCardBtn" class="pq-btn secondary" type="button">Copy card</button>
+              <button id="copyAddressBtn" class="pq-btn secondary" type="button">Copy address</button>
+              <button id="copyEmailBtn" class="pq-btn secondary" type="button">Copy email</button>
+              <button id="copyPhoneBtn" class="pq-btn secondary" type="button">Copy phone</button>
+              <button id="openWebsiteBtn" class="pq-btn secondary" type="button">Open website</button>
+            </div>
           </section>
 
           <details class="contacts-advanced">
