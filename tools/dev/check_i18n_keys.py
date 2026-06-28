@@ -29,6 +29,35 @@ ALLOWED_SAME_AS_BASE_KEYS = {
     "admin.notifications.extra_emails_placeholder",
     "admin.notifications.telegram_chat_id_placeholder",
     "admin.notifications.telegram_token_placeholder",
+
+    # Contacts / contact-card UI strings that are intentionally identical in some languages.
+    "contacts.ok",
+    "contacts.status",
+    "contacts.tags",
+    "contacts.type.person",
+    "contacts.website",
+    "contacts.kind.manual",
+    "contacts.mobile",
+    "contacts.page_title",
+    "contacts.section.notes",
+    "contacts.source",
+    "contacts.title",
+    "contacts.type",
+    "contacts.version",
+
+    "filemgr.ws.messages.button",
+    "filemgr.ws.messages.contact",
+    "filemgr.ws.messages.email",
+    "filemgr.ws.messages.mobile",
+    "filemgr.ws.messages.tags",
+    "filemgr.ws.messages.website",
+
+    "external.messages.contact",
+    "external.messages.email",
+    "external.messages.mobile",
+    "external.messages.tags",
+    "external.messages.website",    "contacts.email",
+
 }
 
 

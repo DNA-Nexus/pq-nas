@@ -16,8 +16,170 @@
     search: "",
     type: "",
     status: "",
-    loading: false
+    loading: false,
+    editorMode: "new"
   };
+
+  function tr(key, vars, fallback) {
+    try {
+      const i18n = window.PQNAS_I18N;
+      if (i18n && typeof i18n.t === "function") {
+        return i18n.t(key, vars || null, fallback || key);
+      }
+    } catch (_) {}
+    return String(fallback || key);
+  }
+
+  function setNodeText(node, key, fallback, vars) {
+    if (node) node.textContent = tr(key, vars || null, fallback);
+  }
+
+  function setText(id, key, fallback, vars) {
+    setNodeText($(id), key, fallback, vars);
+  }
+
+  function setPlaceholder(id, key, fallback) {
+    const node = $(id);
+    if (node) node.placeholder = tr(key, null, fallback);
+  }
+
+  function setFieldLabel(inputId, key, fallback) {
+    const node = $(inputId);
+    const label = node && node.closest ? node.closest("label") : null;
+    const span = label ? label.querySelector("span") : null;
+    setNodeText(span, key, fallback);
+  }
+
+  function setOptionText(selectId, value, key, fallback) {
+    const select = $(selectId);
+    if (!select) return;
+    const opt = Array.from(select.options || []).find((item) => String(item.value) === String(value));
+    if (opt) opt.textContent = tr(key, null, fallback);
+  }
+
+  function setFirstTextNode(selector, key, fallback) {
+    const node = document.querySelector(selector);
+    if (!node) return;
+
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        child.nodeValue = tr(key, null, fallback);
+        return;
+      }
+    }
+  }
+
+  function translateStaticContactsUi() {
+    document.title = tr("contacts.page_title", null, "DNA-Nexus • Contacts");
+
+    const h1 = document.querySelector(".contacts-heroText h1");
+    setNodeText(h1, "contacts.title", "Contacts");
+
+    setText("refreshBtn", "contacts.refresh", "Refresh");
+    setText("newBtn", "contacts.new_contact", "New contact");
+    setText("exportBtn", "contacts.export_vcard", "Export vCard");
+    setText("exportCsvBtn", "contacts.export_csv", "Export CSV");
+    setFirstTextNode(".contacts-fileBtn", "contacts.import_file", "Import file");
+
+    setFieldLabel("searchInput", "contacts.search", "Search");
+    setPlaceholder("searchInput", "contacts.search_placeholder", "Name, company, email, phone, city, tags or notes");
+
+    setFieldLabel("typeFilter", "contacts.type", "Type");
+    setFieldLabel("statusFilter", "contacts.status", "Status");
+
+    setOptionText("typeFilter", "", "contacts.all", "All");
+    setOptionText("typeFilter", "person", "contacts.type.person", "Person");
+    setOptionText("typeFilter", "company", "contacts.type.company", "Company");
+    setOptionText("typeFilter", "customer", "contacts.type.customer", "Customer");
+    setOptionText("typeFilter", "supplier", "contacts.type.supplier", "Supplier");
+    setOptionText("typeFilter", "family", "contacts.type.family", "Family / relatives");
+    setOptionText("typeFilter", "other", "contacts.type.other", "Other");
+
+    setOptionText("statusFilter", "", "contacts.all", "All");
+    setOptionText("statusFilter", "active", "contacts.status.active", "Active");
+    setOptionText("statusFilter", "inactive", "contacts.status.inactive", "Inactive");
+    setOptionText("statusFilter", "archived", "contacts.status.archived", "Archived");
+
+    const listTitle = document.querySelector(".contacts-listCard .contacts-sectionHead h2");
+    setNodeText(listTitle, "contacts.address_book", "Address book");
+    setText("emptyState", "contacts.empty", "No contacts yet. Add your first customer, supplier, relative or other contact.");
+
+    const editorSub = document.querySelector(".contacts-editor .contacts-sectionHead p");
+    setNodeText(editorSub, "contacts.editor_subtitle", "Saved to your private DNA-Nexus Contacts list.");
+
+    const formSectionTitles = Array.from(document.querySelectorAll(".contacts-formSection h3"));
+    setNodeText(formSectionTitles[0], "contacts.section.basic", "Basic");
+    setNodeText(formSectionTitles[1], "contacts.section.details", "Contact details");
+    setNodeText(formSectionTitles[2], "contacts.section.address", "Address");
+    setNodeText(formSectionTitles[3], "contacts.section.notes", "Notes");
+
+    setFieldLabel("contactTypeInput", "contacts.contact_type", "Contact type");
+    setFieldLabel("identityModeSelect", "contacts.source", "Source");
+    setFieldLabel("identitySelect", "contacts.known_person", "Known person");
+    setFieldLabel("displayNameInput", "contacts.display_name", "Display name");
+    setFieldLabel("companyInput", "contacts.company_org", "Company / organization");
+    setFieldLabel("titleInput", "contacts.title_role", "Title / role");
+    setFieldLabel("nicknameInput", "contacts.nickname", "Nickname");
+    setFieldLabel("statusInput", "contacts.status", "Status");
+    setFieldLabel("tagsInput", "contacts.tags", "Tags");
+
+    setOptionText("contactTypeInput", "person", "contacts.type.person", "Person");
+    setOptionText("contactTypeInput", "company", "contacts.type.company", "Company");
+    setOptionText("contactTypeInput", "customer", "contacts.type.customer", "Customer");
+    setOptionText("contactTypeInput", "supplier", "contacts.type.supplier", "Supplier");
+    setOptionText("contactTypeInput", "family", "contacts.type.family", "Family / relatives");
+    setOptionText("contactTypeInput", "other", "contacts.type.other", "Other");
+
+    setOptionText("identityModeSelect", "manual_contact", "contacts.kind.manual_contact", "Manual contact");
+    setOptionText("identityModeSelect", "local_user", "contacts.known_dna_user", "Known DNA-Nexus user");
+
+    setOptionText("statusInput", "active", "contacts.status.active", "Active");
+    setOptionText("statusInput", "inactive", "contacts.status.inactive", "Inactive");
+    setOptionText("statusInput", "archived", "contacts.status.archived", "Archived");
+
+    setPlaceholder("tagsInput", "contacts.tags_placeholder", "customer, supplier, christmas-card");
+
+    setFieldLabel("emailInput", "contacts.email", "Email");
+    setFieldLabel("phoneInput", "contacts.phone", "Phone");
+    setFieldLabel("mobileInput", "contacts.mobile", "Mobile");
+    setFieldLabel("websiteInput", "contacts.website", "Website");
+
+    setFieldLabel("streetInput", "contacts.street", "Street address");
+    setFieldLabel("postalCodeInput", "contacts.postal_code", "Postal code");
+    setFieldLabel("cityInput", "contacts.city", "City");
+    setFieldLabel("countryInput", "contacts.country", "Country");
+
+    setFieldLabel("notesInput", "contacts.private_notes", "Private notes");
+    setPlaceholder("notesInput", "contacts.notes_placeholder", "Customer notes, supplier context, delivery instructions or Christmas card reminders.");
+
+    const actionTitle = document.querySelector(".contacts-actionsPanel h3");
+    setNodeText(actionTitle, "contacts.quick_actions", "Quick actions");
+
+    setText("copyCardBtn", "contacts.copy_card", "Copy card");
+    setText("copyAddressBtn", "contacts.copy_address", "Copy address");
+    setText("copyEmailBtn", "contacts.copy_email", "Copy email");
+    setText("copyPhoneBtn", "contacts.copy_phone", "Copy phone");
+    setText("openWebsiteBtn", "contacts.open_website", "Open website");
+
+    const advancedSummary = document.querySelector(".contacts-advanced summary");
+    setNodeText(advancedSummary, "contacts.technical_identity", "Technical identity");
+    setFieldLabel("fingerprintInput", "contacts.identity_anchor", "Identity anchor");
+    setFieldLabel("kindInput", "contacts.kind", "Kind");
+    setOptionText("kindInput", "manual_contact", "contacts.kind.manual_contact", "Manual contact");
+    setOptionText("kindInput", "fingerprint", "contacts.kind.fingerprint", "Fingerprint");
+    setOptionText("kindInput", "local_user", "contacts.kind.local_user", "Local user");
+    setOptionText("kindInput", "external_dna", "contacts.kind.external_dna", "External DNA");
+
+    const help = document.querySelector(".contacts-help");
+    setNodeText(help, "contacts.identity_help", "This identity anchor is internal. Manual contacts get an automatically generated private anchor. DNA-Nexus users and workspace members can use real DNA identity fingerprints.");
+
+    setText("deleteBtn", "contacts.delete", "Delete");
+    setText("resetBtn", "contacts.clear", "Clear");
+    setText("saveBtn", "contacts.save_contact", "Save contact");
+
+    renderIdentityOptions(selectedContact());
+    setEditorMode(state.editorMode || "new");
+  }
 
   let confirmResolve = null;
   let confirmLastFocus = null;
@@ -110,19 +272,19 @@
   }
 
   function kindLabel(kind) {
-    if (kind === "manual_contact") return "Manual";
-    if (kind === "local_user") return "Local user";
-    if (kind === "external_dna") return "External DNA";
-    return "Fingerprint";
+    if (kind === "manual_contact") return tr("contacts.kind.manual", null, "Manual");
+    if (kind === "local_user") return tr("contacts.kind.local_user", null, "Local user");
+    if (kind === "external_dna") return tr("contacts.kind.external_dna", null, "External DNA");
+    return tr("contacts.kind.fingerprint", null, "Fingerprint");
   }
 
   function typeLabel(type) {
-    if (type === "company") return "Company";
-    if (type === "customer") return "Customer";
-    if (type === "supplier") return "Supplier";
-    if (type === "family") return "Family";
-    if (type === "other") return "Other";
-    return "Person";
+    if (type === "company") return tr("contacts.type.company", null, "Company");
+    if (type === "customer") return tr("contacts.type.customer", null, "Customer");
+    if (type === "supplier") return tr("contacts.type.supplier", null, "Supplier");
+    if (type === "family") return tr("contacts.type.family_short", null, "Family");
+    if (type === "other") return tr("contacts.type.other", null, "Other");
+    return tr("contacts.type.person", null, "Person");
   }
 
   function contactByFingerprint(fp) {
@@ -171,9 +333,9 @@
     if (confirmResolve) closeConfirmModal(false);
 
     const opts = options || {};
-    title.textContent = opts.title || "Confirm action";
-    cancelBtn.textContent = opts.cancelText || "Cancel";
-    okBtn.textContent = opts.confirmText || "OK";
+    title.textContent = opts.title || tr("contacts.confirm_action", null, "Confirm action");
+    cancelBtn.textContent = opts.cancelText || tr("contacts.cancel", null, "Cancel");
+    okBtn.textContent = opts.confirmText || tr("contacts.ok", null, "OK");
 
     okBtn.classList.toggle("danger", !!opts.danger);
 
@@ -316,7 +478,7 @@
 
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "Choose a known DNA-Nexus person…";
+    empty.textContent = tr("contacts.choose_known_person", null, "Choose a known DNA-Nexus person…");
     select.appendChild(empty);
 
     const candidates = state.knownIdentities
@@ -366,8 +528,8 @@
 
     list.replaceChildren();
     count.textContent = state.loading
-      ? "Loading contacts…"
-      : `${items.length} shown / ${state.contacts.length} total`;
+      ? tr("contacts.loading", null, "Loading contacts…")
+      : tr("contacts.count", { shown: items.length, total: state.contacts.length }, `${items.length} shown / ${state.contacts.length} total`);
 
     empty.hidden = state.loading || items.length > 0;
 
@@ -424,6 +586,8 @@
   }
 
   function setEditorMode(mode) {
+    state.editorMode = mode === "edit" ? "edit" : "new";
+
     const badge = $("selectedBadge");
     const title = $("editorTitle");
     const deleteBtn = $("deleteBtn");
@@ -431,10 +595,16 @@
     if (badge) {
       badge.classList.remove("ok", "warn", "err", "info", "muted");
       badge.classList.add(mode === "edit" ? "ok" : "info");
-      badge.textContent = mode === "edit" ? "editing" : "new";
+      badge.textContent = mode === "edit"
+        ? tr("contacts.editing", null, "editing")
+        : tr("contacts.new_badge", null, "new");
     }
 
-    if (title) title.textContent = mode === "edit" ? "Edit contact" : "New contact";
+    if (title) {
+      title.textContent = mode === "edit"
+        ? tr("contacts.edit_contact", null, "Edit contact")
+        : tr("contacts.new_contact", null, "New contact");
+    }
     if (deleteBtn) deleteBtn.disabled = mode !== "edit";
   }
 
@@ -1065,7 +1235,7 @@
       if (!c.subject_kind) c.subject_kind = "manual_contact";
       if (!c.contact_type) c.contact_type = "person";
       if (!c.status) c.status = "active";
-      if (!c.display_name) c.display_name = c.company || c.email || c.phone || c.mobile || "Imported contact";
+      if (!c.display_name) c.display_name = c.company || c.email || c.phone || c.mobile || tr("contacts.imported_contact", null, "Imported contact");
 
       contacts.push(c);
     }
@@ -1164,7 +1334,7 @@
       }
 
       if (!out.subject_fingerprint) out.subject_fingerprint = randomHex(32);
-      if (!out.display_name) out.display_name = out.company || out.email || out.phone || "Imported contact";
+      if (!out.display_name) out.display_name = out.company || out.email || out.phone || tr("contacts.imported_contact", null, "Imported contact");
 
       return out;
     }).filter((c) => c.subject_fingerprint && c.display_name);
@@ -1172,7 +1342,7 @@
 
   async function importContactsFromList(contacts, label) {
     if (!contacts.length) {
-      setNotice(`No importable contacts found in ${label}.`, "warn");
+      setNotice(tr("contacts.no_importable", { label }, `No importable contacts found in ${label}.`), "warn");
       return;
     }
 
@@ -1194,7 +1364,10 @@
       imported += 1;
     }
 
-    setNotice(`Imported ${imported} contact(s). Skipped ${skipped} possible duplicate(s).`, skipped ? "warn" : "ok");
+    setNotice(
+      tr("contacts.import_result", { imported, skipped }, `Imported ${imported} contact(s). Skipped ${skipped} possible duplicate(s).`),
+      skipped ? "warn" : "ok"
+    );
     await loadContacts();
   }
 
@@ -1203,7 +1376,7 @@
 
     try {
       if (Number(file.size || 0) > MAX_IMPORT_BYTES) {
-        throw new Error("Import file is too large. Maximum size is 2 MB.");
+        throw new Error(tr("contacts.import_too_large", null, "Import file is too large. Maximum size is 2 MB."));
       }
 
       const text = await file.text();
@@ -1212,7 +1385,8 @@
       const contacts = looksLikeVCard ? parseVCard(text) : parseCSVContacts(text);
       await importContactsFromList(contacts, looksLikeVCard ? "vCard" : "CSV");
     } catch (error) {
-      setNotice(`Import failed: ${error.message || error}`, "err");
+      const detail = String(error && error.message ? error.message : error);
+      setNotice(tr("contacts.import_failed", { error: detail }, `Import failed: ${detail}`), "err");
     }
   }
 
@@ -1240,7 +1414,9 @@
     if (!badge) return;
 
     const version = await getAppVersion();
-    badge.textContent = version ? `Contacts v${version}` : "Contacts";
+    badge.textContent = version
+      ? tr("contacts.version", { version }, `Contacts v${version}`)
+      : tr("contacts.title", null, "Contacts");
   }
 
   function bindEvents() {
@@ -1289,10 +1465,17 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindConfirmModalEvents();
+    translateStaticContactsUi();
     bindEvents();
     setEditorMode("new");
     clearForm();
     await initVersionBadge();
     await loadContacts();
+
+    window.addEventListener("pqnas-language-changed", () => {
+      translateStaticContactsUi();
+      renderList();
+      initVersionBadge().catch(() => {});
+    });
   });
 })();
