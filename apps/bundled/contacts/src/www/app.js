@@ -19,6 +19,9 @@
     loading: false
   };
 
+  let confirmResolve = null;
+  let confirmLastFocus = null;
+
   const FIELD_IDS = [
     "contactTypeInput", "identityModeSelect", "identitySelect",
     "displayNameInput", "companyInput", "titleInput", "nicknameInput",
@@ -131,6 +134,108 @@
   function knownIdentityByFingerprint(fp) {
     const clean = normalizeFingerprint(fp);
     return state.knownIdentities.find((c) => normalizeFingerprint(c.fingerprint || c.subject_fingerprint) === clean) || null;
+  }
+
+  function closeConfirmModal(result) {
+    const modal = $("confirmModal");
+    if (!modal) return;
+
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+
+    const resolve = confirmResolve;
+    confirmResolve = null;
+
+    if (confirmLastFocus && typeof confirmLastFocus.focus === "function") {
+      try { confirmLastFocus.focus(); } catch (_) {}
+    }
+    confirmLastFocus = null;
+
+    if (resolve) resolve(!!result);
+  }
+
+  function askConfirm(options) {
+    const modal = $("confirmModal");
+    const title = $("confirmModalTitle");
+    const body = $("confirmModalBody");
+    const cancelBtn = $("confirmModalCancel");
+    const okBtn = $("confirmModalOk");
+
+    if (!modal || !title || !body || !cancelBtn || !okBtn) {
+      return Promise.resolve(false);
+    }
+
+    if (confirmResolve) closeConfirmModal(false);
+
+    const opts = options || {};
+    title.textContent = opts.title || "Confirm action";
+    cancelBtn.textContent = opts.cancelText || "Cancel";
+    okBtn.textContent = opts.confirmText || "OK";
+
+    okBtn.classList.toggle("danger", !!opts.danger);
+
+    body.replaceChildren();
+
+    const intro = String(opts.message || "").trim();
+    if (intro) {
+      const p = document.createElement("p");
+      p.textContent = intro;
+      body.appendChild(p);
+    }
+
+    const items = Array.isArray(opts.items) ? opts.items : [];
+    if (items.length) {
+      const list = document.createElement("div");
+      list.className = "contacts-modalList";
+      for (const item of items) {
+        const row = document.createElement("p");
+        row.className = "contacts-modalListItem";
+        row.textContent = String(item || "");
+        list.appendChild(row);
+      }
+      body.appendChild(list);
+    }
+
+    const detail = String(opts.detail || "").trim();
+    if (detail) {
+      const p = document.createElement("p");
+      p.textContent = detail;
+      body.appendChild(p);
+    }
+
+    confirmLastFocus = document.activeElement;
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+
+    return new Promise((resolve) => {
+      confirmResolve = resolve;
+      setTimeout(() => {
+        try { okBtn.focus(); } catch (_) {}
+      }, 0);
+    });
+  }
+
+  function bindConfirmModalEvents() {
+    const modal = $("confirmModal");
+    const cancelBtn = $("confirmModalCancel");
+    const okBtn = $("confirmModalOk");
+
+    if (!modal || !cancelBtn || !okBtn) return;
+
+    cancelBtn.addEventListener("click", () => closeConfirmModal(false));
+    okBtn.addEventListener("click", () => closeConfirmModal(true));
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeConfirmModal(false);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (modal.hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeConfirmModal(false);
+      }
+    });
   }
 
   async function apiJson(path, opts) {
@@ -499,24 +604,18 @@
     return hits;
   }
 
-  function duplicateMessage(hits) {
-    const lines = hits.slice(0, 5).map((hit) => {
+  function duplicateItems(hits) {
+    const items = hits.slice(0, 5).map((hit) => {
       const c = hit.contact || {};
       const label = c.display_name || c.company || shortFingerprint(c.subject_fingerprint);
-      return `- ${label}: ${hit.reasons.join(", ")}`;
+      return `${label}: ${hit.reasons.join(", ")}`;
     });
 
     if (hits.length > 5) {
-      lines.push(`- plus ${hits.length - 5} more`);
+      items.push(`plus ${hits.length - 5} more`);
     }
 
-    return [
-      "Possible duplicate contact found.",
-      "",
-      ...lines,
-      "",
-      "Save anyway?"
-    ].join("\n");
+    return items;
   }
 
   function contactLikeFromForm() {
@@ -694,9 +793,20 @@
     }
 
     const dupes = duplicateCandidates(payload);
-    if (dupes.length && !window.confirm(duplicateMessage(dupes))) {
-      setNotice("Save cancelled because a possible duplicate was found.", "warn");
-      return;
+    if (dupes.length) {
+      const ok = await askConfirm({
+        title: "Possible duplicate",
+        message: "A similar contact already exists.",
+        items: duplicateItems(dupes),
+        detail: "Save this contact anyway?",
+        confirmText: "Save anyway",
+        cancelText: "Review"
+      });
+
+      if (!ok) {
+        setNotice("Save cancelled because a possible duplicate was found.", "warn");
+        return;
+      }
     }
 
     try {
@@ -721,7 +831,14 @@
 
     const fp = normalizeFingerprint(contact.subject_fingerprint);
     const label = contact.display_name || shortFingerprint(fp);
-    const ok = window.confirm(`Delete ${label} from Contacts?`);
+    const ok = await askConfirm({
+      title: "Delete contact?",
+      message: `Delete ${label} from Contacts?`,
+      detail: "This removes the contact from your private address book.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      danger: true
+    });
     if (!ok) return;
 
     try {
@@ -1146,6 +1263,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    bindConfirmModalEvents();
     bindEvents();
     setEditorMode("new");
     clearForm();

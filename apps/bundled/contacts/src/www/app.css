@@ -408,6 +408,89 @@ body {
   display: none;
 }
 
+.contacts-modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--contacts-bg) 86%, transparent),
+      color-mix(in srgb, var(--contacts-bg) 82%, transparent)
+    );
+}
+
+.contacts-modalCard {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--contacts-info-border-strong);
+  border-radius: var(--contacts-radius);
+  background:
+    radial-gradient(720px 220px at 8% 0%, var(--contacts-info-panel), transparent 62%),
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    var(--contacts-bg);
+  color: var(--contacts-fg);
+  box-shadow:
+    var(--contacts-shadow),
+    0 22px 80px color-mix(in srgb, var(--contacts-bg) 52%, transparent),
+    inset 0 1px 0 var(--contacts-info-border);
+  overflow: hidden;
+}
+
+.contacts-modalHead {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--contacts-info-border);
+}
+
+.contacts-modalHead h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.contacts-modalBody {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  color: var(--contacts-fg);
+  line-height: 1.5;
+}
+
+.contacts-modalBody p {
+  margin: 0;
+}
+
+.contacts-modalList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--contacts-info-border);
+  border-radius: var(--contacts-radius-sm);
+  background:
+    linear-gradient(180deg, var(--contacts-info-faint), transparent),
+    color-mix(in srgb, var(--contacts-bg) 92%, var(--contacts-info) 8%);
+}
+
+.contacts-modalListItem {
+  margin: 0;
+  color: var(--contacts-muted);
+  overflow-wrap: anywhere;
+}
+
+.contacts-modalFoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--contacts-info-border);
+}
+
+html[data-theme="win_classic"] .contacts-modalCard,
+html[data-theme="win_classic"] .contacts-modalList {
+  border-radius: 0;
+}
+
 /* Dark-like themes: keep native fields and opened select menus on-theme.
    Bright and Win Classic intentionally keep their lighter system look. */
 html[data-theme="dark"] .contacts-shell .pq-input,
