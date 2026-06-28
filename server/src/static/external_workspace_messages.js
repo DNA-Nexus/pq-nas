@@ -48,6 +48,209 @@
                document.querySelector(".toolbar");
     }
 
+    function parseContactCardText(text) {
+        const raw = String(text || "");
+        const start = raw.indexOf("[DNA-NEXUS-CONTACT]");
+        const end = raw.indexOf("[/DNA-NEXUS-CONTACT]");
+        if (start < 0 || end < 0 || end <= start) return null;
+
+        const before = raw.slice(0, start).trim();
+        const body = raw.slice(start + "[DNA-NEXUS-CONTACT]".length, end).trim();
+        const after = raw.slice(end + "[/DNA-NEXUS-CONTACT]".length).trim();
+
+        const card = {};
+        for (const line of body.split(/\r?\n/)) {
+            const idx = line.indexOf(":");
+            if (idx <= 0) continue;
+
+            const key = line.slice(0, idx).trim().toLowerCase();
+            const value = line.slice(idx + 1).trim();
+            if (!key || !value) continue;
+
+            if (key === "name") card.name = value;
+            else if (key === "company") card.company = value;
+            else if (key === "title") card.title = value;
+            else if (key === "email") card.email = value;
+            else if (key === "phone") card.phone = value;
+            else if (key === "mobile") card.mobile = value;
+            else if (key === "website") card.website = value;
+            else if (key === "address") card.address = value;
+            else if (key === "tags") card.tags = value;
+            else if (key === "identity") card.identity = value;
+        }
+
+        if (!card.name && !card.company && !card.email && !card.phone && !card.mobile) return null;
+        return { before, after, card };
+    }
+
+    function formatContactCardForClipboard(card) {
+        const c = card || {};
+        const lines = [
+            "[DNA-NEXUS-CONTACT]",
+            `Name: ${c.name || ""}`,
+            `Company: ${c.company || ""}`,
+            `Title: ${c.title || ""}`,
+            `Email: ${c.email || ""}`,
+            `Phone: ${c.phone || ""}`,
+            `Mobile: ${c.mobile || ""}`,
+            `Website: ${c.website || ""}`,
+            `Address: ${c.address || ""}`,
+            `Tags: ${c.tags || ""}`,
+            `Identity: ${c.identity || ""}`,
+            "[/DNA-NEXUS-CONTACT]"
+        ];
+        return lines.filter((line) => !line.endsWith(": ")).join("\n");
+    }
+
+    function copyText(value, onDone) {
+        const text = String(value || "").trim();
+        if (!text) return;
+
+        const done = () => {
+            if (typeof onDone === "function") onDone();
+        };
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopyText(text, done));
+            return;
+        }
+
+        fallbackCopyText(text, done);
+    }
+
+    function fallbackCopyText(text, done) {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.left = "-1000px";
+        area.style.top = "-1000px";
+        document.body.appendChild(area);
+        area.select();
+
+        try {
+            document.execCommand("copy");
+            done();
+        } catch (_) {
+        } finally {
+            area.remove();
+        }
+    }
+
+    function appendContactLine(parent, label, value) {
+        const v = String(value || "").trim();
+        if (!v) return;
+
+        const line = el("div", "extWsMsgContactLine");
+        const strong = el("strong", "", label + ": ");
+        const span = el("span", "", v);
+        line.append(strong, span);
+        parent.append(line);
+    }
+
+    function contactCardNode(parsed, setStatus) {
+        const wrap = el("div", "extWsMsgContactWrap");
+
+        if (parsed.before) {
+            wrap.append(el("div", "extWsMsgContactText", parsed.before));
+        }
+
+        const card = parsed.card || {};
+        const box = el("div", "extWsMsgContactCard");
+
+        const top = el("div", "extWsMsgContactTop");
+        top.append(
+            el("div", "extWsMsgContactName", card.name || card.company || card.email || tr("external.messages.contact_card", null, "Contact card")),
+            el("div", "extWsMsgContactBadge", tr("external.messages.contact", null, "Contact"))
+        );
+        box.append(top);
+
+        const metaParts = [card.company, card.title].filter(Boolean);
+        if (metaParts.length) {
+            box.append(el("div", "extWsMsgContactMeta", metaParts.join(" • ")));
+        }
+
+        appendContactLine(box, tr("external.messages.email", null, "Email"), card.email);
+        appendContactLine(box, tr("external.messages.phone", null, "Phone"), card.phone);
+        appendContactLine(box, tr("external.messages.mobile", null, "Mobile"), card.mobile);
+        appendContactLine(box, tr("external.messages.website", null, "Website"), card.website);
+        appendContactLine(box, tr("external.messages.address", null, "Address"), card.address);
+        appendContactLine(box, tr("external.messages.tags", null, "Tags"), card.tags);
+
+        const actions = el("div", "extWsMsgContactActions");
+
+        const copyCard = el("button", "extWsMsgContactAction", tr("external.messages.copy_contact", null, "Copy contact"));
+        copyCard.type = "button";
+        copyCard.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            copyText(formatContactCardForClipboard(card), () => setStatus(tr("external.messages.contact_copied", null, "Contact copied.")));
+        });
+        actions.append(copyCard);
+
+        if (card.address) {
+            const copyAddress = el("button", "extWsMsgContactAction", tr("external.messages.copy_address", null, "Copy address"));
+            copyAddress.type = "button";
+            copyAddress.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                copyText(card.address, () => setStatus(tr("external.messages.address_copied", null, "Address copied.")));
+            });
+            actions.append(copyAddress);
+        }
+
+        if (card.email) {
+            const copyEmail = el("button", "extWsMsgContactAction", tr("external.messages.copy_email", null, "Copy email"));
+            copyEmail.type = "button";
+            copyEmail.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                copyText(card.email, () => setStatus(tr("external.messages.email_copied", null, "Email copied.")));
+            });
+            actions.append(copyEmail);
+        }
+
+        if (card.phone || card.mobile) {
+            const copyPhone = el("button", "extWsMsgContactAction", tr("external.messages.copy_phone", null, "Copy phone"));
+            copyPhone.type = "button";
+            copyPhone.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                copyText(card.phone || card.mobile, () => setStatus(tr("external.messages.phone_copied", null, "Phone copied.")));
+            });
+            actions.append(copyPhone);
+        }
+
+        if (card.website) {
+            const openWebsite = el("button", "extWsMsgContactAction", tr("external.messages.open_website", null, "Open website"));
+            openWebsite.type = "button";
+            openWebsite.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                let url = String(card.website || "").trim();
+                if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+                window.open(url, "_blank", "noopener,noreferrer");
+            });
+            actions.append(openWebsite);
+        }
+
+        box.append(actions);
+        wrap.append(box);
+
+        if (parsed.after) {
+            wrap.append(el("div", "extWsMsgContactText", parsed.after));
+        }
+
+        return wrap;
+    }
+
+    function messageBodyNode(text, setStatus) {
+        const parsed = parseContactCardText(text);
+        if (parsed) return contactCardNode(parsed, setStatus);
+
+        return el("div", "extWsMsgBody", String(text || ""));
+    }
+
     function buildUi(workspaceId) {
         if (!workspaceId) return null;
         if (document.getElementById("externalWorkspaceMessagesDrawer")) {
@@ -171,7 +374,7 @@
                     el("div", "extWsMsgTime", formatTime(m && (m.created_at || m.created_at_epoch)))
                 );
 
-                row.append(meta, el("div", "extWsMsgBody", String((m && m.body) || "")));
+                row.append(meta, messageBodyNode((m && m.body) || "", setStatus));
                 list.append(row);
             }
 
@@ -327,6 +530,14 @@
                 e.preventDefault();
                 void sendMessage();
             }
+        });
+
+        input.addEventListener("paste", () => {
+            window.setTimeout(() => {
+                if (parseContactCardText(input.value)) {
+                    setStatus(tr("external.messages.contact_card_detected", null, "Contact card detected. Send to share it with workspace members."));
+                }
+            }, 0);
         });
 
         window.setInterval(() => {
