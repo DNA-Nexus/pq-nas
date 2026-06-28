@@ -2,7 +2,7 @@
 {
   "id": "contacts",
   "name": "Contacts",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "entry": "www/index.html",
   "api_base": "/api/v4/people",
   "permissions": [],

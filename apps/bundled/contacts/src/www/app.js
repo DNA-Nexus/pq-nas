@@ -39,6 +39,9 @@
     "notes", "subject_kind", "subject_fingerprint"
   ];
 
+  const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+  const MAX_IMPORT_CONTACTS = 1000;
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -918,8 +921,18 @@
     URL.revokeObjectURL(url);
   }
 
-  function csvEscape(value) {
+  function csvSafeCell(value) {
     const s = String(value || "");
+
+    // Prevent spreadsheet formula injection when exported CSV is opened
+    // in Excel/LibreOffice/Google Sheets.
+    if (/^[=+\-@\t\r\n]/.test(s)) return "'" + s;
+
+    return s;
+  }
+
+  function csvEscape(value) {
+    const s = csvSafeCell(value);
     if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   }
@@ -1027,6 +1040,10 @@
     const rows = parseCsvRows(text);
     if (rows.length < 2) return [];
 
+    if (rows.length - 1 > MAX_IMPORT_CONTACTS) {
+      throw new Error(`CSV import limit is ${MAX_IMPORT_CONTACTS} contacts.`);
+    }
+
     const headers = rows[0].map(normalizeCsvHeader);
     const contacts = [];
 
@@ -1080,6 +1097,10 @@
 
   function parseVCard(text) {
     const blocks = unfoldVCard(text).split(/BEGIN:VCARD/i).slice(1);
+
+    if (blocks.length > MAX_IMPORT_CONTACTS) {
+      throw new Error(`vCard import limit is ${MAX_IMPORT_CONTACTS} contacts.`);
+    }
 
     return blocks.map((block) => {
       const lines = block.split(/\r?\n/);
@@ -1181,6 +1202,10 @@
     if (!file) return;
 
     try {
+      if (Number(file.size || 0) > MAX_IMPORT_BYTES) {
+        throw new Error("Import file is too large. Maximum size is 2 MB.");
+      }
+
       const text = await file.text();
       const name = String(file.name || "").toLowerCase();
       const looksLikeVCard = /BEGIN:VCARD/i.test(text) || name.endsWith(".vcf");

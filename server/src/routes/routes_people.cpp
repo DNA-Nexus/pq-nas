@@ -312,14 +312,10 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         PeopleContactRecord saved;
         std::string err;
         if (!store.upsert_for_owner(actor_fp, input, &saved, &err)) {
-            const std::string detail = err.empty()
-                ? std::string("failed to save person")
-                : std::string("failed to save person: ") + err;
-
             reply_json_local(deps, res, 500, json{
                 {"ok", false},
                 {"error", "server_error"},
-                {"message", detail}
+                {"message", "failed to save person"}
             });
             return;
         }
