@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 set -euo pipefail
 
 # Security: do not let the unprivileged service environment influence root helper behavior.
