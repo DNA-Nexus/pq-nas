@@ -1,6 +1,24 @@
 #!/bin/sh
 set -eu
+unset BASH_ENV ENV CDPATH
 export LC_ALL=C
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+umask 022
+
+# Security: root helper must not trust caller-controlled PATH or shell env.
+FINDMNT="/usr/bin/findmnt"
+HEAD="/usr/bin/head"
+TR="/usr/bin/tr"
+BLKID="/usr/sbin/blkid"
+AWK="/usr/bin/awk"
+MKTEMP="/usr/bin/mktemp"
+INSTALL="/usr/bin/install"
+RM="/usr/bin/rm"
+FSTAB="/etc/fstab"
+
+if [ ! -x "$BLKID" ] && [ -x /usr/bin/blkid ]; then
+    BLKID="/usr/bin/blkid"
+fi
 
 die() {
     echo "error: $*" >&2
@@ -46,19 +64,19 @@ parent_real="$(cd "$parent" && pwd -P)"
 [ ! -L "$mount" ] || die "mount path is a symlink: $mount"
 
 # hardening: require the exact path to be an active mountpoint
-target="$(findmnt -rn --target "$mount" -o TARGET 2>/dev/null | head -n1 || true)"
+target="$("$FINDMNT" -rn --target "$mount" -o TARGET 2>/dev/null | "$HEAD" -n1 || true)"
 [ "$target" = "$mount" ] || die "path is not an exact mountpoint: $mount"
 
 # hardening: fail closed unless the target is a mounted btrfs filesystem
-fstype="$(findmnt -rn --target "$mount" -o FSTYPE 2>/dev/null | head -n1 || true)"
+fstype="$("$FINDMNT" -rn --target "$mount" -o FSTYPE 2>/dev/null | "$HEAD" -n1 || true)"
 [ "$fstype" = "btrfs" ] || die "mount is not btrfs: $mount"
 
-uuid="$(findmnt -rn --target "$mount" -o UUID 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+uuid="$("$FINDMNT" -rn --target "$mount" -o UUID 2>/dev/null | "$HEAD" -n1 | "$TR" -d '[:space:]' || true)"
 
 if [ -z "$uuid" ]; then
-    src="$(findmnt -rn --target "$mount" -o SOURCE 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+    src="$("$FINDMNT" -rn --target "$mount" -o SOURCE 2>/dev/null | "$HEAD" -n1 | "$TR" -d '[:space:]' || true)"
     if [ -n "$src" ]; then
-        uuid="$(blkid -s UUID -o value "$src" 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+        uuid="$("$BLKID" -s UUID -o value "$src" 2>/dev/null | "$HEAD" -n1 | "$TR" -d '[:space:]' || true)"
     fi
 fi
 
@@ -72,15 +90,18 @@ case "$uuid" in
 esac
 
 # hardening: create temp file under /etc, not global /tmp
-tmp="$(mktemp /etc/fstab.pqnas-add.XXXXXX)"
-trap 'rm -f "$tmp"' EXIT INT TERM
+tmp="$("$MKTEMP" /etc/fstab.pqnas-add.XXXXXX)"
+cleanup_tmp() {
+    [ -n "${tmp:-}" ] && "$RM" -f "$tmp"
+}
+trap cleanup_tmp EXIT INT TERM
 
-awk -v m="$mount" '$2 != m { print }' /etc/fstab > "$tmp"
+"$AWK" -v m="$mount" '$2 != m { print }' "$FSTAB" > "$tmp"
 printf 'UUID=%s %s btrfs defaults,nofail,x-systemd.device-timeout=10 0 0\n' "$uuid" "$mount" >> "$tmp"
 
 # hardening: atomic-ish root-owned replacement avoids partial fstab writes
-install -m 0644 -o root -g root "$tmp" /etc/fstab
-rm -f "$tmp"
+"$INSTALL" -m 0644 -o root -g root "$tmp" "$FSTAB"
+"$RM" -f "$tmp"
 trap - EXIT INT TERM
 
 echo "ok: fstab updated mount=$mount uuid=$uuid"
