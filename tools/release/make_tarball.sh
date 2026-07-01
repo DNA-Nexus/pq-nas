@@ -101,6 +101,7 @@ RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
 DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
 FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
 BTRFS_SNAPSHOT_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_btrfs_snapshot_root.sh"
+BTRFS_STATUS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_btrfs_status_root.sh"
 FSTAB_REMOVE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_remove_root.sh"
 
 # DNA Connect runtime for alerts
@@ -426,6 +427,21 @@ install -m 0755 "$BTRFS_SNAPSHOT_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-btrfs-
 test -x "$STAGE/libexec/pqnas/pqnas-btrfs-snapshot" || {
   echo "ERROR: Btrfs snapshot root wrapper did not stage"
   exit 63
+}
+
+# Btrfs read-only status root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-btrfs-status
+if [[ ! -f "$BTRFS_STATUS_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing Btrfs status wrapper: $BTRFS_STATUS_WRAPPER_SRC"
+  exit 64
+fi
+
+install -m 0755 "$BTRFS_STATUS_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-btrfs-status"
+
+test -x "$STAGE/libexec/pqnas/pqnas-btrfs-status" || {
+  echo "ERROR: Btrfs status root wrapper did not stage"
+  exit 65
 }
 
 # fstab mount-entry remove root wrapper.
