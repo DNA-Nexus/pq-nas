@@ -1456,6 +1456,9 @@ window.addEventListener("pqnas-language-changed", updateCenterRefreshTitle);
             updateCenterLabel("planned_actions", j.planned_action_count || planned.length || 0, "Planned actions"),
             updateCenterLabel("install_helper_enabled", updateCenterYesNo(j.helper_enabled), "Install helper enabled"),
             j.helper_exit_code === undefined ? null : updateCenterLabel("helper_exit_code", j.helper_exit_code, "Helper exit code"),
+            // Security/ops: show bounded helper detail to admins so signature
+            // verification failures are explicit instead of generic dry-run errors.
+            j.error_detail ? updateCenterLabel("error_detail", updateCenterBackendMessage(j.error_detail), "Detailed error") : null,
             updateCenterLabel("install_performed", updateCenterYesNo(j.install_performed), "Install performed"),
             j.error ? updateCenterLabel("error", updateCenterBackendError(j.error), "Error") : null,
             j.message ? updateCenterLabel("message", updateCenterBackendMessage(j.message), "Message") : null,
