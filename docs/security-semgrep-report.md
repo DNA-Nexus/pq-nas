@@ -463,3 +463,23 @@ Whenever a finding is fixed or triaged:
 5. Include file path, rule id, original risk, fix, security protection, and validation.
 6. Commit the report together with the related code/config change.
 
+
+## Update Center signed package hardening — completed
+
+Status: completed and tested.
+
+Implemented controls:
+
+- Release tarballs now include a signed update manifest.
+- Release tarballs include the trusted DNA-Nexus update public key.
+- Fresh installs copy trusted public keys to `/etc/pqnas/update-trust.d/`.
+- Core binary updates require a valid signed manifest before root-level install steps.
+- Wrong-key signed core update package was rejected during dry-run before file changes.
+- Update Center UI now shows helper `error_detail`, including signature verification failures.
+- Reviewed installer permission warnings are documented inline with `nosemgrep` justifications.
+
+Validation:
+
+- Positive test: correctly signed package accepted.
+- Negative test: wrong-key package rejected with `Signature Verification Failure`.
+- Focused Semgrep scan over signed-update related files: 0 findings.
