@@ -1,0 +1,10 @@
+# QR auth static JWT test vectors.
+# Security triage: these are committed fake/invalid parser fixtures, not live
+# credentials. Ignore them so secret scanning remains useful for real leaks.
+pqnas_qrauth_v4_test_vector_invalid.md
+pqnas_qrauth_v4_test_vectors.md
+pqnas_qrauth_v4_test_vectors_invalid_proof.md
+# QR auth v4 JSON test vectors.
+# Security triage: committed parser/verifier fixtures with fake or expired test
+# tokens. Keep ignored so Semgrep secret scanning highlights real leaks.
+tests/v4_vectors/vectors.json
