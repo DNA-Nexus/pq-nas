@@ -35,6 +35,13 @@ SKIP_ALL_BUILD="${PQNAS_RELEASE_SKIP_BUILD:-0}"
 SKIP_WASM_BUILD="${PQNAS_RELEASE_SKIP_WASM_BUILD:-0}"
 ALLOW_STALE_SERVER="${PQNAS_RELEASE_ALLOW_STALE_SERVER:-0}"
 
+# Security: official update tarballs should carry a signed manifest.
+# Private key stays on the release machine. Use PQNAS_RELEASE_ALLOW_UNSIGNED_UPDATE=1
+# only for local/dev packages that are not meant for production in-place updates.
+RELEASE_SIGNING_KEY="${PQNAS_RELEASE_SIGNING_KEY:-}"
+RELEASE_SIGNING_KEY_ID="${PQNAS_RELEASE_SIGNING_KEY_ID:-pqnas-release-2026}"
+ALLOW_UNSIGNED_UPDATE="${PQNAS_RELEASE_ALLOW_UNSIGNED_UPDATE:-0}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-server-build)
@@ -88,6 +95,7 @@ REL_ROOT="$REPO_ROOT/tools/release"
 CLEAN_CONFIG_DIR="$REL_ROOT/config"
 SYSTEMD_DIR="$REL_ROOT/systemd"
 UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
+SIGNED_UPDATE_MANIFEST_BUILDER="$REL_ROOT/pqnas_build_signed_update_manifest.py"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
 DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
 FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
@@ -568,7 +576,54 @@ echo "[*] Cleaning __pycache__ and *.pyc..."
 find "$STAGE" -type d -name '__pycache__' -prune -exec rm -rf {} + || true
 find "$STAGE" -type f -name '*.pyc' -delete || true
 
-# ---- 6) Create tarball ----
+# ---- 6) Signed update manifest ----
+SIGNED_UPDATE_MANIFEST="$STAGE/pqnas-update-manifest.v1.json"
+SIGNED_UPDATE_SIGNATURE="$STAGE/pqnas-update-manifest.v1.sig"
+
+if [[ -n "$RELEASE_SIGNING_KEY" ]]; then
+  echo "[*] Building signed update manifest..."
+  test -f "$SIGNED_UPDATE_MANIFEST_BUILDER" || {
+    echo "ERROR: Missing signed update manifest builder: $SIGNED_UPDATE_MANIFEST_BUILDER"
+    exit 30
+  }
+  test -f "$RELEASE_SIGNING_KEY" || {
+    echo "ERROR: PQNAS_RELEASE_SIGNING_KEY does not exist: $RELEASE_SIGNING_KEY"
+    exit 31
+  }
+
+  python3 "$SIGNED_UPDATE_MANIFEST_BUILDER" \
+    --stage "$STAGE" \
+    --version "$APP_VER" \
+    --arch "$ARCH" \
+    --key-id "$RELEASE_SIGNING_KEY_ID" \
+    --private-key "$RELEASE_SIGNING_KEY" \
+    --out-manifest "$SIGNED_UPDATE_MANIFEST" \
+    --out-signature "$SIGNED_UPDATE_SIGNATURE"
+
+  test -f "$SIGNED_UPDATE_MANIFEST" || {
+    echo "ERROR: signed update manifest was not created"
+    exit 32
+  }
+  test -f "$SIGNED_UPDATE_SIGNATURE" || {
+    echo "ERROR: signed update manifest signature was not created"
+    exit 33
+  }
+elif is_truthy "$ALLOW_UNSIGNED_UPDATE"; then
+  echo "[!] WARNING: building unsigned update package because PQNAS_RELEASE_ALLOW_UNSIGNED_UPDATE=1"
+  echo "[!] Unsigned packages must not be used for production in-place core updates."
+else
+  echo "ERROR: PQNAS_RELEASE_SIGNING_KEY is required for signed update packages."
+  echo
+  echo "For local/dev package tests only:"
+  echo "  PQNAS_RELEASE_ALLOW_UNSIGNED_UPDATE=1 $0 $VER --skip-server-build"
+  echo
+  echo "For official releases:"
+  echo "  openssl genpkey -algorithm Ed25519 -out /secure/release-keys/pqnas-release-2026.key"
+  echo "  PQNAS_RELEASE_SIGNING_KEY=/secure/release-keys/pqnas-release-2026.key $0 $VER"
+  exit 34
+fi
+
+# ---- 7) Create tarball ----
 echo "[*] Creating tarball..."
 (
   cd "$OUTDIR"
@@ -586,6 +641,8 @@ echo "  ls -la /tmp/pqnas-test/pqnas"
 echo
 echo "Expected manifest/binaries/runtime inside tarball:"
 echo "  /tmp/pqnas-test/pqnas/update_manifest.json"
+echo "  /tmp/pqnas-test/pqnas/pqnas-update-manifest.v1.json"
+echo "  /tmp/pqnas-test/pqnas/pqnas-update-manifest.v1.sig"
 echo "  /tmp/pqnas-test/pqnas/pqnas_server"
 echo "  /tmp/pqnas-test/pqnas/pqnas_keygen"
 echo "  /tmp/pqnas-test/pqnas/nodus-cli"
