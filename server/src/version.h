@@ -1,2 +1,2 @@
 #pragma once
-#define PQNAS_VERSION "1.2.3"
+#define PQNAS_VERSION "1.2.4"
