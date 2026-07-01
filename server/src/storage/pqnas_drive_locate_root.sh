@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # PQ-NAS guarded drive-bay locate wrapper.
 #
 # Narrow by design:
@@ -17,6 +17,27 @@
 # Called by pqnas_server through sudoers.
 
 set -euo pipefail
+unset BASH_ENV ENV CDPATH
+export LC_ALL=C
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+umask 022
+
+# Security: root helper must not trust caller-controlled PATH or shell env.
+AWK="/usr/bin/awk"
+CAT="/usr/bin/cat"
+CHMOD="/usr/bin/chmod"
+CHOWN="/usr/bin/chown"
+GREP="/usr/bin/grep"
+HEAD="/usr/bin/head"
+INSTALL="/usr/bin/install"
+LSPCI="/usr/bin/lspci"
+LSBLK="/usr/bin/lsblk"
+READLINK="/usr/bin/readlink"
+SMARTCTL="/usr/sbin/smartctl"
+SSH="/usr/bin/ssh"
+SSH_KEYGEN="/usr/bin/ssh-keygen"
+TIMEOUT="/usr/bin/timeout"
+TR="/usr/bin/tr"
 
 D_IDRAC_CFG="/etc/pqnas/drive-locate-idrac.env"
 D_IDRAC_DEFAULT_KEY="/etc/pqnas/secrets/pqnas-idrac-locate_rsa"
@@ -28,7 +49,7 @@ die() {
 }
 
 usage() {
-    cat >&2 <<'EOF'
+    "${CAT}" >&2 <<'EOF'
 Usage:
   pqnas-drive-locate --action locate-on  --device /dev/disk/by-id/...
   pqnas-drive-locate --action locate-off --device /dev/disk/by-id/...
@@ -51,7 +72,7 @@ cfg_value() {
     local key="$1"
     [[ -f "$D_IDRAC_CFG" ]] || return 0
 
-    awk -F= -v want="$key" '
+    "${AWK}" -F= -v want="$key" '
         /^[[:space:]]*#/ { next }
         /^[[:space:]]*$/ { next }
         {
@@ -70,7 +91,7 @@ cfg_value() {
 }
 
 truthy() {
-    case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    case "$(printf '%s' "${1:-}" | "${TR}" '[:upper:]' '[:lower:]')" in
         1|yes|true|on|enabled) return 0 ;;
         *) return 1 ;;
     esac
@@ -181,7 +202,7 @@ fi
 
 CANON=""
 if [[ "$needs_device" == "1" ]]; then
-    CANON="$(readlink -f -- "$DEVICE" 2>/dev/null || true)"
+    CANON="$("${READLINK}" -f -- "$DEVICE" 2>/dev/null || true)"
     [[ -n "$CANON" ]] || die "could not resolve device: $DEVICE"
 
     case "$CANON" in
@@ -191,7 +212,7 @@ if [[ "$needs_device" == "1" ]]; then
 
     [[ -b "$CANON" ]] || die "not a block device: $CANON"
 
-    TYPE="$(lsblk -dn -o TYPE -- "$CANON" 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+    TYPE="$("${LSBLK}" -dn -o TYPE -- "$CANON" 2>/dev/null | "${HEAD}" -n1 | "${TR}" -d '[:space:]' || true)"
     [[ "$TYPE" == "disk" ]] || die "target must be a whole storage device, got type=${TYPE:-unknown}: $CANON"
 fi
 
@@ -207,21 +228,21 @@ find_ledctl() {
 }
 
 is_megaraid_controller_present() {
-    command -v lspci >/dev/null 2>&1 || return 1
-    lspci -nn 2>/dev/null | grep -Eiq 'MegaRAID|PERC|LSI|Broadcom.*SAS|RAID bus controller'
+    [[ -x "$LSPCI" ]] || return 1
+    "$LSPCI" -nn 2>/dev/null | "$GREP" -Eiq 'MegaRAID|PERC|LSI|Broadcom.*SAS|RAID bus controller'
 }
 
 device_serial() {
     local s=""
-    s="$(lsblk -dn -o SERIAL -- "$CANON" 2>/dev/null | head -n1 || true)"
+    s="$("${LSBLK}" -dn -o SERIAL -- "$CANON" 2>/dev/null | "${HEAD}" -n1 || true)"
     s="$(trim "$s")"
     if [[ -n "$s" ]]; then
         printf '%s' "$s"
         return 0
     fi
 
-    if command -v smartctl >/dev/null 2>&1; then
-        s="$(smartctl -i "$CANON" 2>/dev/null | awk -F: '
+    if [[ -x "$SMARTCTL" ]]; then
+        s="$("$SMARTCTL" -i "$CANON" 2>/dev/null | "$AWK" -F: '
             /Serial Number/ {
                 v=$2
                 gsub(/^[ \t]+|[ \t]+$/, "", v)
@@ -290,7 +311,7 @@ dell_idrac_load_config() {
 dell_idrac_ssh() {
     local remote_cmd="$1"
 
-    timeout 45 ssh \
+    "$TIMEOUT" 45 "$SSH" \
         -i "$D_IDRAC_KEY" \
         -o IdentitiesOnly=yes \
         -o PubkeyAuthentication=yes \
@@ -308,7 +329,7 @@ dell_find_fqdd_for_serial() {
     local serial="$1"
     local inv="$2"
 
-    awk -v want="$serial" '
+    "${AWK}" -v want="$serial" '
         function trim2(s) {
             gsub(/^[ \t]+|[ \t]+$/, "", s)
             return s
@@ -405,8 +426,8 @@ run_ledctl_locate() {
 
 
 ensure_idrac_secret_dirs() {
-    install -d -m 0755 -o root -g root /etc/pqnas
-    install -d -m 0700 -o root -g root /etc/pqnas/secrets
+    "$INSTALL" -d -m 0755 -o root -g root /etc/pqnas
+    "$INSTALL" -d -m 0700 -o root -g root /etc/pqnas/secrets
 }
 
 idrac_write_config() {
@@ -438,8 +459,8 @@ idrac_write_config() {
         printf 'PQNAS_DRIVE_LOCATE_DELL_IDRAC_KNOWN_HOSTS=%s\n' "$D_IDRAC_DEFAULT_KNOWN_HOSTS"
     } > "$D_IDRAC_CFG"
 
-    chmod 0600 "$D_IDRAC_CFG"
-    chown root:root "$D_IDRAC_CFG"
+    "$CHMOD" 0600 "$D_IDRAC_CFG"
+    "$CHOWN" root:root "$D_IDRAC_CFG"
 
     printf 'saved=1\n'
 }
@@ -448,22 +469,22 @@ idrac_generate_key() {
     ensure_idrac_secret_dirs
 
     if [[ ! -f "$D_IDRAC_DEFAULT_KEY" ]]; then
-        command -v ssh-keygen >/dev/null 2>&1 || die "ssh-keygen not found"
-        ssh-keygen -t rsa -b 4096 -f "$D_IDRAC_DEFAULT_KEY" -N "" -C "pqnas-drive-locate" >/dev/null
-        chmod 0600 "$D_IDRAC_DEFAULT_KEY"
-        chmod 0644 "${D_IDRAC_DEFAULT_KEY}.pub"
-        chown root:root "$D_IDRAC_DEFAULT_KEY" "${D_IDRAC_DEFAULT_KEY}.pub"
+        [[ -x "$SSH_KEYGEN" ]] || die "ssh-keygen not found"
+        "$SSH_KEYGEN" -t rsa -b 4096 -f "$D_IDRAC_DEFAULT_KEY" -N "" -C "pqnas-drive-locate" >/dev/null
+        "$CHMOD" 0600 "$D_IDRAC_DEFAULT_KEY"
+        "$CHMOD" 0644 "${D_IDRAC_DEFAULT_KEY}.pub"
+        "$CHOWN" root:root "$D_IDRAC_DEFAULT_KEY" "${D_IDRAC_DEFAULT_KEY}.pub"
     fi
 
     [[ -r "${D_IDRAC_DEFAULT_KEY}.pub" ]] || die "public key was not created"
     printf 'generated=1\n'
     printf 'public_key='
-    cat "${D_IDRAC_DEFAULT_KEY}.pub"
+    "${CAT}" "${D_IDRAC_DEFAULT_KEY}.pub"
 }
 
 idrac_public_key() {
     [[ -r "${D_IDRAC_DEFAULT_KEY}.pub" ]] || die "public key not found; generate key first"
-    cat "${D_IDRAC_DEFAULT_KEY}.pub"
+    "${CAT}" "${D_IDRAC_DEFAULT_KEY}.pub"
 }
 
 idrac_status() {
@@ -524,7 +545,7 @@ idrac_test_inventory() {
     fi
 
     printf 'inventory=ok\n'
-    awk '
+    "${AWK}" '
         /^Disk\.Bay\./ {
             fqdd=$0
             next
