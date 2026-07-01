@@ -1,5 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 set -euo pipefail
+
+# Security: do not let the unprivileged service environment influence root helper behavior.
+unset BASH_ENV ENV CDPATH
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+umask 022
 
 SMARTCTL="/usr/sbin/smartctl"
 
