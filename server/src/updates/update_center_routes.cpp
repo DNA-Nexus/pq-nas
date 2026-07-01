@@ -481,6 +481,10 @@ UpdateArgvResult update_run_argv_limited(
     return result;
 }
 
+bool update_is_absolute_helper_path(const std::string& path) {
+    return !path.empty() && path[0] == '/';
+}
+
 
 std::filesystem::path updates_root_dir(const UpdateCenterRoutesDeps& deps) {
     const std::string env = deps.getenv_str ? deps.getenv_str("PQNAS_UPDATES_ROOT") : "";
@@ -2777,25 +2781,32 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
                 helper_path = "/usr/local/libexec/pqnas/pqnas_update_apply.py";
             }
 
-            if (helper_path.find('\'') != std::string::npos) {
+            if (!update_is_absolute_helper_path(helper_path)) {
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "bad_helper_path"},
-                    {"message", "Helper path must not contain single quotes."}
+                    {"message", "Helper path must be absolute."}
                 }.dump(2));
                 return;
             }
 
-            const std::string cmd =
-                "timeout 30 " +
-                update_shell_quote(helper_path) +
-                " --plan-id " +
-                update_shell_quote(plan_id) +
-                " --validation-only 2>&1";
+            // Security: run validation-only helper as argv via a fixed Python
+            // interpreter. This protects plan_id/helper_path from shell parsing
+            // and avoids /usr/bin/env shebang PATH influence.
+            const UpdateArgvResult helper_result = update_run_argv_limited(
+                {
+                    "/usr/bin/python3",
+                    helper_path,
+                    "--plan-id",
+                    plan_id,
+                    "--validation-only"
+                },
+                2u * 1024u * 1024u,
+                30000
+            );
 
-            int helper_status = -1;
-            const std::string helper_output =
-                update_run_command_limited(cmd, 2u * 1024u * 1024u, &helper_status);
+            const int helper_status = helper_result.exit_code;
+            const std::string helper_output = helper_result.output;
 
             json helper_json;
             bool parsed_json = false;
@@ -3338,16 +3349,32 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             helper_path = "/usr/local/libexec/pqnas/pqnas_update_apply.py";
         }
 
-        const std::string cmd =
-            "timeout 60 " +
-            update_shell_quote(helper_path) +
-            " --plan-id " +
-            update_shell_quote(plan_id) +
-            " --dry-run 2>&1";
+        if (!update_is_absolute_helper_path(helper_path)) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "bad_helper_path"},
+                {"message", "Helper path must be absolute."},
+                {"install_performed", false}
+            }.dump(2));
+            return;
+        }
 
-        int helper_status = -1;
-        const std::string helper_output =
-            update_run_command_limited(cmd, 4u * 1024u * 1024u, &helper_status);
+        // Security: dry-run uses argv execution and an internal timeout instead
+        // of shell timeout/quoting, so plan_id is never interpreted by a shell.
+        const UpdateArgvResult helper_result = update_run_argv_limited(
+            {
+                "/usr/bin/python3",
+                helper_path,
+                "--plan-id",
+                plan_id,
+                "--dry-run"
+            },
+            4u * 1024u * 1024u,
+            60000
+        );
+
+        const int helper_status = helper_result.exit_code;
+        const std::string helper_output = helper_result.output;
 
         json helper_json;
         bool parsed_json = false;
