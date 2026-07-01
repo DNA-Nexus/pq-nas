@@ -243,6 +243,65 @@ Expected result:
 
 ---
 
+## Manual audit findings
+
+### M1. Update Center core binary trust boundary
+
+Status:
+
+    Open / design fix needed before production hardening
+
+Files:
+
+    server/src/updates/pqnas_update_apply.py
+    server/src/updates/pqnas_update_apply_root.sh
+    server/src/updates/update_center_routes.cpp
+    tools/installer/pqnas_install.py
+
+Finding:
+
+The Update Center apply wrapper runs as root and applies a saved plan by plan_id.
+The plan and package are integrity-checked with plan_hash and package_sha256.
+However, the plan and incoming package directories are writable by the pqnas
+service user.
+
+Security impact:
+
+If an attacker gains code execution as the pqnas service user, they may be able
+to create a matching package + plan pair and ask the root apply wrapper to
+install static_file or core_binary update actions.
+
+Current product requirement:
+
+Core binary updates must remain easy from the admin UI. A new admin should not
+need shell access or manual root-side policy files to apply a normal update.
+
+Rejected mitigation:
+
+A manual root-owned /etc/pqnas/update_apply_policy.json gate was tested but not
+kept because it would break the desired UI-only update flow.
+
+Preferred production fix:
+
+Official update packages should be signed. The root apply helper should verify
+the update package signature using a trusted root-owned public key before
+allowing core_binary apply.
+
+Security protection expected from the future fix:
+
+- Preserves UI-only update flow for normal admins
+- Prevents pqnas service-user compromise from becoming arbitrary root-level
+  binary replacement
+- Separates package integrity from package authenticity
+- Allows root helper to trust official releases without trusting pqnas-writable
+  staging directories
+
+Interim status:
+
+Documented risk. Current UI behavior is preserved.
+
+---
+
 ## Open findings
 
 ### A. JavaScript manual HTML escaping
