@@ -1,0 +1,25 @@
+name: Semgrep
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep OSS scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Semgrep
+        run: python3 -m pip install --user semgrep
+
+      - name: Run Semgrep
+        run: ~/.local/bin/semgrep scan --config auto --error
