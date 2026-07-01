@@ -293,40 +293,54 @@ Rule:
 
     python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
 
-Count:
+Original count:
 
     21
 
+Current expected count:
+
+    19
+
 Status:
 
-    Open / needs manual triage
+    Partially fixed / remaining findings need manual triage
 
 Summary:
 
-Semgrep flags permissions such as 0755, 0750, and 0700 in the installer.
+Semgrep flags permissions such as 0755, 0750, and 0700 in the installer. Most
+of these are not automatically insecure in this project because the context is
+usually root-owned executable installation or private runtime directories.
 
-Initial assessment:
+Fixed:
 
-Many are probably acceptable because root-owned executable helpers often need
-0755, and private runtime directories often use 0750 or 0700. However,
-secret-bearing files and update-related directories should be checked manually.
+    tools/installer/pqnas_install.py: libdna.so
+    tools/installer/pqnas_install.py: /opt/pqnas/lib/dna/libdna_lib.so
 
-Security questions:
+Change:
 
-- Is the path a root-owned executable helper?
-- Is the path a non-secret static asset?
-- Is the path a secret config file?
-- Is the path an update package staging directory?
-- Is the path service-writable?
-- Could the service user write something that root later executes?
+    0755 -> 0644 for shared libraries
 
-Preferred fix direction:
+Security protection:
 
-- Secret files: 0600 root:root where possible
-- Runtime config with secrets: avoid world-readable permissions
-- Root-owned wrappers: 0755 root:root is usually acceptable
-- Service-writable directories: narrow ownership and no world-write
-- Update plans/packages: separate attacker-writable staging from root-executed files
+- Removes unnecessary execute bits from shared library files
+- Keeps libraries root-owned and non-writable by service users
+- Reduces executable filesystem surface without changing read/load behavior
+
+Accepted / likely false positives:
+
+- Root-owned executable wrappers and helper scripts require execute bit
+- pqnas_server, pqnas_keygen, and nodus-cli require execute bit
+- pqnas_notify.py and pqnas_restore_job.sh may require execute bit when launched directly
+- Nodus identity directory at 0700 is intentionally private
+- Nodus root directory at 0750 is intentionally not world-accessible
+- OPAQUE config directory at 0750 is intentionally restricted
+
+Still worth reviewing:
+
+- Update Center runtime directories are pqnas-writable and later participate in
+  root-mediated update apply flow. This is not necessarily wrong, but the trust
+  boundary between uploaded package, generated plan, and root apply helper should
+  remain a dedicated audit item.
 
 Priority:
 

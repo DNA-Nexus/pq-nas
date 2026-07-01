@@ -1239,10 +1239,13 @@ def install_dna_alert_runtime(asset_root: str, log: Optional[Log] = None) -> Tup
 
     tmp_lib = lib_dst + ".new"
     shutil.copy2(libdna_src, tmp_lib)
-    os.chmod(tmp_lib, 0o755)
+
+    # Security: shared libraries need to be readable, not directly executable.
+    # Keep libdna.so root-owned and non-writable by service users.
+    os.chmod(tmp_lib, 0o644)
     os.replace(tmp_lib, lib_dst)
     subprocess.run(["chown", "root:root", lib_dst], check=False)
-    subprocess.run(["chmod", "755", lib_dst], check=False)
+    subprocess.run(["chmod", "644", lib_dst], check=False)
 
     # Refresh linker cache so /usr/local/lib/libdna.so is picked up.
     subprocess.run(["ldconfig"], check=False)
@@ -3697,11 +3700,14 @@ class ExecuteScreen(Screen):
 
             tmp_dna = dst_dna + ".new"
             shutil.copy2(src_dna, tmp_dna)
-            os.chmod(tmp_dna, 0o755)
+
+            # Security: DNA shared library is loaded as data/code by the runtime,
+            # not executed as a standalone command. Avoid unnecessary execute bit.
+            os.chmod(tmp_dna, 0o644)
             os.replace(tmp_dna, dst_dna)
 
             subprocess.run(["chown", "root:root", dst_dna], check=False)
-            subprocess.run(["chmod", "755", dst_dna], check=False)
+            subprocess.run(["chmod", "644", dst_dna], check=False)
 
             self.logw.write(f"DNA lib installed: {dst_dna}  (from {src_dna})")
 
