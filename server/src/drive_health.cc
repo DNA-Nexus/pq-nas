@@ -3,6 +3,9 @@
 #include <nlohmann/json.hpp>
 
 #include <array>
+#include <cerrno>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -73,24 +76,103 @@ static bool run_command_capture(const std::string& cmd, std::string* out, int* r
     return true;
 }
 
+
+static bool run_command_capture_argv(const std::vector<std::string>& argv_s,
+                                     std::string* out,
+                                     int* rc_out) {
+    if (out) out->clear();
+    if (rc_out) *rc_out = 127;
+
+    if (argv_s.empty()) return false;
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        if (out) *out = std::string("pipe failed: ") + std::strerror(errno);
+        return false;
+    }
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        const int saved = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        if (out) *out = std::string("fork failed: ") + std::strerror(saved);
+        return false;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        (void)::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::string buf;
+    std::array<char, 4096> tmp{};
+    for (;;) {
+        const ssize_t n = ::read(pipefd[0], tmp.data(), tmp.size());
+        if (n > 0) {
+            buf.append(tmp.data(), static_cast<std::size_t>(n));
+            continue;
+        }
+        if (n == 0) break;
+        if (errno == EINTR) continue;
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        if (out) *out = buf + "\nwaitpid failed: " + std::strerror(errno);
+        if (rc_out) *rc_out = 127;
+        return false;
+    }
+
+    if (out) *out = std::move(buf);
+
+    if (WIFEXITED(status)) {
+        if (rc_out) *rc_out = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        if (rc_out) *rc_out = 128 + WTERMSIG(status);
+    } else {
+        if (rc_out) *rc_out = 127;
+    }
+
+    return true;
+}
+
+
 // Security: smartctl is executed through a guarded root wrapper.
 // This protects against accidental or malicious expansion from a few supported
 // SMART commands into unrestricted root-level smartctl argument execution.
 static constexpr const char* kPqnasSmartctl = "/usr/local/sbin/pqnas-smartctl";
 
-// Very small single-quote shell escaping helper.
-//
-// We only use this for device paths and similar values when building commands
-// for popen(). The goal is to keep shell use narrowly scoped and avoid obvious
-// quoting bugs when passing /dev/... paths to the guarded smartctl wrapper.
-static std::string shell_quote(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out.push_back(c);
-    }
-    out += "'";
-    return out;
+static bool run_pqnas_smartctl_capture(const std::vector<std::string>& smartctl_args,
+                                      std::string* out,
+                                      int* rc_out) {
+    std::vector<std::string> argv = {
+        "/usr/bin/sudo",
+        "-n",
+        kPqnasSmartctl
+    };
+
+    argv.insert(argv.end(), smartctl_args.begin(), smartctl_args.end());
+
+    return run_command_capture_argv(argv, out, rc_out);
 }
 
 // JSON path helpers.
@@ -790,10 +872,7 @@ static bool start_smartctl_selftest(const std::string& dev,
 
     std::string txt;
     int rc = -1;
-    const std::string cmd =
-        std::string("sudo -n ") + kPqnasSmartctl + " -t " + smart_type + " " + shell_quote(dev) + " 2>&1";
-
-    if (!run_command_capture(cmd, &txt, &rc)) {
+    if (!run_pqnas_smartctl_capture({"-t", smart_type, dev}, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl self-test start";
         return false;
     }
@@ -855,8 +934,7 @@ static bool probe_one_drive(const LsblkDisk& inv, DriveHealthInfo* out, std::str
 
     std::string txt;
     int rc = -1;
-    const std::string cmd = std::string("sudo -n ") + kPqnasSmartctl + " -a -j " + shell_quote(inv.path) + " 2>&1";
-    if (!run_command_capture(cmd, &txt, &rc)) {
+    if (!run_pqnas_smartctl_capture({"-a", "-j", inv.path}, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl for " + inv.path;
         return false;
     }
@@ -963,10 +1041,7 @@ bool start_drive_selftest(const std::string& dev,
     // main probe path before attempting the self-test start command.
     std::string txt;
     int rc = -1;
-    const std::string info_cmd =
-        std::string("sudo -n ") + kPqnasSmartctl + " -i -j " + shell_quote(found->path) + " 2>&1";
-
-    if (!run_command_capture(info_cmd, &txt, &rc)) {
+    if (!run_pqnas_smartctl_capture({"-i", "-j", found->path}, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl identify for self-test";
         return false;
     }
