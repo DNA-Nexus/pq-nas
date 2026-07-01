@@ -27,8 +27,9 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
+import http.client
+import re
 import urllib.parse
-import urllib.request
 import smtplib
 import ssl
 from pathlib import Path
@@ -41,6 +42,15 @@ STATE_DIR = Path("/var/lib/pqnas/notifications")
 STATE_PATH = STATE_DIR / "state.json"
 
 WARNING_THROTTLE_SECONDS = 6 * 60 * 60
+
+TELEGRAM_API_HOST = "api.telegram.org"
+
+# Security: accept only normal Telegram bot tokens before building the API path.
+# This keeps notification settings from becoming a generic dynamic URL sink.
+TELEGRAM_BOT_TOKEN_RE = re.compile(r"^[0-9]{5,20}:[A-Za-z0-9_-]{20,256}$")
+
+# Security: allow numeric chat IDs and @channel usernames, not arbitrary strings.
+TELEGRAM_CHAT_ID_RE = re.compile(r"^-?[0-9]{1,20}$|^@[A-Za-z0-9_]{5,64}$")
 
 
 @contextmanager
@@ -186,41 +196,69 @@ def send_telegram(settings: Dict[str, Any], text: str) -> bool:
         print("[notify] telegram not configured")
         return False
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    if not TELEGRAM_BOT_TOKEN_RE.fullmatch(token):
+        # Security: do not put untrusted config into a URL/path.
+        # Also do not print the token, because it is a secret.
+        print("[notify] telegram token format invalid")
+        return False
+
+    if not TELEGRAM_CHAT_ID_RE.fullmatch(chat_id):
+        # Security: keep chat_id as a Telegram identifier, not arbitrary payload.
+        print("[notify] telegram chat_id format invalid")
+        return False
+
     payload = urllib.parse.urlencode({
         "chat_id": chat_id,
         "text": text,
         "disable_web_page_preview": "true",
     }).encode("utf-8")
 
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    # Security: use a fixed HTTPS host instead of urllib.urlopen(dynamic_url).
+    # Only the Telegram bot API path is dynamic, after token validation above.
+    path = f"/bot{token}/sendMessage"
+
+    # Security: use Python's default verified TLS context explicitly.
+    # This protects against accidentally relying on old/implicit HTTPSConnection
+    # certificate behavior.
+    tls_context = ssl.create_default_context()
+
+    # Security: fixed host + explicit verified TLS context + validated Telegram path.
+    conn = http.client.HTTPSConnection(  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
+        TELEGRAM_API_HOST,
+        timeout=20,
+        context=tls_context,
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            body = r.read(4096).decode("utf-8", errors="replace")
-            if r.status < 200 or r.status >= 300:
-                print(f"[notify] telegram http error: {r.status}")
+        conn.request("POST", path, body=payload, headers=headers)
+        r = conn.getresponse()
+        body = r.read(4096).decode("utf-8", errors="replace")
+
+        if r.status < 200 or r.status >= 300:
+            print(f"[notify] telegram http error: {r.status}")
+            return False
+
+        try:
+            j = json.loads(body)
+            if isinstance(j, dict) and j.get("ok") is False:
+                print(f"[notify] telegram api error: {j.get('description') or 'ok=false'}")
                 return False
+        except Exception:
+            pass
 
-            try:
-                j = json.loads(body)
-                if isinstance(j, dict) and j.get("ok") is False:
-                    print(f"[notify] telegram api error: {j.get('description') or 'ok=false'}")
-                    return False
-            except Exception:
-                pass
-
-            print("[notify] telegram sent")
-            return True
+        print("[notify] telegram sent")
+        return True
 
     except Exception as e:
-        print(f"[notify] telegram send failed: {e}")
+        # Security: avoid printing exception details that could include secrets.
+        print(f"[notify] telegram send failed: {type(e).__name__}")
         return False
+    finally:
+        conn.close()
 
 
 
