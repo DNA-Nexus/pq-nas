@@ -858,9 +858,9 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
 
     // -n = non-interactive (fails fast if sudo not permitted)
     // Use full paths so sudoers rules can be tight.
-    const std::string cmd_show  = "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + mp;
-    const std::string cmd_df    = "/usr/bin/sudo -n /usr/bin/btrfs filesystem df "   + mp;
-    const std::string cmd_stats = "/usr/bin/sudo -n /usr/bin/btrfs device stats "    + mp;
+    const std::string cmd_show  = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + mp;
+    const std::string cmd_df    = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df "   + mp;
+    const std::string cmd_stats = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats "    + mp;
 
 
     int rc_show  = run_capture(cmd_show,  &show);
@@ -1721,7 +1721,7 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
 
     cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount));
     // hardening: pseudo command keeps fstab helper argv-only.
     cmds.push_back("FSTAB_ADD_BTRFS " + mount);
 
@@ -2319,7 +2319,7 @@ j["no_stats_available"] = has("no stats available");
     int ec = 0;
 
     const std::string cmd =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount);
 
     // hardening: route pseudo commands through guarded runner.
     const bool ok = run_cmd_capture(cmd, &show, &ec);
@@ -3733,22 +3733,6 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
     const std::string test_prefix  = "/srv/pqnas-test";
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
 
-    const char* BTRFS1 = "/usr/bin/btrfs";
-    const char* BTRFS2 = "/usr/sbin/btrfs";
-
-    auto exists_exec = [](const char* p) -> bool {
-        std::error_code ec;
-        auto st = std::filesystem::status(p, ec);
-        if (ec) return false;
-        if (!std::filesystem::is_regular_file(st)) return false;
-        auto perms = st.permissions();
-        using P = std::filesystem::perms;
-        return (perms & P::owner_exec) != P::none ||
-               (perms & P::group_exec) != P::none ||
-               (perms & P::others_exec) != P::none;
-    };
-
-    const char* BTRFS = exists_exec(BTRFS1) ? BTRFS1 : (exists_exec(BTRFS2) ? BTRFS2 : BTRFS1);
 
     // Capabilities for UI
     std::string root_fstype;
@@ -3826,15 +3810,15 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
         std::string show_out, df_out, usage_out;
 
         int rc_show = run_capture(
-            std::string("/usr/bin/sudo -n ") + BTRFS + " filesystem show " + sh_quote(target) + " 2>&1",
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(target) + " 2>&1",
             &show_out
         );
         int rc_df = run_capture(
-            std::string("/usr/bin/sudo -n ") + BTRFS + " filesystem df -b " + sh_quote(target) + " 2>&1",
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df-bytes " + sh_quote(target) + " 2>&1",
             &df_out
         );
         int rc_usage = run_capture(
-            std::string("/usr/bin/sudo -n ") + BTRFS + " filesystem usage -b " + sh_quote(target) + " 2>&1",
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-usage-bytes " + sh_quote(target) + " 2>&1",
             &usage_out
         );
 
@@ -4377,24 +4361,9 @@ srv.Post("/api/v4/storage/pools/rename", [&](const httplib::Request& req, httpli
     // If client provided expect_uuid, verify it matches current UUID (hard safety guard)
     if (!expect_uuid.empty()) {
         // pick btrfs binary (same helper you used above in /storage/pools)
-        const char* BTRFS1 = "/usr/bin/btrfs";
-        const char* BTRFS2 = "/usr/sbin/btrfs";
-
-        auto exists_exec = [](const char* p) -> bool {
-            std::error_code ec;
-            auto st = std::filesystem::status(p, ec);
-            if (ec) return false;
-            if (!std::filesystem::is_regular_file(st)) return false;
-            auto perms = st.permissions();
-            using P = std::filesystem::perms;
-            return (perms & P::owner_exec) != P::none ||
-                   (perms & P::group_exec) != P::none ||
-                   (perms & P::others_exec) != P::none;
-        };
-        const char* BTRFS = exists_exec(BTRFS1) ? BTRFS1 : (exists_exec(BTRFS2) ? BTRFS2 : BTRFS1);
 
         std::string show_out;
-        int rc_show = run_capture(std::string("/usr/bin/sudo -n ") + BTRFS + " filesystem show " + sh_quote(mount) + " 2>&1", &show_out);
+        int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
         cap_string(show_out, 256 * 1024);
         rtrim_inplace(show_out);
 
@@ -4880,7 +4849,7 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
     json by_name = disks_j.value("by_name", json::object());
 
     std::string show_out;
-    int rc_show = run_capture("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount) + " 2>&1", &show_out);
+    int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
     cap_string(show_out, 256 * 1024);
     rtrim_inplace(show_out);
 
@@ -5013,7 +4982,7 @@ srv.Post("/api/v4/poolmgr/apply-layout", [&](const httplib::Request& req, httpli
     json by_name = disks_j.value("by_name", json::object());
 
     std::string show_out;
-    int rc_show = run_capture("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount) + " 2>&1", &show_out);
+    int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
     cap_string(show_out, 256 * 1024);
     rtrim_inplace(show_out);
 
@@ -5421,7 +5390,7 @@ srv.Get("/api/v4/raid/discovery", [&](const httplib::Request& req, httplib::Resp
 
     // -------------------- btrfs filesystem show (read-only) --------------------
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -5588,7 +5557,7 @@ srv.Get("/api/v4/raid/balance-status", [&](const httplib::Request& req, httplib:
 
     // Run balance status
     const std::string cmd =
-        "/usr/bin/sudo -n /usr/bin/btrfs balance status " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + sh_quote(resolved_mount);
 
     std::string out;
     int rc = 0;
@@ -5725,7 +5694,7 @@ srv.Get("/api/v4/raid/scrub-status", [&](const httplib::Request& req, httplib::R
 
     // Run scrub status
     const std::string cmd =
-        "/usr/bin/sudo -n /usr/bin/btrfs scrub status " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount);
 
     std::string out;
     int rc = 0;
@@ -5906,7 +5875,7 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
     commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub start " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub status " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
 
     plan["steps"] = steps;
     plan["commands"] = commands;
@@ -6110,7 +6079,7 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
     commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub start " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub status " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
 
     // plan_id check (must match exactly)
     const std::string joined = join_commands_for_hash(commands);
@@ -6340,7 +6309,7 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     if (all_ok) {
         std::string s_out;
         int s_rc = 0;
-        (void)run_cmd_capture("/usr/bin/sudo -n /usr/bin/btrfs scrub status " + sh_quote(resolved_mount), &s_out, &s_rc);
+        (void)run_cmd_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount), &s_out, &s_rc);
         cap_string(s_out, 256 * 1024);
         record["post_scrub_status"] = json{{"rc", s_rc}, {"status_raw", s_out}};
     }
@@ -6479,19 +6448,19 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
 
     // btrfs filesystem show
     out["btrfs_filesystem_show"] = run(
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount),
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount),
         256 * 1024, nullptr, nullptr
     );
 
     // btrfs filesystem df
     out["btrfs_filesystem_df"] = run(
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem df " + sh_quote(resolved_mount),
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df " + sh_quote(resolved_mount),
         256 * 1024, nullptr, nullptr
     );
 
     // btrfs device stats
     out["btrfs_device_stats"] = run(
-        "/usr/bin/sudo -n /usr/bin/btrfs device stats " + sh_quote(resolved_mount),
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats " + sh_quote(resolved_mount),
         256 * 1024, nullptr, nullptr
     );
 
@@ -6500,7 +6469,7 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
         std::string raw;
         int rc = 0;
         json r = run(
-            "/usr/bin/sudo -n /usr/bin/btrfs balance status " + sh_quote(resolved_mount),
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + sh_quote(resolved_mount),
             256 * 1024, &raw, &rc
         );
 
@@ -6531,7 +6500,7 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
         std::string raw;
         int rc = 0;
         json r = run(
-            "/usr/bin/sudo -n /usr/bin/btrfs scrub status " + sh_quote(resolved_mount),
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount),
             256 * 1024, &raw, &rc
         );
 
@@ -6698,7 +6667,7 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
 
     // Read btrfs filesystem show (used to salt plan_id so add->remove->add works)
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -7034,7 +7003,7 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
     json by_path = disks_j.value("by_path", json::object());
 
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -7321,7 +7290,7 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     json by_path = disks_j.value("by_path", json::object());
 
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -7625,7 +7594,7 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
 
     // Read btrfs filesystem show so we can map /dev/loop33 -> /dev/loop33p1 member path
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -8165,7 +8134,7 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
 
     // Read btrfs filesystem show (used to salt plan_id so add->remove->add works)
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -8719,7 +8688,7 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
 
     // Read membership BEFORE umount so we can optionally wipe member disks
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount) + " 2>&1";
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount) + " 2>&1";
 
     std::string show_raw;
     int ec_show = 0;
@@ -9031,7 +9000,7 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
 
     // Read btrfs filesystem show to map /dev/disk -> member path
     const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(resolved_mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
 
     std::string show_raw;
     int ec_show = 0;
@@ -9686,7 +9655,7 @@ srv.Post("/api/v4/raid/execute/create-pool", [&](const httplib::Request& req, ht
             {
                 std::string show_out;
                 int rc_show = run_capture(
-                    "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount) + " 2>&1",
+                    "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1",
                     &show_out
                 );
                 if (rc_show == 0) {
@@ -9884,9 +9853,9 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
 
     std::string dev_stats, scrub_status, balance_status;
 
-    const std::string cmd_dev_stats = "/usr/bin/sudo -n /usr/bin/btrfs device stats " + mp;
-    const std::string cmd_scrub     = "/usr/bin/sudo -n /usr/bin/btrfs scrub status " + mp;
-    const std::string cmd_balance   = "/usr/bin/sudo -n /usr/bin/btrfs balance status " + mp;
+    const std::string cmd_dev_stats = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats " + mp;
+    const std::string cmd_scrub     = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + mp;
+    const std::string cmd_balance   = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + mp;
 
 
     int rc_dev_stats = run_capture(cmd_dev_stats, &dev_stats);

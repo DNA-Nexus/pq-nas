@@ -4590,7 +4590,7 @@ static json load_or_init_pools_cfg(const std::string& users_path) {
     int ec = 0;
 
     const std::string cmd =
-        "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount);
+        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount);
 
     const bool ok = run_cmd_capture(cmd, &show, &ec);
     cap_string(show, 256 * 1024);
@@ -5139,9 +5139,9 @@ static inline double round_dp(double value, int decimals) {
 
     // -n = non-interactive (fails fast if sudo not permitted)
     // Use full paths so sudoers rules can be tight.
-    const std::string cmd_show  = "/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + mp;
-    const std::string cmd_df    = "/usr/bin/sudo -n /usr/bin/btrfs filesystem df "   + mp;
-    const std::string cmd_stats = "/usr/bin/sudo -n /usr/bin/btrfs device stats "    + mp;
+    const std::string cmd_show  = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + mp;
+    const std::string cmd_df    = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df "   + mp;
+    const std::string cmd_stats = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats "    + mp;
 
 
     int rc_show  = run_capture(cmd_show,  &show);
@@ -5791,7 +5791,7 @@ std::string pqnas_server_started_at_iso_local() {
 
     cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
     cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs filesystem show " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount));
 
     const std::string data_dir = mount + "/data";
     cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
