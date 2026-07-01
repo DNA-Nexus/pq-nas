@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Security: do not let the unprivileged service environment influence root helper behavior.
+unset BASH_ENV ENV CDPATH
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+umask 022
+
 die() {
   echo "pqnas-raid-root: $*" >&2
   exit 1
@@ -50,6 +55,7 @@ for bin in "$BTRFS" "$MKFS_BTRFS" "$SGDISK" "$WIPEFS" "$PARTPROBE" "$UDEVADM" "$
   [ -x "$bin" ] || die "missing executable: $bin"
 done
 
+# Security: reject control characters and path traversal before any root operation.
 reject_bad_path_string() {
   local p="$1"
   [ -n "$p" ] || die "empty path"
@@ -69,11 +75,13 @@ safe_pool_id() {
   [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]]
 }
 
+# Security: labels become mount specs and filesystem labels; keep them on a tight allowlist.
 safe_label() {
   local label="$1"
   [[ "$label" =~ ^PQNAS_[A-Za-z0-9._-]+$ ]]
 }
 
+# Security: restore mounts may use LABEL=/UUID= only; reject arbitrary device/path specs.
 safe_mount_spec() {
   local spec="$1"
 
@@ -84,7 +92,7 @@ safe_mount_spec() {
       ;;
     UUID=*)
       local uuid="${spec#UUID=}"
-      [[ "$uuid" =~ ^[A-Fa-f0-9-]{36}$ ]]
+      [[ "$uuid" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]]
       ;;
     *)
       return 1
@@ -97,6 +105,7 @@ normalize_path_may_not_exist() {
   "$READLINK" -m -- "$p"
 }
 
+# Security: destructive disk operations are allowed only for real /dev block devices.
 require_block_device() {
   local dev="$1"
   reject_bad_path_string "$dev"
@@ -110,6 +119,7 @@ require_block_device() {
   printf '%s' "$dev"
 }
 
+# Security: refuse to wipe/repartition a device tree that currently has mounted children.
 require_unmounted_device_tree() {
   local dev="$1"
   local mounts
@@ -120,6 +130,7 @@ require_unmounted_device_tree() {
   fi
 }
 
+# Security: privileged mount/btrfs operations are constrained to PQ-NAS pool roots.
 require_pool_mount() {
   local input="$1"
   local real
@@ -147,6 +158,7 @@ require_pool_mount() {
   printf '%s' "$real"
 }
 
+# Security: mkdir is limited to pool roots or their exact data directory.
 require_pool_or_data_path() {
   local input="$1"
   local real
@@ -175,6 +187,7 @@ require_pool_or_data_path() {
   printf '%s' "$real"
 }
 
+# Security: chown/chmod are limited to the managed pool data directory only.
 require_pool_data_path() {
   local input="$1"
   local real
