@@ -62,13 +62,24 @@ class BtrfsProvider final : public SnapshotProvider {
 public:
     CmdResult snapshot_ro(const std::string& src, const std::string& dst) override {
         CmdResult r;
-        r.ok = run_cmd_capture_stderr({"btrfs","subvolume","snapshot","-r", src, dst}, r.err);
+        // Security: scheduled snapshots need root for btrfs, but pqnas must not
+        // get arbitrary btrfs sudo. The root helper validates allowed pool paths.
+        r.ok = run_cmd_capture_stderr({
+            "/usr/bin/sudo", "-n",
+            "/usr/local/sbin/pqnas-btrfs-snapshot",
+            "create-ro", src, dst
+        }, r.err);
         return r;
     }
 
     CmdResult delete_subvol(const std::string& path) override {
         CmdResult r;
-        r.ok = run_cmd_capture_stderr({"btrfs","subvolume","delete", path}, r.err);
+        // Security: deletion is restricted by the helper to PQ-NAS managed snapshot roots.
+        r.ok = run_cmd_capture_stderr({
+            "/usr/bin/sudo", "-n",
+            "/usr/local/sbin/pqnas-btrfs-snapshot",
+            "delete", path
+        }, r.err);
         return r;
     }
 };
