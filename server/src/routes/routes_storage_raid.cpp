@@ -291,8 +291,172 @@ static void audit_append(const pqnas::AuditEvent& ev) {
 }
 
 
+// Security: known root-helper command strings are legacy display/plan-hash
+// strings. Execute them via argv before any shell fallback.
+[[maybe_unused]] static bool run_argv_capture_limited(
+    const std::vector<std::string>& argv_s,
+    std::string* out,
+    int* ec,
+    int timeout_ms,
+    std::size_t max_bytes);
+
+static std::string raid_cmd_trim_copy(std::string s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.erase(s.begin());
+    }
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+        s.pop_back();
+    }
+    return s;
+}
+
+static bool raid_parse_legacy_helper_tail(const std::string& tail,
+                                          std::vector<std::string>* args_out) {
+    if (args_out) args_out->clear();
+
+    std::vector<std::string> args;
+    std::string cur;
+    bool in_single = false;
+    bool have = false;
+
+    for (std::size_t i = 0; i < tail.size(); ++i) {
+        const char c = tail[i];
+
+        if (in_single) {
+            if (c == '\'') {
+                // sh_quote() encodes embedded apostrophe as: '\''.
+                if (i + 3 < tail.size() &&
+                    tail[i + 1] == '\\' &&
+                    tail[i + 2] == '\'' &&
+                    tail[i + 3] == '\'') {
+                    cur.push_back('\'');
+                    i += 3;
+                    have = true;
+                    continue;
+                }
+
+                in_single = false;
+                have = true;
+                continue;
+            }
+
+            cur.push_back(c);
+            have = true;
+            continue;
+        }
+
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (have) {
+                args.push_back(cur);
+                cur.clear();
+                have = false;
+            }
+            continue;
+        }
+
+        if (c == '\'') {
+            in_single = true;
+            have = true;
+            continue;
+        }
+
+        // Fail closed for shell metacharacters. Known helper action names are
+        // simple unquoted tokens; arguments produced by sh_quote() are quoted.
+        if (c == '\\' || c == ';' || c == '|' || c == '&' ||
+            c == '<' || c == '>' || c == '$' || c == '`' ||
+            c == '(' || c == ')') {
+            return false;
+        }
+
+        cur.push_back(c);
+        have = true;
+    }
+
+    if (in_single) return false;
+
+    if (have) {
+        args.push_back(cur);
+    }
+
+    if (args_out) *args_out = std::move(args);
+    return true;
+}
+
+static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
+                                                std::string* out,
+                                                int* exit_code) {
+    std::string cmd = raid_cmd_trim_copy(cmd_in);
+
+    // Existing callers often append shell stderr redirection. Keep the display
+    // string unchanged, but remove the suffix before strict legacy parsing.
+    if (cmd.size() >= 4 && cmd.compare(cmd.size() - 4, 4, "2>&1") == 0) {
+        cmd.resize(cmd.size() - 4);
+        cmd = raid_cmd_trim_copy(cmd);
+    }
+
+    struct KnownHelper {
+        const char* prefix;
+        const char* helper;
+    };
+
+    static const KnownHelper helpers[] = {
+        {
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root",
+            "/usr/local/sbin/pqnas-raid-root"
+        },
+        {
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status",
+            "/usr/local/sbin/pqnas-btrfs-status"
+        },
+    };
+
+    for (const auto& h : helpers) {
+        const std::string prefix(h.prefix);
+
+        if (cmd != prefix && cmd.rfind(prefix + " ", 0) != 0) {
+            continue;
+        }
+
+        std::string tail;
+        if (cmd.size() > prefix.size()) {
+            tail = cmd.substr(prefix.size() + 1);
+        }
+
+        std::vector<std::string> args;
+        if (!raid_parse_legacy_helper_tail(tail, &args)) {
+            if (out) *out = "err: failed to parse legacy root-helper command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        std::vector<std::string> argv = {
+            "/usr/bin/sudo",
+            "-n",
+            h.helper
+        };
+        argv.insert(argv.end(), args.begin(), args.end());
+
+        // Some btrfs balance/remove operations can be long-running. Preserve the
+        // old no-shell behavior without imposing a short command timeout.
+        return run_argv_capture_limited(
+            argv,
+            out,
+            exit_code,
+            24 * 60 * 60 * 1000,
+            2u * 1024u * 1024u
+        );
+    }
+
+    return false;
+}
+
 // copied transitional helper from main.cpp: run_capture
 [[maybe_unused]] static int run_capture(const std::string& cmd, std::string* out) {
+    int helper_ec = 127;
+    if (raid_try_run_known_root_helper_argv(cmd, out, &helper_ec)) {
+        return helper_ec;
+    }
+
     if (out) out->clear();
     std::array<char, 8192> buf{};
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -355,6 +519,9 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
         return true;
     }
 
+    if (raid_try_run_known_root_helper_argv(cmd, out, exit_code)) {
+        return true;
+    }
 
     if (out) out->clear();
     if (exit_code) *exit_code = 127; // default like "command failed"
