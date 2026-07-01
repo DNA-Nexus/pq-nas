@@ -188,10 +188,8 @@ int run_btrfs_snapshot_local(
             "/usr/bin/sudo",
             "sudo",
             "-n",
-            "/usr/bin/btrfs",
-            "subvolume",
-            "snapshot",
-            "-r",
+            "/usr/local/sbin/pqnas-btrfs-snapshot",
+            "create-ro",
             src.c_str(),
             dst.c_str(),
             static_cast<char*>(nullptr)
@@ -420,7 +418,7 @@ void register_snapshot_create_routes(
                     reply(403, json{
                         {"ok", false},
                         {"error", "no_privs"},
-                        {"message", "sudo not permitted for btrfs snapshot; add sudoers rule for snapshot create"},
+                        {"message", "sudo not permitted for pqnas-btrfs-snapshot helper; install snapshot helper sudoers rule"},
                         {"detail", pqnas::shorten(out, 200)}
                     });
                     return;
