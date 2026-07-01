@@ -1,6 +1,24 @@
 #!/bin/sh
 set -eu
+unset BASH_ENV ENV CDPATH
 export LC_ALL=C
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+umask 022
+
+# Security: root helper must not trust caller-controlled PATH or shell env.
+FINDMNT="/usr/bin/findmnt"
+HEAD="/usr/bin/head"
+TR="/usr/bin/tr"
+BLKID="/usr/sbin/blkid"
+AWK="/usr/bin/awk"
+MKTEMP="/usr/bin/mktemp"
+INSTALL="/usr/bin/install"
+RM="/usr/bin/rm"
+FSTAB="/etc/fstab"
+
+if [ ! -x "$BLKID" ] && [ -x /usr/bin/blkid ]; then
+    BLKID="/usr/bin/blkid"
+fi
 
 die() {
     echo "error: $*" >&2
@@ -47,17 +65,20 @@ if [ -e "$mount" ] && [ -L "$mount" ]; then
 fi
 
 # hardening: count matching fstab rows without using a /tmp side file
-removed_count="$(awk -v m="$mount" '$2 == m { c++ } END { print c + 0 }' /etc/fstab)"
+removed_count="$("$AWK" -v m="$mount" '$2 == m { c++ } END { print c + 0 }' "$FSTAB")"
 
 # hardening: create temp file under /etc, not global /tmp
-tmp="$(mktemp /etc/fstab.pqnas-remove.XXXXXX)"
-trap 'rm -f "$tmp"' EXIT INT TERM
+tmp="$("$MKTEMP" /etc/fstab.pqnas-remove.XXXXXX)"
+cleanup_tmp() {
+    [ -n "${tmp:-}" ] && "$RM" -f "$tmp"
+}
+trap cleanup_tmp EXIT INT TERM
 
-awk -v m="$mount" '$2 != m { print }' /etc/fstab > "$tmp"
+"$AWK" -v m="$mount" '$2 != m { print }' "$FSTAB" > "$tmp"
 
 # hardening: atomic-ish root-owned replacement avoids partial fstab writes
-install -m 0644 -o root -g root "$tmp" /etc/fstab
-rm -f "$tmp"
+"$INSTALL" -m 0644 -o root -g root "$tmp" "$FSTAB"
+"$RM" -f "$tmp"
 trap - EXIT INT TERM
 
 echo "ok: fstab updated mount=$mount removed=$removed_count"
