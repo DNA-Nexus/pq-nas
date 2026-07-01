@@ -1463,6 +1463,234 @@ Rules:
 - long-running preview, archive, restore, import, and indexing tasks need concurrency
   limits and cancellation/timeout behavior
 
+
+---
+
+## 49. Signed update packages and release trust
+
+Update package hashes and install plan hashes are integrity controls, not authenticity controls.
+
+A hash can prove that a package did not change after planning, but it does not prove that the package was produced by the DNA-Nexus release process.
+
+Rules:
+
+- core/server binary updates must require a valid signed update manifest
+- unsigned, missing-signature, malformed-signature, and wrong-key packages must fail closed before any file modification
+- plan hash and package SHA256 must not be treated as release authenticity proof
+- release private keys must never be stored in the repository, release tarball, installer assets, logs, screenshots, support bundles, or CI artifacts
+- only public release trust anchors may be shipped with DNA-Nexus
+- fresh installs must install trusted public update keys automatically
+- trusted public keys used by root helpers must be root-owned and not group/world writable
+- root update helpers must not read trust-anchor paths or verifier binary paths from caller-controlled environment variables
+- the signed manifest must bind update action type, source path, target path, file hash, and intended install mode where practical
+- the root helper must verify the signed manifest before preparing backups, chmod/chown changes, binary replacement, or service restart decisions
+- signed update verification must be part of both dry-run and apply validation
+- dry-run and apply must share the same security validation path
+- UI upload/build-plan flow may stay simple, but privileged apply decisions must be owned by the root helper
+
+Required tests:
+
+- correct release key → core update dry-run/apply is accepted
+- wrong release key → core update dry-run/apply is rejected before changes
+- missing signature → core update dry-run/apply is rejected before changes
+- tampered core binary → core update dry-run/apply is rejected before changes
+
+Security rationale:
+
+- `package_sha256 + plan_hash` means integrity after planning.
+- `signed manifest + trusted public key` means release authenticity.
+
+Both are required for core binary updates.
+
+---
+
+## 50. Release-key handling and trust-anchor bootstrap
+
+Release signing keys are production secrets.
+
+Rules:
+
+- generate release private keys outside the repository
+- keep private keys on a controlled release machine or approved secret store
+- never copy private keys into `/tmp`, release staging directories, installer payloads, GitHub release assets, or support bundles
+- ship only the public key
+- install public keys to a root-controlled trust directory, for example `/etc/pqnas/update-trust.d/`
+- public keys may be world-readable, but must not be writable by the service user, group, or other users
+- key rotation must support at least one overlap period where old and new public keys are trusted if existing installations need to update safely
+- key revocation or emergency rotation must be documented before production use
+- development/test keys must be clearly named and must not be accepted by production trust directories
+
+Fresh-install rule:
+
+- tarball contains public trust anchor.
+- installer copies it to a root-owned trust directory.
+- future Update Center core updates verify against that trust anchor.
+
+Existing-install rule:
+
+- an already installed system cannot verify signed core updates until the trusted public key has been installed through a safe bootstrap path.
+
+---
+
+## 51. Root helper environment and command boundaries
+
+Root helpers are security boundaries.
+
+Rules:
+
+- do not trust caller-controlled environment variables for security decisions
+- do not accept helper binary paths, verifier paths, trust-anchor paths, or policy paths from the unprivileged service environment unless explicitly intended for development and disabled in production
+- use fixed absolute paths for security-critical helper dependencies where practical
+- if configurability is required, load configuration from root-owned, non-writable files
+- validate root-owned config file ownership and mode before trusting it
+- execute verifier tools with fixed argv and `shell=False` or equivalent
+- root helpers must validate every argument using allowlists
+- root helpers must reject `/`, `\`, `..`, empty values, unexpected characters, and unsupported modes in identifiers such as plan IDs
+- root helpers must validate package source paths, target paths, and action types again even if the server already built a plan
+
+Security comment standard:
+
+- Every new root-helper check should include a short comment explaining what attack path it blocks.
+
+Example:
+
+- Security: service-writable plan+package data must not be enough to replace the core server binary as root.
+
+---
+
+## 52. Archive update extraction must be explicit and fail closed
+
+Archive extraction for updates must never rely on broad convenience extraction.
+
+Rules:
+
+- do not use unsafe full-archive extraction helpers for update packages
+- iterate archive members explicitly
+- reject absolute paths
+- reject `..` traversal
+- reject empty member names
+- reject symlinks, hardlinks, devices, FIFOs, sockets, and unsupported types
+- create directories deliberately
+- copy regular files explicitly
+- verify the resolved extraction target remains under the extraction root
+- normalize package paths consistently before comparing them to manifest entries
+- treat top-level package prefixes, such as `pqnas/`, as an explicit normalization case, not as an accident
+- bind normalized source paths to signed manifest entries before applying root changes
+
+Dangerous pattern:
+
+- extract all archive members
+- inspect extracted result only afterwards
+
+Preferred pattern:
+
+- for each member, normalize the member path
+- reject unsafe member type/path
+- resolve the target under the extraction root
+- copy only regular files or create directories
+
+---
+
+## 53. Security-relevant UI errors must preserve bounded detail
+
+Admin-facing security workflows need actionable error details.
+
+Rules:
+
+- helper output must be parsed as structured JSON when possible
+- user-facing admin UI may show bounded `error_detail` for security-relevant failures
+- truncate or bound technical details before returning them to the browser
+- escape all helper-provided detail before rendering
+- do not expose raw command lines, full stdout/stderr dumps, secrets, tokens, or private filesystem paths
+- generic user-facing messages are appropriate for normal users, but admin security workflows should distinguish cases such as signature failure, missing trust anchor, bad package hash, and invalid plan hash
+- browser cache-busting is required when security-related static JavaScript changes affect admin workflows
+
+Example admin-safe detail:
+
+- `signed update manifest verification failed: Signature Verification Failure`
+
+Unsafe detail:
+
+- raw helper command line, full stderr, private paths, and environment values
+
+---
+
+## 54. SAST triage must separate first-party, bundled, vendor, and test code
+
+Full-repository scans are useful only when the results are triaged by ownership.
+
+Rules:
+
+- classify SAST findings into first-party runtime server code, first-party bundled app code, vendored third-party code, static test vectors, and generated/minified assets
+- do not suppress first-party findings just to reduce counts
+- fix first-party findings or add narrow line-level justification
+- exclude vendored upstream code only after documenting why it is not first-party runtime code
+- keep `.semgrepignore` comments close to the ignored paths
+- static JWTs, tokens, and recovery-looking strings must be clearly isolated as test vectors before ignoring them
+- security-relevant permission warnings must not be blindly changed to `0644`
+- executable helpers and binaries may need `0755`
+- service runtime directories may need `0750`
+- private identity directories may need `0700`
+- each permission suppression must explain why the permission is required and why write access is not granted to the wrong principal
+
+Preferred Semgrep workflow:
+
+1. focused scan on touched files
+2. fix or justify every touched-file finding
+3. run a full scan
+4. bucket findings by ownership
+5. exclude reviewed vendor/test assets
+6. leave first-party findings visible until fixed or justified
+
+---
+
+## 55. Security changes must include positive and negative tests
+
+A security patch is incomplete if it only proves the happy path.
+
+Rules:
+
+- every trust-boundary fix should have at least one positive test and one negative test
+- the negative test must prove the old attack path is blocked
+- tests should verify that failure happens before mutation
+- dry-run paths should be tested separately from apply paths when they are security gates
+- UI tests should verify that admins can see enough bounded detail to understand the failure
+- release/security tests should avoid using production private keys unless the test is part of the controlled release process
+
+For signed updates:
+
+- positive: correctly signed package is accepted
+- negative: wrong-key package is rejected before file changes
+- negative: tampered package is rejected before file changes
+- negative: missing trust anchor is rejected before file changes
+
+For privileged helpers:
+
+- positive: allowed action succeeds
+- negative: unsupported action is rejected
+- negative: malformed path is rejected
+- negative: traversal/symlink/device input is rejected
+
+---
+
+## 56. Do not let a clean hash hide an untrusted writer
+
+Any state written by a less-privileged user and later consumed by a more privileged helper must be treated as attacker-controlled.
+
+Rules:
+
+- root helpers must not trust JSON plans merely because they are well-formed
+- root helpers must not trust package paths merely because they are inside a service-owned directory
+- root helpers must revalidate hashes, paths, targets, action types, and ownership boundaries immediately before use
+- if the service user can write both the plan and the package, an additional authenticity control is required for privileged actions
+- a hash stored next to the object it hashes is not an authority unless it is protected by a stronger trust boundary or signature
+
+Review question:
+
+- If the service user is compromised, can it write every input that the root helper uses to make this decision?
+
+If the answer is yes, add a stronger trust boundary.
+
 ## Summary
 
 New DNA-Nexus / PQ-NAS code should be written with these assumptions:
@@ -1500,6 +1728,10 @@ New DNA-Nexus / PQ-NAS code should be written with these assumptions:
 - every metadata query should consider wildcard semantics, locking, busy timeouts, and file permissions
 - every malformed expiration or authorization record should fail closed
 - every externally reachable route should have resource caps, timeouts, and concurrency controls
+- every core/server update should prove both integrity and release authenticity
+- every root helper should treat service-writable plans and packages as untrusted input
+- every security fix should include a negative test that proves the old bypass is blocked
+- every SAST suppression should identify whether the code is first-party, bundled, vendor, generated, or test data
 
 The baseline rule is simple:
 
