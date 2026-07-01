@@ -17,13 +17,13 @@ Latest focused Semgrep state:
 | Finding group | Count | Status |
 |---|---:|---|
 | javascript.audit.detect-replaceall-sanitization.detect-replaceall-sanitization | 61 | Open / pending XSS triage |
-| python.lang.security.audit.insecure-file-permissions.insecure-file-permissions | 21 | Open / manual permission triage |
+| python.lang.security.audit.insecure-file-permissions.insecure-file-permissions | 19 | Partially fixed / remaining findings triaged manually |
 | generic.secrets.security.detected-jwt-token.detected-jwt-token | 0 | Triaged as static auth test vectors |
 | python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected | 0 | Fixed |
 | python.lang.security.audit.httpsconnection-detected.httpsconnection-detected | 0 | Fixed / documented nosemgrep |
 | trailofbits.python.tarfile-extractall-traversal.tarfile-extractall-traversal | 0 | Fixed |
 
-Expected remaining focused findings after current fixes: 82.
+Expected remaining focused findings after current fixes: 80.
 
 ---
 
