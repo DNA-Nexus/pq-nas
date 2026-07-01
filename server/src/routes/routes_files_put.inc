@@ -1006,16 +1006,12 @@ srv.Put("/api/v4/files/put",
             };
         snapshot_browse_ctx.btrfs_subvolume_show =
             [&](const std::string& path, std::string* out, int* rc) {
-                std::string q = path;
-                std::size_t pos = 0;
-                while ((pos = q.find("'", pos)) != std::string::npos) {
-                    q.replace(pos, 1, "'\\''");
-                    pos += 4;
-                }
-
-                int local_rc = 0;
-                popen_capture("sudo -n /usr/bin/btrfs subvolume show '" + q + "' 2>&1", out, &local_rc);
-                if (rc) *rc = local_rc;
+                // Security: browse probing uses pqnas-restore-root argv execution,
+                // not direct btrfs sudo through a shell string.
+                const RestoreRootProbeResult r =
+                    run_restore_root_probe_argv({"subvolume-show", path});
+                if (out) *out = r.output;
+                if (rc) *rc = r.exit_code;
             };
         snapshot_browse_ctx.audit_safe_header_value =
             [&](const std::string& value, std::size_t maxlen) {

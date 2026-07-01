@@ -71,16 +71,6 @@ bool starts_with_local(const std::string& s, const std::string& p) {
     return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
 }
 
-std::string shell_quote_local(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += "'";
-    return out;
-}
-
 std::string utc_stamp_for_id_local() {
     using namespace std::chrono;
 
@@ -212,6 +202,86 @@ int run_btrfs_snapshot_local(
     waitpid(pid, &status, 0);
 
     if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return 128;
+}
+
+int run_restore_root_local(
+    const std::vector<std::string>& args,
+    std::string* output
+) {
+    if (output) output->clear();
+
+    std::vector<std::string> argv_s = {
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/pqnas-restore-root"
+    };
+    argv_s.insert(argv_s.end(), args.begin(), args.end());
+
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return 127;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return 127;
+    }
+
+    if (pid == 0) {
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+
+        close(pipefd[0]);
+        close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        execv("/usr/bin/sudo", argv.data());
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    char buf[4096];
+    ssize_t n;
+    constexpr std::size_t kMaxOutput = 16 * 1024;
+    bool truncated = false;
+
+    while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
+        if (output) {
+            const std::size_t have = output->size();
+            if (have < kMaxOutput) {
+                const std::size_t room = kMaxOutput - have;
+                const std::size_t take =
+                    static_cast<std::size_t>(n) < room
+                        ? static_cast<std::size_t>(n)
+                        : room;
+                output->append(buf, take);
+            }
+            if (output->size() >= kMaxOutput) truncated = true;
+        }
+    }
+
+    close(pipefd[0]);
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        return 127;
+    }
+
+    if (truncated && output) {
+        output->append("\n[output truncated]\n");
+    }
+
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return 128;
 }
 
@@ -363,17 +433,18 @@ void register_snapshot_create_routes(
             std::filesystem::create_directories(snap_root_norm, ec);
 
             if (ec && pool_local_snap_root_ok) {
-                const std::string cmd =
-                    "sudo -n /usr/bin/btrfs subvolume create " +
-                    shell_quote_local(snap_root_norm) +
-                    " >/dev/null 2>&1";
-
-                const int rc = std::system(cmd.c_str());
+                std::string helper_out;
+                // Security: root creates only validated .snapshots roots through pqnas-restore-root.
+                const int rc = run_restore_root_local(
+                    {"subvolume-create-snapshot-root", snap_root_norm},
+                    &helper_out
+                );
                 if (rc == 0) {
                     ec.clear();
                 } else {
                     std::cerr << "[snapshots] snap_root auto-create failed root="
-                              << snap_root_norm << " rc=" << rc << "\\n";
+                              << snap_root_norm << " rc=" << rc
+                              << " detail=" << pqnas::shorten(helper_out, 240) << "\\n";
                 }
             }
 

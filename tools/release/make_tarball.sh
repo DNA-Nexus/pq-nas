@@ -98,6 +98,7 @@ UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
 SIGNED_UPDATE_MANIFEST_BUILDER="$REL_ROOT/pqnas_build_signed_update_manifest.py"
 UPDATE_TRUST_DIR="$REL_ROOT/update-trust"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
+RESTORE_ROOT_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_restore_root.sh"
 DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
 FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
 BTRFS_SNAPSHOT_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_btrfs_snapshot_root.sh"
@@ -458,6 +459,21 @@ install -m 0755 "$RAID_ROOT_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-raid-root"
 test -x "$STAGE/libexec/pqnas/pqnas-raid-root" || {
   echo "ERROR: RAID root wrapper did not stage"
   exit 67
+}
+
+# Snapshot restore guarded root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-restore-root
+if [[ ! -f "$RESTORE_ROOT_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing restore root wrapper: $RESTORE_ROOT_WRAPPER_SRC"
+  exit 68
+fi
+
+install -m 0755 "$RESTORE_ROOT_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-restore-root"
+
+test -x "$STAGE/libexec/pqnas/pqnas-restore-root" || {
+  echo "ERROR: restore root wrapper did not stage"
+  exit 69
 }
 
 # fstab mount-entry remove root wrapper.
