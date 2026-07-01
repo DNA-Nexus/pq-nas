@@ -96,6 +96,7 @@ CLEAN_CONFIG_DIR="$REL_ROOT/config"
 SYSTEMD_DIR="$REL_ROOT/systemd"
 UPDATE_MANIFEST_TEMPLATE="$REL_ROOT/update_manifest.template.json"
 SIGNED_UPDATE_MANIFEST_BUILDER="$REL_ROOT/pqnas_build_signed_update_manifest.py"
+UPDATE_TRUST_DIR="$REL_ROOT/update-trust"
 RESTORE_JOB_SRC="$REPO_ROOT/server/src/storage/snapshots/pqnas_restore_job.sh"
 DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.sh"
 FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
@@ -450,6 +451,24 @@ test -f "$STAGE/update_manifest.json" || {
   exit 19
 }
 
+# Trusted update release public keys.
+# Security: fresh installs need trusted public keys before the root update helper
+# can verify future signed core update packages.
+if [[ ! -d "$UPDATE_TRUST_DIR" ]]; then
+  echo "ERROR: Missing update trust directory: $UPDATE_TRUST_DIR"
+  exit 35
+fi
+
+if ! find "$UPDATE_TRUST_DIR" -maxdepth 1 -type f -name '*.pub' | grep -q .; then
+  echo "ERROR: No trusted update public keys found in: $UPDATE_TRUST_DIR"
+  exit 36
+fi
+
+install -d "$STAGE/update-trust"
+while IFS= read -r pubkey; do
+  install -m 0644 "$pubkey" "$STAGE/update-trust/$(basename "$pubkey")"
+done < <(find "$UPDATE_TRUST_DIR" -maxdepth 1 -type f -name '*.pub' | sort)
+
 # Copies: server/src/static/*  ->  <tarball>/pqnas/static/*
 rsync -a --delete \
   --exclude '__pycache__/' \
@@ -641,6 +660,7 @@ echo "  ls -la /tmp/pqnas-test/pqnas"
 echo
 echo "Expected manifest/binaries/runtime inside tarball:"
 echo "  /tmp/pqnas-test/pqnas/update_manifest.json"
+echo "  /tmp/pqnas-test/pqnas/update-trust/pqnas-release-2026.pub"
 echo "  /tmp/pqnas-test/pqnas/pqnas-update-manifest.v1.json"
 echo "  /tmp/pqnas-test/pqnas/pqnas-update-manifest.v1.sig"
 echo "  /tmp/pqnas-test/pqnas/pqnas_server"

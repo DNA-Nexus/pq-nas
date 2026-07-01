@@ -588,6 +588,75 @@ def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = Non
     return helper_dst, wrapper_dst
 
 
+def find_update_trust_source(asset_root: str) -> str:
+    """
+    Locate trusted update public keys in a release tarball or source checkout.
+
+    Security: only public .pub files are installed. Private release signing keys
+    must never be packaged or copied to the target system.
+    """
+    candidates = [
+        os.path.join(asset_root, "update-trust"),
+        os.path.join(asset_root, "tools", "release", "update-trust"),
+    ]
+
+    for d in candidates:
+        if os.path.isdir(d):
+            pubs = [
+                name for name in os.listdir(d)
+                if name.endswith(".pub") and os.path.isfile(os.path.join(d, name))
+            ]
+            if pubs:
+                return d
+
+    raise FileNotFoundError(
+        "Expected trusted update public keys under update-trust/ or tools/release/update-trust/."
+    )
+
+
+def install_pqnas_update_trust_keys(asset_root: str, log: Optional[Log] = None) -> None:
+    """
+    Install trusted update public keys for future signed update verification.
+
+    Security: the release public key is safe to ship. It lets the root update
+    helper verify that future core update packages were signed by the release
+    private key, without requiring admins to touch the shell.
+    """
+    src_dir = find_update_trust_source(asset_root)
+    dst_dir = "/etc/pqnas/update-trust.d"
+
+    subprocess.run(["install", "-d", "-m", "0755", "-o", "root", "-g", "root", dst_dir], check=True)
+
+    installed = 0
+    for name in sorted(os.listdir(src_dir)):
+        if not name.endswith(".pub"):
+            continue
+
+        if not re.match(r"^[A-Za-z0-9._-]+\.pub$", name):
+            raise RuntimeError(f"Unsafe update trust key filename: {name}")
+
+        src = os.path.join(src_dir, name)
+        if not os.path.isfile(src):
+            continue
+
+        dst = os.path.join(dst_dir, name)
+        tmp = dst + ".new"
+
+        shutil.copy2(src, tmp)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, dst)
+
+        subprocess.run(["chown", "root:root", dst], check=False)
+        subprocess.run(["chmod", "644", dst], check=False)
+        installed += 1
+
+    if installed <= 0:
+        raise RuntimeError(f"No update trust public keys installed from {src_dir}")
+
+    if log:
+        log.write(f"[*] Installed {installed} trusted update public key(s) to {dst_dir}")
+
+
 def find_opaque_helper_source(asset_root: str) -> str:
     """
     Locate OPAQUE helper binary in package or repo/dev layout.
@@ -3895,6 +3964,9 @@ class ExecuteScreen(Screen):
 
             self.logw.write("Installing Update Center apply helper and runtime dirs ?")
             ensure_update_center_runtime_dirs(log=self.logw)
+
+            self.logw.write("Installing trusted update public keys …")
+            install_pqnas_update_trust_keys(asset_root, log=self.logw)
             update_helper_path, update_apply_wrapper = install_update_center_apply_assets(asset_root, log=self.logw)
             install_drive_locate_assets(asset_root, log=self.logw)
             fstab_add_helper_path = install_fstab_add_btrfs_assets(asset_root, log=self.logw)
