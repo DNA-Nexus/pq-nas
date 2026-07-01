@@ -3,6 +3,10 @@
 
 #include <nlohmann/json.hpp>
 #include <sys/wait.h>
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <unistd.h>
 #include <vector>
 #include <iterator>
 #include <cctype>
@@ -336,6 +340,147 @@ std::string update_run_command_limited(const std::string& cmd, std::size_t max_b
     if (status_out) *status_out = st;
     return out;
 }
+
+
+struct UpdateArgvResult {
+    int exit_code = 127;
+    std::string output;
+};
+
+UpdateArgvResult update_run_argv_limited(
+    const std::vector<std::string>& argv_s,
+    std::size_t max_bytes,
+    int timeout_ms
+) {
+    UpdateArgvResult result;
+
+    if (argv_s.empty()) {
+        result.output = "empty argv";
+        return result;
+    }
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        result.output = std::string("pipe failed: ") + std::strerror(errno);
+        return result;
+    }
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        const int saved = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        result.output = std::string("fork failed: ") + std::strerror(saved);
+        return result;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        ::dup2(pipefd[1], STDOUT_FILENO);
+        ::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    const int flags = ::fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) {
+        (void)::fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    bool truncated = false;
+    auto append_bytes = [&](const char* buf, ssize_t n) {
+        if (n <= 0) return;
+
+        const std::size_t have = result.output.size();
+        if (have < max_bytes) {
+            const std::size_t room = max_bytes - have;
+            const std::size_t take = std::min<std::size_t>(
+                static_cast<std::size_t>(n),
+                room
+            );
+            result.output.append(buf, take);
+        }
+
+        if (result.output.size() >= max_bytes) {
+            truncated = true;
+        }
+    };
+
+    auto drain = [&]() {
+        std::array<char, 4096> buf{};
+        for (;;) {
+            const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+            if (n > 0) {
+                append_bytes(buf.data(), n);
+                continue;
+            }
+            if (n == 0) return;
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            return;
+        }
+    };
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    int status = 0;
+    for (;;) {
+        drain();
+
+        const pid_t w = ::waitpid(pid, &status, WNOHANG);
+        if (w == pid) break;
+
+        if (w < 0 && errno != EINTR) {
+            result.output += "\nwaitpid failed: ";
+            result.output += std::strerror(errno);
+            result.exit_code = 127;
+            ::close(pipefd[0]);
+            return result;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            // Security: cap update helper runtime without invoking shell timeout.
+            (void)::kill(pid, SIGKILL);
+            (void)::waitpid(pid, &status, 0);
+            drain();
+            ::close(pipefd[0]);
+            if (truncated) result.output += "\n[output truncated]\n";
+            result.output += "\ncommand timed out";
+            result.exit_code = 124;
+            return result;
+        }
+
+        ::usleep(10 * 1000);
+    }
+
+    drain();
+    ::close(pipefd[0]);
+
+    if (truncated) result.output += "\n[output truncated]\n";
+
+    if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = 128 + WTERMSIG(status);
+    } else {
+        result.exit_code = 127;
+    }
+
+    return result;
+}
+
 
 std::filesystem::path updates_root_dir(const UpdateCenterRoutesDeps& deps) {
     const std::string env = deps.getenv_str ? deps.getenv_str("PQNAS_UPDATES_ROOT") : "";
@@ -3330,23 +3475,22 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             return;
         }
 
-        std::string apply_helper_path =
-            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_APPLY_HELPER_PATH") : "";
+        // Security: root apply must use a fixed sudoers-controlled helper path
+        // and argv execution. Do not allow environment-selected root helper paths.
+        const UpdateArgvResult helper_result = update_run_argv_limited(
+            {
+                "/usr/bin/sudo",
+                "-n",
+                "/usr/local/sbin/pqnas-update-apply",
+                "--plan-id",
+                plan_id
+            },
+            8u * 1024u * 1024u,
+            120000
+        );
 
-        if (apply_helper_path.empty()) {
-            apply_helper_path = "/usr/local/sbin/pqnas-update-apply";
-        }
-
-        const std::string cmd =
-            "timeout 120 sudo -n " +
-            update_shell_quote(apply_helper_path) +
-            " --plan-id " +
-            update_shell_quote(plan_id) +
-            " 2>&1";
-
-        int helper_status = -1;
-        const std::string helper_output =
-            update_run_command_limited(cmd, 8u * 1024u * 1024u, &helper_status);
+        const int helper_status = helper_result.exit_code;
+        const std::string helper_output = helper_result.output;
 
         json helper_json;
         bool parsed_json = false;
