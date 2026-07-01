@@ -7,6 +7,11 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cstring>
+#include <csignal>
+#include <chrono>
+#include <cerrno>
+#include <array>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -17,6 +22,9 @@
 #include <system_error>
 #include <unordered_map>
 #include <vector>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 using json = nlohmann::json;
 
@@ -66,28 +74,178 @@ void reply_json_ctx(
     else fallback_reply_json(res, status, body.dump());
 }
 
-std::string sh_quote(const std::string& s) {
-    std::string q = s;
-    std::size_t pos = 0;
-    while ((pos = q.find("'", pos)) != std::string::npos) {
-        q.replace(pos, 1, "'\\''");
-        pos += 4;
+bool restore_job_id_is_safe(const std::string& id) {
+    // Security: job IDs are used for run-dir filenames and systemd instance names.
+    // Accept only server-generated RJOB_<base64url> values.
+    if (id.size() != 29) return false;
+    if (id.rfind("RJOB_", 0) != 0) return false;
+
+    for (std::size_t i = 5; i < id.size(); ++i) {
+        const char c = id[i];
+        const bool ok =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '_' ||
+            c == '-';
+        if (!ok) return false;
     }
-    return "'" + q + "'";
+
+    return true;
 }
 
-bool run_cmd_ctx(
-    const SnapshotRestoreRoutesContext& c,
-    const std::string& cmd,
+std::string restore_unit_name_for_display(const std::string& job_id) {
+    return "pqnas-restore@" + job_id + ".service";
+}
+
+struct RestoreRootResult {
+    int exit_code = 127;
+    std::string output;
+};
+
+RestoreRootResult run_restore_root_argv(
+    const std::vector<std::string>& args,
+    int timeout_ms = 10000,
+    std::size_t max_bytes = 16 * 1024
+) {
+    RestoreRootResult result;
+
+    std::vector<std::string> argv_s = {
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/pqnas-restore-root"
+    };
+    argv_s.insert(argv_s.end(), args.begin(), args.end());
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        result.output = std::string("pipe failed: ") + std::strerror(errno);
+        return result;
+    }
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        const int saved = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        result.output = std::string("fork failed: ") + std::strerror(saved);
+        return result;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        ::dup2(pipefd[1], STDOUT_FILENO);
+        ::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv("/usr/bin/sudo", argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    const int flags = ::fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) {
+        (void)::fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    bool truncated = false;
+    auto append_bytes = [&](const char* buf, ssize_t n) {
+        if (n <= 0) return;
+        const std::size_t have = result.output.size();
+        if (have < max_bytes) {
+            const std::size_t room = max_bytes - have;
+            const std::size_t take = std::min<std::size_t>(
+                static_cast<std::size_t>(n),
+                room
+            );
+            result.output.append(buf, take);
+        }
+        if (static_cast<std::size_t>(n) > 0 && result.output.size() >= max_bytes) {
+            truncated = true;
+        }
+    };
+
+    auto drain = [&]() {
+        std::array<char, 4096> buf{};
+        for (;;) {
+            const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+            if (n > 0) {
+                append_bytes(buf.data(), n);
+                continue;
+            }
+            if (n == 0) return;
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            return;
+        }
+    };
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    int status = 0;
+    for (;;) {
+        drain();
+
+        const pid_t w = ::waitpid(pid, &status, WNOHANG);
+        if (w == pid) break;
+
+        if (w < 0 && errno != EINTR) {
+            result.output += "\nwaitpid failed: ";
+            result.output += std::strerror(errno);
+            result.exit_code = 127;
+            ::close(pipefd[0]);
+            return result;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            // Security: cap privileged helper runtime so restore polling cannot hang a worker.
+            (void)::kill(pid, SIGKILL);
+            (void)::waitpid(pid, &status, 0);
+            drain();
+            ::close(pipefd[0]);
+            if (truncated) result.output += "\n[output truncated]\n";
+            result.output += "\ncommand timed out";
+            result.exit_code = 124;
+            return result;
+        }
+
+        ::usleep(10 * 1000);
+    }
+
+    drain();
+    ::close(pipefd[0]);
+
+    if (truncated) result.output += "\n[output truncated]\n";
+
+    if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = 128 + WTERMSIG(status);
+    } else {
+        result.exit_code = 127;
+    }
+
+    return result;
+}
+
+bool run_restore_root_ctx(
+    const std::vector<std::string>& args,
     std::string* out,
     int* rc_out
 ) {
-    int rc = 0;
-    std::string o;
-    c.popen_capture(cmd + " 2>&1", &o, &rc);
-    if (out) *out = o;
-    if (rc_out) *rc_out = rc;
-    return rc == 0;
+    const RestoreRootResult r = run_restore_root_argv(args);
+    if (out) *out = r.output;
+    if (rc_out) *rc_out = r.exit_code;
+    return r.exit_code == 0;
 }
 
 std::string file_read_all(const std::filesystem::path& p) {
@@ -112,11 +270,14 @@ void restore_cache_gc_best_effort() {
 }
 
 bool systemd_unit_available() {
-    int rc1 = std::system("command -v systemctl >/dev/null 2>&1");
-    if (rc1 != 0) return false;
-
-    int rc2 = std::system("sudo -n /usr/bin/systemctl status pqnas.service >/dev/null 2>&1");
-    return rc2 == 0;
+    // Security: availability probe goes through the guarded restore helper,
+    // not through a direct systemctl sudo wildcard.
+    const RestoreRootResult r = run_restore_root_argv(
+        {"systemctl-status-pqnas"},
+        5000,
+        4096
+    );
+    return r.exit_code == 0;
 }
 
 } // namespace
@@ -294,7 +455,7 @@ void register_snapshot_restore_routes(
                 reply(400, json{{"ok", false}, {"error", "bad_request"}, {"message", "missing job_id"}});
                 return;
             }
-            if (job_id.rfind("RJOB_", 0) != 0) {
+            if (!restore_job_id_is_safe(job_id)) {
                 reply(400, json{{"ok", false}, {"error", "bad_request"}, {"message", "invalid job_id"}});
                 return;
             }
@@ -332,15 +493,12 @@ void register_snapshot_restore_routes(
                 }
             }
 
-            const std::string unit = "pqnas-restore@" + job_id + ".service";
             std::string out_show;
             int rc_show = 0;
 
-            const std::string cmd_show =
-                "sudo -n /usr/bin/systemctl show " + sh_quote(unit) +
-                " -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainCode";
-
-            if (run_cmd_ctx(c, cmd_show, &out_show, &rc_show)) {
+            // Security: helper builds pqnas-restore@<job_id>.service after validating
+            // the server-generated RJOB_ id; no caller-controlled unit reaches systemctl.
+            if (run_restore_root_ctx({"systemctl-show-restore", job_id}, &out_show, &rc_show)) {
                 auto kv = [&](const std::string& key) -> std::string {
                     std::istringstream iss(out_show);
                     std::string line;
@@ -367,7 +525,7 @@ void register_snapshot_restore_routes(
                     {"ok", true},
                     {"job_id", job_id},
                     {"status", derived},
-                    {"unit", unit},
+                    {"unit", restore_unit_name_for_display(job_id)},
                     {"systemd", {
                         {"ActiveState", active},
                         {"SubState", sub},
@@ -477,6 +635,7 @@ void register_snapshot_restore_routes(
             }
 
             const std::string job_id = "RJOB_" + c.random_b64url(18);
+            const std::string unit = restore_unit_name_for_display(job_id);
             const std::string created_utc = c.now_iso_utc();
 
             const std::filesystem::path run_dir = "/run/pqnas/restore";
@@ -593,13 +752,11 @@ void register_snapshot_restore_routes(
                 );
             }
 
-            const std::string unit = "pqnas-restore@" + job_id + ".service";
-            const std::string cmd_start_restore =
-                "sudo -n /usr/bin/systemctl start " + sh_quote(unit);
-
             std::string out_start;
             int rc_start = 0;
-            if (!run_cmd_ctx(c, cmd_start_restore, &out_start, &rc_start)) {
+
+            // Security: start only the validated restore unit derived by the helper.
+            if (!run_restore_root_ctx({"systemctl-start-restore", job_id}, &out_start, &rc_start)) {
                 pqnas::AuditEvent ev;
                 ev.event = "snapshots.restore_job_start";
                 ev.outcome = "fail";
@@ -619,7 +776,7 @@ void register_snapshot_restore_routes(
                     {"error", "restore_start_failed"},
                     {"message", "failed to start restore unit"},
                     {"job_id", job_id},
-                    {"unit", unit},
+                    {"unit", restore_unit_name_for_display(job_id)},
                     {"rc", rc_start},
                     {"out", pqnas::shorten(out_start, 400)}
                 });

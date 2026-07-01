@@ -353,6 +353,19 @@ def install_pqnas_raid_root_sudoers(log: Optional[Log] = None) -> None:
     install_sudoers_rule("pqnas-raid-root", content, log=log)
 
 
+def install_pqnas_restore_root_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded snapshot restore root helper.
+
+    The helper validates PQ-NAS managed paths and restore job IDs before
+    running btrfs subvolume probes, snapshot-root creation, or systemctl actions.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-restore-root *"
+    # Security: keep the historical sudoers file name so upgrades replace the
+    # old direct btrfs/systemctl restore rules with the guarded helper.
+    install_sudoers_rule("pqnas-restore", content, log=log)
+
+
 def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
     """
     Prepare server-writable Update Center staging directories.
@@ -553,6 +566,48 @@ def install_raid_root_assets(asset_root: str, log: Optional[Log] = None) -> str:
 
     if log:
         log.write(f"[*] Installed RAID root helper: {helper_dst}")
+
+    return helper_dst
+
+
+def install_restore_root_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install guarded snapshot restore root helper.
+
+    Package layout supported:
+      <asset_root>/sbin/pqnas-restore-root
+      <asset_root>/libexec/pqnas/pqnas-restore-root
+
+    Repo layout supported:
+      <asset_root>/server/src/storage/pqnas_restore_root.sh
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-restore-root"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-restore-root"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_restore_root.sh"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "Snapshot restore root helper not found in package/repo assets. "
+            "Expected pqnas-restore-root under sbin/libexec or "
+            "server/src/storage/pqnas_restore_root.sh."
+        )
+
+    helper_dst = "/usr/local/sbin/pqnas-restore-root"
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper; write access is not granted to pqnas.
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    install_pqnas_restore_root_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed snapshot restore root helper: {helper_dst}")
 
     return helper_dst
 
@@ -4131,6 +4186,7 @@ class ExecuteScreen(Screen):
             btrfs_snapshot_helper_path = install_btrfs_snapshot_assets(asset_root, log=self.logw)
             btrfs_status_helper_path = install_btrfs_status_assets(asset_root, log=self.logw)
             raid_root_helper_path = install_raid_root_assets(asset_root, log=self.logw)
+            restore_root_helper_path = install_restore_root_assets(asset_root, log=self.logw)
             fstab_add_helper_path = install_fstab_add_btrfs_assets(asset_root, log=self.logw)
             fstab_remove_helper_path = install_fstab_remove_assets(asset_root, log=self.logw)
             first_admin_helper_path = install_first_admin_helper_assets(asset_root, log=self.logw)

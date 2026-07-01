@@ -4178,42 +4178,112 @@ static bool is_path_under(const std::string& child, const std::string& parent) {
     return (c.size() >= p.size() && c.compare(0, p.size(), p) == 0);
 }
 
-static bool is_btrfs_subvolume_sudo_n(const std::string& abs_path, std::string* detail = nullptr) {
-    if (detail) detail->clear();
+struct RestoreRootProbeResult {
+    int exit_code = 127;
+    std::string output;
+};
 
-    // Quote for sh
-    std::string q = abs_path;
-    size_t pos = 0;
-    while ((pos = q.find("'", pos)) != std::string::npos) { q.replace(pos, 1, "'\\''"); pos += 4; }
+static RestoreRootProbeResult run_restore_root_probe_argv(
+    const std::vector<std::string>& args,
+    std::size_t max_bytes = 16 * 1024
+) {
+    RestoreRootProbeResult result;
 
-    // Prefer /usr/bin/btrfs on Debian/Ubuntu; fallback to /usr/sbin/btrfs.
-    const char* BTRFS1 = "/usr/bin/btrfs";
-    const char* BTRFS2 = "/usr/sbin/btrfs";
-
-    auto exists_exec = [](const char* p) -> bool {
-        std::error_code ec;
-        auto st = std::filesystem::status(p, ec);
-        if (ec) return false;
-        if (!std::filesystem::is_regular_file(st)) return false;
-        // "executable by someone" check (best-effort; still fine if false positives)
-        auto perms = st.permissions();
-        using P = std::filesystem::perms;
-        return (perms & P::owner_exec) != P::none ||
-               (perms & P::group_exec) != P::none ||
-               (perms & P::others_exec) != P::none;
+    std::vector<std::string> argv_s = {
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/pqnas-restore-root"
     };
+    argv_s.insert(argv_s.end(), args.begin(), args.end());
 
-    const char* BTRFS = exists_exec(BTRFS1) ? BTRFS1 : (exists_exec(BTRFS2) ? BTRFS2 : BTRFS1);
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        result.output = std::string("pipe failed: ") + std::strerror(errno);
+        return result;
+    }
 
-    // Use sudo -n so we can probe even when pqnas isn't root. Capture stderr for diagnostics.
-    std::string out;
-    int exit_code = -1; // NOTE: popen_capture() already returns normalized exit code in rc
-    popen_capture(std::string("sudo -n ") + BTRFS + " subvolume show '" + q + "' 2>&1", &out, &exit_code);
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        const int saved = errno;
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        result.output = std::string("fork failed: ") + std::strerror(saved);
+        return result;
+    }
 
-    if (detail) *detail = pqnas::shorten(out, 300);
+    if (pid == 0) {
+        ::dup2(pipefd[1], STDOUT_FILENO);
+        ::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
 
-    // exit 0 => is subvolume
-    return exit_code == 0;
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv("/usr/bin/sudo", argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    char buf[4096];
+    bool truncated = false;
+
+    for (;;) {
+        const ssize_t n = ::read(pipefd[0], buf, sizeof(buf));
+        if (n > 0) {
+            const std::size_t have = result.output.size();
+            if (have < max_bytes) {
+                const std::size_t room = max_bytes - have;
+                const std::size_t take =
+                    static_cast<std::size_t>(n) < room
+                        ? static_cast<std::size_t>(n)
+                        : room;
+                result.output.append(buf, take);
+            }
+            if (result.output.size() >= max_bytes) truncated = true;
+            continue;
+        }
+        if (n == 0) break;
+        if (errno == EINTR) continue;
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        result.output += "\nwaitpid failed: ";
+        result.output += std::strerror(errno);
+        result.exit_code = 127;
+        return result;
+    }
+
+    if (truncated) result.output += "\n[output truncated]\n";
+
+    if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = 128 + WTERMSIG(status);
+    } else {
+        result.exit_code = 127;
+    }
+
+    return result;
+}
+
+static bool is_btrfs_subvolume_sudo_n(const std::string& abs_path, std::string* detail = nullptr) {
+    // Security: probing uses a guarded helper with path allowlists, not direct btrfs sudo.
+    const RestoreRootProbeResult r =
+        run_restore_root_probe_argv({"subvolume-show", abs_path});
+
+    if (detail) *detail = pqnas::shorten(r.output, 300);
+    return r.exit_code == 0;
 }
 
 
