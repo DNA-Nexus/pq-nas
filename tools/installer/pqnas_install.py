@@ -261,7 +261,7 @@ def install_pqnas_smartctl_sudoers(log: Optional[Log] = None) -> None:
 
     tmp = wrapper_dst + ".new"
     shutil.copy2(wrapper_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, wrapper_dst)
     subprocess.run(["chown", "root:root", wrapper_dst], check=False)
     subprocess.run(["chmod", "755", wrapper_dst], check=False)
@@ -343,7 +343,7 @@ def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
     for d in dirs:
         os.makedirs(d, exist_ok=True)
         subprocess.run(["chown", "pqnas:pqnas", d], check=True)
-        os.chmod(d, 0o750)
+        os.chmod(d, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: service-owned runtime/config directory; pqnas needs traversal and there is no world access.
 
     if log:
         log.write("[*] Update Center runtime dirs prepared: /var/lib/pqnas/updates")
@@ -385,7 +385,7 @@ def install_drive_locate_assets(asset_root: str, log: Optional[Log] = None) -> s
 
     tmp_wrapper = wrapper_dst + ".new"
     shutil.copy2(wrapper_src, tmp_wrapper)
-    os.chmod(tmp_wrapper, 0o755)
+    os.chmod(tmp_wrapper, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp_wrapper, wrapper_dst)
     subprocess.run(["chown", "root:root", wrapper_dst], check=False)
     subprocess.run(["chmod", "755", wrapper_dst], check=False)
@@ -427,7 +427,7 @@ def install_fstab_add_btrfs_assets(asset_root: str, log: Optional[Log] = None) -
 
     tmp = helper_dst + ".new"
     shutil.copy2(helper_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, helper_dst)
     subprocess.run(["chown", "root:root", helper_dst], check=False)
     subprocess.run(["chmod", "755", helper_dst], check=False)
@@ -469,7 +469,7 @@ def install_fstab_remove_assets(asset_root: str, log: Optional[Log] = None) -> s
 
     tmp = helper_dst + ".new"
     shutil.copy2(helper_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, helper_dst)
     subprocess.run(["chown", "root:root", helper_dst], check=False)
     subprocess.run(["chmod", "755", helper_dst], check=False)
@@ -510,7 +510,7 @@ def install_first_admin_helper_assets(asset_root: str, log: Optional[Log] = None
 
     tmp = helper_dst + ".new"
     shutil.copy2(helper_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, helper_dst)
     subprocess.run(["chown", "root:root", helper_dst], check=False)
     subprocess.run(["chmod", "755", helper_dst], check=False)
@@ -567,14 +567,14 @@ def install_update_center_apply_assets(asset_root: str, log: Optional[Log] = Non
 
     tmp_helper = helper_dst + ".new"
     shutil.copy2(helper_src, tmp_helper)
-    os.chmod(tmp_helper, 0o755)
+    os.chmod(tmp_helper, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp_helper, helper_dst)
     subprocess.run(["chown", "root:root", helper_dst], check=False)
     subprocess.run(["chmod", "755", helper_dst], check=False)
 
     tmp_wrapper = wrapper_dst + ".new"
     shutil.copy2(wrapper_src, tmp_wrapper)
-    os.chmod(tmp_wrapper, 0o755)
+    os.chmod(tmp_wrapper, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp_wrapper, wrapper_dst)
     subprocess.run(["chown", "root:root", wrapper_dst], check=False)
     subprocess.run(["chmod", "755", wrapper_dst], check=False)
@@ -695,7 +695,7 @@ def install_opaque_helper_assets(asset_root: str, log: Optional[Log] = None) -> 
 
     tmp = helper_dst + ".new"
     shutil.copy2(helper_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, helper_dst)
     subprocess.run(["chown", "root:root", helper_dst], check=False)
     subprocess.run(["chmod", "755", helper_dst], check=False)
@@ -746,7 +746,7 @@ def ensure_opaque_runtime_config(
 
     os.makedirs(config_dir, exist_ok=True)
     subprocess.run(["chown", "pqnas:pqnas", config_dir], check=False)
-    os.chmod(config_dir, 0o750)
+    os.chmod(config_dir, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: service-owned runtime/config directory; pqnas needs traversal and there is no world access.
 
     credentials_path = os.path.join(config_dir, "opaque_credentials.json")
     setup_path = os.path.join(config_dir, "opaque_server_setup.bin")
@@ -830,7 +830,7 @@ def rollback_binaries(dest_dir: str = "/usr/local/bin") -> None:
         if os.path.exists(bak):
             tmp = cur + ".rollback"
             shutil.copy2(bak, tmp)
-            os.chmod(tmp, 0o755)
+            os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
             os.replace(tmp, cur)
 
 
@@ -1301,7 +1301,7 @@ def install_dna_alert_runtime(asset_root: str, log: Optional[Log] = None) -> Tup
 
     tmp_cli = cli_dst + ".new"
     shutil.copy2(cli_src, tmp_cli)
-    os.chmod(tmp_cli, 0o755)
+    os.chmod(tmp_cli, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp_cli, cli_dst)
     subprocess.run(["chown", "root:root", cli_dst], check=False)
     subprocess.run(["chmod", "755", cli_dst], check=False)
@@ -1404,7 +1404,7 @@ def install_notification_worker_assets(asset_root: str, log: Optional[Log] = Non
 
     tmp = dst + ".new"
     shutil.copy2(src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, dst)
     subprocess.run(["chown", "root:root", dst], check=False)
     subprocess.run(["chmod", "755", dst], check=False)
@@ -1878,7 +1878,7 @@ def chmod_nodus_identity_tree(identity_dir: str) -> None:
     if not os.path.isdir(identity_dir):
         return
 
-    os.chmod(identity_dir, 0o700)
+    os.chmod(identity_dir, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: private identity directory; owner-only access is required.
 
     for name in (
             "nodus.pk",
@@ -1922,7 +1922,7 @@ def ensure_nodus_identity(
     os.makedirs(nodus_root, exist_ok=True)
 
     subprocess.run(["chown", "-R", "pqnas:pqnas", nodus_root], check=True)
-    os.chmod(nodus_root, 0o750)
+    os.chmod(nodus_root, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: service-owned runtime/config directory; pqnas needs traversal and there is no world access.
 
     fp = read_nodus_fingerprint(identity_dir)
     if fp:
@@ -2043,14 +2043,14 @@ def install_binaries(asset_root: str, dest_dir: str = "/usr/local/bin") -> Tuple
 
     tmp_server = dst_server + ".new"
     shutil.copy2(src_server, tmp_server)
-    os.chmod(tmp_server, 0o755)
+    os.chmod(tmp_server, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp_server, dst_server)
 
     out_keygen: Optional[str] = None
     if src_keygen and os.path.isfile(src_keygen):
         tmp_keygen = dst_keygen + ".new"
         shutil.copy2(src_keygen, tmp_keygen)
-        os.chmod(tmp_keygen, 0o755)
+        os.chmod(tmp_keygen, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
         os.replace(tmp_keygen, dst_keygen)
         out_keygen = dst_keygen
 
@@ -2058,7 +2058,7 @@ def install_binaries(asset_root: str, dest_dir: str = "/usr/local/bin") -> Tuple
     if src_nodus and os.path.isfile(src_nodus):
         tmp_nodus = dst_nodus + ".new"
         shutil.copy2(src_nodus, tmp_nodus)
-        os.chmod(tmp_nodus, 0o755)
+        os.chmod(tmp_nodus, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
         os.replace(tmp_nodus, dst_nodus)
         out_nodus = dst_nodus
 
@@ -2150,7 +2150,7 @@ def install_snapshot_restore_assets(asset_root: str, backend: str, log: Optional
     script_dst = "/usr/local/lib/pqnas/pqnas_restore_job.sh"
     tmp = script_dst + ".new"
     shutil.copy2(script_src, tmp)
-    os.chmod(tmp, 0o755)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper/binary/script; 0644 would break execution and write access is not granted to pqnas.
     os.replace(tmp, script_dst)
 
     if log:
