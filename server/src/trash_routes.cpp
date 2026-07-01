@@ -203,7 +203,11 @@ static bool is_trash_inactive_err_local(const std::string& err) {
 
     const std::string referer = trash_header_value_local(req, "Referer");
     if (!referer.empty()) {
-        if (referer.rfind(expected_origin, 0) == 0) return true;
+        // Security: Referer is a full URL. Require exact origin or an origin
+        // followed by "/" so prefix tricks such as https://nas.example.evil do
+        // not satisfy the same-origin fallback.
+        const std::string allowed_prefix = expected_origin + "/";
+        if (referer == expected_origin || referer.rfind(allowed_prefix, 0) == 0) return true;
         res.status = 403;
         res.set_header("Content-Type", "application/json");
         res.body = R"({"ok":false,"error":"forbidden","message":"origin mismatch"})";
