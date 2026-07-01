@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import time
@@ -19,6 +20,13 @@ PLAN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 STATIC_ROOT = Path("/opt/pqnas/static").resolve()
 CORE_BINARY = Path("/usr/local/bin/pqnas_server").resolve()
 APPS_INSTALLED_ROOT = Path(os.environ.get("PQNAS_APPS_INSTALLED_DIR", "/srv/pqnas/apps/installed")).resolve()
+
+SIGNED_MANIFEST_NAME = "pqnas-update-manifest.v1.json"
+SIGNED_SIGNATURE_NAME = "pqnas-update-manifest.v1.sig"
+# Security: root update helper must not take trust anchors or verifier binary
+# from the caller environment. Keep both fixed and root-controlled.
+UPDATE_TRUST_DIR = Path("/etc/pqnas/update-trust.d").resolve()
+OPENSSL_BIN = "/usr/bin/openssl"
 
 
 def fail(code: str, message: str, http_like_status: int = 400, **extra) -> int:
@@ -411,6 +419,195 @@ def applicable_actions_from_plan(plan: dict) -> tuple[list[dict], list[dict]]:
     return applicable_actions, reject_actions
 
 
+def update_source_key(source: str) -> str:
+    """
+    Normalize package source paths for signed-manifest comparison.
+
+    Security: release tarballs may contain either pqnas/<file> paths or package
+    root-relative <file> paths. The signed manifest binds root-relative paths.
+    """
+    s = normalize_archive_path(str(source))
+    while s.startswith("pqnas/"):
+        s = s[len("pqnas/"):]
+    return s
+
+
+def find_signed_update_manifest_files(extract_dir: Path) -> tuple[Path, Path]:
+    candidates = [
+        extract_dir,
+        extract_dir / "pqnas",
+    ]
+
+    for base in candidates:
+        manifest = (base / SIGNED_MANIFEST_NAME).resolve()
+        signature = (base / SIGNED_SIGNATURE_NAME).resolve()
+
+        if manifest.is_file() and signature.is_file():
+            root = extract_dir.resolve()
+            for path in (manifest, signature):
+                if path != root and not str(path).startswith(str(root) + os.sep):
+                    raise RuntimeError("signed manifest path escapes extraction root")
+            return manifest, signature
+
+    raise RuntimeError("signed update manifest or signature is missing")
+
+
+def trusted_update_public_keys() -> list[Path]:
+    if not UPDATE_TRUST_DIR.is_dir():
+        raise RuntimeError(f"update trust directory not found: {UPDATE_TRUST_DIR}")
+
+    keys = []
+    for key in sorted(UPDATE_TRUST_DIR.glob("*.pub")):
+        key = key.resolve()
+
+        if not str(key).startswith(str(UPDATE_TRUST_DIR) + os.sep):
+            continue
+
+        st = key.stat()
+        mode = stat.S_IMODE(st.st_mode)
+
+        # Security: public keys are safe to read, but the trust anchor itself must
+        # be root-controlled. Do not trust service-writable key files.
+        if st.st_uid != 0:
+            raise RuntimeError(f"trusted update public key is not root-owned: {key}")
+
+        if mode & 0o022:
+            raise RuntimeError(f"trusted update public key is group/other writable: {key}")
+
+        keys.append(key)
+
+    if not keys:
+        raise RuntimeError(f"no trusted update public keys found in {UPDATE_TRUST_DIR}")
+
+    return keys
+
+
+def verify_manifest_signature(manifest_path: Path, signature_path: Path) -> str:
+    """
+    Verify signed update manifest with any trusted release public key.
+
+    Security: use fixed openssl argv without shell=True. The manifest is trusted
+    only after a signature verifies against a root-owned public key.
+    """
+    last_error = ""
+
+    for key in trusted_update_public_keys():
+        proc = subprocess.run(
+            [
+                OPENSSL_BIN,
+                "pkeyutl",
+                "-verify",
+                "-pubin",
+                "-inkey",
+                str(key),
+                "-rawin",
+                "-in",
+                str(manifest_path),
+                "-sigfile",
+                str(signature_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+        if proc.returncode == 0:
+            return key.name
+
+        last_error = (proc.stderr or proc.stdout or "").strip()
+
+    raise RuntimeError("signed update manifest verification failed: " + last_error[:500])
+
+
+def load_verified_signed_update_manifest(extract_dir: Path) -> tuple[dict, str]:
+    manifest_path, signature_path = find_signed_update_manifest_files(extract_dir)
+    trusted_key = verify_manifest_signature(manifest_path, signature_path)
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise RuntimeError("signed update manifest must be a JSON object")
+
+    if manifest.get("kind") != "pqnas_signed_update_manifest":
+        raise RuntimeError("signed update manifest has unexpected kind")
+
+    if manifest.get("signature_algorithm") != "Ed25519":
+        raise RuntimeError("signed update manifest has unexpected signature algorithm")
+
+    return manifest, trusted_key
+
+
+def signed_action_index(manifest: dict) -> dict[tuple[str, str, str], dict]:
+    actions = manifest.get("actions", [])
+    if not isinstance(actions, list):
+        raise RuntimeError("signed update manifest actions must be an array")
+
+    idx = {}
+    for a in actions:
+        if not isinstance(a, dict):
+            continue
+
+        typ = str(a.get("type", ""))
+        source = update_source_key(str(a.get("source", "")))
+        target = str(a.get("target", ""))
+
+        if not typ or not source or not target:
+            continue
+
+        idx[(typ, source, target)] = a
+
+    return idx
+
+
+def verify_signed_update_actions_if_required(extract_dir: Path, applicable_actions: list[dict]) -> None:
+    """
+    Enforce signed update authenticity for core binary replacement.
+
+    Security: plan_hash/package_sha256 prove integrity, but not authenticity.
+    A pqnas-writable plan+package pair must not be enough to replace
+    /usr/local/bin/pqnas_server as root.
+    """
+    core_actions = [
+        a for a in applicable_actions
+        if isinstance(a, dict) and str(a.get("type", "")) == "core_binary"
+    ]
+
+    if not core_actions:
+        return
+
+    manifest, trusted_key = load_verified_signed_update_manifest(extract_dir)
+    idx = signed_action_index(manifest)
+
+    for a in core_actions:
+        typ = str(a.get("type", ""))
+        source = str(a.get("source", ""))
+        target = str(validate_target_for_apply(a))
+        source_key = update_source_key(source)
+
+        signed = idx.get((typ, source_key, target))
+        if not signed:
+            raise RuntimeError(
+                "core_binary action is not present in signed update manifest: "
+                f"source={source_key}, target={target}"
+            )
+
+        actual_source = resolve_extracted_source(extract_dir, source)
+        actual_sha = sha256_file(actual_source)
+        signed_sha = str(signed.get("sha256", ""))
+
+        if not signed_sha:
+            raise RuntimeError("signed core_binary action is missing sha256")
+
+        if actual_sha != signed_sha:
+            raise RuntimeError(
+                "signed core_binary source sha256 mismatch: "
+                f"source={source_key}, expected={signed_sha}, actual={actual_sha}"
+            )
+
+    # Marker is useful in JSON output later if needed.
+    manifest["_verified_by_key"] = trusted_key
+
+
 
 def validation_errors_from_reject_actions(reject_actions: list[dict]) -> list[dict]:
     errors = []
@@ -573,6 +770,10 @@ def run_dry_run(plan: dict,
     try:
         extract_dir.mkdir(parents=True, exist_ok=False)
         safe_extract_tar(package_path, extract_dir)
+
+        # Security: if this package replaces the core server binary, require
+        # a valid signed manifest before any root-level file copy is prepared.
+        verify_signed_update_actions_if_required(extract_dir, applicable_actions)
 
         for a in applicable_actions:
             target = validate_target_for_dry_run(a)
@@ -740,6 +941,10 @@ def run_apply(plan: dict,
         backup_root.mkdir(parents=True, exist_ok=False)
 
         safe_extract_tar(package_path, extract_dir)
+
+        # Security: if this package replaces the core server binary, require
+        # a valid signed manifest before any root-level file copy is prepared.
+        verify_signed_update_actions_if_required(extract_dir, applicable_actions)
 
         # First validate and back up all targets before copying anything.
         prepared = []
