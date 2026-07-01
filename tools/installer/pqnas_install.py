@@ -342,6 +342,17 @@ def install_pqnas_btrfs_status_sudoers(log: Optional[Log] = None) -> None:
     install_sudoers_rule("pqnas-btrfs-status", content, log=log)
 
 
+def install_pqnas_raid_root_sudoers(log: Optional[Log] = None) -> None:
+    """
+    Allow pqnas_server to run only the guarded RAID/provisioning helper as root.
+
+    The helper validates devices, labels, and PQ-NAS pool mount paths before
+    running destructive storage operations.
+    """
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-raid-root *"
+    install_sudoers_rule("pqnas-raid-root", content, log=log)
+
+
 def ensure_update_center_runtime_dirs(log: Optional[Log] = None) -> None:
     """
     Prepare server-writable Update Center staging directories.
@@ -500,6 +511,48 @@ def install_btrfs_status_assets(asset_root: str, log: Optional[Log] = None) -> s
 
     if log:
         log.write(f"[*] Installed Btrfs status helper: {helper_dst}")
+
+    return helper_dst
+
+
+def install_raid_root_assets(asset_root: str, log: Optional[Log] = None) -> str:
+    """
+    Install guarded RAID/provisioning root helper.
+
+    Package layout supported:
+      <asset_root>/sbin/pqnas-raid-root
+      <asset_root>/libexec/pqnas/pqnas-raid-root
+
+    Repo layout supported:
+      <asset_root>/server/src/storage/pqnas_raid_root.sh
+    """
+    helper_src = _first_existing_path([
+        os.path.join(asset_root, "sbin", "pqnas-raid-root"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-raid-root"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_raid_root.sh"),
+    ])
+
+    if not helper_src:
+        raise RuntimeError(
+            "RAID root helper not found in package/repo assets. "
+            "Expected pqnas-raid-root under sbin/libexec or "
+            "server/src/storage/pqnas_raid_root.sh."
+        )
+
+    helper_dst = "/usr/local/sbin/pqnas-raid-root"
+    os.makedirs(os.path.dirname(helper_dst), exist_ok=True)
+
+    tmp = helper_dst + ".new"
+    shutil.copy2(helper_src, tmp)
+    os.chmod(tmp, 0o755)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: executable root-owned helper; write access is not granted to pqnas.
+    os.replace(tmp, helper_dst)
+    subprocess.run(["chown", "root:root", helper_dst], check=False)
+    subprocess.run(["chmod", "755", helper_dst], check=False)
+
+    install_pqnas_raid_root_sudoers(log=log)
+
+    if log:
+        log.write(f"[*] Installed RAID root helper: {helper_dst}")
 
     return helper_dst
 
@@ -4077,12 +4130,14 @@ class ExecuteScreen(Screen):
             install_drive_locate_assets(asset_root, log=self.logw)
             btrfs_snapshot_helper_path = install_btrfs_snapshot_assets(asset_root, log=self.logw)
             btrfs_status_helper_path = install_btrfs_status_assets(asset_root, log=self.logw)
+            raid_root_helper_path = install_raid_root_assets(asset_root, log=self.logw)
             fstab_add_helper_path = install_fstab_add_btrfs_assets(asset_root, log=self.logw)
             fstab_remove_helper_path = install_fstab_remove_assets(asset_root, log=self.logw)
             first_admin_helper_path = install_first_admin_helper_assets(asset_root, log=self.logw)
             self.logw.write(f"[*] First-admin helper ready: {first_admin_helper_path}")
             self.logw.write(f"[*] Btrfs snapshot helper ready: {btrfs_snapshot_helper_path}")
             self.logw.write(f"[*] Btrfs status helper ready: {btrfs_status_helper_path}")
+            self.logw.write(f"[*] RAID root helper ready: {raid_root_helper_path}")
             self.logw.write(f"[*] fstab add helper ready: {fstab_add_helper_path}")
             self.logw.write(f"[*] fstab remove helper ready: {fstab_remove_helper_path}")
             self.logw.write(f"[*] Update Center helper ready: {update_helper_path}")

@@ -1702,33 +1702,31 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
 
     if (force) {
         for (const auto& d : devices) {
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(d));
         }
     }
 
-    std::string mkfs = "/usr/bin/sudo -n /usr/sbin/mkfs.btrfs -f ";
-    if (mode == "raid1") mkfs += "-d raid1 -m raid1 ";
-    mkfs += "-L " + sh_quote(label);
+    std::string mkfs = "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkfs-btrfs " + sh_quote(mode) + " " + sh_quote(label);
     for (const auto& d : devices) mkfs += " " + sh_quote(d);
     cmds.push_back(mkfs);
 
-    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(mount));
-    cmds.push_back("/usr/bin/sudo -n /bin/mount -t btrfs " +
-                   sh_quote(std::string("LABEL=") + label) + " " +
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mount-label " +
+                   sh_quote(label) + " " +
                    sh_quote(mount));
 
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
     cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount));
     // hardening: pseudo command keeps fstab helper argv-only.
     cmds.push_back("FSTAB_ADD_BTRFS " + mount);
 
     const std::string data_dir = mount + "/data";
-    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /bin/chown pqnas:pqnas " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /bin/chmod 0755 " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chown-pqnas " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chmod-0755 " + sh_quote(data_dir));
 
     return cmds;
 }
@@ -5874,7 +5872,7 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     warnings.push_back("On single-device filesystems scrub validates checksums but cannot repair corrupted data without redundancy.");
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub start " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
     commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
 
     plan["steps"] = steps;
@@ -6078,7 +6076,7 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
 
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs scrub start " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
     commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
 
     // plan_id check (must match exactly)
@@ -6844,24 +6842,24 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     warnings.push_back("Adding a device and converting profiles can take a long time; expect background IO (balance).");
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk -n 1:0:0 -t 1:8300 -c 1:PQNAS_BTRFS " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root create-btrfs-partition " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(new_disk));
 
     // NEW — must match execute endpoint exactly
-    commands.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
 
     // Wait for partition node to appear (handled internally by executor)
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
 
     // Wipe the newly-created partition too. Old btrfs signatures may live
     // inside the partition range even after wiping the parent disk.
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_part));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_part));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
 
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
@@ -7080,11 +7078,11 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
     }
 
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start --force -dconvert=single -mconvert=single -sconvert=single " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
         steps.push_back("Convert data/metadata/system profiles to SINGLE via balance (--force for system chunks).");
         warnings.push_back("Converting to SINGLE with multiple devices reduces redundancy.");
     }
@@ -7352,10 +7350,10 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
 
     json commands = json::array();
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     } else {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start --force -dconvert=single -mconvert=single -sconvert=single " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
     }
 
     const std::string joined = join_commands_for_hash(commands);
@@ -7758,11 +7756,11 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
         warnings.push_back("Pre-step required: converting metadata/system profiles to SINGLE to allow removing down to one device.");
         warnings.push_back("This includes --force because newer btrfs-progs refuse explicit system-chunk operations otherwise.");
         warnings.push_back("Pre-step required: converting DATA profile to SINGLE too (cannot remove a device while DATA remains RAID1).");
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start --force -dconvert=single -mconvert=single -sconvert=single " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
         steps.push_back("Convert data/metadata/system profiles to SINGLE via balance (--force for system chunks).");
     }
 
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
     steps.push_back("Remove device from filesystem (data migration may take time).");
 
     plan["steps"] = steps;
@@ -8262,18 +8260,18 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
 
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk -n 1:0:0 -t 1:8300 -c 1:PQNAS_BTRFS " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root create-btrfs-partition " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(new_disk));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
     // Wipe the newly-created partition too. Old btrfs signatures may live
     // inside the partition range even after wiping the parent disk.
-    commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(new_part));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_part));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs balance start -dconvert=raid1 -mconvert=raid1 " + sh_quote(resolved_mount));
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     }
 
@@ -8740,21 +8738,21 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
 
     json commands = json::array();
 
-    commands.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
-    commands.push_back("/usr/bin/sudo -n /bin/umount " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root umount-pool " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
 
     if (force_wipe) {
         for (const auto& dev : member_devs) {
-            commands.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(dev));
-            commands.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(dev));
+            commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(dev));
+            commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(dev));
         }
-        commands.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
+        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
     }
 
     commands.push_back(std::string("POOLS_CFG_REMOVE ") + resolved_mount);
     commands.push_back(std::string("FSTAB_REMOVE ") + resolved_mount);
-    commands.push_back("/usr/bin/sudo -n /bin/rmdir " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root rmdir-pool " + sh_quote(resolved_mount));
 
     // Enqueue (fail-closed)
     try {
@@ -9146,13 +9144,12 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
     // If this removal would drop from 2 devices -> 1 device, we must convert off RAID1 first
     if (total_devices == 2) {
         commands.push_back(
-            "/usr/bin/sudo -n /usr/bin/btrfs balance start --force "
-            "-dconvert=single -mconvert=single -sconvert=single "
+            "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force "
             + sh_quote(resolved_mount)
         );
     }
 
-    commands.push_back("/usr/bin/sudo -n /usr/bin/btrfs device remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
+    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
 
     // plan_id check (must match exactly plan endpoint)
     const std::string joined = join_commands_for_hash(commands);
