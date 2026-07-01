@@ -5772,31 +5772,29 @@ std::string pqnas_server_started_at_iso_local() {
 
     if (force) {
         for (const auto& d : devices) {
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/sgdisk --zap-all " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/partprobe " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/sbin/wipefs -a " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(d));
+            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(d));
         }
     }
 
-    std::string mkfs = "/usr/bin/sudo -n /usr/sbin/mkfs.btrfs -f ";
-    if (mode == "raid1") mkfs += "-d raid1 -m raid1 ";
-    mkfs += "-L " + sh_quote(label);
+    std::string mkfs = "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkfs-btrfs " + sh_quote(mode) + " " + sh_quote(label);
     for (const auto& d : devices) mkfs += " " + sh_quote(d);
     cmds.push_back(mkfs);
 
-    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(mount));
-    cmds.push_back("/usr/bin/sudo -n /bin/mount -t btrfs " +
-                   sh_quote(std::string("LABEL=") + label) + " " +
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(mount));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mount-label " +
+                   sh_quote(label) + " " +
                    sh_quote(mount));
 
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/udevadm settle");
-    cmds.push_back("/usr/bin/sudo -n /usr/bin/btrfs device scan");
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
     cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount));
 
     const std::string data_dir = mount + "/data";
-    cmds.push_back("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /bin/chown pqnas:pqnas " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /bin/chmod 0755 " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chown-pqnas " + sh_quote(data_dir));
+    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chmod-0755 " + sh_quote(data_dir));
 
     return cmds;
 }
@@ -7512,7 +7510,7 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         std::string out;
         int rc = 0;
 
-        rc = run_capture("/usr/bin/sudo -n /bin/mkdir -p " + sh_quote(mount) + " 2>&1", &out);
+        rc = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(mount) + " 2>&1", &out);
         if (rc != 0) {
             std::cerr << "[pools] restore: mkdir failed pool_id=" << pool_id
                       << " mount=" << mount
@@ -7522,7 +7520,7 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }
 
         out.clear();
-		rc = run_capture("/usr/bin/sudo -n /bin/mount -t btrfs "
+		rc = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mount-spec "
 		                 + sh_quote(mount_spec) + " "
                  		+ sh_quote(mount) + " 2>&1", &out);
         if (rc != 0) {
@@ -7534,8 +7532,8 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
             continue;
         }
 
-        (void)run_capture("/usr/bin/sudo -n /usr/bin/udevadm settle 2>&1", &out);
-        (void)run_capture("/usr/bin/sudo -n /usr/bin/btrfs device scan 2>&1", &out);
+        (void)run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle 2>&1", &out);
+        (void)run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan 2>&1", &out);
 
         if (is_btrfs_mount_active_at(mount)) {
             std::lock_guard<std::mutex> lk(pool_mu());

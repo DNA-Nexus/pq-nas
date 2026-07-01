@@ -102,6 +102,7 @@ DRIVE_LOCATE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_drive_locate_root.
 FSTAB_ADD_BTRFS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_add_btrfs_root.sh"
 BTRFS_SNAPSHOT_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_btrfs_snapshot_root.sh"
 BTRFS_STATUS_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_btrfs_status_root.sh"
+RAID_ROOT_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_raid_root.sh"
 FSTAB_REMOVE_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_fstab_remove_root.sh"
 
 # DNA Connect runtime for alerts
@@ -442,6 +443,21 @@ install -m 0755 "$BTRFS_STATUS_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-btrfs-st
 test -x "$STAGE/libexec/pqnas/pqnas-btrfs-status" || {
   echo "ERROR: Btrfs status root wrapper did not stage"
   exit 65
+}
+
+# RAID/provisioning guarded root wrapper.
+# Package layout expected by installer:
+#   <asset_root>/libexec/pqnas/pqnas-raid-root
+if [[ ! -f "$RAID_ROOT_WRAPPER_SRC" ]]; then
+  echo "ERROR: Missing RAID root wrapper: $RAID_ROOT_WRAPPER_SRC"
+  exit 66
+fi
+
+install -m 0755 "$RAID_ROOT_WRAPPER_SRC" "$STAGE/libexec/pqnas/pqnas-raid-root"
+
+test -x "$STAGE/libexec/pqnas/pqnas-raid-root" || {
+  echo "ERROR: RAID root wrapper did not stage"
+  exit 67
 }
 
 # fstab mount-entry remove root wrapper.
