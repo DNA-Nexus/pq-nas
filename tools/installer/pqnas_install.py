@@ -225,9 +225,54 @@ def install_sudoers_rule(name: str, content: str, log: Optional[Log] = None) -> 
         log.write(f"[*] Installed sudoers rule: {path}")
 
     return path
+def find_smartctl_wrapper_source(asset_root: str) -> str:
+    """
+    Locate the guarded smartctl wrapper in package or repo/dev layout.
+    """
+    candidates = [
+        os.path.join(asset_root, "sbin", "pqnas-smartctl"),
+        os.path.join(asset_root, "libexec", "pqnas", "pqnas-smartctl"),
+        os.path.join(asset_root, "server", "src", "storage", "pqnas_smartctl_root.sh"),
+    ]
+
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+
+    raise RuntimeError(
+        "smartctl wrapper not found in package/repo assets. Tried:\n"
+        + "\n".join(f"  - {c}" for c in candidates)
+    )
+
+
 def install_pqnas_smartctl_sudoers(log: Optional[Log] = None) -> None:
-    content = "pqnas ALL=(root) NOPASSWD: /usr/sbin/smartctl"
+    """
+    Install a guarded smartctl wrapper and allow pqnas to sudo only that wrapper.
+
+    Security: this prevents pqnas_server from gaining unrestricted root-level
+    smartctl access while still allowing the supported drive health probes and
+    SMART self-test start commands.
+    """
+    asset_root = resolve_asset_root()
+    wrapper_src = find_smartctl_wrapper_source(asset_root)
+    wrapper_dst = "/usr/local/sbin/pqnas-smartctl"
+
+    os.makedirs(os.path.dirname(wrapper_dst), exist_ok=True)
+
+    tmp = wrapper_dst + ".new"
+    shutil.copy2(wrapper_src, tmp)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, wrapper_dst)
+    subprocess.run(["chown", "root:root", wrapper_dst], check=False)
+    subprocess.run(["chmod", "755", wrapper_dst], check=False)
+
+    # Security: sudoers points to the wrapper, not directly to /usr/sbin/smartctl.
+    # The wrapper validates the exact allowed argument forms and device paths.
+    content = "pqnas ALL=(root) NOPASSWD: /usr/local/sbin/pqnas-smartctl *"
     install_sudoers_rule("pqnas-smartctl", content, log=log)
+
+    if log:
+        log.write(f"[*] Installed guarded smartctl wrapper: {wrapper_dst}")
 
 
 def install_pqnas_update_apply_sudoers(log: Optional[Log] = None) -> None:
@@ -3830,7 +3875,8 @@ class ExecuteScreen(Screen):
 
             self.logw.write("Validating smartctl sudo access for pqnas …")
             p = subprocess.run(
-                ["sudo", "-u", "pqnas", "sudo", "-n", "/usr/sbin/smartctl", "--version"],
+                # Security: validate sudo access to the guarded wrapper only.
+                ["sudo", "-u", "pqnas", "sudo", "-n", "/usr/local/sbin/pqnas-smartctl", "--version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

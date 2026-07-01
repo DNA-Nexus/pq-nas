@@ -106,7 +106,25 @@ def is_safe_archive_member(name: str) -> bool:
 
 
 def safe_extract_tar(package_path: Path, extract_dir: Path) -> list[str]:
+    """
+    Safely extract a tar archive into extract_dir.
+
+    Do not use TarFile.extractall(): even with member-name checks, keeping
+    extraction explicit makes path containment and member-type policy obvious.
+
+    Allowed archive members:
+      - regular files
+      - directories
+
+    Rejected:
+      - absolute paths
+      - paths containing ..
+      - symlinks / hardlinks
+      - devices / fifos / special entries
+      - anything resolving outside extract_dir
+    """
     extracted = []
+    extract_root = extract_dir.resolve()
 
     with tarfile.open(package_path, "r:*") as tf:
         members = tf.getmembers()
@@ -119,11 +137,24 @@ def safe_extract_tar(package_path: Path, extract_dir: Path) -> list[str]:
             if not (m.isfile() or m.isdir()):
                 raise RuntimeError(f"unsupported archive member type: {m.name}")
 
-        tf.extractall(extract_dir)
+            rel = normalize_archive_path(m.name)
+            target = (extract_root / rel).resolve()
 
-        for m in members:
+            if target != extract_root and extract_root not in target.parents:
+                raise RuntimeError(f"archive member escapes extraction root: {m.name}")
+
+            if m.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+
             if m.isfile():
-                extracted.append(normalize_archive_path(m.name))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                src = tf.extractfile(m)
+                if src is None:
+                    raise RuntimeError(f"failed to read archive member: {m.name}")
+                with src, open(target, "wb") as out:
+                    shutil.copyfileobj(src, out)
+                extracted.append(rel)
 
     return extracted
 

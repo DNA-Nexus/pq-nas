@@ -73,11 +73,16 @@ static bool run_command_capture(const std::string& cmd, std::string* out, int* r
     return true;
 }
 
+// Security: smartctl is executed through a guarded root wrapper.
+// This protects against accidental or malicious expansion from a few supported
+// SMART commands into unrestricted root-level smartctl argument execution.
+static constexpr const char* kPqnasSmartctl = "/usr/local/sbin/pqnas-smartctl";
+
 // Very small single-quote shell escaping helper.
 //
 // We only use this for device paths and similar values when building commands
 // for popen(). The goal is to keep shell use narrowly scoped and avoid obvious
-// quoting bugs when passing /dev/... paths to smartctl.
+// quoting bugs when passing /dev/... paths to the guarded smartctl wrapper.
 static std::string shell_quote(const std::string& s) {
     std::string out = "'";
     for (char c : s) {
@@ -786,7 +791,7 @@ static bool start_smartctl_selftest(const std::string& dev,
     std::string txt;
     int rc = -1;
     const std::string cmd =
-        "sudo -n /usr/sbin/smartctl -t " + smart_type + " " + shell_quote(dev) + " 2>&1";
+        std::string("sudo -n ") + kPqnasSmartctl + " -t " + smart_type + " " + shell_quote(dev) + " 2>&1";
 
     if (!run_command_capture(cmd, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl self-test start";
@@ -850,7 +855,7 @@ static bool probe_one_drive(const LsblkDisk& inv, DriveHealthInfo* out, std::str
 
     std::string txt;
     int rc = -1;
-    const std::string cmd = "sudo -n /usr/sbin/smartctl -a -j " + shell_quote(inv.path) + " 2>&1";
+    const std::string cmd = std::string("sudo -n ") + kPqnasSmartctl + " -a -j " + shell_quote(inv.path) + " 2>&1";
     if (!run_command_capture(cmd, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl for " + inv.path;
         return false;
@@ -959,7 +964,7 @@ bool start_drive_selftest(const std::string& dev,
     std::string txt;
     int rc = -1;
     const std::string info_cmd =
-        "sudo -n /usr/sbin/smartctl -i -j " + shell_quote(found->path) + " 2>&1";
+        std::string("sudo -n ") + kPqnasSmartctl + " -i -j " + shell_quote(found->path) + " 2>&1";
 
     if (!run_command_capture(info_cmd, &txt, &rc)) {
         if (err) *err = "failed to execute smartctl identify for self-test";

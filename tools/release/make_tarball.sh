@@ -326,6 +326,17 @@ test -f "$STAGE/libexec/pqnas/pqnas_update_apply_root.sh" || {
   exit 1
 }
 
+# Guarded smartctl wrapper.
+# Security: release packages must include the wrapper so installed systems do
+# not need unrestricted sudo access to /usr/sbin/smartctl.
+SMARTCTL_WRAPPER_SRC="$REPO_ROOT/server/src/storage/pqnas_smartctl_root.sh"
+test -f "$SMARTCTL_WRAPPER_SRC" || {
+  echo "ERROR: Missing smartctl wrapper: $SMARTCTL_WRAPPER_SRC"
+  exit 1
+}
+install -d "$STAGE/sbin"
+install -m 0755 "$SMARTCTL_WRAPPER_SRC" "$STAGE/sbin/pqnas-smartctl"
+
 # First-admin bootstrap helper.
 # Package layout expected by installer:
 #   <asset_root>/libexec/pqnas/pqnas-first-admin
