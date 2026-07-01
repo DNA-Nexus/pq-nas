@@ -38,12 +38,14 @@
     }
 
     function escapeHtml(s) {
-        return String(s == null ? "" : s)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll("\"", "&quot;")
-            .replaceAll("'", "&#39;");
+        // Security: escape HTML text with one regex/callback instead of chained replaceAll.
+        return String(s == null ? "" : s).replace(/[&<>"\']/g, (c) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        }[c]));
     }
 
     function normalizeRelPath(p) {
@@ -101,12 +103,14 @@
     }
 
     function escapeHtml(s) {
-        return String(s == null ? "" : s)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#39;");
+        // Security: escape HTML text with one regex/callback instead of chained replaceAll.
+        return String(s == null ? "" : s).replace(/[&<>"\']/g, (c) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        }[c]));
     }
 
     function injectStyles() {
