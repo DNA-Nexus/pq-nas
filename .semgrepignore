@@ -8,3 +8,13 @@ pqnas_qrauth_v4_test_vectors_invalid_proof.md
 # Security triage: committed parser/verifier fixtures with fake or expired test
 # tokens. Keep ignored so Semgrep secret scanning highlights real leaks.
 tests/v4_vectors/vectors.json
+
+# Reviewed 2026-07-01:
+# Vendor/test assets are not first-party runtime code for DNA-Nexus SAST triage.
+# Security: keep first-party app/server code scanned, but do not block on
+# vendored upstream CI/actions, vendored crypto libs, minified Leaflet, or static JWT test vectors.
+server/third_party/mlkem-native/**
+third_party/nodus/**
+third_party/shared/**
+apps/bundled/photogallery/src/www/leaflet.js
+tests/v5_vectors/v5_vectors.json
