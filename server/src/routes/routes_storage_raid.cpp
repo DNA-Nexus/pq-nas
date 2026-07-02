@@ -7436,24 +7436,26 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     warnings.push_back("Adding a device and converting profiles can take a long time; expect background IO (balance).");
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root create-btrfs-partition " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(new_disk));
+    // Security: use internal pseudo-commands so add-device root-helper steps
+    // route through argv, not shell command strings.
+    commands.push_back("RAID_ROOT zap-disk " + new_disk);
+    commands.push_back("RAID_ROOT wipefs " + new_disk);
+    commands.push_back("RAID_ROOT create-btrfs-partition " + new_disk);
+    commands.push_back("RAID_ROOT partprobe " + new_disk);
 
     // NEW — must match execute endpoint exactly
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+    commands.push_back("RAID_ROOT udev-settle");
 
     // Wait for partition node to appear (handled internally by executor)
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
 
     // Wipe the newly-created partition too. Old btrfs signatures may live
     // inside the partition range even after wiping the parent disk.
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_part));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
+    commands.push_back("RAID_ROOT wipefs " + new_part);
+    commands.push_back("RAID_ROOT btrfs-device-add " + new_part + " " + resolved_mount);
 
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-raid1 " + resolved_mount);
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
@@ -8846,18 +8848,20 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
 
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root create-btrfs-partition " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(new_disk));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+    // Security: use internal pseudo-commands so add-device root-helper steps
+    // route through argv, not shell command strings.
+    commands.push_back("RAID_ROOT zap-disk " + new_disk);
+    commands.push_back("RAID_ROOT wipefs " + new_disk);
+    commands.push_back("RAID_ROOT create-btrfs-partition " + new_disk);
+    commands.push_back("RAID_ROOT partprobe " + new_disk);
+    commands.push_back("RAID_ROOT udev-settle");
     commands.push_back("WAIT_BLOCK " + new_part + " 2000");
     // Wipe the newly-created partition too. Old btrfs signatures may live
     // inside the partition range even after wiping the parent disk.
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(new_part));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-add " + sh_quote(new_part) + " " + sh_quote(resolved_mount));
+    commands.push_back("RAID_ROOT wipefs " + new_part);
+    commands.push_back("RAID_ROOT btrfs-device-add " + new_part + " " + resolved_mount);
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-raid1 " + resolved_mount);
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     }
 
