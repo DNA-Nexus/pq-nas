@@ -868,6 +868,25 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
     return ran ? ec : 127;
 }
 
+[[maybe_unused]] static int run_findmnt_btrfs_list_argv(const std::string& fields,
+                                                    std::string* out) {
+    if (fields != "TARGET" && fields != "TARGET,SOURCE,FSTYPE") {
+        if (out) *out = "err: unsupported findmnt btrfs field list\n";
+        return 2;
+    }
+
+    int ec = 127;
+    const bool ran = run_argv_capture_limited(
+        {"/usr/bin/findmnt", "-rn", "-t", "btrfs", "-o", fields},
+        out,
+        &ec,
+        10000,
+        1024u * 1024u
+    );
+
+    return ran ? ec : 127;
+}
+
 static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
     // hardening: fstab pseudo commands use argv exec, not shell.
     auto run_fstab_pseudo_argv = [&](const std::string& prefix,
@@ -4404,7 +4423,8 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
     std::map<std::string, json> runtime_by_mount;
 
     std::string mounts_out;
-    int rc = run_capture("/usr/bin/findmnt -rn -t btrfs -o TARGET,SOURCE,FSTYPE", &mounts_out);
+    // Security: call findmnt via argv directly, not through a shell string.
+    int rc = run_findmnt_btrfs_list_argv("TARGET,SOURCE,FSTYPE", &mounts_out);
     cap_string(mounts_out, 1024 * 1024);
     rtrim_inplace(mounts_out);
 
@@ -4980,7 +5000,8 @@ srv.Post("/api/v4/storage/pools/rename", [&](const httplib::Request& req, httpli
 
     // Resolve: ensure mount is actually a btrfs mount we can see (prevents typo mounts)
     std::string mounts_out;
-    int rc = run_capture("/usr/bin/findmnt -rn -t btrfs -o TARGET", &mounts_out);
+    // Security: call findmnt via argv directly, not through a shell string.
+    int rc = run_findmnt_btrfs_list_argv("TARGET", &mounts_out);
     cap_string(mounts_out, 1024 * 1024);
     rtrim_inplace(mounts_out);
 
