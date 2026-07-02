@@ -1,73 +1,90 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROUTES="server/src/routes/routes_storage_raid.cpp"
-
-test -f "$ROUTES" || {
-  echo "ERROR: missing RAID route file: $ROUTES"
-  exit 1
-}
-
 python3 - <<'PY'
 from pathlib import Path
 import sys
 
-p = Path("server/src/routes/routes_storage_raid.cpp")
-s = p.read_text(encoding="utf-8")
+route = Path("server/src/routes/routes_storage_raid.cpp")
+text = route.read_text()
+failed = False
 
 def fail(msg: str) -> None:
-    print("ERROR:", msg)
-    sys.exit(1)
+    global failed
+    print(f"ERROR: {msg}")
+    failed = True
 
-if "raid_try_run_known_root_helper_argv" not in s:
-    fail("missing known root-helper argv interceptor")
-
-if "raid_parse_legacy_helper_tail" not in s:
-    fail("missing strict legacy helper command parser")
-
-def body_after(signature: str) -> str:
-    start = s.find(signature)
+def function_body(signature: str) -> str:
+    start = text.find(signature)
     if start < 0:
-        fail(f"function signature not found: {signature}")
+        fail(f"missing function: {signature}")
+        return ""
 
-    brace = s.find("{", start)
+    brace = text.find("{", start)
     if brace < 0:
-        fail(f"opening brace not found: {signature}")
+        fail(f"missing opening brace for: {signature}")
+        return ""
 
     depth = 0
-    for i in range(brace, len(s)):
-        if s[i] == "{":
+    i = brace
+    while i < len(text):
+        if text[i] == "{":
             depth += 1
-        elif s[i] == "}":
+        elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return s[brace:i + 1]
+                return text[brace + 1:i]
+        i += 1
 
-    fail(f"closing brace not found: {signature}")
+    fail(f"missing closing brace for: {signature}")
     return ""
 
-for sig, popen_text in [
-    ("static int run_capture(", "popen(cmd.c_str()"),
-    ("static bool run_cmd_capture(", "popen(cmd2.c_str()"),
+for bad in [
+    "popen(",
+    "pclose(",
+    "cmd2.c_str()",
+    'cmd2 += " 2>&1"',
 ]:
-    body = body_after(sig)
-    call = body.find("raid_try_run_known_root_helper_argv(cmd")
-    popen = body.find(popen_text)
+    if bad in text:
+        fail(f"legacy shell fallback marker remains: {bad}")
 
-    if popen < 0:
-        fail(f"expected popen fallback not found in {sig}")
+for needle in [
+    "raid_try_run_known_root_helper_argv(cmd, out, &helper_ec)",
+    "raid_try_run_known_root_helper_argv(cmd, out, exit_code)",
+    "raid_try_run_nonroot_probe_argv(cmd, out, &probe_ec)",
+    "RAID_ROOT",
+    "BTRFS_STATUS",
+    "FSTAB_ADD_BTRFS",
+    "FSTAB_REMOVE",
+    "unsupported RAID command",
+    "unsupported RAID capture command",
+]:
+    if needle not in text:
+        fail(f"missing argv/fail-closed marker: {needle}")
 
-    if call < 0:
-        fail(f"{sig} does not route known root-helper commands to argv before shell fallback")
+run_capture = function_body("[[maybe_unused]] static int run_capture(const std::string& cmd, std::string* out)")
+if run_capture:
+    if "raid_try_run_known_root_helper_argv" not in run_capture:
+        fail("run_capture must route known root helpers before failing closed")
+    if "raid_try_run_nonroot_probe_argv" not in run_capture:
+        fail("run_capture must route known non-root probes before failing closed")
+    if "unsupported RAID capture command" not in run_capture:
+        fail("run_capture must fail closed for unsupported command strings")
 
-    if call > popen:
-        fail(f"{sig} root-helper argv routing appears after popen fallback")
+run_cmd = function_body("static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code)")
+if run_cmd:
+    for marker in [
+        "run_fstab_pseudo_argv",
+        "raid_try_run_known_root_helper_argv",
+        "raid_try_run_nonroot_probe_argv",
+        "unsupported RAID command",
+    ]:
+        if marker not in run_cmd:
+            fail(f"run_cmd_capture missing expected marker: {marker}")
 
-print("OK: RAID route intercepts known root-helper command strings before shell fallback.")
+if failed:
+    sys.exit(1)
+
+print("OK: RAID plan executors route supported commands through argv handlers.")
+print("OK: unsupported RAID command strings fail closed without shell fallback.")
 PY
-
-if [ -x tools/security/check_raid_helper_safety.sh ]; then
-  tools/security/check_raid_helper_safety.sh >/dev/null
-fi
-
-echo "OK: RAID plan/executor root-helper argv guard passed."
