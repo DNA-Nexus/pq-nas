@@ -5908,15 +5908,12 @@ srv.Get("/api/v4/raid/discovery", [&](const httplib::Request& req, httplib::Resp
     }
 
     // -------------------- btrfs filesystem show (read-only) --------------------
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
 
-    // NOTE: stderr capture is now inside run_cmd_capture(); do NOT add "2>&1" here.
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
 
     cap_string(show_raw, 256 * 1024);
 
