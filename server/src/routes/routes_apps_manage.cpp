@@ -7,11 +7,17 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <vector>
+
+#include <sys/wait.h>
+#include <unistd.h>
 
 using json = nlohmann::json;
 
@@ -41,7 +47,6 @@ bool apps_context_ok() {
            g_apps_ctx.sha256_file &&
            g_apps_ctx.apply_app_compatibility_fields &&
            g_apps_ctx.rand_hex_16 &&
-           g_apps_ctx.run_cmd_capture &&
            g_apps_ctx.app_manifest_min_server_version &&
            g_apps_ctx.app_server_version_ok &&
            g_apps_ctx.app_compatibility_message &&
@@ -130,8 +135,96 @@ std::string rand_hex_16() {
     return g_apps_ctx.rand_hex_16();
 }
 
-bool run_cmd_capture(const std::string& cmd, std::string* out, int* rc) {
-    return g_apps_ctx.run_cmd_capture(cmd, out, rc);
+bool run_argv_capture_limited(
+    const std::vector<std::string>& argv_s,
+    std::string* out,
+    int* exit_code,
+    std::size_t max_bytes = 2u * 1024u * 1024u) {
+    if (out) out->clear();
+    if (exit_code) *exit_code = 127;
+
+    if (argv_s.empty()) {
+        if (out) *out = "err: empty argv\n";
+        return false;
+    }
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        if (out) *out = "err: pipe failed\n";
+        return false;
+    }
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        if (out) *out = "err: fork failed\n";
+        return false;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        (void)::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::array<char, 8192> buf{};
+    while (true) {
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            if (out && out->size() < max_bytes) {
+                const std::size_t remaining = max_bytes - out->size();
+                const std::size_t take = std::min<std::size_t>(
+                    remaining,
+                    static_cast<std::size_t>(n)
+                );
+                out->append(buf.data(), take);
+            }
+            continue;
+        }
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) {
+        if (exit_code) *exit_code = 127;
+        return false;
+    }
+
+    if (WIFEXITED(st)) {
+        if (exit_code) *exit_code = WEXITSTATUS(st);
+        return true;
+    }
+
+    if (WIFSIGNALED(st)) {
+        if (exit_code) *exit_code = 128 + WTERMSIG(st);
+    }
+    return false;
+}
+
+// Security: run unzip with fixed absolute binary and argv.
+// This prevents zip path / output path values from being interpreted by a shell.
+bool run_unzip_capture(const std::vector<std::string>& args, std::string* out, int* rc) {
+    std::vector<std::string> argv;
+    argv.reserve(args.size() + 1);
+    argv.push_back("/usr/bin/unzip");
+    argv.insert(argv.end(), args.begin(), args.end());
+    return run_argv_capture_limited(argv, out, rc);
 }
 
 std::string app_manifest_min_server_version(const json& mani) {
@@ -529,8 +622,7 @@ srv.Get("/api/v4/apps/has", [=](const httplib::Request& req, httplib::Response& 
     {
         std::string listing;
         int rc = -1;
-        const std::string cmd = "unzip -Z1 \"" + tmpZip.string() + "\" 2>/dev/null";
-        if (!run_cmd_capture(cmd, &listing, &rc) || rc != 0 || listing.empty()) {
+        if (!run_unzip_capture({"-Z1", tmpZip.string()}, &listing, &rc) || rc != 0 || listing.empty()) {
             audit_fail("zip unreadable or empty");
             cleanupZip();
             reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "zip unreadable or empty"}});
@@ -582,8 +674,7 @@ srv.Get("/api/v4/apps/has", [=](const httplib::Request& req, httplib::Response& 
     {
         std::string out;
         int rc = -1;
-        const std::string cmd = "unzip -p \"" + tmpZip.string() + "\" manifest.json 2>/dev/null";
-        if (!run_cmd_capture(cmd, &out, &rc) || rc != 0 || out.empty()) {
+        if (!run_unzip_capture({"-p", tmpZip.string(), "manifest.json"}, &out, &rc) || rc != 0 || out.empty()) {
             cleanupZip();
             reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "manifest.json missing or unreadable in zip"}});
             return;
@@ -665,8 +756,7 @@ srv.Get("/api/v4/apps/has", [=](const httplib::Request& req, httplib::Response& 
     {
         std::string out;
         int rc = -1;
-        const std::string cmd = "unzip -q \"" + tmpZip.string() + "\" -d \"" + tmp.string() + "\" 2>/dev/null";
-        if (!run_cmd_capture(cmd, &out, &rc) || rc != 0) {
+        if (!run_unzip_capture({"-q", tmpZip.string(), "-d", tmp.string()}, &out, &rc) || rc != 0) {
             std::filesystem::remove_all(tmp, ec);
             cleanupZip();
             reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "failed to extract zip"}});
@@ -766,8 +856,7 @@ srv.Post("/api/v4/apps/install_bundled", [=](const httplib::Request& req, httpli
     std::string manifest_txt;
     int code = -1;
     {
-        const std::string cmd = "unzip -p \"" + zip_path.string() + "\" manifest.json 2>/dev/null";
-        if (!run_cmd_capture(cmd, &manifest_txt, &code) || code != 0 || manifest_txt.empty()) {
+        if (!run_unzip_capture({"-p", zip_path.string(), "manifest.json"}, &manifest_txt, &code) || code != 0 || manifest_txt.empty()) {
             audit_fail("manifest.json missing or unreadable in zip");
             reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "manifest.json missing or unreadable in zip"}});
             return;
@@ -809,10 +898,9 @@ srv.Post("/api/v4/apps/install_bundled", [=](const httplib::Request& req, httpli
 
     // unzip into temp
     {
-        const std::string cmd = "unzip -q \"" + zip_path.string() + "\" -d \"" + tmp.string() + "\" 2>/dev/null";
         std::string out;
         int rc = -1;
-        if (!run_cmd_capture(cmd, &out, &rc) || rc != 0) {
+        if (!run_unzip_capture({"-q", zip_path.string(), "-d", tmp.string()}, &out, &rc) || rc != 0) {
             std::filesystem::remove_all(tmp, ec);
             audit_fail("failed to extract zip");
             reply(400, {{"ok", false}, {"error", "bad_request"}, {"message", "failed to extract zip"}});

@@ -1391,11 +1391,6 @@ srv.Put("/api/v4/files/put",
                 return rand_hex_16();
             };
 
-        apps_ctx.run_cmd_capture =
-            [&](const std::string& cmd, std::string* out, int* rc) {
-                return run_cmd_capture(cmd, out, rc);
-            };
-
         apps_ctx.app_manifest_min_server_version =
             [&](const json& mani) {
                 return app_manifest_min_server_version(mani);
