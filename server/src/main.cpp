@@ -7825,7 +7825,10 @@ static bool storage_pool_mount_by_id_adminonly(
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
 
     std::string mounts_out;
-    int rc = run_capture("/usr/bin/findmnt -rn -t btrfs -o TARGET,SOURCE,FSTYPE", &mounts_out);
+    // Security: call findmnt via argv, not a shell string, when locating managed pools.
+    int rc = main_run_argv_capture_no_shell({
+        "/usr/bin/findmnt", "-rn", "-t", "btrfs", "-o", "TARGET,SOURCE,FSTYPE"
+    }, &mounts_out, 1024u * 1024u);
     cap_string(mounts_out, 1024 * 1024);
     rtrim_inplace(mounts_out);
 
