@@ -4878,7 +4878,9 @@ srv.Post("/api/v4/storage/pools/rename", [&](const httplib::Request& req, httpli
         // pick btrfs binary (same helper you used above in /storage/pools)
 
         std::string show_out;
-        int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
+        // Security: call the read-only btrfs-status helper via argv, not a
+        // shell command string, so expected UUID mounts cannot be shell-interpreted.
+        int rc_show = run_btrfs_status_helper_capture("filesystem-show", mount, &show_out);
         cap_string(show_out, 256 * 1024);
         rtrim_inplace(show_out);
 
@@ -6821,7 +6823,9 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     if (all_ok) {
         std::string s_out;
         int s_rc = 0;
-        (void)run_cmd_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount), &s_out, &s_rc);
+        // Security: call the read-only scrub-status helper via argv, not a
+        // shell command string, so resolved mount targets cannot be shell-interpreted.
+        (void)run_btrfs_status_helper_argv("scrub-status", resolved_mount, &s_out, &s_rc);
         cap_string(s_out, 256 * 1024);
         record["post_scrub_status"] = json{{"rc", s_rc}, {"status_raw", s_out}};
     }
@@ -9190,13 +9194,11 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
     }
 
     // Read membership BEFORE umount so we can optionally wipe member disks
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount) + " 2>&1";
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
     rtrim_inplace(show_raw);
 
