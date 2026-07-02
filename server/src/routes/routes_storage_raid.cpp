@@ -4331,18 +4331,11 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
 
         std::string show_out, df_out, usage_out;
 
-        int rc_show = run_capture(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(target) + " 2>&1",
-            &show_out
-        );
-        int rc_df = run_capture(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df-bytes " + sh_quote(target) + " 2>&1",
-            &df_out
-        );
-        int rc_usage = run_capture(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-usage-bytes " + sh_quote(target) + " 2>&1",
-            &usage_out
-        );
+        // Security: call the read-only btrfs-status helper via argv, not a
+        // shell command string, so mount targets cannot be shell-interpreted.
+        int rc_show = run_btrfs_status_helper_capture("filesystem-show", target, &show_out);
+        int rc_df = run_btrfs_status_helper_capture("filesystem-df-bytes", target, &df_out);
+        int rc_usage = run_btrfs_status_helper_capture("filesystem-usage-bytes", target, &usage_out);
 
         cap_string(show_out, 256 * 1024);   rtrim_inplace(show_out);
         cap_string(df_out, 256 * 1024);     rtrim_inplace(df_out);
