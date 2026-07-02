@@ -7179,13 +7179,11 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     }
 
     // Read btrfs filesystem show (used to salt plan_id so add->remove->add works)
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
@@ -7515,13 +7513,11 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
     json disks_j = storage_list_disks_json(&raw_lsblk);
     json by_path = disks_j.value("by_path", json::object());
 
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
@@ -7802,13 +7798,11 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     json disks_j = storage_list_disks_json(&raw_lsblk);
     json by_path = disks_j.value("by_path", json::object());
 
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
@@ -8106,13 +8100,11 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
     json disks   = disks_j.value("disks", json::array());
 
     // Read btrfs filesystem show so we can map /dev/loop33 -> /dev/loop33p1 member path
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
@@ -8646,13 +8638,11 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
     }
 
     // Read btrfs filesystem show (used to salt plan_id so add->remove->add works)
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
@@ -9512,13 +9502,11 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
     json by_path = disks_j.value("by_path", json::object());
 
     // Read btrfs filesystem show to map /dev/disk -> member path
-    const std::string cmd_show =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount);
-
     std::string show_raw;
     int ec_show = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok_show = run_cmd_capture(cmd_show, &show_raw, &ec_show);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
+    const bool ok_show = run_btrfs_status_helper_argv("filesystem-show", resolved_mount, &show_raw, &ec_show);
     cap_string(show_raw, 256 * 1024);
 
     if (!ok_show || ec_show != 0 || show_raw.empty()) {
