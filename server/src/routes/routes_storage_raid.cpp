@@ -10351,18 +10351,13 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
     }
 
     // -------------------- btrfs read-only health commands --------------------
-    const std::string mp = sh_quote(resolved_mount);
-
     std::string dev_stats, scrub_status, balance_status;
 
-    const std::string cmd_dev_stats = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats " + mp;
-    const std::string cmd_scrub     = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + mp;
-    const std::string cmd_balance   = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + mp;
-
-
-    int rc_dev_stats = run_capture(cmd_dev_stats, &dev_stats);
-    int rc_scrub     = run_capture(cmd_scrub,     &scrub_status);
-    int rc_balance   = run_capture(cmd_balance,   &balance_status);
+    // Security: call the read-only btrfs-status helper via argv, not shell
+    // command strings, so resolved mount targets cannot be shell-interpreted.
+    int rc_dev_stats = run_btrfs_status_helper_capture("device-stats", resolved_mount, &dev_stats);
+    int rc_scrub     = run_btrfs_status_helper_capture("scrub-status", resolved_mount, &scrub_status);
+    int rc_balance   = run_btrfs_status_helper_capture("balance-status", resolved_mount, &balance_status);
 
     cap_string(dev_stats,       256 * 1024);
     cap_string(scrub_status,    256 * 1024);
