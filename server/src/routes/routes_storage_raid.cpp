@@ -905,6 +905,39 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
     return false;
 }
 
+// Security: use argv execution for direct btrfs-status helper call sites.
+// This removes visible shell-string construction from hot paths while keeping
+// the root helper action/mount allowlist as the first gate.
+static bool run_btrfs_status_helper_argv(const std::string& action,
+                                         const std::string& mount,
+                                         std::string* out,
+                                         int* exit_code) {
+    const std::vector<std::string> args = {action, mount};
+
+    if (!raid_btrfs_status_args_are_supported(args)) {
+        if (out) *out = "err: unsupported btrfs status helper command\n";
+        if (exit_code) *exit_code = 2;
+        return true;
+    }
+
+    return run_argv_capture_limited({
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/pqnas-btrfs-status",
+        action,
+        mount
+    }, out, exit_code, 24 * 60 * 60 * 1000, 2u * 1024u * 1024u);
+}
+
+static int run_btrfs_status_helper_capture(const std::string& action,
+                                           const std::string& mount,
+                                           std::string* out) {
+    int ec = 127;
+    const bool ok = run_btrfs_status_helper_argv(action, mount, out, &ec);
+    if (!ok && ec == 0) return 127;
+    return ec;
+}
+
 
 // copied transitional helper from main.cpp: trim_copy
 [[maybe_unused]] static inline std::string trim_copy(std::string s) {
@@ -1356,20 +1389,11 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
 	j["error"] = nullptr;
     j["btrfs_mount"] = mountpoint;
 
-    const std::string mp = sh_quote(mountpoint);
-
     std::string show, df, stats;
 
-    // -n = non-interactive (fails fast if sudo not permitted)
-    // Use full paths so sudoers rules can be tight.
-    const std::string cmd_show  = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + mp;
-    const std::string cmd_df    = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df "   + mp;
-    const std::string cmd_stats = "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats "    + mp;
-
-
-    int rc_show  = run_capture(cmd_show,  &show);
-    int rc_df    = run_capture(cmd_df,    &df);
-    int rc_stats = run_capture(cmd_stats, &stats);
+    int rc_show  = run_btrfs_status_helper_capture("filesystem-show", mountpoint, &show);
+    int rc_df    = run_btrfs_status_helper_capture("filesystem-df", mountpoint, &df);
+    int rc_stats = run_btrfs_status_helper_capture("device-stats", mountpoint, &stats);
 
     // Cap outputs
     cap_string(show,  256 * 1024);
@@ -2820,11 +2844,7 @@ j["no_stats_available"] = has("no stats available");
     std::string show;
     int ec = 0;
 
-    const std::string cmd =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount);
-
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok = run_cmd_capture(cmd, &show, &ec);
+    const bool ok = run_btrfs_status_helper_argv("filesystem-show", mount, &show, &ec);
     cap_string(show, 256 * 1024);
 
     if (!ok || ec != 0) return false;
