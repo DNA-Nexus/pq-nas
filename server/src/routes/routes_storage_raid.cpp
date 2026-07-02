@@ -5364,7 +5364,9 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
     json by_name = disks_j.value("by_name", json::object());
 
     std::string show_out;
-    int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so pool manager mounts cannot be shell-interpreted.
+    int rc_show = run_btrfs_status_helper_capture("filesystem-show", mount, &show_out);
     cap_string(show_out, 256 * 1024);
     rtrim_inplace(show_out);
 
@@ -5497,7 +5499,9 @@ srv.Post("/api/v4/poolmgr/apply-layout", [&](const httplib::Request& req, httpli
     json by_name = disks_j.value("by_name", json::object());
 
     std::string show_out;
-    int rc_show = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1", &show_out);
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so pool manager mounts cannot be shell-interpreted.
+    int rc_show = run_btrfs_status_helper_capture("filesystem-show", mount, &show_out);
     cap_string(show_out, 256 * 1024);
     rtrim_inplace(show_out);
 
