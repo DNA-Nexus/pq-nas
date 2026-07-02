@@ -4014,73 +4014,79 @@ static bool sha256_file(const std::filesystem::path& p, std::string* out_hex, st
 //  COMMAND / SHELL / STORAGE PROBE HELPERS
 // ============================================================================
 
-static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
+static bool run_cmd_capture_argv(const std::vector<std::string>& argv_s, std::string* out, int* exit_code) {
     if (out) out->clear();
-    if (exit_code) *exit_code = 127; // default like "command failed"
+    if (exit_code) *exit_code = 127;
 
-    // Always capture stderr too.
-    std::string cmd2 = cmd;
-    if (cmd2.find("2>&1") == std::string::npos) {
-        cmd2 += " 2>&1";
+    if (argv_s.empty()) {
+        if (out) *out = "err: empty argv\n";
+        return false;
     }
 
-    FILE* fp = popen(cmd2.c_str(), "r");
-    if (!fp) {
-        return false; // popen failed
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        if (out) *out = "err: pipe failed\n";
+        return false;
     }
 
-    std::string s;
-    char buf[4096];
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        if (out) *out = "err: fork failed\n";
+        return false;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        (void)::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        // Security: execute the requested command as argv, not via shell quoting.
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::array<char, 8192> buf{};
     while (true) {
-        size_t n = fread(buf, 1, sizeof(buf), fp);
-        if (n == 0) break;
-        s.append(buf, n);
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            if (out) out->append(buf.data(), static_cast<std::size_t>(n));
+            continue;
+        }
+        break;
     }
 
-    const int rc = pclose(fp);
+    ::close(pipefd[0]);
 
-    if (out) *out = s;
-
-    if (rc == -1) {
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) {
         if (exit_code) *exit_code = 127;
         return false;
     }
 
-    if (WIFEXITED(rc)) {
-        if (exit_code) *exit_code = WEXITSTATUS(rc);
+    if (WIFEXITED(st)) {
+        if (exit_code) *exit_code = WEXITSTATUS(st);
         return true;
     }
 
-    if (WIFSIGNALED(rc)) {
-        if (exit_code) *exit_code = 128 + WTERMSIG(rc);
+    if (WIFSIGNALED(st)) {
+        if (exit_code) *exit_code = 128 + WTERMSIG(st);
         return true;
     }
 
     if (exit_code) *exit_code = 127;
     return false;
-}
-
-static std::string shell_quote_posix(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 2);
-    out.push_back('\'');
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out.push_back(c);
-    }
-    out.push_back('\'');
-    return out;
-}
-
-static bool run_cmd_capture_argv(const std::vector<std::string>& argv, std::string* out, int* exit_code) {
-    std::string cmd;
-    bool first = true;
-    for (const auto& a : argv) {
-        if (!first) cmd.push_back(' ');
-        first = false;
-        cmd += shell_quote_posix(a);
-    }
-    return run_cmd_capture(cmd, out, exit_code);
 }
 static std::string rand_hex_16() {
     static const char* k = "0123456789abcdef";
