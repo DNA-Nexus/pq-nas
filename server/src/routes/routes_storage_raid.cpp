@@ -788,18 +788,10 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
         return probe_ec;
     }
 
-    if (out) out->clear();
-    std::array<char, 8192> buf{};
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return -1;
-    while (true) {
-        size_t n = fread(buf.data(), 1, buf.size(), pipe);
-        if (n > 0 && out) out->append(buf.data(), n);
-        if (n < buf.size()) break;
-    }
-    int rc = pclose(pipe);
-    // pclose returns wait status; keep it simple: 0 means success in practice for our uses.
-    return rc;
+    // Security: unsupported command strings fail closed instead of reaching a shell.
+    // Supported legacy strings are intercepted above and executed via argv.
+    if (out) *out = "err: unsupported RAID capture command\n";
+    return 127;
 }
 
 
@@ -940,43 +932,10 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
         return probe_ec == 0;
     }
 
-    std::string cmd2 = cmd;
-    if (cmd2.find("2>&1") == std::string::npos) {
-        cmd2 += " 2>&1";
-    }
-
-    FILE* fp = popen(cmd2.c_str(), "r");
-    if (!fp) {
-        return false; // popen failed
-    }
-
-    std::string s;
-    char buf[4096];
-    while (true) {
-        size_t n = fread(buf, 1, sizeof(buf), fp);
-        if (n == 0) break;
-        s.append(buf, n);
-    }
-
-    const int rc = pclose(fp);
-
-    if (out) *out = s;
-
-    if (rc == -1) {
-        if (exit_code) *exit_code = 127;
-        return false;
-    }
-
-    if (WIFEXITED(rc)) {
-        if (exit_code) *exit_code = WEXITSTATUS(rc);
-        return true;
-    }
-
-    if (WIFSIGNALED(rc)) {
-        if (exit_code) *exit_code = 128 + WTERMSIG(rc);
-        return true;
-    }
-
+    // Security: unsupported command strings fail closed instead of reaching a shell.
+    // All supported plan, root-helper, fstab, lsblk, and findmnt command forms
+    // must be handled above via argv dispatchers.
+    if (out) *out = "err: unsupported RAID command\n";
     if (exit_code) *exit_code = 127;
     return false;
 }
