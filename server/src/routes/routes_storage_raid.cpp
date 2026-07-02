@@ -9332,21 +9332,23 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
 
     json commands = json::array();
 
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root umount-pool " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
+    // Security: use RAID_ROOT so destroy-pool root-helper steps route
+    // through argv, not shell command strings.
+    commands.push_back("RAID_ROOT udev-settle");
+    commands.push_back("RAID_ROOT umount-pool " + resolved_mount);
+    commands.push_back("RAID_ROOT btrfs-device-scan");
 
     if (force_wipe) {
         for (const auto& dev : member_devs) {
-            commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(dev));
-            commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(dev));
+            commands.push_back("RAID_ROOT wipefs " + dev);
+            commands.push_back("RAID_ROOT zap-disk " + dev);
         }
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
+        commands.push_back("RAID_ROOT udev-settle");
     }
 
     commands.push_back(std::string("POOLS_CFG_REMOVE ") + resolved_mount);
     commands.push_back(std::string("FSTAB_REMOVE ") + resolved_mount);
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root rmdir-pool " + sh_quote(resolved_mount));
+    commands.push_back("RAID_ROOT rmdir-pool " + resolved_mount);
 
     // Enqueue (fail-closed)
     try {
