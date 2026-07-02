@@ -811,6 +811,37 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
     int timeout_ms,
     std::size_t max_bytes);
 
+[[maybe_unused]] static int run_lsblk_json_all_props_argv(const std::string& disk_path,
+                                                          std::string* out) {
+    std::vector<std::string> argv{
+        "/usr/bin/lsblk",
+        "-J",
+        "-b",
+        "-O"
+    };
+
+    // Security: non-empty disk paths must be absolute /dev paths before argv exec.
+    // Empty disk_path means full lsblk inventory without adding a user argument.
+    if (!disk_path.empty()) {
+        if (disk_path.rfind("/dev/", 0) != 0 || !raid_probe_abs_path_arg_is_safe(disk_path)) {
+            if (out) *out = "err: unsafe lsblk disk path\n";
+            return 2;
+        }
+        argv.push_back(disk_path);
+    }
+
+    int ec = 127;
+    const bool ran = run_argv_capture_limited(
+        argv,
+        out,
+        &ec,
+        10000,
+        1024u * 1024u
+    );
+
+    return ran ? ec : 127;
+}
+
 static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
     // hardening: fstab pseudo commands use argv exec, not shell.
     auto run_fstab_pseudo_argv = [&](const std::string& prefix,
@@ -1260,8 +1291,8 @@ static int run_btrfs_status_helper_capture(const std::string& action,
 [[maybe_unused]] static json storage_list_disks_json(std::string* raw_lsblk_json_out = nullptr) {
     std::string out;
     // -J JSON, -b bytes, -O all props
-    // NOTE: lsblk output is trusted system tool; we still filter hard.
-    run_capture("lsblk -J -b -O 2>/dev/null", &out);
+    // Security: call lsblk via argv directly, not through a shell string.
+    run_lsblk_json_all_props_argv("", &out);
 
     // Only cap the *debug/raw* string, never cap the parsed JSON input
     if (raw_lsblk_json_out) {
@@ -1731,7 +1762,8 @@ static int run_btrfs_status_helper_capture(const std::string& action,
     out["disk"] = disk_path;
 
     std::string raw;
-    int rc = run_capture("/usr/bin/lsblk -J -b -O " + sh_quote(disk_path) + " 2>/dev/null", &raw);
+    // Security: call lsblk via argv directly; disk_path is validated before exec.
+    int rc = run_lsblk_json_all_props_argv(disk_path, &raw);
 
     out["rc"] = rc;
 
