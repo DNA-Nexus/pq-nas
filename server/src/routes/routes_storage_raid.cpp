@@ -6457,7 +6457,9 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     warnings.push_back("On single-device filesystems scrub validates checksums but cannot repair corrupted data without redundancy.");
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
+    // Security: use an internal pseudo-command so the executor routes this
+    // root-helper scrub start through argv, not a shell command string.
+    commands.push_back("RAID_ROOT btrfs-scrub-start " + resolved_mount);
     // Security: use an internal pseudo-command so the executor routes this
     // read-only scrub-status check through argv, not a shell command string.
     commands.push_back("BTRFS_STATUS scrub-status " + resolved_mount);
@@ -6663,7 +6665,9 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
 
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
+    // Security: use an internal pseudo-command so the executor routes this
+    // root-helper scrub start through argv, not a shell command string.
+    commands.push_back("RAID_ROOT btrfs-scrub-start " + resolved_mount);
     // Security: use an internal pseudo-command so the executor routes this
     // read-only scrub-status check through argv, not a shell command string.
     commands.push_back("BTRFS_STATUS scrub-status " + resolved_mount);
