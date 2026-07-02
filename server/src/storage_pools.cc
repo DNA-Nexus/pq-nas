@@ -11,6 +11,10 @@
 #include <set>
 #include <system_error>
 
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 namespace pqnas {
 
 namespace {
@@ -166,32 +170,69 @@ std::string derive_serial_short_from_disk_id(const std::string& disk_id) {
 }
 
 
-std::string shell_quote_single(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += "'";
-    return out;
-}
-
-std::string run_command_capture_limited(const std::string& cmd, std::size_t max_bytes = 65536) {
+std::string run_argv_capture_limited(const std::vector<std::string>& argv_s,
+                                     std::size_t max_bytes = 65536) {
     std::string out;
+    if (argv_s.empty()) return out;
 
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (!fp) return out;
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) return out;
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        return out;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        ::close(pipefd[1]);
+
+        const int nullfd = ::open("/dev/null", O_WRONLY);
+        if (nullfd >= 0) {
+            (void)::dup2(nullfd, STDERR_FILENO);
+            ::close(nullfd);
+        }
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        // Security: execute storage pool probes as argv; device paths never reach a shell.
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
 
     std::array<char, 4096> buf{};
-    while (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
-        out += buf.data();
-        if (out.size() >= max_bytes) {
-            out.resize(max_bytes);
-            break;
+    while (true) {
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            if (out.size() < max_bytes) {
+                const std::size_t room = max_bytes - out.size();
+                const std::size_t take = std::min<std::size_t>(
+                    room,
+                    static_cast<std::size_t>(n)
+                );
+                out.append(buf.data(), take);
+            }
+            continue;
         }
+        break;
     }
 
-    (void)pclose(fp);
+    ::close(pipefd[0]);
+
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) return "";
+    if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) return "";
+
     return out;
 }
 
@@ -220,10 +261,14 @@ std::map<std::string, std::string> parse_key_value_lines(const std::string& txt)
 std::map<std::string, std::string> udev_properties_for_dev(const std::string& dev) {
     if (!is_dev_path(dev)) return {};
 
-    const std::string cmd =
-        "udevadm info --query=property --name=" + shell_quote_single(dev) + " 2>/dev/null";
+    const std::vector<std::string> argv = {
+        "/usr/bin/udevadm",
+        "info",
+        "--query=property",
+        "--name=" + dev
+    };
 
-    const std::string out = run_command_capture_limited(cmd);
+    const std::string out = run_argv_capture_limited(argv);
     if (out.empty()) return {};
 
     return parse_key_value_lines(out);
