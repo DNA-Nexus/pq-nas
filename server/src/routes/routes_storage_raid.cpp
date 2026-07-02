@@ -413,6 +413,170 @@ static bool raid_btrfs_status_args_are_supported(const std::vector<std::string>&
     return true;
 }
 
+// Security: pqnas-raid-root is a mutating root helper. Keep the C++
+// interceptor fail-closed too, so malformed legacy command strings never reach
+// sudo even though the helper also performs full validation.
+static bool raid_root_arg_has_no_control_or_traversal(const std::string& v) {
+    if (v.empty() || v.size() > 512) return false;
+    if (v.find("..") != std::string::npos) return false;
+
+    for (unsigned char c : v) {
+        if (c == '\0' || c == '\n' || c == '\r' || c == '\t') return false;
+    }
+
+    return true;
+}
+
+static bool raid_root_dev_arg_is_supported(const std::string& v) {
+    return raid_root_arg_has_no_control_or_traversal(v) &&
+           v.rfind("/dev/", 0) == 0;
+}
+
+static bool raid_root_pool_arg_is_supported(const std::string& v) {
+    if (!raid_root_arg_has_no_control_or_traversal(v)) return false;
+
+    const char* roots[] = {
+        "/srv/pqnas/pools/",
+        "/srv/pqnas-test/pools/",
+        "/srv/pqnas-test-btrfs/pools/"
+    };
+
+    for (const char* root : roots) {
+        if (v.rfind(root, 0) == 0 && v.size() > std::strlen(root)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool raid_root_pool_data_arg_is_supported(const std::string& v) {
+    const std::string suffix = "/data";
+    return raid_root_pool_arg_is_supported(v) &&
+           v.size() > suffix.size() &&
+           v.compare(v.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+static bool raid_root_label_arg_is_supported(const std::string& label) {
+    const std::string prefix = "PQNAS_";
+    if (label.rfind(prefix, 0) != 0 || label.size() <= prefix.size() || label.size() > 80) {
+        return false;
+    }
+
+    for (unsigned char c : label) {
+        if (std::isalnum(c) || c == '.' || c == '_' || c == '-') continue;
+        return false;
+    }
+
+    return true;
+}
+
+static bool raid_root_uuid_arg_is_supported(const std::string& uuid) {
+    if (uuid.size() != 36) return false;
+
+    for (std::size_t i = 0; i < uuid.size(); ++i) {
+        const char c = uuid[i];
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (c != '-') return false;
+            continue;
+        }
+        if (!std::isxdigit(static_cast<unsigned char>(c))) return false;
+    }
+
+    return true;
+}
+
+static bool raid_root_mount_spec_arg_is_supported(const std::string& spec) {
+    const std::string label_prefix = "LABEL=";
+    const std::string uuid_prefix = "UUID=";
+
+    if (spec.rfind(label_prefix, 0) == 0) {
+        return raid_root_label_arg_is_supported(spec.substr(label_prefix.size()));
+    }
+
+    if (spec.rfind(uuid_prefix, 0) == 0) {
+        return raid_root_uuid_arg_is_supported(spec.substr(uuid_prefix.size()));
+    }
+
+    return false;
+}
+
+static bool raid_root_args_are_supported(const std::vector<std::string>& args) {
+    if (args.empty()) return false;
+
+    const std::string& action = args[0];
+
+    if (action == "zap-disk" ||
+        action == "create-btrfs-partition" ||
+        action == "partprobe" ||
+        action == "wipefs") {
+        return args.size() == 2 && raid_root_dev_arg_is_supported(args[1]);
+    }
+
+    if (action == "mkfs-btrfs") {
+        if (args.size() < 4) return false;
+
+        const std::string& mode = args[1];
+        const std::string& label = args[2];
+
+        if (mode != "single" && mode != "raid1") return false;
+        if (!raid_root_label_arg_is_supported(label)) return false;
+        if (mode == "raid1" && args.size() < 5) return false;
+
+        for (std::size_t i = 3; i < args.size(); ++i) {
+            if (!raid_root_dev_arg_is_supported(args[i])) return false;
+        }
+
+        return true;
+    }
+
+    if (action == "mkdir-p") {
+        return args.size() == 2 && raid_root_pool_arg_is_supported(args[1]);
+    }
+
+    if (action == "chown-pqnas" || action == "chmod-0755") {
+        return args.size() == 2 && raid_root_pool_data_arg_is_supported(args[1]);
+    }
+
+    if (action == "mount-label") {
+        return args.size() == 3 &&
+               raid_root_label_arg_is_supported(args[1]) &&
+               raid_root_pool_arg_is_supported(args[2]);
+    }
+
+    if (action == "mount-spec") {
+        return args.size() == 3 &&
+               raid_root_mount_spec_arg_is_supported(args[1]) &&
+               raid_root_pool_arg_is_supported(args[2]);
+    }
+
+    if (action == "umount-pool" ||
+        action == "rmdir-pool" ||
+        action == "btrfs-scrub-start" ||
+        action == "btrfs-balance-raid1" ||
+        action == "btrfs-balance-single-force") {
+        return args.size() == 2 && raid_root_pool_arg_is_supported(args[1]);
+    }
+
+    if (action == "udev-settle" || action == "btrfs-device-scan") {
+        return args.size() == 1;
+    }
+
+    if (action == "btrfs-device-add" || action == "btrfs-device-remove") {
+        return args.size() == 3 &&
+               raid_root_dev_arg_is_supported(args[1]) &&
+               raid_root_pool_arg_is_supported(args[2]);
+    }
+
+    if (action == "btrfs-balance-force-profile") {
+        return args.size() == 3 &&
+               (args[1] == "single" || args[1] == "raid1") &&
+               raid_root_pool_arg_is_supported(args[2]);
+    }
+
+    return false;
+}
+
 static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
                                                 std::string* out,
                                                 int* exit_code) {
@@ -456,6 +620,13 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
         std::vector<std::string> args;
         if (!raid_parse_legacy_helper_tail(tail, &args)) {
             if (out) *out = "err: failed to parse legacy root-helper command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        if (std::string(h.helper) == "/usr/local/sbin/pqnas-raid-root" &&
+            !raid_root_args_are_supported(args)) {
+            if (out) *out = "err: unsupported raid root helper command\n";
             if (exit_code) *exit_code = 2;
             return true;
         }
