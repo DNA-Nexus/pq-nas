@@ -4341,20 +4341,6 @@ static bool load_snapshot_volumes_from_admin_settings(const std::string& admin_s
 
 } // namespace
 
-static std::string shell_escape_single_quotes(std::string s) {
-    size_t pos = 0;
-    while ((pos = s.find("'", pos)) != std::string::npos) {
-        s.replace(pos, 1, "'\\''");
-        pos += 4;
-    }
-    return s;
-}
-static std::string sh_quote(const std::string& s) {
-    // Wrap in single quotes and escape any embedded single quotes safely.
-    return "'" + shell_escape_single_quotes(s) + "'";
-}
-
-
 namespace pqnas { struct AuditEvent; }
 
 #include <functional>
@@ -4656,16 +4642,6 @@ static json load_or_init_pools_cfg(const std::string& users_path) {
 
 // returns true if "btrfs filesystem show <mount>" mentions the given device path
 
-static bool getenv_bool(const char* k, bool defv) {
-    const char* v = std::getenv(k);
-    if (!v) return defv;
-    std::string s(v);
-    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-    if (s == "1" || s == "true" || s == "yes" || s == "on") return true;
-    if (s == "0" || s == "false" || s == "no" || s == "off") return false;
-    return defv;
-}
-
 // Security: run startup pool-restore probes/root-helper calls via argv.
 // This avoids shell parsing while keeping the old restore flow isolated.
 [[maybe_unused]] static int main_run_argv_capture_no_shell(
@@ -4939,14 +4915,6 @@ static inline std::string parent_disk_from_dev(const std::string& dev_in) {
 
 
 // Very small validator: require /dev/... and no whitespace
-static bool is_dev_path_basic_safe(const std::string& s) {
-    if (s.rfind("/dev/", 0) != 0) return false;
-    for (char c : s) {
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return false;
-    }
-    if (s.find("..") != std::string::npos) return false;
-    return true;
-}
 
 // Parse a "btrfs filesystem df" line like:
 // "Data, single: total=2.01GiB, used=19.12MiB"

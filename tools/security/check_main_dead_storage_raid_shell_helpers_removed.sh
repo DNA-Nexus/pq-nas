@@ -23,6 +23,10 @@ removed_symbols = [
     "validate_create_pool_devices",
     "build_create_pool_commands_json",
     "compute_create_pool_plan_id",
+    "sh_quote",
+    "getenv_bool",
+    "is_dev_path_basic_safe",
+    "shell_escape_single_quotes",
 ]
 
 for sym in removed_symbols:
