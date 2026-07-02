@@ -2247,7 +2247,9 @@ static int run_btrfs_status_helper_capture(const std::string& action,
 
     cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
     cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount));
+    // Security: use an internal pseudo-command so the executor routes this
+    // read-only btrfs-status check through argv, not a shell command string.
+    cmds.push_back("BTRFS_STATUS filesystem-show " + mount);
     // hardening: pseudo command keeps fstab helper argv-only.
     cmds.push_back("FSTAB_ADD_BTRFS " + mount);
 
@@ -3429,6 +3431,33 @@ j["no_stats_available"] = has("no stats available");
             "/usr/local/sbin/pqnas-fstab-add-btrfs",
             mount
         }, out, ec, 10000, 64 * 1024);
+    }
+
+    // Pseudo-command: BTRFS_STATUS <action> <mount>
+    // Security: read-only btrfs-status checks route through argv, not a shell
+    // command string, so plan mounts cannot be shell-interpreted.
+    if (cmd.rfind("BTRFS_STATUS ", 0) == 0) {
+        const std::string rest = trim_copy(cmd.substr(std::string("BTRFS_STATUS ").size()));
+        const size_t sp = rest.find(' ');
+        if (sp == std::string::npos) {
+            *out = "err: BTRFS_STATUS format is: BTRFS_STATUS <action> <mount>\n";
+            *ec = 2;
+            return true;
+        }
+
+        const std::string action = trim_copy(rest.substr(0, sp));
+        const std::string mount = trim_copy(rest.substr(sp + 1));
+        if (action.empty() || mount.empty() || !is_abs_path_safe(mount)) {
+            *out = "err: BTRFS_STATUS format is: BTRFS_STATUS <action> <mount>\n";
+            *ec = 2;
+            return true;
+        }
+
+        std::string status_out;
+        const int rc = run_btrfs_status_helper_capture(action, mount, &status_out);
+        *out = status_out;
+        *ec = rc;
+        return true;
     }
 
     // Pseudo-command: FSTAB_REMOVE <mount>
@@ -6389,7 +6418,9 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
     commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
+    // Security: use an internal pseudo-command so the executor routes this
+    // read-only scrub-status check through argv, not a shell command string.
+    commands.push_back("BTRFS_STATUS scrub-status " + resolved_mount);
 
     plan["steps"] = steps;
     plan["commands"] = commands;
@@ -6593,7 +6624,9 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     // -------- Build commands exactly like plan endpoint --------
     json commands = json::array();
     commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-scrub-start " + sh_quote(resolved_mount));
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount));
+    // Security: use an internal pseudo-command so the executor routes this
+    // read-only scrub-status check through argv, not a shell command string.
+    commands.push_back("BTRFS_STATUS scrub-status " + resolved_mount);
 
     // plan_id check (must match exactly)
     const std::string joined = join_commands_for_hash(commands);
@@ -10156,10 +10189,9 @@ srv.Post("/api/v4/raid/execute/create-pool", [&](const httplib::Request& req, ht
 
             {
                 std::string show_out;
-                int rc_show = run_capture(
-                    "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(mount) + " 2>&1",
-                    &show_out
-                );
+                // Security: call the read-only btrfs-status helper via argv, not a
+                // shell command string, so newly-created pool mounts cannot be shell-interpreted.
+                int rc_show = run_btrfs_status_helper_capture("filesystem-show", mount, &show_out);
                 if (rc_show == 0) {
                     parse_btrfs_filesystem_show(show_out,
                                                 &fs_label_detected,
