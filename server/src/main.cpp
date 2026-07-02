@@ -1136,23 +1136,6 @@ static std::string public_share_safe_cache_key_local(const std::string& token) {
     return out.empty() ? "share" : out;
 }
 
-static std::string public_share_shell_quote_local(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 2);
-    out += '\'';
-
-    for (char c : s) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out += c;
-        }
-    }
-
-    out += '\'';
-    return out;
-}
-
 static bool public_share_read_binary_file_local(const std::filesystem::path& p,
                                                 std::string* out,
                                                 std::string* err) {
@@ -1189,6 +1172,32 @@ static bool public_share_read_binary_file_local(const std::filesystem::path& p,
     return true;
 }
 
+static int public_share_run_argv_wait_local(const std::vector<std::string>& argv_s) {
+    if (argv_s.empty()) return 127;
+
+    const pid_t pid = ::fork();
+    if (pid < 0) return 127;
+
+    if (pid == 0) {
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        // Security: execute ffmpeg with argv; shared video paths never reach a shell.
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) return 127;
+    if (WIFEXITED(st)) return WEXITSTATUS(st);
+    if (WIFSIGNALED(st)) return 128 + WTERMSIG(st);
+    return 127;
+}
+
 static bool public_share_generate_video_poster_local(const std::filesystem::path& video_abs,
                                                      const std::filesystem::path& poster_abs,
                                                      std::string* err) {
@@ -1213,23 +1222,29 @@ static bool public_share_generate_video_poster_local(const std::filesystem::path
     std::filesystem::remove(tmp, ec);
 
     auto run_ffmpeg = [&](bool seek) -> int {
-        std::ostringstream cmd;
-        cmd
-            << public_share_shell_quote_local(ffmpeg.string())
-            << " -hide_banner -loglevel error -y ";
+        std::vector<std::string> argv = {
+            ffmpeg.string(),
+            "-hide_banner",
+            "-loglevel", "error",
+            "-y"
+        };
 
         if (seek) {
-            cmd << "-ss 1 ";
+            argv.push_back("-ss");
+            argv.push_back("1");
         }
 
-        cmd
-            << "-i " << public_share_shell_quote_local(video_abs.string()) << " "
-            << "-frames:v 1 "
-            << "-vf " << public_share_shell_quote_local("scale=1200:-2:force_original_aspect_ratio=decrease") << " "
-            << "-q:v 4 "
-            << public_share_shell_quote_local(tmp.string());
+        argv.push_back("-i");
+        argv.push_back(video_abs.string());
+        argv.push_back("-frames:v");
+        argv.push_back("1");
+        argv.push_back("-vf");
+        argv.push_back("scale=1200:-2:force_original_aspect_ratio=decrease");
+        argv.push_back("-q:v");
+        argv.push_back("4");
+        argv.push_back(tmp.string());
 
-        return std::system(cmd.str().c_str());
+        return public_share_run_argv_wait_local(argv);
     };
 
     int rc = run_ffmpeg(true);
