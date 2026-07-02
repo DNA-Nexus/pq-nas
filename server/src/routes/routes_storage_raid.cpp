@@ -382,6 +382,37 @@ static bool raid_parse_legacy_helper_tail(const std::string& tail,
     return true;
 }
 
+// Security: pqnas-btrfs-status is a read-only root helper. Keep the C++
+// interceptor fail-closed too, so malformed legacy command strings never reach
+// sudo even though the helper also validates its action/mount allowlist.
+static bool raid_btrfs_status_args_are_supported(const std::vector<std::string>& args) {
+    if (args.size() != 2) return false;
+
+    const std::string& action = args[0];
+    const std::string& mount = args[1];
+
+    const bool action_ok =
+        action == "filesystem-show" ||
+        action == "filesystem-df" ||
+        action == "filesystem-df-bytes" ||
+        action == "filesystem-usage" ||
+        action == "filesystem-usage-bytes" ||
+        action == "device-stats" ||
+        action == "scrub-status" ||
+        action == "balance-status";
+
+    if (!action_ok) return false;
+    if (mount.empty() || mount[0] != '/') return false;
+    if (mount.size() > 512) return false;
+    if (mount.find("..") != std::string::npos) return false;
+
+    for (unsigned char c : mount) {
+        if (c == '\0' || c == '\n' || c == '\r' || c == '\t') return false;
+    }
+
+    return true;
+}
+
 static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
                                                 std::string* out,
                                                 int* exit_code) {
@@ -425,6 +456,13 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
         std::vector<std::string> args;
         if (!raid_parse_legacy_helper_tail(tail, &args)) {
             if (out) *out = "err: failed to parse legacy root-helper command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        if (std::string(h.helper) == "/usr/local/sbin/pqnas-btrfs-status" &&
+            !raid_btrfs_status_args_are_supported(args)) {
+            if (out) *out = "err: unsupported btrfs status helper command\n";
             if (exit_code) *exit_code = 2;
             return true;
         }
