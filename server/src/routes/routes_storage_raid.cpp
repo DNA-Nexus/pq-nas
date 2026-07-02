@@ -842,6 +842,32 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
     return ran ? ec : 127;
 }
 
+[[maybe_unused]] static int run_findmnt_no_target_argv(const std::string& field,
+                                                   const std::string& target,
+                                                   std::string* out) {
+    if (field != "TARGET" && field != "FSTYPE" && field != "SOURCE") {
+        if (out) *out = "err: unsupported findmnt field\n";
+        return 2;
+    }
+
+    // Security: findmnt target paths must be safe absolute paths before argv exec.
+    if (!raid_probe_abs_path_arg_is_safe(target)) {
+        if (out) *out = "err: unsafe findmnt target path\n";
+        return 2;
+    }
+
+    int ec = 127;
+    const bool ran = run_argv_capture_limited(
+        {"/usr/bin/findmnt", "-no", field, "--target", target},
+        out,
+        &ec,
+        10000,
+        128u * 1024u
+    );
+
+    return ran ? ec : 127;
+}
+
 static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_code) {
     // hardening: fstab pseudo commands use argv exec, not shell.
     auto run_fstab_pseudo_argv = [&](const std::string& prefix,
@@ -4175,17 +4201,18 @@ srv.Get("/api/v4/storage/status", [&](const httplib::Request& req, httplib::Resp
 
     // --- Resolve mountpoint + fstype first (must happen before running btrfs) ---
     std::string fs_target_out;
-    int rc_target = run_capture("/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &fs_target_out);
+    // Security: call findmnt via argv directly, not through shell strings.
+    int rc_target = run_findmnt_no_target_argv("TARGET", mount, &fs_target_out);
     cap_string(fs_target_out, 16 * 1024);
     rtrim_inplace(fs_target_out);
 
     std::string fstype_out;
-    int rc_fs = run_capture("/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out);
+    int rc_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
     std::string source_out;
-    int rc_src = run_capture("/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out);
+    int rc_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -10421,15 +10448,16 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
     // -------------------- resolve mountpoint, fstype, source --------------------
     std::string target_out, fstype_out, source_out;
 
-    int rc_target = run_capture("/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out);
+    // Security: call findmnt via argv directly, not through shell strings.
+    int rc_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    int rc_fs = run_capture("/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out);
+    int rc_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    int rc_src = run_capture("/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out);
+    int rc_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
