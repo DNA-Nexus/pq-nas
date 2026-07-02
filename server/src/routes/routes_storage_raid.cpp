@@ -7671,12 +7671,14 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
         warnings.push_back("BUSY: another RAID operation is currently running for this mount; execute will likely return raid_busy until it finishes.");
     }
 
+    // Security: use RAID_ROOT so profile-conversion root-helper steps route
+    // through argv, not shell command strings.
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-raid1 " + resolved_mount);
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
         steps.push_back("Convert data/metadata profiles to RAID1 via balance.");
     } else {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-single-force " + resolved_mount);
         steps.push_back("Convert data/metadata/system profiles to SINGLE via balance (--force for system chunks).");
         warnings.push_back("Converting to SINGLE with multiple devices reduces redundancy.");
     }
@@ -7941,11 +7943,13 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     }
 
     json commands = json::array();
+    // Security: use RAID_ROOT so profile-conversion root-helper steps route
+    // through argv, not shell command strings.
     if (mode == "raid1") {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-raid1 " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-raid1 " + resolved_mount);
         commands.push_back(std::string("POOLS_CFG_SET_MODE ") + resolved_mount + " raid1");
     } else {
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-single-force " + resolved_mount);
     }
 
     const std::string joined = join_commands_for_hash(commands);
@@ -8342,15 +8346,17 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
     warnings.push_back("PLAN ONLY: commands are returned as strings; nothing is executed by this endpoint.");
 
     // If this removal would drop from 2 devices -> 1 device, we must convert off RAID1 first
+    // Security: use RAID_ROOT so device-remove root-helper steps route through
+    // argv, not shell command strings.
     if (total_devices == 2) {
         warnings.push_back("Pre-step required: converting metadata/system profiles to SINGLE to allow removing down to one device.");
         warnings.push_back("This includes --force because newer btrfs-progs refuse explicit system-chunk operations otherwise.");
         warnings.push_back("Pre-step required: converting DATA profile to SINGLE too (cannot remove a device while DATA remains RAID1).");
-        commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force " + sh_quote(resolved_mount));
+        commands.push_back("RAID_ROOT btrfs-balance-single-force " + resolved_mount);
         steps.push_back("Convert data/metadata/system profiles to SINGLE via balance (--force for system chunks).");
     }
 
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
+    commands.push_back("RAID_ROOT btrfs-device-remove " + member_path + " " + resolved_mount);
     steps.push_back("Remove device from filesystem (data migration may take time).");
 
     plan["steps"] = steps;
@@ -9728,14 +9734,13 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
     json commands = json::array();
 
     // If this removal would drop from 2 devices -> 1 device, we must convert off RAID1 first
+    // Security: use RAID_ROOT so device-remove root-helper steps route through
+    // argv, not shell command strings.
     if (total_devices == 2) {
-        commands.push_back(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-balance-single-force "
-            + sh_quote(resolved_mount)
-        );
+        commands.push_back("RAID_ROOT btrfs-balance-single-force " + resolved_mount);
     }
 
-    commands.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-remove " + sh_quote(member_path) + " " + sh_quote(resolved_mount));
+    commands.push_back("RAID_ROOT btrfs-device-remove " + member_path + " " + resolved_mount);
 
     // plan_id check (must match exactly plan endpoint)
     const std::string joined = join_commands_for_hash(commands);
