@@ -8283,19 +8283,61 @@ std::string exif_taken_month_from_string(const std::string& s) {
     return "";
 }
 
-std::string read_command_stdout(const std::string& cmd) {
+std::string read_command_stdout_argv_silent_stderr(const std::vector<std::string>& argv_s) {
     std::string out;
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (!fp) return out;
+    if (argv_s.empty()) return out;
 
-    char buf[4096];
-    while (true) {
-        const std::size_t n = std::fread(buf, 1, sizeof(buf), fp);
-        if (n == 0) break;
-        out.append(buf, n);
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) return out;
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        return out;
     }
 
-    pclose(fp);
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        ::close(pipefd[1]);
+
+        const int nullfd = ::open("/dev/null", O_WRONLY);
+        if (nullfd >= 0) {
+            (void)::dup2(nullfd, STDERR_FILENO);
+            ::close(nullfd);
+        }
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        // Security: execute exiftool with argv; photo paths never reach a shell.
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::array<char, 8192> buf{};
+    while (true) {
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            out.append(buf.data(), static_cast<std::size_t>(n));
+            continue;
+        }
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) return "";
+    if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) return "";
+
     return out;
 }
 
@@ -8308,14 +8350,17 @@ PhotoStatsRow exif_row_from_file(const std::string& rel_path,
     row.size_bytes = size_bytes;
     row.mtime_epoch = mtime_epoch;
 
-    const std::string cmd =
-        "exiftool -json -n "
-        "-Make -Model -LensModel -ISO -FNumber -ExposureTime -FocalLength "
-        "-DateTimeOriginal -CreateDate "
-        "-GPSLatitude -GPSLongitude -GPSAltitude -GPSLatitudeRef -GPSLongitudeRef "
-        + shell_quote_single(abs_path.string()) + " 2>/dev/null";
+    const std::vector<std::string> argv = {
+        "/usr/bin/exiftool",
+        "-json", "-n",
+        "-Make", "-Model", "-LensModel", "-ISO", "-FNumber", "-ExposureTime", "-FocalLength",
+        "-DateTimeOriginal", "-CreateDate",
+        "-GPSLatitude", "-GPSLongitude", "-GPSAltitude", "-GPSLatitudeRef", "-GPSLongitudeRef",
+        "--",
+        abs_path.string()
+    };
 
-    const std::string raw = read_command_stdout(cmd);
+    const std::string raw = read_command_stdout_argv_silent_stderr(argv);
     if (raw.empty()) {
         return row;
     }

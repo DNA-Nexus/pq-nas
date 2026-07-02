@@ -50,8 +50,6 @@ for marker in required_main:
 
 legacy_main = [
     "std::string read_command_stdout(const std::string& cmd)",
-    "popen(cmd.c_str()",
-    "pclose(fp)",
     '"exiftool -json -n ',
     "+ shell_quote_single(abs_path.string())",
 ]
