@@ -45,7 +45,6 @@ struct AppsManageRoutesContext {
     std::function<void(nlohmann::json&, const nlohmann::json&)> apply_app_compatibility_fields;
 
     std::function<std::string()> rand_hex_16;
-    std::function<bool(const std::string&, std::string*, int*)> run_cmd_capture;
 
     std::function<std::string(const nlohmann::json&)> app_manifest_min_server_version;
     std::function<bool(const std::string&)> app_server_version_ok;
