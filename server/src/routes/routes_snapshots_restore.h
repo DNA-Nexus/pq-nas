@@ -35,8 +35,6 @@ struct SnapshotRestoreRoutesContext {
     std::function<std::string()> now_iso_utc;
     std::function<std::string()> rand_hex_32;
     std::function<std::string(std::size_t)> random_b64url;
-
-    std::function<void(const std::string&, std::string*, int*)> popen_capture;
 };
 
 void register_snapshot_restore_routes(

@@ -1143,11 +1143,6 @@ srv.Put("/api/v4/files/put",
             [&](std::size_t n) {
                 return random_b64url(n);
             };
-        snapshot_restore_ctx.popen_capture =
-            [&](const std::string& cmd, std::string* out, int* rc) {
-                popen_capture(cmd, out, rc);
-            };
-
         register_snapshot_restore_routes(srv, snapshot_restore_ctx);
     }
 

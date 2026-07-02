@@ -55,8 +55,7 @@ bool context_ok(const SnapshotRestoreRoutesContext& c) {
            c.realpath_str &&
            c.now_iso_utc &&
            c.rand_hex_32 &&
-           c.random_b64url &&
-           c.popen_capture;
+           c.random_b64url;
 }
 
 void fallback_reply_json(httplib::Response& res, int status, const std::string& body) {
