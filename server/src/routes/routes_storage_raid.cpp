@@ -6071,13 +6071,11 @@ srv.Get("/api/v4/raid/balance-status", [&](const httplib::Request& req, httplib:
     }
 
     // Run balance status
-    const std::string cmd =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + sh_quote(resolved_mount);
-
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
     std::string out;
     int rc = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok = run_cmd_capture(cmd, &out, &rc);
+    const bool ok = run_btrfs_status_helper_argv("balance-status", resolved_mount, &out, &rc);
     cap_string(out, 256 * 1024);
 
     // Parse best-effort
@@ -6208,13 +6206,11 @@ srv.Get("/api/v4/raid/scrub-status", [&](const httplib::Request& req, httplib::R
     }
 
     // Run scrub status
-    const std::string cmd =
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount);
-
+    // Security: call the read-only btrfs-status helper via argv, not a
+    // shell command string, so resolved mount targets cannot be shell-interpreted.
     std::string out;
     int rc = 0;
-    // hardening: route pseudo commands through guarded runner.
-    const bool ok = run_cmd_capture(cmd, &out, &rc);
+    const bool ok = run_btrfs_status_helper_argv("scrub-status", resolved_mount, &out, &rc);
     cap_string(out, 256 * 1024);
 
     // Parse best-effort
