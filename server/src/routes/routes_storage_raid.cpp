@@ -450,11 +450,133 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
     return false;
 }
 
+// Security: route known non-root storage probe command strings through argv
+// before the legacy popen fallback. This keeps existing display strings stable
+// while preventing mount/device arguments from being interpreted by a shell.
+[[maybe_unused]] static bool raid_probe_abs_path_arg_is_safe(const std::string& v) {
+    if (v.empty() || v[0] != '/') return false;
+    if (v.size() > 512) return false;
+    for (unsigned char c : v) {
+        if (c == '\0' || c == '\n' || c == '\r' || c == '\t') return false;
+    }
+    return true;
+}
+
+[[maybe_unused]] static bool raid_strip_probe_redirect_suffix(std::string* cmd) {
+    if (!cmd) return false;
+
+    bool stripped = false;
+    for (;;) {
+        std::string before = *cmd;
+
+        const char* suffixes[] = {
+            " 2>&1",
+            " 2>/dev/null"
+        };
+
+        for (const char* suffix : suffixes) {
+            const std::size_t n = std::strlen(suffix);
+            if (cmd->size() >= n && cmd->compare(cmd->size() - n, n, suffix) == 0) {
+                cmd->resize(cmd->size() - n);
+                *cmd = raid_cmd_trim_copy(*cmd);
+                stripped = true;
+                break;
+            }
+        }
+
+        if (*cmd == before) break;
+    }
+
+    return stripped;
+}
+
+[[maybe_unused]] static bool raid_try_run_nonroot_probe_argv(const std::string& cmd_in,
+                                                             std::string* out,
+                                                             int* exit_code) {
+    std::string cmd = raid_cmd_trim_copy(cmd_in);
+    raid_strip_probe_redirect_suffix(&cmd);
+
+    auto run_probe = [&](const std::vector<std::string>& argv) -> bool {
+        return run_argv_capture_limited(
+            argv,
+            out,
+            exit_code,
+            10000,
+            1024u * 1024u
+        );
+    };
+
+    if (cmd == "lsblk -J -b -O" || cmd == "/usr/bin/lsblk -J -b -O") {
+        return run_probe({"/usr/bin/lsblk", "-J", "-b", "-O"});
+    }
+
+    const std::string lsblk_prefix = "/usr/bin/lsblk ";
+    if (cmd.rfind(lsblk_prefix, 0) == 0) {
+        std::vector<std::string> args;
+        if (!raid_parse_legacy_helper_tail(cmd.substr(lsblk_prefix.size()), &args)) {
+            if (out) *out = "err: failed to parse lsblk probe command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        if (args.size() == 4 &&
+            args[0] == "-J" &&
+            args[1] == "-b" &&
+            args[2] == "-O" &&
+            args[3].rfind("/dev/", 0) == 0 &&
+            raid_probe_abs_path_arg_is_safe(args[3])) {
+            return run_probe({"/usr/bin/lsblk", "-J", "-b", "-O", args[3]});
+        }
+
+        if (out) *out = "err: unsupported lsblk probe command\n";
+        if (exit_code) *exit_code = 2;
+        return true;
+    }
+
+    const std::string findmnt_prefix = "/usr/bin/findmnt ";
+    if (cmd.rfind(findmnt_prefix, 0) == 0) {
+        std::vector<std::string> args;
+        if (!raid_parse_legacy_helper_tail(cmd.substr(findmnt_prefix.size()), &args)) {
+            if (out) *out = "err: failed to parse findmnt probe command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        if (args.size() == 4 &&
+            args[0] == "-no" &&
+            (args[1] == "TARGET" || args[1] == "FSTYPE" || args[1] == "SOURCE") &&
+            args[2] == "--target" &&
+            raid_probe_abs_path_arg_is_safe(args[3])) {
+            return run_probe({"/usr/bin/findmnt", "-no", args[1], "--target", args[3]});
+        }
+
+        if (args.size() == 5 &&
+            args[0] == "-rn" &&
+            args[1] == "-t" &&
+            args[2] == "btrfs" &&
+            args[3] == "-o" &&
+            (args[4] == "TARGET" || args[4] == "TARGET,SOURCE,FSTYPE")) {
+            return run_probe({"/usr/bin/findmnt", "-rn", "-t", "btrfs", "-o", args[4]});
+        }
+
+        if (out) *out = "err: unsupported findmnt probe command\n";
+        if (exit_code) *exit_code = 2;
+        return true;
+    }
+
+    return false;
+}
+
 // copied transitional helper from main.cpp: run_capture
 [[maybe_unused]] static int run_capture(const std::string& cmd, std::string* out) {
     int helper_ec = 127;
     if (raid_try_run_known_root_helper_argv(cmd, out, &helper_ec)) {
         return helper_ec;
+    }
+
+    int probe_ec = 127;
+    if (raid_try_run_nonroot_probe_argv(cmd, out, &probe_ec)) {
+        return probe_ec;
     }
 
     if (out) out->clear();
@@ -527,6 +649,12 @@ static bool run_cmd_capture(const std::string& cmd, std::string* out, int* exit_
     if (exit_code) *exit_code = 127; // default like "command failed"
 
     // Always capture stderr too.
+    int probe_ec = 127;
+    if (raid_try_run_nonroot_probe_argv(cmd, out, &probe_ec)) {
+        if (exit_code) *exit_code = probe_ec;
+        return probe_ec == 0;
+    }
+
     std::string cmd2 = cmd;
     if (cmd2.find("2>&1") == std::string::npos) {
         cmd2 += " 2>&1";
