@@ -4151,39 +4151,6 @@ static std::string rand_hex_32() {
     return out;
 }
 
-static bool popen_capture(const std::string& cmd, std::string* out, int* rc) {
-    if (out) out->clear();
-
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (!fp) { if (rc) *rc = -1; return false; }
-
-    std::string buf;
-    char tmp[4096];
-    while (true) {
-        size_t n = fread(tmp, 1, sizeof(tmp), fp);
-        if (n > 0) buf.append(tmp, tmp + n);
-        if (n < sizeof(tmp)) break;
-    }
-
-    int st = pclose(fp);
-
-    int code = -1;
-    if (st == -1) {
-        code = -1; // pclose failed
-    } else if (WIFEXITED(st)) {
-        code = WEXITSTATUS(st); // normal exit => 0..255
-    } else if (WIFSIGNALED(st)) {
-        code = 128 + WTERMSIG(st); // like bash convention
-    } else {
-        code = st; // fallback (shouldn't happen often)
-    }
-
-    if (rc) *rc = code;
-    if (out) *out = buf;
-    return true;
-}
-
-
 static std::string realpath_str(const std::string& p) {
     std::error_code ec;
     auto rp = std::filesystem::weakly_canonical(std::filesystem::path(p), ec);
