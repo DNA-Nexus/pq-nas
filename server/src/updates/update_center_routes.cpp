@@ -309,39 +309,6 @@ std::string update_safe_filename(std::string name, std::string* err) {
     return name;
 }
 
-std::string update_shell_quote(const std::string& in) {
-    std::string out = "'";
-    for (char c : in) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += "'";
-    return out;
-}
-
-std::string update_run_command_limited(const std::string& cmd, std::size_t max_bytes, int* status_out) {
-    if (status_out) *status_out = -1;
-
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-
-    std::string out;
-    char buf[4096];
-
-    while (fgets(buf, sizeof(buf), pipe)) {
-        if (out.size() < max_bytes) {
-            const std::size_t room = max_bytes - out.size();
-            const std::size_t len = std::strlen(buf);
-            out.append(buf, std::min(room, len));
-        }
-    }
-
-    const int st = pclose(pipe);
-    if (status_out) *status_out = st;
-    return out;
-}
-
-
 struct UpdateArgvResult {
     int exit_code = 127;
     std::string output;
@@ -807,16 +774,21 @@ bool update_is_safe_staged_package_name(const std::string& name) {
     };
 
     for (const std::string& candidate : candidates) {
-        int status = -1;
+        // Security: read candidate manifests with tar argv; package paths never reach a shell.
+        const UpdateArgvResult tar_result = update_run_argv_limited(
+            {
+                "/usr/bin/tar",
+                "-xOzf",
+                package_path.string(),
+                candidate
+            },
+            256u * 1024u,
+            10000
+        );
 
-        const std::string cmd =
-            "tar -xOzf " + update_shell_quote(package_path.string()) + " " +
-            update_shell_quote(candidate) + " 2>/dev/null";
+        std::string raw = update_trim(tar_result.output);
 
-        std::string raw = update_run_command_limited(cmd, 256u * 1024u, &status);
-        raw = update_trim(raw);
-
-        if (status != 0) {
+        if (tar_result.exit_code != 0) {
             continue;
         }
 
@@ -2418,17 +2390,23 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             return;
         }
 
-        int tar_status = -1;
-        const std::string cmd =
-            "tar -tzf " + update_shell_quote(package_path.string()) + " 2>&1";
-        const std::string listing =
-            update_run_command_limited(cmd, 2u * 1024u * 1024u, &tar_status);
+        // Security: list package contents with tar argv instead of shell command strings.
+        const UpdateArgvResult tar_result = update_run_argv_limited(
+            {
+                "/usr/bin/tar",
+                "-tzf",
+                package_path.string()
+            },
+            2u * 1024u * 1024u,
+            10000
+        );
+        const std::string listing = tar_result.output;
 
-        if (tar_status != 0) {
+        if (tar_result.exit_code != 0) {
             deps.reply_json(res, 400, json{
                 {"ok", false},
                 {"error", "tar_list_failed"},
-                {"status", tar_status},
+                {"status", tar_result.exit_code},
                 {"output", listing.substr(0, 12000)}
             }.dump(2));
             return;
@@ -2617,17 +2595,23 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             return;
         }
 
-        int tar_status = -1;
-        const std::string cmd =
-            "tar -tzf " + update_shell_quote(package_path.string()) + " 2>&1";
-        const std::string listing =
-            update_run_command_limited(cmd, 2u * 1024u * 1024u, &tar_status);
+        // Security: list package contents with tar argv instead of shell command strings.
+        const UpdateArgvResult tar_result = update_run_argv_limited(
+            {
+                "/usr/bin/tar",
+                "-tzf",
+                package_path.string()
+            },
+            2u * 1024u * 1024u,
+            10000
+        );
+        const std::string listing = tar_result.output;
 
-        if (tar_status != 0) {
+        if (tar_result.exit_code != 0) {
             deps.reply_json(res, 400, json{
                 {"ok", false},
                 {"error", "tar_list_failed"},
-                {"status", tar_status},
+                {"status", tar_result.exit_code},
                 {"output", listing.substr(0, 12000)}
             }.dump(2));
             return;
