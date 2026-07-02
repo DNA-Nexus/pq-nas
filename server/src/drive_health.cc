@@ -50,33 +50,6 @@ static std::string trim_ws(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-// Execute a shell command and capture stdout as a single string.
-//
-// Notes:
-// - stderr redirection is controlled by the caller in the command string.
-// - rc_out receives the raw pclose() result as used elsewhere in this file.
-// - This helper is intentionally simple because the surrounding code already
-//   handles command-specific validation and error messaging.
-static bool run_command_capture(const std::string& cmd, std::string* out, int* rc_out) {
-    if (out) out->clear();
-    if (rc_out) *rc_out = -1;
-
-    FILE* fp = ::popen(cmd.c_str(), "r");
-    if (!fp) return false;
-
-    std::string buf;
-    std::array<char, 4096> tmp{};
-    while (std::fgets(tmp.data(), (int)tmp.size(), fp)) {
-        buf.append(tmp.data());
-    }
-
-    const int rc = ::pclose(fp);
-    if (out) *out = std::move(buf);
-    if (rc_out) *rc_out = rc;
-    return true;
-}
-
-
 static bool run_command_capture_argv(const std::vector<std::string>& argv_s,
                                      std::string* out,
                                      int* rc_out) {
@@ -378,9 +351,16 @@ static bool collect_lsblk_disks(std::vector<LsblkDisk>* out, std::string* err) {
     if (err) err->clear();
 
     std::string txt;
-    int rc = -1;
-    const std::string cmd = "lsblk -J -d -b -o NAME,PATH,MODEL,SERIAL,SIZE,ROTA,TYPE,TRAN";
-    if (!run_command_capture(cmd, &txt, &rc)) {
+    int rc = 127;
+    // Security: call lsblk via argv directly, not through a shell command string.
+    if (!run_command_capture_argv({
+            "/usr/bin/lsblk",
+            "-J",
+            "-d",
+            "-b",
+            "-o",
+            "NAME,PATH,MODEL,SERIAL,SIZE,ROTA,TYPE,TRAN"
+        }, &txt, &rc)) {
         if (err) *err = "failed to execute lsblk";
         return false;
     }
