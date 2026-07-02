@@ -2350,7 +2350,7 @@ static int run_btrfs_status_helper_capture(const std::string& action,
     std::string source_out;
     int ec_src = 0;
 
-    run_cmd_capture("/usr/bin/findmnt -no SOURCE --target " + sh_quote(root), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", root, &source_out);
     cap_string(source_out, 4096);
     rtrim_inplace(source_out);
 
@@ -4388,7 +4388,7 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
     std::string root_fstype;
     {
         int ec_rootfs = 0;
-        run_cmd_capture("/usr/bin/findmnt -no FSTYPE --target " + sh_quote(allowed_prefix), &root_fstype, &ec_rootfs);
+        ec_rootfs = run_findmnt_no_target_argv("FSTYPE", allowed_prefix, &root_fstype);
         cap_string(root_fstype, 4096);
         rtrim_inplace(root_fstype);
         if (ec_rootfs != 0) root_fstype.clear();
@@ -5468,13 +5468,14 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
 
     // Runtime state from current merged route logic
     std::string source_out, fstype_out;
-    int ec_src = 0, ec_fs = 0;
+    [[maybe_unused]] int ec_src = 0;
+    int ec_fs = 0;
 
-    run_cmd_capture("/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
     cap_string(source_out, 4096);
     rtrim_inplace(source_out);
 
-    run_cmd_capture("/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
     cap_string(fstype_out, 4096);
     rtrim_inplace(fstype_out);
 
@@ -5776,24 +5777,15 @@ srv.Get("/api/v4/storage/overview", [&](const httplib::Request& req, httplib::Re
     // -------------------- resolve mountpoint, fstype, source --------------------
     std::string target_out, fstype_out, source_out;
 
-    int rc_target = run_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount),
-        &target_out
-    );
+    int rc_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    int rc_fs = run_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount),
-        &fstype_out
-    );
+    int rc_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    int rc_src = run_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount),
-        &source_out
-    );
+    int rc_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -5977,24 +5969,18 @@ srv.Get("/api/v4/raid/discovery", [&](const httplib::Request& req, httplib::Resp
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount),
-        &target_out, &ec_target
-    );
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount),
-        &fstype_out, &ec_fs
-    );
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount),
-        &source_out, &ec_src
-    );
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -6144,18 +6130,18 @@ srv.Get("/api/v4/raid/balance-status", [&](const httplib::Request& req, httplib:
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -6289,18 +6275,18 @@ srv.Get("/api/v4/raid/scrub-status", [&](const httplib::Request& req, httplib::R
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -6426,18 +6412,18 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -6660,18 +6646,18 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -7029,18 +7015,18 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -7251,18 +7237,18 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -7584,18 +7570,18 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -7878,18 +7864,18 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -8167,18 +8153,18 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -8710,18 +8696,18 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -9267,18 +9253,18 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
@@ -9583,18 +9569,18 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
     std::string target_out, fstype_out, source_out;
     int ec_target = 0, ec_fs = 0, ec_src = 0;
 
-    const bool ok_target = run_cmd_capture(
-        "/usr/bin/findmnt -no TARGET --target " + sh_quote(mount), &target_out, &ec_target);
+    ec_target = run_findmnt_no_target_argv("TARGET", mount, &target_out);
+    const bool ok_target = (ec_target == 0);
     cap_string(target_out, 16 * 1024);
     rtrim_inplace(target_out);
 
-    const bool ok_fs = run_cmd_capture(
-        "/usr/bin/findmnt -no FSTYPE --target " + sh_quote(mount), &fstype_out, &ec_fs);
+    ec_fs = run_findmnt_no_target_argv("FSTYPE", mount, &fstype_out);
+    const bool ok_fs = (ec_fs == 0);
     cap_string(fstype_out, 16 * 1024);
     rtrim_inplace(fstype_out);
 
-    const bool ok_src = run_cmd_capture(
-        "/usr/bin/findmnt -no SOURCE --target " + sh_quote(mount), &source_out, &ec_src);
+    ec_src = run_findmnt_no_target_argv("SOURCE", mount, &source_out);
+    const bool ok_src = (ec_src == 0);
     cap_string(source_out, 16 * 1024);
     rtrim_inplace(source_out);
 
