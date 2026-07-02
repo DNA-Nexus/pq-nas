@@ -6936,12 +6936,13 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
         return;
     }
 
-    // Helper to run cmd + capture
-    auto run = [&](const std::string& cmd, int cap_bytes, std::string* out_txt, int* out_rc) -> json {
+    // Helper to run btrfs-status actions via argv + capture
+    auto run_btrfs_status = [&](const std::string& action, int cap_bytes, std::string* out_txt, int* out_rc) -> json {
         std::string out;
         int rc = 0;
-        // hardening: route pseudo commands through guarded runner.
-        const bool ok = run_cmd_capture(cmd, &out, &rc);
+        // Security: call the read-only btrfs-status helper via argv, not a
+        // shell command string, so resolved mount targets cannot be shell-interpreted.
+        const bool ok = run_btrfs_status_helper_argv(action, resolved_mount, &out, &rc);
         cap_string(out, cap_bytes);
         if (out_txt) *out_txt = out;
         if (out_rc)  *out_rc = rc;
@@ -6959,20 +6960,20 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     if (!resolved_disk.empty()) out["resolved_disk"] = resolved_disk;
 
     // btrfs filesystem show
-    out["btrfs_filesystem_show"] = run(
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-show " + sh_quote(resolved_mount),
+    out["btrfs_filesystem_show"] = run_btrfs_status(
+        "filesystem-show",
         256 * 1024, nullptr, nullptr
     );
 
     // btrfs filesystem df
-    out["btrfs_filesystem_df"] = run(
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status filesystem-df " + sh_quote(resolved_mount),
+    out["btrfs_filesystem_df"] = run_btrfs_status(
+        "filesystem-df",
         256 * 1024, nullptr, nullptr
     );
 
     // btrfs device stats
-    out["btrfs_device_stats"] = run(
-        "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status device-stats " + sh_quote(resolved_mount),
+    out["btrfs_device_stats"] = run_btrfs_status(
+        "device-stats",
         256 * 1024, nullptr, nullptr
     );
 
@@ -6980,8 +6981,8 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     {
         std::string raw;
         int rc = 0;
-        json r = run(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status balance-status " + sh_quote(resolved_mount),
+        json r = run_btrfs_status(
+            "balance-status",
             256 * 1024, &raw, &rc
         );
 
@@ -7011,8 +7012,8 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     {
         std::string raw;
         int rc = 0;
-        json r = run(
-            "/usr/bin/sudo -n /usr/local/sbin/pqnas-btrfs-status scrub-status " + sh_quote(resolved_mount),
+        json r = run_btrfs_status(
+            "scrub-status",
             256 * 1024, &raw, &rc
         );
 
