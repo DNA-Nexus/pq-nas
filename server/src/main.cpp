@@ -4695,6 +4695,86 @@ static int run_capture(const std::string& cmd, std::string* out) {
     return rc;
 }
 
+// Security: run startup pool-restore probes/root-helper calls via argv.
+// This avoids shell parsing while keeping the old restore flow isolated.
+[[maybe_unused]] static int main_run_argv_capture_no_shell(
+    const std::vector<std::string>& argv_s,
+    std::string* out,
+    std::size_t max_bytes = 1024u * 1024u) {
+    if (out) out->clear();
+
+    if (argv_s.empty()) {
+        if (out) *out = "err: empty argv\\n";
+        return 127;
+    }
+
+    int pipefd[2] = {-1, -1};
+    if (::pipe(pipefd) != 0) {
+        if (out) *out = "err: pipe failed\\n";
+        return 127;
+    }
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(pipefd[0]);
+        ::close(pipefd[1]);
+        if (out) *out = "err: fork failed\\n";
+        return 127;
+    }
+
+    if (pid == 0) {
+        ::close(pipefd[0]);
+        (void)::dup2(pipefd[1], STDOUT_FILENO);
+        (void)::dup2(pipefd[1], STDERR_FILENO);
+        ::close(pipefd[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(argv_s.size() + 1);
+        for (const auto& a : argv_s) {
+            argv.push_back(const_cast<char*>(a.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        ::execv(argv_s[0].c_str(), argv.data());
+        _exit(127);
+    }
+
+    ::close(pipefd[1]);
+
+    std::array<char, 8192> buf{};
+    while (true) {
+        const ssize_t n = ::read(pipefd[0], buf.data(), buf.size());
+        if (n > 0) {
+            if (out && out->size() < max_bytes) {
+                const std::size_t remaining = max_bytes - out->size();
+                const std::size_t take = std::min<std::size_t>(
+                    remaining,
+                    static_cast<std::size_t>(n)
+                );
+                out->append(buf.data(), take);
+            }
+            continue;
+        }
+        break;
+    }
+
+    ::close(pipefd[0]);
+
+    int st = 0;
+    if (::waitpid(pid, &st, 0) < 0) {
+        return 127;
+    }
+
+    if (WIFEXITED(st)) {
+        return WEXITSTATUS(st);
+    }
+    if (WIFSIGNALED(st)) {
+        return 128 + WTERMSIG(st);
+    }
+    return 127;
+}
+
+
 [[maybe_unused]] static bool is_abs_path_safe(const std::string& p) {
     if (p.empty()) return false;
     if (p[0] != '/') return false;
@@ -7518,7 +7598,10 @@ static std::vector<ManagedPoolRef> managed_pools_from_cfg(const json& cfg) {
 
 static bool is_btrfs_mount_active_at(const std::string& mount) {
     std::string mounts_out;
-    int rc = run_capture("/usr/bin/findmnt -rn -t btrfs -o TARGET", &mounts_out);
+    // Security: call findmnt via argv, not a shell string, during startup restore.
+    int rc = main_run_argv_capture_no_shell({
+        "/usr/bin/findmnt", "-rn", "-t", "btrfs", "-o", "TARGET"
+    }, &mounts_out, 1024u * 1024u);
     if (rc != 0) return false;
 
     rtrim_inplace(mounts_out);
@@ -7580,7 +7663,10 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         std::string out;
         int rc = 0;
 
-        rc = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(mount) + " 2>&1", &out);
+        // Security: call pqnas-raid-root via sudo argv, not through shell quoting.
+        rc = main_run_argv_capture_no_shell({
+            "/usr/bin/sudo", "-n", "/usr/local/sbin/pqnas-raid-root", "mkdir-p", mount
+        }, &out, 64u * 1024u);
         if (rc != 0) {
             std::cerr << "[pools] restore: mkdir failed pool_id=" << pool_id
                       << " mount=" << mount
@@ -7590,9 +7676,10 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }
 
         out.clear();
-		rc = run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mount-spec "
-		                 + sh_quote(mount_spec) + " "
-                 		+ sh_quote(mount) + " 2>&1", &out);
+		rc = main_run_argv_capture_no_shell({
+            "/usr/bin/sudo", "-n", "/usr/local/sbin/pqnas-raid-root",
+            "mount-spec", mount_spec, mount
+        }, &out, 64u * 1024u);
         if (rc != 0) {
 		std::cerr << "[pools] restore: mount failed pool_id=" << pool_id
 		          << " via=" << log_spec
@@ -7602,8 +7689,12 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
             continue;
         }
 
-        (void)run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle 2>&1", &out);
-        (void)run_capture("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan 2>&1", &out);
+        (void)main_run_argv_capture_no_shell({
+            "/usr/bin/sudo", "-n", "/usr/local/sbin/pqnas-raid-root", "udev-settle"
+        }, &out, 64u * 1024u);
+        (void)main_run_argv_capture_no_shell({
+            "/usr/bin/sudo", "-n", "/usr/local/sbin/pqnas-raid-root", "btrfs-device-scan"
+        }, &out, 64u * 1024u);
 
         if (is_btrfs_mount_active_at(mount)) {
             std::lock_guard<std::mutex> lk(pool_mu());
