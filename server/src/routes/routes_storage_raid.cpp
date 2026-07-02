@@ -2228,25 +2228,25 @@ static int run_btrfs_status_helper_capture(const std::string& action,
 
     json cmds = json::array();
 
+    // Security: emit internal pseudo-commands so the executor routes create-pool
+    // root-helper steps through argv, not shell command strings.
     if (force) {
         for (const auto& d : devices) {
-            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root zap-disk " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root partprobe " + sh_quote(d));
-            cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root wipefs " + sh_quote(d));
+            cmds.push_back("RAID_ROOT zap-disk " + d);
+            cmds.push_back("RAID_ROOT partprobe " + d);
+            cmds.push_back("RAID_ROOT wipefs " + d);
         }
     }
 
-    std::string mkfs = "/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkfs-btrfs " + sh_quote(mode) + " " + sh_quote(label);
-    for (const auto& d : devices) mkfs += " " + sh_quote(d);
+    std::string mkfs = "RAID_ROOT mkfs-btrfs " + mode + " " + label;
+    for (const auto& d : devices) mkfs += " " + d;
     cmds.push_back(mkfs);
 
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(mount));
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mount-label " +
-                   sh_quote(label) + " " +
-                   sh_quote(mount));
+    cmds.push_back("RAID_ROOT mkdir-p " + mount);
+    cmds.push_back("RAID_ROOT mount-label " + label + " " + mount);
 
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root udev-settle");
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root btrfs-device-scan");
+    cmds.push_back("RAID_ROOT udev-settle");
+    cmds.push_back("RAID_ROOT btrfs-device-scan");
     // Security: use an internal pseudo-command so the executor routes this
     // read-only btrfs-status check through argv, not a shell command string.
     cmds.push_back("BTRFS_STATUS filesystem-show " + mount);
@@ -2254,9 +2254,9 @@ static int run_btrfs_status_helper_capture(const std::string& action,
     cmds.push_back("FSTAB_ADD_BTRFS " + mount);
 
     const std::string data_dir = mount + "/data";
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root mkdir-p " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chown-pqnas " + sh_quote(data_dir));
-    cmds.push_back("/usr/bin/sudo -n /usr/local/sbin/pqnas-raid-root chmod-0755 " + sh_quote(data_dir));
+    cmds.push_back("RAID_ROOT mkdir-p " + data_dir);
+    cmds.push_back("RAID_ROOT chown-pqnas " + data_dir);
+    cmds.push_back("RAID_ROOT chmod-0755 " + data_dir);
 
     return cmds;
 }
@@ -3431,6 +3431,46 @@ j["no_stats_available"] = has("no stats available");
             "/usr/local/sbin/pqnas-fstab-add-btrfs",
             mount
         }, out, ec, 10000, 64 * 1024);
+    }
+
+    // Pseudo-command: RAID_ROOT <action> [args...]
+    // Security: create-pool plan root-helper steps route through argv, not
+    // shell command strings, so devices and mounts cannot be shell-interpreted.
+    if (cmd.rfind("RAID_ROOT ", 0) == 0) {
+        const std::string tail = trim_copy(cmd.substr(std::string("RAID_ROOT ").size()));
+        if (tail.empty()) {
+            *out = "err: RAID_ROOT format is: RAID_ROOT <action> [args...]\n";
+            *ec = 2;
+            return true;
+        }
+
+        std::istringstream iss(tail);
+        std::vector<std::string> args;
+        std::string arg;
+        while (iss >> arg) {
+            args.push_back(arg);
+        }
+
+        if (!raid_root_args_are_supported(args)) {
+            *out = "err: unsupported RAID_ROOT command\n";
+            *ec = 2;
+            return true;
+        }
+
+        std::vector<std::string> argv = {
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/pqnas-raid-root"
+        };
+        argv.insert(argv.end(), args.begin(), args.end());
+
+        return run_argv_capture_limited(
+            argv,
+            out,
+            ec,
+            24 * 60 * 60 * 1000,
+            2u * 1024u * 1024u
+        );
     }
 
     // Pseudo-command: BTRFS_STATUS <action> <mount>
