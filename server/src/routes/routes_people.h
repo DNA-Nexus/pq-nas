@@ -23,6 +23,11 @@ struct PeopleRoutesDeps {
                        std::string*)> require_user_auth_users_actor;
 
     std::function<void(httplib::Response&, int, const std::string&)> reply_json;
+
+    // Contacts app gate:
+    // protects full address-book APIs from being used directly after the admin uninstalls Contacts.
+    // Core read-only resolution can remain available separately in routes_people.cpp.
+    std::function<bool()> contacts_app_available;
 };
 
 void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps);

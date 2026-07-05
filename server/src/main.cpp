@@ -10538,6 +10538,30 @@ pqnas::register_drive_locate_routes(srv, drive_locate_deps);
     people_deps.people_db_path = std::filesystem::path(users_path).parent_path() / "people_contacts.sqlite3";
     people_deps.require_user_auth_users_actor = activity_deps.require_user_auth_users_actor;
     people_deps.reply_json = activity_deps.reply_json;
+    people_deps.contacts_app_available = []() -> bool {
+        // Contacts Core data is retained even when the app is uninstalled.
+        // This check only gates full Contacts UI/API operations.
+        std::error_code ec;
+        const std::filesystem::path app_root =
+            std::filesystem::path(APPS_INSTALLED_DIR) / "contacts";
+
+        if (!std::filesystem::exists(app_root, ec) || ec) return false;
+        if (!std::filesystem::is_directory(app_root, ec) || ec) return false;
+
+        for (const auto& de : std::filesystem::directory_iterator(app_root, ec)) {
+            if (ec) break;
+
+            std::error_code st_ec;
+            if (!std::filesystem::is_directory(de.path(), st_ec) || st_ec) continue;
+
+            std::error_code mf_ec;
+            if (std::filesystem::exists(de.path() / "manifest.json", mf_ec) && !mf_ec) {
+                return true;
+            }
+        }
+
+        return false;
+    };
     pqnas::register_people_routes(srv, people_deps);
 
     pqnas::FileAnnotationRoutesDeps file_annotation_deps;
