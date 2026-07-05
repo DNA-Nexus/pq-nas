@@ -20,6 +20,4 @@ void circle_stack_memory_nodes_annotate_feed_posts(
     const CircleStackRoutesDeps& deps
 );
 
-nlohmann::json circle_stack_memory_nodes_admin_stats();
-
 } // namespace pqnas

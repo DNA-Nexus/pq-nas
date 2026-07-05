@@ -23,7 +23,6 @@
     let currentTrendPeriod = "7d";
     let latestSummary = null;
     let latestTrendPayload = null;
-    let latestCircleStackStats = null;
     let latestServerStartedAtEpoch = 0;
     let uptimeTimer = null;
     let latestAvailability = null;
@@ -549,13 +548,12 @@
             trend_period: currentTrendPeriod,
             summary: latestSummary,
             trends: latestTrendPayload,
-            circle_stack: latestCircleStackStats,
             availability: latestAvailability
         };
     }
 
     function exportStatsJson() {
-        if (!latestSummary && !latestTrendPayload && !latestCircleStackStats) {
+        if (!latestSummary && !latestTrendPayload) {
             setExportStatus(tr("admin.stats.no_data_loaded", null, "No data loaded"));
             return;
         }
@@ -582,97 +580,7 @@
         setExportStatus(tr("admin.stats.csv_downloaded", null, "CSV downloaded"));
     }
 
-    function renderCircleStackStats(j) {
-        const posts = j.posts || {};
-        const replies = j.replies || {};
-        const reactions = j.reactions || {};
-        const mentions = j.mentions || {};
-        const graph = j.graph || {};
-        const contact = j.contact_requests || {};
-        const intro = j.introductions || {};
-        const memory = j.memory_nodes || {};
 
-        setText("circleActiveUsers", fmtNum(j.active_users_total));
-        setText("circleActiveUsersMini", "users with Circle Stack activity");
-
-        setText("circlePosts", fmtNum(posts.total));
-        setText("circlePostsMini", `${fmtNum(posts.last_24h)} / 24h · ${fmtNum(posts.last_7d)} / 7d · ${fmtNum(posts.last_30d)} / 30d`);
-
-        setText("circleReplies", fmtNum(replies.total));
-        setText("circleRepliesMini", `${fmtRatio(replies.per_post)} replies/post · ${fmtNum(replies.with_media)} with media`);
-
-        setText("circleReactions", fmtNum(reactions.total));
-        setText("circleReactionsMini", `${fmtNum(reactions.post_total)} posts · ${fmtNum(reactions.reply_total)} replies`);
-
-        setText("circleMentions", fmtNum(mentions.total));
-        setText("circleMentionsMini", `${fmtNum(mentions.post_total)} post tags · ${fmtNum(mentions.reply_total)} reply tags`);
-
-        setText("circleEdges", fmtNum(graph.circle_edges_total));
-        setText("circleEdgesMini", "accepted trust graph edges");
-
-        setText("circleContactRequests", fmtNum(contact.total));
-        setText("circleContactRequestsMini", `${fmtNum(contact.pending)} pending`);
-
-        setText("circleIntroductions", fmtNum(intro.total));
-        setText("circleIntroductionsMini", `${fmtNum(intro.pending)} pending`);
-
-        setText("circleMemoryNodes", fmtNum(memory.nodes_total));
-        setText("circleMemoryNodesMini", `${fmtNum(memory.items_total)} items · ${fmtNum(memory.contributors_total)} contributors`);
-
-        const visibilityRows = $("circleVisibilityRows");
-        if (visibilityRows) {
-            visibilityRows.innerHTML = countRowsHtml(j.visibility, "visibility", "No visibility data");
-        }
-
-        const reactionRows = $("circleReactionRows");
-        if (reactionRows) {
-            reactionRows.innerHTML = countRowsHtml(reactions.top, "reaction", "No reactions yet");
-        }
-
-        const contactRows = $("circleContactRows");
-        if (contactRows) {
-            contactRows.innerHTML = countRowsHtml(contact.by_status, "status", "No contact requests");
-        }
-
-        const introRows = $("circleIntroRows");
-        if (introRows) {
-            introRows.innerHTML = countRowsHtml(intro.by_status, "status", "No introductions");
-        }
-
-        setPillValue("circleStatsStatus", `Updated ${new Date().toLocaleTimeString()}`);
-    }
-
-    async function loadCircleStackStats() {
-        setPillValue("circleStatsStatus", "Loading…");
-
-        try {
-            const r = await fetch("/api/v4/admin/stats/circlestack", {
-                headers: { "Accept": "application/json" },
-                credentials: "include",
-                cache: "no-store"
-            });
-
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok || !j.ok) {
-                throw new Error(j.message || j.error || `HTTP ${r.status}`);
-            }
-
-            latestCircleStackStats = j;
-            renderCircleStackStats(j);
-        } catch (e) {
-            setPillValue("circleStatsStatus", `Failed: ${e.message || e}`);
-
-            [
-                "circleVisibilityRows",
-                "circleReactionRows",
-                "circleContactRows",
-                "circleIntroRows"
-            ].forEach(id => {
-                const el = $(id);
-                if (el) el.innerHTML = `<tr><td colspan="2">${esc("Failed to load Circle Stack statistics.")}</td></tr>`;
-            });
-        }
-    }
 
     function trendBucketForPeriod(period) {
         if (period === "24h" || period === "7d") return "hour";
@@ -1012,7 +920,6 @@
         if (btn) {
             btn.addEventListener("click", async () => {
                 await loadStats(true);
-                await loadCircleStackStats();
                 await loadTrends(currentTrendPeriod);
                 await loadAvailability();
             });
@@ -1036,7 +943,6 @@
 
         applyStaticI18n();
         loadStats(false);
-        loadCircleStackStats();
         loadTrends(currentTrendPeriod);
         loadAvailability();
 
