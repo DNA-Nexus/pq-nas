@@ -2306,6 +2306,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             homeBlurb.style.minHeight = "0";
             homeBlurb.style.overflowY = "visible";
             homeBlurb.style.overflowX = "hidden";
+            homeBlurb.style.padding = "14px 18px 28px 18px";
+            homeBlurb.style.boxSizing = "border-box";
         }
 
         const qrBlock = currentPairing ? `
@@ -2370,7 +2372,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 `;
 
     const homeContent = setHomeContentHtml(`
-    <div style="max-width:760px; font-family:var(--sans);">
+    <div style="max-width:760px; margin:16px 0 28px 22px; padding:0; box-sizing:border-box; font-family:var(--sans);">
         <h3 style="margin:0 0 8px 0; font-size:18px; font-family:inherit;">${tr("shell.trusted.pair_title", null, "Pair a new device")}</h3>
         <div style="color:var(--fg-dim); line-height:1.5; margin-bottom:14px; font-family:inherit;">
             ${tr("shell.trusted.pair_intro", null, "Open the mobile app, choose scan/pair, and scan the QR code shown here. After you confirm on the phone, this page will update automatically.")}
