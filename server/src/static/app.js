@@ -911,10 +911,21 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     const NOTEPAD_TITLE = "Notepad";
     const NOTEPAD_LAYOUT_KEY = "builtin:notepad";
     const NOTEPAD_DRAFT_MAX_CHARS = 65536;
+    const NOTEPAD_MAX_MARKS = 200;
+    const NOTEPAD_MARK_COLORS = ["yellow", "green", "blue", "red", "purple"];
+    const NOTEPAD_MARK_CLASS = {
+        yellow: "notepadMarkYellow",
+        green: "notepadMarkGreen",
+        blue: "notepadMarkBlue",
+        red: "notepadMarkRed",
+        purple: "notepadMarkPurple"
+    };
 
     let notepadWindowZ = 4200;
     let notepadRestored = false;
     let notepadWindowDraft = "";
+    let notepadMarks = [];
+    let notepadActiveMarkColor = "yellow";
     let notepadLoaded = false;
     let notepadDirty = false;
     let notepadRevision = 0;
@@ -953,8 +964,22 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         } catch {}
     }
 
+    function notepadRoot(win = null) {
+        return win || document.getElementById("notepadFloatingWindow");
+    }
+
+    function notepadTextarea(win = null) {
+        const root = notepadRoot(win);
+        return root ? root.querySelector(".notepadText") : null;
+    }
+
+    function notepadHighlightLayer(win = null) {
+        const root = notepadRoot(win);
+        return root ? root.querySelector(".notepadHighlightLayer") : null;
+    }
+
     function notepadStatusEl(win = null) {
-        const root = win || document.getElementById("notepadFloatingWindow");
+        const root = notepadRoot(win);
         return root ? root.querySelector(".notepadStatus") : null;
     }
 
@@ -963,14 +988,213 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (el) el.textContent = text;
     }
 
+    function notepadColorOk(color) {
+        return NOTEPAD_MARK_COLORS.includes(color);
+    }
+
+    function notepadColorLabel(color) {
+        return tr(`notepad.color.${color}`, null, color);
+    }
+
+    function notepadTr(key, fallback, vars = null) {
+        return tr(key, vars, fallback);
+    }
+
+    function normalizeNotepadMarks(marks, body) {
+        const text = String(body || "");
+        const max = text.length;
+        const out = [];
+
+        for (const raw of Array.isArray(marks) ? marks : []) {
+            if (out.length >= NOTEPAD_MAX_MARKS) break;
+            if (!raw || typeof raw !== "object") continue;
+
+            const start = Number(raw.start);
+            const end = Number(raw.end);
+            const color = String(raw.color || "");
+
+            if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+            if (!notepadColorOk(color)) continue;
+            if (start < 0 || end <= start || end > max) continue;
+
+            out.push({ start, end, color });
+        }
+
+        out.sort((a, b) => {
+            if (a.start !== b.start) return a.start - b.start;
+            return a.end - b.end;
+        });
+
+        const nonOverlapping = [];
+        let cursor = 0;
+        for (const mark of out) {
+            if (mark.start < cursor) continue;
+            nonOverlapping.push(mark);
+            cursor = mark.end;
+        }
+
+        return nonOverlapping;
+    }
+
+    function syncNotepadHighlightScroll(win = null) {
+        const textarea = notepadTextarea(win);
+        const layer = notepadHighlightLayer(win);
+        if (!textarea || !layer) return;
+
+        layer.scrollTop = textarea.scrollTop;
+        layer.scrollLeft = textarea.scrollLeft;
+    }
+
+    function renderNotepadHighlights(win = null) {
+        const textarea = notepadTextarea(win);
+        const layer = notepadHighlightLayer(win);
+        if (!textarea || !layer) return;
+
+        const body = textarea.value || "";
+        notepadMarks = normalizeNotepadMarks(notepadMarks, body);
+
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+
+        for (const mark of notepadMarks) {
+            if (mark.start > cursor) {
+                frag.appendChild(document.createTextNode(body.slice(cursor, mark.start)));
+            }
+
+            const el = document.createElement("mark");
+            el.className = NOTEPAD_MARK_CLASS[mark.color] || NOTEPAD_MARK_CLASS.yellow;
+            el.dataset.color = mark.color;
+            el.appendChild(document.createTextNode(body.slice(mark.start, mark.end)));
+            frag.appendChild(el);
+
+            cursor = mark.end;
+        }
+
+        if (cursor < body.length) {
+            frag.appendChild(document.createTextNode(body.slice(cursor)));
+        }
+
+        if (!body) {
+            frag.appendChild(document.createTextNode(""));
+        }
+
+        layer.replaceChildren(frag);
+        syncNotepadHighlightScroll(win);
+    }
+
+    function markNotepadSelection(color) {
+        if (!notepadColorOk(color)) return;
+
+        const textarea = notepadTextarea();
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) {
+            setNotepadStatus(notepadTr("notepad.status.select_text_first", "Select text first"));
+            textarea.focus();
+            return;
+        }
+
+        notepadMarks = normalizeNotepadMarks(notepadMarks, textarea.value)
+            .filter(mark => mark.end <= start || mark.start >= end);
+
+        notepadMarks.push({ start, end, color });
+        notepadMarks = normalizeNotepadMarks(notepadMarks, textarea.value);
+
+        notepadDirty = true;
+        renderNotepadHighlights();
+        scheduleNotepadSave();
+        textarea.focus();
+    }
+
+    function clearNotepadMarksInSelection() {
+        const textarea = notepadTextarea();
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) {
+            setNotepadStatus(notepadTr("notepad.status.select_highlighted_text_first", "Select highlighted text first"));
+            textarea.focus();
+            return;
+        }
+
+        const before = notepadMarks.length;
+        notepadMarks = normalizeNotepadMarks(notepadMarks, textarea.value)
+            .filter(mark => mark.end <= start || mark.start >= end);
+
+        if (notepadMarks.length !== before) {
+            notepadDirty = true;
+            renderNotepadHighlights();
+            scheduleNotepadSave();
+        }
+
+        textarea.focus();
+    }
+
+    function updateNotepadToolbarActive(win = null) {
+        const root = notepadRoot(win);
+        if (!root) return;
+
+        for (const btn of root.querySelectorAll(".notepadMarkBtn")) {
+            btn.classList.toggle("active", btn.dataset.color === notepadActiveMarkColor);
+        }
+    }
+
+    function refreshNotepadI18n(win = null) {
+        const root = notepadRoot(win);
+        if (!root) return;
+
+        const closeBtn = root.querySelector(".notepadWindowBtn");
+        if (closeBtn) {
+            const closeText = notepadTr("notepad.close", "Close Notepad");
+            closeBtn.title = closeText;
+            closeBtn.setAttribute("aria-label", closeText);
+        }
+
+        const toolLabel = root.querySelector(".notepadToolLabel");
+        if (toolLabel) {
+            toolLabel.textContent = notepadTr("notepad.highlight_label", "Highlight:");
+        }
+
+        for (const btn of root.querySelectorAll(".notepadMarkBtn")) {
+            const color = btn.dataset.color || "";
+            if (!notepadColorOk(color)) continue;
+
+            const colorLabel = notepadColorLabel(color);
+            const title = notepadTr(
+                "notepad.highlight_color",
+                `Highlight ${colorLabel}`,
+                { color: colorLabel }
+            );
+            btn.title = title;
+            btn.setAttribute("aria-label", title);
+        }
+
+        const clearBtn = root.querySelector(".notepadClearMarkBtn");
+        if (clearBtn) {
+            clearBtn.textContent = notepadTr("notepad.clear", "Clear");
+            const clearTitle = notepadTr("notepad.clear_highlight", "Clear highlight from selected text");
+            clearBtn.title = clearTitle;
+            clearBtn.setAttribute("aria-label", clearTitle);
+        }
+
+        const textarea = root.querySelector(".notepadText");
+        if (textarea) {
+            textarea.placeholder = notepadTr("notepad.placeholder", "Quick note...");
+        }
+    }
+
     async function loadNotepadFromServer(win = null) {
         if (!authed) return null;
         if (notepadLoadInFlight) return notepadLoadInFlight;
 
-        const root = win || document.getElementById("notepadFloatingWindow");
-        const textarea = root ? root.querySelector(".notepadText") : null;
+        const textarea = notepadTextarea(win);
 
-        setNotepadStatus("Loading...");
+        setNotepadStatus(notepadTr("notepad.status.loading", "Loading..."));
 
         notepadLoadInFlight = (async () => {
             try {
@@ -987,16 +1211,18 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                 notepadRevision = Number.isFinite(Number(j.revision)) ? Number(j.revision) : 0;
                 notepadWindowDraft = typeof j.body === "string" ? j.body : "";
+                notepadMarks = normalizeNotepadMarks(j.marks, notepadWindowDraft);
                 notepadLoaded = true;
 
                 if (textarea && !notepadDirty) {
                     textarea.value = notepadWindowDraft;
                 }
 
-                setNotepadStatus(notepadRevision > 0 ? "Saved" : "Ready");
+                renderNotepadHighlights(win);
+                setNotepadStatus(notepadRevision > 0 ? notepadTr("notepad.status.saved", "Saved") : notepadTr("notepad.status.ready", "Ready"));
                 return j;
             } catch (e) {
-                setNotepadStatus("Load failed");
+                setNotepadStatus(notepadTr("notepad.status.load_failed", "Load failed"));
                 throw e;
             } finally {
                 notepadLoadInFlight = null;
@@ -1014,7 +1240,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             notepadSaveTimer = null;
         }
 
-        setNotepadStatus("Unsaved changes");
+        setNotepadStatus(notepadTr("notepad.status.unsaved_changes", "Unsaved changes"));
 
         notepadSaveTimer = window.setTimeout(() => {
             notepadSaveTimer = null;
@@ -1030,15 +1256,15 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             return;
         }
 
-        const win = document.getElementById("notepadFloatingWindow");
-        const textarea = win ? win.querySelector(".notepadText") : null;
+        const textarea = notepadTextarea();
         if (!textarea) return;
 
         notepadSaving = true;
         notepadSavePending = false;
-        setNotepadStatus("Saving...");
+        setNotepadStatus(notepadTr("notepad.status.saving", "Saving..."));
 
         const body = textarea.value;
+        const marks = normalizeNotepadMarks(notepadMarks, body);
 
         try {
             const r = await fetch("/api/v4/notepad", {
@@ -1051,6 +1277,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 },
                 body: JSON.stringify({
                     body,
+                    marks,
                     revision: notepadRevision
                 })
             });
@@ -1061,7 +1288,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 if (j.current && Number.isFinite(Number(j.current.revision))) {
                     notepadRevision = Number(j.current.revision);
                 }
-                setNotepadStatus("Changed elsewhere. Copy your text, then reload Notepad.");
+                setNotepadStatus(notepadTr("notepad.status.changed_elsewhere", "Changed elsewhere. Copy your text, then reload Notepad."));
                 return;
             }
 
@@ -1071,10 +1298,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
             notepadRevision = Number.isFinite(Number(j.revision)) ? Number(j.revision) : notepadRevision;
             notepadWindowDraft = body;
+            notepadMarks = normalizeNotepadMarks(j.marks || marks, body);
             notepadDirty = false;
-            setNotepadStatus("Saved");
+            renderNotepadHighlights();
+            setNotepadStatus(notepadTr("notepad.status.saved", "Saved"));
         } catch (e) {
-            setNotepadStatus("Save failed");
+            setNotepadStatus(notepadTr("notepad.status.save_failed", "Save failed"));
             throw e;
         } finally {
             notepadSaving = false;
@@ -1200,8 +1429,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         closeBtn.type = "button";
         closeBtn.className = "notepadWindowBtn";
         closeBtn.textContent = "×";
-        closeBtn.title = "Close Notepad";
-        closeBtn.setAttribute("aria-label", "Close Notepad");
+        closeBtn.title = notepadTr("notepad.close", "Close Notepad");
+        closeBtn.setAttribute("aria-label", notepadTr("notepad.close", "Close Notepad"));
 
         titlebar.appendChild(title);
         titlebar.appendChild(closeBtn);
@@ -1209,25 +1438,79 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const body = document.createElement("div");
         body.className = "notepadBody";
 
+        const toolbar = document.createElement("div");
+        toolbar.className = "notepadToolbar";
+
+        const toolLabel = document.createElement("span");
+        toolLabel.className = "notepadToolLabel";
+        toolLabel.textContent = notepadTr("notepad.highlight_label", "Highlight:");
+        toolbar.appendChild(toolLabel);
+
+        for (const color of NOTEPAD_MARK_COLORS) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `notepadMarkBtn ${NOTEPAD_MARK_CLASS[color] || ""}`;
+            btn.dataset.color = color;
+            btn.title = notepadTr("notepad.highlight_color", `Highlight ${notepadColorLabel(color)}`, { color: notepadColorLabel(color) });
+            btn.setAttribute("aria-label", notepadTr("notepad.highlight_color", `Highlight ${notepadColorLabel(color)}`, { color: notepadColorLabel(color) }));
+            btn.textContent = "●";
+            btn.addEventListener("mousedown", (ev) => ev.preventDefault());
+            btn.addEventListener("click", () => {
+                notepadActiveMarkColor = color;
+                updateNotepadToolbarActive(win);
+                markNotepadSelection(color);
+            });
+            toolbar.appendChild(btn);
+        }
+
+        const clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "notepadClearMarkBtn";
+        clearBtn.textContent = notepadTr("notepad.clear", "Clear");
+        clearBtn.title = notepadTr("notepad.clear_highlight", "Clear highlight from selected text");
+        clearBtn.setAttribute("aria-label", notepadTr("notepad.clear_highlight", "Clear highlight from selected text"));
+        clearBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+        clearBtn.addEventListener("click", () => clearNotepadMarksInSelection());
+        toolbar.appendChild(clearBtn);
+
+        const editorWrap = document.createElement("div");
+        editorWrap.className = "notepadEditorWrap";
+
+        const highlightLayer = document.createElement("div");
+        highlightLayer.className = "notepadHighlightLayer";
+        highlightLayer.setAttribute("aria-hidden", "true");
+
         const textarea = document.createElement("textarea");
         textarea.className = "notepadText";
         textarea.maxLength = NOTEPAD_DRAFT_MAX_CHARS;
-        textarea.spellcheck = true;
-        textarea.placeholder = "Quick note...";
+        textarea.spellcheck = false;
+        textarea.setAttribute("spellcheck", "false");
+        textarea.setAttribute("autocomplete", "off");
+        textarea.setAttribute("autocorrect", "off");
+        textarea.setAttribute("autocapitalize", "off");
+        textarea.placeholder = notepadTr("notepad.placeholder", "Quick note...");
         textarea.setAttribute("aria-label", "Notepad text");
         textarea.value = notepadWindowDraft;
 
-        const status = document.createElement("div");
-        status.className = "notepadStatus";
-        status.textContent = "Loading...";
-
         textarea.addEventListener("input", () => {
             notepadWindowDraft = textarea.value;
+            notepadMarks = normalizeNotepadMarks(notepadMarks, textarea.value);
             notepadDirty = true;
+            renderNotepadHighlights(win);
             scheduleNotepadSave();
         });
 
-        body.appendChild(textarea);
+        textarea.addEventListener("scroll", () => syncNotepadHighlightScroll(win));
+
+        const status = document.createElement("div");
+        status.className = "notepadStatus";
+        status.textContent = notepadTr("notepad.status.loading", "Loading...");
+
+        editorWrap.appendChild(highlightLayer);
+        editorWrap.appendChild(textarea);
+
+        body.appendChild(toolbar);
+        body.appendChild(editorWrap);
         body.appendChild(status);
 
         win.appendChild(titlebar);
@@ -1236,6 +1519,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         applyNotepadWindowState(win);
         attachNotepadWindowDrag(win, titlebar);
+        updateNotepadToolbarActive(win);
+        refreshNotepadI18n(win);
+        renderNotepadHighlights(win);
 
         closeBtn.addEventListener("click", () => {
             closeNotepadWindow();
@@ -1253,6 +1539,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const win = ensureNotepadWindow();
         win.hidden = false;
+        refreshNotepadI18n(win);
         bringNotepadWindowToFront(win);
         saveNotepadWindowRect(win, true);
 
@@ -1260,7 +1547,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         setActiveApp(NOTEPAD_APP_ID);
 
         if (options.focus !== false) {
-            const textarea = win.querySelector(".notepadText");
+            const textarea = notepadTextarea(win);
             if (textarea) textarea.focus();
         }
 
@@ -1447,6 +1734,33 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         iconEl.addEventListener("pointerup", onUp);
         iconEl.addEventListener("pointercancel", onUp);
     }
+
+    let notepadI18nObserverStarted = false;
+
+    function startNotepadI18nObserver() {
+        if (notepadI18nObserverStarted) return;
+        notepadI18nObserverStarted = true;
+
+        const refresh = () => {
+            const win = document.getElementById("notepadFloatingWindow");
+            if (win) refreshNotepadI18n(win);
+        };
+
+        try {
+            const observer = new MutationObserver(refresh);
+            observer.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ["lang", "data-i18n-ready", "data-i18n-pending"]
+            });
+        } catch {}
+
+        window.addEventListener("focus", refresh);
+        window.setTimeout(refresh, 0);
+        window.setTimeout(refresh, 250);
+        window.setTimeout(refresh, 1000);
+    }
+
+    startNotepadI18nObserver();
 
     function renderNotepadDesktopIcon(surface, apps) {
         if (!surface || !authed) return;

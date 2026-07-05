@@ -10556,6 +10556,9 @@ pqnas::register_drive_locate_routes(srv, drive_locate_deps);
     notepad_deps.now_epoch_sec = []() {
         return now_epoch_sec();
     };
+    notepad_deps.user_dir_for_fp = [&](const std::string& fp_hex) -> std::filesystem::path {
+        return user_dir_for_fp(users, fp_hex);
+    };
     pqnas::register_notepad_routes(srv, notepad_deps);
 
     pqnas::PeopleRoutesDeps people_deps;
