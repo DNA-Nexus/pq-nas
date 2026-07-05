@@ -5174,5 +5174,7 @@
   "wait.waiting_ellipsis": "正在等待…",
   "wait.what_this_means": "这是什么意思",
   "wait.when_approved": "批准后会发生什么",
-  "wait.where_approves": "管理员在哪里批准"
+  "wait.where_approves": "管理员在哪里批准",
+  "contacts.identity.technical_title": "技术身份",
+  "contacts.identity.technical_hint": "此身份锚点为内部使用。手动联系人会自动获得生成的私有锚点。DNA-Nexus 用户和工作区成员可以使用真实的 DNA 身份指纹。"
 }

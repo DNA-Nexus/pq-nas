@@ -243,25 +243,6 @@ long long csmn_count(sqlite3* db, const char* sql) {
     return out;
 }
 
-json csmn_group_counts(sqlite3* db, const char* sql, const std::string& key_name) {
-    json out = json::array();
-
-    sqlite3_stmt* st = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) {
-        return out;
-    }
-
-    while (sqlite3_step(st) == SQLITE_ROW) {
-        const char* key_raw = reinterpret_cast<const char*>(sqlite3_column_text(st, 0));
-        out.push_back({
-            {key_name, key_raw ? key_raw : ""},
-            {"count", sqlite3_column_int64(st, 1)}
-        });
-    }
-
-    sqlite3_finalize(st);
-    return out;
-}
 
 bool csmn_actor_can_see_post(
     sqlite3* db,
@@ -803,35 +784,6 @@ void circle_stack_memory_nodes_annotate_feed_posts(
     sqlite3_close(db);
 }
 
-json circle_stack_memory_nodes_admin_stats() {
-    sqlite3* db = nullptr;
-    std::string err;
-
-    if (!csmn_open_db(&db, &err)) {
-        return {
-            {"ok", false},
-            {"error", err.empty() ? "memory_node_db_unavailable" : err}
-        };
-    }
-
-    json out = {
-        {"ok", true},
-        {"nodes_total", csmn_count(db, "SELECT COUNT(*) FROM memory_nodes")},
-        {"nodes_last_7d", csmn_count(db, "SELECT COUNT(*) FROM memory_nodes WHERE created_epoch >= strftime('%s','now') - 604800")},
-        {"items_total", csmn_count(db, "SELECT COUNT(*) FROM memory_node_items")},
-        {"image_items", csmn_count(db, "SELECT COUNT(*) FROM memory_node_items WHERE media_kind = 'image'")},
-        {"video_items", csmn_count(db, "SELECT COUNT(*) FROM memory_node_items WHERE media_kind = 'video'")},
-        {"contributors_total", csmn_count(db, "SELECT COUNT(DISTINCT owner_fp) FROM memory_node_items")},
-        {"items_by_kind", csmn_group_counts(
-            db,
-            "SELECT media_kind, COUNT(*) FROM memory_node_items GROUP BY media_kind ORDER BY media_kind ASC",
-            "kind"
-        )}
-    };
-
-    sqlite3_close(db);
-    return out;
-}
 
 void register_circle_stack_memory_node_routes(
     httplib::Server& server,

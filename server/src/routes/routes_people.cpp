@@ -183,6 +183,26 @@ bool people_check_len_local(const std::string& value,
     return false;
 }
 
+
+bool contacts_app_available_local(const PeopleRoutesDeps& deps) {
+    // Default-open keeps legacy tests/dev wiring alive if the callback is not provided.
+    // main.cpp wires this in production so uninstalling Contacts disables full Contacts APIs.
+    if (!deps.contacts_app_available) return true;
+    return deps.contacts_app_available();
+}
+
+bool reject_contacts_app_unavailable_local(const PeopleRoutesDeps& deps, httplib::Response& res) {
+    if (contacts_app_available_local(deps)) return false;
+
+    reply_json_local(deps, res, 403, json{
+        {"ok", false},
+        {"error", "app_disabled"},
+        {"app", "contacts"},
+        {"message", "Contacts app is not installed or enabled"}
+    });
+    return true;
+}
+
 bool people_contact_lengths_ok_local(const PeopleContactRecord& input, std::string* bad_field) {
     constexpr std::size_t kTiny = 64;
     constexpr std::size_t kShort = 256;
@@ -220,7 +240,7 @@ bool people_contact_lengths_ok_local(const PeopleContactRecord& input, std::stri
 } // namespace
 
 void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) {
-    srv.Get("/api/v4/people/local-users", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/local-users)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -234,6 +254,8 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
             });
             return;
         }
+
+        if (reject_contacts_app_unavailable_local(deps, res)) return;
 
         json arr = json::array();
         const auto snapshot = deps.users->snapshot();
@@ -267,7 +289,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Get("/api/v4/people/list", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/list)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -281,6 +303,8 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
             });
             return;
         }
+
+        if (reject_contacts_app_unavailable_local(deps, res)) return;
 
         PeopleContactsStore store(deps.people_db_path);
         std::vector<PeopleContactRecord> contacts;
@@ -304,7 +328,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Get("/api/v4/people/resolve", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/resolve)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -357,7 +381,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Post("/api/v4/people/upsert", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post(R"(/api/v4/(?:people|contacts)/upsert)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -372,6 +396,8 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
             });
             return;
         }
+
+        if (reject_contacts_app_unavailable_local(deps, res)) return;
 
         if (!people_rate_limit_allow_local(
                 "people.upsert",
@@ -472,7 +498,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Post("/api/v4/people/delete", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post(R"(/api/v4/(?:people|contacts)/delete)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -487,6 +513,8 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
             });
             return;
         }
+
+        if (reject_contacts_app_unavailable_local(deps, res)) return;
 
         if (!people_rate_limit_allow_local(
                 "people.delete",

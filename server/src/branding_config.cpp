@@ -74,6 +74,13 @@ BrandingConfig load_branding_config() {
     cfg.primary_color = json_string_or(j, "primary_color", cfg.primary_color);
     cfg.accent_color = json_string_or(j, "accent_color", cfg.accent_color);
     cfg.support_url = json_string_or(j, "support_url", cfg.support_url);
+
+    cfg.mobile_display_name = json_string_or(j, "mobile_display_name", cfg.mobile_display_name);
+    cfg.mobile_short_name = json_string_or(j, "mobile_short_name", cfg.mobile_short_name);
+    cfg.mobile_logo_url = json_string_or(j, "mobile_logo_url", cfg.mobile_logo_url);
+    cfg.mobile_primary_color = json_string_or(j, "mobile_primary_color", cfg.mobile_primary_color);
+    cfg.mobile_accent_color = json_string_or(j, "mobile_accent_color", cfg.mobile_accent_color);
+
     cfg.presentation_url = json_string_or(j, "presentation_url", cfg.presentation_url);
     cfg.show_presentation_link = json_bool_or(j, "show_presentation_link", cfg.show_presentation_link);
 
@@ -83,6 +90,12 @@ BrandingConfig load_branding_config() {
     if (cfg.logo_dark.empty()) cfg.logo_dark = "/static/img/logo/Nexus_logo_dark.png";
     if (cfg.logo_bright.empty()) cfg.logo_bright = "/static/img/logo/Nexus_logo_bright.png";
     if (cfg.logo_wordmark.empty()) cfg.logo_wordmark = "/static/img/logo/nexuslogo_text.svg";
+
+    if (cfg.mobile_display_name.empty()) cfg.mobile_display_name = cfg.product_name;
+    if (cfg.mobile_short_name.empty()) cfg.mobile_short_name = cfg.product_short_name;
+    if (cfg.mobile_logo_url.empty()) cfg.mobile_logo_url = cfg.logo_wordmark;
+    if (cfg.mobile_primary_color.empty()) cfg.mobile_primary_color = cfg.primary_color;
+    if (cfg.mobile_accent_color.empty()) cfg.mobile_accent_color = cfg.accent_color;
 
     return cfg;
 }
@@ -104,7 +117,14 @@ nlohmann::json branding_config_public_json(const BrandingConfig& cfg) {
         {"accent_color", cfg.accent_color},
         {"support_url", cfg.support_url},
         {"presentation_url", cfg.presentation_url},
-        {"show_presentation_link", cfg.show_presentation_link}
+        {"show_presentation_link", cfg.show_presentation_link},
+        {"mobile", nlohmann::json{
+            {"display_name", cfg.mobile_display_name},
+            {"short_name", cfg.mobile_short_name},
+            {"logo_url", cfg.mobile_logo_url},
+            {"primary_color", cfg.mobile_primary_color},
+            {"accent_color", cfg.mobile_accent_color}
+        }}
     };
 }
 

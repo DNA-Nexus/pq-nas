@@ -1,10 +1,9 @@
-
 {
   "id": "contacts",
   "name": "Contacts",
-  "version": "1.2.6",
+  "version": "1.2.8",
   "entry": "www/index.html",
-  "api_base": "/api/v4/people",
+  "api_base": "/api/v4/contacts",
   "permissions": [],
   "category": "people",
   "surfaces": {
