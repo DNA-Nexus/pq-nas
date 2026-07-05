@@ -240,7 +240,7 @@ bool people_contact_lengths_ok_local(const PeopleContactRecord& input, std::stri
 } // namespace
 
 void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) {
-    srv.Get("/api/v4/people/local-users", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/local-users)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -289,7 +289,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Get("/api/v4/people/list", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/list)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -328,7 +328,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Get("/api/v4/people/resolve", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Get(R"(/api/v4/(?:people|contacts)/resolve)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -381,7 +381,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Post("/api/v4/people/upsert", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post(R"(/api/v4/(?:people|contacts)/upsert)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;
@@ -498,7 +498,7 @@ void register_people_routes(httplib::Server& srv, const PeopleRoutesDeps& deps) 
         });
     });
 
-    srv.Post("/api/v4/people/delete", [deps](const httplib::Request& req, httplib::Response& res) {
+    srv.Post(R"(/api/v4/(?:people|contacts)/delete)", [deps](const httplib::Request& req, httplib::Response& res) {
         std::string actor_fp;
         std::string actor_role;
         if (!require_actor_local(deps, req, res, &actor_fp, &actor_role)) return;

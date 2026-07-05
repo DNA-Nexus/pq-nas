@@ -3,10 +3,10 @@
   "use strict";
 
   const API = {
-    list: "/api/v4/people/list",
-    upsert: "/api/v4/people/upsert",
-    delete: "/api/v4/people/delete",
-    localUsers: "/api/v4/people/local-users"
+    list: "/api/v4/contacts/list",
+    upsert: "/api/v4/contacts/upsert",
+    delete: "/api/v4/contacts/delete",
+    localUsers: "/api/v4/contacts/local-users"
   };
 
   const state = {
@@ -162,7 +162,7 @@
     setText("openWebsiteBtn", "contacts.open_website", "Open website");
 
     const advancedSummary = document.querySelector(".contacts-advanced summary");
-    setNodeText(advancedSummary, "contacts.technical_identity", "Technical identity");
+    setNodeText(advancedSummary, "contacts.technical_identity", tr("contacts.identity.technical_title", null, "Technical identity"));
     setFieldLabel("fingerprintInput", "contacts.identity_anchor", "Identity anchor");
     setFieldLabel("kindInput", "contacts.kind", "Kind");
     setOptionText("kindInput", "manual_contact", "contacts.kind.manual_contact", "Manual contact");
@@ -171,7 +171,7 @@
     setOptionText("kindInput", "external_dna", "contacts.kind.external_dna", "External DNA");
 
     const help = document.querySelector(".contacts-help");
-    setNodeText(help, "contacts.identity_help", "This identity anchor is internal. Manual contacts get an automatically generated private anchor. DNA-Nexus users and workspace members can use real DNA identity fingerprints.");
+    setNodeText(help, "contacts.identity_help", tr("contacts.identity.technical_hint", null, "This identity anchor is internal. Manual contacts get an automatically generated private anchor. DNA-Nexus users and workspace members can use real DNA identity fingerprints."));
 
     setText("deleteBtn", "contacts.delete", "Delete");
     setText("resetBtn", "contacts.clear", "Clear");

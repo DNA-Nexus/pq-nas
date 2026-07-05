@@ -159,11 +159,11 @@
 
     async function resolvePerson(fp) {
         const q = encodeURIComponent(fp);
-        return await apiJson(`/api/v4/people/resolve?fingerprint=${q}`);
+        return await apiJson(`/api/v4/contacts/resolve?fingerprint=${q}`);
     }
 
     async function savePerson(payload) {
-        return await apiJson("/api/v4/people/upsert", {
+        return await apiJson("/api/v4/contacts/upsert", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
@@ -191,7 +191,7 @@
 
             const title = document.createElement("div");
             title.className = "modalTitle";
-            title.textContent = options.title || tr("filemgr.people.edit", null, "Edit People");
+            title.textContent = options.title || tr("filemgr.people.edit", null, "Edit contact");
 
             const sub = document.createElement("div");
             sub.className = "modalSub";
@@ -242,7 +242,7 @@
 
             const notesInput = document.createElement("textarea");
             notesInput.value = options.notes || "";
-            notesInput.placeholder = tr("filemgr.people.notes_placeholder", null, "Optional notes visible only in your People list");
+            notesInput.placeholder = tr("filemgr.people.notes_placeholder", null, "Optional notes visible only in your Contacts list");
             notesInput.style.width = "100%";
             notesInput.style.minHeight = "110px";
             notesInput.style.resize = "vertical";
@@ -282,7 +282,7 @@
             hint.className = "v";
             hint.style.opacity = "0.75";
             hint.style.fontSize = "12px";
-            hint.textContent = tr("filemgr.people.saved_private", null, "Saved only to your private People list.");
+            hint.textContent = tr("filemgr.people.saved_private", null, "Saved only to your private Contacts list.");
 
             const spacer = document.createElement("div");
             spacer.style.flex = "1 1 auto";
@@ -295,7 +295,7 @@
             const okBtn = document.createElement("button");
             okBtn.type = "button";
             okBtn.className = "btn";
-            okBtn.textContent = tr("filemgr.people.save", null, "Save People");
+            okBtn.textContent = tr("filemgr.people.save", null, "Save contact");
 
             foot.appendChild(hint);
             foot.appendChild(spacer);
@@ -383,14 +383,14 @@
         const btn = document.createElement("button");
         btn.className = "btn secondary";
         btn.type = "button";
-        btn.textContent = tr("filemgr.people.edit", null, "People…");
+        btn.textContent = tr("filemgr.people.edit", null, "Contact…");
         btn.disabled = true;
 
         const hint = document.createElement("span");
         hint.className = "mono";
         hint.style.opacity = ".76";
         hint.style.fontSize = "12px";
-        hint.textContent = tr("filemgr.people.checking", null, "Checking People…");
+        hint.textContent = tr("filemgr.people.checking", null, "Checking Contacts…");
 
         wrap.appendChild(btn);
         wrap.appendChild(hint);
@@ -409,17 +409,17 @@
             }
 
             btn.disabled = false;
-            btn.textContent = resolved ? tr("filemgr.people.edit", null, "Edit People") : tr("filemgr.people.add", null, "Add to People");
+            btn.textContent = resolved ? tr("filemgr.people.edit", null, "Edit contact") : tr("filemgr.people.add", null, "Add to Contacts");
             hint.textContent = resolved
-                ? "Saved in People"
-                : tr("filemgr.people.not_saved", null, "Not saved in People");
+                ? "Saved in Contacts"
+                : tr("filemgr.people.not_saved", null, "Not saved in Contacts");
 
             btn.addEventListener("click", async () => {
                 const defaultNotes = String(person.notes || "").trim() ||
                     (workspaceName ? tr("filemgr.people.default_notes", { workspace: workspaceName }, `Workspace collaborator: ${workspaceName}`) : "");
 
                 const picked = await openPeopleEditModal({
-                    title: resolved ? tr("filemgr.people.modal_title_edit", null, "Edit People") : tr("filemgr.people.modal_title_add", null, "Add to People"),
+                    title: resolved ? tr("filemgr.people.modal_title_edit", null, "Edit contact") : tr("filemgr.people.modal_title_add", null, "Add to Contacts"),
                     subtitle: tr("filemgr.people.modal_subtitle", null, "Save a private name and notes for this workspace member."),
                     displayName: currentName,
                     notes: defaultNotes,
@@ -433,7 +433,7 @@
                 const old = btn.textContent;
                 btn.disabled = true;
                 btn.textContent = tr("filemgr.people.saving", null, "Saving…");
-                hint.textContent = tr("filemgr.people.saving_label", null, "Saving People label…");
+                hint.textContent = tr("filemgr.people.saving_label", null, "Saving contact label…");
 
                 try {
                     const saved = await savePerson({
@@ -451,26 +451,26 @@
 
                     applyResolvedPeopleLabel(row, savedPerson);
 
-                    btn.textContent = tr("filemgr.people.edit", null, "Edit People");
-                    hint.textContent = tr("filemgr.people.saved", null, "Saved in People");
-                    setStatus(statusEl, tr("filemgr.people.saved_name", { name: savedName }, `Saved ${savedName} in People.`));
+                    btn.textContent = tr("filemgr.people.edit", null, "Edit contact");
+                    hint.textContent = tr("filemgr.people.saved", null, "Saved in Contacts");
+                    setStatus(statusEl, tr("filemgr.people.saved_name", { name: savedName }, `Saved ${savedName} in Contacts.`));
                 } catch (e) {
                     btn.textContent = old;
                     hint.textContent = resolved
-                        ? "Saved in People"
-                        : tr("filemgr.people.not_saved", null, "Not saved in People");
-                    setStatus(statusEl, tr("filemgr.people.save_failed", { error: String(e && e.message ? e.message : e) }, `People save failed: ${String(e && e.message ? e.message : e)}`));
+                        ? "Saved in Contacts"
+                        : tr("filemgr.people.not_saved", null, "Not saved in Contacts");
+                    setStatus(statusEl, tr("filemgr.people.save_failed", { error: String(e && e.message ? e.message : e) }, `Contact save failed: ${String(e && e.message ? e.message : e)}`));
                 } finally {
                     btn.disabled = false;
                 }
             });
         }).catch((e) => {
             btn.disabled = false;
-            btn.textContent = tr("filemgr.people.add", null, "Add to People");
-            hint.textContent = tr("filemgr.people.lookup_unavailable", null, "People lookup unavailable");
+            btn.textContent = tr("filemgr.people.add", null, "Add to Contacts");
+            hint.textContent = tr("filemgr.people.lookup_unavailable", null, "Contacts lookup unavailable");
 
             btn.addEventListener("click", () => {
-                setStatus(statusEl, tr("filemgr.people.lookup_failed", { error: String(e && e.message ? e.message : e) }, `People lookup failed: ${String(e && e.message ? e.message : e)}`));
+                setStatus(statusEl, tr("filemgr.people.lookup_failed", { error: String(e && e.message ? e.message : e) }, `Contacts lookup failed: ${String(e && e.message ? e.message : e)}`));
             });
         });
     }
