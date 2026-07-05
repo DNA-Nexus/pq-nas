@@ -906,6 +906,451 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             el.classList.toggle("active", el.dataset.appid === appId);
         }
     }
+
+    const NOTEPAD_APP_ID = "notepad";
+    const NOTEPAD_TITLE = "Notepad";
+    const NOTEPAD_LAYOUT_KEY = "builtin:notepad";
+    const NOTEPAD_DRAFT_MAX_CHARS = 65536;
+
+    let notepadWindowZ = 4200;
+    let notepadRestored = false;
+    let notepadWindowDraft = "";
+
+    function notepadClamp(value, min, max) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return min;
+        return Math.min(max, Math.max(min, n));
+    }
+
+    function notepadUiStorageKey() {
+        const fp = meFpHex ? meFpHex : "anon";
+        return `pqnas_notepad_ui_v1::${fp}`;
+    }
+
+    function readNotepadUiState() {
+        try {
+            const raw = localStorage.getItem(notepadUiStorageKey());
+            const j = raw ? JSON.parse(raw) : {};
+            if (!j || typeof j !== "object") return {};
+            return j;
+        } catch {
+            return {};
+        }
+    }
+
+    function writeNotepadUiState(next) {
+        const cur = readNotepadUiState();
+        const merged = { ...cur, ...(next && typeof next === "object" ? next : {}) };
+        try {
+            localStorage.setItem(notepadUiStorageKey(), JSON.stringify(merged));
+        } catch {}
+    }
+
+    function applyNotepadWindowState(win) {
+        if (!win) return;
+
+        const st = readNotepadUiState();
+        const vw = Math.max(320, window.innerWidth || 1024);
+        const vh = Math.max(320, window.innerHeight || 768);
+
+        const width = notepadClamp(st.width, 300, Math.max(300, vw - 32));
+        const height = notepadClamp(st.height, 240, Math.max(240, vh - 72));
+        const left = notepadClamp(st.left, 8, Math.max(8, vw - width - 8));
+        const top = notepadClamp(st.top, 8, Math.max(8, vh - height - 8));
+
+        win.style.width = `${width}px`;
+        win.style.height = `${height}px`;
+        win.style.left = `${left}px`;
+        win.style.top = `${top}px`;
+    }
+
+    function saveNotepadWindowRect(win, openState = null) {
+        if (!win) return;
+
+        const rect = win.getBoundingClientRect();
+        const patch = {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+        };
+
+        if (typeof openState === "boolean") patch.open = openState;
+
+        writeNotepadUiState(patch);
+    }
+
+    function bringNotepadWindowToFront(win) {
+        if (!win) return;
+        notepadWindowZ += 1;
+        win.style.zIndex = String(notepadWindowZ);
+    }
+
+    function attachNotepadWindowDrag(win, handle) {
+        if (!win || !handle || handle.dataset.notepadDragReady === "1") return;
+        handle.dataset.notepadDragReady = "1";
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let baseLeft = 0;
+        let baseTop = 0;
+
+        const onMove = (ev) => {
+            if (!dragging) return;
+            ev.preventDefault();
+
+            const rect = win.getBoundingClientRect();
+            const vw = Math.max(320, window.innerWidth || 1024);
+            const vh = Math.max(320, window.innerHeight || 768);
+
+            const nextLeft = notepadClamp(baseLeft + ev.clientX - startX, 8, Math.max(8, vw - rect.width - 8));
+            const nextTop = notepadClamp(baseTop + ev.clientY - startY, 8, Math.max(8, vh - rect.height - 8));
+
+            win.style.left = `${nextLeft}px`;
+            win.style.top = `${nextTop}px`;
+        };
+
+        const onUp = (ev) => {
+            if (!dragging) return;
+            dragging = false;
+            try { handle.releasePointerCapture(ev.pointerId); } catch {}
+            saveNotepadWindowRect(win, true);
+        };
+
+        handle.addEventListener("pointerdown", (ev) => {
+            if (ev.button !== 0) return;
+            if (ev.target && ev.target.closest && ev.target.closest("button")) return;
+
+            dragging = true;
+            bringNotepadWindowToFront(win);
+
+            const rect = win.getBoundingClientRect();
+            startX = ev.clientX;
+            startY = ev.clientY;
+            baseLeft = rect.left;
+            baseTop = rect.top;
+
+            try { handle.setPointerCapture(ev.pointerId); } catch {}
+            ev.preventDefault();
+        });
+
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+    }
+
+    function ensureNotepadWindow() {
+        const existing = document.getElementById("notepadFloatingWindow");
+        if (existing) return existing;
+
+        const win = document.createElement("section");
+        win.id = "notepadFloatingWindow";
+        win.className = "notepadFloating";
+        win.hidden = true;
+        win.setAttribute("role", "dialog");
+        win.setAttribute("aria-label", NOTEPAD_TITLE);
+
+        const titlebar = document.createElement("div");
+        titlebar.className = "notepadTitlebar";
+
+        const title = document.createElement("div");
+        title.className = "notepadTitle";
+        title.textContent = NOTEPAD_TITLE;
+
+        const closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.className = "notepadWindowBtn";
+        closeBtn.textContent = "×";
+        closeBtn.title = "Close Notepad";
+        closeBtn.setAttribute("aria-label", "Close Notepad");
+
+        titlebar.appendChild(title);
+        titlebar.appendChild(closeBtn);
+
+        const body = document.createElement("div");
+        body.className = "notepadBody";
+
+        const textarea = document.createElement("textarea");
+        textarea.className = "notepadText";
+        textarea.maxLength = NOTEPAD_DRAFT_MAX_CHARS;
+        textarea.spellcheck = true;
+        textarea.placeholder = "Quick note...";
+        textarea.setAttribute("aria-label", "Notepad text");
+        textarea.value = notepadWindowDraft;
+
+        const status = document.createElement("div");
+        status.className = "notepadStatus";
+        status.textContent = "UI preview — server save comes next.";
+
+        textarea.addEventListener("input", () => {
+            // Security: keep draft text in this browser session only until the server-backed API is added.
+            notepadWindowDraft = textarea.value;
+            status.textContent = "Draft in this browser session only.";
+        });
+
+        body.appendChild(textarea);
+        body.appendChild(status);
+
+        win.appendChild(titlebar);
+        win.appendChild(body);
+        document.body.appendChild(win);
+
+        applyNotepadWindowState(win);
+        attachNotepadWindowDrag(win, titlebar);
+
+        closeBtn.addEventListener("click", () => {
+            closeNotepadWindow();
+        });
+
+        win.addEventListener("pointerdown", () => {
+            bringNotepadWindowToFront(win);
+        });
+
+        return win;
+    }
+
+    function openNotepadWindow(options = {}) {
+        if (!authed) return;
+
+        const win = ensureNotepadWindow();
+        win.hidden = false;
+        bringNotepadWindowToFront(win);
+        saveNotepadWindowRect(win, true);
+
+        setActiveNav("");
+        setActiveApp(NOTEPAD_APP_ID);
+
+        if (options.focus !== false) {
+            const textarea = win.querySelector(".notepadText");
+            if (textarea) textarea.focus();
+        }
+    }
+
+    function closeNotepadWindow() {
+        const win = document.getElementById("notepadFloatingWindow");
+        if (!win) return;
+
+        saveNotepadWindowRect(win, false);
+        win.hidden = true;
+
+        if (currentApp && currentApp.id) {
+            setActiveApp(currentApp.id);
+        } else {
+            setActiveApp("");
+        }
+    }
+
+    function restoreNotepadWindowIfOpen() {
+        if (notepadRestored || !authed) return;
+        notepadRestored = true;
+
+        const st = readNotepadUiState();
+        if (st && st.open === true) {
+            openNotepadWindow({ focus: false });
+        }
+    }
+
+    function addNotepadNavButton() {
+        if (!appsList) return;
+        if (appsList.querySelector(`[data-appid="${NOTEPAD_APP_ID}"]`)) return;
+
+        const a = document.createElement("a");
+        a.className = "navbtn";
+        a.href = "#notepad";
+        a.dataset.appid = NOTEPAD_APP_ID;
+        a.title = NOTEPAD_TITLE;
+
+        const left = document.createElement("span");
+        left.textContent = NOTEPAD_TITLE;
+
+        const icon = document.createElement("span");
+        icon.className = "k appNavIcon";
+
+        const fallback = document.createElement("span");
+        fallback.className = "appNavIconFallback";
+        fallback.textContent = "NP";
+
+        icon.appendChild(fallback);
+        a.appendChild(left);
+        a.appendChild(icon);
+
+        a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            openNotepadWindow();
+        });
+
+        appsList.appendChild(a);
+    }
+
+    function ensureNotepadDesktopLayout(surface, apps) {
+        if (!surface) return;
+        if (!desktopLayout) loadDesktopLayout();
+        if (!desktopLayout.items || typeof desktopLayout.items !== "object") {
+            desktopLayout.items = {};
+        }
+
+        const rect = surface.getBoundingClientRect();
+        const pad = 14;
+        const colW = Math.max(92, DESKTOP_GRID_X * 5);
+        const rowH = Math.max(112, DESKTOP_GRID_Y * 5);
+        const cols = Math.max(1, Math.floor(Math.max(colW, rect.width - pad) / colW));
+
+        const cellForPos = (pos) => {
+            const x = Number(pos && pos.x);
+            const y = Number(pos && pos.y);
+            const col = Math.max(0, Math.round(((Number.isFinite(x) ? x : pad) - pad) / colW));
+            const row = Math.max(0, Math.round(((Number.isFinite(y) ? y : pad) - pad) / rowH));
+            return row * cols + col;
+        };
+
+        const posForCell = (cell) => {
+            const col = cell % cols;
+            const row = Math.floor(cell / cols);
+            return {
+                x: pad + col * colW,
+                y: pad + row * rowH
+            };
+        };
+
+        const occupied = new Set();
+        for (const app of apps || []) {
+            const key = layoutKeyFor(app);
+            const pos = key ? desktopLayout.items[key] : null;
+            if (pos) occupied.add(cellForPos(pos));
+        }
+
+        let changed = false;
+        const current = desktopLayout.items[NOTEPAD_LAYOUT_KEY];
+
+        if (current && !occupied.has(cellForPos(current))) {
+            occupied.add(cellForPos(current));
+        } else {
+            let cell = 0;
+            while (occupied.has(cell)) cell++;
+            desktopLayout.items[NOTEPAD_LAYOUT_KEY] = posForCell(cell);
+            changed = true;
+        }
+
+        if (changed) saveDesktopLayout();
+    }
+
+    function attachNotepadDesktopDrag(iconEl) {
+        const surface = getDesktopSurface();
+        if (!surface || !iconEl || iconEl.dataset.notepadDragReady === "1") return;
+        iconEl.dataset.notepadDragReady = "1";
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let baseX = 0;
+        let baseY = 0;
+
+        const onMove = (ev) => {
+            if (!dragging) return;
+            ev.preventDefault();
+
+            const rect = surface.getBoundingClientRect();
+            const iconW = iconEl.offsetWidth || 92;
+            const iconH = iconEl.offsetHeight || 92;
+
+            const x = notepadClamp(baseX + ev.clientX - startX, 6, Math.max(6, rect.width - iconW - 6));
+            const y = notepadClamp(baseY + ev.clientY - startY, 6, Math.max(6, rect.height - iconH - 6));
+
+            iconEl.style.left = `${x}px`;
+            iconEl.style.top = `${y}px`;
+
+            if (!desktopLayout) loadDesktopLayout();
+            desktopLayout.items[NOTEPAD_LAYOUT_KEY] = { x, y };
+        };
+
+        const onUp = (ev) => {
+            if (!dragging) return;
+            dragging = false;
+
+            const left = parseFloat(iconEl.style.left || "0") || 0;
+            const top = parseFloat(iconEl.style.top || "0") || 0;
+            const snapped = snapToGrid(left, top);
+
+            iconEl.style.left = `${snapped.x}px`;
+            iconEl.style.top = `${snapped.y}px`;
+
+            if (!desktopLayout) loadDesktopLayout();
+            desktopLayout.items[NOTEPAD_LAYOUT_KEY] = snapped;
+            saveDesktopLayout();
+
+            try { iconEl.releasePointerCapture(ev.pointerId); } catch {}
+        };
+
+        iconEl.addEventListener("pointerdown", (ev) => {
+            if (ev.button !== 0) return;
+
+            setSelectedIcon(NOTEPAD_LAYOUT_KEY, ev.ctrlKey || ev.metaKey);
+
+            dragging = true;
+            startX = ev.clientX;
+            startY = ev.clientY;
+            baseX = parseFloat(iconEl.style.left || "0") || 0;
+            baseY = parseFloat(iconEl.style.top || "0") || 0;
+
+            try { iconEl.setPointerCapture(ev.pointerId); } catch {}
+            ev.preventDefault();
+        });
+
+        iconEl.addEventListener("pointermove", onMove);
+        iconEl.addEventListener("pointerup", onUp);
+        iconEl.addEventListener("pointercancel", onUp);
+    }
+
+    function renderNotepadDesktopIcon(surface, apps) {
+        if (!surface || !authed) return;
+
+        ensureNotepadDesktopLayout(surface, apps);
+
+        const pos =
+            desktopLayout &&
+            desktopLayout.items &&
+            desktopLayout.items[NOTEPAD_LAYOUT_KEY]
+                ? desktopLayout.items[NOTEPAD_LAYOUT_KEY]
+                : { x: 14, y: 14 };
+
+        const el = document.createElement("div");
+        el.className = "desktopIcon";
+        el.dataset.key = NOTEPAD_LAYOUT_KEY;
+        el.dataset.appid = NOTEPAD_APP_ID;
+        el.style.left = `${pos.x}px`;
+        el.style.top = `${pos.y}px`;
+
+        const glyph = document.createElement("div");
+        glyph.className = "notepadDesktopGlyph";
+        glyph.setAttribute("aria-hidden", "true");
+        glyph.textContent = "N";
+
+        const label = document.createElement("div");
+        label.className = "label";
+        label.textContent = NOTEPAD_TITLE;
+
+        const sub = document.createElement("div");
+        sub.className = "sub";
+        sub.textContent = "quick";
+
+        el.appendChild(glyph);
+        el.appendChild(label);
+        el.appendChild(sub);
+
+        el.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            setSelectedIcon(NOTEPAD_LAYOUT_KEY, ev.ctrlKey || ev.metaKey);
+        });
+
+        el.addEventListener("dblclick", (ev) => {
+            ev.preventDefault();
+            openNotepadWindow();
+        });
+
+        attachNotepadDesktopDrag(el);
+        surface.appendChild(el);
+    }
     function currentThemeName() {
         // Try data-theme set by your theme system, then localStorage, then default
         const dt = (document.documentElement.getAttribute("data-theme") || "").trim();
@@ -2201,6 +2646,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             surface.appendChild(el);
         }
 
+        renderNotepadDesktopIcon(surface, desktopApps);
         updateSelectionVisual();
     }
     async function startPairingFlow() {
@@ -3585,6 +4031,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
 
     function openAppById(appId) {
+        if (appId === NOTEPAD_APP_ID) {
+            openNotepadWindow();
+            return;
+        }
+
         const matches = installedApps.filter(x => x.id === appId);
         const a = matches.length ? matches[matches.length - 1] : null;
 
@@ -3677,6 +4128,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             if (currentView === "home") renderDesktopIcons();
 
             clearAppsList();
+            addNotepadNavButton();
+            restoreNotepadWindowIfOpen();
 
             for (const a of usable) {
                 const mani = await fetchManifest(a.id, a.ver);
