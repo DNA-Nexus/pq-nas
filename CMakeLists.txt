@@ -265,6 +265,10 @@ add_executable(pqnas_server
         server/src/routes/routes_activity.cpp
         server/src/people_contacts.cpp
         server/src/routes/routes_people.cpp
+        server/src/notepad_store.cpp
+        server/src/notepad_store.h
+        server/src/routes/routes_notepad.cpp
+        server/src/routes/routes_notepad.h
         server/src/file_annotations.cpp
         server/src/routes/routes_file_annotations.cpp
         server/src/file_locks.cpp

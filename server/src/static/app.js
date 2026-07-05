@@ -915,6 +915,13 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     let notepadWindowZ = 4200;
     let notepadRestored = false;
     let notepadWindowDraft = "";
+    let notepadLoaded = false;
+    let notepadDirty = false;
+    let notepadRevision = 0;
+    let notepadSaveTimer = null;
+    let notepadSaving = false;
+    let notepadSavePending = false;
+    let notepadLoadInFlight = null;
 
     function notepadClamp(value, min, max) {
         const n = Number(value);
@@ -944,6 +951,137 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         try {
             localStorage.setItem(notepadUiStorageKey(), JSON.stringify(merged));
         } catch {}
+    }
+
+    function notepadStatusEl(win = null) {
+        const root = win || document.getElementById("notepadFloatingWindow");
+        return root ? root.querySelector(".notepadStatus") : null;
+    }
+
+    function setNotepadStatus(text) {
+        const el = notepadStatusEl();
+        if (el) el.textContent = text;
+    }
+
+    async function loadNotepadFromServer(win = null) {
+        if (!authed) return null;
+        if (notepadLoadInFlight) return notepadLoadInFlight;
+
+        const root = win || document.getElementById("notepadFloatingWindow");
+        const textarea = root ? root.querySelector(".notepadText") : null;
+
+        setNotepadStatus("Loading...");
+
+        notepadLoadInFlight = (async () => {
+            try {
+                const r = await fetch("/api/v4/notepad", {
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: { "Accept": "application/json" }
+                });
+
+                const j = await r.json().catch(() => null);
+                if (!r.ok || !j || j.ok === false) {
+                    throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+                }
+
+                notepadRevision = Number.isFinite(Number(j.revision)) ? Number(j.revision) : 0;
+                notepadWindowDraft = typeof j.body === "string" ? j.body : "";
+                notepadLoaded = true;
+
+                if (textarea && !notepadDirty) {
+                    textarea.value = notepadWindowDraft;
+                }
+
+                setNotepadStatus(notepadRevision > 0 ? "Saved" : "Ready");
+                return j;
+            } catch (e) {
+                setNotepadStatus("Load failed");
+                throw e;
+            } finally {
+                notepadLoadInFlight = null;
+            }
+        })();
+
+        return notepadLoadInFlight;
+    }
+
+    function scheduleNotepadSave(delayMs = 1000) {
+        if (!authed || !notepadLoaded) return;
+
+        if (notepadSaveTimer) {
+            window.clearTimeout(notepadSaveTimer);
+            notepadSaveTimer = null;
+        }
+
+        setNotepadStatus("Unsaved changes");
+
+        notepadSaveTimer = window.setTimeout(() => {
+            notepadSaveTimer = null;
+            notepadSaveNow().catch(() => {});
+        }, delayMs);
+    }
+
+    async function notepadSaveNow() {
+        if (!authed || !notepadLoaded || !notepadDirty) return;
+
+        if (notepadSaving) {
+            notepadSavePending = true;
+            return;
+        }
+
+        const win = document.getElementById("notepadFloatingWindow");
+        const textarea = win ? win.querySelector(".notepadText") : null;
+        if (!textarea) return;
+
+        notepadSaving = true;
+        notepadSavePending = false;
+        setNotepadStatus("Saving...");
+
+        const body = textarea.value;
+
+        try {
+            const r = await fetch("/api/v4/notepad", {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    body,
+                    revision: notepadRevision
+                })
+            });
+
+            const j = await r.json().catch(() => null);
+
+            if (r.status === 409 && j && j.error === "revision_mismatch") {
+                if (j.current && Number.isFinite(Number(j.current.revision))) {
+                    notepadRevision = Number(j.current.revision);
+                }
+                setNotepadStatus("Changed elsewhere. Copy your text, then reload Notepad.");
+                return;
+            }
+
+            if (!r.ok || !j || j.ok === false) {
+                throw new Error((j && (j.message || j.error)) ? (j.message || j.error) : `HTTP ${r.status}`);
+            }
+
+            notepadRevision = Number.isFinite(Number(j.revision)) ? Number(j.revision) : notepadRevision;
+            notepadWindowDraft = body;
+            notepadDirty = false;
+            setNotepadStatus("Saved");
+        } catch (e) {
+            setNotepadStatus("Save failed");
+            throw e;
+        } finally {
+            notepadSaving = false;
+            if (notepadSavePending) {
+                scheduleNotepadSave(250);
+            }
+        }
     }
 
     function applyNotepadWindowState(win) {
@@ -1081,12 +1219,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const status = document.createElement("div");
         status.className = "notepadStatus";
-        status.textContent = "UI preview — server save comes next.";
+        status.textContent = "Loading...";
 
         textarea.addEventListener("input", () => {
-            // Security: keep draft text in this browser session only until the server-backed API is added.
             notepadWindowDraft = textarea.value;
-            status.textContent = "Draft in this browser session only.";
+            notepadDirty = true;
+            scheduleNotepadSave();
         });
 
         body.appendChild(textarea);
@@ -1125,11 +1263,19 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             const textarea = win.querySelector(".notepadText");
             if (textarea) textarea.focus();
         }
+
+        loadNotepadFromServer(win).catch(() => {});
     }
 
     function closeNotepadWindow() {
         const win = document.getElementById("notepadFloatingWindow");
         if (!win) return;
+
+        if (notepadSaveTimer) {
+            window.clearTimeout(notepadSaveTimer);
+            notepadSaveTimer = null;
+        }
+        notepadSaveNow().catch(() => {});
 
         saveNotepadWindowRect(win, false);
         win.hidden = true;

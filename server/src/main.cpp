@@ -138,6 +138,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_admin_user_storage_jobs.h"
 #include "routes/routes_admin_user_profile.h"
 #include "routes/routes_user_avatars.h"
+#include "notepad_store.h"
+#include "routes/routes_notepad.h"
 #include "routes/routes_apps_manage.h"
 #include "routes/routes_apps_public.h"
 #include "routes/routes_core_ui_shell.h"
@@ -10531,6 +10533,30 @@ pqnas::register_drive_locate_routes(srv, drive_locate_deps);
         }
 
     }
+
+    pqnas::NotepadStore notepad_store(
+        std::filesystem::path(users_path).parent_path() / "notepad.sqlite3"
+    );
+    {
+        std::string notepad_init_err;
+        if (!notepad_store.init(&notepad_init_err)) {
+            std::cerr << "[notepad] init failed: " << notepad_init_err << "\n";
+        }
+    }
+
+    pqnas::NotepadRoutesDeps notepad_deps;
+    notepad_deps.store = &notepad_store;
+    notepad_deps.users = activity_deps.users;
+    notepad_deps.cookie_key = activity_deps.cookie_key;
+    notepad_deps.require_user_auth_users_actor = activity_deps.require_user_auth_users_actor;
+    notepad_deps.require_same_origin = [&](const httplib::Request& req, httplib::Response& res) {
+        return require_same_origin_for_cookie_mutation(req, res);
+    };
+    notepad_deps.reply_json = activity_deps.reply_json;
+    notepad_deps.now_epoch_sec = []() {
+        return now_epoch_sec();
+    };
+    pqnas::register_notepad_routes(srv, notepad_deps);
 
     pqnas::PeopleRoutesDeps people_deps;
     people_deps.users = activity_deps.users;
