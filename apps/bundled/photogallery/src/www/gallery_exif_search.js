@@ -119,6 +119,71 @@
         clear: el("exifSearchClearBtn")
     };
 
+    function labelSpan(input) {
+        return input && input.closest ? input.closest("label")?.querySelector("span") : null;
+    }
+
+    function setText(node, key, fallback, params = null) {
+        if (node) node.textContent = exifT(key, params, fallback);
+    }
+
+    function setAttr(node, attr, key, fallback, params = null) {
+        if (node) node.setAttribute(attr, exifT(key, params, fallback));
+    }
+
+    function refreshExifSearchI18n() {
+        // The EXIF panel is created dynamically. Refreshing here prevents early
+        // fallback English from sticking when the global i18n bundle finishes later.
+        setAttr(btn, "title", "photogallery.exif.advanced_search", "Advanced EXIF search");
+
+        setText(panel.querySelector(".exifSearchTitle"), "photogallery.exif.advanced_search", "Advanced EXIF search");
+        setText(panel.querySelector(".exifSearchSub"), "photogallery.exif.search_subtitle", "Filter photos by camera, lens, ISO, GPS, and capture date.");
+
+        setText(fields.clear, "photogallery.exif.clear_filters", "Clear EXIF filters");
+
+        setText(labelSpan(fields.make), "photogallery.exif.camera_make", "Camera make");
+        setAttr(fields.make, "placeholder", "photogallery.exif.placeholder.make", "Panasonic, Samsung, Canon…");
+
+        setText(labelSpan(fields.model), "photogallery.exif.camera_model", "Camera model");
+        setAttr(fields.model, "placeholder", "photogallery.exif.placeholder.model", "DMC-G7, GT-I9505…");
+
+        setText(labelSpan(fields.lens), "photogallery.exif.lens", "Lens");
+        setAttr(fields.lens, "placeholder", "photogallery.exif.placeholder.lens", "Lumix, 25mm, Leica…");
+
+        setText(labelSpan(fields.iso), "photogallery.exif.iso", "ISO");
+        setAttr(fields.iso, "placeholder", "photogallery.exif.placeholder.iso", "200 or 100-800 or 200,400");
+
+        setText(labelSpan(fields.gps), "photogallery.exif.gps", "GPS");
+        if (fields.gps && fields.gps.options) {
+            if (fields.gps.options[0]) fields.gps.options[0].textContent = exifT("photogallery.exif.gps_any", null, "Any");
+            if (fields.gps.options[1]) fields.gps.options[1].textContent = exifT("photogallery.exif.gps_yes", null, "Has GPS");
+            if (fields.gps.options[2]) fields.gps.options[2].textContent = exifT("photogallery.exif.gps_no", null, "No GPS");
+        }
+
+        setText(labelSpan(fields.from), "photogallery.exif.taken_from", "Taken from");
+        setText(labelSpan(fields.to), "photogallery.exif.taken_to", "Taken to");
+    }
+
+    function startExifSearchI18nObserver() {
+        const refresh = () => refreshExifSearchI18n();
+
+        try {
+            const observer = new MutationObserver(refresh);
+            observer.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ["lang", "data-i18n-ready", "data-i18n-pending"]
+            });
+        } catch (_) {}
+
+        window.addEventListener("pqnas-language-changed", refresh);
+        window.setTimeout(refresh, 0);
+        window.setTimeout(refresh, 250);
+        window.setTimeout(refresh, 1000);
+    }
+
+    refreshExifSearchI18n();
+    startExifSearchI18nObserver();
+
     const norm = (v) => String(v == null ? "" : v).trim().toLowerCase();
 
     function textContains(value, query) {
