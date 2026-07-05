@@ -992,6 +992,14 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return NOTEPAD_MARK_COLORS.includes(color);
     }
 
+    function notepadColorLabel(color) {
+        return tr(`notepad.color.${color}`, null, color);
+    }
+
+    function notepadTr(key, fallback, vars = null) {
+        return tr(key, vars, fallback);
+    }
+
     function normalizeNotepadMarks(marks, body) {
         const text = String(body || "");
         const max = text.length;
@@ -1084,7 +1092,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const end = textarea.selectionEnd;
 
         if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) {
-            setNotepadStatus("Select text first");
+            setNotepadStatus(notepadTr("notepad.status.select_text_first", "Select text first"));
             textarea.focus();
             return;
         }
@@ -1109,7 +1117,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const end = textarea.selectionEnd;
 
         if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) {
-            setNotepadStatus("Select highlighted text first");
+            setNotepadStatus(notepadTr("notepad.status.select_highlighted_text_first", "Select highlighted text first"));
             textarea.focus();
             return;
         }
@@ -1136,13 +1144,57 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         }
     }
 
+    function refreshNotepadI18n(win = null) {
+        const root = notepadRoot(win);
+        if (!root) return;
+
+        const closeBtn = root.querySelector(".notepadWindowBtn");
+        if (closeBtn) {
+            const closeText = notepadTr("notepad.close", "Close Notepad");
+            closeBtn.title = closeText;
+            closeBtn.setAttribute("aria-label", closeText);
+        }
+
+        const toolLabel = root.querySelector(".notepadToolLabel");
+        if (toolLabel) {
+            toolLabel.textContent = notepadTr("notepad.highlight_label", "Highlight:");
+        }
+
+        for (const btn of root.querySelectorAll(".notepadMarkBtn")) {
+            const color = btn.dataset.color || "";
+            if (!notepadColorOk(color)) continue;
+
+            const colorLabel = notepadColorLabel(color);
+            const title = notepadTr(
+                "notepad.highlight_color",
+                `Highlight ${colorLabel}`,
+                { color: colorLabel }
+            );
+            btn.title = title;
+            btn.setAttribute("aria-label", title);
+        }
+
+        const clearBtn = root.querySelector(".notepadClearMarkBtn");
+        if (clearBtn) {
+            clearBtn.textContent = notepadTr("notepad.clear", "Clear");
+            const clearTitle = notepadTr("notepad.clear_highlight", "Clear highlight from selected text");
+            clearBtn.title = clearTitle;
+            clearBtn.setAttribute("aria-label", clearTitle);
+        }
+
+        const textarea = root.querySelector(".notepadText");
+        if (textarea) {
+            textarea.placeholder = notepadTr("notepad.placeholder", "Quick note...");
+        }
+    }
+
     async function loadNotepadFromServer(win = null) {
         if (!authed) return null;
         if (notepadLoadInFlight) return notepadLoadInFlight;
 
         const textarea = notepadTextarea(win);
 
-        setNotepadStatus("Loading...");
+        setNotepadStatus(notepadTr("notepad.status.loading", "Loading..."));
 
         notepadLoadInFlight = (async () => {
             try {
@@ -1167,10 +1219,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 }
 
                 renderNotepadHighlights(win);
-                setNotepadStatus(notepadRevision > 0 ? "Saved" : "Ready");
+                setNotepadStatus(notepadRevision > 0 ? notepadTr("notepad.status.saved", "Saved") : notepadTr("notepad.status.ready", "Ready"));
                 return j;
             } catch (e) {
-                setNotepadStatus("Load failed");
+                setNotepadStatus(notepadTr("notepad.status.load_failed", "Load failed"));
                 throw e;
             } finally {
                 notepadLoadInFlight = null;
@@ -1188,7 +1240,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             notepadSaveTimer = null;
         }
 
-        setNotepadStatus("Unsaved changes");
+        setNotepadStatus(notepadTr("notepad.status.unsaved_changes", "Unsaved changes"));
 
         notepadSaveTimer = window.setTimeout(() => {
             notepadSaveTimer = null;
@@ -1209,7 +1261,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         notepadSaving = true;
         notepadSavePending = false;
-        setNotepadStatus("Saving...");
+        setNotepadStatus(notepadTr("notepad.status.saving", "Saving..."));
 
         const body = textarea.value;
         const marks = normalizeNotepadMarks(notepadMarks, body);
@@ -1236,7 +1288,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 if (j.current && Number.isFinite(Number(j.current.revision))) {
                     notepadRevision = Number(j.current.revision);
                 }
-                setNotepadStatus("Changed elsewhere. Copy your text, then reload Notepad.");
+                setNotepadStatus(notepadTr("notepad.status.changed_elsewhere", "Changed elsewhere. Copy your text, then reload Notepad."));
                 return;
             }
 
@@ -1249,9 +1301,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             notepadMarks = normalizeNotepadMarks(j.marks || marks, body);
             notepadDirty = false;
             renderNotepadHighlights();
-            setNotepadStatus("Saved");
+            setNotepadStatus(notepadTr("notepad.status.saved", "Saved"));
         } catch (e) {
-            setNotepadStatus("Save failed");
+            setNotepadStatus(notepadTr("notepad.status.save_failed", "Save failed"));
             throw e;
         } finally {
             notepadSaving = false;
@@ -1377,8 +1429,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         closeBtn.type = "button";
         closeBtn.className = "notepadWindowBtn";
         closeBtn.textContent = "×";
-        closeBtn.title = "Close Notepad";
-        closeBtn.setAttribute("aria-label", "Close Notepad");
+        closeBtn.title = notepadTr("notepad.close", "Close Notepad");
+        closeBtn.setAttribute("aria-label", notepadTr("notepad.close", "Close Notepad"));
 
         titlebar.appendChild(title);
         titlebar.appendChild(closeBtn);
@@ -1391,7 +1443,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const toolLabel = document.createElement("span");
         toolLabel.className = "notepadToolLabel";
-        toolLabel.textContent = "Highlight:";
+        toolLabel.textContent = notepadTr("notepad.highlight_label", "Highlight:");
         toolbar.appendChild(toolLabel);
 
         for (const color of NOTEPAD_MARK_COLORS) {
@@ -1399,8 +1451,8 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             btn.type = "button";
             btn.className = `notepadMarkBtn ${NOTEPAD_MARK_CLASS[color] || ""}`;
             btn.dataset.color = color;
-            btn.title = `Highlight ${color}`;
-            btn.setAttribute("aria-label", `Highlight ${color}`);
+            btn.title = notepadTr("notepad.highlight_color", `Highlight ${notepadColorLabel(color)}`, { color: notepadColorLabel(color) });
+            btn.setAttribute("aria-label", notepadTr("notepad.highlight_color", `Highlight ${notepadColorLabel(color)}`, { color: notepadColorLabel(color) }));
             btn.textContent = "●";
             btn.addEventListener("mousedown", (ev) => ev.preventDefault());
             btn.addEventListener("click", () => {
@@ -1414,9 +1466,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         const clearBtn = document.createElement("button");
         clearBtn.type = "button";
         clearBtn.className = "notepadClearMarkBtn";
-        clearBtn.textContent = "Clear";
-        clearBtn.title = "Clear highlight from selected text";
-        clearBtn.setAttribute("aria-label", "Clear highlight from selected text");
+        clearBtn.textContent = notepadTr("notepad.clear", "Clear");
+        clearBtn.title = notepadTr("notepad.clear_highlight", "Clear highlight from selected text");
+        clearBtn.setAttribute("aria-label", notepadTr("notepad.clear_highlight", "Clear highlight from selected text"));
         clearBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
         clearBtn.addEventListener("click", () => clearNotepadMarksInSelection());
         toolbar.appendChild(clearBtn);
@@ -1436,7 +1488,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         textarea.setAttribute("autocomplete", "off");
         textarea.setAttribute("autocorrect", "off");
         textarea.setAttribute("autocapitalize", "off");
-        textarea.placeholder = "Quick note...";
+        textarea.placeholder = notepadTr("notepad.placeholder", "Quick note...");
         textarea.setAttribute("aria-label", "Notepad text");
         textarea.value = notepadWindowDraft;
 
@@ -1452,7 +1504,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const status = document.createElement("div");
         status.className = "notepadStatus";
-        status.textContent = "Loading...";
+        status.textContent = notepadTr("notepad.status.loading", "Loading...");
 
         editorWrap.appendChild(highlightLayer);
         editorWrap.appendChild(textarea);
@@ -1468,6 +1520,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         applyNotepadWindowState(win);
         attachNotepadWindowDrag(win, titlebar);
         updateNotepadToolbarActive(win);
+        refreshNotepadI18n(win);
         renderNotepadHighlights(win);
 
         closeBtn.addEventListener("click", () => {
@@ -1486,6 +1539,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const win = ensureNotepadWindow();
         win.hidden = false;
+        refreshNotepadI18n(win);
         bringNotepadWindowToFront(win);
         saveNotepadWindowRect(win, true);
 
@@ -1680,6 +1734,33 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         iconEl.addEventListener("pointerup", onUp);
         iconEl.addEventListener("pointercancel", onUp);
     }
+
+    let notepadI18nObserverStarted = false;
+
+    function startNotepadI18nObserver() {
+        if (notepadI18nObserverStarted) return;
+        notepadI18nObserverStarted = true;
+
+        const refresh = () => {
+            const win = document.getElementById("notepadFloatingWindow");
+            if (win) refreshNotepadI18n(win);
+        };
+
+        try {
+            const observer = new MutationObserver(refresh);
+            observer.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ["lang", "data-i18n-ready", "data-i18n-pending"]
+            });
+        } catch {}
+
+        window.addEventListener("focus", refresh);
+        window.setTimeout(refresh, 0);
+        window.setTimeout(refresh, 250);
+        window.setTimeout(refresh, 1000);
+    }
+
+    startNotepadI18nObserver();
 
     function renderNotepadDesktopIcon(surface, apps) {
         if (!surface || !authed) return;
