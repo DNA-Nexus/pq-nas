@@ -147,6 +147,19 @@
     return "";
   }
 
+  function zeroBytes(bytes) {
+    // Security: reduce lifetime of browser-owned CEK/plaintext buffers.
+    // Passphrases are JS strings and cannot be reliably wiped, but Uint8Array
+    // buffers should be cleared once Blob/CryptoKey creation no longer needs them.
+    if (bytes && typeof bytes.fill === "function") {
+      try {
+        bytes.fill(0);
+      } catch {
+        // Best-effort memory hygiene only.
+      }
+    }
+  }
+
   async function derivePassphraseAesKey(passphrase, salt, iterations) {
     const baseKey = await crypto.subtle.importKey(
       "raw",
@@ -277,6 +290,8 @@
       ["decrypt"]
     );
 
+    zeroBytes(cekBytes);
+
     const fileBytes = await aesGcmDecryptWithOptionalAad(
       fileKey,
       b64ToBytes(payloadIvB64),
@@ -294,9 +309,12 @@
 
     const mime = text(original.mime || original.mime_type || "application/octet-stream") || "application/octet-stream";
 
+    const blob = new Blob([fileBytes], { type: mime });
+    zeroBytes(fileBytes);
+
     return {
       filename,
-      blob: new Blob([fileBytes], { type: mime })
+      blob
     };
   }
 

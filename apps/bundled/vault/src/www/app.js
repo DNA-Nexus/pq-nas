@@ -209,6 +209,41 @@
     setText(el.encryptStatus, `${state.files.length} file(s) ready.`);
   }
 
+  let lastDecryptObjectUrl = "";
+
+  function zeroBytes(bytes) {
+    // Security: reduce lifetime of raw CEK/plaintext/shared-secret buffers.
+    // JS strings and WebCrypto CryptoKeys cannot be reliably zeroed, but
+    // Uint8Array buffers we own should be wiped as soon as they are no longer needed.
+    if (bytes && typeof bytes.fill === "function") {
+      try {
+        bytes.fill(0);
+      } catch {
+        // Best-effort memory hygiene only.
+      }
+    }
+  }
+
+  function revokeLastDecryptObjectUrl() {
+    if (!lastDecryptObjectUrl) return;
+    URL.revokeObjectURL(lastDecryptObjectUrl);
+    lastDecryptObjectUrl = "";
+  }
+
+  function clearUploadSensitiveInputs() {
+    if (el.passphraseInput) el.passphraseInput.value = "";
+    if (el.passphraseConfirmInput) el.passphraseConfirmInput.value = "";
+  }
+
+  function clearAdvancedImportSensitiveInputs({ clearFile = false, clearDownload = false } = {}) {
+    if (el.decryptPassphraseInput) el.decryptPassphraseInput.value = "";
+    if (clearFile && el.decryptFileInput) el.decryptFileInput.value = "";
+    if (clearDownload && el.downloadSlot) {
+      revokeLastDecryptObjectUrl();
+      el.downloadSlot.replaceChildren();
+    }
+  }
+
   async function deriveUserWrapKey(passphrase, saltBytes) {
     const baseKey = await crypto.subtle.importKey(
       "raw",
@@ -295,12 +330,23 @@
     const encap = await globalThis.PqShareMlKemV1.encapsulate768({ publicKeyB64 });
     const hkdfSalt = randomBytes(32);
     const hkdfInfo = utf8ToBytes("pqnas-vault-mlkem768-recovery-wrap-v1");
-    const wrapKey = await hkdfAesGcmKey(
-      b64ToBytes(encap.shared_secret_b64),
-      hkdfSalt,
-      hkdfInfo,
-      ["encrypt"]
-    );
+    const sharedSecretBytes = encap.shared_secret_bytes;
+
+    if (!(sharedSecretBytes instanceof Uint8Array)) {
+      throw new Error("ML-KEM helper returned no wipeable shared secret bytes");
+    }
+
+    let wrapKey;
+    try {
+      wrapKey = await hkdfAesGcmKey(
+        sharedSecretBytes,
+        hkdfSalt,
+        hkdfInfo,
+        ["encrypt"]
+      );
+    } finally {
+      zeroBytes(sharedSecretBytes);
+    }
 
     const wrapIv = randomBytes(12);
     const wrapped = new Uint8Array(await crypto.subtle.encrypt(
@@ -368,6 +414,8 @@
       plaintext
     ));
 
+    zeroBytes(plaintext);
+
     const wrappedKeys = [
       await wrapCekForUser(rawCek, passphrase, aadBytes)
     ];
@@ -376,6 +424,8 @@
     if (trimmedRecoveryKey) {
       wrappedKeys.push(await wrapCekForOrganization(rawCek, trimmedRecoveryKey, aadBytes));
     }
+
+    zeroBytes(rawCek);
 
     return {
       v: VAULT_PACKAGE_VERSION,
@@ -506,6 +556,8 @@
       ["decrypt"]
     );
 
+    zeroBytes(rawCek);
+
     const plaintext = await crypto.subtle.decrypt(
       {
         name: "AES-GCM",
@@ -541,7 +593,11 @@
       const decrypted = await decryptVaultPackage(pkg, passphrase);
 
       const blob = new Blob([decrypted.bytes], { type: decrypted.type });
+      zeroBytes(decrypted.bytes);
+
+      revokeLastDecryptObjectUrl();
       const url = URL.createObjectURL(blob);
+      lastDecryptObjectUrl = url;
 
       const link = document.createElement("a");
       link.href = url;
@@ -551,6 +607,7 @@
       el.downloadSlot.append(link);
       setText(el.decryptStatus, "Decryption complete. The server was not involved.");
     } finally {
+      clearAdvancedImportSensitiveInputs({ clearFile: true });
       el.decryptBtn.disabled = false;
     }
   }
@@ -578,14 +635,15 @@
         await encryptAndUploadSelectedFiles();
       } catch (err) {
         setText(el.encryptStatus, err && err.message ? err.message : "Encryption/upload failed.");
+      } finally {
+        clearUploadSensitiveInputs();
       }
     });
 
     el.clearBtn.addEventListener("click", () => {
       state.files = [];
       el.fileInput.value = "";
-      el.passphraseInput.value = "";
-      el.passphraseConfirmInput.value = "";
+      clearUploadSensitiveInputs();
       renderQueue();
       setText(el.encryptStatus, "Ready.");
     });
@@ -594,6 +652,7 @@
       try {
         await decryptSelectedVaultFile();
       } catch (err) {
+        clearAdvancedImportSensitiveInputs();
         setText(el.decryptStatus, err && err.message ? err.message : "Decrypt failed.");
       }
     });
