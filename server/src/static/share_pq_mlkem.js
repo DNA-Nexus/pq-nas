@@ -82,14 +82,24 @@
             const ciphertext = result && result.ciphertext
                 ? new Uint8Array(result.ciphertext)
                 : new Uint8Array(result[0]);
-            const sharedSecret = result && result.sharedSecret
-                ? new Uint8Array(result.sharedSecret)
-                : new Uint8Array(result[1]);
+
+            const sharedSecret = result && result.sharedKey
+                ? new Uint8Array(result.sharedKey)
+                : result && result.sharedSecret
+                    ? new Uint8Array(result.sharedSecret)
+                    : new Uint8Array(result[1]);
+
+            if (ciphertext.length !== 1088 || sharedSecret.length !== 32) {
+                throw new Error("Unexpected ML-KEM-768 encapsulation result shape");
+            }
 
             return {
                 alg: "ML-KEM-768",
                 ciphertext_b64: bytesToB64(ciphertext),
-                shared_secret_b64: bytesToB64(sharedSecret)
+                // Security: return the shared secret as bytes so callers can wipe
+                // the buffer after HKDF use instead of keeping an immutable base64
+                // string alive longer than necessary.
+                shared_secret_bytes: sharedSecret
             };
         },
 
