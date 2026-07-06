@@ -1,0 +1,33 @@
+{
+  "id": "vault",
+  "name": "Vault",
+  "version": "0.1.0",
+  "entry": "www/index.html",
+  "api_base": "/api/v4/files",
+  "permissions": [],
+  "category": "security",
+  "surfaces": {
+    "desktop": {
+      "enabled": true
+    },
+    "launcher": {
+      "enabled": true
+    },
+    "sidebar": {
+      "enabled": false,
+      "user_pinnable": true,
+      "section": "security",
+      "label": "Vault",
+      "order": 90
+    }
+  },
+  "icons": {
+    "win_classic": "www/icon.svg",
+    "cpunk_orange": "www/icon.svg",
+    "dark": "www/icon.svg",
+    "bright": "www/icon.svg",
+    "default": "www/icon.svg",
+    "sidebar": "www/nav_icon.svg"
+  },
+  "min_server_version": "1.2.1"
+}

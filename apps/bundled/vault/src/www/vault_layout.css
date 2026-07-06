@@ -1,0 +1,457 @@
+/* Vault File Manager shell and detached action modals. */
+
+.vaultFmShell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+}
+
+.vaultFmTopbar {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.vaultFmBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.vaultFmBrandIcon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  background: var(--card);
+  color: var(--accent);
+}
+
+.vaultFmPathBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.vaultFmPathInput {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input-bg, var(--card));
+  color: var(--fg);
+  font: inherit;
+}
+
+.vaultFmActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.vaultFmBtn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--button-bg, var(--card));
+  color: var(--fg);
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.vaultFmBtn:hover,
+.vaultFmBtn:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  outline-offset: 1px;
+}
+
+.vaultFmPrimary {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+  font-weight: 900;
+}
+
+.vaultFmPrimary:hover,
+.vaultFmPrimary:focus-visible {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 42%, transparent);
+  outline-offset: 1px;
+}
+
+.vaultFmMain {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  padding: 12px;
+}
+
+.vaultFmFileArea {
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  background: var(--card);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.vaultFmListHeader,
+.vaultFmRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 120px 180px 120px;
+  gap: 12px;
+  align-items: center;
+}
+
+.vaultFmListHeader {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-dim, var(--muted));
+  font-size: 13px;
+  font-weight: 800;
+  background: var(--panel);
+}
+
+.vaultFmList {
+  min-height: 0;
+  overflow: auto;
+}
+
+.vaultFmRow {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: default;
+}
+
+.vaultFmRow:hover,
+.vaultFmRow:focus-visible,
+.vaultFmRow[aria-selected="true"] {
+  background: var(--hover-bg, var(--panel));
+  outline: 0;
+}
+
+.vaultFmName {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 750;
+}
+
+.vaultFmNameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vaultFmIcon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--panel);
+}
+
+.vaultFmCellMuted {
+  color: var(--fg-dim, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vaultFmSide {
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  background: var(--card);
+  padding: 14px;
+  overflow: auto;
+}
+
+.vaultFmSide h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.vaultFmSide p {
+  margin: 0 0 12px;
+  color: var(--fg-dim, var(--muted));
+  line-height: 1.45;
+}
+
+.vaultFmPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--fg-dim, var(--muted));
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.vaultFmStatus {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-dim, var(--muted));
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.vaultFmEmpty {
+  padding: 42px 18px;
+  text-align: center;
+  color: var(--fg-dim, var(--muted));
+}
+
+.vaultFmEmptyAction {
+  margin-top: 14px;
+}
+
+.vaultDetachedDialog {
+  width: min(920px, calc(100vw - 36px));
+  max-height: min(820px, calc(100dvh - 36px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  padding: 0;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.vaultDetachedDialog_decrypt {
+  width: min(620px, calc(100vw - 36px));
+}
+
+.vaultDetachedDialog_recovery {
+  width: min(760px, calc(100vw - 36px));
+}
+
+.vaultDetachedDialog_download {
+  width: min(620px, calc(100vw - 36px));
+}
+
+.vaultDetachedDialog_details {
+  width: min(720px, calc(100vw - 36px));
+}
+
+.vaultDetachedDialog::backdrop {
+  background: color-mix(in oklab, var(--bg) 72%, transparent);
+}
+
+.vaultDetachedChrome {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.vaultDetachedTitle {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.vaultDetachedClose {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--button-bg, var(--panel));
+  color: var(--fg);
+  font: inherit;
+  font-weight: 800;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.vaultDetachedContent {
+  max-height: calc(min(820px, calc(100dvh - 36px)) - 56px);
+  overflow: auto;
+  padding: 16px;
+}
+
+.vaultDetachedContent .vault-panel,
+.vaultRecoveryPanel {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.vaultDetachedContent .vault-panel + .vault-panel {
+  margin-top: 12px;
+}
+
+.vaultDetachedContent .vault-drop {
+  min-height: 180px;
+}
+
+.vaultDetachedHelp {
+  margin: 0 0 14px;
+  color: var(--fg-dim, var(--muted));
+  line-height: 1.45;
+}
+
+.vaultRecoveryBody {
+  display: grid;
+  gap: 14px;
+}
+
+.vaultDownloadPanel {
+  margin: 0;
+}
+
+.vaultDownloadFile {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+}
+
+.vaultDownloadFile span {
+  color: var(--fg-dim, var(--muted));
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.vaultDownloadFile strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vaultDetailsPanel {
+  margin: 0;
+}
+
+.vaultDetailsGrid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px 14px;
+  margin: 16px 0;
+}
+
+.vaultDetailsGrid dt {
+  color: var(--fg-dim, var(--muted));
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.vaultDetailsGrid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.vaultDetailsMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+
+.vaultDetailsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.vaultRecoveryBody .vault-note {
+  margin: 0;
+}
+
+.vaultContextMenu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+
+.vaultContextMenu[hidden] {
+  display: none;
+}
+
+.vaultContextMenu button {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.vaultContextMenu button:hover,
+.vaultContextMenu button:focus-visible {
+  background: var(--hover-bg, var(--card));
+  outline: 0;
+}
+
+@media (max-width: 920px) {
+  .vaultFmTopbar {
+    grid-template-columns: 1fr;
+  }
+
+  .vaultFmActions {
+    justify-content: flex-start;
+  }
+
+  .vaultFmMain {
+    grid-template-columns: 1fr;
+  }
+
+  .vaultFmSide {
+    display: none;
+  }
+
+  .vaultFmListHeader,
+  .vaultFmRow {
+    grid-template-columns: minmax(160px, 1fr) 90px;
+  }
+
+  .vaultFmCellOptional {
+    display: none;
+  }
+}
