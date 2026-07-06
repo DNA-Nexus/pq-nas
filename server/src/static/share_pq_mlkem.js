@@ -63,6 +63,36 @@
             };
         },
 
+        async encapsulate768({ publicKeyB64 }) {
+            const mlkem = await loadMlKemModule();
+
+            const publicKey = await mlkem.importKey(
+                "raw-public",
+                b64ToBytes(publicKeyB64),
+                { name: "ML-KEM-768" },
+                false,
+                ["encapsulateBits"]
+            );
+
+            const result = await mlkem.encapsulateBits(
+                { name: "ML-KEM-768" },
+                publicKey
+            );
+
+            const ciphertext = result && result.ciphertext
+                ? new Uint8Array(result.ciphertext)
+                : new Uint8Array(result[0]);
+            const sharedSecret = result && result.sharedSecret
+                ? new Uint8Array(result.sharedSecret)
+                : new Uint8Array(result[1]);
+
+            return {
+                alg: "ML-KEM-768",
+                ciphertext_b64: bytesToB64(ciphertext),
+                shared_secret_b64: bytesToB64(sharedSecret)
+            };
+        },
+
         async decapsulate768({ privateKeyB64, ciphertextB64 }) {
             const mlkem = await loadMlKemModule();
 

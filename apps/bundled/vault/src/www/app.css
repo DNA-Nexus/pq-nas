@@ -1,0 +1,220 @@
+:root {
+  --vault-bg: var(--bg);
+  --vault-fg: var(--fg);
+  --vault-muted: var(--muted);
+  --vault-panel: var(--panel);
+  --vault-card: var(--card);
+  --vault-line: var(--border);
+  --vault-line-strong: var(--border2);
+  --vault-accent: var(--accent);
+  --vault-danger: var(--danger);
+  --vault-radius: var(--radius-lg);
+  --vault-shadow: var(--shadow);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--vault-bg);
+  color: var(--vault-fg);
+  font-family: var(--sans);
+}
+
+.vault-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.vault-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  background: var(--vault-card);
+  border: 1px solid var(--vault-line);
+  box-shadow: var(--vault-shadow);
+}
+
+.vault-kicker,
+.vault-version,
+.vault-status,
+.vault-panel p,
+.vault-note li,
+.vault-drop span {
+  color: var(--vault-muted);
+}
+
+.vault-kicker {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vault-hero h1,
+.vault-panel h2,
+.vault-note h2 {
+  margin: 0;
+}
+
+.vault-hero h1 {
+  margin-top: 6px;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.vault-hero p {
+  max-width: 760px;
+  margin: 10px 0 0;
+  line-height: 1.6;
+}
+
+.vault-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.vault-panel,
+.vault-note {
+  padding: 22px;
+  background: var(--vault-card);
+  border: 1px solid var(--vault-line);
+}
+
+.vault-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.vault-panel p {
+  margin: 8px 0 0;
+  line-height: 1.55;
+}
+
+.vault-field {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0;
+}
+
+.vault-field > span {
+  font-weight: 700;
+}
+
+.vault-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.vault-drop {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 148px;
+  border: 1px dashed var(--vault-line-strong);
+  border-radius: var(--vault-radius);
+  background: var(--vault-panel);
+  text-align: center;
+  padding: 18px;
+}
+
+.vault-drop.dragging {
+  border-color: var(--vault-accent);
+}
+
+.vault-drop input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.vault-drop strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.vault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.vault-status {
+  margin-top: 14px;
+  min-height: 1.4em;
+}
+
+.vault-list,
+.vault-download {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.vault-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--vault-line);
+  border-radius: var(--vault-radius);
+  background: var(--vault-panel);
+}
+
+.vault-item-title {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.vault-item-meta {
+  color: var(--vault-muted);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.vault-download a {
+  color: var(--vault-accent);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.vault-note {
+  margin-top: 18px;
+}
+
+.vault-note ul {
+  margin: 12px 0 0;
+  padding-left: 22px;
+}
+
+.vault-note li {
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .vault-shell {
+    width: min(100vw - 20px, 1180px);
+    padding-top: 16px;
+  }
+
+  .vault-hero,
+  .vault-grid,
+  .vault-two {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-hero {
+    display: grid;
+  }
+}
