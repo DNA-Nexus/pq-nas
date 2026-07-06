@@ -3451,6 +3451,770 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
 
 
+// pqnas-vault-org-recovery-admin-ui-v1
+(() => {
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+
+    const pill = $("vaultRecoveryPill");
+    const recoveryKeyIdEl = $("vaultRecoveryKeyId");
+    const createdEl = $("vaultRecoveryCreated");
+    const btnGenerate = $("btnVaultRecoveryGenerate");
+    const btnReload = $("btnVaultRecoveryReload");
+
+    const win = $("vaultRecoveryDetachedWindow");
+    const winHead = $("vaultRecoveryWindowHead");
+    const btnWindowClose = $("btnVaultRecoveryWindowClose");
+    const privateKeyEl = $("vaultRecoveryPrivateKey");
+    const btnCopyPrivate = $("btnVaultRecoveryCopyPrivate");
+    const btnDownloadPrivate = $("btnVaultRecoveryDownloadPrivate");
+    const btnDiscardPrivate = $("btnVaultRecoveryDiscardPrivate");
+    const ackEl = $("vaultRecoveryAck");
+    const btnStored = $("btnVaultRecoveryStored");
+
+    if (!pill || !btnGenerate || !win) {
+        return;
+    }
+
+    let currentRecovery = null;
+
+    // Security: the private key is held only in these in-memory JS variables
+    // while the detached one-time window is open. It is never included in the
+    // POST body sent to the DNA-Nexus server.
+    let pendingPrivateKeyB64 = "";
+    let pendingPublicKeyB64 = "";
+    let pendingPublicKeySha256 = "";
+    let pendingCreatedAt = 0;
+    let zCounter = 7300;
+
+    function t(key, fallback) {
+        const api = window.PQNAS_I18N;
+        if (api && typeof api.t === "function") {
+            return api.t(key, null, fallback);
+        }
+        return fallback;
+    }
+
+    function setPill(kind, text) {
+        if (!pill) return;
+        pill.className = "pill " + (kind || "");
+        const v = pill.querySelector(".v");
+        if (v) v.textContent = text || "—";
+    }
+
+    function toast(kind, title, message) {
+        try {
+            const tEl = $("toast");
+            const tt = $("toastTitle");
+            const tm = $("toastMsg");
+            if (tEl && tt && tm) {
+                tEl.className = "toast show " + (kind || "");
+                tt.textContent = title || "";
+                tm.textContent = message || "";
+                window.clearTimeout(toast._timer);
+                toast._timer = window.setTimeout(() => { tEl.className = "toast"; }, 3200);
+                return;
+            }
+        } catch (_) {}
+        console.log(title || "", message || "");
+    }
+
+    async function apiJson(url, options) {
+        const res = await fetch(url, {
+            cache: "no-store",
+            credentials: "include",
+            ...(options || {})
+        });
+
+        let data = null;
+        try {
+            data = await res.json();
+        } catch (_) {
+            data = {};
+        }
+
+        if (!res.ok || data.ok === false) {
+            throw new Error(data.message || data.error || `HTTP ${res.status}`);
+        }
+
+        return data;
+    }
+
+    function b64ToBytes(b64) {
+        const bin = atob(String(b64 || "").replace(/-/g, "+").replace(/_/g, "/"));
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i += 1) {
+            out[i] = bin.charCodeAt(i);
+        }
+        return out;
+    }
+
+    function bytesToHex(bytes) {
+        return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function sha256PublicKeyB64(publicKeyB64) {
+        const hash = await crypto.subtle.digest("SHA-256", b64ToBytes(publicKeyB64));
+        return bytesToHex(new Uint8Array(hash));
+    }
+
+    function shortRecoveryKeyId(fp) {
+        const s = String(fp || "");
+        if (!s) return "—";
+        if (s.length <= 24) return s;
+        return `${s.slice(0, 16)}…${s.slice(-8)}`;
+    }
+
+    function formatCreated(ms) {
+        const n = Number(ms || 0);
+        if (!Number.isFinite(n) || n <= 0) return "—";
+        try {
+            return new Date(n).toLocaleString();
+        } catch (_) {
+            return String(n);
+        }
+    }
+
+    function setGenerateButtonLabel(text) {
+        const span = btnGenerate?.querySelector("span");
+        if (span) span.textContent = text;
+        else if (btnGenerate) btnGenerate.textContent = text;
+    }
+
+    function renderVaultRecovery(vr) {
+        const v = vr && typeof vr === "object" ? vr : {};
+        currentRecovery = v;
+
+        const active = !!v.enabled && String(v.status || "") === "active";
+        setPill(active ? "ok" : "warn", active ? "active" : "not configured");
+
+        if (recoveryKeyIdEl) {
+            const keyId = String(v.public_key_sha256 || "");
+            recoveryKeyIdEl.textContent = shortRecoveryKeyId(keyId);
+            recoveryKeyIdEl.title = keyId || "";
+        }
+
+        if (createdEl) {
+            createdEl.textContent = formatCreated(v.created_at);
+        }
+
+        setGenerateButtonLabel(active ? "Rotate organization recovery key" : "Generate organization recovery key");
+    }
+
+    async function refreshVaultRecovery() {
+        setPill("warn", t("admin.common.loading", "loading…"));
+        const data = await apiJson("/api/v4/admin/settings");
+        renderVaultRecovery(data.vault_recovery || {});
+    }
+
+    function bringWindowToFront() {
+        if (!win) return;
+        zCounter += 1;
+        win.style.zIndex = String(zCounter);
+    }
+
+    function openPrivateKeyWindow() {
+        if (!win || !privateKeyEl) return;
+
+        privateKeyEl.value = pendingPrivateKeyB64;
+        if (ackEl) ackEl.checked = false;
+        if (btnStored) btnStored.disabled = true;
+
+        win.classList.remove("hidden");
+        bringWindowToFront();
+
+        const rect = win.getBoundingClientRect();
+        if (!win.style.left) {
+            win.style.left = `${Math.max(16, rect.left)}px`;
+            win.style.top = `${Math.max(16, rect.top)}px`;
+        }
+
+        window.setTimeout(() => {
+            try {
+                privateKeyEl.focus();
+                privateKeyEl.select();
+            } catch (_) {}
+        }, 40);
+    }
+
+    function clearPendingPrivateKey() {
+        pendingPrivateKeyB64 = "";
+        pendingPublicKeyB64 = "";
+        pendingPublicKeySha256 = "";
+        pendingCreatedAt = 0;
+        if (privateKeyEl) privateKeyEl.value = "";
+        if (ackEl) ackEl.checked = false;
+        if (btnStored) btnStored.disabled = true;
+    }
+
+    function closePrivateKeyWindowAfterClear() {
+        clearPendingPrivateKey();
+        win?.classList.add("hidden");
+    }
+
+    function requestWindowClose() {
+        if (pendingPrivateKeyB64) {
+            toast(
+                "warn",
+                "Recovery key is still pending",
+                "Store it safely and save the public key, or discard it without saving."
+            );
+            return;
+        }
+        win?.classList.add("hidden");
+    }
+
+    async function copyPrivateKey() {
+        const value = String(privateKeyEl?.value || pendingPrivateKeyB64 || "");
+        if (!value) return;
+
+        try {
+            await navigator.clipboard.writeText(value);
+            toast("ok", "Copied", "Private recovery key copied to clipboard.");
+        } catch (_) {
+            try {
+                privateKeyEl?.focus();
+                privateKeyEl?.select();
+                document.execCommand("copy");
+                toast("ok", "Copied", "Private recovery key copied to clipboard.");
+            } catch (err) {
+                toast("fail", "Copy failed", String(err?.message || err));
+            }
+        }
+    }
+
+    function downloadPrivateKeyFile() {
+        if (!pendingPrivateKeyB64) return;
+
+        const payload = {
+            type: "dna-nexus-vault-organization-recovery-private-key",
+            alg: "ML-KEM-768",
+            private_key_format: "compact-seed-64-bytes",
+            created_at: pendingCreatedAt,
+            public_key_sha256: pendingPublicKeySha256,
+            private_key_b64: pendingPrivateKeyB64,
+            warning: "Store this file offline or in a company password manager. DNA-Nexus does not store this private key."
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], {
+            type: "application/json"
+        });
+
+        const a = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = `dna-nexus-vault-recovery-key-${pendingPublicKeySha256.slice(0, 12) || "new"}.json`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+
+        window.setTimeout(() => {
+            URL.revokeObjectURL(url);
+            a.remove();
+        }, 1000);
+    }
+
+    async function savePendingPublicKeyAndClose() {
+        if (!pendingPublicKeyB64 || !pendingPublicKeySha256) {
+            toast("fail", "Missing key", "No pending recovery key is available.");
+            return;
+        }
+
+        if (!ackEl?.checked) {
+            toast("warn", "Confirmation required", "Confirm that you have stored the private key safely.");
+            return;
+        }
+
+        if (btnStored) btnStored.disabled = true;
+
+        try {
+            // Security: deliberately send only public key material and metadata.
+            // The organization recovery private key never leaves this browser.
+            const data = await apiJson("/api/v4/admin/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    vault_recovery: {
+                        enabled: true,
+                        status: "active",
+                        public_key_b64: pendingPublicKeyB64,
+                        public_key_sha256: pendingPublicKeySha256,
+                        created_at: pendingCreatedAt,
+                        label: "Organization recovery key"
+                    }
+                })
+            });
+
+            renderVaultRecovery(data.vault_recovery || {});
+            closePrivateKeyWindowAfterClear();
+            toast("ok", "Saved", "Vault organization recovery public key and recovery key ID saved.");
+        } catch (err) {
+            if (btnStored) btnStored.disabled = false;
+            toast("fail", "Save failed", String(err?.message || err));
+        }
+    }
+
+    function confirmRecoveryRotationDetached() {
+        return new Promise((resolve) => {
+            document.getElementById("vaultRecoveryRotateConfirmWindow")?.remove();
+
+            const root = document.createElement("div");
+            root.id = "vaultRecoveryRotateConfirmWindow";
+            root.className = "vaultRecoveryDetached";
+            root.setAttribute("role", "dialog");
+            root.setAttribute("aria-modal", "false");
+            root.setAttribute("aria-labelledby", "vaultRecoveryRotateConfirmTitle");
+            root.style.width = "min(560px, calc(100vw - 32px))";
+            root.style.left = "max(24px, calc(50vw - 280px))";
+            root.style.top = "112px";
+
+            root.innerHTML = `
+                <div class="vaultRecoveryDetachedHead">
+                    <div id="vaultRecoveryRotateConfirmTitle" class="vaultRecoveryDetachedTitle">Rotate organization recovery key?</div>
+                    <button class="pq-btn" type="button" data-action="cancel">×</button>
+                </div>
+                <div class="vaultRecoveryDetachedBody">
+                    <div class="vaultRecoveryWarning">
+                        New Vault uploads will use the new recovery public key. Old encrypted packages still require the old private key.
+                    </div>
+                    <div class="note">
+                        Make sure old recovery private keys remain stored safely before rotating.
+                    </div>
+                </div>
+                <div class="vaultRecoveryDetachedFoot">
+                    <span class="vaultRecoveryAck">This does not re-wrap old Vault packages.</span>
+                    <div class="row">
+                        <button class="pq-btn" type="button" data-action="cancel">Cancel</button>
+                        <button class="pq-btn primary" type="button" data-action="ok">Rotate key</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(root);
+
+            zCounter += 1;
+            root.style.zIndex = String(zCounter);
+
+            const head = root.querySelector(".vaultRecoveryDetachedHead");
+            const okBtn = root.querySelector('[data-action="ok"]');
+            const cancelBtns = root.querySelectorAll('[data-action="cancel"]');
+
+            let done = false;
+            const finish = (value) => {
+                if (done) return;
+                done = true;
+                document.removeEventListener("keydown", onKey, true);
+                root.remove();
+                resolve(value);
+            };
+
+            const onKey = (ev) => {
+                if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    finish(false);
+                }
+            };
+
+            document.addEventListener("keydown", onKey, true);
+            okBtn?.addEventListener("click", () => finish(true));
+            cancelBtns.forEach((btn) => btn.addEventListener("click", () => finish(false)));
+
+            // Detached Windows-like dialog: draggable titlebar, no blocking browser alert.
+            let drag = null;
+            head?.addEventListener("pointerdown", (ev) => {
+                if (ev.target && ev.target.closest && ev.target.closest("button,input,textarea,select,a")) {
+                    return;
+                }
+
+                zCounter += 1;
+                root.style.zIndex = String(zCounter);
+
+                const rect = root.getBoundingClientRect();
+                root.style.left = `${rect.left}px`;
+                root.style.top = `${rect.top}px`;
+
+                drag = {
+                    pointerId: ev.pointerId,
+                    startX: ev.clientX,
+                    startY: ev.clientY,
+                    left: rect.left,
+                    top: rect.top
+                };
+
+                try { head.setPointerCapture(ev.pointerId); } catch (_) {}
+                ev.preventDefault();
+            });
+
+            head?.addEventListener("pointermove", (ev) => {
+                if (!drag || drag.pointerId !== ev.pointerId) return;
+
+                const maxLeft = Math.max(16, window.innerWidth - root.offsetWidth - 16);
+                const maxTop = Math.max(16, window.innerHeight - root.offsetHeight - 16);
+
+                const left = Math.min(maxLeft, Math.max(16, drag.left + ev.clientX - drag.startX));
+                const top = Math.min(maxTop, Math.max(16, drag.top + ev.clientY - drag.startY));
+
+                root.style.left = `${left}px`;
+                root.style.top = `${top}px`;
+            });
+
+            const stopDrag = (ev) => {
+                if (!drag || drag.pointerId !== ev.pointerId) return;
+                try { head.releasePointerCapture(ev.pointerId); } catch (_) {}
+                drag = null;
+            };
+
+            head?.addEventListener("pointerup", stopDrag);
+            head?.addEventListener("pointercancel", stopDrag);
+
+            window.setTimeout(() => okBtn?.focus(), 40);
+        });
+    }
+
+    function bytesEqual(a, b) {
+        if (!a || !b || a.length !== b.length) return false;
+        let diff = 0;
+        for (let i = 0; i < a.length; i += 1) {
+            diff |= a[i] ^ b[i];
+        }
+        return diff === 0;
+    }
+
+    function zeroBytes(bytes) {
+        if (bytes && typeof bytes.fill === "function") {
+            try { bytes.fill(0); } catch (_) {}
+        }
+    }
+
+    async function assertRecoveryKeyRoundtrip(helper, publicKeyB64, privateKeyB64) {
+        if (!helper ||
+            typeof helper.encapsulate768 !== "function" ||
+            typeof helper.decapsulate768 !== "function") {
+            throw new Error("ML-KEM helper does not support recovery key self-test");
+        }
+
+        const publicKeyBytes = b64ToBytes(publicKeyB64);
+        const privateKeyBytes = b64ToBytes(privateKeyB64);
+
+        if (publicKeyBytes.length !== 1184) {
+            throw new Error(`Unexpected ML-KEM-768 public key size: ${publicKeyBytes.length} bytes`);
+        }
+
+        if (privateKeyBytes.length !== 64) {
+            throw new Error(`Unexpected ML-KEM-768 compact private key size: ${privateKeyBytes.length} bytes`);
+        }
+
+        let encSecret = null;
+        let decSecret = null;
+
+        try {
+            const enc = await helper.encapsulate768({ publicKeyB64 });
+            encSecret = enc && enc.shared_secret_bytes;
+            decSecret = await helper.decapsulate768({
+                privateKeyB64,
+                ciphertextB64: enc.ciphertext_b64
+            });
+
+            if (!(encSecret instanceof Uint8Array) || !(decSecret instanceof Uint8Array)) {
+                throw new Error("ML-KEM recovery key self-test returned invalid shared secret buffers");
+            }
+
+            if (encSecret.length !== 32 || decSecret.length !== 32 || !bytesEqual(encSecret, decSecret)) {
+                throw new Error("ML-KEM recovery key self-test failed");
+            }
+        } finally {
+            // Security: wipe temporary shared secrets created only for the
+            // pre-save recovery key self-test.
+            zeroBytes(encSecret);
+            zeroBytes(decSecret);
+            zeroBytes(publicKeyBytes);
+            zeroBytes(privateKeyBytes);
+        }
+    }
+
+    async function generateRecoveryKey() {
+        const active = !!currentRecovery?.enabled && String(currentRecovery?.status || "") === "active";
+        if (active) {
+            const ok = await confirmRecoveryRotationDetached();
+            if (!ok) return;
+        }
+
+        const helper = window.PqShareMlKemV1;
+        if (!helper || typeof helper.keygen768 !== "function") {
+            toast("fail", "ML-KEM helper missing", "Reload the page and try again.");
+            return;
+        }
+
+        btnGenerate.disabled = true;
+        setPill("warn", "generating…");
+
+        try {
+            const kp = await helper.keygen768();
+            pendingPrivateKeyB64 = String(kp.private_key_b64 || "");
+            pendingPublicKeyB64 = String(kp.public_key_b64 || "");
+            pendingPublicKeySha256 = await sha256PublicKeyB64(pendingPublicKeyB64);
+            pendingCreatedAt = Date.now();
+
+            if (!pendingPrivateKeyB64 || !pendingPublicKeyB64 || pendingPublicKeySha256.length !== 64) {
+                clearPendingPrivateKey();
+                throw new Error("ML-KEM key generation returned invalid key material");
+            }
+
+            await assertRecoveryKeyRoundtrip(
+                helper,
+                pendingPublicKeyB64,
+                pendingPrivateKeyB64
+            );
+
+            openPrivateKeyWindow();
+            setPill(active ? "ok" : "warn", active ? "active" : "not configured");
+        } catch (err) {
+            clearPendingPrivateKey();
+            toast("fail", "Key generation failed", String(err?.message || err));
+            await refreshVaultRecovery().catch(() => {});
+        } finally {
+            btnGenerate.disabled = false;
+        }
+    }
+
+    function confirmRecoveryDiscardDetached() {
+        return new Promise((resolve) => {
+            document.getElementById("vaultRecoveryDiscardConfirmWindow")?.remove();
+
+            const root = document.createElement("div");
+            root.id = "vaultRecoveryDiscardConfirmWindow";
+            root.className = "vaultRecoveryDetached";
+            root.setAttribute("role", "dialog");
+            root.setAttribute("aria-modal", "false");
+            root.setAttribute("aria-labelledby", "vaultRecoveryDiscardConfirmTitle");
+            root.style.width = "min(560px, calc(100vw - 32px))";
+            root.style.left = "max(24px, calc(50vw - 280px))";
+            root.style.top = "128px";
+
+            root.innerHTML = `
+                <div class="vaultRecoveryDetachedHead">
+                    <div id="vaultRecoveryDiscardConfirmTitle" class="vaultRecoveryDetachedTitle">Discard generated private key?</div>
+                    <button class="pq-btn" type="button" data-action="cancel">×</button>
+                </div>
+                <div class="vaultRecoveryDetachedBody">
+                    <div class="vaultRecoveryWarning">
+                        This will close the one-time private key window without saving the matching public key to DNA-Nexus.
+                    </div>
+                    <div class="note">
+                        Use this only if you do not want to activate this generated recovery key.
+                    </div>
+                </div>
+                <div class="vaultRecoveryDetachedFoot">
+                    <span class="vaultRecoveryAck">The generated keypair will be forgotten by this browser view.</span>
+                    <div class="row">
+                        <button class="pq-btn" type="button" data-action="cancel">Cancel</button>
+                        <button class="pq-btn primary" type="button" data-action="ok">Discard key</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(root);
+
+            zCounter += 1;
+            root.style.zIndex = String(zCounter);
+
+            const head = root.querySelector(".vaultRecoveryDetachedHead");
+            const okBtn = root.querySelector('[data-action="ok"]');
+            const cancelBtns = root.querySelectorAll('[data-action="cancel"]');
+
+            let done = false;
+            const finish = (value) => {
+                if (done) return;
+                done = true;
+                document.removeEventListener("keydown", onKey, true);
+                root.remove();
+                resolve(value);
+            };
+
+            const onKey = (ev) => {
+                if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    finish(false);
+                }
+            };
+
+            document.addEventListener("keydown", onKey, true);
+            okBtn?.addEventListener("click", () => finish(true));
+            cancelBtns.forEach((btn) => btn.addEventListener("click", () => finish(false)));
+
+            // Detached Windows-like dialog: draggable titlebar, no native browser confirm.
+            let drag = null;
+            head?.addEventListener("pointerdown", (ev) => {
+                if (ev.target && ev.target.closest && ev.target.closest("button,input,textarea,select,a")) {
+                    return;
+                }
+
+                zCounter += 1;
+                root.style.zIndex = String(zCounter);
+
+                const rect = root.getBoundingClientRect();
+                root.style.left = `${rect.left}px`;
+                root.style.top = `${rect.top}px`;
+
+                drag = {
+                    pointerId: ev.pointerId,
+                    startX: ev.clientX,
+                    startY: ev.clientY,
+                    left: rect.left,
+                    top: rect.top
+                };
+
+                try { head.setPointerCapture(ev.pointerId); } catch (_) {}
+                ev.preventDefault();
+            });
+
+            head?.addEventListener("pointermove", (ev) => {
+                if (!drag || drag.pointerId !== ev.pointerId) return;
+
+                const maxLeft = Math.max(16, window.innerWidth - root.offsetWidth - 16);
+                const maxTop = Math.max(16, window.innerHeight - root.offsetHeight - 16);
+
+                const left = Math.min(maxLeft, Math.max(16, drag.left + ev.clientX - drag.startX));
+                const top = Math.min(maxTop, Math.max(16, drag.top + ev.clientY - drag.startY));
+
+                root.style.left = `${left}px`;
+                root.style.top = `${top}px`;
+            });
+
+            const stopDrag = (ev) => {
+                if (!drag || drag.pointerId !== ev.pointerId) return;
+                try { head.releasePointerCapture(ev.pointerId); } catch (_) {}
+                drag = null;
+            };
+
+            head?.addEventListener("pointerup", stopDrag);
+            head?.addEventListener("pointercancel", stopDrag);
+
+            window.setTimeout(() => okBtn?.focus(), 40);
+        });
+    }
+
+    async function discardPendingKey() {
+        if (!pendingPrivateKeyB64) {
+            closePrivateKeyWindowAfterClear();
+            return;
+        }
+
+        const ok = await confirmRecoveryDiscardDetached();
+        if (!ok) return;
+
+        closePrivateKeyWindowAfterClear();
+        toast("warn", "Discarded", "Generated recovery key was discarded and not saved.");
+    }
+
+    function initDrag() {
+        if (!win || !winHead) return;
+
+        let drag = null;
+
+        winHead.addEventListener("pointerdown", (ev) => {
+            if (ev.target && ev.target.closest && ev.target.closest("button,input,textarea,select,a")) {
+                return;
+            }
+
+            bringWindowToFront();
+
+            const rect = win.getBoundingClientRect();
+            win.style.left = `${rect.left}px`;
+            win.style.top = `${rect.top}px`;
+
+            drag = {
+                pointerId: ev.pointerId,
+                startX: ev.clientX,
+                startY: ev.clientY,
+                left: rect.left,
+                top: rect.top
+            };
+
+            try { winHead.setPointerCapture(ev.pointerId); } catch (_) {}
+            ev.preventDefault();
+        });
+
+        winHead.addEventListener("pointermove", (ev) => {
+            if (!drag || drag.pointerId !== ev.pointerId) return;
+
+            const maxLeft = Math.max(16, window.innerWidth - win.offsetWidth - 16);
+            const maxTop = Math.max(16, window.innerHeight - win.offsetHeight - 16);
+
+            const left = Math.min(maxLeft, Math.max(16, drag.left + ev.clientX - drag.startX));
+            const top = Math.min(maxTop, Math.max(16, drag.top + ev.clientY - drag.startY));
+
+            win.style.left = `${left}px`;
+            win.style.top = `${top}px`;
+        });
+
+        const stop = (ev) => {
+            if (!drag || drag.pointerId !== ev.pointerId) return;
+            try { winHead.releasePointerCapture(ev.pointerId); } catch (_) {}
+            drag = null;
+        };
+
+        winHead.addEventListener("pointerup", stop);
+        winHead.addEventListener("pointercancel", stop);
+    }
+
+    btnGenerate?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        generateRecoveryKey();
+    });
+
+    btnReload?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshVaultRecovery().catch((err) => {
+            setPill("fail", "error");
+            toast("fail", "Reload failed", String(err?.message || err));
+        });
+    });
+
+    btnWindowClose?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        requestWindowClose();
+    });
+
+    btnCopyPrivate?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        copyPrivateKey();
+    });
+
+    btnDownloadPrivate?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        downloadPrivateKeyFile();
+    });
+
+    btnDiscardPrivate?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        discardPendingKey().catch((err) => {
+            toast("fail", "Discard failed", String(err?.message || err));
+        });
+    });
+
+    ackEl?.addEventListener("change", () => {
+        if (btnStored) btnStored.disabled = !ackEl.checked;
+    });
+
+    btnStored?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        savePendingPublicKeyAndClose();
+    });
+
+    win?.addEventListener("pointerdown", () => bringWindowToFront());
+
+    initDrag();
+    refreshVaultRecovery().catch((err) => {
+        setPill("fail", "error");
+        console.error("[vault_recovery] refresh failed", err);
+    });
+})();
+
+
+
+
 // pqnas-admin-create-password-user-i18n-v1
 (() => {
     function t(key, fallback) {

@@ -19,14 +19,15 @@
     dropZone: document.getElementById("dropZone"),
     passphraseInput: document.getElementById("passphraseInput"),
     passphraseConfirmInput: document.getElementById("passphraseConfirmInput"),
-    recoveryPublicKeyInput: document.getElementById("recoveryPublicKeyInput"),
     encryptUploadBtn: document.getElementById("encryptUploadBtn"),
     clearBtn: document.getElementById("clearBtn"),
     encryptStatus: document.getElementById("encryptStatus"),
     queueList: document.getElementById("queueList"),
     decryptFileInput: document.getElementById("decryptFileInput"),
     decryptPassphraseInput: document.getElementById("decryptPassphraseInput"),
+    recoveryPrivateKeyInput: document.getElementById("recoveryPrivateKeyInput"),
     decryptBtn: document.getElementById("decryptBtn"),
+    organizationRecoverBtn: document.getElementById("organizationRecoverBtn"),
     decryptStatus: document.getElementById("decryptStatus"),
     downloadSlot: document.getElementById("downloadSlot")
   };
@@ -238,6 +239,7 @@
   function clearAdvancedImportSensitiveInputs({ clearFile = false, clearDownload = false } = {}) {
     if (el.decryptPassphraseInput) el.decryptPassphraseInput.value = "";
     if (clearFile && el.decryptFileInput) el.decryptFileInput.value = "";
+    if (clearFile && el.recoveryPrivateKeyInput) el.recoveryPrivateKeyInput.value = "";
     if (clearDownload && el.downloadSlot) {
       revokeLastDecryptObjectUrl();
       el.downloadSlot.replaceChildren();
@@ -314,6 +316,48 @@
       },
       wrap_iv_b64: bytesToB64(iv),
       wrapped_cek_b64: bytesToB64(wrapped)
+    };
+  }
+
+  function shortRecoveryKeyId(id) {
+    const s = String(id || "");
+    if (!s) return "";
+    if (s.length <= 24) return s;
+    return `${s.slice(0, 16)}…${s.slice(-8)}`;
+  }
+
+  async function loadOrganizationRecoveryPublicKey() {
+    let res;
+    let data = null;
+
+    try {
+      res = await fetch("/api/v4/vault/recovery-public-key", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include"
+      });
+      data = await res.json();
+    } catch {
+      // Security: fail closed. Do not silently create a Vault package without
+      // checking whether admin-managed organization recovery must be applied.
+      throw new Error("Could not check organization recovery settings");
+    }
+
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.message || data?.error || "Could not load organization recovery settings");
+    }
+
+    const enabled = !!data.enabled && data.status === "active";
+    const publicKeyB64 = String(data.public_key_b64 || "").trim();
+    const recoveryKeyId = String(data.recovery_key_id || "").trim();
+
+    if (!enabled || !publicKeyB64) {
+      return null;
+    }
+
+    return {
+      publicKeyB64,
+      recoveryKeyId
     };
   }
 
@@ -496,13 +540,24 @@
 
     const folder = normalizeFolderPath(el.vaultFolderInput.value);
     const passphrase = getPassphrasePair();
-    const recoveryPublicKey = el.recoveryPublicKeyInput.value.trim();
+
+    let organizationRecovery = null;
+    let recoveryPublicKey = "";
 
     el.encryptUploadBtn.disabled = true;
     try {
+      setText(el.encryptStatus, "Checking organization recovery…");
+
+      organizationRecovery = await loadOrganizationRecoveryPublicKey();
+      recoveryPublicKey = organizationRecovery?.publicKeyB64 || "";
+
+      const recoveryPrefix = organizationRecovery
+        ? `Organization recovery active (${shortRecoveryKeyId(organizationRecovery.recoveryKeyId)}).`
+        : "Organization recovery not configured.";
+
       for (let i = 0; i < state.files.length; i++) {
         const file = state.files[i];
-        setText(el.encryptStatus, `Encrypting ${i + 1}/${state.files.length}: ${file.name}`);
+        setText(el.encryptStatus, `${recoveryPrefix} Encrypting ${i + 1}/${state.files.length}: ${file.name}`);
 
         const pkg = await encryptFileToVaultPackage(file, passphrase, recoveryPublicKey);
         const targetName = `${safeFileName(file.name)}.dnavault.json`;
@@ -518,6 +573,155 @@
     }
 
     setText(el.encryptStatus, "Done. Files were encrypted before upload.");
+  }
+
+  async function ensureMlKemHelper() {
+    if (globalThis.PqShareMlKemV1?.decapsulate768) {
+      return globalThis.PqShareMlKemV1;
+    }
+
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/static/share_pq_mlkem.js?v=20260706-vault-org-recovery-ui-1";
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("Could not load ML-KEM recovery helper"));
+      document.head.appendChild(script);
+    });
+
+    if (!globalThis.PqShareMlKemV1?.decapsulate768) {
+      throw new Error("ML-KEM recovery helper is not available");
+    }
+
+    return globalThis.PqShareMlKemV1;
+  }
+
+  async function readOrganizationRecoveryPrivateKey(file) {
+    if (!file) {
+      throw new Error("Select the organization recovery private key JSON.");
+    }
+
+    const text = await file.text();
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(text);
+    } catch (_) {
+      parsed = null;
+    }
+
+    const key = parsed?.private_key_b64 || text.trim();
+
+    if (!key) {
+      throw new Error("Recovery private key is empty.");
+    }
+
+    return String(key).trim();
+  }
+
+  async function unwrapCekWithOrganizationRecovery(pkg, privateKeyB64) {
+    const aadBytes = b64ToBytes(pkg.aad_b64);
+    const orgWrap = Array.isArray(pkg.wrapped_keys)
+      ? pkg.wrapped_keys.find((k) => k && k.purpose === "organization_recovery")
+      : null;
+
+    if (!orgWrap) {
+      throw new Error("No organization recovery wrapped key found in Vault package.");
+    }
+
+    const mlkem = await ensureMlKemHelper();
+
+    const ciphertextB64 = String(orgWrap.kem_ciphertext_b64 || "").trim();
+    const hkdfSaltB64 = String(orgWrap.hkdf_salt_b64 || "").trim();
+    const hkdfInfoB64 = String(orgWrap.hkdf_info_b64 || "").trim();
+    const wrapIvB64 = String(orgWrap.wrap_iv_b64 || "").trim();
+    const wrappedCekB64 = String(orgWrap.wrapped_cek_b64 || "").trim();
+
+    if (!ciphertextB64) throw new Error("Organization recovery wrap is missing ML-KEM ciphertext.");
+    if (!hkdfSaltB64) throw new Error("Organization recovery wrap is missing HKDF salt.");
+    if (!wrapIvB64) throw new Error("Organization recovery wrap is missing wrap IV.");
+    if (!wrappedCekB64) throw new Error("Organization recovery wrap is missing wrapped file key.");
+
+    let sharedSecret = null;
+
+    try {
+      sharedSecret = await mlkem.decapsulate768({
+        privateKeyB64,
+        ciphertextB64
+      });
+
+      const hkdfKey = await crypto.subtle.importKey(
+        "raw",
+        sharedSecret,
+        "HKDF",
+        false,
+        ["deriveKey"]
+      );
+
+      const wrapKey = await crypto.subtle.deriveKey(
+        {
+          name: "HKDF",
+          hash: "SHA-256",
+          salt: b64ToBytes(hkdfSaltB64),
+          info: hkdfInfoB64
+            ? b64ToBytes(hkdfInfoB64)
+            : utf8ToBytes("pqnas-vault-mlkem768-recovery-wrap-v1")
+        },
+        hkdfKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+      );
+
+      const rawCek = new Uint8Array(await crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: b64ToBytes(wrapIvB64),
+          additionalData: aadBytes
+        },
+        wrapKey,
+        b64ToBytes(wrappedCekB64)
+      ));
+
+      if (rawCek.length !== 32) {
+        zeroBytes(rawCek);
+        throw new Error("Organization recovery returned an invalid file key.");
+      }
+
+      return rawCek;
+    } finally {
+      // Security: wipe the ML-KEM shared secret after deriving the CEK wrap key.
+      zeroBytes(sharedSecret);
+    }
+  }
+
+  async function decryptVaultPackageWithCek(pkg, rawCek) {
+    if (!pkg || pkg.app !== VAULT_APP_ID || pkg.mode !== "aes256gcm_file_v1") {
+      throw new Error("Not a supported DNA-Nexus Vault package.");
+    }
+
+    const cek = await crypto.subtle.importKey(
+      "raw",
+      rawCek,
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"]
+    );
+
+    const plaintext = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: b64ToBytes(pkg.payload?.iv_b64),
+        additionalData: b64ToBytes(pkg.aad_b64)
+      },
+      cek,
+      b64ToBytes(pkg.payload?.ciphertext_b64)
+    );
+
+    return {
+      bytes: new Uint8Array(plaintext),
+      name: safeFileName(pkg.original?.name || "vault-file"),
+      type: pkg.original?.type || "application/octet-stream"
+    };
   }
 
   async function unwrapCekWithUserPassphrase(pkg, passphrase) {
@@ -543,36 +747,41 @@
   }
 
   async function decryptVaultPackage(pkg, passphrase) {
-    if (!pkg || pkg.app !== VAULT_APP_ID || pkg.mode !== "aes256gcm_file_v1") {
-      throw new Error("Not a supported DNA-Nexus Vault package.");
-    }
-
     const rawCek = await unwrapCekWithUserPassphrase(pkg, passphrase);
-    const cek = await crypto.subtle.importKey(
-      "raw",
-      rawCek,
-      { name: "AES-GCM" },
-      false,
-      ["decrypt"]
-    );
 
-    zeroBytes(rawCek);
+    try {
+      return await decryptVaultPackageWithCek(pkg, rawCek);
+    } finally {
+      // Security: wipe the passphrase-unwrapped CEK after decrypting the payload.
+      zeroBytes(rawCek);
+    }
+  }
 
-    const plaintext = await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: b64ToBytes(pkg.payload?.iv_b64),
-        additionalData: b64ToBytes(pkg.aad_b64)
-      },
-      cek,
-      b64ToBytes(pkg.payload?.ciphertext_b64)
-    );
+  async function decryptVaultPackageWithOrganizationRecovery(pkg, privateKeyB64) {
+    const rawCek = await unwrapCekWithOrganizationRecovery(pkg, privateKeyB64);
 
-    return {
-      bytes: new Uint8Array(plaintext),
-      name: safeFileName(pkg.original?.name || "vault-file"),
-      type: pkg.original?.type || "application/octet-stream"
-    };
+    try {
+      return await decryptVaultPackageWithCek(pkg, rawCek);
+    } finally {
+      // Security: wipe the organization-recovered CEK after decrypting the payload.
+      zeroBytes(rawCek);
+    }
+  }
+
+  function publishRecoveredDownload(decrypted, labelPrefix = "Download decrypted file") {
+    const blob = new Blob([decrypted.bytes], { type: decrypted.type });
+    zeroBytes(decrypted.bytes);
+
+    revokeLastDecryptObjectUrl();
+    const url = URL.createObjectURL(blob);
+    lastDecryptObjectUrl = url;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = decrypted.name;
+    link.textContent = `${labelPrefix}: ${decrypted.name}`;
+
+    el.downloadSlot.append(link);
   }
 
   async function decryptSelectedVaultFile() {
@@ -592,23 +801,37 @@
       setText(el.decryptStatus, "Decrypting locally…");
       const decrypted = await decryptVaultPackage(pkg, passphrase);
 
-      const blob = new Blob([decrypted.bytes], { type: decrypted.type });
-      zeroBytes(decrypted.bytes);
-
-      revokeLastDecryptObjectUrl();
-      const url = URL.createObjectURL(blob);
-      lastDecryptObjectUrl = url;
-
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = decrypted.name;
-      link.textContent = `Download decrypted file: ${decrypted.name}`;
-
-      el.downloadSlot.append(link);
+      publishRecoveredDownload(decrypted, "Download decrypted file");
       setText(el.decryptStatus, "Decryption complete. The server was not involved.");
     } finally {
       clearAdvancedImportSensitiveInputs({ clearFile: true });
       el.decryptBtn.disabled = false;
+    }
+  }
+
+  async function recoverSelectedVaultFileWithOrganizationKey() {
+    const file = el.decryptFileInput.files && el.decryptFileInput.files[0];
+    if (!file) throw new Error("Select a Vault package first.");
+
+    const keyFile = el.recoveryPrivateKeyInput?.files && el.recoveryPrivateKeyInput.files[0];
+    if (!keyFile) throw new Error("Select the organization recovery private key JSON.");
+
+    el.organizationRecoverBtn.disabled = true;
+    el.downloadSlot.replaceChildren();
+
+    try {
+      setText(el.decryptStatus, "Reading encrypted package and recovery key…");
+      const pkg = JSON.parse(await file.text());
+      const privateKeyB64 = await readOrganizationRecoveryPrivateKey(keyFile);
+
+      setText(el.decryptStatus, "Recovering locally with organization private key…");
+      const decrypted = await decryptVaultPackageWithOrganizationRecovery(pkg, privateKeyB64);
+
+      publishRecoveredDownload(decrypted, "Download recovered file");
+      setText(el.decryptStatus, "Organization recovery complete. The server was not involved.");
+    } finally {
+      clearAdvancedImportSensitiveInputs({ clearFile: true });
+      el.organizationRecoverBtn.disabled = false;
     }
   }
 
@@ -654,6 +877,15 @@
       } catch (err) {
         clearAdvancedImportSensitiveInputs();
         setText(el.decryptStatus, err && err.message ? err.message : "Decrypt failed.");
+      }
+    });
+
+    el.organizationRecoverBtn?.addEventListener("click", async () => {
+      try {
+        await recoverSelectedVaultFileWithOrganizationKey();
+      } catch (err) {
+        clearAdvancedImportSensitiveInputs();
+        setText(el.decryptStatus, err && err.message ? err.message : "Organization recovery failed.");
       }
     });
   }

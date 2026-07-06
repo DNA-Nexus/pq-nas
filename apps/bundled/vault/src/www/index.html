@@ -59,10 +59,12 @@
         </label>
       </div>
 
-      <label class="vault-field">
-        <span>Organization recovery public key</span>
-        <textarea id="recoveryPublicKeyInput" class="pq-textarea" rows="4" spellcheck="false" placeholder="Optional ML-KEM-768 public key in base64"></textarea>
-      </label>
+      <div class="vault-field">
+        <span>Organization recovery</span>
+        <p class="vault-muted">
+          When organization recovery is active, Vault automatically wraps new uploads for the admin-managed recovery public key.
+        </p>
+      </div>
 
       <div class="vault-actions">
         <button id="encryptUploadBtn" class="pq-btn primary" type="button">Encrypt and upload</button>
@@ -77,7 +79,7 @@
       <div class="vault-panel-head">
         <div>
           <h2 id="decryptTitle">Local decrypt test</h2>
-          <p>Open a downloaded .dnavault.json file and decrypt it locally with your passphrase.</p>
+          <p>Open a downloaded .dnavault.json file and decrypt it locally with your passphrase or organization recovery key.</p>
         </div>
       </div>
 
@@ -91,8 +93,14 @@
         <input id="decryptPassphraseInput" class="pq-input" type="password" autocomplete="current-password">
       </label>
 
+      <label class="vault-field">
+        <span>Organization recovery private key JSON</span>
+        <input id="recoveryPrivateKeyInput" class="pq-input" type="file" accept=".json,application/json">
+      </label>
+
       <div class="vault-actions">
         <button id="decryptBtn" class="pq-btn primary" type="button">Decrypt locally</button>
+        <button id="organizationRecoverBtn" class="pq-btn secondary" type="button">Recover with organization private key</button>
       </div>
 
       <div id="decryptStatus" class="vault-status" aria-live="polite">No Vault file selected.</div>
@@ -105,13 +113,13 @@
     <ul>
       <li>File content is encrypted with AES-256-GCM using a random file key.</li>
       <li>The file key is wrapped for the user passphrase.</li>
-      <li>If a company recovery public key is provided, the file key is also wrapped for organization recovery using ML-KEM-768.</li>
+      <li>If organization recovery is active in Admin Settings, the file key is also wrapped automatically for organization recovery using ML-KEM-768.</li>
       <li>The server stores encrypted Vault packages and cannot generate thumbnails or content previews for them.</li>
     </ul>
   </section>
 </main>
 
-<script src="./app.js?v=20260705-vault-mvp-1"></script>
+<script src="./app.js?v=20260706-vault-org-recovery-ui-1"></script>
   <script src="./vault_layout.js"></script>
 </body>
 </html>
