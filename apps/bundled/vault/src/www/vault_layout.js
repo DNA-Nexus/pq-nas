@@ -901,9 +901,7 @@
     const refreshBtn = makeButton("Refresh");
     const uploadBtn = makeButton("Encrypted upload", "vaultFmBtn vaultFmPrimary");
     const decryptBtn = makeButton("Advanced import");
-    const keysBtn = makeButton("Keys & recovery");
-
-    actions.append(refreshBtn, uploadBtn, decryptBtn, keysBtn);
+    actions.append(refreshBtn, uploadBtn, decryptBtn);
     topbar.append(brand, pathBar, actions);
 
     const main = document.createElement("main");
@@ -935,7 +933,7 @@
       <p>Files in this view are encrypted locally before upload. Server-side previews and media playback stay disabled for Vault packages.</p>
       <span class="vaultFmPill">AES-256-GCM package</span>
       <p></p>
-      <span class="vaultFmPill">Optional ML-KEM recovery wrap</span>
+      <span class="vaultFmPill">Organization recovery is admin-managed</span>
     `;
 
     main.append(fileArea, side);
@@ -1024,33 +1022,379 @@
       }
     }
 
-    async function createVaultFolder() {
-      const path = normalizeDisplayPath(pathInput.value);
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function ensureVaultActionModalStyles() {
+      if (document.getElementById("vaultActionModalStyles")) return;
+
+      const style = document.createElement("style");
+      style.id = "vaultActionModalStyles";
+      style.textContent = `
+        .vaultActionModalBackdrop{
+          position:fixed;
+          inset:0;
+          z-index:99990;
+          background:rgba(15,23,42,0.38);
+          display:flex;
+          align-items:flex-start;
+          justify-content:center;
+          padding:96px 24px 24px;
+        }
+        .vaultActionModal{
+          width:min(520px, calc(100vw - 32px));
+          border:1px solid var(--border, #b8c2cf);
+          border-radius:18px;
+          background:#f8fbff;
+          color:var(--text, #0f172a);
+          box-shadow:0 28px 90px rgba(0,0,0,0.28);
+          overflow:hidden;
+        }
+        .vaultActionModalHead{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          padding:14px 16px;
+          background:#eef4ff;
+          border-bottom:1px solid var(--border, #c7d2e2);
+          cursor:move;
+          user-select:none;
+        }
+        .vaultActionModalTitle{
+          font-weight:900;
+          letter-spacing:.01em;
+        }
+        .vaultActionModalBody{
+          padding:16px;
+          background:inherit;
+        }
+        .vaultActionModalFoot{
+          display:flex;
+          align-items:center;
+          justify-content:flex-end;
+          gap:10px;
+          padding:14px 16px;
+          background:#eef4ff;
+          border-top:1px solid var(--border, #c7d2e2);
+        }
+        .vaultActionModalInput{
+          width:100%;
+          box-sizing:border-box;
+          margin-top:10px;
+          padding:12px 13px;
+          border:1px solid var(--border, #b8c2cf);
+          border-radius:12px;
+          background:#fff;
+          color:inherit;
+          font:inherit;
+          outline:none;
+        }
+        .vaultActionModalInput:focus{
+          border-color:#60a5fa;
+          box-shadow:0 0 0 3px rgba(96,165,250,.24);
+        }
+        .vaultActionWarning{
+          padding:12px 13px;
+          border:1px solid rgba(245,158,11,.52);
+          border-radius:12px;
+          background:rgba(245,158,11,.12);
+          color:#92400e;
+          line-height:1.45;
+        }
+        .vaultActionNote{
+          margin-top:10px;
+          color:var(--muted, #64748b);
+          line-height:1.45;
+        }
+        html[data-theme="dark"] .vaultActionModal{
+          background:#07111f;
+        }
+        html[data-theme="dark"] .vaultActionModalHead,
+        html[data-theme="dark"] .vaultActionModalFoot{
+          background:#0b1728;
+        }
+        html[data-theme="dark"] .vaultActionModalInput{
+          background:#0f1b2d;
+        }
+        html[data-theme="cpunk_orange"] .vaultActionModal{
+          background:#150b05;
+        }
+        html[data-theme="cpunk_orange"] .vaultActionModalHead,
+        html[data-theme="cpunk_orange"] .vaultActionModalFoot{
+          background:#1f1008;
+        }
+        html[data-theme="cpunk_orange"] .vaultActionModalInput{
+          background:#211309;
+        }
+        html[data-theme="win_classic"] .vaultActionModal{
+          background:#f0f0f0;
+          border-radius:8px;
+        }
+        html[data-theme="win_classic"] .vaultActionModalHead,
+        html[data-theme="win_classic"] .vaultActionModalFoot{
+          background:#e6e6e6;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    function showVaultActionModal({ title, bodyHtml, input, primaryLabel, danger, onSubmit }) {
+      ensureVaultActionModalStyles();
+
+      document.getElementById("vaultActionModalBackdrop")?.remove();
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "vaultActionModalBackdrop";
+      backdrop.className = "vaultActionModalBackdrop";
+
+      const dialog = document.createElement("div");
+      dialog.className = "vaultActionModal";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+
+      const primaryClass = danger ? "vaultFmBtn vaultFmPrimary" : "vaultFmBtn vaultFmPrimary";
+
+      dialog.innerHTML = `
+        <div class="vaultActionModalHead">
+          <div class="vaultActionModalTitle"></div>
+          <button class="vaultFmBtn" type="button" data-action="cancel">×</button>
+        </div>
+        <div class="vaultActionModalBody">
+          <div data-slot="body"></div>
+          ${input ? '<input class="vaultActionModalInput" type="text" autocomplete="off" spellcheck="false">' : ''}
+        </div>
+        <div class="vaultActionModalFoot">
+          <button class="vaultFmBtn" type="button" data-action="cancel">Cancel</button>
+          <button class="${primaryClass}" type="button" data-action="primary"></button>
+        </div>
+      `;
+
+      backdrop.appendChild(dialog);
+      document.body.appendChild(backdrop);
+
+      const titleEl = dialog.querySelector(".vaultActionModalTitle");
+      const bodyEl = dialog.querySelector('[data-slot="body"]');
+      const inputEl = dialog.querySelector(".vaultActionModalInput");
+      const primaryBtn = dialog.querySelector('[data-action="primary"]');
+      const cancelBtns = dialog.querySelectorAll('[data-action="cancel"]');
+      const head = dialog.querySelector(".vaultActionModalHead");
+
+      titleEl.textContent = title || "";
+      bodyEl.innerHTML = bodyHtml || "";
+      primaryBtn.textContent = primaryLabel || "OK";
+
+      let drag = null;
+
+      const close = () => {
+        document.removeEventListener("keydown", onKey, true);
+        backdrop.remove();
+      };
+
+      const onKey = (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          close();
+        }
+        if (ev.key === "Enter" && inputEl && document.activeElement === inputEl) {
+          ev.preventDefault();
+          primaryBtn.click();
+        }
+      };
+
+      document.addEventListener("keydown", onKey, true);
+
+      cancelBtns.forEach((btn) => btn.addEventListener("click", close));
+      backdrop.addEventListener("click", (ev) => {
+        if (ev.target === backdrop) close();
+      });
+
+      primaryBtn.addEventListener("click", async () => {
+        try {
+          primaryBtn.disabled = true;
+          const value = inputEl ? inputEl.value : "";
+          await onSubmit(value);
+          close();
+        } catch (err) {
+          primaryBtn.disabled = false;
+          status.textContent = err && err.message ? err.message : String(err || "Action failed");
+        }
+      });
+
+      head.addEventListener("pointerdown", (ev) => {
+        if (ev.target && ev.target.closest && ev.target.closest("button,input,textarea,select,a")) return;
+
+        const rect = dialog.getBoundingClientRect();
+        drag = {
+          pointerId: ev.pointerId,
+          startX: ev.clientX,
+          startY: ev.clientY,
+          left: rect.left,
+          top: rect.top
+        };
+
+        dialog.style.position = "fixed";
+        dialog.style.left = `${rect.left}px`;
+        dialog.style.top = `${rect.top}px`;
+        dialog.style.margin = "0";
+
+        try { head.setPointerCapture(ev.pointerId); } catch (_) {}
+        ev.preventDefault();
+      });
+
+      head.addEventListener("pointermove", (ev) => {
+        if (!drag || drag.pointerId !== ev.pointerId) return;
+
+        const maxLeft = Math.max(16, window.innerWidth - dialog.offsetWidth - 16);
+        const maxTop = Math.max(16, window.innerHeight - dialog.offsetHeight - 16);
+
+        const left = Math.min(maxLeft, Math.max(16, drag.left + ev.clientX - drag.startX));
+        const top = Math.min(maxTop, Math.max(16, drag.top + ev.clientY - drag.startY));
+
+        dialog.style.left = `${left}px`;
+        dialog.style.top = `${top}px`;
+      });
+
+      const stopDrag = (ev) => {
+        if (!drag || drag.pointerId !== ev.pointerId) return;
+        try { head.releasePointerCapture(ev.pointerId); } catch (_) {}
+        drag = null;
+      };
+
+      head.addEventListener("pointerup", stopDrag);
+      head.addEventListener("pointercancel", stopDrag);
+
+      window.setTimeout(() => {
+        if (inputEl) inputEl.focus();
+        else primaryBtn.focus();
+      }, 40);
+    }
+
+    function cleanFolderName(name) {
+      const s = String(name || "").trim();
+
+      if (!s) throw new Error("Folder name is required.");
+      if (s === "." || s === "..") throw new Error("Folder name cannot be . or ..");
+      if (s.includes("/") || s.includes("\\")) throw new Error("Folder name cannot contain slashes.");
+      if (s.length > 120) throw new Error("Folder name is too long.");
+
+      return s;
+    }
+
+    function childDisplayPath(parentPath, childName) {
+      const parent = normalizeDisplayPath(parentPath || DEFAULT_PATH);
+      const child = cleanFolderName(childName);
+      if (parent === "/" || parent === "") return `/${child}`;
+      return `${parent.replace(/\/+$/, "")}/${child}`;
+    }
+
+    async function createVaultFolderAt(displayPath) {
+      const path = normalizeDisplayPath(displayPath);
       const apiPath = apiPathFromDisplayPath(path);
 
       if (!apiPath) {
-        status.textContent = "Cannot create root as a Vault folder.";
-        return;
+        throw new Error("Cannot create root as a Vault folder.");
       }
 
       status.textContent = `Creating ${path}...`;
 
-      try {
-        const res = await fetch(`/api/v4/files/mkdir?path=${encodeURIComponent(apiPath)}`, {
-          method: "POST",
-          credentials: "include",
-          cache: "no-store",
-          headers: { "Accept": "application/json" }
-        });
+      const res = await fetch(`/api/v4/files/mkdir?path=${encodeURIComponent(apiPath)}`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
 
-        const body = await res.text().catch(() => "");
+      const body = await res.text().catch(() => "");
 
-        if (!res.ok && res.status !== 409) {
-          throw new Error(body || `HTTP ${res.status}`);
+      if (!res.ok && res.status !== 409) {
+        throw new Error(body || `Create folder failed with HTTP ${res.status}`);
+      }
+
+      status.textContent = `${path} is ready.`;
+      await refresh();
+    }
+
+    function showCreateFolderModal() {
+      const currentPath = normalizeDisplayPath(pathInput.value);
+
+      showVaultActionModal({
+        title: "Create folder",
+        input: true,
+        primaryLabel: "Create folder",
+        bodyHtml: `
+          <div class="vaultActionNote">
+            Create a new folder inside <strong>${escapeHtml(inputPathFromDisplayPath(currentPath))}</strong>.
+          </div>
+        `,
+        onSubmit: async (name) => {
+          const target = childDisplayPath(currentPath, name);
+          await createVaultFolderAt(target);
         }
+      });
+    }
 
-        status.textContent = `${path} is ready.`;
-        await refresh();
+    async function deleteVaultFile(entry) {
+      if (!entry || entry.isDir) {
+        throw new Error("Only Vault files can be deleted from this menu.");
+      }
+
+      const displayPath = entry.serverPath || entry.path;
+      const apiPath = apiPathFromDisplayPath(displayPath);
+
+      if (!apiPath) {
+        throw new Error("File path is empty.");
+      }
+
+      status.textContent = `Deleting ${entry.name}...`;
+
+      const res = await fetch(`/api/v4/files/delete?path=${encodeURIComponent(apiPath)}`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+
+      const body = await res.text().catch(() => "");
+
+      if (!res.ok) {
+        throw new Error(body || `Delete failed with HTTP ${res.status}`);
+      }
+
+      status.textContent = `${entry.name} deleted.`;
+      await refresh();
+    }
+
+    function showDeleteFileModal(entry) {
+      showVaultActionModal({
+        title: "Delete Vault file?",
+        primaryLabel: "Delete",
+        danger: true,
+        bodyHtml: `
+          <div class="vaultActionWarning">
+            Delete <strong>${escapeHtml(entry.name || "this file")}</strong> from Vault?
+          </div>
+          <div class="vaultActionNote">
+            This removes the encrypted Vault package from the server. It does not decrypt or inspect the file.
+          </div>
+        `,
+        onSubmit: async () => {
+          // Security: delete only the encrypted package selected by the user.
+          // No server-side decrypt/preview path is involved.
+          await deleteVaultFile(entry);
+        }
+      });
+    }
+
+    async function createVaultFolder() {
+      try {
+        await createVaultFolderAt(pathInput.value);
       } catch (err) {
         status.textContent = `Create folder failed: ${err && err.message ? err.message : err}`;
       }
@@ -1176,6 +1520,15 @@
           window.location.href = `/api/v4/files/get?path=${encodeURIComponent(apiPathFromDisplayPath(entry.serverPath || entry.path))}`;
         });
         menu.appendChild(downloadEncrypted);
+
+        const deleteFile = document.createElement("button");
+        deleteFile.type = "button";
+        deleteFile.textContent = "Delete";
+        deleteFile.addEventListener("click", () => {
+          hideContextMenu();
+          showDeleteFileModal(entry);
+        });
+        menu.appendChild(deleteFile);
       }
 
       const rect = menu.getBoundingClientRect();
@@ -1202,6 +1555,10 @@
         });
         menu.appendChild(btn);
       }
+
+      addMenuButton("Create folder", () => {
+        showCreateFolderModal();
+      });
 
       addMenuButton("Upload encrypted file", () => {
         syncVaultFolderInput(pathInput.value);
@@ -1265,10 +1622,6 @@
 
     decryptBtn.addEventListener("click", () => {
       openDialog(dialogs.decryptDialog, "#decryptFileInput");
-    });
-
-    keysBtn.addEventListener("click", () => {
-      openDialog(dialogs.recoveryDialog, "#recoveryPublicKeyInput");
     });
 
     refreshBtn.addEventListener("click", () => refresh().catch(() => {}));

@@ -519,6 +519,131 @@
         }
 
 
+        .vaultRecoveryDetached{
+            position:fixed;
+            z-index:7200;
+            left:max(24px, calc(50vw - 340px));
+            top:96px;
+            width:min(760px, calc(100vw - 32px));
+            max-height:calc(100dvh - 48px);
+            display:flex;
+            flex-direction:column;
+            border:1px solid rgba(var(--fg-rgb),0.24);
+            border-radius:18px;
+            background:var(--panel);
+            box-shadow:0 28px 110px rgba(0,0,0,0.58);
+            overflow:hidden;
+        }
+
+        .vaultRecoveryDetached.hidden{
+            display:none;
+        }
+
+        .vaultRecoveryDetachedHead{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(var(--fg-rgb),0.14);
+            background:linear-gradient(180deg, rgba(var(--fg-rgb),0.08), rgba(var(--fg-rgb),0.02));
+            cursor:move;
+            user-select:none;
+        }
+
+        .vaultRecoveryDetachedTitle{
+            font-weight:950;
+            letter-spacing:0.02em;
+        }
+
+        .vaultRecoveryDetachedBody{
+            padding:14px;
+            overflow:auto;
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+        }
+
+        .vaultRecoverySecret{
+            width:100%;
+            min-height:170px;
+            resize:vertical;
+            font-family:var(--mono);
+            font-size:12px;
+            line-height:1.45;
+        }
+
+        .vaultRecoveryWarning{
+            border:1px solid rgba(var(--warn-rgb),0.38);
+            background:rgba(var(--warn-rgb),0.10);
+            color:rgba(var(--warn-rgb),0.96);
+            border-radius:14px;
+            padding:10px 12px;
+            font-size:12px;
+            line-height:1.5;
+        }
+
+        .vaultRecoveryDetachedFoot{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            padding:12px 14px;
+            border-top:1px solid rgba(var(--fg-rgb),0.12);
+            background:rgba(0,0,0,0.16);
+        }
+
+        .vaultRecoveryAck{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            color:var(--fg-dim);
+            font-size:12px;
+        }
+
+        html[data-theme="dark"] .vaultRecoveryDetached{
+            background:#07111f;
+        }
+
+        html[data-theme="cpunk_orange"] .vaultRecoveryDetached{
+            background:#150b05;
+        }
+
+        html[data-theme="bright"] .vaultRecoveryDetached{
+            background:#f7faff;
+            box-shadow:0 24px 80px rgba(0,0,0,0.24);
+        }
+
+        html[data-theme="win_classic"] .vaultRecoveryDetached{
+            background:#f0f0f0;
+            box-shadow:0 24px 80px rgba(0,0,0,0.24);
+        }
+
+        .vaultRecoveryDetachedBody{
+            background:inherit;
+        }
+
+        html[data-theme="dark"] .vaultRecoveryDetachedHead,
+        html[data-theme="dark"] .vaultRecoveryDetachedFoot{
+            background:#0b1728;
+        }
+
+        html[data-theme="cpunk_orange"] .vaultRecoveryDetachedHead,
+        html[data-theme="cpunk_orange"] .vaultRecoveryDetachedFoot{
+            background:#1f1008;
+        }
+
+        html[data-theme="bright"] .vaultRecoveryDetachedHead,
+        html[data-theme="bright"] .vaultRecoveryDetachedFoot{
+            background:#eef4ff;
+        }
+
+        html[data-theme="win_classic"] .vaultRecoveryDetachedHead,
+        html[data-theme="win_classic"] .vaultRecoveryDetachedFoot{
+            background:#e6e6e6;
+        }
+
         .modalBackdrop{
             position: fixed;
             inset: 0;
@@ -1606,6 +1731,35 @@
                 </div>
             </div>
 
+            <div class="card accordion" data-acc="vault-recovery">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
+                    <div class="h"><span>Vault organization recovery</span></div>
+                    <div class="row">
+                        <span class="pill warn" id="vaultRecoveryPill"><span class="k">Recovery:</span> <span class="v">—</span></span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="row">
+                        <span class="pill info"><span class="k">Recovery key ID:</span> <span class="v mono" id="vaultRecoveryKeyId">—</span></span>
+                        <span class="pill info"><span class="k">Created:</span> <span class="v" id="vaultRecoveryCreated">—</span></span>
+                    </div>
+
+                    <div class="row">
+                        <button id="btnVaultRecoveryGenerate" class="pq-btn primary" type="button"><span>Generate organization recovery key</span></button>
+                        <button id="btnVaultRecoveryReload" class="pq-btn" type="button"><span>Reload recovery status</span></button>
+                    </div>
+
+                    <div class="note">
+                        The recovery private key is generated in this browser and shown only once. DNA-Nexus stores only the organization recovery public key and recovery key ID.
+                    </div>
+                    <div class="note">
+                        If the private key is lost, Vault files encrypted for that recovery key cannot be recovered without the user passphrase. If the private key is stolen, encrypted Vault packages containing organization recovery may be recoverable by the attacker.
+                    </div>
+                </div>
+            </div>
+
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.theme.title">UI Theme</span></div>
@@ -1631,6 +1785,43 @@
                     <div class="note">
                         <span data-i18n="admin.theme.desc">Theme is saved apply it instantly.</span>
                     </div>
+                </div>
+            </div>
+
+            <div id="vaultRecoveryDetachedWindow" class="vaultRecoveryDetached hidden" role="dialog" aria-modal="false" aria-labelledby="vaultRecoveryWindowTitle">
+                <div id="vaultRecoveryWindowHead" class="vaultRecoveryDetachedHead">
+                    <div id="vaultRecoveryWindowTitle" class="vaultRecoveryDetachedTitle">Organization recovery private key</div>
+                    <button id="btnVaultRecoveryWindowClose" class="pq-btn" type="button">×</button>
+                </div>
+
+                <div class="vaultRecoveryDetachedBody">
+                    <div class="vaultRecoveryWarning">
+                        Copy or download this private recovery key now. It will not be shown again after this window is closed and DNA-Nexus will not store it.
+                    </div>
+
+                    <div class="note">
+                        Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it.
+                    </div>
+
+                    <textarea id="vaultRecoveryPrivateKey" class="pq-textarea vaultRecoverySecret" readonly spellcheck="false" aria-label="Organization recovery private key"></textarea>
+
+                    <div class="row">
+                        <button id="btnVaultRecoveryCopyPrivate" class="pq-btn" type="button">Copy private key</button>
+                        <button id="btnVaultRecoveryDownloadPrivate" class="pq-btn" type="button">Download recovery key file</button>
+                        <button id="btnVaultRecoveryDiscardPrivate" class="pq-btn" type="button">Discard without saving</button>
+                    </div>
+
+                    <div class="note">
+                        Store this in a company password manager, offline USB storage, or a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
+                    </div>
+                </div>
+
+                <div class="vaultRecoveryDetachedFoot">
+                    <label class="vaultRecoveryAck">
+                        <input id="vaultRecoveryAck" type="checkbox">
+                        <span>I have stored this private key safely.</span>
+                    </label>
+                    <button id="btnVaultRecoveryStored" class="pq-btn primary" type="button" disabled>Save public key and close</button>
                 </div>
             </div>
 
@@ -1726,7 +1917,8 @@
 </script>
 
 <script src="/static/admin_badges.js"></script>
-<script src="/static/admin_settings.js?v=20260622-notifications-backend-1"></script>
+<script src="/static/share_pq_mlkem.js?v=20260706-vault-admin-recovery-1"></script>
+<script src="/static/admin_settings.js?v=20260706-vault-admin-recovery-1"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
