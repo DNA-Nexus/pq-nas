@@ -793,7 +793,7 @@
       <div class="vault-panel-head">
         <div>
           <h2>Keys & recovery</h2>
-          <p>Configure the optional organization recovery recipient for future encrypted uploads.</p>
+          <p>Configure the optional Master recovery recipient for future encrypted uploads.</p>
         </div>
       </div>
       <div class="vaultRecoveryBody"></div>
@@ -804,7 +804,7 @@
     if (recoveryField) {
       const info = document.createElement("p");
       info.className = "vaultDetachedHelp";
-      info.textContent = "When this field is set, each new Vault package also wraps the file key for the organization recovery public key.";
+      info.textContent = "When this field is set, each new Vault package also wraps the file key for the Master recovery public key.";
       body.append(info, recoveryField);
     }
 
@@ -898,10 +898,54 @@
     const actions = document.createElement("div");
     actions.className = "vaultFmActions";
 
+    const VIEW_MODE_STORAGE_KEY = "pqnas.vault.viewMode";
+    const SORT_KEY_STORAGE_KEY = "pqnas.vault.sortKey";
+    const SORT_DIR_STORAGE_KEY = "pqnas.vault.sortDir";
+    const FOLDERS_FIRST_STORAGE_KEY = "pqnas.vault.foldersFirst";
+    const SORT_KEYS = ["name", "size", "modified", "type"];
+    const SORT_LABELS = {
+      name: "Name",
+      size: "Size",
+      modified: "Modified",
+      type: "Type"
+    };
+
+    let viewMode = "list";
+    let sortKey = "name";
+    let sortDir = "asc";
+    let foldersFirst = true;
+
+    try {
+      viewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "grid" ? "grid" : "list";
+
+      const storedSortKey = localStorage.getItem(SORT_KEY_STORAGE_KEY);
+      const storedSortDir = localStorage.getItem(SORT_DIR_STORAGE_KEY);
+      const storedFoldersFirst = localStorage.getItem(FOLDERS_FIRST_STORAGE_KEY);
+
+      sortKey = SORT_KEYS.includes(storedSortKey) ? storedSortKey : "name";
+      sortDir = storedSortDir === "desc" ? "desc" : "asc";
+      foldersFirst = storedFoldersFirst === null ? true : storedFoldersFirst !== "false";
+    } catch (_) {
+      viewMode = "list";
+      sortKey = "name";
+      sortDir = "asc";
+      foldersFirst = true;
+    }
+
+    const sortCollator = new Intl.Collator(undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+
     const refreshBtn = makeButton("Refresh");
+    const viewToggleBtn = makeButton("");
+    const sortKeyBtn = makeButton("");
+    const sortDirBtn = makeButton("");
+    const foldersFirstBtn = makeButton("");
+    const trashBtn = makeButton("Trash");
     const uploadBtn = makeButton("Encrypted upload", "vaultFmBtn vaultFmPrimary");
     const decryptBtn = makeButton("Advanced import");
-    actions.append(refreshBtn, uploadBtn, decryptBtn);
+    actions.append(refreshBtn, viewToggleBtn, sortKeyBtn, sortDirBtn, foldersFirstBtn, trashBtn, uploadBtn, decryptBtn);
     topbar.append(brand, pathBar, actions);
 
     const main = document.createElement("main");
@@ -914,10 +958,36 @@
     const header = document.createElement("div");
     header.className = "vaultFmListHeader";
 
+    const headerSortMap = {
+      Name: "name",
+      Size: "size",
+      Modified: "modified",
+      Type: "type"
+    };
+
     for (const label of ["Name", "Size", "Modified", "Type"]) {
       const cell = document.createElement("div");
+      const key = headerSortMap[label];
+
       cell.textContent = label;
+      cell.dataset.sortKey = key;
+      cell.title = `Sort by ${label.toLowerCase()}`;
+      cell.setAttribute("role", "button");
+      cell.tabIndex = 0;
+
       if (label !== "Name" && label !== "Size") cell.className = "vaultFmCellOptional";
+
+      cell.addEventListener("click", () => {
+        setSortKey(key);
+      });
+
+      cell.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          setSortKey(key);
+        }
+      });
+
       header.appendChild(cell);
     }
 
@@ -933,7 +1003,7 @@
       <p>Files in this view are encrypted locally before upload. Server-side previews and media playback stay disabled for Vault packages.</p>
       <span class="vaultFmPill">AES-256-GCM package</span>
       <p></p>
-      <span class="vaultFmPill">Organization recovery is admin-managed</span>
+      <span class="vaultFmPill">Master recovery is per-user</span>
     `;
 
     main.append(fileArea, side);
@@ -945,6 +1015,141 @@
     shell.append(topbar, main, status);
     document.body.prepend(shell);
 
+    function applyVaultViewMode() {
+      const isGrid = viewMode === "grid";
+      shell.classList.toggle("vaultFmGridView", isGrid);
+      viewToggleBtn.textContent = isGrid ? "List view" : "Grid view";
+      viewToggleBtn.setAttribute("aria-pressed", isGrid ? "true" : "false");
+      viewToggleBtn.title = isGrid ? "Switch to list view" : "Switch to grid view";
+    }
+
+    function persistVaultSortSettings() {
+      try {
+        localStorage.setItem(SORT_KEY_STORAGE_KEY, sortKey);
+        localStorage.setItem(SORT_DIR_STORAGE_KEY, sortDir);
+        localStorage.setItem(FOLDERS_FIRST_STORAGE_KEY, foldersFirst ? "true" : "false");
+      } catch (_) {
+        // Non-fatal: sort settings still apply for the current session.
+      }
+    }
+
+    function sortTypeLabel(entry) {
+      if (entry?.isDir) return "Folder";
+      return entry?.isVaultPackage ? "Vault package" : "Encrypted file";
+    }
+
+    function sortNumber(value) {
+      const num = Number(value);
+      if (Number.isFinite(num)) return num;
+
+      const parsed = Date.parse(String(value || ""));
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function compareVaultEntryValues(a, b) {
+      if (sortKey === "size") {
+        return sortNumber(a?.size) - sortNumber(b?.size);
+      }
+
+      if (sortKey === "modified") {
+        return sortNumber(a?.modified) - sortNumber(b?.modified);
+      }
+
+      if (sortKey === "type") {
+        return sortCollator.compare(sortTypeLabel(a), sortTypeLabel(b));
+      }
+
+      return sortCollator.compare(String(a?.name || ""), String(b?.name || ""));
+    }
+
+    function compareVaultEntries(a, b) {
+      if (foldersFirst && !!a?.isDir !== !!b?.isDir) {
+        return a?.isDir ? -1 : 1;
+      }
+
+      let result = compareVaultEntryValues(a, b);
+
+      if (result === 0 && sortKey !== "name") {
+        result = sortCollator.compare(String(a?.name || ""), String(b?.name || ""));
+      }
+
+      return sortDir === "desc" ? -result : result;
+    }
+
+    function sortVaultEntries(entries) {
+      if (Array.isArray(entries)) entries.sort(compareVaultEntries);
+      return entries;
+    }
+
+    function updateVaultSortControls() {
+      const label = SORT_LABELS[sortKey] || "Name";
+      const arrow = sortDir === "desc" ? "↓" : "↑";
+
+      sortKeyBtn.textContent = `Sort: ${label}`;
+      sortKeyBtn.title = "Cycle sort field";
+
+      sortDirBtn.textContent = arrow;
+      sortDirBtn.title = sortDir === "desc" ? "Sort descending" : "Sort ascending";
+      sortDirBtn.setAttribute("aria-label", sortDir === "desc" ? "Sort descending" : "Sort ascending");
+
+      foldersFirstBtn.textContent = foldersFirst ? "Folders first" : "Mixed folders";
+      foldersFirstBtn.setAttribute("aria-pressed", foldersFirst ? "true" : "false");
+      foldersFirstBtn.title = foldersFirst ? "Folders are grouped first" : "Folders are sorted with files";
+
+      for (const cell of header.querySelectorAll("[data-sort-key]")) {
+        const key = cell.dataset.sortKey || "";
+        const cellLabel = SORT_LABELS[key] || cell.textContent || "";
+
+        cell.classList.toggle("vaultFmSortActive", key === sortKey);
+        cell.textContent = key === sortKey ? `${cellLabel} ${arrow}` : cellLabel;
+        cell.setAttribute("aria-sort", key === sortKey ? (sortDir === "desc" ? "descending" : "ascending") : "none");
+      }
+    }
+
+    function rerenderSortedVaultRows() {
+      if (visibleEntries.length) {
+        sortVaultEntries(visibleEntries);
+        renderRows(visibleEntries);
+      }
+
+      updateVaultSortControls();
+    }
+
+    function setSortKey(nextKey) {
+      if (!SORT_KEYS.includes(nextKey)) return;
+
+      if (sortKey === nextKey) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = nextKey;
+        sortDir = nextKey === "modified" || nextKey === "size" ? "desc" : "asc";
+      }
+
+      persistVaultSortSettings();
+      rerenderSortedVaultRows();
+    }
+
+    function cycleSortKey() {
+      const current = SORT_KEYS.indexOf(sortKey);
+      const next = SORT_KEYS[(current + 1 + SORT_KEYS.length) % SORT_KEYS.length];
+      setSortKey(next);
+    }
+
+    function toggleSortDirection() {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+      persistVaultSortSettings();
+      rerenderSortedVaultRows();
+    }
+
+    function toggleFoldersFirst() {
+      foldersFirst = !foldersFirst;
+      persistVaultSortSettings();
+      rerenderSortedVaultRows();
+    }
+
+    applyVaultViewMode();
+    updateVaultSortControls();
+
     window.requestAnimationFrame(() => {
       triggerVaultRedAlert();
     });
@@ -954,6 +1159,368 @@
     menu.hidden = true;
     document.body.appendChild(menu);
 
+    const selectedPaths = new Set();
+    const entryByPath = new Map();
+    let visibleEntries = [];
+    let lastSelectedPath = "";
+    let marqueeDrag = null;
+    let trashMode = false;
+    let lastLivePath = pathInput.value || "Vault";
+
+    function ensureVaultSelectionStyles() {
+      if (document.getElementById("vaultSelectionStyles")) return;
+
+      const style = document.createElement("style");
+      style.id = "vaultSelectionStyles";
+      style.textContent = `
+        .vaultFmFileArea{
+          position:relative;
+        }
+        .vaultFmRow{
+          position:relative;
+        }
+        .vaultFmRowSelected{
+          background:rgba(245,158,11,.16) !important;
+          box-shadow:inset 4px 0 0 #f59e0b, inset 0 0 0 1px rgba(245,158,11,.48);
+        }
+        .vaultFmRowSelected .vaultFmNameText{
+          font-weight:950;
+        }
+        .vaultBulkBar{
+          position:absolute;
+          left:12px;
+          right:12px;
+          top:12px;
+          z-index:55;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          padding:10px 12px;
+          border:1px solid var(--border, #cbd5e1);
+          border-radius:16px;
+          background:#fff7ed;
+          color:var(--text, #0f172a);
+          margin:0;
+          box-shadow:0 10px 26px rgba(15,23,42,.10);
+        }
+        .vaultBulkBar[hidden]{
+          display:none !important;
+        }
+        .vaultBulkInfo{
+          font-weight:900;
+        }
+        .vaultBulkActions{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          flex-wrap:wrap;
+          justify-content:flex-end;
+        }
+        .vaultSelectionMarquee{
+          position:absolute;
+          z-index:40;
+          pointer-events:none;
+          border:1px solid #f59e0b;
+          background:rgba(245,158,11,.18);
+          border-radius:10px;
+          box-shadow:0 0 0 1px rgba(255,255,255,.35) inset;
+        }
+        .vaultSelectionMarquee[hidden]{
+          display:none !important;
+        }
+        html[data-theme="dark"] .vaultBulkBar{
+          background:#1f1308;
+        }
+        html[data-theme="dark"] .vaultFmRowSelected{
+          background:rgba(245,158,11,.18) !important;
+        }
+        html[data-theme="cpunk_orange"] .vaultBulkBar{
+          background:#231105;
+        }
+        html[data-theme="win_classic"] .vaultBulkBar{
+          background:#fff4d6;
+          border-radius:8px;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    ensureVaultSelectionStyles();
+
+    const selectionBar = document.createElement("div");
+    selectionBar.className = "vaultBulkBar";
+    selectionBar.hidden = true;
+
+    const selectionInfo = document.createElement("span");
+    selectionInfo.className = "vaultBulkInfo";
+    selectionInfo.textContent = "0 selected";
+
+    const selectionActions = document.createElement("div");
+    selectionActions.className = "vaultBulkActions";
+
+    const clearSelectionBtn = makeButton("Clear");
+    const downloadSelectedBtn = makeButton("Download selected");
+    const deleteSelectedBtn = makeButton("Move selected to trash", "vaultFmBtn vaultFmPrimary");
+
+    selectionActions.append(clearSelectionBtn, downloadSelectedBtn, deleteSelectedBtn);
+    selectionBar.append(selectionInfo, selectionActions);
+    fileArea.insertBefore(selectionBar, header);
+
+    const marqueeBox = document.createElement("div");
+    marqueeBox.className = "vaultSelectionMarquee";
+    marqueeBox.hidden = true;
+    fileArea.appendChild(marqueeBox);
+
+    function getSelectedEntries() {
+      return [...selectedPaths]
+        .map((path) => entryByPath.get(path))
+        .filter(Boolean);
+    }
+
+    function getSelectedFileEntries() {
+      return getSelectedEntries().filter((entry) => entry && !entry.isDir);
+    }
+
+    function updateSelectionBar() {
+      const entries = getSelectedEntries();
+      const files = entries.filter((entry) => !entry.isDir).length;
+      const folders = entries.length - files;
+
+      // Avoid layout flicker while marquee selection is active. Showing/hiding
+      // the bulk bar during pointer movement shifts the list under the cursor,
+      // which can make the marquee selection oscillate.
+      if (marqueeDrag) {
+        return;
+      }
+
+      selectionBar.hidden = entries.length === 0;
+
+      if (!entries.length) {
+        selectionInfo.textContent = "0 selected";
+      } else {
+        const parts = [];
+        if (files) parts.push(`${files} file${files === 1 ? "" : "s"}`);
+        if (folders) parts.push(`${folders} folder${folders === 1 ? "" : "s"}`);
+        selectionInfo.textContent = `${entries.length} selected${parts.length ? ` (${parts.join(", ")})` : ""}`;
+      }
+
+      downloadSelectedBtn.disabled = trashMode || files === 0;
+      downloadSelectedBtn.title = trashMode
+        ? "Trash items cannot be downloaded from the Vault trash view."
+        : "Download selected encrypted packages.";
+
+      deleteSelectedBtn.textContent = trashMode ? "Restore selected" : "Move selected to trash";
+      deleteSelectedBtn.disabled = entries.length === 0;
+    }
+
+    function applySelectionStateToRow(row, entry) {
+      const selected = !!entry && selectedPaths.has(entry.path);
+      row.classList.toggle("vaultFmRowSelected", selected);
+      row.setAttribute("aria-selected", selected ? "true" : "false");
+    }
+
+    function updateRenderedSelection() {
+      for (const row of list.querySelectorAll(".vaultFmRow")) {
+        const entry = entryByPath.get(row.dataset.path || "");
+        applySelectionStateToRow(row, entry);
+      }
+
+      updateSelectionBar();
+    }
+
+    function clearSelection() {
+      selectedPaths.clear();
+      lastSelectedPath = "";
+      updateRenderedSelection();
+    }
+
+    function selectSingleEntry(entry) {
+      selectedPaths.clear();
+      if (entry?.path) {
+        selectedPaths.add(entry.path);
+        lastSelectedPath = entry.path;
+      }
+      updateRenderedSelection();
+    }
+
+    function toggleEntrySelection(entry) {
+      if (!entry?.path) return;
+
+      if (selectedPaths.has(entry.path)) {
+        selectedPaths.delete(entry.path);
+      } else {
+        selectedPaths.add(entry.path);
+      }
+
+      lastSelectedPath = entry.path;
+      updateRenderedSelection();
+    }
+
+    function selectRangeToEntry(entry) {
+      if (!entry?.path) return;
+
+      const from = visibleEntries.findIndex((item) => item.path === lastSelectedPath);
+      const to = visibleEntries.findIndex((item) => item.path === entry.path);
+
+      if (from < 0 || to < 0) {
+        selectSingleEntry(entry);
+        return;
+      }
+
+      selectedPaths.clear();
+
+      const start = Math.min(from, to);
+      const end = Math.max(from, to);
+
+      for (let i = start; i <= end; i += 1) {
+        if (visibleEntries[i]?.path) selectedPaths.add(visibleEntries[i].path);
+      }
+
+      updateRenderedSelection();
+    }
+
+    function handleRowClick(ev, entry) {
+      if (ev.shiftKey) {
+        selectRangeToEntry(entry);
+        return;
+      }
+
+      if (ev.ctrlKey || ev.metaKey) {
+        toggleEntrySelection(entry);
+        return;
+      }
+
+      selectSingleEntry(entry);
+    }
+
+    function ensureEntrySelectedForContextMenu(entry) {
+      if (!entry?.path) return;
+
+      if (!selectedPaths.has(entry.path)) {
+        selectedPaths.clear();
+        selectedPaths.add(entry.path);
+        lastSelectedPath = entry.path;
+        updateRenderedSelection();
+      }
+    }
+
+    function beginMarqueeSelection(ev) {
+      if (ev.button !== 0) return;
+      if (ev.target.closest(".vaultFmRow, .vaultBulkBar, .vaultContextMenu, button, input, textarea, select, a")) return;
+
+      hideContextMenu();
+
+      const areaRect = fileArea.getBoundingClientRect();
+
+      marqueeDrag = {
+        pointerId: ev.pointerId,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        additive: ev.ctrlKey || ev.metaKey,
+        baseSelected: new Set(selectedPaths),
+        didDrag: false
+      };
+
+      marqueeBox.hidden = false;
+      marqueeBox.style.left = `${ev.clientX - areaRect.left}px`;
+      marqueeBox.style.top = `${ev.clientY - areaRect.top}px`;
+      marqueeBox.style.width = "0px";
+      marqueeBox.style.height = "0px";
+
+      try { fileArea.setPointerCapture(ev.pointerId); } catch (_) {}
+      ev.preventDefault();
+    }
+
+    function updateMarqueeSelection(ev) {
+      if (!marqueeDrag || marqueeDrag.pointerId !== ev.pointerId) return;
+
+      const dx = ev.clientX - marqueeDrag.startX;
+      const dy = ev.clientY - marqueeDrag.startY;
+
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        marqueeDrag.didDrag = true;
+      }
+
+      const areaRect = fileArea.getBoundingClientRect();
+      const left = Math.min(marqueeDrag.startX, ev.clientX);
+      const top = Math.min(marqueeDrag.startY, ev.clientY);
+      const right = Math.max(marqueeDrag.startX, ev.clientX);
+      const bottom = Math.max(marqueeDrag.startY, ev.clientY);
+
+      marqueeBox.style.left = `${left - areaRect.left}px`;
+      marqueeBox.style.top = `${top - areaRect.top}px`;
+      marqueeBox.style.width = `${right - left}px`;
+      marqueeBox.style.height = `${bottom - top}px`;
+
+      if (!marqueeDrag.didDrag) return;
+
+      selectedPaths.clear();
+
+      if (marqueeDrag.additive) {
+        for (const path of marqueeDrag.baseSelected) selectedPaths.add(path);
+      }
+
+      const selectionRect = { left, top, right, bottom };
+
+      for (const row of list.querySelectorAll(".vaultFmRow")) {
+        const rect = row.getBoundingClientRect();
+        const intersects =
+          rect.left <= selectionRect.right &&
+          rect.right >= selectionRect.left &&
+          rect.top <= selectionRect.bottom &&
+          rect.bottom >= selectionRect.top;
+
+        if (intersects && row.dataset.path) {
+          selectedPaths.add(row.dataset.path);
+          lastSelectedPath = row.dataset.path;
+        }
+      }
+
+      updateRenderedSelection();
+    }
+
+    function finishMarqueeSelection(ev) {
+      if (!marqueeDrag || marqueeDrag.pointerId !== ev.pointerId) return;
+
+      const didDrag = marqueeDrag.didDrag;
+      const additive = marqueeDrag.additive;
+
+      try { fileArea.releasePointerCapture(ev.pointerId); } catch (_) {}
+
+      marqueeDrag = null;
+      marqueeBox.hidden = true;
+
+      if (!didDrag && !additive) {
+        clearSelection();
+      } else {
+        updateSelectionBar();
+      }
+    }
+
+    clearSelectionBtn.addEventListener("click", clearSelection);
+
+    downloadSelectedBtn.addEventListener("click", () => {
+      try {
+        downloadSelectedEncryptedPackages();
+      } catch (err) {
+        status.textContent = err && err.message ? err.message : "Download selected failed.";
+      }
+    });
+
+    deleteSelectedBtn.addEventListener("click", () => {
+      if (trashMode) {
+        showRestoreSelectedModal();
+      } else {
+        showRemoveSelectedModal();
+      }
+    });
+
+    fileArea.addEventListener("pointerdown", beginMarqueeSelection);
+    fileArea.addEventListener("pointermove", updateMarqueeSelection);
+    fileArea.addEventListener("pointerup", finishMarqueeSelection);
+    fileArea.addEventListener("pointercancel", finishMarqueeSelection);
+
     function renderEmpty(message) {
       list.textContent = "";
       const empty = document.createElement("div");
@@ -962,20 +1529,42 @@
       list.appendChild(empty);
     }
 
+    function isHiddenVaultSystemEntry(entry) {
+      const name = String(entry?.name || entry?.rawName || "").trim();
+
+      // Security/UX: hide DNA-Nexus internal housekeeping entries from the Vault
+      // browser so users do not accidentally move/delete .pqnas metadata folders.
+      return name === ".pqnas" || name.startsWith(".pqnas_") || name.startsWith(".pqnas-");
+    }
+
     function renderRows(entries) {
       list.textContent = "";
+      entryByPath.clear();
+      visibleEntries = Array.isArray(entries) ? entries.slice() : [];
 
-      if (!entries.length) {
+      const livePaths = new Set(visibleEntries.map((entry) => entry && entry.path).filter(Boolean));
+      for (const path of [...selectedPaths]) {
+        if (!livePaths.has(path)) selectedPaths.delete(path);
+      }
+
+      for (const entry of visibleEntries) {
+        if (entry?.path) entryByPath.set(entry.path, entry);
+      }
+
+      updateSelectionBar();
+
+      if (!visibleEntries.length) {
         renderEmpty("This Vault folder is empty.");
         return;
       }
 
-      for (const entry of entries) {
+      for (const entry of visibleEntries) {
         const row = document.createElement("button");
         row.type = "button";
         row.className = "vaultFmRow";
         row.dataset.path = entry.path;
         row.dataset.kind = entry.isDir ? "dir" : "file";
+        row.setAttribute("aria-selected", selectedPaths.has(entry.path) ? "true" : "false");
 
         const nameCell = document.createElement("div");
         nameCell.className = "vaultFmName";
@@ -1003,9 +1592,16 @@
         typeCell.textContent = entry.isDir ? "Folder" : (entry.isVaultPackage ? "Vault package" : "Encrypted file");
 
         row.append(nameCell, sizeCell, modifiedCell, typeCell);
+        applySelectionStateToRow(row, entry);
+
+        row.addEventListener("click", (ev) => {
+          handleRowClick(ev, entry);
+        });
 
         row.addEventListener("dblclick", () => {
-          if (entry.isDir) {
+          if (entry.isTrash) {
+            showRestoreTrashModal(entry);
+          } else if (entry.isDir) {
             pathInput.value = entry.path;
             refresh().catch(() => {});
           } else {
@@ -1015,6 +1611,7 @@
 
         row.addEventListener("contextmenu", (ev) => {
           ev.preventDefault();
+          ensureEntrySelectedForContextMenu(entry);
           showContextMenu(ev.clientX, ev.clientY, entry);
         });
 
@@ -1340,19 +1937,20 @@
       });
     }
 
-    async function deleteVaultFile(entry) {
-      if (!entry || entry.isDir) {
-        throw new Error("Only Vault files can be deleted from this menu.");
+    async function deleteVaultEntry(entry) {
+      if (!entry) {
+        throw new Error("No Vault entry selected.");
       }
 
       const displayPath = entry.serverPath || entry.path;
       const apiPath = apiPathFromDisplayPath(displayPath);
 
       if (!apiPath) {
-        throw new Error("File path is empty.");
+        throw new Error("Vault path is empty.");
       }
 
-      status.textContent = `Deleting ${entry.name}...`;
+      const kind = entry.isDir ? "folder" : "file";
+      status.textContent = `Removing ${entry.name}...`;
 
       const res = await fetch(`/api/v4/files/delete?path=${encodeURIComponent(apiPath)}`, {
         method: "POST",
@@ -1364,32 +1962,148 @@
       const body = await res.text().catch(() => "");
 
       if (!res.ok) {
-        throw new Error(body || `Delete failed with HTTP ${res.status}`);
+        throw new Error(body || `Remove ${kind} failed with HTTP ${res.status}`);
       }
 
-      status.textContent = `${entry.name} deleted.`;
+      status.textContent = `${entry.name} removed.`;
       await refresh();
     }
 
-    function showDeleteFileModal(entry) {
+    function showRemoveEntryModal(entry) {
+      const isFolder = !!entry?.isDir;
+      const title = isFolder ? "Move Vault folder to trash?" : "Move Vault file to trash?";
+      const primaryLabel = isFolder ? "Move folder to trash" : "Move to trash";
+
       showVaultActionModal({
-        title: "Delete Vault file?",
-        primaryLabel: "Delete",
+        title,
+        primaryLabel,
         danger: true,
         bodyHtml: `
           <div class="vaultActionWarning">
-            Delete <strong>${escapeHtml(entry.name || "this file")}</strong> from Vault?
+            ${isFolder ? "Move folder to trash" : "Move file to trash"} <strong>${escapeHtml(entry?.name || "this item")}</strong> from Vault?
           </div>
           <div class="vaultActionNote">
-            This removes the encrypted Vault package from the server. It does not decrypt or inspect the file.
+            ${isFolder
+              ? "This moves the selected Vault folder and its contents to trash."
+              : "This removes the encrypted Vault package from the server. It does not decrypt or inspect the file."}
           </div>
         `,
         onSubmit: async () => {
-          // Security: delete only the encrypted package selected by the user.
-          // No server-side decrypt/preview path is involved.
-          await deleteVaultFile(entry);
+          // Security: remove only the exact Vault entry selected by the user.
+          // The server-side delete endpoint handles trashing; no decrypt/preview path is involved.
+          await deleteVaultEntry(entry);
+          selectedPaths.delete(entry?.path || "");
+          updateRenderedSelection();
         }
       });
+    }
+
+    async function deleteVaultEntries(entries) {
+      if (!Array.isArray(entries) || !entries.length) {
+        throw new Error("No selected Vault entries.");
+      }
+
+      let removed = 0;
+
+      for (const entry of entries) {
+        const displayPath = entry.serverPath || entry.path;
+        const apiPath = apiPathFromDisplayPath(displayPath);
+
+        if (!apiPath) {
+          throw new Error(`Vault path is empty for ${entry.name || "selected item"}.`);
+        }
+
+        status.textContent = `Removing ${removed + 1}/${entries.length}: ${entry.name}`;
+
+        const res = await fetch(`/api/v4/files/delete?path=${encodeURIComponent(apiPath)}`, {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        });
+
+        const body = await res.text().catch(() => "");
+
+        if (!res.ok) {
+          throw new Error(body || `Remove failed with HTTP ${res.status}`);
+        }
+
+        removed += 1;
+      }
+
+      selectedPaths.clear();
+      status.textContent = `Removed ${removed} selected item${removed === 1 ? "" : "s"}.`;
+      await refresh();
+    }
+
+    function showRemoveSelectedModal() {
+      const entries = getSelectedEntries();
+
+      if (!entries.length) {
+        status.textContent = "No selected Vault entries.";
+        return;
+      }
+
+      const files = entries.filter((entry) => !entry.isDir).length;
+      const folders = entries.length - files;
+
+      const parts = [];
+      if (files) parts.push(`${files} file${files === 1 ? "" : "s"}`);
+      if (folders) parts.push(`${folders} folder${folders === 1 ? "" : "s"}`);
+
+      showVaultActionModal({
+        title: "Move selected to trash Vault items?",
+        primaryLabel: "Move selected to trash",
+        danger: true,
+        bodyHtml: `
+          <div class="vaultActionWarning">
+            Move to trash <strong>${entries.length}</strong> selected Vault item${entries.length === 1 ? "" : "s"}?
+          </div>
+          <div class="vaultActionNote">
+            Selected: ${escapeHtml(parts.join(", ") || "items")}. Folders and their contents are moved to trash.
+            Encrypted packages are removed as stored; no decrypt or preview path is involved.
+          </div>
+        `,
+        onSubmit: async () => {
+          // Security: bulk deletion only submits the exact selected Vault paths to
+          // the existing trashing endpoint. No plaintext recovery path is involved.
+          await deleteVaultEntries(entries);
+        }
+      });
+    }
+
+    function downloadEncryptedPackage(entry) {
+      const displayPath = entry.serverPath || entry.path;
+      const apiPath = apiPathFromDisplayPath(displayPath);
+
+      if (!apiPath) {
+        throw new Error(`Vault path is empty for ${entry.name || "selected file"}.`);
+      }
+
+      const a = document.createElement("a");
+      a.href = `/api/v4/files/get?path=${encodeURIComponent(apiPath)}`;
+      a.download = entry.name || "vault-package.dnavault.json";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function downloadSelectedEncryptedPackages() {
+      const files = getSelectedFileEntries();
+
+      if (!files.length) {
+        status.textContent = "Select one or more files. Folders cannot be downloaded as encrypted packages.";
+        return;
+      }
+
+      // Security: this downloads the encrypted Vault packages exactly as stored.
+      // It does not decrypt, preview, or recover plaintext.
+      for (const entry of files) {
+        downloadEncryptedPackage(entry);
+      }
+
+      status.textContent = `Started encrypted package download for ${files.length} file${files.length === 1 ? "" : "s"}.`;
     }
 
     async function createVaultFolder() {
@@ -1418,6 +2132,11 @@
     }
 
     async function refresh() {
+      if (trashMode) {
+        await refreshVaultTrash();
+        return;
+      }
+
       const path = normalizeDisplayPath(pathInput.value);
       pathInput.value = inputPathFromDisplayPath(path);
       localStorage.setItem(STORAGE_KEY, path);
@@ -1453,8 +2172,13 @@
             return a.name.localeCompare(b.name);
           });
 
-        renderRows(entries);
-        status.textContent = `${entries.length} item${entries.length === 1 ? "" : "s"} in ${path}`;
+        const visibleEntries = entries.filter((entry) => !isHiddenVaultSystemEntry(entry));
+
+        sortVaultEntries(visibleEntries);
+
+        renderRows(visibleEntries);
+        updateVaultSortControls();
+        status.textContent = `${visibleEntries.length} item${visibleEntries.length === 1 ? "" : "s"} in ${path}`;
       } catch (err) {
         if (err && err.status === 404) {
           renderMissingFolder(path);
@@ -1467,7 +2191,754 @@
       }
     }
 
+    function trashText(item, keys) {
+      for (const key of keys) {
+        const value = item && item[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value).trim();
+        }
+      }
+      return "";
+    }
+
+    function trashNumber(item, keys) {
+      for (const key of keys) {
+        const value = item && item[key];
+        const num = Number(value);
+        if (Number.isFinite(num)) return num;
+      }
+      return 0;
+    }
+
+    function basenameFromPath(path) {
+      const clean = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+      const parts = clean.split("/").filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : clean;
+    }
+
+    function normalizeTrashOriginalPath(item) {
+      return trashText(item, [
+        "original_rel_path",
+        "original_path",
+        "originalPath",
+        "rel_path",
+        "path"
+      ]).replace(/\\/g, "/").replace(/^\/+/, "");
+    }
+
+    function isVaultTrashItem(item) {
+      const originalPath = normalizeTrashOriginalPath(item);
+      const rawName = trashText(item, ["name", "filename", "original_name"]) || basenameFromPath(originalPath);
+
+      return originalPath === "Vault" ||
+        originalPath.startsWith("Vault/") ||
+        rawName.endsWith(".dnavault.json");
+    }
+
+    function trashItemToVaultEntry(item) {
+      const trashId = trashText(item, ["trash_id", "trashId", "id"]);
+      const originalPath = normalizeTrashOriginalPath(item);
+      const rawName = trashText(item, ["name", "filename", "original_name"]) || basenameFromPath(originalPath) || trashId;
+      const type = trashText(item, ["item_type", "type", "kind"]);
+      const isDir = type === "dir" || type === "directory";
+
+      return {
+        name: rawName.endsWith(".dnavault.json") ? friendlyVaultName(rawName) : rawName,
+        rawName,
+        path: `trash:${trashId}`,
+        serverPath: originalPath,
+        originalPath,
+        trashId,
+        isTrash: true,
+        isDir,
+        isVaultPackage: rawName.endsWith(".dnavault.json"),
+        size: trashNumber(item, ["size_bytes", "payload_size_bytes", "bytes", "size"]),
+        modified: trashNumber(item, ["trashed_at_epoch", "trashed_at_unix", "deleted_at_epoch", "mtime_unix"]) ||
+          trashText(item, ["trashed_at", "deleted_at", "created_at", "mtime"]),
+        mime: ""
+      };
+    }
+
+    async function fetchVaultTrashEntries() {
+      const res = await fetch("/api/v4/trash/list?scope=user&limit=500", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+
+      const text = await res.text().catch(() => "");
+
+      if (!res.ok) {
+        throw new Error(text || `Trash list failed with HTTP ${res.status}`);
+      }
+
+      const body = text ? JSON.parse(text) : {};
+      const items = Array.isArray(body.items) ? body.items : [];
+
+      return items
+        .filter(isVaultTrashItem)
+        .map(trashItemToVaultEntry)
+        .filter((entry) => entry.trashId);
+    }
+
+    async function refreshVaultTrash() {
+      clearSelection();
+      list.textContent = "";
+      status.textContent = "Loading Vault trash…";
+
+      const entries = await fetchVaultTrashEntries();
+      sortVaultEntries(entries);
+
+      if (!entries.length) {
+        entryByPath.clear();
+        visibleEntries = [];
+        updateSelectionBar();
+        renderEmpty("Vault trash is empty.");
+        status.textContent = "Vault trash is empty.";
+        updateVaultSortControls();
+        return;
+      }
+
+      renderRows(entries);
+      updateVaultSortControls();
+      status.textContent = `${entries.length} Vault trash item${entries.length === 1 ? "" : "s"}`;
+    }
+
+    async function restoreVaultTrashEntry(entry) {
+      if (!entry?.trashId) {
+        throw new Error("No trash item selected.");
+      }
+
+      status.textContent = `Restoring ${entry.name}…`;
+
+      const res = await fetch("/api/v4/trash/restore", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          trash_id: entry.trashId,
+          rename_if_conflict: true
+        })
+      });
+
+      const body = await res.text().catch(() => "");
+
+      if (!res.ok) {
+        throw new Error(body || `Restore failed with HTTP ${res.status}`);
+      }
+
+      status.textContent = `${entry.name} restored.`;
+      await refresh();
+    }
+
+    async function restoreVaultTrashEntries(entries) {
+      if (!Array.isArray(entries) || !entries.length) {
+        throw new Error("No selected trash items.");
+      }
+
+      let restored = 0;
+
+      for (const entry of entries) {
+        status.textContent = `Restoring ${restored + 1}/${entries.length}: ${entry.name}`;
+        await restoreVaultTrashEntry(entry);
+        restored += 1;
+      }
+
+      selectedPaths.clear();
+      status.textContent = `Restored ${restored} Vault item${restored === 1 ? "" : "s"}.`;
+      await refresh();
+    }
+
+    function showRestoreTrashModal(entry) {
+      showVaultActionModal({
+        title: "Restore Vault item?",
+        primaryLabel: "Restore",
+        bodyHtml: `
+          <div class="vaultActionWarning">
+            Restore <strong>${escapeHtml(entry?.name || "this item")}</strong> back to
+            <strong>${escapeHtml(entry?.originalPath || "its original Vault path")}</strong>?
+          </div>
+          <div class="vaultActionNote">
+            If the original path already exists, DNA-Nexus may restore with a conflict-safe renamed path.
+          </div>
+        `,
+        onSubmit: async () => {
+          // Security: restore by trash_id only. The server validates ownership and
+          // resolves the original path under the user's allowed storage root.
+          await restoreVaultTrashEntry(entry);
+        }
+      });
+    }
+
+    function showRestoreSelectedModal() {
+      const entries = getSelectedEntries().filter((entry) => entry?.isTrash);
+
+      if (!entries.length) {
+        status.textContent = "No Vault trash items selected.";
+        return;
+      }
+
+      showVaultActionModal({
+        title: "Restore selected Vault items?",
+        primaryLabel: "Restore selected",
+        bodyHtml: `
+          <div class="vaultActionWarning">
+            Restore <strong>${entries.length}</strong> selected Vault trash item${entries.length === 1 ? "" : "s"}?
+          </div>
+          <div class="vaultActionNote">
+            Only Vault trash items are shown here. Other File Manager trash entries stay hidden from this view.
+          </div>
+        `,
+        onSubmit: async () => {
+          // Security: bulk restore submits only selected trash_id values from the
+          // Vault-filtered trash view. The server re-checks ownership for each item.
+          await restoreVaultTrashEntries(entries);
+        }
+      });
+    }
+
+    function applyTrashModeUi() {
+      trashBtn.textContent = trashMode ? "Back to Vault" : "Trash";
+      trashBtn.setAttribute("aria-pressed", trashMode ? "true" : "false");
+
+      pathInput.disabled = trashMode;
+      upBtn.disabled = trashMode;
+      uploadBtn.hidden = trashMode;
+      decryptBtn.hidden = trashMode;
+
+      if (trashMode) {
+        pathInput.value = "Trash / Vault";
+      } else {
+        pathInput.value = lastLivePath || "Vault";
+      }
+
+      updateSelectionBar();
+    }
+
+    function setTrashMode(enabled) {
+      if (enabled === trashMode) return;
+
+      if (enabled) {
+        lastLivePath = pathInput.value || lastLivePath || "Vault";
+      }
+
+      trashMode = enabled;
+      selectedPaths.clear();
+      applyTrashModeUi();
+      refresh().catch((err) => {
+        status.textContent = err && err.message ? err.message : "Vault refresh failed.";
+      });
+    }
+
+    function placeContextMenu(x, y) {
+      const rect = menu.getBoundingClientRect();
+      const left = Math.min(x, Math.max(8, window.innerWidth - rect.width - 8));
+      const top = Math.min(y, Math.max(8, window.innerHeight - rect.height - 8));
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+    }
+
+    function showTrashContextMenu(x, y, entry) {
+      menu.textContent = "";
+      menu.hidden = false;
+
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.textContent = "Restore";
+      restore.addEventListener("click", () => {
+        hideContextMenu();
+        showRestoreTrashModal(entry);
+      });
+
+      const copyPath = document.createElement("button");
+      copyPath.type = "button";
+      copyPath.textContent = "Copy original path";
+      copyPath.addEventListener("click", async () => {
+        hideContextMenu();
+
+        try {
+          await navigator.clipboard.writeText(entry.originalPath || "");
+          status.textContent = "Original path copied.";
+        } catch {
+          status.textContent = entry.originalPath || "";
+        }
+      });
+
+      menu.append(restore, copyPath);
+      placeContextMenu(x, y);
+    }
+
+    function vaultTrashText(item, keys) {
+      for (const key of keys) {
+        const value = item && item[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value).trim();
+        }
+      }
+      return "";
+    }
+
+    function vaultTrashNumber(item, keys) {
+      for (const key of keys) {
+        const value = item && item[key];
+        const num = Number(value);
+        if (Number.isFinite(num)) return num;
+      }
+      return 0;
+    }
+
+    function vaultTrashBasename(path) {
+      const clean = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+      const parts = clean.split("/").filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : clean;
+    }
+
+    function vaultTrashOriginalPath(item) {
+      return vaultTrashText(item, [
+        "original_rel_path",
+        "original_path",
+        "originalPath",
+        "rel_path",
+        "path"
+      ]).replace(/\\/g, "/").replace(/^\/+/, "");
+    }
+
+    function isVaultTrashItem(item) {
+      const originalPath = vaultTrashOriginalPath(item);
+      const rawName = vaultTrashText(item, ["name", "filename", "original_name"]) || vaultTrashBasename(originalPath);
+
+      return originalPath === "Vault" ||
+        originalPath.startsWith("Vault/") ||
+        rawName.endsWith(".dnavault.json");
+    }
+
+    function vaultTrashItemView(item) {
+      const originalPath = vaultTrashOriginalPath(item);
+      const trashId = vaultTrashText(item, ["trash_id", "trashId", "id"]);
+      const rawName = vaultTrashText(item, ["name", "filename", "original_name"]) || vaultTrashBasename(originalPath) || trashId;
+      const itemType = vaultTrashText(item, ["item_type", "type", "kind"]);
+      const isDir = itemType === "dir" || itemType === "directory";
+      const size = vaultTrashNumber(item, ["size_bytes", "payload_size_bytes", "bytes", "size"]);
+      const trashedAt = vaultTrashText(item, ["trashed_at", "deleted_at", "created_at"]) ||
+        vaultTrashNumber(item, ["trashed_at_epoch", "trashed_at_unix", "deleted_at_epoch"]);
+
+      return {
+        trashId,
+        name: rawName.endsWith(".dnavault.json") ? friendlyVaultName(rawName) : rawName,
+        rawName,
+        originalPath,
+        isDir,
+        size,
+        trashedAt,
+        source: item
+      };
+    }
+
+    async function fetchVaultTrashItems() {
+      const res = await fetch("/api/v4/trash/list?scope=user&limit=500", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+
+      const bodyText = await res.text().catch(() => "");
+
+      if (!res.ok) {
+        throw new Error(bodyText || `Trash list failed with HTTP ${res.status}`);
+      }
+
+      const body = bodyText ? JSON.parse(bodyText) : {};
+      const items = Array.isArray(body.items) ? body.items : [];
+
+      return items
+        .filter(isVaultTrashItem)
+        .map(vaultTrashItemView)
+        .filter((item) => item.trashId);
+    }
+
+    async function restoreVaultTrashItem(item) {
+      if (!item?.trashId) {
+        throw new Error("No trash item selected.");
+      }
+
+      const res = await fetch("/api/v4/trash/restore", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          trash_id: item.trashId,
+          rename_if_conflict: true
+        })
+      });
+
+      const bodyText = await res.text().catch(() => "");
+
+      if (!res.ok) {
+        throw new Error(bodyText || `Restore failed with HTTP ${res.status}`);
+      }
+
+      return bodyText ? JSON.parse(bodyText) : {};
+    }
+
+    function formatVaultTrashTime(value) {
+      if (!value) return "—";
+
+      if (typeof value === "number") {
+        return formatTime(value);
+      }
+
+      const parsed = Date.parse(String(value));
+      if (Number.isFinite(parsed)) {
+        return new Date(parsed).toLocaleString();
+      }
+
+      return String(value);
+    }
+
+    function ensureVaultTrashModalStyles() {
+      if (document.getElementById("vaultTrashModalStyles")) return;
+
+      const style = document.createElement("style");
+      style.id = "vaultTrashModalStyles";
+      style.textContent = `
+        .vaultTrashBackdrop{
+          position:fixed;
+          inset:0;
+          z-index:10020;
+          display:grid;
+          place-items:center;
+          padding:24px;
+          background:rgba(15,23,42,.30);
+          backdrop-filter:blur(8px);
+        }
+        .vaultTrashBackdrop[hidden]{
+          display:none !important;
+        }
+        .vaultTrashDialog{
+          width:min(900px, calc(100vw - 48px));
+          max-height:min(720px, calc(100vh - 48px));
+          display:grid;
+          grid-template-rows:auto auto 1fr auto;
+          overflow:hidden;
+          border:1px solid var(--border);
+          border-radius:18px;
+          background:var(--card);
+          color:var(--fg);
+          box-shadow:0 28px 80px rgba(15,23,42,.28);
+        }
+        .vaultTrashHead{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          padding:14px 16px;
+          border-bottom:1px solid var(--border);
+          background:var(--panel);
+        }
+        .vaultTrashTitle{
+          font-weight:950;
+          font-size:17px;
+        }
+        .vaultTrashSub{
+          color:var(--fg-dim, var(--muted));
+          font-size:13px;
+          margin-top:2px;
+        }
+        .vaultTrashStatus{
+          padding:12px 16px;
+          color:var(--fg-dim, var(--muted));
+          font-family:var(--mono, monospace);
+          border-bottom:1px solid var(--border);
+        }
+        .vaultTrashSummary{
+          margin:12px 16px 0;
+          padding:10px 12px;
+          border:1px solid var(--border);
+          border-radius:14px;
+          background:color-mix(in oklab, var(--panel) 86%, transparent);
+          display:flex;
+          align-items:center;
+          gap:8px;
+          flex-wrap:wrap;
+        }
+        .vaultTrashPill{
+          border:1px solid var(--border);
+          border-radius:999px;
+          padding:5px 9px;
+          font-weight:850;
+          font-size:12px;
+          background:var(--card);
+        }
+        .vaultTrashList{
+          overflow:auto;
+          padding:10px 16px 16px;
+          display:grid;
+          gap:10px;
+        }
+        .vaultTrashItem{
+          display:grid;
+          grid-template-columns:minmax(0, 1fr) auto;
+          gap:12px;
+          align-items:center;
+          border:1px solid var(--border);
+          border-radius:14px;
+          padding:12px;
+          background:var(--panel);
+        }
+        .vaultTrashItemName{
+          font-weight:950;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+        }
+        .vaultTrashItemMeta{
+          margin-top:4px;
+          color:var(--fg-dim, var(--muted));
+          font-size:12px;
+          line-height:1.35;
+        }
+        .vaultTrashItemPath{
+          margin-top:4px;
+          color:var(--fg-dim, var(--muted));
+          font-family:var(--mono, monospace);
+          font-size:12px;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+        }
+        .vaultTrashItemActions{
+          display:flex;
+          gap:8px;
+          align-items:center;
+        }
+        .vaultTrashFoot{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          padding:12px 16px;
+          border-top:1px solid var(--border);
+          background:var(--panel);
+        }
+        .vaultTrashFootActions{
+          display:flex;
+          gap:8px;
+          align-items:center;
+          flex-wrap:wrap;
+        }
+        .vaultTrashEmpty{
+          padding:32px 16px;
+          text-align:center;
+          color:var(--fg-dim, var(--muted));
+          font-weight:800;
+        }
+        html[data-theme="win_classic"] .vaultTrashDialog{
+          border-radius:8px;
+        }
+        @media (max-width:700px){
+          .vaultTrashItem{
+            grid-template-columns:1fr;
+          }
+          .vaultTrashItemActions{
+            justify-content:flex-start;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    function openVaultTrashModal() {
+      ensureVaultTrashModalStyles();
+
+      const old = document.querySelector(".vaultTrashBackdrop");
+      if (old) old.remove();
+
+      const backdrop = document.createElement("div");
+      backdrop.className = "vaultTrashBackdrop";
+
+      const dialog = document.createElement("section");
+      dialog.className = "vaultTrashDialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+      dialog.setAttribute("aria-label", "Vault trash");
+
+      const head = document.createElement("div");
+      head.className = "vaultTrashHead";
+
+      const headText = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "vaultTrashTitle";
+      title.textContent = "Vault trash";
+      const sub = document.createElement("div");
+      sub.className = "vaultTrashSub";
+      sub.textContent = "Only Vault items are shown here.";
+      headText.append(title, sub);
+
+      const closeBtn = makeButton("Close");
+      head.append(headText, closeBtn);
+
+      const statusEl = document.createElement("div");
+      statusEl.className = "vaultTrashStatus";
+      statusEl.textContent = "Loading Vault trash…";
+
+      const summary = document.createElement("div");
+      summary.className = "vaultTrashSummary";
+      summary.hidden = true;
+
+      const listEl = document.createElement("div");
+      listEl.className = "vaultTrashList";
+
+      const foot = document.createElement("div");
+      foot.className = "vaultTrashFoot";
+
+      const footActions = document.createElement("div");
+      footActions.className = "vaultTrashFootActions";
+
+      const refreshTrashBtn = makeButton("Refresh");
+      footActions.append(refreshTrashBtn);
+
+      const countEl = document.createElement("div");
+      countEl.className = "vaultTrashSub";
+      countEl.textContent = "";
+
+      foot.append(footActions, countEl);
+      dialog.append(head, statusEl, summary, listEl, foot);
+      backdrop.appendChild(dialog);
+      document.body.appendChild(backdrop);
+
+      const close = () => {
+        backdrop.remove();
+        refresh().catch(() => {});
+      };
+
+      closeBtn.addEventListener("click", close);
+      backdrop.addEventListener("click", (ev) => {
+        if (ev.target === backdrop) close();
+      });
+
+      const onKey = (ev) => {
+        if (ev.key === "Escape" && document.body.contains(backdrop)) {
+          ev.preventDefault();
+          document.removeEventListener("keydown", onKey);
+          close();
+        }
+      };
+      document.addEventListener("keydown", onKey);
+
+      async function load() {
+        statusEl.textContent = "Loading Vault trash…";
+        listEl.textContent = "";
+        summary.hidden = true;
+        countEl.textContent = "";
+
+        try {
+          const items = await fetchVaultTrashItems();
+          const files = items.filter((item) => !item.isDir).length;
+          const folders = items.length - files;
+          const bytes = items.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
+
+          summary.hidden = false;
+          summary.textContent = "";
+
+          const pills = [
+            `Vault trash: ${items.length} item${items.length === 1 ? "" : "s"}`,
+            `${folders} folder${folders === 1 ? "" : "s"}`,
+            `${files} file${files === 1 ? "" : "s"}`,
+            `Size: ${formatBytes(bytes)}`
+          ];
+
+          for (const text of pills) {
+            const pill = document.createElement("span");
+            pill.className = "vaultTrashPill";
+            pill.textContent = text;
+            summary.appendChild(pill);
+          }
+
+          if (!items.length) {
+            const empty = document.createElement("div");
+            empty.className = "vaultTrashEmpty";
+            empty.textContent = "Vault trash is empty.";
+            listEl.appendChild(empty);
+            statusEl.textContent = "No Vault trash items.";
+            countEl.textContent = "0 items";
+            return;
+          }
+
+          statusEl.textContent = `Loaded ${items.length} Vault trash item${items.length === 1 ? "" : "s"}.`;
+          countEl.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
+
+          for (const item of items) {
+            const row = document.createElement("article");
+            row.className = "vaultTrashItem";
+
+            const body = document.createElement("div");
+            const name = document.createElement("div");
+            name.className = "vaultTrashItemName";
+            name.textContent = item.name;
+
+            const meta = document.createElement("div");
+            meta.className = "vaultTrashItemMeta";
+            meta.textContent = `${item.isDir ? "Folder" : "File"} · ${formatBytes(item.size || 0)} · Removed: ${formatVaultTrashTime(item.trashedAt)}`;
+
+            const path = document.createElement("div");
+            path.className = "vaultTrashItemPath";
+            path.textContent = item.originalPath || "—";
+
+            body.append(name, meta, path);
+
+            const actions = document.createElement("div");
+            actions.className = "vaultTrashItemActions";
+
+            const restoreBtn = makeButton("Restore");
+            restoreBtn.addEventListener("click", async () => {
+              restoreBtn.disabled = true;
+              statusEl.textContent = `Restoring ${item.name}…`;
+
+              try {
+                // Security: restore uses trash_id only. The server validates owner
+                // scope and resolves the original path under the user's storage root.
+                await restoreVaultTrashItem(item);
+                await load();
+              } catch (err) {
+                restoreBtn.disabled = false;
+                statusEl.textContent = err && err.message ? err.message : "Restore failed.";
+              }
+            });
+
+            actions.appendChild(restoreBtn);
+            row.append(body, actions);
+            listEl.appendChild(row);
+          }
+        } catch (err) {
+          const empty = document.createElement("div");
+          empty.className = "vaultTrashEmpty";
+          empty.textContent = "Could not load Vault trash.";
+          listEl.appendChild(empty);
+          statusEl.textContent = err && err.message ? err.message : "Trash list failed.";
+        }
+      }
+
+      refreshTrashBtn.addEventListener("click", load);
+      load().catch(() => {});
+      closeBtn.focus();
+    }
+
     function showContextMenu(x, y, entry) {
+      if (entry?.isTrash) {
+        showTrashContextMenu(x, y, entry);
+        return;
+      }
+
       menu.textContent = "";
       menu.hidden = false;
 
@@ -1509,7 +2980,17 @@
 
       menu.append(open, details, copyPath);
 
-      if (!entry.isDir) {
+      if (entry.isDir) {
+        const removeFolder = document.createElement("button");
+        removeFolder.type = "button";
+        removeFolder.textContent = "Move folder to trash";
+        removeFolder.classList.add("vaultContextDanger");
+        removeFolder.addEventListener("click", () => {
+          hideContextMenu();
+          showRemoveEntryModal(entry);
+        });
+        menu.appendChild(removeFolder);
+      } else {
         const downloadEncrypted = document.createElement("button");
         downloadEncrypted.type = "button";
         downloadEncrypted.textContent = "Download encrypted package";
@@ -1523,10 +3004,11 @@
 
         const deleteFile = document.createElement("button");
         deleteFile.type = "button";
-        deleteFile.textContent = "Delete";
+        deleteFile.textContent = "Move to trash";
+        deleteFile.classList.add("vaultContextDanger");
         deleteFile.addEventListener("click", () => {
           hideContextMenu();
-          showDeleteFileModal(entry);
+          showRemoveEntryModal(entry);
         });
         menu.appendChild(deleteFile);
       }
@@ -1539,6 +3021,8 @@
     }
 
     function showFolderContextMenu(x, y) {
+      if (trashMode) return;
+
       const currentPath = normalizeDisplayPath(pathInput.value);
       const visiblePath = inputPathFromDisplayPath(currentPath);
 
@@ -1603,6 +3087,7 @@
 
     function hideContextMenu() {
       menu.hidden = true;
+      marqueeBox.hidden = true;
     }
 
     uploadBtn.addEventListener("click", () => {
@@ -1622,6 +3107,26 @@
 
     decryptBtn.addEventListener("click", () => {
       openDialog(dialogs.decryptDialog, "#decryptFileInput");
+    });
+
+    viewToggleBtn.addEventListener("click", () => {
+      viewMode = viewMode === "grid" ? "list" : "grid";
+
+      try {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+      } catch (_) {
+        // Non-fatal: view mode still changes for the current session.
+      }
+
+      applyVaultViewMode();
+    });
+
+    sortKeyBtn.addEventListener("click", cycleSortKey);
+    sortDirBtn.addEventListener("click", toggleSortDirection);
+    foldersFirstBtn.addEventListener("click", toggleFoldersFirst);
+
+    trashBtn.addEventListener("click", () => {
+      openVaultTrashModal();
     });
 
     refreshBtn.addEventListener("click", () => refresh().catch(() => {}));

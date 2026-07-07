@@ -39,80 +39,57 @@
         res.body = body;
     });
 
-    // User-safe Vault recovery public key API.
-    // Security: this exposes only the active organization recovery public key
-    // and recovery key ID. It never exposes private key material or unrelated
-    // admin settings.
+    // User-safe Vault Master recovery public key API.
+    // Security: this returns only the signed-in user's own Master recovery public key.
+    // It never reads Admin Settings and never exposes another user's recovery key.
     srv.Get("/api/v4/vault/recovery-public-key", [&](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string actor_fp_hex;
             std::string actor_role;
             if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &actor_fp_hex, &actor_role)) return;
 
-            auto load_settings_json = [&]() -> json {
-                try {
-                    std::ifstream f(admin_settings_path);
-                    if (!f.good()) return json::object();
-
-                    json j;
-                    f >> j;
-
-                    if (!j.is_object()) return json::object();
-                    return j;
-                } catch (...) {
-                    return json::object();
-                }
-            };
-
-            json persisted = load_settings_json();
-
-            bool enabled = false;
-            std::string status = "not_configured";
-            std::string public_key_b64;
-            std::string recovery_key_id;
-
-            if (persisted.contains("vault_recovery") && persisted["vault_recovery"].is_object()) {
-                const json& vr = persisted["vault_recovery"];
-
-                if (vr.contains("enabled") && vr["enabled"].is_boolean()) {
-                    enabled = vr["enabled"].get<bool>();
-                }
-
-                if (vr.contains("status") && vr["status"].is_string()) {
-                    status = vr["status"].get<std::string>();
-                }
-
-                if (vr.contains("public_key_b64") && vr["public_key_b64"].is_string()) {
-                    public_key_b64 = trim_copy(vr["public_key_b64"].get<std::string>());
-                }
-
-                if (vr.contains("public_key_sha256") && vr["public_key_sha256"].is_string()) {
-                    recovery_key_id = trim_copy(vr["public_key_sha256"].get<std::string>());
-                }
+            if (!users.load(users_path)) {
+                res.status = 500;
+                res.set_header("Content-Type", "application/json; charset=utf-8");
+                res.set_header("Cache-Control", "no-store");
+                res.body = json{
+                    {"ok", false},
+                    {"error", "users_reload_failed"},
+                    {"message", "failed to reload users"}
+                }.dump();
+                return;
             }
 
+            auto uopt = users.get(actor_fp_hex);
+            if (!uopt.has_value()) {
+                res.status = 404;
+                res.set_header("Content-Type", "application/json; charset=utf-8");
+                res.set_header("Cache-Control", "no-store");
+                res.body = json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "user not found"}
+                }.dump();
+                return;
+            }
+
+            const auto& u = *uopt;
             const bool active =
-                enabled &&
-                status == "active" &&
-                !public_key_b64.empty() &&
-                recovery_key_id.size() == 64;
-
-            if (!active) {
-                enabled = false;
-                if (status != "disabled") status = "not_configured";
-                public_key_b64.clear();
-                recovery_key_id.clear();
-            }
+                u.vault_master_recovery_status == "active" &&
+                !u.vault_master_recovery_public_key_b64.empty() &&
+                u.vault_master_recovery_public_key_sha256.size() == 64;
 
             res.status = 200;
             res.set_header("Content-Type", "application/json; charset=utf-8");
             res.set_header("Cache-Control", "no-store");
             res.body = json{
                 {"ok", true},
-                {"enabled", enabled},
-                {"status", status},
-                {"public_key_b64", public_key_b64},
-                {"recovery_key_id", recovery_key_id}
+                {"enabled", active},
+                {"status", active ? "active" : (u.vault_master_recovery_status == "disabled" ? "disabled" : "not_configured")},
+                {"public_key_b64", active ? u.vault_master_recovery_public_key_b64 : ""},
+                {"recovery_key_id", active ? u.vault_master_recovery_public_key_sha256 : ""},
+                {"fingerprint_hex", actor_fp_hex},
+                {"scope", "current_user"}
             }.dump();
         } catch (const std::exception& e) {
             res.status = 500;
@@ -120,7 +97,7 @@
             res.set_header("Cache-Control", "no-store");
             res.body = json{
                 {"ok", false},
-                {"error", "vault_recovery_public_key_failed"},
+                {"error", "vault_master_recovery_public_key_failed"},
                 {"message", e.what()}
             }.dump();
         } catch (...) {
@@ -129,7 +106,7 @@
             res.set_header("Cache-Control", "no-store");
             res.body = json{
                 {"ok", false},
-                {"error", "vault_recovery_public_key_failed"},
+                {"error", "vault_master_recovery_public_key_failed"},
                 {"message", "unknown error"}
             }.dump();
         }
@@ -331,43 +308,10 @@ json dna_connect_identity = json{
     {"admin_recipient", dna_connect_alerts.value("recipient", std::string(""))}
 };
 
-// Vault organization recovery settings.
+// Vault Master recovery settings.
 // Security: only the public recovery key and metadata are persisted.
-// The private recovery key is generated client-side and must never be sent here.
-json vault_recovery = json{
-    {"enabled", false},
-    {"status", "not_configured"},
-    {"public_key_b64", ""},
-    {"public_key_sha256", ""},
-    {"created_at", 0},
-    {"label", ""}
-};
-if (persisted.contains("vault_recovery") && persisted["vault_recovery"].is_object()) {
-    const json& vr = persisted["vault_recovery"];
-    if (vr.contains("enabled") && vr["enabled"].is_boolean()) {
-        vault_recovery["enabled"] = vr["enabled"];
-    }
-    if (vr.contains("status") && vr["status"].is_string()) {
-        const std::string status = vr["status"].get<std::string>();
-        if (status == "active" || status == "disabled" || status == "not_configured") {
-            vault_recovery["status"] = status;
-        }
-    }
-    if (vr.contains("public_key_b64") && vr["public_key_b64"].is_string()) {
-        vault_recovery["public_key_b64"] = vr["public_key_b64"];
-    }
-    if (vr.contains("public_key_sha256") && vr["public_key_sha256"].is_string()) {
-        vault_recovery["public_key_sha256"] = vr["public_key_sha256"];
-    }
-    if (vr.contains("created_at") && vr["created_at"].is_number_integer()) {
-        vault_recovery["created_at"] = vr["created_at"];
-    }
-    if (vr.contains("label") && vr["label"].is_string()) {
-        vault_recovery["label"] = vr["label"];
-    }
-}
-
-	try {
+// The private Master recovery key is generated client-side and must never be sent here.
+try {
     	const std::string data_dir =
         	trim_copy(dna_connect_alerts.value("data_dir", std::string("/var/lib/pqnas/dna-alerts")));
 
@@ -409,7 +353,6 @@ if (persisted.contains("vault_recovery") && persisted["vault_recovery"].is_objec
 			{"tiering", tiering},
 			{"dna_connect_alerts", dna_connect_alerts},
 			{"dna_connect_identity", dna_connect_identity},
-            {"vault_recovery", vault_recovery},
 			{"upload_tiering_candidates", build_upload_tiering_candidates_json()},
 
 			{"transport_max_upload_bytes", tmax},
@@ -655,131 +598,6 @@ srv.Post("/api/v4/admin/settings", [&](const httplib::Request& req, httplib::Res
 	    };
 	};
 
-auto normalize_vault_recovery = [&](const json& in_vault, std::string& err) -> json {
-    if (!in_vault.is_object()) {
-        err = "vault_recovery must be an object";
-        return json();
-    }
-
-    // Security: reject private key material at the API boundary. Organization
-    // recovery private keys are shown once in the admin browser and must never
-    // be persisted on the DNA-Nexus server.
-    if (in_vault.contains("private_key_b64") ||
-        in_vault.contains("privateKeyB64") ||
-        in_vault.contains("private_key") ||
-        in_vault.contains("secret_key") ||
-        in_vault.contains("secretKey")) {
-        err = "vault_recovery private key material must not be sent to server";
-        return json();
-    }
-
-    json out = json{
-        {"enabled", false},
-        {"status", "not_configured"},
-        {"public_key_b64", ""},
-        {"public_key_sha256", ""},
-        {"created_at", 0},
-        {"label", ""}
-    };
-
-    if (in_vault.contains("enabled")) {
-        if (!in_vault["enabled"].is_boolean()) {
-            err = "vault_recovery.enabled must be boolean";
-            return json();
-        }
-        out["enabled"] = in_vault["enabled"];
-    }
-
-    if (in_vault.contains("status")) {
-        if (!in_vault["status"].is_string()) {
-            err = "vault_recovery.status must be string";
-            return json();
-        }
-        const std::string status = in_vault["status"].get<std::string>();
-        if (!(status == "active" || status == "disabled" || status == "not_configured")) {
-            err = "vault_recovery.status must be one of: active, disabled, not_configured";
-            return json();
-        }
-        out["status"] = status;
-    }
-
-    if (in_vault.contains("public_key_b64")) {
-        if (!in_vault["public_key_b64"].is_string()) {
-            err = "vault_recovery.public_key_b64 must be string";
-            return json();
-        }
-        const std::string pk = trim_copy(in_vault["public_key_b64"].get<std::string>());
-        if (pk.size() > 8192) {
-            err = "vault_recovery.public_key_b64 too large";
-            return json();
-        }
-        out["public_key_b64"] = pk;
-    }
-
-    if (in_vault.contains("public_key_sha256")) {
-        if (!in_vault["public_key_sha256"].is_string()) {
-            err = "vault_recovery.public_key_sha256 must be string";
-            return json();
-        }
-        const std::string fp = trim_copy(in_vault["public_key_sha256"].get<std::string>());
-        if (fp.size() != 64) {
-            err = "vault_recovery.public_key_sha256 must be 64 hex characters";
-            return json();
-        }
-        for (char c : fp) {
-            const bool hex =
-                (c >= '0' && c <= '9') ||
-                (c >= 'a' && c <= 'f') ||
-                (c >= 'A' && c <= 'F');
-            if (!hex) {
-                err = "vault_recovery.public_key_sha256 must be hex";
-                return json();
-            }
-        }
-        out["public_key_sha256"] = fp;
-    }
-
-    if (in_vault.contains("created_at")) {
-        if (!in_vault["created_at"].is_number_integer()) {
-            err = "vault_recovery.created_at must be integer";
-            return json();
-        }
-        const long long ts = in_vault["created_at"].get<long long>();
-        if (ts < 0) {
-            err = "vault_recovery.created_at must be >= 0";
-            return json();
-        }
-        out["created_at"] = ts;
-    }
-
-    if (in_vault.contains("label")) {
-        if (!in_vault["label"].is_string()) {
-            err = "vault_recovery.label must be string";
-            return json();
-        }
-        std::string label = trim_copy(in_vault["label"].get<std::string>());
-        if (label.size() > 120) label.resize(120);
-        out["label"] = label;
-    }
-
-    const bool wants_active =
-        out.value("enabled", false) || out.value("status", std::string("")) == "active";
-
-    if (wants_active) {
-        if (out.value("public_key_b64", std::string()).empty()) {
-            err = "vault_recovery.public_key_b64 required when active";
-            return json();
-        }
-        if (out.value("public_key_sha256", std::string()).empty()) {
-            err = "vault_recovery.public_key_sha256 required when active";
-            return json();
-        }
-        out["enabled"] = true;
-        out["status"] = "active";
-    }
-
-    return out;
-};
 
 auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
     err.clear();
@@ -1184,7 +1002,6 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
         bool changed_snapshots = false;
         bool changed_transport = false;
 		bool changed_tiering   = false;
-        bool changed_vault_recovery = false;
         bool changed_dna_alerts = false;
 
         json patch = json::object();
@@ -1434,27 +1251,7 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
 		        audit_append(ev);
 		    } catch (...) {}
 		}
-        // ---- vault_recovery (optional) ----
-        if (in.contains("vault_recovery")) {
-            std::string vault_recovery_err;
-            json norm = normalize_vault_recovery(in["vault_recovery"], vault_recovery_err);
-            if (!vault_recovery_err.empty()) {
-                res.status = 400;
-                res.set_header("Content-Type", "application/json; charset=utf-8");
-                res.body = json{
-                    {"ok", false},
-                    {"error", "bad_request"},
-                    {"message", vault_recovery_err}
-                }.dump();
-                return;
-            }
-
-            patch["vault_recovery"] = norm;
-            persisted["vault_recovery"] = norm;
-            changed_vault_recovery = true;
-        }
-
-       // ---- transport_max_upload_bytes (optional) ----
+// ---- transport_max_upload_bytes (optional) ----
         if (in.contains("transport_max_upload_bytes")) {
             // Accept: integer only (safe-by-default)
             if (!in["transport_max_upload_bytes"].is_number_integer()) {
@@ -1512,11 +1309,11 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
         }
 
         if (!changed_level && !changed_ret && !changed_rotation && !changed_theme &&
-                !changed_snapshots && !changed_transport && !changed_tiering && !changed_dna_alerts && !changed_vault_recovery) {
+                !changed_snapshots && !changed_transport && !changed_tiering && !changed_dna_alerts) {
             reply_json(res, 400, json{
                 {"ok", false},
                 {"error", "bad_request"},
-                                {"message", "nothing to update (provide audit_min_level and/or audit_retention and/or audit_rotation and/or ui_theme and/or snapshots and/or tiering and/or dna_connect_alerts and/or vault_recovery and/or transport_max_upload_bytes)"}
+                                {"message", "nothing to update (provide audit_min_level and/or audit_retention and/or audit_rotation and/or ui_theme and/or snapshots and/or tiering and/or dna_connect_alerts and/or transport_max_upload_bytes)"}
             }.dump());
             return;
         }
@@ -1566,22 +1363,6 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
 		        {"min_level", "warning"}
 		    };
 		}
-
-        json vault_recovery = json{
-            {"enabled", false},
-            {"status", "not_configured"},
-            {"public_key_b64", ""},
-            {"public_key_sha256", ""},
-            {"created_at", 0},
-            {"label", ""}
-        };
-        if (persisted.contains("vault_recovery") && persisted["vault_recovery"].is_object()) {
-            std::string vr_err;
-            json norm_vr = normalize_vault_recovery(persisted["vault_recovery"], vr_err);
-            if (vr_err.empty() && norm_vr.is_object()) {
-                vault_recovery = norm_vr;
-            }
-        }
 
 		if (!dna_connect_alerts.contains("enabled") || !dna_connect_alerts["enabled"].is_boolean()) {
 		    dna_connect_alerts["enabled"] = false;
@@ -1705,7 +1486,6 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
             {"storage_roots", storage_roots},
 			{"tiering", tiering},
 			{"dna_connect_alerts", dna_connect_alerts},
-            {"vault_recovery", vault_recovery},
     		{"upload_tiering_candidates", build_upload_tiering_candidates_json()},
 
             {"transport_max_upload_bytes", tmax},

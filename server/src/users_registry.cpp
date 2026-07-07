@@ -120,6 +120,17 @@ static std::string norm_storage_state(std::string s) {
   return "unallocated";
 }
 
+/*
+norm_vault_master_recovery_status()
+  - Enforces the per-user Vault Master recovery lifecycle.
+  - Unknown values collapse to not_configured so bad JSON edits cannot enable
+    recovery accidentally.
+*/
+static std::string norm_vault_master_recovery_status(std::string s) {
+  if (s == "active" || s == "disabled") return s;
+  return "not_configured";
+}
+
 
 //------------------------------------------------------------------------------
 // JSON decoding helper (defensive numeric parsing)
@@ -217,6 +228,29 @@ bool UsersRegistry::load(const std::string& path) {
       u.app_prefs_json = it["app_prefs"].dump();
     } else {
       u.app_prefs_json = "{}";
+    }
+
+    // Vault Master recovery is per-user/fingerprint. Only public key metadata is
+    // loaded; no private recovery key material belongs in users.json.
+    if (it.contains("vault_master_recovery") && it["vault_master_recovery"].is_object()) {
+      const auto& vr = it["vault_master_recovery"];
+      u.vault_master_recovery_status =
+          norm_vault_master_recovery_status(vr.value("status", "not_configured"));
+      u.vault_master_recovery_public_key_b64 = vr.value("public_key_b64", "");
+      u.vault_master_recovery_public_key_sha256 = vr.value("public_key_sha256", "");
+      if (vr.contains("created_at") && vr["created_at"].is_number_integer()) {
+        u.vault_master_recovery_created_at = vr["created_at"].get<long long>();
+        if (u.vault_master_recovery_created_at < 0) u.vault_master_recovery_created_at = 0;
+      } else {
+        u.vault_master_recovery_created_at = 0;
+      }
+      u.vault_master_recovery_label = vr.value("label", "");
+    } else {
+      u.vault_master_recovery_status = "not_configured";
+      u.vault_master_recovery_public_key_b64 = "";
+      u.vault_master_recovery_public_key_sha256 = "";
+      u.vault_master_recovery_created_at = 0;
+      u.vault_master_recovery_label = "";
     }
 
     // New: storage metadata (defaults for backward compatibility)
@@ -334,6 +368,16 @@ bool UsersRegistry::save(const std::string& path) const {
       {"address", u.address},
       {"avatar_url", u.avatar_url},
       {"app_prefs", app_prefs},
+
+      // Vault Master recovery is scoped to this exact user fingerprint.
+      // Security: this contains public key material only.
+      {"vault_master_recovery", json{
+        {"status", norm_vault_master_recovery_status(u.vault_master_recovery_status)},
+        {"public_key_b64", u.vault_master_recovery_public_key_b64},
+        {"public_key_sha256", u.vault_master_recovery_public_key_sha256},
+        {"created_at", u.vault_master_recovery_created_at < 0 ? 0 : u.vault_master_recovery_created_at},
+        {"label", u.vault_master_recovery_label}
+      }},
 
       // New: storage metadata
       {"storage_state", norm_storage_state(u.storage_state)},

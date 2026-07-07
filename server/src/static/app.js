@@ -3506,6 +3506,537 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         return j;
     }
 
+    let userVaultMasterRecovery = null;
+    let userVaultMasterRecoveryError = "";
+    let pendingVaultMasterRecoveryPrivateKeyB64 = "";
+    let pendingVaultMasterRecoveryPublicKeyB64 = "";
+    let pendingVaultMasterRecoveryPublicKeySha256 = "";
+    let pendingVaultMasterRecoveryCreatedAt = 0;
+
+    function b64ToBytesForMasterRecovery(b64) {
+        const bin = atob(String(b64 || "").replace(/-/g, "+").replace(/_/g, "/"));
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+        return out;
+    }
+
+    function bytesToHexForMasterRecovery(bytes) {
+        return Array.from(bytes || []).map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function zeroBytesForMasterRecovery(bytes) {
+        if (bytes && typeof bytes.fill === "function") {
+            try { bytes.fill(0); } catch {}
+        }
+    }
+
+    function shortMasterRecoveryKeyId(id) {
+        const s = String(id || "");
+        if (!s) return "—";
+        if (s.length <= 24) return s;
+        return `${s.slice(0, 16)}…${s.slice(-8)}`;
+    }
+
+    function formatMasterRecoveryCreated(ms) {
+        const n = Number(ms || 0);
+        if (!Number.isFinite(n) || n <= 0) return "—";
+        try { return new Date(n).toLocaleString(); } catch { return String(n); }
+    }
+
+    async function loadMasterRecoveryHelper() {
+        const existingHelper = window.PQShareMlkem || window.PqShareMlKemV1 || null;
+        if (existingHelper &&
+            typeof (existingHelper.generateKeypair768 || existingHelper.keygen768) === "function" &&
+            typeof existingHelper.encapsulate768 === "function" &&
+            typeof existingHelper.decapsulate768 === "function") {
+            return existingHelper;
+        }
+
+        await new Promise((resolve, reject) => {
+            let done = false;
+            const finish = (err) => {
+                if (done) return;
+                done = true;
+                window.clearTimeout(timer);
+                err ? reject(err) : resolve();
+            };
+
+            const helperObj = () => window.PQShareMlkem || window.PqShareMlKemV1 || null;
+            const ready = () => {
+                const h = helperObj();
+                return h &&
+                    typeof (h.generateKeypair768 || h.keygen768) === "function" &&
+                    typeof h.encapsulate768 === "function" &&
+                    typeof h.decapsulate768 === "function";
+            };
+
+            const timer = window.setTimeout(() => {
+                finish(new Error("Timed out loading ML-KEM helper"));
+            }, 10000);
+
+            if (ready()) {
+                finish();
+                return;
+            }
+
+            const existing = document.querySelector('script[data-master-recovery-helper="1"]');
+            if (existing) {
+                existing.addEventListener("load", () => finish(), { once: true });
+                existing.addEventListener("error", () => finish(new Error("Failed to load ML-KEM helper")), { once: true });
+                return;
+            }
+
+            const s = document.createElement("script");
+            s.src = "/static/share_pq_mlkem.js?v=master-recovery-modal-1";
+            s.async = true;
+            s.dataset.masterRecoveryHelper = "1";
+            s.onload = () => finish();
+            s.onerror = () => finish(new Error("Failed to load ML-KEM helper"));
+            document.head.appendChild(s);
+        });
+
+        const h = window.PQShareMlkem || window.PqShareMlKemV1 || null;
+        if (!h ||
+            typeof (h.generateKeypair768 || h.keygen768) !== "function" ||
+            typeof h.encapsulate768 !== "function" ||
+            typeof h.decapsulate768 !== "function") {
+            throw new Error("ML-KEM helper is unavailable");
+        }
+
+        return h;
+    }
+
+    async function sha256B64ForMasterRecovery(publicKeyB64) {
+        const bytes = b64ToBytesForMasterRecovery(publicKeyB64);
+        try {
+            const hash = await crypto.subtle.digest("SHA-256", bytes);
+            return bytesToHexForMasterRecovery(new Uint8Array(hash));
+        } finally {
+            zeroBytesForMasterRecovery(bytes);
+        }
+    }
+
+    async function assertMasterRecoveryKeyRoundtrip(helper, publicKeyB64, privateKeyB64) {
+        const publicKeyBytes = b64ToBytesForMasterRecovery(publicKeyB64);
+        const privateKeyBytes = b64ToBytesForMasterRecovery(privateKeyB64);
+        let encSecret = null;
+        let decSecret = null;
+
+        try {
+            if (publicKeyBytes.length !== 1184) {
+                throw new Error(`Unexpected ML-KEM-768 public key size: ${publicKeyBytes.length} bytes`);
+            }
+
+            if (privateKeyBytes.length !== 64) {
+                throw new Error(`Unexpected ML-KEM-768 compact private key size: ${privateKeyBytes.length} bytes`);
+            }
+
+            const enc = await helper.encapsulate768({ publicKeyB64 });
+            encSecret = enc && enc.shared_secret_bytes;
+            decSecret = await helper.decapsulate768({
+                privateKeyB64,
+                ciphertextB64: enc.ciphertext_b64
+            });
+
+            if (!encSecret || !decSecret || encSecret.length !== decSecret.length) {
+                throw new Error("Master recovery key self-test failed");
+            }
+
+            let diff = 0;
+            for (let i = 0; i < encSecret.length; i += 1) diff |= encSecret[i] ^ decSecret[i];
+            if (diff !== 0) throw new Error("Master recovery key self-test failed");
+        } finally {
+            zeroBytesForMasterRecovery(publicKeyBytes);
+            zeroBytesForMasterRecovery(privateKeyBytes);
+            zeroBytesForMasterRecovery(encSecret);
+            zeroBytesForMasterRecovery(decSecret);
+        }
+    }
+
+    async function loadUserVaultMasterRecovery() {
+        userVaultMasterRecoveryError = "";
+        try {
+            const j = await apiUserGet("/api/v4/user/vault/master-recovery");
+            userVaultMasterRecovery = j.vault_master_recovery || {};
+        } catch (e) {
+            userVaultMasterRecovery = null;
+            userVaultMasterRecoveryError = String(e && e.message ? e.message : e);
+        }
+    }
+
+    async function saveUserVaultMasterRecoveryPublicKey() {
+        if (!pendingVaultMasterRecoveryPublicKeyB64 || !pendingVaultMasterRecoveryPublicKeySha256) {
+            throw new Error("No pending Master recovery public key.");
+        }
+
+        const ack = document.getElementById("settingsMasterRecoveryAck");
+        if (!ack || !ack.checked) {
+            throw new Error("Confirm that you have stored the private key safely.");
+        }
+
+        const j = await apiUserPost("/api/v4/user/vault/master-recovery", {
+            vault_master_recovery: {
+                enabled: true,
+                status: "active",
+                public_key_b64: pendingVaultMasterRecoveryPublicKeyB64,
+                public_key_sha256: pendingVaultMasterRecoveryPublicKeySha256,
+                created_at: pendingVaultMasterRecoveryCreatedAt,
+                label: "Master recovery key"
+            }
+        });
+
+        userVaultMasterRecovery = j.vault_master_recovery || {};
+        pendingVaultMasterRecoveryPrivateKeyB64 = "";
+        pendingVaultMasterRecoveryPublicKeyB64 = "";
+        pendingVaultMasterRecoveryPublicKeySha256 = "";
+        pendingVaultMasterRecoveryCreatedAt = 0;
+    }
+
+    function withMasterRecoveryTimeout(promise, label, ms = 15000) {
+        return new Promise((resolve, reject) => {
+            const timer = window.setTimeout(() => {
+                reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds`));
+            }, ms);
+
+            Promise.resolve(promise).then(
+                (value) => {
+                    window.clearTimeout(timer);
+                    resolve(value);
+                },
+                (err) => {
+                    window.clearTimeout(timer);
+                    reject(err);
+                }
+            );
+        });
+    }
+
+    async function generateUserVaultMasterRecoveryKey() {
+        const current = userVaultMasterRecovery || {};
+        const active = !!current.enabled && String(current.status || "") === "active";
+
+        if (active) {
+            const ok = await openShellConfirmDialog({
+                title: "Rotate Master recovery key?",
+                message: "New Vault uploads will use the new Master recovery public key. Old Vault packages still require the old private key.",
+                confirmText: "Rotate key",
+                cancelText: "Cancel",
+                danger: false
+            });
+            if (!ok) return false;
+        }
+
+        const helper = await withMasterRecoveryTimeout(
+            loadMasterRecoveryHelper(),
+            "Loading ML-KEM helper",
+            15000
+        );
+
+        const keygen768 =
+            typeof helper.generateKeypair768 === "function"
+                ? helper.generateKeypair768.bind(helper)
+                : helper.keygen768.bind(helper);
+
+        const kp = await withMasterRecoveryTimeout(
+            keygen768(),
+            "Generating ML-KEM keypair",
+            15000
+        );
+
+        pendingVaultMasterRecoveryPrivateKeyB64 = String(kp.private_key_b64 || "");
+        pendingVaultMasterRecoveryPublicKeyB64 = String(kp.public_key_b64 || "");
+        pendingVaultMasterRecoveryCreatedAt = Date.now();
+
+        pendingVaultMasterRecoveryPublicKeySha256 = await withMasterRecoveryTimeout(
+            sha256B64ForMasterRecovery(pendingVaultMasterRecoveryPublicKeyB64),
+            "Hashing Master recovery public key",
+            10000
+        );
+
+        await withMasterRecoveryTimeout(
+            assertMasterRecoveryKeyRoundtrip(
+                helper,
+                pendingVaultMasterRecoveryPublicKeyB64,
+                pendingVaultMasterRecoveryPrivateKeyB64
+            ),
+            "Testing Master recovery key",
+            15000
+        );
+
+        return true;
+    }
+
+    function downloadPendingMasterRecoveryPrivateKey() {
+        if (!pendingVaultMasterRecoveryPrivateKeyB64) {
+            throw new Error("No pending Master recovery private key.");
+        }
+
+        const payload = {
+            type: "dna-nexus-vault-master-recovery-private-key",
+            alg: "ML-KEM-768",
+            private_key_format: "compact-seed-64-bytes",
+            created_at: pendingVaultMasterRecoveryCreatedAt,
+            public_key_sha256: pendingVaultMasterRecoveryPublicKeySha256,
+            private_key_b64: pendingVaultMasterRecoveryPrivateKeyB64,
+            warning: "Store this file offline. Anyone with this private key can recover Vault files protected by this Master recovery key."
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], {
+            type: "application/json"
+        });
+
+        const a = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = `dna-nexus-vault-master-recovery-key-${pendingVaultMasterRecoveryPublicKeySha256.slice(0, 12) || "new"}.json`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+
+        window.setTimeout(() => {
+            URL.revokeObjectURL(url);
+            a.remove();
+        }, 1000);
+    }
+
+    function ensureMasterRecoveryModalStyles() {
+        if (document.getElementById("settingsMasterRecoveryModalStyles")) return;
+
+        const style = document.createElement("style");
+        style.id = "settingsMasterRecoveryModalStyles";
+        style.textContent = `
+            .settingsMasterRecoveryOverlay{
+                position:fixed;
+                inset:0;
+                z-index:9900;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                padding:18px;
+                background:rgba(0,0,0,0.38);
+                backdrop-filter:blur(8px);
+            }
+            .settingsMasterRecoveryDialog{
+                width:min(760px, calc(100vw - 36px));
+                max-height:calc(100vh - 36px);
+                overflow:auto;
+                border-radius:20px;
+                border:1px solid rgba(255,255,255,0.22);
+                background:rgba(248,250,255,0.96);
+                color:#111827;
+                box-shadow:0 28px 90px rgba(0,0,0,0.36);
+            }
+            html[data-theme="dark"] .settingsMasterRecoveryDialog,
+            html[data-theme="cpunk_orange"] .settingsMasterRecoveryDialog{
+                background:rgba(9,18,32,0.98);
+                color:rgba(235,248,255,0.96);
+            }
+            .settingsMasterRecoveryHead{
+                display:flex;
+                align-items:center;
+                justify-content:space-between;
+                gap:12px;
+                padding:14px 16px;
+                border-bottom:1px solid rgba(128,128,128,0.25);
+            }
+            .settingsMasterRecoveryTitle{
+                font-weight:900;
+                letter-spacing:.03em;
+            }
+            .settingsMasterRecoveryBody{
+                padding:16px;
+            }
+            .settingsMasterRecoverySecret{
+                width:100%;
+                min-height:132px;
+                margin-top:10px;
+                font-family:var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+                font-size:12px;
+                border-radius:14px;
+                padding:10px;
+                box-sizing:border-box;
+            }
+            .settingsMasterRecoveryWarning{
+                padding:10px 12px;
+                border-radius:14px;
+                border:1px solid rgba(180,120,0,0.38);
+                background:rgba(255,190,80,0.14);
+                line-height:1.5;
+            }
+            .settingsMasterRecoveryFoot{
+                display:flex;
+                justify-content:space-between;
+                gap:10px;
+                flex-wrap:wrap;
+                align-items:center;
+                padding:14px 16px;
+                border-top:1px solid rgba(128,128,128,0.25);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function closeMasterRecoveryModal() {
+        document.getElementById("settingsMasterRecoveryModal")?.remove();
+    }
+
+    async function openUserVaultMasterRecoveryPrivateKeyDialog() {
+        if (!pendingVaultMasterRecoveryPrivateKeyB64) {
+            throw new Error("No pending Master recovery private key.");
+        }
+
+        ensureMasterRecoveryModalStyles();
+        closeMasterRecoveryModal();
+
+        const root = document.createElement("div");
+        root.id = "settingsMasterRecoveryModal";
+        root.className = "settingsMasterRecoveryOverlay";
+        root.setAttribute("role", "dialog");
+        root.setAttribute("aria-modal", "true");
+        root.setAttribute("aria-labelledby", "settingsMasterRecoveryModalTitle");
+
+        root.innerHTML = `
+            <div class="settingsMasterRecoveryDialog">
+                <div class="settingsMasterRecoveryHead">
+                    <div id="settingsMasterRecoveryModalTitle" class="settingsMasterRecoveryTitle">
+                        Master recovery private key
+                    </div>
+                    <button class="btn secondary" type="button" data-action="close">×</button>
+                </div>
+
+                <div class="settingsMasterRecoveryBody">
+                    <div class="settingsMasterRecoveryWarning">
+                        Copy or download this private key now. It will not be shown again after this window is closed and DNA-Nexus will not store it.
+                    </div>
+
+                    <div class="mini" style="line-height:1.5; margin-top:10px;">
+                        Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it.
+                    </div>
+
+                    <textarea
+                        id="settingsMasterRecoveryPrivateKey"
+                        class="settingsMasterRecoverySecret"
+                        readonly
+                        spellcheck="false"
+                        aria-label="Master recovery private key"
+                    >${escapeHtml(pendingVaultMasterRecoveryPrivateKeyB64)}</textarea>
+
+                    <div class="mini" style="line-height:1.5; margin-top:10px;">
+                        Store this offline, in a password manager, on offline USB storage, or as a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
+                    </div>
+
+                    <div id="settingsMasterRecoveryModalStatus" class="mini" style="line-height:1.5; margin-top:10px;"></div>
+                </div>
+
+                <div class="settingsMasterRecoveryFoot">
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input id="settingsMasterRecoveryAck" type="checkbox">
+                        <span>I have stored this private key safely.</span>
+                    </label>
+
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn secondary" type="button" data-action="copy">Copy private key</button>
+                        <button class="btn secondary" type="button" data-action="download">Download private key JSON</button>
+                        <button class="btn primary" type="button" data-action="save">Save public key</button>
+                        <button class="btn secondary" type="button" data-action="discard">Discard</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(root);
+
+        const status = root.querySelector("#settingsMasterRecoveryModalStatus");
+        const textarea = root.querySelector("#settingsMasterRecoveryPrivateKey");
+
+        const setStatus = (msg, kind = "") => {
+            if (!status) return;
+            status.textContent = msg || "";
+            status.className = kind ? `msg ${kind}` : "mini";
+        };
+
+        root.addEventListener("click", async (ev) => {
+            const btn = ev.target && ev.target.closest ? ev.target.closest("[data-action]") : null;
+            if (!btn) return;
+
+            const action = btn.getAttribute("data-action");
+
+            if (action === "close") {
+                setStatus("Store the private key and save the public key, or discard it explicitly.", "warn");
+                return;
+            }
+
+            if (action === "copy") {
+                try {
+                    await navigator.clipboard.writeText(pendingVaultMasterRecoveryPrivateKeyB64);
+                    setStatus("Private key copied.", "ok");
+                } catch (e) {
+                    try {
+                        textarea?.focus();
+                        textarea?.select();
+                        document.execCommand("copy");
+                        setStatus("Private key copied.", "ok");
+                    } catch {
+                        setStatus(`Copy failed: ${String(e && e.message ? e.message : e)}`, "err");
+                    }
+                }
+                return;
+            }
+
+            if (action === "download") {
+                try {
+                    downloadPendingMasterRecoveryPrivateKey();
+                    setStatus("Private key JSON downloaded.", "ok");
+                } catch (e) {
+                    setStatus(`Download failed: ${String(e && e.message ? e.message : e)}`, "err");
+                }
+                return;
+            }
+
+            if (action === "save") {
+                btn.disabled = true;
+                btn.textContent = "Saving…";
+
+                try {
+                    await saveUserVaultMasterRecoveryPublicKey();
+                    closeMasterRecoveryModal();
+                    renderUserSettings("Master recovery public key saved.", "ok");
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.textContent = "Save public key";
+                    setStatus(`Save failed: ${String(e && e.message ? e.message : e)}`, "err");
+                }
+                return;
+            }
+
+            if (action === "discard") {
+                const ok = await openShellConfirmDialog({
+                    title: "Discard generated private key?",
+                    message: "The generated private key and public key will be forgotten by this browser view.",
+                    confirmText: "Discard",
+                    cancelText: "Cancel",
+                    danger: true
+                });
+
+                if (!ok) return;
+
+                pendingVaultMasterRecoveryPrivateKeyB64 = "";
+                pendingVaultMasterRecoveryPublicKeyB64 = "";
+                pendingVaultMasterRecoveryPublicKeySha256 = "";
+                pendingVaultMasterRecoveryCreatedAt = 0;
+                closeMasterRecoveryModal();
+                renderUserSettings("Generated Master recovery key discarded.", "ok");
+            }
+        });
+
+        window.setTimeout(() => {
+            try {
+                textarea?.focus();
+                textarea?.select();
+            } catch {}
+        }, 40);
+    }
+
     async function loadUserProfile() {
         if (!authed) {
             userProfile = null;
@@ -3595,6 +4126,12 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const activeTheme = currentThemeName();
         const activeLanguage = currentLanguageName();
+
+        if (!userVaultMasterRecovery && !userVaultMasterRecoveryError) {
+            loadUserVaultMasterRecovery().then(() => {
+                if (currentView === "user_settings") renderUserSettings(messageText, messageKind);
+            }).catch(() => {});
+        }
 
         const languageOptions = [
             { code: "en", flag: "en", key: "settings.language.english", fallback: "English" },
@@ -3993,6 +4530,64 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         
             <div class="card" style="padding:14px; margin-top:12px;">
                 <h3 style="margin:0 0 8px 0; font-size:18px;">
+                    Vault / Master recovery key
+                </h3>
+
+                <div class="mini" style="line-height:1.5;">
+                    Master recovery protects only your own Vault files. DNA-Nexus stores only the public key.
+                    The private key is shown once and must be stored offline by the Vault owner.
+                </div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                    <span class="chip">Status: ${escapeHtml((userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? "active" : "not configured")}</span>
+                    <span class="chip">Key ID: ${escapeHtml(shortMasterRecoveryKeyId(userVaultMasterRecovery && (userVaultMasterRecovery.recovery_key_id || userVaultMasterRecovery.public_key_sha256)))}</span>
+                    <span class="chip">Created: ${escapeHtml(formatMasterRecoveryCreated(userVaultMasterRecovery && userVaultMasterRecovery.created_at))}</span>
+                </div>
+
+                ${userVaultMasterRecoveryError ? `
+                    <div class="msg err" style="margin-top:10px;">${escapeHtml(userVaultMasterRecoveryError)}</div>
+                ` : ""}
+
+                ${pendingVaultMasterRecoveryPrivateKeyB64 ? `
+                    <div class="msg warn" style="margin-top:12px;">
+                        Copy or download this private key now. It will not be shown again after this view is refreshed.
+                    </div>
+
+                    <textarea
+                        id="settingsMasterRecoveryPrivateKey"
+                        readonly
+                        spellcheck="false"
+                        style="width:100%; min-height:110px; margin-top:10px; font-family:var(--mono);"
+                    >${escapeHtml(pendingVaultMasterRecoveryPrivateKeyB64)}</textarea>
+
+                    <label style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+                        <input id="settingsMasterRecoveryAck" type="checkbox">
+                        <span>I have stored this private key safely.</span>
+                    </label>
+
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+                        <button class="btn secondary" id="settingsMasterRecoveryCopyBtn" type="button">Copy private key</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryDownloadBtn" type="button">Download private key JSON</button>
+                        <button class="btn primary" id="settingsMasterRecoverySaveBtn" type="button">Save public key</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryDiscardBtn" type="button">Discard</button>
+                    </div>
+                ` : `
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+                        <button class="btn primary" id="settingsMasterRecoveryGenerateBtn" type="button">
+                            ${(userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? "Rotate Master recovery key" : "Generate Master recovery key"}
+                        </button>
+                        <button class="btn secondary" id="settingsMasterRecoveryReloadBtn" type="button">Reload status</button>
+                    </div>
+                `}
+
+                <div class="mini" style="line-height:1.5; margin-top:12px;">
+                    This is not a service-wide master key. It does not give this account access to other users' Vault files.
+                    Anyone with the private key can recover your Vault files protected by this key.
+                </div>
+            </div>
+
+            <div class="card" style="padding:14px; margin-top:12px;">
+                <h3 style="margin:0 0 8px 0; font-size:18px;">
                     ${escapeHtml(tr("settings.language.title", null, "Language"))}
                 </h3>
 
@@ -4195,6 +4790,184 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 }
             });
         }
+        const masterRecoveryGenerateBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoveryGenerateBtn");
+        if (masterRecoveryGenerateBtn) {
+            masterRecoveryGenerateBtn.addEventListener("click", async () => {
+                masterRecoveryGenerateBtn.disabled = true;
+                masterRecoveryGenerateBtn.textContent = "Generating…";
+
+                try {
+                    // UX/safety: open the one-time key modal before doing expensive
+                    // crypto work. If ML-KEM blocks or fails, the user sees the
+                    // progress/error in the modal instead of a silent stuck button.
+                    ensureMasterRecoveryModalStyles();
+                    closeMasterRecoveryModal();
+
+                    const root = document.createElement("div");
+                    root.id = "settingsMasterRecoveryModal";
+                    root.className = "settingsMasterRecoveryOverlay";
+                    root.setAttribute("role", "dialog");
+                    root.setAttribute("aria-modal", "true");
+                    root.innerHTML = `
+                        <div class="settingsMasterRecoveryDialog">
+                            <div class="settingsMasterRecoveryHead">
+                                <div class="settingsMasterRecoveryTitle">Master recovery private key</div>
+                                <button class="btn secondary" type="button" data-action="close">×</button>
+                            </div>
+                            <div class="settingsMasterRecoveryBody">
+                                <div class="settingsMasterRecoveryWarning">
+                                    Generating Master recovery key locally in this browser…
+                                </div>
+                                <div id="settingsMasterRecoveryModalStatus" class="mini" style="line-height:1.5; margin-top:10px;">
+                                    Loading ML-KEM helper…
+                                </div>
+                            </div>
+                            <div class="settingsMasterRecoveryFoot">
+                                <span class="mini">Do not close this window until the key is ready.</span>
+                                <button class="btn secondary" type="button" data-action="discard">Cancel</button>
+                            </div>
+                        </div>
+                    `;
+
+                    document.body.appendChild(root);
+
+                    const setModalStatus = (msg, kind = "") => {
+                        const status = document.getElementById("settingsMasterRecoveryModalStatus");
+                        if (!status) return;
+                        status.textContent = msg || "";
+                        status.className = kind ? `msg ${kind}` : "mini";
+                    };
+
+                    root.addEventListener("click", async (ev) => {
+                        const btn = ev.target && ev.target.closest ? ev.target.closest("[data-action]") : null;
+                        if (!btn) return;
+
+                        const action = btn.getAttribute("data-action");
+                        if (action === "close") {
+                            setModalStatus("Key generation is still running. Use Cancel only if you want to abandon this view.", "warn");
+                            return;
+                        }
+
+                        if (action === "discard") {
+                            pendingVaultMasterRecoveryPrivateKeyB64 = "";
+                            pendingVaultMasterRecoveryPublicKeyB64 = "";
+                            pendingVaultMasterRecoveryPublicKeySha256 = "";
+                            pendingVaultMasterRecoveryCreatedAt = 0;
+                            closeMasterRecoveryModal();
+                            renderUserSettings("Master recovery key generation cancelled.", "ok");
+                        }
+                    });
+
+                    await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+                    setModalStatus("Generating ML-KEM keypair…");
+                    const generated = await generateUserVaultMasterRecoveryKey();
+
+                    if (!generated) {
+                        closeMasterRecoveryModal();
+                        renderUserSettings("Master recovery key generation cancelled.", "ok");
+                        return;
+                    }
+
+                    setModalStatus("Key generated. Opening private-key view…");
+                    await openUserVaultMasterRecoveryPrivateKeyDialog();
+                } catch (e) {
+                    const msg = `Master recovery generation failed: ${String(e && e.message ? e.message : e)}`;
+                    const status = document.getElementById("settingsMasterRecoveryModalStatus");
+                    if (status) {
+                        status.textContent = msg;
+                        status.className = "msg err";
+                    } else {
+                        renderUserSettings(msg, "err");
+                    }
+                } finally {
+                    if (masterRecoveryGenerateBtn.isConnected) {
+                        const active = !!(userVaultMasterRecovery && userVaultMasterRecovery.enabled);
+                        masterRecoveryGenerateBtn.disabled = false;
+                        masterRecoveryGenerateBtn.textContent = active ? "Rotate Master recovery key" : "Generate Master recovery key";
+                    }
+                }
+            });
+        }
+
+        const masterRecoveryReloadBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoveryReloadBtn");
+        if (masterRecoveryReloadBtn) {
+            masterRecoveryReloadBtn.addEventListener("click", async () => {
+                await loadUserVaultMasterRecovery();
+                renderUserSettings("Master recovery status reloaded.", "ok");
+            });
+        }
+
+        const masterRecoveryCopyBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoveryCopyBtn");
+        if (masterRecoveryCopyBtn) {
+            masterRecoveryCopyBtn.addEventListener("click", async () => {
+                const value = String(pendingVaultMasterRecoveryPrivateKeyB64 || "");
+                if (!value) return;
+
+                try {
+                    await navigator.clipboard.writeText(value);
+                    renderUserSettings("Private key copied.", "ok");
+                } catch (e) {
+                    const el = document.getElementById("settingsMasterRecoveryPrivateKey");
+                    try {
+                        el?.focus();
+                        el?.select();
+                        document.execCommand("copy");
+                        renderUserSettings("Private key copied.", "ok");
+                    } catch {
+                        renderUserSettings(`Copy failed: ${String(e && e.message ? e.message : e)}`, "err");
+                    }
+                }
+            });
+        }
+
+        const masterRecoveryDownloadBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoveryDownloadBtn");
+        if (masterRecoveryDownloadBtn) {
+            masterRecoveryDownloadBtn.addEventListener("click", () => {
+                try {
+                    downloadPendingMasterRecoveryPrivateKey();
+                } catch (e) {
+                    renderUserSettings(`Download failed: ${String(e && e.message ? e.message : e)}`, "err");
+                }
+            });
+        }
+
+        const masterRecoverySaveBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoverySaveBtn");
+        if (masterRecoverySaveBtn) {
+            masterRecoverySaveBtn.addEventListener("click", async () => {
+                masterRecoverySaveBtn.disabled = true;
+                masterRecoverySaveBtn.textContent = "Saving…";
+
+                try {
+                    await saveUserVaultMasterRecoveryPublicKey();
+                    renderUserSettings("Master recovery public key saved.", "ok");
+                } catch (e) {
+                    renderUserSettings(`Master recovery save failed: ${String(e && e.message ? e.message : e)}`, "err");
+                }
+            });
+        }
+
+        const masterRecoveryDiscardBtn = (homeContent || homeBlurb).querySelector("#settingsMasterRecoveryDiscardBtn");
+        if (masterRecoveryDiscardBtn) {
+            masterRecoveryDiscardBtn.addEventListener("click", async () => {
+                const ok = await openShellConfirmDialog({
+                    title: "Discard generated private key?",
+                    message: "The generated private key and public key will be forgotten by this browser view.",
+                    confirmText: "Discard",
+                    cancelText: "Cancel",
+                    danger: true
+                });
+
+                if (!ok) return;
+
+                pendingVaultMasterRecoveryPrivateKeyB64 = "";
+                pendingVaultMasterRecoveryPublicKeyB64 = "";
+                pendingVaultMasterRecoveryPublicKeySha256 = "";
+                pendingVaultMasterRecoveryCreatedAt = 0;
+                renderUserSettings("Generated Master recovery key discarded.", "ok");
+            });
+        }
+
         for (const input of (homeContent || homeBlurb).querySelectorAll('input[name="userLanguage"]')) {
             input.addEventListener("change", () => {
                 if (!input.checked) return;

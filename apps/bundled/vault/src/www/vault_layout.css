@@ -455,3 +455,146 @@
     display: none;
   }
 }
+
+/* Vault list/grid view toggle. */
+.vaultFmShell.vaultFmGridView .vaultFmFileArea {
+  grid-template-rows: 1fr;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmListHeader {
+  display: none;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding: 12px;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmRow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  align-content: start;
+  justify-items: stretch;
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  background: var(--panel);
+  padding: 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmRow:hover,
+.vaultFmShell.vaultFmGridView .vaultFmRow:focus-visible,
+.vaultFmShell.vaultFmGridView .vaultFmRow[aria-selected="true"] {
+  background: var(--hover-bg, var(--card));
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmName {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  font-size: 30px;
+  background: var(--card);
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmNameText {
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmCellMuted {
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmCellOptional {
+  display: block;
+}
+
+.vaultFmShell.vaultFmGridView .vaultFmRowSelected {
+  background: rgba(245, 158, 11, .16) !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(245, 158, 11, .7),
+    0 12px 28px rgba(15, 23, 42, .10);
+}
+
+/* Vault sorting controls. */
+.vaultFmListHeader > [data-sort-key] {
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-sm, 8px);
+  padding: 4px 6px;
+  margin: -4px -6px;
+}
+
+.vaultFmListHeader > [data-sort-key]:hover,
+.vaultFmListHeader > [data-sort-key]:focus-visible {
+  color: var(--fg);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  outline: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+.vaultFmListHeader > .vaultFmSortActive {
+  color: var(--fg);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+/* Compact Vault context menu, aligned with File Manager menu sizing. */
+.vaultContextMenu {
+  width: max-content;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 8px;
+}
+
+.vaultContextMenu button {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 9px 12px;
+  border-radius: 10px;
+}
+
+.vaultContextMenu .vaultContextDanger {
+  color: #b91c1c;
+}
+
+.vaultContextMenu .vaultContextDanger:hover,
+.vaultContextMenu .vaultContextDanger:focus-visible {
+  color: #7f1d1d;
+  background: rgba(239, 68, 68, .10);
+  border-color: rgba(239, 68, 68, .32);
+}
+
+html[data-theme="dark"] .vaultContextMenu .vaultContextDanger,
+html[data-theme="cpunk_orange"] .vaultContextMenu .vaultContextDanger {
+  color: #fca5a5;
+}
+
+html[data-theme="dark"] .vaultContextMenu .vaultContextDanger:hover,
+html[data-theme="dark"] .vaultContextMenu .vaultContextDanger:focus-visible,
+html[data-theme="cpunk_orange"] .vaultContextMenu .vaultContextDanger:hover,
+html[data-theme="cpunk_orange"] .vaultContextMenu .vaultContextDanger:focus-visible {
+  color: #fecaca;
+  background: rgba(239, 68, 68, .16);
+  border-color: rgba(248, 113, 113, .38);
+}

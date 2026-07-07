@@ -326,7 +326,7 @@
     return `${s.slice(0, 16)}…${s.slice(-8)}`;
   }
 
-  async function loadOrganizationRecoveryPublicKey() {
+  async function loadMasterRecoveryPublicKey() {
     let res;
     let data = null;
 
@@ -339,12 +339,12 @@
       data = await res.json();
     } catch {
       // Security: fail closed. Do not silently create a Vault package without
-      // checking whether admin-managed organization recovery must be applied.
-      throw new Error("Could not check organization recovery settings");
+      // checking whether this user's Master recovery must be applied.
+      throw new Error("Could not check Master recovery settings");
     }
 
     if (!res.ok || data?.ok === false) {
-      throw new Error(data?.message || data?.error || "Could not load organization recovery settings");
+      throw new Error(data?.message || data?.error || "Could not load Master recovery settings");
     }
 
     const enabled = !!data.enabled && data.status === "active";
@@ -361,7 +361,7 @@
     };
   }
 
-  async function wrapCekForOrganization(rawCek, publicKeyB64, aadBytes) {
+  async function wrapCekForMasterRecovery(rawCek, publicKeyB64, aadBytes) {
     const publicKeyBytes = b64ToBytes(publicKeyB64);
     if (!globalThis.PqShareMlKemV1 || !(await globalThis.PqShareMlKemV1.isAvailable())) {
       throw new Error("ML-KEM-768 browser helper is not available");
@@ -404,7 +404,7 @@
     ));
 
     return {
-      purpose: "organization_recovery",
+      purpose: "master_recovery",
       mode: "mlkem768_hkdf_sha256_aes256gcm_v1",
       kem_alg: "ML-KEM-768",
       recipient_public_key_sha256: await sha256Hex(publicKeyBytes),
@@ -466,7 +466,7 @@
 
     const trimmedRecoveryKey = String(recoveryPublicKeyB64 || "").trim();
     if (trimmedRecoveryKey) {
-      wrappedKeys.push(await wrapCekForOrganization(rawCek, trimmedRecoveryKey, aadBytes));
+      wrappedKeys.push(await wrapCekForMasterRecovery(rawCek, trimmedRecoveryKey, aadBytes));
     }
 
     zeroBytes(rawCek);
@@ -541,19 +541,19 @@
     const folder = normalizeFolderPath(el.vaultFolderInput.value);
     const passphrase = getPassphrasePair();
 
-    let organizationRecovery = null;
+    let masterRecovery = null;
     let recoveryPublicKey = "";
 
     el.encryptUploadBtn.disabled = true;
     try {
-      setText(el.encryptStatus, "Checking organization recovery…");
+      setText(el.encryptStatus, "Checking Master recovery…");
 
-      organizationRecovery = await loadOrganizationRecoveryPublicKey();
-      recoveryPublicKey = organizationRecovery?.publicKeyB64 || "";
+      masterRecovery = await loadMasterRecoveryPublicKey();
+      recoveryPublicKey = masterRecovery?.publicKeyB64 || "";
 
-      const recoveryPrefix = organizationRecovery
-        ? `Organization recovery active (${shortRecoveryKeyId(organizationRecovery.recoveryKeyId)}).`
-        : "Organization recovery not configured.";
+      const recoveryPrefix = masterRecovery
+        ? `Master recovery active (${shortRecoveryKeyId(masterRecovery.recoveryKeyId)}).`
+        : "Master recovery not configured.";
 
       for (let i = 0; i < state.files.length; i++) {
         const file = state.files[i];
@@ -595,9 +595,9 @@
     return globalThis.PqShareMlKemV1;
   }
 
-  async function readOrganizationRecoveryPrivateKey(file) {
+  async function readMasterRecoveryPrivateKey(file) {
     if (!file) {
-      throw new Error("Select the organization recovery private key JSON.");
+      throw new Error("Select the Master recovery private key JSON.");
     }
 
     const text = await file.text();
@@ -618,14 +618,14 @@
     return String(key).trim();
   }
 
-  async function unwrapCekWithOrganizationRecovery(pkg, privateKeyB64) {
+  async function unwrapCekWithMasterRecovery(pkg, privateKeyB64) {
     const aadBytes = b64ToBytes(pkg.aad_b64);
     const orgWrap = Array.isArray(pkg.wrapped_keys)
-      ? pkg.wrapped_keys.find((k) => k && k.purpose === "organization_recovery")
+      ? pkg.wrapped_keys.find((k) => k && k.purpose === "master_recovery")
       : null;
 
     if (!orgWrap) {
-      throw new Error("No organization recovery wrapped key found in Vault package.");
+      throw new Error("No Master recovery wrapped key found in Vault package.");
     }
 
     const mlkem = await ensureMlKemHelper();
@@ -636,10 +636,10 @@
     const wrapIvB64 = String(orgWrap.wrap_iv_b64 || "").trim();
     const wrappedCekB64 = String(orgWrap.wrapped_cek_b64 || "").trim();
 
-    if (!ciphertextB64) throw new Error("Organization recovery wrap is missing ML-KEM ciphertext.");
-    if (!hkdfSaltB64) throw new Error("Organization recovery wrap is missing HKDF salt.");
-    if (!wrapIvB64) throw new Error("Organization recovery wrap is missing wrap IV.");
-    if (!wrappedCekB64) throw new Error("Organization recovery wrap is missing wrapped file key.");
+    if (!ciphertextB64) throw new Error("Master recovery wrap is missing ML-KEM ciphertext.");
+    if (!hkdfSaltB64) throw new Error("Master recovery wrap is missing HKDF salt.");
+    if (!wrapIvB64) throw new Error("Master recovery wrap is missing wrap IV.");
+    if (!wrappedCekB64) throw new Error("Master recovery wrap is missing wrapped file key.");
 
     let sharedSecret = null;
 
@@ -684,7 +684,7 @@
 
       if (rawCek.length !== 32) {
         zeroBytes(rawCek);
-        throw new Error("Organization recovery returned an invalid file key.");
+        throw new Error("Master recovery returned an invalid file key.");
       }
 
       return rawCek;
@@ -757,8 +757,8 @@
     }
   }
 
-  async function decryptVaultPackageWithOrganizationRecovery(pkg, privateKeyB64) {
-    const rawCek = await unwrapCekWithOrganizationRecovery(pkg, privateKeyB64);
+  async function decryptVaultPackageWithMasterRecovery(pkg, privateKeyB64) {
+    const rawCek = await unwrapCekWithMasterRecovery(pkg, privateKeyB64);
 
     try {
       return await decryptVaultPackageWithCek(pkg, rawCek);
@@ -809,12 +809,12 @@
     }
   }
 
-  async function recoverSelectedVaultFileWithOrganizationKey() {
+  async function recoverSelectedVaultFileWithMasterRecoveryKey() {
     const file = el.decryptFileInput.files && el.decryptFileInput.files[0];
     if (!file) throw new Error("Select a Vault package first.");
 
     const keyFile = el.recoveryPrivateKeyInput?.files && el.recoveryPrivateKeyInput.files[0];
-    if (!keyFile) throw new Error("Select the organization recovery private key JSON.");
+    if (!keyFile) throw new Error("Select the Master recovery private key JSON.");
 
     el.organizationRecoverBtn.disabled = true;
     el.downloadSlot.replaceChildren();
@@ -822,13 +822,13 @@
     try {
       setText(el.decryptStatus, "Reading encrypted package and recovery key…");
       const pkg = JSON.parse(await file.text());
-      const privateKeyB64 = await readOrganizationRecoveryPrivateKey(keyFile);
+      const privateKeyB64 = await readMasterRecoveryPrivateKey(keyFile);
 
       setText(el.decryptStatus, "Recovering locally with organization private key…");
-      const decrypted = await decryptVaultPackageWithOrganizationRecovery(pkg, privateKeyB64);
+      const decrypted = await decryptVaultPackageWithMasterRecovery(pkg, privateKeyB64);
 
       publishRecoveredDownload(decrypted, "Download recovered file");
-      setText(el.decryptStatus, "Organization recovery complete. The server was not involved.");
+      setText(el.decryptStatus, "Master recovery complete. The server was not involved.");
     } finally {
       clearAdvancedImportSensitiveInputs({ clearFile: true });
       el.organizationRecoverBtn.disabled = false;
@@ -882,10 +882,10 @@
 
     el.organizationRecoverBtn?.addEventListener("click", async () => {
       try {
-        await recoverSelectedVaultFileWithOrganizationKey();
+        await recoverSelectedVaultFileWithMasterRecoveryKey();
       } catch (err) {
         clearAdvancedImportSensitiveInputs();
-        setText(el.decryptStatus, err && err.message ? err.message : "Organization recovery failed.");
+        setText(el.decryptStatus, err && err.message ? err.message : "Master recovery failed.");
       }
     });
   }
