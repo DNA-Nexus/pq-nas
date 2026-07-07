@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/theme.css?v=20260705-vault-theme-1">
   <link rel="stylesheet" href="/static/components.css?v=20260705-vault-components-1">
   <script src="/static/theme.js?v=20260705-vault-theme-1"></script>
+  <script src="/static/i18n.js?v=20260707-vault-i18n-1"></script>
   <script src="/static/share_pq_mlkem.js?v=20260706-vault-mlkem-hygiene-2"></script>
   <link rel="stylesheet" href="./app.css?v=20260705-vault-mvp-1">
   <link rel="stylesheet" href="./vault_layout.css?v=20260707-vault-storage-footer-1">
@@ -18,73 +19,73 @@
     <div>
       <div class="vault-kicker" data-brand-template="{product_short_name} Secure Storage">Secure Storage</div>
       <h1>Vault <span id="appVersion" class="vault-version"></span></h1>
-      <p>
+      <p data-i18n="vault.hero_description">
         Client-side encrypted storage for sensitive files. Files are encrypted before upload,
         so server-side previews, thumbnails, indexing and media playback are intentionally unavailable.
       </p>
     </div>
-    <div id="sessionBadge" class="pq-badge muted">Checking session…</div>
+    <div id="sessionBadge" class="pq-badge muted" data-i18n="vault.session.checking">Checking session…</div>
   </section>
 
   <section class="vault-grid">
     <section class="vault-panel pq-card" aria-labelledby="encryptTitle">
       <div class="vault-panel-head">
         <div>
-          <h2 id="encryptTitle">Encrypt and upload</h2>
-          <p>Drag files here or choose them. The browser encrypts each file before upload.</p>
+          <h2 id="encryptTitle" data-i18n="vault.encrypt.title">Encrypt and upload</h2>
+          <p data-i18n="vault.encrypt.intro">Drag files here or choose them. The browser encrypts each file before upload.</p>
         </div>
       </div>
 
       <label class="vault-field">
-        <span>Vault folder</span>
+        <span data-i18n="vault.folder">Vault folder</span>
         <input id="vaultFolderInput" class="pq-input" type="text" value="Vault" autocomplete="off">
       </label>
 
       <div class="vault-drop" id="dropZone">
         <input id="fileInput" type="file" multiple>
         <div>
-          <strong>Drop files here</strong>
-          <span>or use the file picker.</span>
+          <strong data-i18n="vault.drop.title">Drop files here</strong>
+          <span data-i18n="vault.drop.subtitle">or use the file picker.</span>
         </div>
       </div>
 
       <div class="vault-two">
         <label class="vault-field">
-          <span>Vault passphrase</span>
+          <span data-i18n="vault.passphrase">Vault passphrase</span>
           <input id="passphraseInput" class="pq-input" type="password" autocomplete="new-password">
         </label>
         <label class="vault-field">
-          <span>Confirm passphrase</span>
+          <span data-i18n="vault.confirm_passphrase">Confirm passphrase</span>
           <input id="passphraseConfirmInput" class="pq-input" type="password" autocomplete="new-password">
         </label>
       </div>
 
       <div class="vault-field">
-        <span>Master recovery</span>
-        <p class="vault-muted">
+        <span data-i18n="vault.master_recovery">Master recovery</span>
+        <p class="vault-muted" data-i18n="vault.master_recovery_help">
           When Master recovery is active, Vault automatically wraps new uploads for the current Vault owner's Master recovery public key.
         </p>
       </div>
 
       <div class="vault-actions">
-        <button id="encryptUploadBtn" class="pq-btn primary" type="button">Encrypt and upload</button>
-        <button id="clearBtn" class="pq-btn secondary" type="button">Clear</button>
+        <button id="encryptUploadBtn" class="pq-btn primary" type="button" data-i18n="vault.encrypt_upload">Encrypt and upload</button>
+        <button id="clearBtn" class="pq-btn secondary" type="button" data-i18n="vault.clear">Clear</button>
       </div>
 
-      <div id="encryptStatus" class="vault-status" aria-live="polite">Ready.</div>
+      <div id="encryptStatus" class="vault-status" aria-live="polite" data-i18n="vault.ready_dot">Ready.</div>
       <div id="queueList" class="vault-list"></div>
     </section>
 
     <section class="vault-panel pq-card" aria-labelledby="decryptTitle">
       <div class="vault-panel-head">
         <div>
-          <h2 id="decryptTitle">Local decrypt test</h2>
-          <p>Open a downloaded .dnavault.json file and decrypt it locally with your passphrase or Master recovery key.</p>
+          <h2 id="decryptTitle" data-i18n="vault.decrypt.title">Local decrypt test</h2>
+          <p data-i18n="vault.decrypt.intro">Open a downloaded .dnavault.json file and decrypt it locally with your passphrase or Master recovery key.</p>
         </div>
       </div>
 
       <label class="vault-field">
-        <span>Encrypted Vault file</span>
+        <span data-i18n="vault.encrypted_file">Encrypted Vault file</span>
         <input id="decryptFileInput" class="pq-input" type="file" accept=".json,.dnavault,.dnavault.json,application/json">
       </label>
 
@@ -94,32 +95,32 @@
       </label>
 
       <label class="vault-field">
-        <span>Master recovery private key JSON</span>
+        <span data-i18n="vault.master_recovery_private_key_json">Master recovery private key JSON</span>
         <input id="recoveryPrivateKeyInput" class="pq-input" type="file" accept=".json,application/json">
       </label>
 
       <div class="vault-actions">
-        <button id="decryptBtn" class="pq-btn primary" type="button">Decrypt locally</button>
-        <button id="organizationRecoverBtn" class="pq-btn secondary" type="button">Recover with organization private key</button>
+        <button id="decryptBtn" class="pq-btn primary" type="button" data-i18n="vault.decrypt_locally">Decrypt locally</button>
+        <button id="organizationRecoverBtn" class="pq-btn secondary" type="button" data-i18n="vault.organization_recover">Recover with organization private key</button>
       </div>
 
-      <div id="decryptStatus" class="vault-status" aria-live="polite">No Vault file selected.</div>
+      <div id="decryptStatus" class="vault-status" aria-live="polite" data-i18n="vault.no_file_selected_dot">No Vault file selected.</div>
       <div id="downloadSlot" class="vault-download"></div>
     </section>
   </section>
 
   <section class="vault-note pq-card">
-    <h2>Security model</h2>
+    <h2 data-i18n="vault.security_model">Security model</h2>
     <ul>
-      <li>File content is encrypted with AES-256-GCM using a random file key.</li>
-      <li>The file key is wrapped for the user passphrase.</li>
-      <li>If Master recovery is active in Settings, the file key is also wrapped automatically for Master recovery using ML-KEM-768.</li>
-      <li>The server stores encrypted Vault packages and cannot generate thumbnails or content previews for them.</li>
+      <li data-i18n="vault.security.file_content">File content is encrypted with AES-256-GCM using a random file key.</li>
+      <li data-i18n="vault.security.user_passphrase">The file key is wrapped for the user passphrase.</li>
+      <li data-i18n="vault.security.master_recovery">If Master recovery is active in Settings, the file key is also wrapped automatically for Master recovery using ML-KEM-768.</li>
+      <li data-i18n="vault.security.server_cannot_preview">The server stores encrypted Vault packages and cannot generate thumbnails or content previews for them.</li>
     </ul>
   </section>
 </main>
 
-<script src="./app.js?v=20260707-vault-storage-footer-1"></script>
-  <script src="./vault_layout.js?v=20260707-vault-grid-default-1"></script>
+<script src="./app.js?v=20260707-vault-i18n-3"></script>
+  <script src="./vault_layout.js?v=20260707-vault-i18n-3"></script>
 </body>
 </html>

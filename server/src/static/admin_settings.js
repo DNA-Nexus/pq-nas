@@ -3587,7 +3587,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         currentRecovery = v;
 
         const active = !!v.enabled && String(v.status || "") === "active";
-        setPill(active ? "ok" : "warn", active ? "active" : "not configured");
+        setPill(
+            active ? "ok" : "warn",
+            active
+                ? t("admin.vault_recovery.status_active", "active")
+                : t("admin.vault_recovery.status_not_configured", "not configured")
+        );
 
         if (recoveryKeyIdEl) {
             const keyId = String(v.public_key_sha256 || "");
@@ -3599,7 +3604,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             createdEl.textContent = formatCreated(v.created_at);
         }
 
-        setGenerateButtonLabel(active ? "Rotate Master recovery key" : "Generate Master recovery key");
+        setGenerateButtonLabel(
+            active
+                ? t("admin.vault_recovery.rotate_button", "Rotate Master recovery key")
+                : t("admin.vault_recovery.generate_button", "Generate Master recovery key")
+        );
     }
 
     async function refreshVaultRecovery() {
@@ -3657,8 +3666,8 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (pendingPrivateKeyB64) {
             toast(
                 "warn",
-                "Recovery key is still pending",
-                "Store it safely and save the public key, or discard it without saving."
+                t("admin.vault_recovery.pending_title", "Recovery key is still pending"),
+                t("admin.vault_recovery.pending_message", "Store it safely and save the public key, or discard it without saving.")
             );
             return;
         }
@@ -3671,15 +3680,15 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
         try {
             await navigator.clipboard.writeText(value);
-            toast("ok", "Copied", "Private recovery key copied to clipboard.");
+            toast("ok", t("admin.common.copied", "Copied"), t("admin.vault_recovery.private_key_copied", "Private recovery key copied to clipboard."));
         } catch (_) {
             try {
                 privateKeyEl?.focus();
                 privateKeyEl?.select();
                 document.execCommand("copy");
-                toast("ok", "Copied", "Private recovery key copied to clipboard.");
+                toast("ok", t("admin.common.copied", "Copied"), t("admin.vault_recovery.private_key_copied", "Private recovery key copied to clipboard."));
             } catch (err) {
-                toast("fail", "Copy failed", String(err?.message || err));
+                toast("fail", t("admin.common.copy_failed", "Copy failed"), String(err?.message || err));
             }
         }
     }
@@ -3717,12 +3726,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
     async function savePendingPublicKeyAndClose() {
         if (!pendingPublicKeyB64 || !pendingPublicKeySha256) {
-            toast("fail", "Missing key", "No pending recovery key is available.");
+            toast("fail", t("admin.vault_recovery.missing_key", "Missing key"), t("admin.vault_recovery.no_pending_key", "No pending recovery key is available."));
             return;
         }
 
         if (!ackEl?.checked) {
-            toast("warn", "Confirmation required", "Confirm that you have stored the private key safely.");
+            toast("warn", t("admin.vault_recovery.confirmation_required", "Confirmation required"), t("admin.vault_recovery.confirm_stored", "Confirm that you have stored the private key safely."));
             return;
         }
 
@@ -3748,10 +3757,10 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
             renderVaultRecovery(data.vault_master_recovery || {});
             closePrivateKeyWindowAfterClear();
-            toast("ok", "Saved", "Vault Master recovery public key and recovery key ID saved.");
+            toast("ok", t("admin.common.saved", "Saved"), t("admin.vault_recovery.saved_message", "Vault Master recovery public key and recovery key ID saved."));
         } catch (err) {
             if (btnStored) btnStored.disabled = false;
-            toast("fail", "Save failed", String(err?.message || err));
+            toast("fail", t("admin.common.save_failed", "Save failed"), String(err?.message || err));
         }
     }
 
@@ -3771,22 +3780,22 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
             root.innerHTML = `
                 <div class="vaultRecoveryDetachedHead">
-                    <div id="vaultRecoveryRotateConfirmTitle" class="vaultRecoveryDetachedTitle">Rotate Master recovery key?</div>
+                    <div id="vaultRecoveryRotateConfirmTitle" class="vaultRecoveryDetachedTitle">${t("admin.vault_recovery.rotate_confirm_title", "Rotate Master recovery key?")}</div>
                     <button class="pq-btn" type="button" data-action="cancel">×</button>
                 </div>
                 <div class="vaultRecoveryDetachedBody">
                     <div class="vaultRecoveryWarning">
-                        New Vault uploads will use the new recovery public key. Old encrypted packages still require the old private key.
+                        ${t("admin.vault_recovery.rotate_warning", "New Vault uploads will use the new recovery public key. Old encrypted packages still require the old private key.")}
                     </div>
                     <div class="note">
-                        Make sure old recovery private keys remain stored safely before rotating.
+                        ${t("admin.vault_recovery.rotate_note", "Make sure old recovery private keys remain stored safely before rotating.")}
                     </div>
                 </div>
                 <div class="vaultRecoveryDetachedFoot">
-                    <span class="vaultRecoveryAck">This does not re-wrap old Vault packages.</span>
+                    <span class="vaultRecoveryAck">${t("admin.vault_recovery.rotate_no_rewrap", "This does not re-wrap old Vault packages.")}</span>
                     <div class="row">
-                        <button class="pq-btn" type="button" data-action="cancel">Cancel</button>
-                        <button class="pq-btn primary" type="button" data-action="ok">Rotate key</button>
+                        <button class="pq-btn" type="button" data-action="cancel">${t("admin.common.cancel", "Cancel")}</button>
+                        <button class="pq-btn primary" type="button" data-action="ok">${t("admin.vault_recovery.rotate_key", "Rotate key")}</button>
                     </div>
                 </div>
             `;
@@ -3968,7 +3977,12 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             );
 
             openPrivateKeyWindow();
-            setPill(active ? "ok" : "warn", active ? "active" : "not configured");
+            setPill(
+            active ? "ok" : "warn",
+            active
+                ? t("admin.vault_recovery.status_active", "active")
+                : t("admin.vault_recovery.status_not_configured", "not configured")
+        );
         } catch (err) {
             clearPendingPrivateKey();
             toast("fail", "Key generation failed", String(err?.message || err));
@@ -3994,22 +4008,22 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
             root.innerHTML = `
                 <div class="vaultRecoveryDetachedHead">
-                    <div id="vaultRecoveryDiscardConfirmTitle" class="vaultRecoveryDetachedTitle">Discard generated private key?</div>
+                    <div id="vaultRecoveryDiscardConfirmTitle" class="vaultRecoveryDetachedTitle">${t("admin.vault_recovery.discard_confirm_title", "Discard generated private key?")}</div>
                     <button class="pq-btn" type="button" data-action="cancel">×</button>
                 </div>
                 <div class="vaultRecoveryDetachedBody">
                     <div class="vaultRecoveryWarning">
-                        This will close the one-time private key window without saving the matching public key to DNA-Nexus.
+                        ${t("admin.vault_recovery.discard_warning", "This will close the one-time private key window without saving the matching public key to DNA-Nexus.")}
                     </div>
                     <div class="note">
-                        Use this only if you do not want to activate this generated recovery key.
+                        ${t("admin.vault_recovery.discard_note", "Use this only if you do not want to activate this generated recovery key.")}
                     </div>
                 </div>
                 <div class="vaultRecoveryDetachedFoot">
-                    <span class="vaultRecoveryAck">The generated keypair will be forgotten by this browser view.</span>
+                    <span class="vaultRecoveryAck">${t("admin.vault_recovery.discard_forget_note", "The generated keypair will be forgotten by this browser view.")}</span>
                     <div class="row">
-                        <button class="pq-btn" type="button" data-action="cancel">Cancel</button>
-                        <button class="pq-btn primary" type="button" data-action="ok">Discard key</button>
+                        <button class="pq-btn" type="button" data-action="cancel">${t("admin.common.cancel", "Cancel")}</button>
+                        <button class="pq-btn primary" type="button" data-action="ok">${t("admin.vault_recovery.discard_key", "Discard key")}</button>
                     </div>
                 </div>
             `;
@@ -4105,7 +4119,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (!ok) return;
 
         closePrivateKeyWindowAfterClear();
-        toast("warn", "Discarded", "Generated recovery key was discarded and not saved.");
+        toast("warn", t("admin.vault_recovery.discarded_title", "Discarded"), t("admin.vault_recovery.discarded_message", "Generated recovery key was discarded and not saved."));
     }
 
     function initDrag() {

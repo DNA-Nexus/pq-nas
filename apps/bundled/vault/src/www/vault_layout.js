@@ -16,6 +16,27 @@
     return value == null ? "" : String(value);
   }
 
+  function tr(key, vars, fallback) {
+    const i18n = window.PQNAS_I18N;
+    if (i18n && typeof i18n.t === "function") {
+      return i18n.t(key, vars, fallback);
+    }
+
+    let out = String(fallback ?? key ?? "");
+    if (vars && typeof vars === "object") {
+      for (const [name, value] of Object.entries(vars)) {
+        out = out.replaceAll(`{${name}}`, String(value ?? ""));
+      }
+    }
+    return out;
+  }
+
+  function pluralText(count, oneKey, otherKey, oneFallback, otherFallback) {
+    return Number(count) === 1
+      ? tr(oneKey, null, oneFallback)
+      : tr(otherKey, null, otherFallback);
+  }
+
   function normalizeDisplayPath(raw) {
     let value = text(raw).trim();
     if (!value) value = DEFAULT_PATH;
@@ -425,14 +446,14 @@
   }
 
   function accountStorageText(accountStorage) {
-    if (!accountStorage) return "Account storage: unavailable";
+    if (!accountStorage) return tr("vault.storage.account_unavailable", null, "Account storage: unavailable");
 
     if (!accountStorage.quotaBytes) {
-      return `Account storage: ${formatBytes(accountStorage.usedBytes)}`;
+      return `${tr("vault.storage.account", null, "Account storage")}: ${formatBytes(accountStorage.usedBytes)}`;
     }
 
     const freeBytes = Math.max(0, accountStorage.quotaBytes - accountStorage.usedBytes);
-    return `Account storage: ${formatBytes(accountStorage.usedBytes)} / ${formatBytes(accountStorage.quotaBytes)} (${formatPercent01(accountStorage.pct)}) · Free: ${formatBytes(freeBytes)}`;
+    return `${tr("vault.storage.account", null, "Account storage")}: ${formatBytes(accountStorage.usedBytes)} / ${formatBytes(accountStorage.quotaBytes)} (${formatPercent01(accountStorage.pct)}) · ${tr("vault.storage.free", null, "Free")}: ${formatBytes(freeBytes)}`;
   }
 
   function accountStorageKind(accountStorage) {
@@ -525,7 +546,7 @@ function makeDialog(id, titleText, kind) {
     dialog.innerHTML = `
       <div class="vaultDetachedChrome">
         <div class="vaultDetachedTitle">${titleText}</div>
-        <button type="button" class="vaultDetachedClose">Close</button>
+        <button type="button" class="vaultDetachedClose">${tr("vault.close", null, "Close")}</button>
       </div>
       <div class="vaultDetachedContent"></div>
     `;
@@ -558,7 +579,7 @@ function makeDialog(id, titleText, kind) {
   }
 
   function makeVaultDownloadDialog() {
-    const dialog = makeDialog("vaultDownloadDialog", "Download", "download");
+    const dialog = makeDialog("vaultDownloadDialog", tr("vault.download", null, "Download"), "download");
 
     const content = dialog.querySelector(".vaultDetachedContent");
     content.innerHTML = "";
@@ -568,26 +589,26 @@ function makeDialog(id, titleText, kind) {
     card.innerHTML = `
       <div class="vault-panel-head">
         <div>
-          <h2>Download from Vault</h2>
-          <p>The encrypted package is fetched from the server, decrypted in your browser, and saved as the original file.</p>
+          <h2>${tr("vault.download_dialog.title", null, "Download from Vault")}</h2>
+          <p>${tr("vault.download_dialog.intro", null, "The encrypted package is fetched from the server, decrypted in your browser, and saved as the original file.")}</p>
         </div>
       </div>
 
       <div class="vaultDownloadFile">
-        <span>File</span>
-        <strong class="vaultDownloadFileName">No file selected</strong>
+        <span>${tr("vault.file", null, "File")}</span>
+        <strong class="vaultDownloadFileName">${tr("vault.no_file_selected", null, "No file selected")}</strong>
       </div>
 
       <label class="vault-field">
-        <span>Vault passphrase</span>
+        <span>${tr("vault.passphrase", null, "Vault passphrase")}</span>
         <input class="pq-input vaultDownloadPassphrase" type="password" autocomplete="current-password">
       </label>
 
       <div class="vault-actions">
-        <button class="pq-btn primary vaultDownloadBtn" type="button">Download</button>
+        <button class="pq-btn primary vaultDownloadBtn" type="button">${tr("vault.download", null, "Download")}</button>
       </div>
 
-      <div class="vault-status vaultDownloadStatus" aria-live="polite">Ready.</div>
+      <div class="vault-status vaultDownloadStatus" aria-live="polite">${tr("vault.ready_dot", null, "Ready.")}</div>
     `;
 
     content.appendChild(card);
@@ -601,13 +622,13 @@ function makeDialog(id, titleText, kind) {
 
     async function runDownload() {
       if (!currentEntry) {
-        statusEl.textContent = "No file selected.";
+        statusEl.textContent = tr("vault.no_file_selected_dot", null, "No file selected.");
         return;
       }
 
       const passphrase = String(passEl.value || "");
       if (!passphrase) {
-        statusEl.textContent = "Enter Vault passphrase.";
+        statusEl.textContent = tr("vault.enter_passphrase_dot", null, "Enter Vault passphrase.");
         passEl.focus();
         return;
       }
@@ -616,7 +637,7 @@ function makeDialog(id, titleText, kind) {
       const apiPath = apiPathFromDisplayPath(serverPath);
 
       btn.disabled = true;
-      statusEl.textContent = "Exporting encrypted package...";
+      statusEl.textContent = tr("vault.status.exporting_package", null, "Exporting encrypted package...");
 
       try {
         const res = await fetch(`/api/v4/files/get?path=${encodeURIComponent(apiPath)}`, {
@@ -632,7 +653,7 @@ function makeDialog(id, titleText, kind) {
           throw new Error(raw || `HTTP ${res.status}`);
         }
 
-        statusEl.textContent = "Decrypting locally...";
+        statusEl.textContent = tr("vault.status.decrypting_locally_ascii", null, "Decrypting locally...");
         const pkg = JSON.parse(raw);
         const out = await decryptVaultPackageForDownload(pkg, passphrase);
 
@@ -675,7 +696,7 @@ function makeDialog(id, titleText, kind) {
   }
 
   function makeVaultDetailsDialog(onDownload) {
-    const dialog = makeDialog("vaultDetailsDialog", "Details", "details");
+    const dialog = makeDialog("vaultDetailsDialog", tr("vault.details", null, "Details"), "details");
 
     const content = dialog.querySelector(".vaultDetachedContent");
     content.textContent = "";
@@ -688,10 +709,10 @@ function makeDialog(id, titleText, kind) {
 
     const headText = document.createElement("div");
     const title = document.createElement("h2");
-    title.textContent = "File details";
+    title.textContent = tr("vault.file_details", null, "File details");
 
     const intro = document.createElement("p");
-    intro.textContent = "Vault shows the friendly file name. The stored package path remains encrypted-package specific.";
+    intro.textContent = tr("vault.details_intro", null, "Vault shows the friendly file name. The stored package path remains encrypted-package specific.");
 
     headText.append(title, intro);
     head.appendChild(headText);
@@ -705,17 +726,17 @@ function makeDialog(id, titleText, kind) {
     const downloadBtn = document.createElement("button");
     downloadBtn.type = "button";
     downloadBtn.className = "pq-btn primary";
-    downloadBtn.textContent = "Download";
+    downloadBtn.textContent = tr("vault.download", null, "Download");
 
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "pq-btn secondary";
-    copyBtn.textContent = "Copy Vault path";
+    copyBtn.textContent = tr("vault.copy_vault_path", null, "Copy Vault path");
 
     const status = document.createElement("div");
     status.className = "vault-status";
     status.setAttribute("aria-live", "polite");
-    status.textContent = "Ready.";
+    status.textContent = tr("vault.ready_dot", null, "Ready.");
 
     actions.append(downloadBtn, copyBtn);
     card.append(head, grid, actions, status);
@@ -741,17 +762,17 @@ function makeDialog(id, titleText, kind) {
       const storedPath = entry && entry.serverPath ? entry.serverPath : entry && entry.path ? entry.path : "";
       const packageName = storedPath ? fileNameFromPath(storedPath) : "";
 
-      addRow("Name", entry && entry.name ? entry.name : "—");
-      addRow("Type", isFolder ? "Folder" : entry && entry.isVaultPackage ? "Encrypted Vault file" : "File");
-      addRow("Size", isFolder ? "—" : formatBytes(entry && entry.size));
-      addRow("Modified", formatTime(entry && entry.modified));
-      addRow("Vault path", entry && entry.path ? entry.path : "—", true);
-      addRow("Stored package", storedPath, true);
-      addRow("Package file", packageName);
-      addRow("MIME", entry && entry.mime ? entry.mime : "—");
+      addRow(tr("vault.details.name", null, "Name"), entry && entry.name ? entry.name : "—");
+      addRow(tr("vault.details.type", null, "Type"), isFolder ? tr("vault.type.folder", null, "Folder") : entry && entry.isVaultPackage ? tr("vault.type.encrypted_vault_file", null, "Encrypted Vault file") : tr("vault.type.file", null, "File"));
+      addRow(tr("vault.details.size", null, "Size"), isFolder ? "—" : formatBytes(entry && entry.size));
+      addRow(tr("vault.details.modified", null, "Modified"), formatTime(entry && entry.modified));
+      addRow(tr("vault.details.vault_path", null, "Vault path"), entry && entry.path ? entry.path : "—", true);
+      addRow(tr("vault.details.stored_package", null, "Stored package"), storedPath, true);
+      addRow(tr("vault.details.package_file", null, "Package file"), packageName);
+      addRow(tr("vault.details.mime", null, "MIME"), entry && entry.mime ? entry.mime : "—");
 
       downloadBtn.hidden = isFolder;
-      status.textContent = "Ready.";
+      status.textContent = tr("vault.ready_dot", null, "Ready.");
     }
 
     copyBtn.addEventListener("click", async () => {
@@ -760,7 +781,7 @@ function makeDialog(id, titleText, kind) {
       const value = currentEntry.path || "";
       try {
         await navigator.clipboard.writeText(value);
-        status.textContent = "Vault path copied.";
+        status.textContent = tr("vault.status.path_copied", null, "Vault path copied.");
       } catch {
         status.textContent = value || "Could not copy path.";
       }
@@ -831,20 +852,20 @@ function makeDialog(id, titleText, kind) {
       throw new Error("Vault source panels missing");
     }
 
-    const uploadDialog = makeDialog("vaultUploadDialog", "Encrypted upload", "upload");
-    const decryptDialog = makeDialog("vaultDecryptDialog", "Export encrypted package", "decrypt");
-    const recoveryDialog = makeDialog("vaultRecoveryDialog", "Keys & recovery", "recovery");
+    const uploadDialog = makeDialog("vaultUploadDialog", tr("vault.encrypted_upload", null, "Encrypted upload"), "upload");
+    const decryptDialog = makeDialog("vaultDecryptDialog", tr("vault.export_package", null, "Export encrypted package"), "decrypt");
+    const recoveryDialog = makeDialog("vaultRecoveryDialog", tr("vault.keys_recovery", null, "Keys & recovery"), "recovery");
 
     const decryptTitle = decryptPanel.querySelector("#decryptTitle");
-    if (decryptTitle) decryptTitle.textContent = "Export encrypted package";
+    if (decryptTitle) decryptTitle.textContent = tr("vault.export_package", null, "Export encrypted package");
 
     const decryptIntro = decryptPanel.querySelector(".vault-panel-head p");
     if (decryptIntro) {
-      decryptIntro.textContent = "Open an exported .dnavault.json package and decrypt it locally with your passphrase.";
+      decryptIntro.textContent = tr("vault.decrypt_exported_intro", null, "Open an exported .dnavault.json package and decrypt it locally with your passphrase.");
     }
 
     const decryptAction = decryptPanel.querySelector("#decryptBtn");
-    if (decryptAction) decryptAction.textContent = "Decrypt package";
+    if (decryptAction) decryptAction.textContent = tr("vault.decrypt_package", null, "Decrypt package");
 
     uploadDialog.querySelector(".vaultDetachedContent").appendChild(uploadPanel);
     decryptDialog.querySelector(".vaultDetachedContent").appendChild(decryptPanel);
@@ -889,7 +910,7 @@ function makeDialog(id, titleText, kind) {
     const pathBar = document.createElement("div");
     pathBar.className = "vaultFmPathBar";
 
-    const upBtn = makeButton("Up");
+    const upBtn = makeButton(tr("vault.up", null, "Up"));
     const pathInput = document.createElement("input");
     pathInput.className = "vaultFmPathInput";
     pathInput.type = "text";
@@ -912,10 +933,10 @@ function makeDialog(id, titleText, kind) {
     const FOLDERS_FIRST_STORAGE_KEY = "pqnas.vault.foldersFirst";
     const SORT_KEYS = ["name", "size", "modified", "type"];
     const SORT_LABELS = {
-      name: "Name",
-      size: "Size",
-      modified: "Modified",
-      type: "Type"
+      name: tr("vault.sort.name", null, "Name"),
+      size: tr("vault.sort.size", null, "Size"),
+      modified: tr("vault.sort.modified", null, "Modified"),
+      type: tr("vault.sort.type", null, "Type")
     };
 
     let viewMode = "grid";
@@ -946,14 +967,14 @@ function makeDialog(id, titleText, kind) {
       sensitivity: "base"
     });
 
-    const refreshBtn = makeButton("Refresh");
+    const refreshBtn = makeButton(tr("vault.refresh", null, "Refresh"));
     const viewToggleBtn = makeButton("");
     const sortKeyBtn = makeButton("");
     const sortDirBtn = makeButton("");
     const foldersFirstBtn = makeButton("");
-    const trashBtn = makeButton("Trash");
-    const uploadBtn = makeButton("Encrypted upload", "vaultFmBtn vaultFmPrimary");
-    const decryptBtn = makeButton("Export encrypted package");
+    const trashBtn = makeButton(tr("vault.trash", null, "Trash"));
+    const uploadBtn = makeButton(tr("vault.encrypted_upload", null, "Encrypted upload"), "vaultFmBtn vaultFmPrimary");
+    const decryptBtn = makeButton(tr("vault.export_package", null, "Export encrypted package"));
     actions.append(refreshBtn, viewToggleBtn, sortKeyBtn, sortDirBtn, foldersFirstBtn, trashBtn, uploadBtn, decryptBtn);
     topbar.append(brand, pathBar, actions);
 
@@ -962,7 +983,7 @@ function makeDialog(id, titleText, kind) {
 
     const fileArea = document.createElement("section");
     fileArea.className = "vaultFmFileArea";
-    fileArea.setAttribute("aria-label", "Vault files");
+    fileArea.setAttribute("aria-label", tr("vault.files", null, "Vault files"));
 
     const header = document.createElement("div");
     header.className = "vaultFmListHeader";
@@ -1008,11 +1029,11 @@ function makeDialog(id, titleText, kind) {
     const side = document.createElement("aside");
     side.className = "vaultFmSide";
     side.innerHTML = `
-      <h2>Encrypted space</h2>
-      <p>Files in this view are encrypted locally before upload. Server-side previews and media playback stay disabled for Vault packages.</p>
-      <span class="vaultFmPill">AES-256-GCM package</span>
+      <h2>${tr("vault.side.title", null, "Encrypted space")}</h2>
+      <p>${tr("vault.side.intro", null, "Files in this view are encrypted locally before upload. Server-side previews and media playback stay disabled for Vault packages.")}</p>
+      <span class="vaultFmPill">${tr("vault.side.aes_package", null, "AES-256-GCM package")}</span>
       <p></p>
-      <span class="vaultFmPill">Master recovery is per-user</span>
+      <span class="vaultFmPill">${tr("vault.side.master_recovery_per_user", null, "Master recovery is per-user")}</span>
     `;
 
     main.append(fileArea, side);
@@ -1027,7 +1048,7 @@ function makeDialog(id, titleText, kind) {
     const storageStatus = document.createElement("span");
     storageStatus.className = "vaultFmStorageText";
     storageStatus.setAttribute("aria-live", "polite");
-    storageStatus.textContent = "Vault: — · Account storage: —";
+    storageStatus.textContent = `${tr("vault.storage.vault", null, "Vault")}: — · ${tr("vault.storage.account", null, "Account storage")}: —`;
 
     statusFooter.append(status, storageStatus);
 
@@ -1043,9 +1064,9 @@ function makeDialog(id, titleText, kind) {
     function applyVaultViewMode() {
       const isGrid = viewMode === "grid";
       shell.classList.toggle("vaultFmGridView", isGrid);
-      viewToggleBtn.textContent = isGrid ? "List view" : "Grid view";
+      viewToggleBtn.textContent = isGrid ? tr("vault.list_view", null, "List view") : tr("vault.grid_view", null, "Grid view");
       viewToggleBtn.setAttribute("aria-pressed", isGrid ? "true" : "false");
-      viewToggleBtn.title = isGrid ? "Switch to list view" : "Switch to grid view";
+      viewToggleBtn.title = isGrid ? tr("vault.switch_to_list_view", null, "Switch to list view") : tr("vault.switch_to_grid_view", null, "Switch to grid view");
     }
 
     function persistVaultSortSettings() {
@@ -1110,16 +1131,20 @@ function makeDialog(id, titleText, kind) {
       const label = SORT_LABELS[sortKey] || "Name";
       const arrow = sortDir === "desc" ? "↓" : "↑";
 
-      sortKeyBtn.textContent = `Sort: ${label}`;
-      sortKeyBtn.title = "Cycle sort field";
+      sortKeyBtn.textContent = `${tr("vault.sort", null, "Sort")}: ${label}`;
+      sortKeyBtn.title = tr("vault.sort.cycle_field", null, "Cycle sort field");
 
       sortDirBtn.textContent = arrow;
-      sortDirBtn.title = sortDir === "desc" ? "Sort descending" : "Sort ascending";
-      sortDirBtn.setAttribute("aria-label", sortDir === "desc" ? "Sort descending" : "Sort ascending");
+      sortDirBtn.title = sortDir === "desc"
+        ? tr("vault.sort.descending", null, "Sort descending")
+        : tr("vault.sort.ascending", null, "Sort ascending");
+      sortDirBtn.setAttribute("aria-label", sortDirBtn.title);
 
-      foldersFirstBtn.textContent = foldersFirst ? "Folders first" : "Mixed folders";
+      foldersFirstBtn.textContent = foldersFirst ? tr("vault.folders_first", null, "Folders first") : tr("vault.mixed_folders", null, "Mixed folders");
       foldersFirstBtn.setAttribute("aria-pressed", foldersFirst ? "true" : "false");
-      foldersFirstBtn.title = foldersFirst ? "Folders are grouped first" : "Folders are sorted with files";
+      foldersFirstBtn.title = foldersFirst
+        ? tr("vault.folders_first_title", null, "Folders are grouped first")
+        : tr("vault.mixed_folders_title", null, "Folders are sorted with files");
 
       for (const cell of header.querySelectorAll("[data-sort-key]")) {
         const key = cell.dataset.sortKey || "";
@@ -1219,10 +1244,15 @@ function makeDialog(id, titleText, kind) {
     function updateTrashButtonCount(count) {
       const n = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
       vaultTrashCount = n;
-      trashBtn.textContent = n > 0 ? `Trash (${n})` : "Trash";
+      trashBtn.textContent = n > 0
+        ? `${tr("vault.trash", null, "Trash")} (${n})`
+        : tr("vault.trash", null, "Trash");
       trashBtn.title = n > 0
-        ? `${n} Vault trash item${n === 1 ? "" : "s"}`
-        : "Vault trash";
+        ? tr("vault.trash.count_title", {
+            count: n,
+            item: pluralText(n, "vault.trash.item_one", "vault.trash.item_other", "Vault trash item", "Vault trash items")
+          }, "{count} {item}")
+        : tr("vault.trash", null, "Vault trash");
     }
 
     async function refreshTrashButtonCount() {
@@ -1321,14 +1351,14 @@ function makeDialog(id, titleText, kind) {
 
     const selectionInfo = document.createElement("span");
     selectionInfo.className = "vaultBulkInfo";
-    selectionInfo.textContent = "0 selected";
+    selectionInfo.textContent = tr("vault.selection.none", null, "0 selected");
 
     const selectionActions = document.createElement("div");
     selectionActions.className = "vaultBulkActions";
 
-    const clearSelectionBtn = makeButton("Clear");
-    const downloadSelectedBtn = makeButton("Download selected");
-    const deleteSelectedBtn = makeButton("Move selected to trash", "vaultFmBtn vaultFmPrimary");
+    const clearSelectionBtn = makeButton(tr("vault.clear", null, "Clear"));
+    const downloadSelectedBtn = makeButton(tr("vault.download_selected", null, "Download selected"));
+    const deleteSelectedBtn = makeButton(tr("vault.move_selected_to_trash", null, "Move selected to trash"), "vaultFmBtn vaultFmPrimary");
 
     selectionActions.append(clearSelectionBtn, downloadSelectedBtn, deleteSelectedBtn);
     selectionBar.append(selectionInfo, selectionActions);
@@ -1364,20 +1394,30 @@ function makeDialog(id, titleText, kind) {
       selectionBar.hidden = entries.length === 0;
 
       if (!entries.length) {
-        selectionInfo.textContent = "0 selected";
+        selectionInfo.textContent = tr("vault.selection.none", null, "0 selected");
       } else {
         const parts = [];
-        if (files) parts.push(`${files} file${files === 1 ? "" : "s"}`);
-        if (folders) parts.push(`${folders} folder${folders === 1 ? "" : "s"}`);
-        selectionInfo.textContent = `${entries.length} selected${parts.length ? ` (${parts.join(", ")})` : ""}`;
+        if (files) {
+          parts.push(`${files} ${pluralText(files, "vault.selection.file_one", "vault.selection.file_other", "file", "files")}`);
+        }
+        if (folders) {
+          parts.push(`${folders} ${pluralText(folders, "vault.selection.folder_one", "vault.selection.folder_other", "folder", "folders")}`);
+        }
+
+        selectionInfo.textContent = tr("vault.selection.summary", {
+          count: entries.length,
+          details: parts.length ? ` (${parts.join(", ")})` : ""
+        }, "{count} selected{details}");
       }
 
       downloadSelectedBtn.disabled = trashMode || files === 0;
       downloadSelectedBtn.title = trashMode
-        ? "Trash items cannot be downloaded from the Vault trash view."
-        : "Export selected encrypted packages.";
+        ? tr("vault.selection.trash_download_disabled", null, "Trash items cannot be downloaded from the Vault trash view.")
+        : tr("vault.selection.export_selected_packages", null, "Export selected encrypted packages.");
 
-      deleteSelectedBtn.textContent = trashMode ? "Restore selected" : "Move selected to trash";
+      deleteSelectedBtn.textContent = trashMode
+        ? tr("vault.restore_selected", null, "Restore selected")
+        : tr("vault.move_selected_to_trash", null, "Move selected to trash");
       deleteSelectedBtn.disabled = entries.length === 0;
     }
 
@@ -1621,7 +1661,7 @@ function makeDialog(id, titleText, kind) {
       updateSelectionBar();
 
       if (!visibleEntries.length) {
-        renderEmpty("This Vault folder is empty.");
+        renderEmpty(tr("vault.empty_folder", null, "This Vault folder is empty."));
         return;
       }
 
@@ -1656,7 +1696,7 @@ function makeDialog(id, titleText, kind) {
 
         const typeCell = document.createElement("div");
         typeCell.className = "vaultFmCellMuted vaultFmCellOptional";
-        typeCell.textContent = entry.isDir ? "Folder" : (entry.isVaultPackage ? "Vault package" : "Encrypted file");
+        typeCell.textContent = entry.isDir ? tr("vault.type.folder", null, "Folder") : (entry.isVaultPackage ? tr("vault.type.vault_package", null, "Vault package") : tr("vault.type.encrypted_file", null, "Encrypted file"));
 
         row.append(nameCell, sizeCell, modifiedCell, typeCell);
         applySelectionStateToRow(row, entry);
@@ -2261,7 +2301,11 @@ function makeDialog(id, titleText, kind) {
 
         renderRows(visibleEntries);
         updateVaultSortControls();
-        status.textContent = `${visibleEntries.length} item${visibleEntries.length === 1 ? "" : "s"} in ${path}`;
+        status.textContent = tr("vault.status.items_in_path", {
+          count: visibleEntries.length,
+          item: pluralText(visibleEntries.length, "vault.item_one", "vault.item_other", "item", "items"),
+          path
+        }, "{count} {item} in {path}");
         refreshVaultStorageStatus(visibleEntries).catch(() => {
           setVaultStorageStatus("", `Vault: ${formatBytes(sumEntrySizes(visibleEntries))} · Account storage: unavailable`);
         });
@@ -3036,7 +3080,9 @@ function makeDialog(id, titleText, kind) {
 
       const open = document.createElement("button");
       open.type = "button";
-      open.textContent = entry.isDir ? "Open folder" : "Download";
+      open.textContent = entry.isDir
+        ? tr("vault.open_folder", null, "Open folder")
+        : tr("vault.download", null, "Download");
       open.addEventListener("click", () => {
         hideContextMenu();
 
@@ -3050,7 +3096,7 @@ function makeDialog(id, titleText, kind) {
 
       const details = document.createElement("button");
       details.type = "button";
-      details.textContent = "Details";
+      details.textContent = tr("vault.details", null, "Details");
       details.addEventListener("click", () => {
         hideContextMenu();
         detailsDialog.open(entry);
@@ -3058,7 +3104,7 @@ function makeDialog(id, titleText, kind) {
 
       const copyPath = document.createElement("button");
       copyPath.type = "button";
-      copyPath.textContent = "Copy path";
+      copyPath.textContent = tr("vault.copy_path", null, "Copy path");
       copyPath.addEventListener("click", async () => {
         hideContextMenu();
 
@@ -3075,7 +3121,7 @@ function makeDialog(id, titleText, kind) {
       if (entry.isDir) {
         const removeFolder = document.createElement("button");
         removeFolder.type = "button";
-        removeFolder.textContent = "Move folder to trash";
+        removeFolder.textContent = tr("vault.move_folder_to_trash", null, "Move folder to trash");
         removeFolder.classList.add("vaultContextDanger");
         removeFolder.addEventListener("click", () => {
           hideContextMenu();
@@ -3085,7 +3131,7 @@ function makeDialog(id, titleText, kind) {
       } else {
         const downloadEncrypted = document.createElement("button");
         downloadEncrypted.type = "button";
-        downloadEncrypted.textContent = "Export encrypted package";
+        downloadEncrypted.textContent = tr("vault.export_package", null, "Export encrypted package");
         downloadEncrypted.addEventListener("click", () => {
           hideContextMenu();
           // Security: download the encrypted package as stored; do not preview or
@@ -3096,7 +3142,7 @@ function makeDialog(id, titleText, kind) {
 
         const deleteFile = document.createElement("button");
         deleteFile.type = "button";
-        deleteFile.textContent = "Move to trash";
+        deleteFile.textContent = tr("vault.move_to_trash", null, "Move to trash");
         deleteFile.classList.add("vaultContextDanger");
         deleteFile.addEventListener("click", () => {
           hideContextMenu();
@@ -3132,24 +3178,24 @@ function makeDialog(id, titleText, kind) {
         menu.appendChild(btn);
       }
 
-      addMenuButton("Create folder", () => {
+      addMenuButton(tr("vault.create_folder", null, "Create folder"), () => {
         showCreateFolderModal();
       });
 
-      addMenuButton("Upload encrypted file", () => {
+      addMenuButton(tr("vault.upload_encrypted_file", null, "Upload encrypted file"), () => {
         syncVaultFolderInput(pathInput.value);
         openDialog(dialogs.uploadDialog, "#fileInput");
       });
 
-      addMenuButton("Refresh", () => {
+      addMenuButton(tr("vault.refresh", null, "Refresh"), () => {
         refresh().catch(() => {});
       });
 
-      addMenuButton("Export encrypted package", () => {
+      addMenuButton(tr("vault.export_package", null, "Export encrypted package"), () => {
         openDialog(dialogs.decryptDialog, "#decryptFileInput");
       });
 
-      addMenuButton("Folder details", () => {
+      addMenuButton(tr("vault.folder_details", null, "Folder details"), () => {
         detailsDialog.open({
           name: visiblePath,
           path: currentPath,
@@ -3161,7 +3207,7 @@ function makeDialog(id, titleText, kind) {
         });
       });
 
-      addMenuButton("Copy folder path", async () => {
+      addMenuButton(tr("vault.copy_folder_path", null, "Copy folder path"), async () => {
         try {
           await navigator.clipboard.writeText(visiblePath);
           status.textContent = "Folder path copied.";
@@ -3249,5 +3295,13 @@ function makeDialog(id, titleText, kind) {
     refresh().catch(() => {});
   }
 
-  onReady(mountLayout);
+  onReady(() => {
+    const i18n = window.PQNAS_I18N;
+    if (i18n && typeof i18n.ready === "function") {
+      i18n.ready().then(mountLayout).catch(() => mountLayout());
+      return;
+    }
+
+    mountLayout();
+  });
 })();

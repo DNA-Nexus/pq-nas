@@ -1733,28 +1733,28 @@
 
                                                 <div class="card accordion" data-acc="vault-recovery">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
-                    <div class="h"><span>Vault / Master recovery key</span></div>
+                    <div class="h"><span data-i18n="admin.vault_recovery.title">Vault / Master recovery key</span></div>
                     <div class="row">
-                        <span class="pill warn" id="vaultRecoveryPill"><span class="k">Recovery:</span> <span class="v">—</span></span>
+                        <span class="pill warn" id="vaultRecoveryPill"><span class="k" data-i18n="admin.vault_recovery.recovery_label">Recovery:</span> <span class="v">—</span></span>
                     </div>
                     <span class="chev" aria-hidden="true">▸</span>
                 </div>
 
                 <div class="bd">
                     <div class="row">
-                        <span class="pill info"><span class="k">Master recovery key ID:</span> <span class="v mono" id="vaultRecoveryKeyId">—</span></span>
-                        <span class="pill info"><span class="k">Created:</span> <span class="v" id="vaultRecoveryCreated">—</span></span>
+                        <span class="pill info"><span class="k" data-i18n="admin.vault_recovery.key_id">Master recovery key ID:</span> <span class="v mono" id="vaultRecoveryKeyId">—</span></span>
+                        <span class="pill info"><span class="k" data-i18n="admin.vault_recovery.created">Created:</span> <span class="v" id="vaultRecoveryCreated">—</span></span>
                     </div>
 
                     <div class="row">
-                        <button id="btnVaultRecoveryGenerate" class="pq-btn primary" type="button"><span>Generate Master recovery key</span></button>
-                        <button id="btnVaultRecoveryReload" class="pq-btn" type="button"><span>Reload recovery status</span></button>
+                        <button id="btnVaultRecoveryGenerate" class="pq-btn primary" type="button"><span data-i18n="admin.vault_recovery.generate_button">Generate Master recovery key</span></button>
+                        <button id="btnVaultRecoveryReload" class="pq-btn" type="button"><span data-i18n="admin.vault_recovery.reload_button">Reload recovery status</span></button>
                     </div>
 
-                    <div class="note">
+                    <div class="note" data-i18n="admin.vault_recovery.scope_note">
                         This Master recovery key protects only this signed-in admin account's own Vault uploads. It is not a service-wide master key and it does not give this admin account access to other users' or other admins' Vault files.
                     </div>
-                    <div class="note">
+                    <div class="note" data-i18n="admin.vault_recovery.storage_note">
                         DNA-Nexus stores only this account's Master recovery public key and Recovery key ID. The private key is shown once and must be stored offline by the Vault owner. Anyone with this private key can recover this account's Vault files that were protected by this Master recovery key.
                     </div>
                 </div>
@@ -1790,28 +1790,28 @@
 
             <div id="vaultRecoveryDetachedWindow" class="vaultRecoveryDetached hidden" role="dialog" aria-modal="false" aria-labelledby="vaultRecoveryWindowTitle">
                 <div id="vaultRecoveryWindowHead" class="vaultRecoveryDetachedHead">
-                    <div id="vaultRecoveryWindowTitle" class="vaultRecoveryDetachedTitle">Master recovery private key</div>
+                    <div id="vaultRecoveryWindowTitle" class="vaultRecoveryDetachedTitle" data-i18n="admin.vault_recovery.private_key_title">Master recovery private key</div>
                     <button id="btnVaultRecoveryWindowClose" class="pq-btn" type="button">×</button>
                 </div>
 
                 <div class="vaultRecoveryDetachedBody">
-                    <div class="vaultRecoveryWarning">
+                    <div class="vaultRecoveryWarning" data-i18n="admin.vault_recovery.private_key_warning">
                         Copy or download this private recovery key now. It will not be shown again after this window is closed and DNA-Nexus will not store it.
                     </div>
 
-                    <div class="note">
+                    <div class="note" data-i18n="admin.vault_recovery.private_key_format_note">
                         Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it.
                     </div>
 
-                    <textarea id="vaultRecoveryPrivateKey" class="pq-textarea vaultRecoverySecret" readonly spellcheck="false" aria-label="Master recovery private key"></textarea>
+                    <textarea id="vaultRecoveryPrivateKey" class="pq-textarea vaultRecoverySecret" readonly spellcheck="false" aria-label="Master recovery private key" data-i18n-aria-label="admin.vault_recovery.private_key_title"></textarea>
 
                     <div class="row">
-                        <button id="btnVaultRecoveryCopyPrivate" class="pq-btn" type="button">Copy private key</button>
-                        <button id="btnVaultRecoveryDownloadPrivate" class="pq-btn" type="button">Download recovery key file</button>
-                        <button id="btnVaultRecoveryDiscardPrivate" class="pq-btn" type="button">Discard without saving</button>
+                        <button id="btnVaultRecoveryCopyPrivate" class="pq-btn" type="button" data-i18n="admin.vault_recovery.copy_private_key">Copy private key</button>
+                        <button id="btnVaultRecoveryDownloadPrivate" class="pq-btn" type="button" data-i18n="admin.vault_recovery.download_key_file">Download recovery key file</button>
+                        <button id="btnVaultRecoveryDiscardPrivate" class="pq-btn" type="button" data-i18n="admin.vault_recovery.discard_without_saving">Discard without saving</button>
                     </div>
 
-                    <div class="note">
+                    <div class="note" data-i18n="admin.vault_recovery.offline_storage_note">
                         Store this offline, in a password manager, on offline USB storage, or as a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
                     </div>
                 </div>
@@ -1819,9 +1819,9 @@
                 <div class="vaultRecoveryDetachedFoot">
                     <label class="vaultRecoveryAck">
                         <input id="vaultRecoveryAck" type="checkbox">
-                        <span>I have stored this private key safely.</span>
+                        <span data-i18n="admin.vault_recovery.ack_stored">I have stored this private key safely.</span>
                     </label>
-                    <button id="btnVaultRecoveryStored" class="pq-btn primary" type="button" disabled>Save public key and close</button>
+                    <button id="btnVaultRecoveryStored" class="pq-btn primary" type="button" disabled data-i18n="admin.vault_recovery.save_public_close">Save public key and close</button>
                 </div>
             </div>
 
@@ -1918,7 +1918,7 @@
 
 <script src="/static/admin_badges.js"></script>
 <script src="/static/share_pq_mlkem.js?v=20260706-vault-admin-recovery-1"></script>
-<script src="/static/admin_settings.js?v=20260706-vault-admin-recovery-1"></script>
+<script src="/static/admin_settings.js?v=20260707-vault-recovery-i18n-2"></script>
 <script src="/static/shell_sidebar.js"></script>
     <script src="/static/onboarding.js?v=guided-tours-clean-v1"></script>
 </body>
