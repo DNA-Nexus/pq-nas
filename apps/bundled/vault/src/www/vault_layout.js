@@ -611,7 +611,7 @@
       const apiPath = apiPathFromDisplayPath(serverPath);
 
       btn.disabled = true;
-      statusEl.textContent = "Downloading encrypted package...";
+      statusEl.textContent = "Exporting encrypted package...";
 
       try {
         const res = await fetch(`/api/v4/files/get?path=${encodeURIComponent(apiPath)}`, {
@@ -827,11 +827,11 @@
     }
 
     const uploadDialog = makeDialog("vaultUploadDialog", "Encrypted upload", "upload");
-    const decryptDialog = makeDialog("vaultDecryptDialog", "Advanced import", "decrypt");
+    const decryptDialog = makeDialog("vaultDecryptDialog", "Export encrypted package", "decrypt");
     const recoveryDialog = makeDialog("vaultRecoveryDialog", "Keys & recovery", "recovery");
 
     const decryptTitle = decryptPanel.querySelector("#decryptTitle");
-    if (decryptTitle) decryptTitle.textContent = "Advanced import";
+    if (decryptTitle) decryptTitle.textContent = "Export encrypted package";
 
     const decryptIntro = decryptPanel.querySelector(".vault-panel-head p");
     if (decryptIntro) {
@@ -944,7 +944,7 @@
     const foldersFirstBtn = makeButton("");
     const trashBtn = makeButton("Trash");
     const uploadBtn = makeButton("Encrypted upload", "vaultFmBtn vaultFmPrimary");
-    const decryptBtn = makeButton("Advanced import");
+    const decryptBtn = makeButton("Export encrypted package");
     actions.append(refreshBtn, viewToggleBtn, sortKeyBtn, sortDirBtn, foldersFirstBtn, trashBtn, uploadBtn, decryptBtn);
     topbar.append(brand, pathBar, actions);
 
@@ -1308,7 +1308,7 @@
       downloadSelectedBtn.disabled = trashMode || files === 0;
       downloadSelectedBtn.title = trashMode
         ? "Trash items cannot be downloaded from the Vault trash view."
-        : "Download selected encrypted packages.";
+        : "Export selected encrypted packages.";
 
       deleteSelectedBtn.textContent = trashMode ? "Restore selected" : "Move selected to trash";
       deleteSelectedBtn.disabled = entries.length === 0;
@@ -2103,7 +2103,7 @@
         downloadEncryptedPackage(entry);
       }
 
-      status.textContent = `Started encrypted package download for ${files.length} file${files.length === 1 ? "" : "s"}.`;
+      status.textContent = `Started encrypted package export for ${files.length} file${files.length === 1 ? "" : "s"}.`;
     }
 
     async function createVaultFolder() {
@@ -2993,7 +2993,7 @@
       } else {
         const downloadEncrypted = document.createElement("button");
         downloadEncrypted.type = "button";
-        downloadEncrypted.textContent = "Download encrypted package";
+        downloadEncrypted.textContent = "Export encrypted package";
         downloadEncrypted.addEventListener("click", () => {
           hideContextMenu();
           // Security: download the encrypted package as stored; do not preview or
@@ -3053,7 +3053,7 @@
         refresh().catch(() => {});
       });
 
-      addMenuButton("Advanced import", () => {
+      addMenuButton("Export encrypted package", () => {
         openDialog(dialogs.decryptDialog, "#decryptFileInput");
       });
 
