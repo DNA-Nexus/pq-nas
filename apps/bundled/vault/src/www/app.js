@@ -32,6 +32,21 @@
     downloadSlot: document.getElementById("downloadSlot")
   };
 
+  function tr(key, vars, fallback) {
+    const i18n = window.PQNAS_I18N;
+    if (i18n && typeof i18n.t === "function") {
+      return i18n.t(key, vars, fallback);
+    }
+
+    let out = String(fallback ?? key ?? "");
+    if (vars && typeof vars === "object") {
+      for (const [name, value] of Object.entries(vars)) {
+        out = out.replaceAll(`{${name}}`, String(value ?? ""));
+      }
+    }
+    return out;
+  }
+
   function setText(node, text) {
     if (node) node.textContent = String(text || "");
   }
@@ -104,19 +119,19 @@
       });
 
       if (r.status === 401) {
-        setText(el.sessionBadge, "Not signed in");
+        setText(el.sessionBadge, tr("vault.session.not_signed_in", null, "Not signed in"));
         el.sessionBadge.className = "pq-badge err";
         return;
       }
 
       if (r.status === 403) {
-        setText(el.sessionBadge, "Account not allowed");
+        setText(el.sessionBadge, tr("vault.session.account_not_allowed", null, "Account not allowed"));
         el.sessionBadge.className = "pq-badge warn";
         return;
       }
 
       if (!r.ok) {
-        setText(el.sessionBadge, "Session check failed");
+        setText(el.sessionBadge, tr("vault.session.check_failed", null, "Session check failed"));
         el.sessionBadge.className = "pq-badge warn";
         return;
       }
@@ -126,7 +141,7 @@
       setText(el.sessionBadge, `Signed in • ${role}`);
       el.sessionBadge.className = "pq-badge ok";
     } catch (_) {
-      setText(el.sessionBadge, "Offline or unavailable");
+      setText(el.sessionBadge, tr("vault.session.offline", null, "Offline or unavailable"));
       el.sessionBadge.className = "pq-badge warn";
     }
   }
@@ -194,7 +209,7 @@
       item.className = "vault-item";
       const title = document.createElement("div");
       title.className = "vault-item-title";
-      title.textContent = "No files selected.";
+      title.textContent = tr("vault.queue.no_files_selected", null, "No files selected.");
       item.append(title);
       el.queueList.append(item);
     }
@@ -546,14 +561,14 @@
 
     el.encryptUploadBtn.disabled = true;
     try {
-      setText(el.encryptStatus, "Checking Master recovery…");
+      setText(el.encryptStatus, tr("vault.status.checking_master_recovery", null, "Checking Master recovery…"));
 
       masterRecovery = await loadMasterRecoveryPublicKey();
       recoveryPublicKey = masterRecovery?.publicKeyB64 || "";
 
       const recoveryPrefix = masterRecovery
         ? `Master recovery active (${shortRecoveryKeyId(masterRecovery.recoveryKeyId)}).`
-        : "Master recovery not configured.";
+         : tr("vault.status.master_recovery_not_configured", null, "Master recovery not configured.");
 
       for (let i = 0; i < state.files.length; i++) {
         const file = state.files[i];
@@ -572,7 +587,7 @@
       el.encryptUploadBtn.disabled = false;
     }
 
-    setText(el.encryptStatus, "Done. Files were encrypted before upload.");
+    setText(el.encryptStatus, tr("vault.status.upload_done", null, "Done. Files were encrypted before upload."));
 
     try {
       window.dispatchEvent(new CustomEvent("pqnas:vault-storage-changed"));
@@ -801,14 +816,14 @@
     el.downloadSlot.replaceChildren();
 
     try {
-      setText(el.decryptStatus, "Reading encrypted package…");
+      setText(el.decryptStatus, tr("vault.status.reading_package", null, "Reading encrypted package…"));
       const pkg = JSON.parse(await file.text());
 
-      setText(el.decryptStatus, "Decrypting locally…");
+      setText(el.decryptStatus, tr("vault.status.decrypting_locally", null, "Decrypting locally…"));
       const decrypted = await decryptVaultPackage(pkg, passphrase);
 
-      publishRecoveredDownload(decrypted, "Download decrypted file");
-      setText(el.decryptStatus, "Decryption complete. The server was not involved.");
+      publishRecoveredDownload(decrypted, tr("vault.download_decrypted_file", null, "Download decrypted file"));
+      setText(el.decryptStatus, tr("vault.status.decryption_complete", null, "Decryption complete. The server was not involved."));
     } finally {
       clearAdvancedImportSensitiveInputs({ clearFile: true });
       el.decryptBtn.disabled = false;
@@ -826,15 +841,15 @@
     el.downloadSlot.replaceChildren();
 
     try {
-      setText(el.decryptStatus, "Reading encrypted package and recovery key…");
+      setText(el.decryptStatus, tr("vault.status.reading_package_and_key", null, "Reading encrypted package and recovery key…"));
       const pkg = JSON.parse(await file.text());
       const privateKeyB64 = await readMasterRecoveryPrivateKey(keyFile);
 
-      setText(el.decryptStatus, "Recovering locally with organization private key…");
+      setText(el.decryptStatus, tr("vault.status.recovering_locally", null, "Recovering locally with organization private key…"));
       const decrypted = await decryptVaultPackageWithMasterRecovery(pkg, privateKeyB64);
 
-      publishRecoveredDownload(decrypted, "Download recovered file");
-      setText(el.decryptStatus, "Master recovery complete. The server was not involved.");
+      publishRecoveredDownload(decrypted, tr("vault.download_recovered_file", null, "Download recovered file"));
+      setText(el.decryptStatus, tr("vault.status.master_recovery_complete", null, "Master recovery complete. The server was not involved."));
     } finally {
       clearAdvancedImportSensitiveInputs({ clearFile: true });
       el.organizationRecoverBtn.disabled = false;
@@ -874,7 +889,7 @@
       el.fileInput.value = "";
       clearUploadSensitiveInputs();
       renderQueue();
-      setText(el.encryptStatus, "Ready.");
+      setText(el.encryptStatus, tr("vault.ready_dot", null, "Ready."));
     });
 
     el.decryptBtn.addEventListener("click", async () => {
@@ -905,7 +920,16 @@
     await checkSession();
   }
 
-  init().catch((err) => {
-    setText(el.encryptStatus, err && err.message ? err.message : "Vault init failed.");
+  async function startWhenI18nReady() {
+    const i18n = window.PQNAS_I18N;
+    if (i18n && typeof i18n.ready === "function") {
+      await i18n.ready();
+    }
+
+    await init();
+  }
+
+  startWhenI18nReady().catch((err) => {
+    setText(el.encryptStatus, err && err.message ? err.message : tr("vault.init_failed", null, "Vault init failed."));
   });
 })();

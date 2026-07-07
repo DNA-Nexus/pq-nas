@@ -3671,7 +3671,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         const ack = document.getElementById("settingsMasterRecoveryAck");
         if (!ack || !ack.checked) {
-            throw new Error("Confirm that you have stored the private key safely.");
+            throw new Error(tr("settings.vault_recovery.confirm_stored", null, "Confirm that you have stored the private key safely."));
         }
 
         const j = await apiUserPost("/api/v4/user/vault/master-recovery", {
@@ -3717,10 +3717,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
         if (active) {
             const ok = await openShellConfirmDialog({
-                title: "Rotate Master recovery key?",
-                message: "New Vault uploads will use the new Master recovery public key. Old Vault packages still require the old private key.",
-                confirmText: "Rotate key",
-                cancelText: "Cancel",
+                title: tr("settings.vault_recovery.rotate_confirm_title", null, "Rotate Master recovery key?"),
+                message: tr("settings.vault_recovery.rotate_confirm_message", null, "New Vault uploads will use the new Master recovery public key. Old Vault packages still require the old private key."),
+                confirmText: tr("settings.vault_recovery.rotate_key", null, "Rotate key"),
+                cancelText: tr("admin.common.cancel", null, "Cancel"),
                 danger: false
             });
             if (!ok) return false;
@@ -3906,11 +3906,11 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                 <div class="settingsMasterRecoveryBody">
                     <div class="settingsMasterRecoveryWarning">
-                        Copy or download this private key now. It will not be shown again after this window is closed and DNA-Nexus will not store it.
+                        ${escapeHtml(tr("settings.vault_recovery.private_key_window_warning", null, "Copy or download this private key now. It will not be shown again after this window is closed and DNA-Nexus will not store it."))}
                     </div>
 
                     <div class="mini" style="line-height:1.5; margin-top:10px;">
-                        Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it.
+                        ${escapeHtml(tr("settings.vault_recovery.private_key_format_note", null, "Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it."))}
                     </div>
 
                     <textarea
@@ -3922,7 +3922,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     >${escapeHtml(pendingVaultMasterRecoveryPrivateKeyB64)}</textarea>
 
                     <div class="mini" style="line-height:1.5; margin-top:10px;">
-                        Store this offline, in a password manager, on offline USB storage, or as a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
+                        ${escapeHtml(tr("settings.vault_recovery.offline_storage_note", null, "Store this offline, in a password manager, on offline USB storage, or as a printed recovery sheet in a safe. Do not email it or leave it in Downloads."))}
                     </div>
 
                     <div id="settingsMasterRecoveryModalStatus" class="mini" style="line-height:1.5; margin-top:10px;"></div>
@@ -3931,14 +3931,14 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 <div class="settingsMasterRecoveryFoot">
                     <label style="display:flex; gap:8px; align-items:center;">
                         <input id="settingsMasterRecoveryAck" type="checkbox">
-                        <span>I have stored this private key safely.</span>
+                        <span>${escapeHtml(tr("settings.vault_recovery.ack_stored", null, "I have stored this private key safely."))}</span>
                     </label>
 
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                        <button class="btn secondary" type="button" data-action="copy">Copy private key</button>
-                        <button class="btn secondary" type="button" data-action="download">Download private key JSON</button>
-                        <button class="btn primary" type="button" data-action="save">Save public key</button>
-                        <button class="btn secondary" type="button" data-action="discard">Discard</button>
+                        <button class="btn secondary" type="button" data-action="copy">${escapeHtml(tr("settings.vault_recovery.copy_private_key", null, "Copy private key"))}</button>
+                        <button class="btn secondary" type="button" data-action="download">${escapeHtml(tr("settings.vault_recovery.download_private_key_json", null, "Download private key JSON"))}</button>
+                        <button class="btn primary" type="button" data-action="save">${escapeHtml(tr("settings.vault_recovery.save_public_key", null, "Save public key"))}</button>
+                        <button class="btn secondary" type="button" data-action="discard">${escapeHtml(tr("settings.vault_recovery.discard", null, "Discard"))}</button>
                     </div>
                 </div>
             </div>
@@ -3962,20 +3962,20 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             const action = btn.getAttribute("data-action");
 
             if (action === "close") {
-                setStatus("Store the private key and save the public key, or discard it explicitly.", "warn");
+                setStatus(tr("settings.vault_recovery.store_or_discard", null, "Store the private key and save the public key, or discard it explicitly."), "warn");
                 return;
             }
 
             if (action === "copy") {
                 try {
                     await navigator.clipboard.writeText(pendingVaultMasterRecoveryPrivateKeyB64);
-                    setStatus("Private key copied.", "ok");
+                    setStatus(tr("settings.vault_recovery.private_key_copied", null, "Private key copied."), "ok");
                 } catch (e) {
                     try {
                         textarea?.focus();
                         textarea?.select();
                         document.execCommand("copy");
-                        setStatus("Private key copied.", "ok");
+                        setStatus(tr("settings.vault_recovery.private_key_copied", null, "Private key copied."), "ok");
                     } catch {
                         setStatus(`Copy failed: ${String(e && e.message ? e.message : e)}`, "err");
                     }
@@ -4004,17 +4004,17 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 } catch (e) {
                     btn.disabled = false;
                     btn.textContent = "Save public key";
-                    setStatus(`Save failed: ${String(e && e.message ? e.message : e)}`, "err");
+                    setStatus(tr("settings.vault_recovery.save_failed", { error: String(e && e.message ? e.message : e) }, `Save failed: ${String(e && e.message ? e.message : e)}`), "err");
                 }
                 return;
             }
 
             if (action === "discard") {
                 const ok = await openShellConfirmDialog({
-                    title: "Discard generated private key?",
-                    message: "The generated private key and public key will be forgotten by this browser view.",
-                    confirmText: "Discard",
-                    cancelText: "Cancel",
+                    title: tr("settings.vault_recovery.discard_confirm_title", null, "Discard generated private key?"),
+                    message: tr("settings.vault_recovery.discard_confirm_message", null, "The generated private key and public key will be forgotten by this browser view."),
+                    confirmText: tr("settings.vault_recovery.discard", null, "Discard"),
+                    cancelText: tr("admin.common.cancel", null, "Cancel"),
                     danger: true
                 });
 
@@ -4025,7 +4025,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 pendingVaultMasterRecoveryPublicKeySha256 = "";
                 pendingVaultMasterRecoveryCreatedAt = 0;
                 closeMasterRecoveryModal();
-                renderUserSettings("Generated Master recovery key discarded.", "ok");
+                renderUserSettings(tr("settings.vault_recovery.generated_key_discarded", null, "Generated Master recovery key discarded."), "ok");
             }
         });
 
@@ -4530,18 +4530,17 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         
             <div class="card" style="padding:14px; margin-top:12px;">
                 <h3 style="margin:0 0 8px 0; font-size:18px;">
-                    Vault / Master recovery key
+                    ${escapeHtml(tr("settings.vault_recovery.title", null, "Vault / Master recovery key"))}
                 </h3>
 
                 <div class="mini" style="line-height:1.5;">
-                    Master recovery protects only your own Vault files. DNA-Nexus stores only the public key.
-                    The private key is shown once and must be stored offline by the Vault owner.
+                    ${escapeHtml(tr("settings.vault_recovery.desc", null, "Master recovery protects only your own Vault files. DNA-Nexus stores only the public key. The private key is shown once and must be stored offline by the Vault owner."))}
                 </div>
 
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-                    <span class="chip">Status: ${escapeHtml((userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? "active" : "not configured")}</span>
-                    <span class="chip">Key ID: ${escapeHtml(shortMasterRecoveryKeyId(userVaultMasterRecovery && (userVaultMasterRecovery.recovery_key_id || userVaultMasterRecovery.public_key_sha256)))}</span>
-                    <span class="chip">Created: ${escapeHtml(formatMasterRecoveryCreated(userVaultMasterRecovery && userVaultMasterRecovery.created_at))}</span>
+                    <span class="chip">${escapeHtml(tr("settings.vault_recovery.status", null, "Status"))}: ${escapeHtml((userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? tr("settings.vault_recovery.status_active", null, "active") : tr("settings.vault_recovery.status_not_configured", null, "not configured"))}</span>
+                    <span class="chip">${escapeHtml(tr("settings.vault_recovery.key_id", null, "Key ID"))}: ${escapeHtml(shortMasterRecoveryKeyId(userVaultMasterRecovery && (userVaultMasterRecovery.recovery_key_id || userVaultMasterRecovery.public_key_sha256)))}</span>
+                    <span class="chip">${escapeHtml(tr("settings.vault_recovery.created", null, "Created"))}: ${escapeHtml(formatMasterRecoveryCreated(userVaultMasterRecovery && userVaultMasterRecovery.created_at))}</span>
                 </div>
 
                 ${userVaultMasterRecoveryError ? `
@@ -4550,7 +4549,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                 ${pendingVaultMasterRecoveryPrivateKeyB64 ? `
                     <div class="msg warn" style="margin-top:12px;">
-                        Copy or download this private key now. It will not be shown again after this view is refreshed.
+                        ${escapeHtml(tr("settings.vault_recovery.private_key_warning", null, "Copy or download this private key now. It will not be shown again after this view is refreshed."))}
                     </div>
 
                     <textarea
@@ -4562,27 +4561,26 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     <label style="display:flex; gap:8px; align-items:center; margin-top:10px;">
                         <input id="settingsMasterRecoveryAck" type="checkbox">
-                        <span>I have stored this private key safely.</span>
+                        <span>${escapeHtml(tr("settings.vault_recovery.ack_stored", null, "I have stored this private key safely."))}</span>
                     </label>
 
                     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
-                        <button class="btn secondary" id="settingsMasterRecoveryCopyBtn" type="button">Copy private key</button>
-                        <button class="btn secondary" id="settingsMasterRecoveryDownloadBtn" type="button">Download private key JSON</button>
-                        <button class="btn primary" id="settingsMasterRecoverySaveBtn" type="button">Save public key</button>
-                        <button class="btn secondary" id="settingsMasterRecoveryDiscardBtn" type="button">Discard</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryCopyBtn" type="button">${escapeHtml(tr("settings.vault_recovery.copy_private_key", null, "Copy private key"))}</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryDownloadBtn" type="button">${escapeHtml(tr("settings.vault_recovery.download_private_key_json", null, "Download private key JSON"))}</button>
+                        <button class="btn primary" id="settingsMasterRecoverySaveBtn" type="button">${escapeHtml(tr("settings.vault_recovery.save_public_key", null, "Save public key"))}</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryDiscardBtn" type="button">${escapeHtml(tr("settings.vault_recovery.discard", null, "Discard"))}</button>
                     </div>
                 ` : `
                     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
                         <button class="btn primary" id="settingsMasterRecoveryGenerateBtn" type="button">
-                            ${(userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? "Rotate Master recovery key" : "Generate Master recovery key"}
+                            ${escapeHtml((userVaultMasterRecovery && userVaultMasterRecovery.enabled) ? tr("settings.vault_recovery.rotate_button", null, "Rotate Master recovery key") : tr("settings.vault_recovery.generate_button", null, "Generate Master recovery key"))}
                         </button>
-                        <button class="btn secondary" id="settingsMasterRecoveryReloadBtn" type="button">Reload status</button>
+                        <button class="btn secondary" id="settingsMasterRecoveryReloadBtn" type="button">${escapeHtml(tr("settings.vault_recovery.reload_status", null, "Reload status"))}</button>
                     </div>
                 `}
 
                 <div class="mini" style="line-height:1.5; margin-top:12px;">
-                    This is not a service-wide master key. It does not give this account access to other users' Vault files.
-                    Anyone with the private key can recover your Vault files protected by this key.
+                    ${escapeHtml(tr("settings.vault_recovery.scope_note", null, "This is not a service-wide master key. It does not give this account access to other users' Vault files. Anyone with the private key can recover your Vault files protected by this key."))}
                 </div>
             </div>
 
@@ -4794,7 +4792,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (masterRecoveryGenerateBtn) {
             masterRecoveryGenerateBtn.addEventListener("click", async () => {
                 masterRecoveryGenerateBtn.disabled = true;
-                masterRecoveryGenerateBtn.textContent = "Generating…";
+                masterRecoveryGenerateBtn.textContent = tr("settings.vault_recovery.generating", null, "Generating…");
 
                 try {
                     // UX/safety: open the one-time key modal before doing expensive
@@ -4811,20 +4809,20 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     root.innerHTML = `
                         <div class="settingsMasterRecoveryDialog">
                             <div class="settingsMasterRecoveryHead">
-                                <div class="settingsMasterRecoveryTitle">Master recovery private key</div>
+                                <div class="settingsMasterRecoveryTitle">${escapeHtml(tr("settings.vault_recovery.private_key_title", null, "Master recovery private key"))}</div>
                                 <button class="btn secondary" type="button" data-action="close">×</button>
                             </div>
                             <div class="settingsMasterRecoveryBody">
                                 <div class="settingsMasterRecoveryWarning">
-                                    Generating Master recovery key locally in this browser…
+                                    ${escapeHtml(tr("settings.vault_recovery.generating_locally", null, "Generating Master recovery key locally in this browser…"))}
                                 </div>
                                 <div id="settingsMasterRecoveryModalStatus" class="mini" style="line-height:1.5; margin-top:10px;">
-                                    Loading ML-KEM helper…
+                                    ${escapeHtml(tr("settings.vault_recovery.loading_helper", null, "Loading ML-KEM helper…"))}
                                 </div>
                             </div>
                             <div class="settingsMasterRecoveryFoot">
-                                <span class="mini">Do not close this window until the key is ready.</span>
-                                <button class="btn secondary" type="button" data-action="discard">Cancel</button>
+                                <span class="mini">${escapeHtml(tr("settings.vault_recovery.do_not_close", null, "Do not close this window until the key is ready."))}</span>
+                                <button class="btn secondary" type="button" data-action="discard">${escapeHtml(tr("admin.common.cancel", null, "Cancel"))}</button>
                             </div>
                         </div>
                     `;
@@ -4844,7 +4842,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                         const action = btn.getAttribute("data-action");
                         if (action === "close") {
-                            setModalStatus("Key generation is still running. Use Cancel only if you want to abandon this view.", "warn");
+                            setModalStatus(tr("settings.vault_recovery.generation_running", null, "Key generation is still running. Use Cancel only if you want to abandon this view."), "warn");
                             return;
                         }
 
@@ -4860,7 +4858,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     await new Promise((resolve) => window.setTimeout(resolve, 30));
 
-                    setModalStatus("Generating ML-KEM keypair…");
+                    setModalStatus(tr("settings.vault_recovery.generating_keypair", null, "Generating ML-KEM keypair…"));
                     const generated = await generateUserVaultMasterRecoveryKey();
 
                     if (!generated) {
@@ -4869,7 +4867,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                         return;
                     }
 
-                    setModalStatus("Key generated. Opening private-key view…");
+                    setModalStatus(tr("settings.vault_recovery.key_generated_opening", null, "Key generated. Opening private-key view…"));
                     await openUserVaultMasterRecoveryPrivateKeyDialog();
                 } catch (e) {
                     const msg = `Master recovery generation failed: ${String(e && e.message ? e.message : e)}`;
@@ -4884,7 +4882,9 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                     if (masterRecoveryGenerateBtn.isConnected) {
                         const active = !!(userVaultMasterRecovery && userVaultMasterRecovery.enabled);
                         masterRecoveryGenerateBtn.disabled = false;
-                        masterRecoveryGenerateBtn.textContent = active ? "Rotate Master recovery key" : "Generate Master recovery key";
+                        masterRecoveryGenerateBtn.textContent = active
+                            ? tr("settings.vault_recovery.rotate_button", null, "Rotate Master recovery key")
+                            : tr("settings.vault_recovery.generate_button", null, "Generate Master recovery key");
                     }
                 }
             });
@@ -4894,7 +4894,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (masterRecoveryReloadBtn) {
             masterRecoveryReloadBtn.addEventListener("click", async () => {
                 await loadUserVaultMasterRecovery();
-                renderUserSettings("Master recovery status reloaded.", "ok");
+                renderUserSettings(tr("settings.vault_recovery.status_reloaded", null, "Master recovery status reloaded."), "ok");
             });
         }
 
@@ -4906,14 +4906,14 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                 try {
                     await navigator.clipboard.writeText(value);
-                    renderUserSettings("Private key copied.", "ok");
+                    renderUserSettings(tr("settings.vault_recovery.private_key_copied", null, "Private key copied."), "ok");
                 } catch (e) {
                     const el = document.getElementById("settingsMasterRecoveryPrivateKey");
                     try {
                         el?.focus();
                         el?.select();
                         document.execCommand("copy");
-                        renderUserSettings("Private key copied.", "ok");
+                        renderUserSettings(tr("settings.vault_recovery.private_key_copied", null, "Private key copied."), "ok");
                     } catch {
                         renderUserSettings(`Copy failed: ${String(e && e.message ? e.message : e)}`, "err");
                     }
@@ -4951,10 +4951,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (masterRecoveryDiscardBtn) {
             masterRecoveryDiscardBtn.addEventListener("click", async () => {
                 const ok = await openShellConfirmDialog({
-                    title: "Discard generated private key?",
-                    message: "The generated private key and public key will be forgotten by this browser view.",
-                    confirmText: "Discard",
-                    cancelText: "Cancel",
+                    title: tr("settings.vault_recovery.discard_confirm_title", null, "Discard generated private key?"),
+                    message: tr("settings.vault_recovery.discard_confirm_message", null, "The generated private key and public key will be forgotten by this browser view."),
+                    confirmText: tr("settings.vault_recovery.discard", null, "Discard"),
+                    cancelText: tr("admin.common.cancel", null, "Cancel"),
                     danger: true
                 });
 
@@ -4964,7 +4964,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                 pendingVaultMasterRecoveryPublicKeyB64 = "";
                 pendingVaultMasterRecoveryPublicKeySha256 = "";
                 pendingVaultMasterRecoveryCreatedAt = 0;
-                renderUserSettings("Generated Master recovery key discarded.", "ok");
+                renderUserSettings(tr("settings.vault_recovery.generated_key_discarded", null, "Generated Master recovery key discarded."), "ok");
             });
         }
 
