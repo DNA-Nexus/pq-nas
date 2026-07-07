@@ -11620,6 +11620,177 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         	{"group", group}
     	}).dump());
 	});
+
+auto vault_master_recovery_to_json = [](const pqnas::UserRec& u) -> json {
+    const bool active =
+        u.vault_master_recovery_status == "active" &&
+        !u.vault_master_recovery_public_key_b64.empty() &&
+        u.vault_master_recovery_public_key_sha256.size() == 64;
+
+    if (!active) {
+        return json{
+            {"enabled", false},
+            {"status", u.vault_master_recovery_status == "disabled" ? "disabled" : "not_configured"},
+            {"public_key_b64", ""},
+            {"public_key_sha256", ""},
+            {"recovery_key_id", ""},
+            {"created_at", 0},
+            {"label", ""}
+        };
+    }
+
+    return json{
+        {"enabled", true},
+        {"status", "active"},
+        {"public_key_b64", u.vault_master_recovery_public_key_b64},
+        {"public_key_sha256", u.vault_master_recovery_public_key_sha256},
+        {"recovery_key_id", u.vault_master_recovery_public_key_sha256},
+        {"created_at", u.vault_master_recovery_created_at},
+        {"label", u.vault_master_recovery_label}
+    };
+};
+
+auto normalize_user_vault_master_recovery = [&](const json& in, std::string& err) -> json {
+    err.clear();
+
+    if (!in.is_object()) {
+        err = "vault_master_recovery must be an object";
+        return json();
+    }
+
+    // Security: reject all private/secret key fields at the API boundary.
+    // The Master recovery private key must remain client-side/offline.
+    if (in.contains("private_key_b64") ||
+        in.contains("privateKeyB64") ||
+        in.contains("private_key") ||
+        in.contains("secret_key") ||
+        in.contains("secretKey")) {
+        err = "Master recovery private key material must not be sent to server";
+        return json();
+    }
+
+    json out = json{
+        {"enabled", false},
+        {"status", "not_configured"},
+        {"public_key_b64", ""},
+        {"public_key_sha256", ""},
+        {"created_at", 0},
+        {"label", ""}
+    };
+
+    if (in.contains("enabled")) {
+        if (!in["enabled"].is_boolean()) {
+            err = "enabled must be boolean";
+            return json();
+        }
+        out["enabled"] = in["enabled"];
+    }
+
+    if (in.contains("status")) {
+        if (!in["status"].is_string()) {
+            err = "status must be string";
+            return json();
+        }
+
+        const std::string status = in["status"].get<std::string>();
+        if (!(status == "active" || status == "disabled" || status == "not_configured")) {
+            err = "status must be one of: active, disabled, not_configured";
+            return json();
+        }
+
+        out["status"] = status;
+    }
+
+    if (in.contains("public_key_b64")) {
+        if (!in["public_key_b64"].is_string()) {
+            err = "public_key_b64 must be string";
+            return json();
+        }
+
+        const std::string pk = trim_copy(in["public_key_b64"].get<std::string>());
+        if (pk.size() > 8192) {
+            err = "public_key_b64 too large";
+            return json();
+        }
+
+        out["public_key_b64"] = pk;
+    }
+
+    if (in.contains("public_key_sha256")) {
+        if (!in["public_key_sha256"].is_string()) {
+            err = "public_key_sha256 must be string";
+            return json();
+        }
+
+        const std::string id = trim_copy(in["public_key_sha256"].get<std::string>());
+        if (id.size() != 64) {
+            err = "public_key_sha256 must be 64 hex characters";
+            return json();
+        }
+
+        for (char c : id) {
+            const bool hex =
+                (c >= '0' && c <= '9') ||
+                (c >= 'a' && c <= 'f') ||
+                (c >= 'A' && c <= 'F');
+
+            if (!hex) {
+                err = "public_key_sha256 must be hex";
+                return json();
+            }
+        }
+
+        out["public_key_sha256"] = id;
+    }
+
+    if (in.contains("created_at")) {
+        if (!in["created_at"].is_number_integer()) {
+            err = "created_at must be integer";
+            return json();
+        }
+
+        const long long ts = in["created_at"].get<long long>();
+        if (ts < 0) {
+            err = "created_at must be >= 0";
+            return json();
+        }
+
+        out["created_at"] = ts;
+    }
+
+    if (in.contains("label")) {
+        if (!in["label"].is_string()) {
+            err = "label must be string";
+            return json();
+        }
+
+        std::string label = trim_copy(in["label"].get<std::string>());
+        if (label.size() > 120) label.resize(120);
+        out["label"] = label;
+    }
+
+    const bool wants_active =
+        out.value("enabled", false) ||
+        out.value("status", std::string("")) == "active";
+
+    if (wants_active) {
+        if (out.value("public_key_b64", std::string()).empty()) {
+            err = "public_key_b64 required when active";
+            return json();
+        }
+
+        if (out.value("public_key_sha256", std::string()).empty()) {
+            err = "public_key_sha256 required when active";
+            return json();
+        }
+
+        out["enabled"] = true;
+        out["status"] = "active";
+    }
+
+    return out;
+};
+
 // GET /api/v4/user/profile
 // Normal signed-in users can read their own editable profile fields.
 srv.Get("/api/v4/user/profile", [&](const httplib::Request& req, httplib::Response& res) {
@@ -11662,6 +11833,132 @@ srv.Get("/api/v4/user/profile", [&](const httplib::Request& req, httplib::Respon
     }.dump());
 });
 
+
+
+// GET /api/v4/user/vault/master-recovery
+// Returns the signed-in user's own Vault Master recovery public key metadata.
+srv.Get("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, httplib::Response& res) {
+    std::string actor_fp, actor_role;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &actor_fp, &actor_role)) return;
+
+    if (!users.load(users_path)) {
+        reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "users_reload_failed"},
+            {"message", "failed to reload users"}
+        }.dump());
+        return;
+    }
+
+    auto uopt = users.get(actor_fp);
+    if (!uopt.has_value()) {
+        reply_json(res, 404, json{
+            {"ok", false},
+            {"error", "not_found"},
+            {"message", "user not found"}
+        }.dump());
+        return;
+    }
+
+    res.set_header("Cache-Control", "no-store");
+    reply_json(res, 200, json{
+        {"ok", true},
+        {"fingerprint_hex", actor_fp},
+        {"role", actor_role},
+        {"vault_master_recovery", vault_master_recovery_to_json(*uopt)}
+    }.dump());
+});
+
+// POST /api/v4/user/vault/master-recovery
+// Updates only the signed-in user's own Vault Master recovery public key.
+srv.Post("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, httplib::Response& res) {
+    std::string actor_fp, actor_role;
+    if (!require_user_auth_users_actor(req, res, COOKIE_KEY, &users, &actor_fp, &actor_role)) return;
+    if (!require_same_origin_for_cookie_mutation(req, res)) return;
+
+    json in;
+    try {
+        in = json::parse(req.body);
+    } catch (...) {
+        reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", "invalid json"}
+        }.dump());
+        return;
+    }
+
+    json candidate = in.contains("vault_master_recovery") ? in["vault_master_recovery"] : in;
+
+    std::string norm_err;
+    json norm = normalize_user_vault_master_recovery(candidate, norm_err);
+    if (!norm_err.empty()) {
+        reply_json(res, 400, json{
+            {"ok", false},
+            {"error", "bad_request"},
+            {"message", norm_err}
+        }.dump());
+        return;
+    }
+
+    if (!users.load(users_path)) {
+        reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "users_reload_failed"},
+            {"message", "failed to reload users"}
+        }.dump());
+        return;
+    }
+
+    auto cur = users.get(actor_fp);
+    if (!cur.has_value()) {
+        reply_json(res, 404, json{
+            {"ok", false},
+            {"error", "not_found"},
+            {"message", "user not found"}
+        }.dump());
+        return;
+    }
+
+    pqnas::UserRec u = *cur;
+    u.vault_master_recovery_status = norm.value("status", std::string("not_configured"));
+    u.vault_master_recovery_public_key_b64 = norm.value("public_key_b64", std::string(""));
+    u.vault_master_recovery_public_key_sha256 = norm.value("public_key_sha256", std::string(""));
+    u.vault_master_recovery_created_at = norm.value("created_at", 0LL);
+    u.vault_master_recovery_label = norm.value("label", std::string(""));
+
+    const bool ok_upsert = users.upsert(u);
+    const bool ok_save = ok_upsert ? users.save(users_path) : false;
+
+    {
+        pqnas::AuditEvent ev;
+        ev.event = "user.vault_master_recovery_update";
+        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+        ev.f["actor_fp"] = actor_fp;
+        ev.f["role"] = actor_role;
+        ev.f["status"] = u.vault_master_recovery_status;
+        ev.f["key_id"] = pqnas::shorten(u.vault_master_recovery_public_key_sha256, 24);
+        ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+        audit_append(ev);
+    }
+
+    if (!ok_upsert || !ok_save) {
+        reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", ok_upsert ? "users save failed" : "user update failed"}
+        }.dump());
+        return;
+    }
+
+    res.set_header("Cache-Control", "no-store");
+    reply_json(res, 200, json{
+        {"ok", true},
+        {"fingerprint_hex", actor_fp},
+        {"role", actor_role},
+        {"vault_master_recovery", vault_master_recovery_to_json(u)}
+    }.dump());
+});
 
 // POST /api/v4/user/profile/update
 // Normal signed-in users can update only their own safe profile fields.

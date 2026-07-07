@@ -3451,7 +3451,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
 
 
-// pqnas-vault-org-recovery-admin-ui-v1
+// pqnas-vault-master-recovery-admin-ui-v1
 (() => {
     "use strict";
 
@@ -3599,13 +3599,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             createdEl.textContent = formatCreated(v.created_at);
         }
 
-        setGenerateButtonLabel(active ? "Rotate organization recovery key" : "Generate organization recovery key");
+        setGenerateButtonLabel(active ? "Rotate Master recovery key" : "Generate Master recovery key");
     }
 
     async function refreshVaultRecovery() {
         setPill("warn", t("admin.common.loading", "loading…"));
-        const data = await apiJson("/api/v4/admin/settings");
-        renderVaultRecovery(data.vault_recovery || {});
+        const data = await apiJson("/api/v4/user/vault/master-recovery");
+        renderVaultRecovery(data.vault_master_recovery || {});
     }
 
     function bringWindowToFront() {
@@ -3688,13 +3688,13 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (!pendingPrivateKeyB64) return;
 
         const payload = {
-            type: "dna-nexus-vault-organization-recovery-private-key",
+            type: "dna-nexus-vault-master-recovery-private-key",
             alg: "ML-KEM-768",
             private_key_format: "compact-seed-64-bytes",
             created_at: pendingCreatedAt,
             public_key_sha256: pendingPublicKeySha256,
             private_key_b64: pendingPrivateKeyB64,
-            warning: "Store this file offline or in a company password manager. DNA-Nexus does not store this private key."
+            warning: "This Master recovery private key protects only the Vault files encrypted for this key. DNA-Nexus stores only the public key. Anyone with this private key can recover protected Vault files."
         };
 
         const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], {
@@ -3729,26 +3729,26 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         if (btnStored) btnStored.disabled = true;
 
         try {
-            // Security: deliberately send only public key material and metadata.
-            // The organization recovery private key never leaves this browser.
-            const data = await apiJson("/api/v4/admin/settings", {
+            // Security: deliberately send only this account's public key material
+            // and metadata. The Master recovery private key never leaves this browser.
+            const data = await apiJson("/api/v4/user/vault/master-recovery", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    vault_recovery: {
+                    vault_master_recovery: {
                         enabled: true,
                         status: "active",
                         public_key_b64: pendingPublicKeyB64,
                         public_key_sha256: pendingPublicKeySha256,
                         created_at: pendingCreatedAt,
-                        label: "Organization recovery key"
+                        label: "Master recovery key"
                     }
                 })
             });
 
-            renderVaultRecovery(data.vault_recovery || {});
+            renderVaultRecovery(data.vault_master_recovery || {});
             closePrivateKeyWindowAfterClear();
-            toast("ok", "Saved", "Vault organization recovery public key and recovery key ID saved.");
+            toast("ok", "Saved", "Vault Master recovery public key and recovery key ID saved.");
         } catch (err) {
             if (btnStored) btnStored.disabled = false;
             toast("fail", "Save failed", String(err?.message || err));
@@ -3771,7 +3771,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
 
             root.innerHTML = `
                 <div class="vaultRecoveryDetachedHead">
-                    <div id="vaultRecoveryRotateConfirmTitle" class="vaultRecoveryDetachedTitle">Rotate organization recovery key?</div>
+                    <div id="vaultRecoveryRotateConfirmTitle" class="vaultRecoveryDetachedTitle">Rotate Master recovery key?</div>
                     <button class="pq-btn" type="button" data-action="cancel">×</button>
                 </div>
                 <div class="vaultRecoveryDetachedBody">
@@ -4208,7 +4208,7 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     initDrag();
     refreshVaultRecovery().catch((err) => {
         setPill("fail", "error");
-        console.error("[vault_recovery] refresh failed", err);
+        console.error("[vault_master_recovery] refresh failed", err);
     });
 })();
 

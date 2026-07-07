@@ -1731,9 +1731,9 @@
                 </div>
             </div>
 
-            <div class="card accordion" data-acc="vault-recovery">
+                                                <div class="card accordion" data-acc="vault-recovery">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
-                    <div class="h"><span>Vault organization recovery</span></div>
+                    <div class="h"><span>Vault / Master recovery key</span></div>
                     <div class="row">
                         <span class="pill warn" id="vaultRecoveryPill"><span class="k">Recovery:</span> <span class="v">—</span></span>
                     </div>
@@ -1742,25 +1742,25 @@
 
                 <div class="bd">
                     <div class="row">
-                        <span class="pill info"><span class="k">Recovery key ID:</span> <span class="v mono" id="vaultRecoveryKeyId">—</span></span>
+                        <span class="pill info"><span class="k">Master recovery key ID:</span> <span class="v mono" id="vaultRecoveryKeyId">—</span></span>
                         <span class="pill info"><span class="k">Created:</span> <span class="v" id="vaultRecoveryCreated">—</span></span>
                     </div>
 
                     <div class="row">
-                        <button id="btnVaultRecoveryGenerate" class="pq-btn primary" type="button"><span>Generate organization recovery key</span></button>
+                        <button id="btnVaultRecoveryGenerate" class="pq-btn primary" type="button"><span>Generate Master recovery key</span></button>
                         <button id="btnVaultRecoveryReload" class="pq-btn" type="button"><span>Reload recovery status</span></button>
                     </div>
 
                     <div class="note">
-                        The recovery private key is generated in this browser and shown only once. DNA-Nexus stores only the organization recovery public key and recovery key ID.
+                        This Master recovery key protects only this signed-in admin account's own Vault uploads. It is not a service-wide master key and it does not give this admin account access to other users' or other admins' Vault files.
                     </div>
                     <div class="note">
-                        If the private key is lost, Vault files encrypted for that recovery key cannot be recovered without the user passphrase. If the private key is stolen, encrypted Vault packages containing organization recovery may be recoverable by the attacker.
+                        DNA-Nexus stores only this account's Master recovery public key and Recovery key ID. The private key is shown once and must be stored offline by the Vault owner. Anyone with this private key can recover this account's Vault files that were protected by this Master recovery key.
                     </div>
                 </div>
             </div>
 
-            <div class="card accordion" data-acc="settings">
+<div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.theme.title">UI Theme</span></div>
                     <div class="row">
@@ -1790,7 +1790,7 @@
 
             <div id="vaultRecoveryDetachedWindow" class="vaultRecoveryDetached hidden" role="dialog" aria-modal="false" aria-labelledby="vaultRecoveryWindowTitle">
                 <div id="vaultRecoveryWindowHead" class="vaultRecoveryDetachedHead">
-                    <div id="vaultRecoveryWindowTitle" class="vaultRecoveryDetachedTitle">Organization recovery private key</div>
+                    <div id="vaultRecoveryWindowTitle" class="vaultRecoveryDetachedTitle">Master recovery private key</div>
                     <button id="btnVaultRecoveryWindowClose" class="pq-btn" type="button">×</button>
                 </div>
 
@@ -1803,7 +1803,7 @@
                         Format: ML-KEM-768 compact seed private key, 64 bytes. DNA-Nexus verifies this key with a local roundtrip test before showing it.
                     </div>
 
-                    <textarea id="vaultRecoveryPrivateKey" class="pq-textarea vaultRecoverySecret" readonly spellcheck="false" aria-label="Organization recovery private key"></textarea>
+                    <textarea id="vaultRecoveryPrivateKey" class="pq-textarea vaultRecoverySecret" readonly spellcheck="false" aria-label="Master recovery private key"></textarea>
 
                     <div class="row">
                         <button id="btnVaultRecoveryCopyPrivate" class="pq-btn" type="button">Copy private key</button>
@@ -1812,7 +1812,7 @@
                     </div>
 
                     <div class="note">
-                        Store this in a company password manager, offline USB storage, or a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
+                        Store this offline, in a password manager, on offline USB storage, or as a printed recovery sheet in a safe. Do not email it or leave it in Downloads.
                     </div>
                 </div>
 

@@ -60,9 +60,9 @@
       </div>
 
       <div class="vault-field">
-        <span>Organization recovery</span>
+        <span>Master recovery</span>
         <p class="vault-muted">
-          When organization recovery is active, Vault automatically wraps new uploads for the admin-managed recovery public key.
+          When Master recovery is active, Vault automatically wraps new uploads for the current Vault owner's Master recovery public key.
         </p>
       </div>
 
@@ -79,7 +79,7 @@
       <div class="vault-panel-head">
         <div>
           <h2 id="decryptTitle">Local decrypt test</h2>
-          <p>Open a downloaded .dnavault.json file and decrypt it locally with your passphrase or organization recovery key.</p>
+          <p>Open a downloaded .dnavault.json file and decrypt it locally with your passphrase or Master recovery key.</p>
         </div>
       </div>
 
@@ -94,7 +94,7 @@
       </label>
 
       <label class="vault-field">
-        <span>Organization recovery private key JSON</span>
+        <span>Master recovery private key JSON</span>
         <input id="recoveryPrivateKeyInput" class="pq-input" type="file" accept=".json,application/json">
       </label>
 
@@ -113,7 +113,7 @@
     <ul>
       <li>File content is encrypted with AES-256-GCM using a random file key.</li>
       <li>The file key is wrapped for the user passphrase.</li>
-      <li>If organization recovery is active in Admin Settings, the file key is also wrapped automatically for organization recovery using ML-KEM-768.</li>
+      <li>If Master recovery is active in Settings, the file key is also wrapped automatically for Master recovery using ML-KEM-768.</li>
       <li>The server stores encrypted Vault packages and cannot generate thumbnails or content previews for them.</li>
     </ul>
   </section>

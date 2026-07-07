@@ -24,6 +24,15 @@ struct UserRec {
     // Stored as a compact JSON object string; schema is validated by callers.
     std::string app_prefs_json;
 
+    // Vault Master recovery metadata for this exact user fingerprint.
+    // Security: only public key material is stored here. The private Master
+    // recovery key is generated client-side and must never be sent to the server.
+    std::string vault_master_recovery_status; // "active" | "disabled" | "not_configured"
+    std::string vault_master_recovery_public_key_b64;
+    std::string vault_master_recovery_public_key_sha256;
+    long long vault_master_recovery_created_at = 0;
+    std::string vault_master_recovery_label;
+
     // New: admin profile metadata (non-security)
     std::string group;         // e.g. "Family", "Work"
     std::string email;
