@@ -424,96 +424,7 @@
     return btn;
   }
 
-  function triggerVaultRedAlert() {
-    function findVaultFrame(doc) {
-      return Array.from(doc.querySelectorAll("iframe"))
-        .find((frame) => String(frame.src || "").includes("/apps/vault/"));
-    }
-
-    function targetDocumentAndRect() {
-      try {
-        if (window.parent && window.parent !== window && window.parent.document) {
-          const frame = window.frameElement || findVaultFrame(window.parent.document);
-          if (frame) {
-            return {
-              doc: window.parent.document,
-              rect: frame.getBoundingClientRect()
-            };
-          }
-        }
-      } catch {
-        // Cross-frame access may be blocked. Fall back to the Vault document.
-      }
-
-      const shell = document.querySelector(".vaultFmShell");
-      return {
-        doc: document,
-        rect: shell
-          ? shell.getBoundingClientRect()
-          : {
-              left: 0,
-              top: 0,
-              right: document.documentElement.clientWidth || window.innerWidth,
-              bottom: document.documentElement.clientHeight || window.innerHeight
-            }
-      };
-    }
-
-    function addPanel(doc, layer, left, top, width, height) {
-      if (width <= 1 || height <= 1) return;
-
-      const panel = doc.createElement("div");
-      panel.className = "pqnasVaultRedAlertPanel";
-      panel.style.position = "fixed";
-      panel.style.left = `${Math.max(0, left)}px`;
-      panel.style.top = `${Math.max(0, top)}px`;
-      panel.style.width = `${Math.max(0, width)}px`;
-      panel.style.height = `${Math.max(0, height)}px`;
-      panel.style.pointerEvents = "none";
-
-      // UX-only secure-mode signal. This does not change auth, crypto state,
-      // server-side access checks, file visibility, or encryption behavior.
-      panel.style.background = "var(--danger, red)";
-      panel.style.opacity = "0.35";
-
-      layer.appendChild(panel);
-    }
-
-    const { doc, rect } = targetDocumentAndRect();
-    if (!doc || !doc.body || !doc.documentElement || !rect) return;
-
-    for (const old of doc.querySelectorAll(".pqnasVaultRedAlertLayer")) {
-      old.remove();
-    }
-
-    const vw = doc.documentElement.clientWidth || window.innerWidth;
-    const vh = doc.documentElement.clientHeight || window.innerHeight;
-
-    const left = Math.max(0, Math.min(vw, rect.left));
-    const top = Math.max(0, Math.min(vh, rect.top));
-    const right = Math.max(0, Math.min(vw, rect.right));
-    const bottom = Math.max(0, Math.min(vh, rect.bottom));
-
-    const layer = doc.createElement("div");
-    layer.className = "pqnasVaultRedAlertLayer";
-    layer.style.position = "fixed";
-    layer.style.inset = "0";
-    layer.style.zIndex = "2147483000";
-    layer.style.pointerEvents = "none";
-
-    addPanel(doc, layer, 0, 0, vw, top);
-    addPanel(doc, layer, 0, top, left, Math.max(0, bottom - top));
-    addPanel(doc, layer, right, top, Math.max(0, vw - right), Math.max(0, bottom - top));
-    addPanel(doc, layer, 0, bottom, vw, Math.max(0, vh - bottom));
-
-    doc.body.appendChild(layer);
-
-    window.setTimeout(() => {
-      layer.remove();
-    }, 1700);
-  }
-
-  function makeDialog(id, titleText, kind) {
+function makeDialog(id, titleText, kind) {
     const dialog = document.createElement("dialog");
     dialog.id = id;
     dialog.className = `vaultDetachedDialog vaultDetachedDialog_${kind}`;
@@ -1151,7 +1062,6 @@
     updateVaultSortControls();
 
     window.requestAnimationFrame(() => {
-      triggerVaultRedAlert();
     });
 
     const menu = document.createElement("div");
@@ -1165,6 +1075,24 @@
     let lastSelectedPath = "";
     let marqueeDrag = null;
     let trashMode = false;
+    let vaultTrashCount = 0;
+
+    function updateTrashButtonCount(count) {
+      const n = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+      vaultTrashCount = n;
+      trashBtn.textContent = n > 0 ? `Trash (${n})` : "Trash";
+      trashBtn.title = n > 0
+        ? `${n} Vault trash item${n === 1 ? "" : "s"}`
+        : "Vault trash";
+    }
+
+    async function refreshTrashButtonCount() {
+      // Security: use the existing user-scoped trash list endpoint and the same
+      // Vault-only filter as the Trash view; do not count unrelated user trash.
+      const entries = await fetchVaultTrashEntries();
+      updateTrashButtonCount(entries.length);
+      return entries;
+    }
     let lastLivePath = pathInput.value || "Vault";
 
     function ensureVaultSelectionStyles() {
@@ -1994,6 +1922,7 @@
           await deleteVaultEntry(entry);
           selectedPaths.delete(entry?.path || "");
           updateRenderedSelection();
+          await refreshTrashButtonCount().catch(() => {});
         }
       });
     }
@@ -2089,6 +2018,17 @@
       a.remove();
     }
 
+    function showRemoveEntryOrSelectedModal(entry) {
+      // If the context-menu target is part of a multi-selection, apply the
+      // action to the full selected set instead of only the clicked row.
+      if (entry?.path && selectedPaths.has(entry.path) && selectedPaths.size > 1) {
+        showRemoveSelectedModal();
+        return;
+      }
+
+      showRemoveEntryOrSelectedModal(entry);
+    }
+
     function downloadSelectedEncryptedPackages() {
       const files = getSelectedFileEntries();
 
@@ -2136,6 +2076,10 @@
         await refreshVaultTrash();
         return;
       }
+
+      refreshTrashButtonCount().catch(() => {
+        updateTrashButtonCount(vaultTrashCount);
+      });
 
       const path = normalizeDisplayPath(pathInput.value);
       pathInput.value = inputPathFromDisplayPath(path);
@@ -2287,7 +2231,7 @@
       list.textContent = "";
       status.textContent = "Loading Vault trash…";
 
-      const entries = await fetchVaultTrashEntries();
+      const entries = await refreshTrashButtonCount();
       sortVaultEntries(entries);
 
       if (!entries.length) {
@@ -2987,7 +2931,7 @@
         removeFolder.classList.add("vaultContextDanger");
         removeFolder.addEventListener("click", () => {
           hideContextMenu();
-          showRemoveEntryModal(entry);
+          showRemoveEntryOrSelectedModal(entry);
         });
         menu.appendChild(removeFolder);
       } else {
@@ -3008,7 +2952,7 @@
         deleteFile.classList.add("vaultContextDanger");
         deleteFile.addEventListener("click", () => {
           hideContextMenu();
-          showRemoveEntryModal(entry);
+          showRemoveEntryOrSelectedModal(entry);
         });
         menu.appendChild(deleteFile);
       }
@@ -3157,6 +3101,5 @@
     refresh().catch(() => {});
   }
 
-  window.pqnasVaultRedAlertTest = triggerVaultRedAlert;
   onReady(mountLayout);
 })();
