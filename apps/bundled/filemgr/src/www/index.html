@@ -662,19 +662,19 @@
     .footer{
       padding:10px 12px;
       border-top:1px solid var(--border2);
-      display:flex;
-      align-items:flex-start;        /* allow multi-line children */
-      justify-content:space-between;
-      gap:12px;
+      display:grid;
+      grid-template-columns: minmax(120px, 1fr) minmax(360px, 1.4fr) auto;
+      align-items:start;
+      gap:6px 12px;
       color: rgba(var(--fg-rgb),0.55);
       font-size: 12px;
-      flex-wrap: wrap;               /* KEY: status can wrap / take 2 lines */
     }
 
     /* Status text: allow wrapping + 2-line clamp */
     #status{
-      flex: 1 1 380px;               /* grow, shrink, reasonable base */
-      min-width: 260px;              /* avoid getting crushed to nothing */
+      grid-column:1;
+      grid-row:1;
+      min-width:0;
       white-space: normal;
       word-break: break-word;
 
@@ -686,32 +686,62 @@
 
     .quotaLine {
       opacity: .88;
-      margin-top: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      margin-top: 0;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: normal;
     }
     .quotaLine.warn { opacity: .92; }
     .quotaLine.err  { opacity: .98; }
 
-    /* Keep quota line compact; allow shrink */
+    /* Account quota is important status data: do not ellipsize translated text. */
     #quotaLine{
-      flex: 0 1 320px;
-      min-width: 220px;
+      grid-column:2;
+      grid-row:1;
+      min-width:0;
+      max-width:100%;
+      justify-self:end;
+      text-align:right;
+      font-variant-numeric: tabular-nums;
     }
 
-    /* Right-side app label should never wrap */
+    /* Right-side app label stays on the first row on wide screens. */
     .footer > .mono:last-child{
-      flex: 0 0 auto;
+      grid-column:3;
+      grid-row:1;
+      min-width:0;
+      justify-self:end;
       white-space: nowrap;
-      margin-left: auto;             /* keep it right when wrapping occurs */
     }
 
-    /* Upload progress: allow it to take its own line when shown */
+    /* Upload progress: take a full row when shown. */
     #uploadProg{
-      flex: 1 1 520px;
-      min-width: 320px;
+      grid-column:1 / -1;
+      grid-row:2;
+      min-width:0;
       margin-top: 6px;
+    }
+
+    @media (max-width: 900px){
+      .footer{
+        grid-template-columns: 1fr;
+      }
+
+      #status,
+      #quotaLine,
+      #uploadProg,
+      .footer > .mono:last-child{
+        grid-column:1;
+        grid-row:auto;
+      }
+
+      #quotaLine,
+      .footer > .mono:last-child{
+        justify-self:start;
+        text-align:left;
+        white-space:normal;
+      }
     }
 
     #uploadProg .upRow{

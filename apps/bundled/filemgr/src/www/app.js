@@ -403,7 +403,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!quotaBytes) {
       if (isWorkspaceQuota && storageState && storageState !== "allocated") {
-        showQuotaLine("warn", "Workspace storage not allocated");
+        showQuotaLine("warn", tr("filemgr.storage.workspace_not_allocated", null, "Workspace storage not allocated"));
       } else {
         hideQuotaLine();
       }
@@ -412,8 +412,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const pct = quotaBytes > 0 ? (usedBytes / quotaBytes) : 0;
     const state = String(q.quota_state || quotaStateFromPct(pct));
-    const label = isWorkspaceQuota ? "Workspace storage" : "Storage";
-    const text = `${label}: ${fmtSize(usedBytes)} / ${fmtSize(quotaBytes)} (${fmtPct01(pct)})`;
+    const label = tr(
+      isWorkspaceQuota ? "filemgr.storage.workspace" : "filemgr.storage.account",
+      null,
+      isWorkspaceQuota ? "Workspace storage" : "Account storage"
+    );
+    const freeLabel = tr("filemgr.storage.free", null, "Free");
+    const freeBytes = Math.max(0, quotaBytes - usedBytes);
+    const freeText = quotaBytes > 0 ? ` · ${freeLabel}: ${fmtSize(freeBytes)}` : "";
+    const text = `${label}: ${fmtSize(usedBytes)} / ${fmtSize(quotaBytes)} (${fmtPct01(pct)})${freeText}`;
 
     const uploadingNow = uploadProg && uploadProg.style.display !== "none";
     if (uploadingNow) {
@@ -423,12 +430,22 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (state === "over") {
       setBadge("err", "storage");
-      showQuotaLine("err", `${isWorkspaceQuota ? "Workspace over quota" : "Over quota (soft)"}: ${text}`);
+      const overLabel = tr(
+        isWorkspaceQuota ? "filemgr.storage.workspace_over_quota" : "filemgr.storage.over_quota",
+        null,
+        isWorkspaceQuota ? "Workspace over quota" : "Over quota (soft)"
+      );
+      showQuotaLine("err", `${overLabel}: ${text}`);
       return;
     }
     if (state === "danger") {
       setBadge("warn", "storage");
-      showQuotaLine("warn", `${isWorkspaceQuota ? "Workspace nearly full" : "Nearly full"}: ${text}`);
+      const nearlyFullLabel = tr(
+        isWorkspaceQuota ? "filemgr.storage.workspace_nearly_full" : "filemgr.storage.nearly_full",
+        null,
+        isWorkspaceQuota ? "Workspace nearly full" : "Nearly full"
+      );
+      showQuotaLine("warn", `${nearlyFullLabel}: ${text}`);
       return;
     }
 

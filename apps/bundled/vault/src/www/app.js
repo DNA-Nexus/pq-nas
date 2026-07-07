@@ -573,6 +573,12 @@
     }
 
     setText(el.encryptStatus, "Done. Files were encrypted before upload.");
+
+    try {
+      window.dispatchEvent(new CustomEvent("pqnas:vault-storage-changed"));
+    } catch (_) {
+      // Non-fatal UI refresh hint only. The upload itself has already succeeded.
+    }
   }
 
   async function ensureMlKemHelper() {

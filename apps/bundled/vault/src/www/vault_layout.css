@@ -231,6 +231,37 @@
   color: var(--fg-dim, var(--muted));
   background: var(--panel);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vaultFmStatusText,
+.vaultFmStorageText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vaultFmStatusText {
+  flex: 1 1 220px;
+}
+
+.vaultFmStorageText {
+  flex: 0 1 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.vaultFmStorageText.warn {
+  color: var(--warning, var(--accent));
+}
+
+.vaultFmStorageText.err {
+  color: var(--danger, var(--fg));
 }
 
 .vaultFmEmpty {
