@@ -350,6 +350,100 @@
     return `${value.toFixed(1)} PiB`;
   }
 
+  function formatPercent01(value) {
+    if (!Number.isFinite(value)) return "";
+    return `${Math.round(value * 100)}%`;
+  }
+
+  function quotaStateFromFraction(value) {
+    if (!Number.isFinite(value)) return "unknown";
+    if (value >= 1.0) return "over";
+    if (value >= 0.90) return "danger";
+    if (value >= 0.70) return "warn";
+    return "ok";
+  }
+
+  function normalizeAccountStoragePayload(payload) {
+    if (!payload || typeof payload !== "object") return null;
+
+    const usedRaw =
+      payload.used_bytes ??
+      payload.storage_used_bytes ??
+      payload.bytes_used ??
+      payload.used ??
+      0;
+
+    const quotaRaw =
+      payload.quota_bytes ??
+      payload.storage_quota_bytes ??
+      payload.quota ??
+      0;
+
+    const usedBytes = Number(usedRaw);
+    const quotaBytes = Number(quotaRaw);
+    const safeUsedBytes = Number.isFinite(usedBytes) && usedBytes > 0 ? usedBytes : 0;
+    const safeQuotaBytes = Number.isFinite(quotaBytes) && quotaBytes > 0 ? quotaBytes : 0;
+    const pct = safeQuotaBytes > 0 ? safeUsedBytes / safeQuotaBytes : 0;
+
+    return {
+      usedBytes: safeUsedBytes,
+      quotaBytes: safeQuotaBytes,
+      pct,
+      state: String(payload.quota_state || quotaStateFromFraction(pct))
+    };
+  }
+
+  async function fetchAccountStorageInfo() {
+    try {
+      const res = await fetch("/api/v4/me/storage", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload || payload.ok === false) return null;
+
+      return normalizeAccountStoragePayload(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function sumEntrySizes(entries) {
+    if (!Array.isArray(entries)) return 0;
+
+    return entries.reduce((sum, entry) => {
+      if (!entry || entry.isDir) return sum;
+
+      const bytes = Number(entry.size);
+      if (!Number.isFinite(bytes) || bytes <= 0) return sum;
+
+      return sum + bytes;
+    }, 0);
+  }
+
+  function accountStorageText(accountStorage) {
+    if (!accountStorage) return "Account storage: unavailable";
+
+    if (!accountStorage.quotaBytes) {
+      return `Account storage: ${formatBytes(accountStorage.usedBytes)}`;
+    }
+
+    const freeBytes = Math.max(0, accountStorage.quotaBytes - accountStorage.usedBytes);
+    return `Account storage: ${formatBytes(accountStorage.usedBytes)} / ${formatBytes(accountStorage.quotaBytes)} (${formatPercent01(accountStorage.pct)}) · Free: ${formatBytes(freeBytes)}`;
+  }
+
+  function accountStorageKind(accountStorage) {
+    if (!accountStorage) return "";
+
+    if (accountStorage.state === "over") return "err";
+    if (accountStorage.state === "danger" || accountStorage.state === "warn") return "warn";
+
+    return "";
+  }
+
   function formatTime(value) {
     if (!value) return "—";
 
@@ -809,7 +903,10 @@ function makeDialog(id, titleText, kind) {
     const actions = document.createElement("div");
     actions.className = "vaultFmActions";
 
-    const VIEW_MODE_STORAGE_KEY = "pqnas.vault.viewMode";
+    // v2 intentionally ignores the old default-list preference key so new
+    // sessions open the Vault browser in grid view while still allowing users
+    // to choose and persist list view later.
+    const VIEW_MODE_STORAGE_KEY = "pqnas.vault.viewMode.v2";
     const SORT_KEY_STORAGE_KEY = "pqnas.vault.sortKey";
     const SORT_DIR_STORAGE_KEY = "pqnas.vault.sortDir";
     const FOLDERS_FIRST_STORAGE_KEY = "pqnas.vault.foldersFirst";
@@ -821,13 +918,14 @@ function makeDialog(id, titleText, kind) {
       type: "Type"
     };
 
-    let viewMode = "list";
+    let viewMode = "grid";
     let sortKey = "name";
     let sortDir = "asc";
     let foldersFirst = true;
 
     try {
-      viewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "grid" ? "grid" : "list";
+      const storedViewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      viewMode = storedViewMode === "list" ? "list" : "grid";
 
       const storedSortKey = localStorage.getItem(SORT_KEY_STORAGE_KEY);
       const storedSortDir = localStorage.getItem(SORT_DIR_STORAGE_KEY);
@@ -837,7 +935,7 @@ function makeDialog(id, titleText, kind) {
       sortDir = storedSortDir === "desc" ? "desc" : "asc";
       foldersFirst = storedFoldersFirst === null ? true : storedFoldersFirst !== "false";
     } catch (_) {
-      viewMode = "list";
+      viewMode = "grid";
       sortKey = "name";
       sortDir = "asc";
       foldersFirst = true;
@@ -919,12 +1017,28 @@ function makeDialog(id, titleText, kind) {
 
     main.append(fileArea, side);
 
-    const status = document.createElement("footer");
-    status.className = "vaultFmStatus";
+    const statusFooter = document.createElement("footer");
+    statusFooter.className = "vaultFmStatus";
+
+    const status = document.createElement("span");
+    status.className = "vaultFmStatusText";
     status.textContent = "Ready";
 
-    shell.append(topbar, main, status);
+    const storageStatus = document.createElement("span");
+    storageStatus.className = "vaultFmStorageText";
+    storageStatus.setAttribute("aria-live", "polite");
+    storageStatus.textContent = "Vault: — · Account storage: —";
+
+    statusFooter.append(status, storageStatus);
+
+    shell.append(topbar, main, statusFooter);
     document.body.prepend(shell);
+
+    window.addEventListener("pqnas:vault-storage-changed", () => {
+      refresh().catch((err) => {
+        status.textContent = err && err.message ? err.message : "Vault refresh failed.";
+      });
+    });
 
     function applyVaultViewMode() {
       const isGrid = viewMode === "grid";
@@ -1076,6 +1190,31 @@ function makeDialog(id, titleText, kind) {
     let marqueeDrag = null;
     let trashMode = false;
     let vaultTrashCount = 0;
+    let vaultStorageRequestSeq = 0;
+
+    function setVaultStorageStatus(kind, message) {
+      storageStatus.classList.toggle("warn", kind === "warn");
+      storageStatus.classList.toggle("err", kind === "err");
+      storageStatus.textContent = message || "";
+    }
+
+    async function refreshVaultStorageStatus(entries) {
+      const requestSeq = ++vaultStorageRequestSeq;
+      const vaultBytes = sumEntrySizes(entries);
+
+      setVaultStorageStatus(
+        "",
+        `Vault: ${formatBytes(vaultBytes)} · Account storage: loading…`
+      );
+
+      const accountStorage = await fetchAccountStorageInfo();
+      if (requestSeq !== vaultStorageRequestSeq) return;
+
+      setVaultStorageStatus(
+        accountStorageKind(accountStorage),
+        `Vault: ${formatBytes(vaultBytes)} · ${accountStorageText(accountStorage)}`
+      );
+    }
 
     function updateTrashButtonCount(count) {
       const n = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
@@ -2123,15 +2262,24 @@ function makeDialog(id, titleText, kind) {
         renderRows(visibleEntries);
         updateVaultSortControls();
         status.textContent = `${visibleEntries.length} item${visibleEntries.length === 1 ? "" : "s"} in ${path}`;
+        refreshVaultStorageStatus(visibleEntries).catch(() => {
+          setVaultStorageStatus("", `Vault: ${formatBytes(sumEntrySizes(visibleEntries))} · Account storage: unavailable`);
+        });
       } catch (err) {
         if (err && err.status === 404) {
           renderMissingFolder(path);
           status.textContent = `Vault folder missing: ${path}`;
+          refreshVaultStorageStatus([]).catch(() => {
+            setVaultStorageStatus("", "Vault: 0 B · Account storage: unavailable");
+          });
           return;
         }
 
         renderEmpty(`Could not list ${path}.`);
         status.textContent = err && err.message ? err.message : "Vault list failed";
+        refreshVaultStorageStatus([]).catch(() => {
+          setVaultStorageStatus("", "Vault: 0 B · Account storage: unavailable");
+        });
       }
     }
 
