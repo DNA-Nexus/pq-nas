@@ -1,5 +1,6 @@
 #include "runtime_paths.h"
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -14,6 +15,37 @@ namespace pqnas {
             if (!key || !*key) return {};
             const char* v = std::getenv(key);
             return v ? std::string(v) : std::string{};
+        }
+
+        std::string trim_ascii_local(std::string s) {
+            auto is_ws = [](unsigned char c) {
+                return std::isspace(c) != 0;
+            };
+
+            std::size_t a = 0;
+            while (a < s.size() && is_ws(static_cast<unsigned char>(s[a]))) ++a;
+
+            std::size_t b = s.size();
+            while (b > a && is_ws(static_cast<unsigned char>(s[b - 1]))) --b;
+
+            return s.substr(a, b - a);
+        }
+
+        std::filesystem::path absolute_normalized_path_or_empty_local(const std::string& raw) {
+            const std::string trimmed = trim_ascii_local(raw);
+            if (trimmed.empty()) return {};
+
+            std::filesystem::path p(trimmed);
+            if (!p.is_absolute()) return {};
+
+            p = p.lexically_normal();
+
+            // Security: never allow the storage root to collapse to filesystem
+            // root. Storage-manager destructive operations use this root as an
+            // allow-list boundary for pool paths.
+            if (p.empty() || p == std::filesystem::path("/")) return {};
+
+            return p;
         }
 
         bool dir_exists_local(const std::filesystem::path& p) {
@@ -52,6 +84,22 @@ namespace pqnas {
 
     std::filesystem::path data_root_path() {
         return std::filesystem::path(data_root_dir());
+    }
+
+    std::string storage_root_dir() {
+        // Security: PQNAS_STORAGE_ROOT is deployment-level configuration, not
+        // request data. Centralize and sanitize it here before storage-manager
+        // code derives config paths or allowed pool prefixes from it.
+        const std::filesystem::path env_root =
+            absolute_normalized_path_or_empty_local(getenv_str_local("PQNAS_STORAGE_ROOT"));
+
+        if (!env_root.empty()) return env_root.string();
+
+        return "/srv/pqnas";
+    }
+
+    std::filesystem::path storage_root_path() {
+        return std::filesystem::path(storage_root_dir());
     }
 
     std::string config_root_dir() {

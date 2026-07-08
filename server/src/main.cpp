@@ -4495,16 +4495,15 @@ static bool write_text_file_atomic(const std::string& path, const std::string& c
 // ----------------------------------------------------------------------------
 
 static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path) {
-    // Mutable config should live under PQNAS_STORAGE_ROOT/config (default /srv/pqnas/config)
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    // Mutable config should live under the centralized sanitized storage root.
+    const std::filesystem::path root = pqnas::storage_root_path();
 
-    std::filesystem::path p = std::filesystem::path(root) / "config" / "pools.json";
+    std::filesystem::path p = root / "config" / "pools.json";
 
     // If that doesn't exist yet, still return it (so load_or_init can create it).
     // Fall back to sibling of users.json only if root looks unusable.
     std::error_code ec;
-    auto st = std::filesystem::status(std::filesystem::path(root) / "config", ec);
+    auto st = std::filesystem::status(root / "config", ec);
     if (!ec && std::filesystem::is_directory(st)) return p;
 
     return std::filesystem::path(users_path).parent_path() / "pools.json";
@@ -6817,8 +6816,7 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
     	std::cerr << "[pools] restore: no managed pools configured" << std::endl;
     	return;
 	}
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string pools_prefix = allowed_prefix + "/pools";
 
 	for (const auto& mp : managed) {
@@ -7016,8 +7014,7 @@ static bool storage_pool_mount_by_id_adminonly(
     // Load pools.json for display names / stable IDs (same as endpoint)
     const json pools_cfg = load_or_init_pools_cfg(users_path);
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string test_prefix  = "/srv/pqnas-test";
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
 
