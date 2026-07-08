@@ -1763,3 +1763,23 @@ Security reason: `dlopen()` loads executable code into the server process.
 Letting an environment variable, request value, or writable config choose the
 library path can turn a bad deployment setting, environment injection, or path
 manipulation bug into arbitrary code execution.
+
+## Authentication state file paths
+
+Authentication state files such as `opaque_enrollments.json` and
+`password_enrollments.json` must use one shared, deterministic path derivation
+across every writer.
+
+Do not redirect authentication/enrollment stores with environment variables such
+as `PQNAS_OPAQUE_ENROLLMENTS_PATH` or `PQNAS_PASSWORD_ENROLLMENTS_PATH`.
+
+Allowed pattern:
+
+- derive the store path from the same trusted server config path in every writer
+- keep revoke, onboarding, workspace invite, and login flows on the same file
+- use the existing lock/atomic-write discipline for shared auth state files
+
+Security reason: if different server paths can be selected by environment or
+deployment-controlled values, auth flows can split across different token stores.
+That can create stale enrollment tokens, missed revoke invalidation, or path
+manipulation risks around authentication state.

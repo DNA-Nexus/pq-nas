@@ -736,9 +736,9 @@ static std::mutex& routes_v5_password_enrollments_file_mu() {
 }
 
 static std::string routes_v5_password_enrollments_path(const RoutesV5Context& ctx) {
-    const char* raw = std::getenv("PQNAS_PASSWORD_ENROLLMENTS_PATH");
-    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
+    // Security: enrollment-token stores are authentication state.
+    // Do not redirect them with environment variables; every writer must derive
+    // the same deterministic path to avoid split-brain token stores and path injection.
 
     if (ctx.users_path && !ctx.users_path->empty()) {
         std::filesystem::path p(*ctx.users_path);
@@ -1180,9 +1180,9 @@ private:
     // main.cpp must use the same path derivation for user revoke invalidation,
     // otherwise revoke and onboarding would update different files.
 static std::string routes_v5_opaque_enrollments_path(const RoutesV5Context& ctx) {
-    const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
-    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
+    // Security: enrollment-token stores are authentication state.
+    // Do not redirect them with environment variables; every writer must derive
+    // the same deterministic path to avoid split-brain token stores and path injection.
 
     if (ctx.users_path && !ctx.users_path->empty()) {
         std::filesystem::path p(*ctx.users_path);

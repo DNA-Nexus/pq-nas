@@ -12693,20 +12693,11 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
     };
 
 
-    auto trim_ascii_for_opaque_enrollments = [](const std::string& in) -> std::string {
-        std::size_t a = 0;
-        while (a < in.size() && std::isspace(static_cast<unsigned char>(in[a]))) ++a;
-
-        std::size_t b = in.size();
-        while (b > a && std::isspace(static_cast<unsigned char>(in[b - 1]))) --b;
-
-        return in.substr(a, b - a);
-    };
 
     auto opaque_enrollments_path_for_admin_status = [&]() -> std::string {
-        const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
-        const std::string env_path = trim_ascii_for_opaque_enrollments(raw ? raw : "");
-        if (!env_path.empty()) return env_path;
+        // Security: enrollment-token stores are authentication state.
+        // Do not redirect them with environment variables; every writer must derive
+        // the same deterministic path to avoid split-brain token stores and path injection.
 
         if (!users_path.empty()) {
             std::filesystem::path p(users_path);

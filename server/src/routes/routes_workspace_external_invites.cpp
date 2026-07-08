@@ -1038,9 +1038,9 @@ std::mutex& workspace_external_opaque_enrollments_file_mu_local() {
 
 std::string workspace_external_opaque_enrollments_path_local(
     const WorkspaceExternalInviteRouteDeps& deps) {
-    const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
-    const std::string env_path = trim_copy_safe(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
+    // Security: enrollment-token stores are authentication state.
+    // Do not redirect them with environment variables; every writer must derive
+    // the same deterministic path to avoid split-brain token stores and path injection.
 
     if (!deps.users_path.empty()) {
         std::filesystem::path p(deps.users_path);
