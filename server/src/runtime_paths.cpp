@@ -134,9 +134,9 @@ namespace pqnas {
     }
 
     std::filesystem::path opaque_helper_path() {
-        const std::string env = getenv_str_local("PQNAS_OPAQUE_HELPER");
-        if (!env.empty()) return std::filesystem::path(env);
-
+        // Security: the OPAQUE helper is an executable boundary. Do not allow an
+        // environment override to redirect execv() to attacker-controlled code;
+        // keep it pinned to the root-managed install location.
         return std::filesystem::path("/usr/local/libexec/pqnas/pqnas_opaque_helper");
     }
 
