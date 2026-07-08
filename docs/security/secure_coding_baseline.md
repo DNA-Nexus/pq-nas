@@ -1890,3 +1890,22 @@ Security reason: these files hold identity, authorization, device auth, sharing,
 and admin policy state. Per-file path overrides can split security state across
 different files, causing stale access rules, missed revocation, or authentication
 against an unexpected registry.
+
+## OPAQUE server setup file path
+
+OPAQUE server setup state must not have a per-file environment variable
+override.
+
+Do not add environment variables such as `PQNAS_OPAQUE_SERVER_SETUP_PATH` that
+redirect `opaque_server_setup.bin` at runtime.
+
+Allowed pattern:
+
+- derive OPAQUE server setup from the trusted runtime config root
+- use the fixed filename `opaque_server_setup.bin`
+- keep backend status checks, login flows, and backups on the same helper
+- keep file permissions restrictive
+
+Security reason: OPAQUE server setup is authentication cryptographic state.
+Per-file path overrides can split OPAQUE backend initialization, login, status
+checks, and backups across different files.

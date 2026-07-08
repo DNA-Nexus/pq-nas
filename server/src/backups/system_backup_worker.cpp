@@ -505,10 +505,10 @@ std::vector<SystemBackupSource> default_sources() {
     const std::filesystem::path opaque_credentials_path =
         pqnas::opaque_credentials_path();
 
-    const std::filesystem::path opaque_server_setup_path = configured_path_local(
-        "PQNAS_OPAQUE_SERVER_SETUP_PATH",
-        {"/etc/pqnas/opaque_server_setup.bin", "/srv/pqnas/config/opaque_server_setup.bin"}
-    );
+    // Security: OPAQUE server setup is authentication cryptographic state.
+    // Back up the same deterministic runtime store used by the OPAQUE backend.
+    const std::filesystem::path opaque_server_setup_path =
+        pqnas::opaque_server_setup_path();
 
     add_regular("config", "Admin settings", admin_settings_path, "config/admin_settings.json");
     add_regular("config", "Policy", policy_path, "config/policy.json");
