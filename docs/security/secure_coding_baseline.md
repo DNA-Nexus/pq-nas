@@ -2024,3 +2024,29 @@ Allowed pattern:
 Security reason: a broad root fallback can mix config, data, temporary files,
 audit logs, and storage state under an unexpected layout. Specific roots make the
 trust boundary and deployment intent explicit.
+
+## Installer environment file hygiene
+
+The installer must not write stale per-file runtime path overrides into
+`pqnas.env` after the server has moved those paths to trusted runtime helpers.
+
+Do not write removed overrides such as:
+
+- `PQNAS_ADMIN_SETTINGS_PATH`
+- `PQNAS_POLICY_PATH`
+- `PQNAS_USERS_PATH`
+- `PQNAS_SHARES_PATH`
+- `PQNAS_POOLS_PATH`
+- `PQNAS_APP_AUTH_PATH`
+- `PQNAS_NOTIFICATIONS_PATH`
+
+Allowed pattern:
+
+- write only the small set of supported deployment roots and feature flags
+- derive fixed config/state files from shared runtime path helpers
+- keep installer output aligned with server path resolution
+- remove env lines when the server no longer reads them
+
+Security reason: stale env lines make it look like per-file path overrides are
+still supported. That can hide configuration drift and reintroduce split-state
+path bugs later.
