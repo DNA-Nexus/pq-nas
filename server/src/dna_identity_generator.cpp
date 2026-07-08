@@ -40,8 +40,10 @@ using qgp_sha3_512_fingerprint_fn =
     int (*)(const unsigned char* pubkey, std::size_t pubkey_len, char* fingerprint_out);
 
 static std::string dna_lib_path() {
-    const char* env = std::getenv("PQNAS_DNA_LIB");
-    if (env && *env) return std::string(env);
+    // Security: keep dlopen() pinned to a fixed, root-managed library path.
+    // Loading a .so from an environment-controlled path would allow a bad
+    // service configuration or environment injection to redirect execution to
+    // attacker-controlled code.
     return "/opt/pqnas/lib/dna/libdna_lib.so";
 }
 

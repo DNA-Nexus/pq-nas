@@ -236,18 +236,14 @@ static bool is_allowed_dna_lib_sha256(const std::string& hex) {
 
         std::vector<std::string> candidates;
 
-        // 1) Explicit runtime-installed path from env (preferred)
-        if (const char* p = std::getenv("PQNAS_DNA_LIB"); p && *p) {
-            candidates.emplace_back(p);
-        }
-
-        // 2) Installer/runtime default path
+        // 1) Installer/runtime default path. Keep runtime library loading away
+        // from environment-controlled paths; dlopen() loads executable code.
         candidates.emplace_back("/opt/pqnas/lib/dna/libdna_lib.so");
 
-        // 3) Side-by-side with executable (useful for some package/dev layouts)
+        // 2) Side-by-side with executable (useful for some package/dev layouts)
         candidates.emplace_back(exe_dir_local() + "/libdna_lib.so");
 
-        // 4) Dev-tree fallback only
+        // 3) Dev-tree fallback only
         candidates.emplace_back(
             (std::filesystem::path(exe_dir_local()) / ".." / ".." / "server" / "third_party" /
              "dna" / "lib" / "linux" / "x64" / "libdna_lib.so")

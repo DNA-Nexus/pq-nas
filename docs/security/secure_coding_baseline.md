@@ -1736,3 +1736,30 @@ New DNA-Nexus / PQ-NAS code should be written with these assumptions:
 The baseline rule is simple:
 
 Do not rely on shell quoting, UI hiding, manual setup, path strings, timing differences, framework cleanup, or developer memory as security controls.
+
+## Runtime dynamic library loading
+
+Server runtime code must not choose dynamically loaded libraries from request
+data, user-controlled config, environment variables, database values, or other
+deployment-controlled strings.
+
+Do not build `dlopen()` paths from:
+
+- HTTP request parameters
+- JSON/config values that can be changed by users or admins through the UI
+- database values
+- CLI arguments in server runtime paths
+- environment variables such as `PQNAS_DNA_LIB`
+
+Allowed patterns:
+
+- Use a fixed absolute path under a root-managed install location.
+- Use a small hardcoded allowlist of fixed absolute paths when multiple runtime
+  layouts are required.
+- For dev/test-only tools, any fallback path must be checked before `dlopen()`:
+  regular file, expected location, and expected cryptographic hash.
+
+Security reason: `dlopen()` loads executable code into the server process.
+Letting an environment variable, request value, or writable config choose the
+library path can turn a bad deployment setting, environment injection, or path
+manipulation bug into arbitrary code execution.
