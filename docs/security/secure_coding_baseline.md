@@ -1805,3 +1805,23 @@ Allowed pattern:
 Security reason: per-file path overrides make it easier for bad deployment
 settings, environment injection, or path manipulation bugs to redirect secrets
 to the wrong location or read/write an unintended file.
+
+## Federation identity paths
+
+Federation identity directories must not be redirected with per-feature
+environment variables.
+
+Do not add environment variables such as `PQNAS_NODUS_IDENTITY_DIR` that choose
+which Nodus identity directory the server uses at runtime.
+
+Allowed pattern:
+
+- use the production root-managed identity directory
+- use an explicit hardcoded legacy fallback only when migrating old layouts
+- keep worker, admin, research, and Circle Stack routes on the same deterministic path
+- read only the expected identity files such as `nodus.fp`
+
+Security reason: the Nodus identity selects the local federation origin.
+Redirecting it through environment-controlled paths can create split-brain
+federation identity, impersonation-by-misconfiguration, or unintended reads from
+the wrong identity directory.

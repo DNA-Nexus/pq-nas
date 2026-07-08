@@ -1887,15 +1887,12 @@ std::string cs_read_first_line_trimmed(const std::filesystem::path& path) {
 }
 
 std::string cs_local_nodus_identity_fingerprint() {
-    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
-
     std::vector<std::filesystem::path> dirs;
 
-    if (env_dir && env_dir[0]) {
-        dirs.emplace_back(env_dir);
-    }
-
-    // Production path first, research path as compatibility fallback.
+    // Security: the local Nodus identity selects the federation origin.
+    // Do not redirect it with an environment-controlled directory; Circle Stack
+    // must use the same deterministic production/legacy identity paths as the
+    // federation worker and Nodus admin/research routes.
     dirs.emplace_back("/srv/pqnas/config/nodus/identity");
     dirs.emplace_back("/srv/pqnas/config/nodus/research_identity");
 
@@ -1908,16 +1905,14 @@ std::string cs_local_nodus_identity_fingerprint() {
 }
 
 std::string cs_local_nodus_identity_dir() {
-    const char* env_dir = std::getenv("PQNAS_NODUS_IDENTITY_DIR");
-    if (env_dir && env_dir[0]) {
-        return env_dir;
-    }
-
     const std::filesystem::path production =
         "/srv/pqnas/config/nodus/identity";
     const std::filesystem::path legacy =
         "/srv/pqnas/config/nodus/research_identity";
 
+    // Security: keep Circle Stack on the same deterministic Nodus identity
+    // selection as the federation worker. This avoids split-brain federation
+    // identity caused by environment-controlled directory overrides.
     if (!cs_read_first_line_trimmed(production / "nodus.fp").empty()) {
         return production.string();
     }

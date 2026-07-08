@@ -377,12 +377,11 @@ federation::NodusClientConfig make_nodus_config() {
 
     config.identity_dir = production_identity_dir;
 
-    if (const char* p = std::getenv("PQNAS_NODUS_IDENTITY_DIR")) {
-        if (p[0]) {
-            config.identity_dir = p;
-        }
-    } else if (nodus_identity_fingerprint_from_dir(production_identity_dir).empty() &&
-               !nodus_identity_fingerprint_from_dir(legacy_identity_dir).empty()) {
+    // Security: the local Nodus identity selects the federation origin.
+    // Do not redirect it with an environment-controlled directory; keep the
+    // worker and admin routes on the same deterministic production/legacy path.
+    if (nodus_identity_fingerprint_from_dir(production_identity_dir).empty() &&
+        !nodus_identity_fingerprint_from_dir(legacy_identity_dir).empty()) {
         config.identity_dir = legacy_identity_dir;
     }
 
