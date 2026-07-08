@@ -2006,11 +2006,8 @@ def write_env_file(
             lines += [f"PQNAS_PASSWORD_BOOTSTRAP_TOKEN={password_bootstrap_token}"]
 
         if lm == "opaque":
-            lines += [
-                "PQNAS_OPAQUE_HELPER=/usr/local/libexec/pqnas/pqnas_opaque_helper",
-                "PQNAS_OPAQUE_CREDENTIALS_PATH=/etc/pqnas/opaque_credentials.json",
-                "PQNAS_OPAQUE_SERVER_SETUP_PATH=/etc/pqnas/opaque_server_setup.bin",
-            ]
+            # Security: OPAQUE runtime paths are fixed in server code. Do not
+            # write removed per-file overrides into pqnas.env.
             if password_bootstrap_token:
                 lines += [f"PQNAS_OPAQUE_BOOTSTRAP_TOKEN={password_bootstrap_token}"]
 

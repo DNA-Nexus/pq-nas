@@ -1909,3 +1909,21 @@ Allowed pattern:
 Security reason: OPAQUE server setup is authentication cryptographic state.
 Per-file path overrides can split OPAQUE backend initialization, login, status
 checks, and backups across different files.
+
+## OPAQUE helper executable path
+
+OPAQUE helper executable paths must not be controlled by runtime environment
+variables.
+
+Do not add environment variables such as `PQNAS_OPAQUE_HELPER` that redirect the
+`pqnas_opaque_helper` executable at runtime.
+
+Allowed pattern:
+
+- install the helper to `/usr/local/libexec/pqnas/pqnas_opaque_helper`
+- execute only that fixed root-managed path from server code
+- keep installer output aligned with the fixed runtime path
+- keep helper ownership and permissions restrictive
+
+Security reason: the OPAQUE helper is an executable trust boundary. Environment
+controlled helper paths can redirect `execv()` to attacker-controlled code.
