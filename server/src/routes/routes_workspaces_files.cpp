@@ -224,9 +224,9 @@ namespace pqnas {
     static std::string ws_files_opaque_enrollments_path_local(
         const WorkspaceFileRouteDeps& deps
     ) {
-        const char* raw = std::getenv("PQNAS_OPAQUE_ENROLLMENTS_PATH");
-        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
-        if (!env_path.empty()) return env_path;
+        // Security: enrollment-token stores are authentication state.
+        // Do not redirect them with environment variables; every writer must derive
+        // the same deterministic path to avoid split-brain token stores and path injection.
 
         if (!deps.users_path.empty()) {
             std::filesystem::path p(deps.users_path);
