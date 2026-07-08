@@ -448,8 +448,11 @@ UpdateArgvResult update_run_argv_limited(
     return result;
 }
 
-bool update_is_absolute_helper_path(const std::string& path) {
-    return !path.empty() && path[0] == '/';
+std::string update_apply_helper_path() {
+    // Security: the update apply helper is an executable trust boundary. Do not
+    // allow an environment override to redirect argv execution to
+    // attacker-controlled code; keep it pinned to the root-managed install path.
+    return "/usr/local/libexec/pqnas/pqnas_update_apply.py";
 }
 
 
@@ -2758,25 +2761,12 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             helper_enabled == "TRUE" ||
             helper_enabled == "yes" ||
             helper_enabled == "YES") {
-            std::string helper_path =
-                deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_PATH") : "";
-
-            if (helper_path.empty()) {
-                helper_path = "/usr/local/libexec/pqnas/pqnas_update_apply.py";
-            }
-
-            if (!update_is_absolute_helper_path(helper_path)) {
-                deps.reply_json(res, 500, json{
-                    {"ok", false},
-                    {"error", "bad_helper_path"},
-                    {"message", "Helper path must be absolute."}
-                }.dump(2));
-                return;
-            }
+            const std::string helper_path = update_apply_helper_path();
 
             // Security: run validation-only helper as argv via a fixed Python
-            // interpreter. This protects plan_id/helper_path from shell parsing
-            // and avoids /usr/bin/env shebang PATH influence.
+            // interpreter and a fixed root-managed helper path. This protects
+            // plan_id from shell parsing and avoids /usr/bin/env shebang PATH
+            // influence.
             const UpdateArgvResult helper_result = update_run_argv_limited(
                 {
                     "/usr/bin/python3",
@@ -3326,25 +3316,11 @@ void register_update_center_routes(httplib::Server& srv, const UpdateCenterRoute
             return;
         }
 
-        std::string helper_path =
-            deps.getenv_str ? deps.getenv_str("PQNAS_UPDATE_HELPER_PATH") : "";
+        const std::string helper_path = update_apply_helper_path();
 
-        if (helper_path.empty()) {
-            helper_path = "/usr/local/libexec/pqnas/pqnas_update_apply.py";
-        }
-
-        if (!update_is_absolute_helper_path(helper_path)) {
-            deps.reply_json(res, 500, json{
-                {"ok", false},
-                {"error", "bad_helper_path"},
-                {"message", "Helper path must be absolute."},
-                {"install_performed", false}
-            }.dump(2));
-            return;
-        }
-
-        // Security: dry-run uses argv execution and an internal timeout instead
-        // of shell timeout/quoting, so plan_id is never interpreted by a shell.
+        // Security: dry-run uses argv execution, an internal timeout, and a
+        // fixed root-managed helper path instead of shell timeout/quoting, so
+        // plan_id is never interpreted by a shell.
         const UpdateArgvResult helper_result = update_run_argv_limited(
             {
                 "/usr/bin/python3",

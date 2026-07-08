@@ -1965,7 +1965,6 @@ def write_env_file(
         "",
         "PQNAS_UPDATES_ROOT=/var/lib/pqnas/updates",
         "PQNAS_UPDATE_HELPER_ENABLED=1",
-        "PQNAS_UPDATE_HELPER_PATH=/usr/local/libexec/pqnas/pqnas_update_apply.py",
         "PQNAS_UPDATE_APPLY_HELPER_PATH=/usr/local/sbin/pqnas-update-apply",
         "",
         "PQNAS_NODUS_CLI=/usr/local/bin/nodus-cli",

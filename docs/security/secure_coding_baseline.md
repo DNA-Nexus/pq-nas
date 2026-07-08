@@ -1927,3 +1927,23 @@ Allowed pattern:
 
 Security reason: the OPAQUE helper is an executable trust boundary. Environment
 controlled helper paths can redirect `execv()` to attacker-controlled code.
+
+## Update helper executable path
+
+Update helper executable paths must not be controlled by runtime environment
+variables.
+
+Do not add environment variables such as `PQNAS_UPDATE_HELPER_PATH` that redirect
+the update apply helper executable at runtime.
+
+Allowed pattern:
+
+- install the helper to `/usr/local/libexec/pqnas/pqnas_update_apply.py`
+- execute only that fixed root-managed path from server code
+- keep `PQNAS_UPDATE_HELPER_ENABLED` as a feature gate only
+- keep installer output aligned with the fixed runtime path
+- keep helper ownership and permissions restrictive
+
+Security reason: the update apply helper is an executable trust boundary.
+Environment-controlled helper paths can redirect privileged update validation or
+dry-run execution to attacker-controlled code.

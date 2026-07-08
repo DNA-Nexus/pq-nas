@@ -47,8 +47,8 @@ for pattern, message in bad_patterns:
 
 required_patterns = [
     (
-        r"bool\s+update_is_absolute_helper_path\s*\(",
-        "missing absolute helper path guard",
+        r"std::string\s+update_apply_helper_path\s*\(",
+        "missing fixed update_apply_helper_path helper",
     ),
     (
         r"update_run_argv_limited\(\s*\{\s*\"/usr/bin/python3\",\s*helper_path,\s*\"--plan-id\",\s*plan_id,\s*\"--validation-only\"\s*\}",
@@ -69,6 +69,6 @@ if failed:
     sys.exit(1)
 
 print("OK: Update Center validation-only/dry-run helper calls use argv execution.")
-print("OK: helper_path is required to be absolute.")
+print("OK: helper_path is pinned to the fixed root-managed update helper.")
 print("OK: shell timeout/redirection/helper_path quoting regressions are blocked.")
 PY
