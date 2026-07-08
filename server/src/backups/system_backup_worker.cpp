@@ -1,4 +1,5 @@
 #include "backups/system_backup_worker.h"
+#include "runtime_paths.h"
 
 #include <sqlite3.h>
 
@@ -283,11 +284,9 @@ std::filesystem::path notification_settings_path_for_backup_local() {
 }
 
 std::filesystem::path password_credentials_path_for_backup_local(const std::filesystem::path& users_path) {
-    const auto env_path = env_path_or_empty_local("PQNAS_PASSWORD_CREDENTIALS_PATH");
-    if (!env_path.empty()) {
-        return env_path;
-    }
-
+    // Security: password credentials are authentication state. Backups must use
+    // the same deterministic store as login/cleanup flows, not a per-file
+    // environment override that could split credential state.
     if (!users_path.empty() && !users_path.parent_path().empty()) {
         return users_path.parent_path() / "password_credentials.json";
     }
@@ -497,10 +496,10 @@ std::vector<SystemBackupSource> default_sources() {
     const std::filesystem::path password_credentials_path =
         password_credentials_path_for_backup_local(users_path);
 
-    const std::filesystem::path opaque_credentials_path = configured_path_local(
-        "PQNAS_OPAQUE_CREDENTIALS_PATH",
-        {"/etc/pqnas/opaque_credentials.json", "/srv/pqnas/config/opaque_credentials.json"}
-    );
+    // Security: OPAQUE credentials are authentication state. Back up the same
+    // shared runtime credential store used by login routes.
+    const std::filesystem::path opaque_credentials_path =
+        pqnas::opaque_credentials_path();
 
     const std::filesystem::path opaque_server_setup_path = configured_path_local(
         "PQNAS_OPAQUE_SERVER_SETUP_PATH",

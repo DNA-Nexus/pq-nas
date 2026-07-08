@@ -48,6 +48,7 @@
 #include "allowlist.h"
 #include "users_registry.h"
 #include "password_credentials.h"
+#include "runtime_paths.h"
 #include "dna_identity_generator.h"
 #include "opaque_backend_status.h"
 #include "opaque_credentials.h"
@@ -158,25 +159,10 @@ static bool routes_v5_simple_ip_rate_limit_allow(
 static std::string routes_v5_trim_ascii_copy(const std::string& s);
 
 static std::string routes_v5_opaque_credentials_path() {
-    const char* env = std::getenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
-    const std::string env_path = routes_v5_trim_ascii_copy(env ? env : "");
-    if (!env_path.empty()) {
-        return env_path;
-    }
-
-    const char* cfg_env = std::getenv("PQNAS_CONFIG");
-    const std::string cfg_path = routes_v5_trim_ascii_copy(cfg_env ? cfg_env : "");
-    if (!cfg_path.empty()) {
-        return (std::filesystem::path(cfg_path) / "opaque_credentials.json").string();
-    }
-
-    const char* cfg_root_env = std::getenv("PQNAS_CONFIG_ROOT");
-    const std::string cfg_root_path = routes_v5_trim_ascii_copy(cfg_root_env ? cfg_root_env : "");
-    if (!cfg_root_path.empty()) {
-        return (std::filesystem::path(cfg_root_path) / "opaque_credentials.json").string();
-    }
-
-    return "/etc/pqnas/opaque_credentials.json";
+    // Security: OPAQUE credentials are authentication state. Keep all v5 routes
+    // on the shared runtime path helper so credentials cannot split across
+    // environment-controlled per-file stores.
+    return pqnas::opaque_credentials_path().string();
 }
 
 static bool routes_v5_sync_admin_to_allowlist(const RoutesV5Context& ctx, const std::string& fp_hex) {
@@ -971,10 +957,9 @@ static bool routes_v5_has_control_chars(const std::string& s) {
 }
 
 static std::string routes_v5_password_credentials_path(const RoutesV5Context& ctx) {
-    const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
-    std::string env_path = routes_v5_trim_ascii_copy(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
-
+    // Security: password credentials are authentication state. Do not allow a
+    // per-file environment override; derive the credential store beside
+    // users.json so user records and password records cannot split.
     if (ctx.users_path && !ctx.users_path->empty()) {
         std::filesystem::path p(*ctx.users_path);
         return (p.parent_path() / "password_credentials.json").string();

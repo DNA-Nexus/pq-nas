@@ -1846,3 +1846,24 @@ Security reason: the storage root is used as an allow-list boundary for pool
 mounts and storage-manager operations. Parsing it in multiple places risks
 inconsistent validation, path manipulation, and accidentally broad destructive
 operation scopes.
+
+## Authentication credential file paths
+
+Authentication credential stores must not have per-file environment variable
+overrides.
+
+Do not add environment variables such as `PQNAS_PASSWORD_CREDENTIALS_PATH` or
+`PQNAS_OPAQUE_CREDENTIALS_PATH` that redirect credential stores at runtime.
+
+Allowed pattern:
+
+- derive password credentials beside the active `users.json`
+- derive OPAQUE credentials from the trusted runtime config root with the fixed
+  filename `opaque_credentials.json`
+- keep every login, workspace, invite, and cleanup route on the same helper
+- keep credential file writes atomic and permissions restrictive
+
+Security reason: password and OPAQUE credential files are authentication state.
+Per-file path overrides can split login, cleanup, migration, and revoke flows
+across different stores, leaving stale credentials or authenticating against an
+unexpected file.
