@@ -79,7 +79,9 @@ function quotaUsagePct(usedBytes, quotaBytes) {
 const openUsers = new Set(); // fingerprints
 
 const ADMIN_USERS_STORAGE_JOBS_KEY = "pqnas.adminUsers.storageJobs.v1";
+const ADMIN_USERS_DONE_JOB_AUTO_HIDE_MS = 2500;
 const adminUsersStorageJobPolls = new Map();
+const adminUsersStorageJobDoneTimers = new Map();
 
 function adminUsersValidStorageJobKind(kind) {
     return kind === "migration" || kind === "cleanup";
@@ -118,6 +120,15 @@ function adminUsersStorageJobsLoad() {
 
                 const updatedAt = Date.parse(String(j.updated_at || j.created_at || "")) || now;
                 if ((now - updatedAt) > maxAgeMs) return null;
+
+                const stateForExpiry = String(j.state || "queued").toLowerCase();
+
+                // UX: completed bulk jobs create a huge panel during mass moves.
+                // Keep failures visible for manual review, but let successful
+                // jobs disappear shortly after completion.
+                if (stateForExpiry === "done" && (now - updatedAt) > ADMIN_USERS_DONE_JOB_AUTO_HIDE_MS) {
+                    return null;
+                }
 
                 return {
                     kind,
@@ -192,10 +203,37 @@ function adminUsersRemoveStorageJob(kind, jobId) {
     if (!adminUsersValidStorageJobKind(kind) || !job_id) return;
 
     const key = adminUsersStorageJobKey(kind, job_id);
+
+    const timer = adminUsersStorageJobDoneTimers.get(key);
+    if (timer) {
+        clearTimeout(timer);
+        adminUsersStorageJobDoneTimers.delete(key);
+    }
+
     adminUsersStorageJobsSave(
         adminUsersStorageJobsLoad().filter(j => adminUsersStorageJobKey(j.kind, j.job_id) !== key)
     );
     renderAdminUsersStorageJobPanel();
+}
+
+function adminUsersScheduleDoneStorageJobRemoval(job) {
+    const kind = String(job?.kind || "");
+    const jobId = adminUsersSafeJobId(job?.job_id);
+    if (!adminUsersValidStorageJobKind(kind) || !jobId) return;
+
+    const key = adminUsersStorageJobKey(kind, jobId);
+    if (adminUsersStorageJobDoneTimers.has(key)) return;
+
+    const updatedAt = Date.parse(String(job.updated_at || job.created_at || "")) || Date.now();
+    const ageMs = Math.max(0, Date.now() - updatedAt);
+    const delayMs = Math.max(0, ADMIN_USERS_DONE_JOB_AUTO_HIDE_MS - ageMs);
+
+    const timer = setTimeout(() => {
+        adminUsersStorageJobDoneTimers.delete(key);
+        adminUsersRemoveStorageJob(kind, jobId);
+    }, delayMs);
+
+    adminUsersStorageJobDoneTimers.set(key, timer);
 }
 
 function adminUsersUpdateStorageJobFromRecord(kind, jobId, fp, job) {
@@ -443,6 +481,10 @@ function renderAdminUsersStorageJobPanel() {
     list.className = "adminUsersJobList";
 
     for (const job of jobs) {
+        if (String(job.state || "").toLowerCase() === "done") {
+            adminUsersScheduleDoneStorageJobRemoval(job);
+        }
+
         const item = document.createElement("article");
         item.className = "adminUsersJobItem";
 
@@ -594,6 +636,147 @@ async function apiPost(path, body) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.message || j.error || ("HTTP " + r.status));
     return j;
+}
+
+
+function adminUsersInstallConfirmThemeFix() {
+    if (window.__adminUsersConfirmThemeFixInstalled) return;
+    window.__adminUsersConfirmThemeFixInstalled = true;
+
+    const installTokens = () => {
+        if (document.getElementById("adminUsersConfirmTokenCss")) return;
+
+        const style = document.createElement("style");
+        style.id = "adminUsersConfirmTokenCss";
+        style.textContent = `
+:root{
+    --admin-users-modal-scrim: color-mix(in oklab, var(--bg) 72%, transparent);
+    --admin-users-modal-surface: color-mix(in oklab, var(--bg) 92%, var(--fg) 8%);
+    --admin-users-modal-surface-2: color-mix(in oklab, var(--bg) 86%, var(--fg) 14%);
+}
+`;
+        document.head.appendChild(style);
+    };
+
+    const applyOverlayTokens = (el) => {
+        // Theme safety: keep backdrop dimmed but not opaque. Use only theme
+        // tokens so dark/orange modes do not become a light gray page.
+        el.style.background = "var(--admin-users-modal-scrim)";
+        el.style.backgroundColor = "var(--admin-users-modal-scrim)";
+        el.style.color = "var(--fg)";
+        el.style.backdropFilter = "none";
+        el.style.webkitBackdropFilter = "none";
+    };
+
+    const applyCardTokens = (el) => {
+        // Theme safety: modal surface must be solid, because --panel is glassy
+        // in dark/orange themes. This avoids text and table rows bleeding
+        // through the confirm dialog.
+        el.style.background = "var(--admin-users-modal-surface)";
+        el.style.backgroundColor = "var(--admin-users-modal-surface)";
+        el.style.color = "var(--fg)";
+        el.style.border = "1px solid var(--border)";
+        el.style.boxShadow = "var(--shadow)";
+        el.style.backdropFilter = "none";
+        el.style.webkitBackdropFilter = "none";
+    };
+
+    const applyInsetTokens = (el) => {
+        el.style.background = "var(--admin-users-modal-surface-2)";
+        el.style.backgroundColor = "var(--admin-users-modal-surface-2)";
+        el.style.color = "var(--fg)";
+        el.style.borderColor = "var(--border2)";
+    };
+
+    const looksLikeFullscreenOverlay = (el) => {
+        if (!(el instanceof HTMLElement)) return false;
+
+        const cs = window.getComputedStyle(el);
+        if (cs.position !== "fixed") return false;
+
+        const r = el.getBoundingClientRect();
+        return r.width >= window.innerWidth * 0.75 &&
+               r.height >= window.innerHeight * 0.75;
+    };
+
+    const looksLikeDialogCard = (el) => {
+        if (!(el instanceof HTMLElement)) return false;
+
+        if (el.getAttribute("role") === "dialog") return true;
+        if (el.getAttribute("aria-modal") === "true") return true;
+
+        const hint = `${el.id || ""} ${el.className || ""}`.toLowerCase();
+        if (hint.includes("backdrop") || hint.includes("overlay")) return false;
+
+        const hasNameHint =
+            hint.includes("confirm") ||
+            hint.includes("dialog") ||
+            hint.includes("modal") ||
+            hint.includes("card");
+
+        const r = el.getBoundingClientRect();
+        return hasNameHint &&
+               r.width >= 260 &&
+               r.width <= window.innerWidth * 0.92 &&
+               r.height >= 120 &&
+               r.height <= window.innerHeight * 0.92;
+    };
+
+    const normalizeRoot = (root) => {
+        installTokens();
+
+        const nodes = [];
+        if (root instanceof HTMLElement) nodes.push(root);
+        if (root && root.querySelectorAll) nodes.push(...root.querySelectorAll("*"));
+
+        for (const el of nodes) {
+            if (!(el instanceof HTMLElement)) continue;
+
+            const hint = `${el.id || ""} ${el.className || ""}`.toLowerCase();
+            const nameLooksModal =
+                hint.includes("confirm") ||
+                hint.includes("modal") ||
+                hint.includes("dialog") ||
+                hint.includes("backdrop") ||
+                hint.includes("overlay");
+
+            if (looksLikeFullscreenOverlay(el) && nameLooksModal) {
+                applyOverlayTokens(el);
+                continue;
+            }
+
+            if (looksLikeDialogCard(el)) {
+                applyCardTokens(el);
+
+                for (const sub of el.querySelectorAll("*")) {
+                    const subHint = `${sub.id || ""} ${sub.className || ""}`.toLowerCase();
+
+                    if (
+                        subHint.includes("note") ||
+                        subHint.includes("warning") ||
+                        subHint.includes("row") ||
+                        subHint.includes("body") ||
+                        subHint.includes("content")
+                    ) {
+                        applyInsetTokens(sub);
+                    }
+                }
+            }
+        }
+    };
+
+    const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            for (const n of m.addedNodes) normalizeRoot(n);
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+    });
+
+    normalizeRoot(document.body);
 }
 
 function $(id) { return document.getElementById(id); }
@@ -1025,7 +1208,54 @@ function normalizePoolsFromResponse(j) {
         if (p.profile_metadata) hintParts.push(`meta:${String(p.profile_metadata)}`);
         const hint = hintParts.join(" • ");
 
-        out.push({ id, name, hint, mount });
+        const total_bytes = adminUsersPoolCapacityNumber(p, [
+            "total_bytes",
+            "pool_total_bytes",
+            "capacity_bytes",
+            "bytes_total",
+            "size_bytes",
+            "fs_total_bytes",
+            "stat_total_bytes",
+        ]);
+
+        const free_bytes = adminUsersPoolCapacityNumber(p, [
+            "free_bytes",
+            "pool_free_bytes",
+            "available_bytes",
+            "avail_bytes",
+            "bytes_available",
+            "usable_free_bytes",
+            "fs_free_bytes",
+            "stat_free_bytes",
+            "remaining_allocatable_bytes",
+        ]);
+
+        const used_bytes = adminUsersPoolCapacityNumber(p, [
+            "used_bytes",
+            "pool_used_bytes",
+            "bytes_used",
+            "allocated_bytes",
+            "quota_used_bytes",
+            "assigned_quota_bytes",
+        ]);
+
+        const remaining_allocatable_bytes = adminUsersPoolCapacityNumber(p, [
+            "remaining_allocatable_bytes",
+            "pool_remaining_allocatable_bytes",
+            "remaining_bytes",
+        ]);
+
+        out.push({
+            ...p,
+            id,
+            name,
+            hint,
+            mount,
+            total_bytes,
+            free_bytes,
+            used_bytes,
+            remaining_allocatable_bytes,
+        });
     }
     return out;
 }
@@ -2106,6 +2336,10 @@ async function submitAllocationFromModal() {
 
 let allUsers = [];
 let actorFp = "";
+let visibleUsers = [];
+const selectedFingerprints = new Set();
+const ADMIN_USERS_BULK_MIGRATE_MAX = 100;
+let adminUsersLastBulkBatchId = localStorage.getItem("pqnas.adminUsers.lastBulkBatchId") || "";
 let adminUsersEditFingerprint = "";
 
 function isExternalWorkspaceUser(u) {
@@ -2138,18 +2372,23 @@ function adminUsersVisibleCount() {
 }
 
 function adminUsersLoadedMessage() {
-    const visible = adminUsersVisibleCount();
+    const baseVisible = adminUsersVisibleCount();
+    const filteredVisible = Array.isArray(visibleUsers) ? visibleUsers.length : baseVisible;
     const hidden = adminUsersShowExternal() ? 0 : adminUsersExternalCount();
+    const selected = selectedFingerprints.size;
 
-    if (hidden > 0) {
-        return tr(
-            "admin.users.loaded_users_external_hidden",
-            { count: visible, hidden },
-            `Loaded ${visible} users (${hidden} external hidden)`
-        );
-    }
+    let fallback = filteredVisible === baseVisible
+        ? `Loaded ${baseVisible} users`
+        : `Showing ${filteredVisible} of ${baseVisible} users`;
 
-    return tr("admin.users.loaded_users", { count: visible }, `Loaded ${visible} users`);
+    if (hidden > 0) fallback += ` (${hidden} external hidden)`;
+    if (selected > 0) fallback += ` · ${selected} selected`;
+
+    return tr(
+        "admin.users.loaded_users_filtered",
+        { count: filteredVisible, total: baseVisible, hidden, selected },
+        fallback
+    );
 }
 
 function syncExternalUsersNotice() {
@@ -2199,6 +2438,515 @@ let gAllocPreview = null;
 function setMsg(text) {
     const el = $("msg");
     if (el) el.textContent = text || "";
+}
+
+
+function adminUsersAddOption(sel, value, label) {
+    const opt = document.createElement("option");
+    opt.value = String(value || "");
+    opt.textContent = String(label || value || "");
+    sel.appendChild(opt);
+}
+
+function adminUsersPoolCapacityNumber(pool, keys) {
+    const p = pool || {};
+
+    for (const key of keys) {
+        const n = Number(p[key]);
+        if (Number.isFinite(n) && n >= 0) return n;
+    }
+
+    return null;
+}
+
+function adminUsersPoolCapacityParts(pool) {
+    const total = adminUsersPoolCapacityNumber(pool, [
+        "total_bytes",
+        "pool_total_bytes",
+        "capacity_bytes",
+        "bytes_total",
+        "size_bytes",
+        "fs_total_bytes",
+        "stat_total_bytes",
+    ]);
+
+    let free = adminUsersPoolCapacityNumber(pool, [
+        "free_bytes",
+        "pool_free_bytes",
+        "available_bytes",
+        "avail_bytes",
+        "bytes_available",
+        "usable_free_bytes",
+        "fs_free_bytes",
+        "stat_free_bytes",
+        "remaining_allocatable_bytes",
+        "pool_remaining_allocatable_bytes",
+    ]);
+
+    const used = adminUsersPoolCapacityNumber(pool, [
+        "used_bytes",
+        "bytes_used",
+        "allocated_bytes",
+        "quota_used_bytes",
+        "assigned_quota_bytes",
+    ]);
+
+    if (free === null && total !== null && used !== null && total >= used) {
+        free = total - used;
+    }
+
+    return { total, free, used };
+}
+
+function adminUsersPoolCapacityText(pool) {
+    const { free, used } = adminUsersPoolCapacityParts(pool);
+
+    const migrationUsable = adminUsersPoolCapacityNumber(pool, [
+        "remaining_allocatable_bytes",
+        "pool_remaining_allocatable_bytes",
+        "effective_free_bytes",
+        "usable_free_bytes",
+        "migration_available_bytes",
+        "allocatable_bytes",
+    ]);
+
+    if (migrationUsable !== null && free !== null) {
+        return tr(
+            "admin.users.pool_space_migration_free",
+            { usable: fmtBytesShort(migrationUsable), free: fmtBytesShort(free) },
+            `${fmtBytesShort(migrationUsable)} migration space (${fmtBytesShort(free)} free)`
+        );
+    }
+
+    if (migrationUsable !== null) {
+        return tr(
+            "admin.users.pool_space_migration_only",
+            { usable: fmtBytesShort(migrationUsable) },
+            `${fmtBytesShort(migrationUsable)} migration space`
+        );
+    }
+
+    const explicitUsableTotal = adminUsersPoolCapacityNumber(pool, [
+        "effective_total_bytes",
+        "usable_total_bytes",
+        "pool_effective_total_bytes",
+        "pool_usable_total_bytes",
+        "logical_total_bytes",
+        "pool_logical_total_bytes",
+    ]);
+
+    let usableTotal = explicitUsableTotal;
+
+    if (usableTotal === null && free !== null && used !== null) {
+        usableTotal = free + used;
+    }
+
+    if (usableTotal === null && free !== null) {
+        usableTotal = free;
+    }
+
+    if (free !== null && usableTotal !== null) {
+        return tr(
+            "admin.users.pool_space_free_usable",
+            { free: fmtBytesShort(free), usable: fmtBytesShort(usableTotal) },
+            `${fmtBytesShort(free)} free / ${fmtBytesShort(usableTotal)} usable`
+        );
+    }
+
+    if (used !== null && usableTotal !== null) {
+        return tr(
+            "admin.users.pool_space_used_usable",
+            { used: fmtBytesShort(used), usable: fmtBytesShort(usableTotal) },
+            `${fmtBytesShort(used)} used / ${fmtBytesShort(usableTotal)} usable`
+        );
+    }
+
+    return tr("admin.users.pool_space_unknown", null, "Pool capacity unavailable");
+}
+
+function adminUsersPoolOptionLabel(pool) {
+    const p = pool || {};
+    const name = String(p.name || p.id || "").trim();
+    const capacity = adminUsersPoolCapacityText(p);
+
+    if (!name) return capacity;
+    if (capacity === tr("admin.users.pool_space_unknown", null, "Pool capacity unavailable")) return name;
+
+    return `${name} — ${capacity}`;
+}
+
+function syncAdminUsersBulkPoolCapacityUi() {
+    const box = $("adminUsersBulkPoolCapacity");
+    if (!box) return;
+
+    const poolId = String($("adminUsersBulkPool")?.value || "").trim();
+    if (!poolId) {
+        box.textContent = tr("admin.users.pool_space_unknown", null, "Pool capacity unavailable");
+        return;
+    }
+
+    const pool = (gPools || []).find(p => String(p.id || "") === poolId);
+    if (!pool) {
+        box.textContent = tr("admin.users.pool_space_unknown", null, "Pool capacity unavailable");
+        return;
+    }
+
+    box.textContent = adminUsersPoolCapacityText(pool);
+}
+
+function adminUsersSearchText() {
+    const primary = String($("adminUsersSearch")?.value || "").trim();
+    const legacy = String($("filter")?.value || "").trim();
+    return (primary || legacy).toLowerCase();
+}
+
+function adminUsersPoolFilterValue() {
+    return String($("adminUsersPoolFilter")?.value || "all").trim() || "all";
+}
+
+function adminUsersStorageFilterValue() {
+    return String($("adminUsersStorageFilter")?.value || "all").trim().toLowerCase() || "all";
+}
+
+function adminUsersStatusFilterValue() {
+    return String($("adminUsersStatusFilter")?.value || "all").trim().toLowerCase() || "all";
+}
+
+function adminUsersFilterMatches(u, searchText, poolFilter, storageFilter, statusFilter) {
+    const poolId = storagePoolIdForUser(u);
+    const storageState = String(u?.storage_state || "unallocated").toLowerCase();
+    const status = String(u?.status || "").toLowerCase();
+
+    if (poolFilter !== "all" && poolId !== poolFilter) return false;
+    if (storageFilter !== "all" && storageState !== storageFilter) return false;
+    if (statusFilter !== "all" && status !== statusFilter) return false;
+
+    const hay = [
+        u.fingerprint, u.name, u.notes, u.role, u.status,
+        u.group, u.email, u.storage_state, poolId,
+        String(u.quota_bytes || "")
+    ].join(" ").toLowerCase();
+
+    return !searchText || hay.includes(searchText);
+}
+
+function refreshAdminUsersPoolFilter() {
+    const sel = $("adminUsersPoolFilter");
+    if (!sel) return;
+
+    const prev = String(sel.value || "all");
+    const pools = Array.from(new Set(allUsers.map(storagePoolIdForUser)))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+    sel.innerHTML = "";
+    adminUsersAddOption(sel, "all", tr("admin.users.all_pools", null, "All pools"));
+
+    for (const poolId of pools) {
+        const label = poolId === "default"
+            ? tr("admin.users.default_pool", null, "Default pool")
+            : poolId;
+        adminUsersAddOption(sel, poolId, label);
+    }
+
+    sel.value = pools.includes(prev) ? prev : "all";
+}
+
+function adminUsersPruneSelection() {
+    const valid = new Set(allUsers.map(u => String(u.fingerprint || "")).filter(Boolean));
+    for (const fp of Array.from(selectedFingerprints)) {
+        if (!valid.has(fp)) selectedFingerprints.delete(fp);
+    }
+}
+
+function adminUsersVisibleFingerprints() {
+    return visibleUsers.map(u => String(u.fingerprint || "")).filter(Boolean);
+}
+
+function adminUsersSelectVisible(checked) {
+    for (const fp of adminUsersVisibleFingerprints()) {
+        if (checked) selectedFingerprints.add(fp);
+        else selectedFingerprints.delete(fp);
+    }
+
+    render();
+    setMsg(adminUsersLoadedMessage());
+}
+
+function adminUsersSelectedRows() {
+    const selected = new Set(selectedFingerprints);
+    return allUsers.filter(u => selected.has(String(u.fingerprint || "")));
+}
+
+function syncAdminUsersBulkUi() {
+    const visibleFps = adminUsersVisibleFingerprints();
+    const selectedVisible = visibleFps.filter(fp => selectedFingerprints.has(fp)).length;
+
+    const selectVisible = $("adminUsersSelectVisible");
+    if (selectVisible) {
+        selectVisible.checked = visibleFps.length > 0 && selectedVisible === visibleFps.length;
+        selectVisible.indeterminate = selectedVisible > 0 && selectedVisible < visibleFps.length;
+        selectVisible.disabled = visibleFps.length === 0;
+    }
+
+    const selectedCount = selectedFingerprints.size;
+    const haveLastBatch = !!String(adminUsersLastBulkBatchId || "").trim();
+
+    const bar = $("adminUsersBulkBar");
+    const count = $("adminUsersBulkCount");
+    const migrateBtn = $("adminUsersBulkMigrateBtn");
+    const cleanupBtn = $("adminUsersBulkCleanupBtn");
+    const poolSel = $("adminUsersBulkPool");
+
+    // UX: keep the bar visible after migration if there is a backend batch that
+    // can still be used for old-copy cleanup. The UI is only a convenience;
+    // backend cleanup still validates admin auth, job state, pool ids, and copy
+    // completeness before destructive deletion.
+    if (bar) bar.hidden = selectedCount === 0 && !haveLastBatch;
+
+    if (count) {
+        if (selectedCount > 0) {
+            count.textContent = tr(
+                "admin.users.bulk_selected_count",
+                { count: selectedCount },
+                `${selectedCount} selected`
+            );
+        } else if (haveLastBatch) {
+            count.textContent = tr(
+                "admin.users.bulk_last_batch_available",
+                null,
+                "Last bulk migration batch is available for cleanup"
+            );
+        } else {
+            count.textContent = tr(
+                "admin.users.bulk_selected_count",
+                { count: 0 },
+                "0 selected"
+            );
+        }
+    }
+
+    if (migrateBtn) {
+        migrateBtn.disabled = selectedCount === 0 || !String(poolSel?.value || "").trim();
+    }
+
+    if (cleanupBtn) {
+        cleanupBtn.disabled = !haveLastBatch;
+    }
+}
+
+async function refreshAdminUsersBulkDestPools() {
+    const sel = $("adminUsersBulkPool");
+    if (!sel) return;
+
+    const prev = String(sel.value || "");
+    const pools = await ensurePoolsLoaded();
+
+    sel.innerHTML = "";
+    adminUsersAddOption(sel, "", tr("admin.users.choose_target_pool", null, "Choose target pool…"));
+
+    for (const p of pools) {
+        adminUsersAddOption(sel, p.id, adminUsersPoolOptionLabel(p));
+    }
+
+    if (prev && Array.from(sel.options).some(o => o.value === prev)) {
+        sel.value = prev;
+    }
+
+    syncAdminUsersBulkUi();
+    syncAdminUsersBulkPoolCapacityUi();
+}
+
+function adminUsersRefreshAfterFilterChange() {
+    render();
+    setMsg(adminUsersLoadedMessage());
+}
+
+async function submitAdminUsersBulkMigration() {
+    const pool_id = String($("adminUsersBulkPool")?.value || "").trim();
+    if (!pool_id) {
+        showToast(tr("admin.users.no_destination_pool", null, "No destination pool selected."), 7000);
+        return;
+    }
+
+    const selectedRows = adminUsersSelectedRows();
+    if (!selectedRows.length) {
+        showToast(tr("admin.users.no_users_selected", null, "No users selected."), 7000);
+        return;
+    }
+
+    const expectedPool = adminUsersPoolFilterValue();
+    const fingerprints = selectedRows
+        .map(u => String(u.fingerprint || "").trim())
+        .filter(Boolean)
+        .slice(0, ADMIN_USERS_BULK_MIGRATE_MAX);
+
+    if (!fingerprints.length) {
+        showToast(tr("admin.users.no_users_selected", null, "No users selected."), 7000);
+        return;
+    }
+
+    const overflow = Math.max(0, selectedRows.length - fingerprints.length);
+    const dstPool = (gPools || []).find(p => p.id === pool_id);
+    const dstName = dstPool?.name || pool_id;
+
+    const ok = await openAdminUsersConfirmModal({
+        title: tr("admin.users.bulk_migrate_confirm_title", { count: fingerprints.length, pool: dstName }, `Migrate ${fingerprints.length} selected users to "${dstName}"?`),
+        subtitle: tr("admin.users.bulk_migrate_confirm_subtitle", null, "This creates a durable backend batch and queues one async storage migration job per user."),
+        rows: [
+            { label: tr("admin.users.selected", null, "Selected"), value: String(selectedRows.length), mono: true },
+            { label: tr("admin.users.queued_now", null, "Queued now"), value: String(fingerprints.length), mono: true },
+            { label: tr("admin.users.to", null, "To"), value: dstName, mono: true },
+        ],
+        note: tr(
+            "admin.users.bulk_migrate_confirm_note",
+            null,
+            "The backend stores this batch so the same migrated users can be found later for old-copy cleanup. Each migration still performs server-side source/target validation and copy verification."
+        ) + (overflow ? `\n${tr("admin.users.bulk_limit_note", { limit: ADMIN_USERS_BULK_MIGRATE_MAX, overflow }, `Safety limit: first ${ADMIN_USERS_BULK_MIGRATE_MAX} users now; ${overflow} remain selected.`)}` : ""),
+        confirmText: tr("admin.users.start_migration", null, "Start migration"),
+        cancelText: tr("admin.users.cancel", null, "Cancel"),
+        danger: false
+    });
+
+    if (!ok) return;
+
+    const btn = $("adminUsersBulkMigrateBtn");
+    if (btn) btn.disabled = true;
+
+    try {
+        setMsg(tr("admin.users.bulk_queuing_migrations", null, "Queuing bulk migrations…"));
+
+        const body = {
+            fingerprints,
+            pool_id,
+            expected_from_pool_id: expectedPool,
+        };
+
+        const j = await apiPost("/api/v4/admin/users/bulk_migrate_storage", body);
+        const batch = j?.batch || {};
+        const batchId = String(j?.batch_id || batch?.batch_id || "").trim();
+
+        if (batchId) {
+            adminUsersLastBulkBatchId = batchId;
+            localStorage.setItem("pqnas.adminUsers.lastBulkBatchId", batchId);
+        }
+
+        const items = Array.isArray(batch.items) ? batch.items : [];
+        let queued = 0;
+        let skipped = 0;
+        let failed = 0;
+
+        for (const item of items) {
+            const fp = String(item.fingerprint || "").trim();
+            const state = String(item.state || "");
+            const jobId = String(item.migration_job_id || "").trim();
+
+            if (state === "queued" && fp && jobId) {
+                queued += 1;
+                adminUsersUpsertStorageJob("migration", jobId, fp, {
+                    state: "queued",
+                    phase: "queued",
+                    from_pool_id: String(item.from_pool_id || "default"),
+                    to_pool_id: String(item.to_pool_id || pool_id || "default"),
+                    message: tr("admin.users.migration_queued", null, "Migration queued"),
+                });
+                adminUsersStartStorageJobMonitor("migration", jobId, fp);
+                selectedFingerprints.delete(fp);
+            } else if (state === "skipped") {
+                skipped += 1;
+            } else if (state === "failed") {
+                failed += 1;
+            }
+        }
+
+        render();
+
+        const summary = [
+            tr("admin.users.bulk_migration_summary", { queued, failed }, `Bulk migration queued: ${queued}, failed: ${failed}`),
+            skipped ? tr("admin.users.bulk_skipped_count", { count: skipped }, `Skipped: ${skipped}`) : "",
+            batchId ? `Batch: ${batchId}` : "",
+            tr("admin.users.bulk_cleanup_hint", null, "After the migrations finish, use Cleanup last batch to remove inactive old copies.")
+        ].filter(Boolean).join("\n");
+
+        setMsg(summary);
+        showToast(summary, 12000);
+    } finally {
+        syncAdminUsersBulkUi();
+    }
+}
+
+async function submitAdminUsersBulkCleanupLastBatch() {
+    const batchId = String(adminUsersLastBulkBatchId || "").trim();
+    if (!batchId) {
+        showToast(tr("admin.users.no_bulk_batch", null, "No recent backend bulk migration batch found."), 9000);
+        return;
+    }
+
+    const ok = await openAdminUsersConfirmModal({
+        title: tr("admin.users.bulk_cleanup_confirm_title", null, "Cleanup old copies from last bulk migration?"),
+        subtitle: tr("admin.users.bulk_cleanup_confirm_subtitle", null, "Only migration jobs that are done will be queued for cleanup."),
+        rows: [
+            { label: tr("admin.users.batch", null, "Batch"), value: batchId, mono: true },
+        ],
+        note: tr(
+            "admin.users.bulk_cleanup_confirm_note",
+            null,
+            "The backend checks each migration job is done, verifies the active and old pool ids, then each cleanup job re-checks the active copy before deleting the inactive old copy."
+        ),
+        confirmText: tr("admin.users.cleanup_old_copy", null, "Cleanup old copy"),
+        cancelText: tr("admin.users.cancel", null, "Cancel"),
+        danger: true
+    });
+
+    if (!ok) return;
+
+    try {
+        setMsg(tr("admin.users.bulk_cleanup_queuing", null, "Queuing cleanup for last batch…"));
+
+        const j = await apiPost("/api/v4/admin/users/bulk_cleanup_old_storage", {
+            batch_id: batchId,
+        });
+
+        let queued = 0;
+        let skipped = 0;
+        let failed = 0;
+
+        const results = Array.isArray(j?.results) ? j.results : [];
+        for (const item of results) {
+            const fp = String(item.fingerprint || "").trim();
+            const state = String(item.state || "");
+            const jobId = String(item.cleanup_job_id || "").trim();
+
+            if (state === "queued" && fp && jobId) {
+                queued += 1;
+                adminUsersUpsertStorageJob("cleanup", jobId, fp, {
+                    state: "queued",
+                    phase: "queued",
+                    active_pool_id: String(item.expected_active_pool_id || ""),
+                    old_pool_id: String(item.old_pool_id || ""),
+                    message: tr("admin.users.cleanup_queued", null, "Cleanup queued"),
+                });
+                adminUsersStartStorageJobMonitor("cleanup", jobId, fp);
+            } else if (state === "skipped") {
+                skipped += 1;
+            } else if (state === "failed") {
+                failed += 1;
+            }
+        }
+
+        const summary = tr(
+            "admin.users.bulk_cleanup_summary",
+            { queued, skipped, failed },
+            `Cleanup queued: ${queued}, skipped: ${skipped}, failed: ${failed}`
+        );
+
+        setMsg(summary);
+        showToast(summary, 12000);
+    } catch (e) {
+        const msg = tr("admin.users.failed", { error: e?.message || e }, "Failed: " + (e?.message || e));
+        setMsg(msg);
+        showToast(msg, 15000);
+    }
 }
 
 
@@ -2333,24 +3081,21 @@ function bindAdminUsersSortHeaders() {
 }
 
 function render() {
-    const f = ($("filter")?.value || "").toLowerCase().trim();
+    const f = adminUsersSearchText();
+    const poolFilter = adminUsersPoolFilterValue();
+    const storageFilter = adminUsersStorageFilterValue();
+    const statusFilter = adminUsersStatusFilterValue();
     const showExternal = adminUsersShowExternal();
 
     let rows = allUsers.filter(u => {
         if (!showExternal && isExternalWorkspaceUser(u)) return false;
-
-        const hay = [
-            u.fingerprint, u.name, u.notes, u.role, u.status,
-            u.group, u.email, u.storage_state,
-            String(u.quota_bytes || "")
-        ].join(" ").toLowerCase();
-
-        return !f || hay.includes(f);
+        return adminUsersFilterMatches(u, f, poolFilter, storageFilter, statusFilter);
     });
 
     syncExternalUsersNotice();
 
     rows = sortAdminUserRows(rows);
+    visibleUsers = rows;
 
     const tb = $("tbody");
     if (!tb) return;
@@ -2360,6 +3105,7 @@ function render() {
         const fp = String(u.fingerprint || "");
         const isOpen = openUsers.has(fp);
         const isSelf = actorFp && fp === actorFp;
+        const isSelected = selectedFingerprints.has(fp);
 
         const selfTag = isSelf
             ? `<span class="pq-badge ok selfTag" title="${esc(tr("admin.users.this_is_you", null, "This is you"))}">${esc(tr("admin.users.you", null, "you"))}</span>`
@@ -2403,7 +3149,7 @@ function render() {
         const detailRow = isOpen ? `
 
 <tr class="detailRow" data-fp="${esc(fp)}">
-  <td colspan="9">
+  <td colspan="10">
     <div class="detailGrid">
       <div class="detailBox">
         <h3>${esc(tr("admin.users.profile", null, "Profile"))}</h3>
@@ -2563,6 +3309,15 @@ function render() {
 
         return `
 <tr class="userRow" data-fp="${esc(fp)}" aria-expanded="${isOpen ? "true" : "false"}">
+  <td class="adminUsersSelectCell">
+    <input
+      class="adminUsersRowSelect"
+      type="checkbox"
+      data-select-fp="${esc(fp)}"
+      aria-label="${esc(tr("admin.users.select_user", null, "Select user"))}"
+      ${isSelected ? "checked" : ""}
+    />
+  </td>
   <td>${avatarThumb(u)}</td>
 
   <td>
@@ -2592,6 +3347,21 @@ ${detailRow}
     }).join("");
 
     updateAdminUsersSortIndicators();
+    syncAdminUsersBulkUi();
+
+    tb.querySelectorAll("input[data-select-fp]").forEach(box => {
+        box.addEventListener("change", (ev) => {
+            ev.stopPropagation();
+            const fp = box.getAttribute("data-select-fp") || "";
+            if (!fp) return;
+
+            if (box.checked) selectedFingerprints.add(fp);
+            else selectedFingerprints.delete(fp);
+
+            syncAdminUsersBulkUi();
+            setMsg(adminUsersLoadedMessage());
+        });
+    });
 
     // ✅ Attach avatar modal click via delegation (works across rerenders)
     tb.onclick = (ev) => {
@@ -2782,9 +3552,11 @@ async function refresh() {
     const j = await apiGet("/api/v4/admin/users");
     actorFp = String(j.actor_fp || "");
     allUsers = (j.users || []).sort((a,b) => (a.fingerprint||"").localeCompare(b.fingerprint||""));
+    adminUsersPruneSelection();
+    refreshAdminUsersPoolFilter();
     render();
-        renderAdminUsersStorageJobPanel();
-setMsg(adminUsersLoadedMessage());
+    renderAdminUsersStorageJobPanel();
+    setMsg(adminUsersLoadedMessage());
 }
 
 async function upsertFromForm() {
@@ -2818,15 +3590,57 @@ async function upsertFromForm() {
 
 
 window.addEventListener("load", async () => {
+    adminUsersInstallConfirmThemeFix();
     $("btnRefresh")?.addEventListener("click", refresh);
     $("filter")?.addEventListener("input", () => {
+        const search = $("adminUsersSearch");
+        if (search && search.value !== $("filter").value) search.value = $("filter").value;
+        adminUsersRefreshAfterFilterChange();
+    });
+    $("adminUsersSearch")?.addEventListener("input", adminUsersRefreshAfterFilterChange);
+    $("adminUsersPoolFilter")?.addEventListener("change", adminUsersRefreshAfterFilterChange);
+    $("adminUsersStorageFilter")?.addEventListener("change", adminUsersRefreshAfterFilterChange);
+    $("adminUsersStatusFilter")?.addEventListener("change", adminUsersRefreshAfterFilterChange);
+    $("showExternalUsers")?.addEventListener("change", adminUsersRefreshAfterFilterChange);
+
+    $("adminUsersSelectVisible")?.addEventListener("change", (ev) => {
+        adminUsersSelectVisible(!!ev.target.checked);
+    });
+
+    $("adminUsersClearFiltersBtn")?.addEventListener("click", () => {
+        if ($("filter")) $("filter").value = "";
+        if ($("adminUsersSearch")) $("adminUsersSearch").value = "";
+        if ($("adminUsersPoolFilter")) $("adminUsersPoolFilter").value = "all";
+        if ($("adminUsersStorageFilter")) $("adminUsersStorageFilter").value = "all";
+        if ($("adminUsersStatusFilter")) $("adminUsersStatusFilter").value = "all";
+        adminUsersRefreshAfterFilterChange();
+    });
+
+    $("adminUsersBulkClearBtn")?.addEventListener("click", () => {
+        selectedFingerprints.clear();
         render();
         setMsg(adminUsersLoadedMessage());
     });
-    $("showExternalUsers")?.addEventListener("change", () => {
-        render();
-        setMsg(adminUsersLoadedMessage());
+
+    $("adminUsersBulkMigrateBtn")?.addEventListener("click", () => {
+        submitAdminUsersBulkMigration().catch(e => {
+            setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
+            showToast(tr("admin.users.failed", { error: e?.message || e }, "Failed: " + (e?.message || e)), 15000);
+        });
     });
+
+    $("adminUsersBulkCleanupBtn")?.addEventListener("click", () => {
+        submitAdminUsersBulkCleanupLastBatch().catch(e => {
+            setMsg(tr("admin.users.error", { error: e?.message || e }, "Error: " + (e?.message || e)));
+            showToast(tr("admin.users.failed", { error: e?.message || e }, "Failed: " + (e?.message || e)), 15000);
+        });
+    });
+
+    $("adminUsersBulkPool")?.addEventListener("change", () => {
+        syncAdminUsersBulkUi();
+        syncAdminUsersBulkPoolCapacityUi();
+    });
+    refreshAdminUsersBulkDestPools().catch(() => {});
 
     setProfileEditorOpen(false);
     if ($("fp")) {

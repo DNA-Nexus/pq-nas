@@ -1014,11 +1014,48 @@ bool validate_user_storage_cleanup(const UserStorageCleanupPlan& plan,
     return true;
 }
 
+bool verify_user_storage_cleanup_before_delete(const UserStorageCleanupPlan& plan,
+                                               std::string* err) {
+    if (err) err->clear();
+
+    std::error_code ec;
+    if (!std::filesystem::exists(plan.active_user_dir, ec) || ec) {
+        if (err) *err = "active user dir missing before cleanup verify: " + plan.active_user_dir.string();
+        return false;
+    }
+
+    ec.clear();
+    if (!std::filesystem::exists(plan.old_user_dir, ec) || ec) {
+        if (err) *err = "old user dir missing before cleanup verify: " + plan.old_user_dir.string();
+        return false;
+    }
+
+    const auto active_bytes = compute_tree_bytes(plan.active_user_dir);
+    const auto old_bytes = compute_tree_bytes(plan.old_user_dir);
+
+    if (active_bytes != old_bytes) {
+        if (err) {
+            *err = "cleanup byte totals differ: active=" + std::to_string(active_bytes) +
+                   " old=" + std::to_string(old_bytes);
+        }
+        return false;
+    }
+
+    return true;
+}
+
 bool delete_user_storage_old_copy(const UserStorageCleanupPlan& plan,
                                   std::uint64_t* removed_entries,
                                   std::string* err) {
     if (err) err->clear();
     if (removed_entries) *removed_entries = 0;
+
+    // Security: cleanup is destructive, so repeat a final source/destination
+    // completeness check immediately before remove_all(). This mirrors the
+    // migration verify phase and reduces stale-state deletion risk.
+    if (!verify_user_storage_cleanup_before_delete(plan, err)) {
+        return false;
+    }
 
     std::error_code ec;
     const auto n = std::filesystem::remove_all(plan.old_user_dir, ec);
