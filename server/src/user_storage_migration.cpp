@@ -398,6 +398,81 @@ static std::uint64_t compute_tree_bytes(const std::filesystem::path& root) {
 
     return total;
 }
+
+static bool is_allowed_quota_overbooking_percent_local(int pct) {
+    return pct == 0 || pct == 10 || pct == 15 || pct == 20 || pct == 25;
+}
+
+static int read_pool_quota_overbooking_percent_local(const std::string& users_path,
+                                                     const std::string& pool_id) {
+    const std::string logical_pool = normalize_pool_id_local(pool_id);
+    const std::filesystem::path users_file_path(users_path);
+    const std::filesystem::path config_dir = users_file_path.parent_path();
+    const std::filesystem::path install_root = config_dir.parent_path();
+
+    const std::array<std::filesystem::path, 2> candidates = {
+        // Current/expected config layout when users.json lives under config/.
+        config_dir / "admin_settings.json",
+
+        // Compatibility layout used by older installs and some dev setups.
+        install_root / "admin_settings.json",
+    };
+
+    for (const auto& settings_path : candidates) {
+        try {
+            std::ifstream in(settings_path);
+            if (!in.good()) continue;
+
+            json j;
+            in >> j;
+            if (!j.is_object()) continue;
+
+            auto cfg_it = j.find("storage_quota_overbooking");
+            if (cfg_it == j.end() || !cfg_it->is_object()) continue;
+
+            auto pools_it = cfg_it->find("pools");
+            if (pools_it == cfg_it->end() || !pools_it->is_object()) continue;
+
+            auto pool_it = pools_it->find(logical_pool);
+            if (pool_it == pools_it->end() || !pool_it->is_number_integer()) continue;
+
+            const int pct = pool_it->get<int>();
+
+            // Safety: only the UI-supported bounded values are accepted here.
+            // Unknown or edited values fall back to strict 0% overbooking.
+            return is_allowed_quota_overbooking_percent_local(pct) ? pct : 0;
+        } catch (...) {
+            continue;
+        }
+    }
+
+    return 0;
+}
+
+static std::uint64_t quota_capacity_with_overbooking_local(std::uint64_t base_bytes,
+                                                           int overbooking_percent) {
+    if (overbooking_percent <= 0) return base_bytes;
+    if (!is_allowed_quota_overbooking_percent_local(overbooking_percent)) return base_bytes;
+
+    const std::uint64_t maxv = std::numeric_limits<std::uint64_t>::max();
+    const std::uint64_t div = base_bytes / 100ULL;
+    const std::uint64_t rem = base_bytes % 100ULL;
+    const std::uint64_t pct = static_cast<std::uint64_t>(overbooking_percent);
+
+    std::uint64_t bonus = 0;
+    if (div > maxv / pct) {
+        bonus = maxv;
+    } else {
+        bonus = div * pct;
+        const std::uint64_t rem_bonus = (rem * pct) / 100ULL;
+        if (maxv - bonus < rem_bonus) bonus = maxv;
+        else bonus += rem_bonus;
+    }
+
+    if (maxv - base_bytes < bonus) return maxv;
+    return base_bytes + bonus;
+}
+
 // Execute rsync copy from source user dir to destination user dir.
 //
 // Command intent
@@ -688,6 +763,8 @@ bool resolve_user_storage_migration(const UsersRegistry& users,
         out->dest_total_bytes = 0;
         out->dest_free_bytes = 0;
         out->required_free_bytes = 0;
+        out->dest_quota_capacity_bytes = 0;
+        out->dest_overbooking_percent = 0;
         out->dest_allocated_other_bytes = 0;
         out->dest_would_total_quota_bytes = 0;
         out->user_quota_bytes = 0;
@@ -726,6 +803,12 @@ bool resolve_user_storage_migration(const UsersRegistry& users,
     const std::uint64_t user_quota_bytes =
         (u.storage_state == "allocated") ? static_cast<std::uint64_t>(u.quota_bytes) : 0;
 
+    const int dest_overbooking_percent =
+        read_pool_quota_overbooking_percent_local(users_path, plan.to_pool_id);
+
+    const std::uint64_t dest_quota_capacity_bytes =
+        quota_capacity_with_overbooking_local(dest_total_bytes, dest_overbooking_percent);
+
     const std::uint64_t dest_allocated_other_bytes =
         sum_allocated_quota_on_pool_local(users, plan.to_pool_id, plan.fingerprint);
 
@@ -741,6 +824,8 @@ bool resolve_user_storage_migration(const UsersRegistry& users,
         out->dest_total_bytes = dest_total_bytes;
         out->dest_free_bytes = dest_free_bytes;
         out->required_free_bytes = required_free_bytes;
+        out->dest_quota_capacity_bytes = dest_quota_capacity_bytes;
+        out->dest_overbooking_percent = dest_overbooking_percent;
         out->dest_allocated_other_bytes = dest_allocated_other_bytes;
         out->dest_would_total_quota_bytes = dest_would_total_quota_bytes;
         out->user_quota_bytes = user_quota_bytes;
@@ -751,8 +836,17 @@ bool resolve_user_storage_migration(const UsersRegistry& users,
         return false;
     }
 
-    if (dest_would_total_quota_bytes > dest_total_bytes) {
-        if (err) *err = "destination_pool_quota_overcommit";
+    if (dest_would_total_quota_bytes > dest_quota_capacity_bytes) {
+        if (err) {
+            *err = "destination_pool_quota_overcommit"
+                   ": pool=" + plan.to_pool_id +
+                   " overbooking_pct=" + std::to_string(dest_overbooking_percent) +
+                   " total=" + std::to_string(dest_total_bytes) +
+                   " quota_capacity=" + std::to_string(dest_quota_capacity_bytes) +
+                   " allocated_other=" + std::to_string(dest_allocated_other_bytes) +
+                   " user_quota=" + std::to_string(user_quota_bytes) +
+                   " would_total=" + std::to_string(dest_would_total_quota_bytes);
+        }
         return false;
     }
 

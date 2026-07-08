@@ -67,6 +67,61 @@ function quotaUsageText(usedBytes, quotaBytes) {
     return `${fmtBytesShort(isFinite(used) ? used : NaN)} / ${fmtBytesShort(quota)}`;
 }
 
+function adminUsersNormalizePoolIdForOverbooking(poolId) {
+    const s = String(poolId || "").trim();
+    return s || "default";
+}
+
+function adminUsersNormalizeOverbookingPercent(raw) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return 0;
+    return ADMIN_USERS_STORAGE_OVERBOOKING_PCTS.includes(n) ? n : 0;
+}
+
+function adminUsersStorageOverbookingFromSettings(j) {
+    const out = { pools: {} };
+    const pools = j?.storage_quota_overbooking?.pools;
+
+    if (!pools || typeof pools !== "object") return out;
+
+    for (const [poolIdRaw, pctRaw] of Object.entries(pools)) {
+        const poolId = adminUsersNormalizePoolIdForOverbooking(poolIdRaw);
+        out.pools[poolId] = adminUsersNormalizeOverbookingPercent(pctRaw);
+    }
+
+    return out;
+}
+
+async function adminUsersRefreshOverbookingSettingsBestEffort() {
+    try {
+        const j = await apiGet("/api/v4/admin/settings");
+        gAdminUsersStorageQuotaOverbooking = adminUsersStorageOverbookingFromSettings(j);
+    } catch (e) {
+        // UI display only: backend remains authoritative for quota enforcement.
+        // If settings cannot be read, show strict 0% labels instead of guessing.
+        console.warn("Admin Users overbooking settings load failed:", e?.message || e);
+        gAdminUsersStorageQuotaOverbooking = { pools: {} };
+    }
+}
+
+function adminUsersPoolOverbookingPercent(poolId) {
+    const id = adminUsersNormalizePoolIdForOverbooking(poolId);
+    return adminUsersNormalizeOverbookingPercent(gAdminUsersStorageQuotaOverbooking?.pools?.[id]);
+}
+
+function adminUsersQuotaCapacityWithOverbooking(baseBytes, overbookingPercent) {
+    const base = Number(baseBytes);
+    const pct = adminUsersNormalizeOverbookingPercent(overbookingPercent);
+
+    if (!Number.isFinite(base) || base < 0) return null;
+    if (pct <= 0) return Math.floor(base);
+
+    // UI display only: bounded arithmetic prevents Infinity/NaN labels.
+    // Backend performs the real migration quota-capacity check.
+    const next = Math.floor(base * (100 + pct) / 100);
+    return Number.isFinite(next) ? Math.min(Number.MAX_SAFE_INTEGER, next) : Number.MAX_SAFE_INTEGER;
+}
+
 function quotaUsagePct(usedBytes, quotaBytes) {
     const used = Number(usedBytes);
     const quota = Number(quotaBytes);
@@ -82,6 +137,9 @@ const ADMIN_USERS_STORAGE_JOBS_KEY = "pqnas.adminUsers.storageJobs.v1";
 const ADMIN_USERS_DONE_JOB_AUTO_HIDE_MS = 2500;
 const adminUsersStorageJobPolls = new Map();
 const adminUsersStorageJobDoneTimers = new Map();
+
+const ADMIN_USERS_STORAGE_OVERBOOKING_PCTS = [0, 10, 15, 20, 25];
+let gAdminUsersStorageQuotaOverbooking = { pools: {} };
 
 function adminUsersValidStorageJobKind(kind) {
     return kind === "migration" || kind === "cleanup";
@@ -1221,13 +1279,19 @@ function normalizePoolsFromResponse(j) {
         const hint = hintParts.join(" • ");
 
         const total_bytes = adminUsersPoolCapacityNumber(p, [
+            // Prefer effective/usable pool capacity for quota accounting.
+            // RAID1 raw device size can be roughly 2x the usable quota base.
+            "usable_total_bytes",
+            "effective_total_bytes",
+            "quota_total_bytes",
+            "logical_total_bytes",
             "total_bytes",
             "pool_total_bytes",
             "capacity_bytes",
             "bytes_total",
-            "size_bytes",
             "fs_total_bytes",
             "stat_total_bytes",
+            "size_bytes",
         ]);
 
         const free_bytes = adminUsersPoolCapacityNumber(p, [
@@ -1311,6 +1375,7 @@ async function ensurePoolsLoaded() {
     }
 
     gPools = out;
+    await adminUsersRefreshOverbookingSettingsBestEffort();
     return gPools;
 }
 async function refreshAllocPreview() {
@@ -2545,6 +2610,8 @@ function adminUsersPoolQuotaCapacityParts(pool) {
     const p = pool || {};
     const { total, free } = adminUsersPoolCapacityParts(p);
     const poolId = String(p.id || p.pool_id || "default").trim() || "default";
+    const overbookingPercent = adminUsersPoolOverbookingPercent(poolId);
+    const quotaCapacity = adminUsersQuotaCapacityWithOverbooking(total, overbookingPercent);
 
     const explicitAllocated = adminUsersPoolCapacityNumber(p, [
         "allocated_quota_bytes",
@@ -2570,18 +2637,67 @@ function adminUsersPoolQuotaCapacityParts(pool) {
         "allocatable_quota_bytes",
     ]);
 
-    let quotaAvailable = explicitRemaining;
-    if (quotaAvailable === null && total !== null) {
-        quotaAvailable = total > allocatedQuota ? total - allocatedQuota : 0;
+    let quotaAvailable = null;
+    let quotaOverLimitBytes = 0;
+
+    if (quotaCapacity !== null) {
+        const delta = quotaCapacity - allocatedQuota;
+        if (delta >= 0) {
+            quotaAvailable = delta;
+        } else {
+            quotaAvailable = 0;
+            quotaOverLimitBytes = Math.abs(delta);
+        }
+    } else if (explicitRemaining !== null) {
+        if (explicitRemaining >= 0) {
+            quotaAvailable = explicitRemaining;
+        } else {
+            quotaAvailable = 0;
+            quotaOverLimitBytes = Math.abs(explicitRemaining);
+        }
     }
 
-    return { total, free, allocatedQuota, quotaAvailable };
+    return {
+        total,
+        free,
+        allocatedQuota,
+        quotaAvailable,
+        quotaCapacity,
+        quotaOverLimitBytes,
+        overbookingPercent
+    };
 }
 
 function adminUsersPoolCapacityText(pool) {
-    const { free, quotaAvailable } = adminUsersPoolQuotaCapacityParts(pool);
+    const { free, quotaAvailable, quotaOverLimitBytes, overbookingPercent } = adminUsersPoolQuotaCapacityParts(pool);
+    const pct = adminUsersNormalizeOverbookingPercent(overbookingPercent);
+    const over = Number(quotaOverLimitBytes || 0);
+
+    if (over > 0 && free !== null) {
+        return tr(
+            "admin.users.pool_space_quota_overlimit_free",
+            { over: fmtBytesShort(over), free: fmtBytesShort(free), pct: String(pct) },
+            `${fmtBytesShort(over)} over quota policy (${pct}% overbooking, ${fmtBytesShort(free)} physically free)`
+        );
+    }
+
+    if (over > 0) {
+        return tr(
+            "admin.users.pool_space_quota_overlimit_only",
+            { over: fmtBytesShort(over), pct: String(pct) },
+            `${fmtBytesShort(over)} over quota policy (${pct}% overbooking)`
+        );
+    }
 
     if (quotaAvailable !== null && free !== null) {
+        if (pct > 0) {
+            return tr(
+                "admin.users.pool_space_quota_free_overbooked",
+                { quota: fmtBytesShort(quotaAvailable), free: fmtBytesShort(free), pct: String(pct) },
+                `${fmtBytesShort(quotaAvailable)} allocatable (+${pct}% overbooking, ${fmtBytesShort(free)} physically free)`
+            );
+        }
+
         return tr(
             "admin.users.pool_space_quota_free",
             { quota: fmtBytesShort(quotaAvailable), free: fmtBytesShort(free) },
@@ -2590,6 +2706,14 @@ function adminUsersPoolCapacityText(pool) {
     }
 
     if (quotaAvailable !== null) {
+        if (pct > 0) {
+            return tr(
+                "admin.users.pool_space_quota_only_overbooked",
+                { quota: fmtBytesShort(quotaAvailable), pct: String(pct) },
+                `${fmtBytesShort(quotaAvailable)} allocatable (+${pct}% overbooking)`
+            );
+        }
+
         return tr(
             "admin.users.pool_space_quota_only",
             { quota: fmtBytesShort(quotaAvailable) },
