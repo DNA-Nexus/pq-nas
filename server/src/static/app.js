@@ -780,6 +780,305 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (wsSubtitle) wsSubtitle.textContent = txt;
     }
 
+
+    function ensureUserSettingsAccordionStyles() {
+        if (document.getElementById("userSettingsAccordionStyles")) return;
+
+        const style = document.createElement("style");
+        style.id = "userSettingsAccordionStyles";
+        style.textContent = `
+.userSettingsPage{
+    width:min(1120px, 100%);
+    max-width:1120px;
+    min-width:0;
+}
+
+.userSettingsPage > .card{
+    width:100%;
+    box-sizing:border-box;
+}
+
+.userSettingsPage input[type="text"],
+.userSettingsPage input[type="email"],
+.userSettingsPage input[type="password"],
+.userSettingsPage input[type="number"],
+.userSettingsPage select,
+.userSettingsPage textarea{
+    background:var(--field-bg);
+    color:var(--field-fg);
+    border:1px solid var(--field-border);
+    border-radius:12px;
+    padding:8px 10px;
+    box-sizing:border-box;
+    font-family:var(--sans);
+}
+
+.userSettingsPage textarea{
+    line-height:1.45;
+}
+
+.userSettingsPage input::placeholder,
+.userSettingsPage textarea::placeholder{
+    color:var(--field-ph);
+}
+
+.userSettingsPage input[type="text"]:focus,
+.userSettingsPage input[type="email"]:focus,
+.userSettingsPage input[type="password"]:focus,
+.userSettingsPage input[type="number"]:focus,
+.userSettingsPage select:focus,
+.userSettingsPage textarea:focus{
+    outline:none;
+    border-color:var(--field-border2);
+    box-shadow:0 0 0 3px var(--field-focus-ring);
+}
+
+.userSettingsPage input:disabled,
+.userSettingsPage select:disabled,
+.userSettingsPage textarea:disabled{
+    background:var(--panel);
+    color:var(--fg-dim);
+    border-color:var(--border2);
+    cursor:not-allowed;
+}
+
+.userSettingsPage select{
+    color-scheme:var(--field-color-scheme, dark);
+}
+
+.userSettingsPage select option,
+.userSettingsPage select optgroup{
+    background-color:var(--field-menu-bg);
+    color:var(--field-menu-fg);
+}
+
+.userSettingsPage input[type="checkbox"],
+.userSettingsPage input[type="radio"]{
+    accent-color:var(--fg);
+}
+
+.userSettingsAccordion{
+    padding:0 !important;
+    overflow:hidden;
+}
+
+.userSettingsAccordionHead{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 14px;
+    border-bottom:1px solid rgba(var(--fg-rgb),0.12);
+    background:linear-gradient(180deg, rgba(var(--fg-rgb),0.06), transparent);
+    cursor:pointer;
+    user-select:none;
+}
+
+.userSettingsAccordionHead:focus{
+    outline:none;
+    box-shadow:0 0 0 3px rgba(var(--fg-rgb),0.10) inset;
+}
+
+.userSettingsAccordionHead .h{
+    font-size:12px;
+    color:rgba(var(--fg-rgb),0.70);
+    letter-spacing:0.10em;
+    text-transform:uppercase;
+    font-weight:950;
+}
+
+.userSettingsAccordionBody{
+    padding:14px;
+}
+
+.userSettingsAccordion:not(.open) .userSettingsAccordionBody{
+    display:none;
+}
+
+.userSettingsAccordion:not(.open) .userSettingsAccordionHead{
+    border-bottom:none;
+}
+
+.userSettingsAccordion.open{
+    border-color:rgba(var(--info-rgb),0.28);
+}
+
+.userSettingsAccordion.open > .userSettingsAccordionHead{
+    border-bottom-color:rgba(var(--info-rgb),0.36);
+    background-color:rgba(var(--info-rgb),0.12);
+    background-image:
+        linear-gradient(90deg, rgba(var(--info-rgb),0.24), rgba(var(--info-rgb),0.10) 55%, rgba(var(--info-rgb),0.04)),
+        linear-gradient(180deg, rgba(var(--fg-rgb),0.08), rgba(var(--fg-rgb),0.02));
+    box-shadow:
+        inset 5px 0 0 rgba(var(--info-rgb),0.85),
+        inset 0 -1px 0 rgba(var(--info-rgb),0.28);
+}
+
+.userSettingsAccordion.open > .userSettingsAccordionHead .h{
+    color:rgba(var(--fg-rgb),0.95);
+}
+
+.userSettingsAccordion .chev{
+    margin-left:10px;
+    opacity:0.75;
+    font-weight:950;
+    transform:rotate(0deg);
+    transition:transform 120ms ease, opacity 120ms ease;
+    flex:0 0 auto;
+}
+
+.userSettingsAccordion.open .chev{
+    transform:rotate(90deg);
+    opacity:0.95;
+}
+
+html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccordionHead{
+    border-bottom-color:var(--border);
+    background-color:var(--panel2);
+    background-image:
+        linear-gradient(90deg, color-mix(in srgb, var(--fg) 24%, transparent), color-mix(in srgb, var(--fg) 10%, transparent) 58%, color-mix(in srgb, var(--fg) 4%, transparent)),
+        linear-gradient(180deg, color-mix(in srgb, var(--panel2) 92%, transparent), var(--panel));
+    box-shadow:
+        inset 6px 0 0 var(--fg),
+        inset 0 -1px 0 var(--border2);
+}
+
+html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccordionHead .h{
+    color:var(--fg);
+}
+
+@media (max-width:760px){
+    .userSettingsPage{
+        width:100%;
+        max-width:100%;
+    }
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    function userSettingsAccordionKey(section) {
+        return `pqnas_user_settings_accordion_${section}`;
+    }
+
+    function readUserSettingsAccordionOpen(section, fallback) {
+        try {
+            const v = localStorage.getItem(userSettingsAccordionKey(section));
+            if (v === "1") return true;
+            if (v === "0") return false;
+        } catch (_) {}
+        return !!fallback;
+    }
+
+    function writeUserSettingsAccordionOpen(section, open) {
+        try {
+            localStorage.setItem(userSettingsAccordionKey(section), open ? "1" : "0");
+        } catch (_) {}
+    }
+
+    function detectUserSettingsSectionKey(card, index) {
+        if (!card || !card.querySelector) return `section_${index}`;
+
+        if (card.querySelector("#userProfileSaveBtn, #userProfileName")) return "profile";
+        if (card.querySelector("#settingsPasswordChangeBtn, #settingsCurrentPassword")) return "password";
+        if (card.querySelector("#settingsAppPrefsSaveBtn, .settingsAppSidebar")) return "apps";
+        if (card.querySelector("#settingsMasterRecoveryGenerateBtn, #settingsMasterRecoveryReloadBtn, #settingsMasterRecoveryPrivateKey")) return "vault_recovery";
+        if (card.querySelector('input[name="userLanguage"]')) return "language";
+        if (card.querySelector('input[name="userTheme"], #userThemeDefaultBtn')) return "theme";
+
+        return `section_${index}`;
+    }
+
+    function upgradeUserSettingsCardsToAccordions(root) {
+        if (!root || !root.children || root.dataset.userSettingsAccordionReady === "1") return;
+
+        ensureUserSettingsAccordionStyles();
+
+        const cards = Array.from(root.children).filter((el) => {
+            return el && el.classList && el.classList.contains("card");
+        });
+
+        let profileFallbackConsumed = false;
+
+        cards.forEach((card, index) => {
+            if (card.classList.contains("userSettingsAccordion")) return;
+
+            const title = Array.from(card.children).find((el) => {
+                return el && String(el.tagName || "").toUpperCase() === "H3";
+            });
+            if (!title) return;
+
+            const section = detectUserSettingsSectionKey(card, index);
+            const headId = `userSettingsAccordionHead_${section}`;
+            const bodyId = `userSettingsAccordionBody_${section}`;
+
+            const head = document.createElement("div");
+            head.className = "userSettingsAccordionHead";
+            head.id = headId;
+            head.setAttribute("role", "button");
+            head.setAttribute("tabindex", "0");
+            head.setAttribute("aria-controls", bodyId);
+
+            const titleWrap = document.createElement("div");
+            titleWrap.className = "h";
+            titleWrap.innerHTML = title.innerHTML;
+
+            const chev = document.createElement("span");
+            chev.className = "chev";
+            chev.setAttribute("aria-hidden", "true");
+            chev.textContent = "▸";
+
+            head.appendChild(titleWrap);
+            head.appendChild(chev);
+
+            title.remove();
+
+            const body = document.createElement("div");
+            body.className = "userSettingsAccordionBody";
+            body.id = bodyId;
+            body.setAttribute("role", "region");
+            body.setAttribute("aria-labelledby", headId);
+
+            while (card.firstChild) {
+                body.appendChild(card.firstChild);
+            }
+
+            card.appendChild(head);
+            card.appendChild(body);
+
+            card.classList.add("userSettingsAccordion");
+            card.style.padding = "0";
+            card.style.overflow = "hidden";
+
+            const hasAttention = !!body.querySelector(".msg.err, .msg.warn, .bigState");
+            const defaultOpen = hasAttention || (!profileFallbackConsumed && section === "profile");
+            if (section === "profile") profileFallbackConsumed = true;
+
+            const setOpen = (open, persist = true) => {
+                card.classList.toggle("open", !!open);
+                body.hidden = !open;
+                head.setAttribute("aria-expanded", open ? "true" : "false");
+                if (persist) writeUserSettingsAccordionOpen(section, !!open);
+            };
+
+            setOpen(readUserSettingsAccordionOpen(section, defaultOpen), false);
+
+            head.addEventListener("click", () => {
+                setOpen(!card.classList.contains("open"));
+                fitHomeContentToViewport();
+            });
+
+            head.addEventListener("keydown", (e) => {
+                if (!e || (e.key !== "Enter" && e.key !== " ")) return;
+                e.preventDefault();
+                setOpen(!card.classList.contains("open"));
+                fitHomeContentToViewport();
+            });
+        });
+
+        root.dataset.userSettingsAccordionReady = "1";
+    }
+
     function setActiveNav(activeId) {
         const ids = [
             "nav_home",
@@ -4508,7 +4807,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         }
 
         const homeContent = setHomeContentHtml(`
-        <div style="max-width:760px; font-family:var(--sans);">
+        <div class="userSettingsPage" style="font-family:var(--sans);">
             <h3 style="margin:0 0 8px 0; font-size:18px; font-family:inherit;">
                 ${escapeHtml(tr("settings.general.title", null, "General settings"))}
             </h3>
@@ -4628,6 +4927,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
             </div>
         </div>
     `);
+        const userSettingsPage = homeContent && homeContent.querySelector
+            ? (homeContent.querySelector(".userSettingsPage") || homeContent)
+            : homeContent;
+        upgradeUserSettingsCardsToAccordions(userSettingsPage);
         fitHomeContentToViewport();
 
         const appPrefsSaveBtn = (homeContent || homeBlurb).querySelector("#settingsAppPrefsSaveBtn");
@@ -4852,7 +5155,7 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
                             pendingVaultMasterRecoveryPublicKeySha256 = "";
                             pendingVaultMasterRecoveryCreatedAt = 0;
                             closeMasterRecoveryModal();
-                            renderUserSettings("Master recovery key generation cancelled.", "ok");
+                            renderUserSettings(tr("settings.vault_recovery.generation_cancelled", null, "Master recovery key generation cancelled."), "ok");
                         }
                     });
 
@@ -4863,14 +5166,15 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
                     if (!generated) {
                         closeMasterRecoveryModal();
-                        renderUserSettings("Master recovery key generation cancelled.", "ok");
+                        renderUserSettings(tr("settings.vault_recovery.generation_cancelled", null, "Master recovery key generation cancelled."), "ok");
                         return;
                     }
 
                     setModalStatus(tr("settings.vault_recovery.key_generated_opening", null, "Key generated. Opening private-key view…"));
                     await openUserVaultMasterRecoveryPrivateKeyDialog();
                 } catch (e) {
-                    const msg = `Master recovery generation failed: ${String(e && e.message ? e.message : e)}`;
+                    const err = String(e && e.message ? e.message : e);
+                    const msg = tr("settings.vault_recovery.generation_failed", { error: err }, `Master recovery generation failed: ${err}`);
                     const status = document.getElementById("settingsMasterRecoveryModalStatus");
                     if (status) {
                         status.textContent = msg;
@@ -6023,6 +6327,16 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
         if (currentView === "user_settings") {
             fitHomeContentToViewport();
         }
+    });
+
+    window.addEventListener("pqnas-language-changed", () => {
+        if (currentView !== "user_settings") return;
+
+        // UX/i18n: Settings uses JS-rendered tr(...) strings, not only data-i18n
+        // attributes. Re-render this view after a language switch so Apps and
+        // Vault recovery cards do not stay in the old language until refresh.
+        renderUserSettings();
+        fitHomeContentToViewport();
     });
 
 })();
