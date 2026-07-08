@@ -238,6 +238,15 @@ bool resolve_user_storage_cleanup(const UsersRegistry& users,
 bool validate_user_storage_cleanup(const UserStorageCleanupPlan& plan,
                                   std::string* err);
 
+// Final destructive-action guard for old-copy cleanup.
+//
+// This reuses the migration verification model at cleanup time: before deleting
+// the inactive old copy, regular-file byte totals of active and old trees must
+// still match. It is intentionally coarse, but prevents obvious accidental
+// deletion when the active copy is incomplete or has drifted unexpectedly.
+bool verify_user_storage_cleanup_before_delete(const UserStorageCleanupPlan& plan,
+                                               std::string* err);
+
 // Validate that a planned destination pool has enough real free space and
 // enough logical quota capacity for the migration to proceed safely.
 bool validate_user_storage_migration_destination_capacity(const UsersRegistry& users,

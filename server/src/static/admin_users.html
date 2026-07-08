@@ -584,6 +584,129 @@
             white-space:nowrap;
         }
 
+        .adminUsersControlBar{
+            display:grid;
+            grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, auto)) auto;
+            gap:10px;
+            align-items:end;
+            margin:0 0 10px;
+            padding:10px;
+            border:1px solid var(--border2);
+            border-radius:14px;
+            background:var(--panel2);
+        }
+
+        .adminUsersControlField{
+            display:grid;
+            gap:5px;
+            min-width:0;
+        }
+
+        .adminUsersControlField span{
+            color:rgba(var(--fg-rgb),0.66);
+            font-size:11px;
+            font-weight:900;
+            letter-spacing:.05em;
+            text-transform:uppercase;
+        }
+
+        :root{
+            --admin-users-select-color-scheme: dark;
+            --admin-users-select-surface: color-mix(in oklab, var(--bg) 92%, var(--fg) 8%);
+            --admin-users-select-surface-hover: color-mix(in oklab, var(--bg) 84%, var(--fg) 16%);
+        }
+
+        html[data-theme="bright"],
+        html[data-theme="win_classic"]{
+            --admin-users-select-color-scheme: light;
+            --admin-users-select-surface: color-mix(in oklab, var(--bg) 94%, var(--fg) 6%);
+            --admin-users-select-surface-hover: color-mix(in oklab, var(--bg) 88%, var(--fg) 12%);
+        }
+
+        .adminUsersControlActions{
+            display:flex;
+            justify-content:flex-end;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+        }
+
+        .adminUsersControlBar select,
+        .adminUsersBulkBar select{
+            color-scheme:var(--admin-users-select-color-scheme);
+        }
+
+        .adminUsersControlBar select option,
+        .adminUsersBulkBar select option{
+            background:var(--admin-users-select-surface);
+            color:var(--fg);
+        }
+
+        .adminUsersControlBar select option:checked,
+        .adminUsersBulkBar select option:checked{
+            background:var(--admin-users-select-surface-hover);
+            color:var(--fg);
+        }
+
+        .adminUsersBulkBar{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            flex-wrap:wrap;
+            margin:0 0 10px;
+            padding:10px 12px;
+            border:1px solid rgba(var(--info-rgb),0.30);
+            border-radius:14px;
+            background:rgba(var(--info-rgb),0.08);
+        }
+
+        .adminUsersBulkBar[hidden]{
+            display:none;
+        }
+
+        .adminUsersBulkMeta{
+            color:rgba(var(--fg-rgb),0.82);
+            font-size:13px;
+            font-weight:850;
+        }
+
+        .adminUsersBulkActions{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+        }
+
+        .adminUsersSelectCell{
+            width:44px;
+            text-align:center;
+            vertical-align:middle;
+        }
+
+        .adminUsersSelectCell input{
+            inline-size:18px;
+            block-size:18px;
+            accent-color:var(--accent);
+            cursor:pointer;
+        }
+
+        @media (max-width: 1100px){
+            .adminUsersControlBar{
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .adminUsersControlActions{
+                justify-content:flex-start;
+            }
+        }
+
+        @media (max-width: 720px){
+            .adminUsersControlBar{
+                grid-template-columns: 1fr;
+            }
+        }
+
         .usageSummaryGrid{
             display:grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -798,12 +921,60 @@
                     </div>
                 </div>
 
+                <div class="adminUsersControlBar" aria-label="User filters">
+                    <label class="adminUsersControlField">
+                        <span data-i18n="admin.users.filter.search">Search</span>
+                        <input class="pq-input" id="adminUsersSearch" type="search" placeholder="Name, email, notes, group, fingerprint…" data-i18n-placeholder="admin.users.filter.search_placeholder" autocomplete="off">
+                    </label>
+
+                    <label class="adminUsersControlField">
+                        <span data-i18n="admin.users.filter.pool">Pool</span>
+                        <select class="pq-select" id="adminUsersPoolFilter"></select>
+                    </label>
+
+                    <label class="adminUsersControlField">
+                        <span data-i18n="admin.users.filter.storage">Storage</span>
+                        <select class="pq-select" id="adminUsersStorageFilter">
+                            <option value="all" data-i18n="admin.users.filter.all_storage_states">All storage states</option>
+                            <option value="allocated" data-i18n="admin.users.storage.allocated">Allocated</option>
+                            <option value="unallocated" data-i18n="admin.users.storage.unallocated">Unallocated</option>
+                        </select>
+                    </label>
+
+                    <label class="adminUsersControlField">
+                        <span data-i18n="admin.users.filter.status">Status</span>
+                        <select class="pq-select" id="adminUsersStatusFilter">
+                            <option value="all" data-i18n="admin.users.filter.all_statuses">All statuses</option>
+                            <option value="enabled" data-i18n="admin.users.status.enabled">Enabled</option>
+                            <option value="disabled" data-i18n="admin.users.status.disabled">Disabled</option>
+                            <option value="revoked" data-i18n="admin.users.status.revoked">Revoked</option>
+                        </select>
+                    </label>
+
+                    <div class="adminUsersControlActions">
+                        <button class="pq-btn secondary" id="adminUsersClearFiltersBtn" type="button" data-i18n="admin.users.clear_filters">Clear filters</button>
+                    </div>
+                </div>
+
+                <div class="adminUsersBulkBar" id="adminUsersBulkBar" hidden>
+                    <div class="adminUsersBulkMeta" id="adminUsersBulkCount">0 selected</div>
+                    <div class="adminUsersBulkActions">
+                        <select class="pq-select" id="adminUsersBulkPool" aria-label="Target pool" data-i18n-aria-label="admin.users.target_pool"></select>
+                        <button class="pq-btn" id="adminUsersBulkMigrateBtn" type="button" data-i18n="admin.users.migrate_selected">Migrate selected</button>
+                        <button class="pq-btn secondary" id="adminUsersBulkCleanupBtn" type="button" data-i18n="admin.users.cleanup_last_batch">Cleanup last batch</button>
+                        <button class="pq-btn secondary" id="adminUsersBulkClearBtn" type="button" data-i18n="admin.users.clear_selection">Clear selection</button>
+                    </div>
+                </div>
+
                 <div class="paneBody">
                     <div class="tableWrap">
                         <table>
                             <thead>
                             <tr>
-                                <th style="width:6%;" data-i18n="admin.users.avatar">Avatar</th>
+                                <th class="adminUsersSelectCell">
+                                    <input id="adminUsersSelectVisible" type="checkbox" aria-label="Select visible users" data-i18n-aria-label="admin.users.select_visible_users">
+                                </th>
+                                <th style="width:5%;" data-i18n="admin.users.avatar">Avatar</th>
                                 <th style="width:30%;"><button class="sortTh" type="button" data-sort="name" aria-label="Sort by Name / Notes"><span data-i18n="admin.users.name_notes">Name / Notes</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:6%;"><button class="sortTh" type="button" data-sort="role" aria-label="Sort by Role"><span data-i18n="admin.users.role">Role</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
                                 <th style="width:7%;"><button class="sortTh" type="button" data-sort="status" aria-label="Sort by Status"><span data-i18n="admin.users.status">Status</span><span class="sortIcon" aria-hidden="true">↕</span></button></th>
