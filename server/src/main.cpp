@@ -7409,17 +7409,10 @@ static bool validate_upload_tiering_pool_id(const std::string& pool_id, std::str
 }
 
 static std::string admin_settings_path_for_helpers() {
-    if (const char* p_admin = std::getenv("PQNAS_ADMIN_SETTINGS_PATH")) {
-        if (*p_admin) return std::string(p_admin);
-    }
-
-    if (const char* p_cfg = std::getenv("PQNAS_CONFIG")) {
-        if (*p_cfg) {
-            return (std::filesystem::path(p_cfg) / "admin_settings.json").string();
-        }
-    }
-
-    return "/etc/pqnas/admin_settings.json";
+    // Security: admin settings are core configuration. Do not allow a per-file
+    // environment override; derive the path from the trusted config root with a
+    // fixed filename.
+    return (pqnas::config_root_path() / "admin_settings.json").string();
 }
 // -----------------------------------------------------------------------------
 // DNA Connect alerts helpers
@@ -9594,18 +9587,20 @@ auto maybe_auto_rotate_before_append = [&]() {
 
 
     // Policy (allowlist) path resolution:
-    //  1) PQNAS_POLICY_PATH (explicit override)
-    //  2) PQNAS_CONFIG_ROOT/policy.json (installed default)
-    //  3) REPO_ROOT/config/policy.json (dev fallback)
+    //  1) PQNAS_CONFIG_ROOT or PQNAS_CONFIG / policy.json
+    //  2) REPO_ROOT/config/policy.json (dev fallback)
+    // Security: do not allow per-file policy path overrides; policy is core
+    // authorization state and must stay under the trusted config root.
     std::string allowlist_path;
-    if (const char* p = std::getenv("PQNAS_POLICY_PATH")) {
-        allowlist_path = p;
-    } else {
-        const std::string config_root = getenv_str("PQNAS_CONFIG_ROOT");
-        if (!config_root.empty()) {
-            allowlist_path = (std::filesystem::path(config_root) / "policy.json").string();
+    {
+        const std::filesystem::path runtime_path =
+            pqnas::config_root_path() / "policy.json";
+        std::error_code ec;
+        if (std::filesystem::exists(runtime_path, ec)) {
+            allowlist_path = runtime_path.string();
         } else {
-            allowlist_path = (std::filesystem::path(REPO_ROOT) / "config" / "policy.json").string();
+            allowlist_path =
+                (std::filesystem::path(REPO_ROOT) / "config" / "policy.json").string();
         }
     }
 
@@ -9615,31 +9610,34 @@ auto maybe_auto_rotate_before_append = [&]() {
         return 3;
     }
 
-    // Users registry path resolution:
-    //  1) PQNAS_USERS_PATH (explicit override)
-    //  2) PQNAS_CONFIG_ROOT/users.json (installed default)
-    //  3) REPO_ROOT/config/users.json (dev fallback)
+    // Users/app-auth path resolution:
+    //  1) PQNAS_CONFIG_ROOT or PQNAS_CONFIG / fixed filename
+    //  2) REPO_ROOT/config/<file> (dev fallback)
+    // Security: these files are identity/auth state. Do not allow per-file
+    // environment overrides that could split users and auth records.
     std::string users_path;
-    if (const char* p = std::getenv("PQNAS_USERS_PATH")) {
-        users_path = p;
-    } else {
-        const std::string config_root = getenv_str("PQNAS_CONFIG_ROOT");
-        if (!config_root.empty()) {
-            users_path = (std::filesystem::path(config_root) / "users.json").string();
+    {
+        const std::filesystem::path runtime_path =
+            pqnas::config_root_path() / "users.json";
+        std::error_code ec;
+        if (std::filesystem::exists(runtime_path, ec)) {
+            users_path = runtime_path.string();
         } else {
-            users_path = (std::filesystem::path(REPO_ROOT) / "config" / "users.json").string();
+            users_path =
+                (std::filesystem::path(REPO_ROOT) / "config" / "users.json").string();
         }
     }
 
     std::string app_auth_path;
-    if (const char* p = std::getenv("PQNAS_APP_AUTH_PATH")) {
-        app_auth_path = p;
-    } else {
-        const std::string config_root = getenv_str("PQNAS_CONFIG_ROOT");
-        if (!config_root.empty()) {
-            app_auth_path = (std::filesystem::path(config_root) / "app_auth.json").string();
+    {
+        const std::filesystem::path runtime_path =
+            pqnas::config_root_path() / "app_auth.json";
+        std::error_code ec;
+        if (std::filesystem::exists(runtime_path, ec)) {
+            app_auth_path = runtime_path.string();
         } else {
-            app_auth_path = (std::filesystem::path(REPO_ROOT) / "config" / "app_auth.json").string();
+            app_auth_path =
+                (std::filesystem::path(REPO_ROOT) / "config" / "app_auth.json").string();
         }
     }
 
@@ -9669,10 +9667,10 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 
     std::cerr << "[cfg] users_path=" << users_path << std::endl;
 
-    std::string shares_path = (std::filesystem::path(users_path).parent_path() / "shares.json").string();
-    if (const char* p = std::getenv("PQNAS_SHARES_PATH")) {
-        shares_path = p;
-    }
+    // Security: shares are core access-control state. Keep shares.json beside
+    // users.json instead of allowing a per-file environment override.
+    std::string shares_path =
+        (std::filesystem::path(users_path).parent_path() / "shares.json").string();
     std::cerr << "[cfg] shares_path=" << shares_path << std::endl;
 
     std::filesystem::path dropzone_db_path =
