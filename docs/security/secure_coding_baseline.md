@@ -1966,3 +1966,23 @@ Allowed pattern:
 Security reason: Drop Zone links and upload history are access-control and
 sharing state. Per-file database path overrides can split Drop Zone state from
 the active user registry and sharing configuration.
+
+## Audit log directory path
+
+Audit log directory paths must not have standalone runtime environment variable
+overrides.
+
+Do not add environment variables such as `PQNAS_AUDIT_DIR` that redirect audit
+logs at runtime.
+
+Allowed pattern:
+
+- derive the audit directory from the trusted runtime data-root layout
+- keep audit logs in the deterministic sibling `audit/` directory beside `data/`
+- keep installer output aligned with the derived runtime path
+- create the audit directory with restrictive service-owned permissions
+- keep admin audit read, rotation, retention, and append flows on the same files
+
+Security reason: audit logs are the security trail. Standalone audit directory
+overrides can split, hide, or redirect audit history away from the expected
+runtime layout.

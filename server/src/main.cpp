@@ -9234,10 +9234,12 @@ int main()
     }
     pqnas::TrashService trash_service(&trash_index);
     // ---- Audit log (hash-chained JSONL) ----
-    std::string audit_dir = exe_dir() + "/audit";
-	if (const char* p = std::getenv("PQNAS_AUDIT_DIR")) {
-    	audit_dir = p;
-	}
+    // Security: audit logs are the security trail. Do not allow a standalone
+    // environment override that could split or hide audit history; derive the
+    // audit directory from the trusted runtime data-root layout.
+    const std::filesystem::path audit_dir_path =
+        pqnas::data_root_path().parent_path() / "audit";
+    const std::string audit_dir = audit_dir_path.string();
 
     try {
         std::filesystem::create_directories(audit_dir);
