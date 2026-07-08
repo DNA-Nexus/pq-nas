@@ -1956,7 +1956,6 @@ def write_env_file(
         "# PQNAS_SMTP_FROM=DNA-Nexus <admin@example.com>",
         "",
         f"PQNAS_LOG_DIR={root}/logs",
-        f"PQNAS_TMP_DIR={root}/tmp",
         "",
         f"PQNAS_DATA_ROOT={root}/data",
         "PQNAS_STATIC_ROOT=/opt/pqnas/static",
