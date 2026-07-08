@@ -72,6 +72,10 @@
     --field-border2: rgba(var(--fg-rgb),0.35);
     --field-focus-ring: rgba(var(--fg-rgb),0.14);
 
+    --field-menu-bg: var(--bg);
+    --field-menu-fg: var(--field-fg);
+    --field-color-scheme: dark;
+
     /* charts */
     --chart_rx: var(--ok);
     --chart_tx: var(--warn);
@@ -131,6 +135,10 @@ html[data-theme="bright"]{
     --field-border: rgba(0,0,0,0.18);
     --field-border2: rgba(0,0,0,0.26);
     --field-focus-ring: rgba(40,110,200,0.18);
+
+    --field-menu-bg: var(--panel2);
+    --field-menu-fg: var(--field-fg);
+    --field-color-scheme: light;
 
     --toast-bg: rgba(255,255,255,0.92);
     --toast-border: rgba(0,0,0,0.18);
@@ -272,6 +280,10 @@ html[data-theme="win_classic"]{
     --fail-rgb: 80,18,18;
     --err-rgb: 80,18,18;
     --info-rgb: 11,78,162;
+
+    --field-menu-bg: var(--panel2);
+    --field-menu-fg: var(--field-fg);
+    --field-color-scheme: light;
 
     /* charts */
     --chart_rx: #0b4ea2;
