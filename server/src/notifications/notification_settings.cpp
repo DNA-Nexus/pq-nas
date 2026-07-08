@@ -236,11 +236,10 @@ bool save_notification_settings_unlocked_local(
 } // namespace
 
 std::filesystem::path notification_settings_path() {
-    const std::string explicit_path = getenv_str_local("PQNAS_NOTIFICATIONS_PATH", "");
-    if (!explicit_path.empty()) {
-        return std::filesystem::path(explicit_path);
-    }
-
+    // Security: notification settings contain secret-bearing fields such as
+    // Telegram bot tokens and SMTP passwords. Do not allow a per-file
+    // environment override to redirect this store; keep it under the trusted
+    // server config root with a fixed filename.
     std::string cfg = getenv_str_local("PQNAS_CONFIG_DIR", "");
     if (cfg.empty()) {
         cfg = getenv_str_local("PQNAS_CONFIG", "/etc/pqnas");

@@ -1783,3 +1783,25 @@ Security reason: if different server paths can be selected by environment or
 deployment-controlled values, auth flows can split across different token stores.
 That can create stale enrollment tokens, missed revoke invalidation, or path
 manipulation risks around authentication state.
+
+## Secret-bearing configuration file paths
+
+Configuration files that store secrets must not have per-file environment
+variable overrides.
+
+Examples include notification settings that contain Telegram bot tokens, SMTP
+usernames, SMTP passwords, API tokens, or similar credentials.
+
+Do not add environment variables such as `PQNAS_NOTIFICATIONS_PATH` that redirect
+one secret-bearing settings file to an arbitrary runtime path.
+
+Allowed pattern:
+
+- derive the path from a trusted server config root
+- use a fixed filename for the settings file
+- keep file permissions restrictive, for example `0600`
+- use atomic temp-file plus rename writes for updates
+
+Security reason: per-file path overrides make it easier for bad deployment
+settings, environment injection, or path manipulation bugs to redirect secrets
+to the wrong location or read/write an unintended file.

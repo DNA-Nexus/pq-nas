@@ -261,6 +261,27 @@ std::filesystem::path configured_path_local(const char* env_name,
     return first;
 }
 
+std::filesystem::path notification_settings_path_for_backup_local() {
+    // Security: notification settings contain secret-bearing values such as
+    // Telegram bot tokens and SMTP passwords. Match notification_settings.cpp:
+    // derive the path from the trusted config root and fixed filename instead
+    // of honoring a per-file environment override.
+    const auto config_dir = env_path_or_empty_local("PQNAS_CONFIG_DIR");
+    if (!config_dir.empty()) {
+        return config_dir / "notifications.json";
+    }
+
+    const auto config = env_path_or_empty_local("PQNAS_CONFIG");
+    if (!config.empty()) {
+        return config / "notifications.json";
+    }
+
+    return configured_path_local(
+        nullptr,
+        {"/etc/pqnas/notifications.json", "/srv/pqnas/config/notifications.json"}
+    );
+}
+
 std::filesystem::path password_credentials_path_for_backup_local(const std::filesystem::path& users_path) {
     const auto env_path = env_path_or_empty_local("PQNAS_PASSWORD_CREDENTIALS_PATH");
     if (!env_path.empty()) {
@@ -470,10 +491,8 @@ std::vector<SystemBackupSource> default_sources() {
         {"/etc/pqnas/app_auth.json", "/srv/pqnas/config/app_auth.json"}
     );
 
-    const std::filesystem::path notifications_path = configured_path_local(
-        "PQNAS_NOTIFICATIONS_PATH",
-        {"/srv/pqnas/config/notifications.json", "/etc/pqnas/notifications.json"}
-    );
+    const std::filesystem::path notifications_path =
+        notification_settings_path_for_backup_local();
 
     const std::filesystem::path password_credentials_path =
         password_credentials_path_for_backup_local(users_path);
