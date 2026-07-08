@@ -1054,14 +1054,26 @@ function storagePoolIdForUser(u) {
     return v ? v : "default";
 }
 
+function storageStateCellHtml(u) {
+    const state = String(u?.storage_state || "unallocated").toLowerCase();
+    return storagePill(state);
+}
+
+function storagePoolCellHtml(u) {
+    const state = String(u?.storage_state || "unallocated").toLowerCase();
+    if (state !== "allocated") return `<span class="muted">—</span>`;
+
+    const poolId = storagePoolIdForUser(u);
+    return poolPill(poolId);
+}
+
 function storageCellHtml(u) {
     const state = String(u?.storage_state || "unallocated").toLowerCase();
-    const main = storagePill(state);
+    const main = storageStateCellHtml(u);
 
     if (state !== "allocated") return main;
 
-    const poolId = storagePoolIdForUser(u);
-    return `${main} ${poolPill(poolId)}`;
+    return `${main} ${storagePoolCellHtml(u)}`;
 }
 function fmtBytes(n) {
     n = Number(n || 0);
@@ -1227,7 +1239,6 @@ function normalizePoolsFromResponse(j) {
             "usable_free_bytes",
             "fs_free_bytes",
             "stat_free_bytes",
-            "remaining_allocatable_bytes",
         ]);
 
         const used_bytes = adminUsersPoolCapacityNumber(p, [
@@ -1243,6 +1254,11 @@ function normalizePoolsFromResponse(j) {
             "remaining_allocatable_bytes",
             "pool_remaining_allocatable_bytes",
             "remaining_bytes",
+            "remaining_quota_bytes",
+            "quota_remaining_bytes",
+            "quota_available_bytes",
+            "available_quota_bytes",
+            "allocatable_quota_bytes",
         ]);
 
         out.push({
@@ -2452,7 +2468,16 @@ function adminUsersPoolCapacityNumber(pool, keys) {
     const p = pool || {};
 
     for (const key of keys) {
-        const n = Number(p[key]);
+        if (!Object.prototype.hasOwnProperty.call(p, key)) continue;
+
+        const raw = p[key];
+
+        // UI safety: null/undefined/empty string mean "not provided", not 0 B.
+        // Real numeric 0 is still accepted, so a truly full pool can show 0 B.
+        if (raw === null || raw === undefined) continue;
+        if (typeof raw === "string" && raw.trim() === "") continue;
+
+        const n = Number(raw);
         if (Number.isFinite(n) && n >= 0) return n;
     }
 
@@ -2479,8 +2504,6 @@ function adminUsersPoolCapacityParts(pool) {
         "usable_free_bytes",
         "fs_free_bytes",
         "stat_free_bytes",
-        "remaining_allocatable_bytes",
-        "pool_remaining_allocatable_bytes",
     ]);
 
     const used = adminUsersPoolCapacityNumber(pool, [
@@ -2498,66 +2521,87 @@ function adminUsersPoolCapacityParts(pool) {
     return { total, free, used };
 }
 
-function adminUsersPoolCapacityText(pool) {
-    const { free, used } = adminUsersPoolCapacityParts(pool);
+function adminUsersPoolAllocatedQuotaBytes(poolId) {
+    const want = String(poolId || "default").trim() || "default";
+    const rows = (typeof allUsers !== "undefined" && Array.isArray(allUsers)) ? allUsers : [];
 
-    const migrationUsable = adminUsersPoolCapacityNumber(pool, [
+    let total = 0;
+    for (const u of rows) {
+        if (String(u?.storage_state || "unallocated").toLowerCase() !== "allocated") continue;
+        if (storagePoolIdForUser(u) !== want) continue;
+
+        const quota = Number(u?.quota_bytes ?? 0);
+        if (!Number.isFinite(quota) || quota <= 0) continue;
+
+        // UI accounting only: keep quota addition bounded so a bad value cannot
+        // produce Infinity/NaN labels. Backend still enforces real capacity.
+        total = Math.min(Number.MAX_SAFE_INTEGER, total + quota);
+    }
+
+    return total;
+}
+
+function adminUsersPoolQuotaCapacityParts(pool) {
+    const p = pool || {};
+    const { total, free } = adminUsersPoolCapacityParts(p);
+    const poolId = String(p.id || p.pool_id || "default").trim() || "default";
+
+    const explicitAllocated = adminUsersPoolCapacityNumber(p, [
+        "allocated_quota_bytes",
+        "quota_allocated_bytes",
+        "assigned_quota_bytes",
+        "allocated_user_quota_bytes",
+        "allocated_total_bytes",
+    ]);
+
+    const allocatedQuota =
+        explicitAllocated !== null
+            ? explicitAllocated
+            : adminUsersPoolAllocatedQuotaBytes(poolId);
+
+    const explicitRemaining = adminUsersPoolCapacityNumber(p, [
         "remaining_allocatable_bytes",
         "pool_remaining_allocatable_bytes",
-        "effective_free_bytes",
-        "usable_free_bytes",
-        "migration_available_bytes",
-        "allocatable_bytes",
+        "remaining_bytes",
+        "remaining_quota_bytes",
+        "quota_remaining_bytes",
+        "quota_available_bytes",
+        "available_quota_bytes",
+        "allocatable_quota_bytes",
     ]);
 
-    if (migrationUsable !== null && free !== null) {
+    let quotaAvailable = explicitRemaining;
+    if (quotaAvailable === null && total !== null) {
+        quotaAvailable = total > allocatedQuota ? total - allocatedQuota : 0;
+    }
+
+    return { total, free, allocatedQuota, quotaAvailable };
+}
+
+function adminUsersPoolCapacityText(pool) {
+    const { free, quotaAvailable } = adminUsersPoolQuotaCapacityParts(pool);
+
+    if (quotaAvailable !== null && free !== null) {
         return tr(
-            "admin.users.pool_space_migration_free",
-            { usable: fmtBytesShort(migrationUsable), free: fmtBytesShort(free) },
-            `${fmtBytesShort(migrationUsable)} migration space (${fmtBytesShort(free)} free)`
+            "admin.users.pool_space_quota_free",
+            { quota: fmtBytesShort(quotaAvailable), free: fmtBytesShort(free) },
+            `${fmtBytesShort(quotaAvailable)} allocatable (${fmtBytesShort(free)} physically free)`
         );
     }
 
-    if (migrationUsable !== null) {
+    if (quotaAvailable !== null) {
         return tr(
-            "admin.users.pool_space_migration_only",
-            { usable: fmtBytesShort(migrationUsable) },
-            `${fmtBytesShort(migrationUsable)} migration space`
+            "admin.users.pool_space_quota_only",
+            { quota: fmtBytesShort(quotaAvailable) },
+            `${fmtBytesShort(quotaAvailable)} allocatable`
         );
     }
 
-    const explicitUsableTotal = adminUsersPoolCapacityNumber(pool, [
-        "effective_total_bytes",
-        "usable_total_bytes",
-        "pool_effective_total_bytes",
-        "pool_usable_total_bytes",
-        "logical_total_bytes",
-        "pool_logical_total_bytes",
-    ]);
-
-    let usableTotal = explicitUsableTotal;
-
-    if (usableTotal === null && free !== null && used !== null) {
-        usableTotal = free + used;
-    }
-
-    if (usableTotal === null && free !== null) {
-        usableTotal = free;
-    }
-
-    if (free !== null && usableTotal !== null) {
+    if (free !== null) {
         return tr(
-            "admin.users.pool_space_free_usable",
-            { free: fmtBytesShort(free), usable: fmtBytesShort(usableTotal) },
-            `${fmtBytesShort(free)} free / ${fmtBytesShort(usableTotal)} usable`
-        );
-    }
-
-    if (used !== null && usableTotal !== null) {
-        return tr(
-            "admin.users.pool_space_used_usable",
-            { used: fmtBytesShort(used), usable: fmtBytesShort(usableTotal) },
-            `${fmtBytesShort(used)} used / ${fmtBytesShort(usableTotal)} usable`
+            "admin.users.pool_space_physical_free",
+            { free: fmtBytesShort(free) },
+            `${fmtBytesShort(free)} physically free`
         );
     }
 
@@ -2635,7 +2679,24 @@ function refreshAdminUsersPoolFilter() {
     if (!sel) return;
 
     const prev = String(sel.value || "all");
-    const pools = Array.from(new Set(allUsers.map(storagePoolIdForUser)))
+
+    const ids = new Set();
+
+    // Existing users may reference pools even if the pool list endpoint is
+    // temporarily unavailable. Keep those visible for filtering.
+    for (const u of allUsers) {
+        const poolId = storagePoolIdForUser(u);
+        if (poolId) ids.add(poolId);
+    }
+
+    // New or empty pools must also be filterable. The migration target dropdown
+    // loads gPools from the backend pool list; reuse that data here.
+    for (const p of Array.isArray(gPools) ? gPools : []) {
+        const poolId = String(p?.id || p?.pool_id || "").trim();
+        if (poolId) ids.add(poolId);
+    }
+
+    const pools = Array.from(ids)
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 
@@ -2643,9 +2704,10 @@ function refreshAdminUsersPoolFilter() {
     adminUsersAddOption(sel, "all", tr("admin.users.all_pools", null, "All pools"));
 
     for (const poolId of pools) {
+        const poolMeta = (gPools || []).find(p => String(p?.id || p?.pool_id || "") === poolId);
         const label = poolId === "default"
             ? tr("admin.users.default_pool", null, "Default pool")
-            : poolId;
+            : String(poolMeta?.name || poolId);
         adminUsersAddOption(sel, poolId, label);
     }
 
@@ -2978,7 +3040,9 @@ function adminUsersSortValue(u, key) {
         case "group":
             return String(u.group || "").toLowerCase();
         case "storage":
-            return String(`${u.storage_state || ""} ${storagePoolIdForUser(u)}`).toLowerCase();
+            return String(u.storage_state || "").toLowerCase();
+        case "pool":
+            return String(storagePoolIdForUser(u) || "default").toLowerCase();
         case "quota":
             return Number(u.quota_bytes || 0);
         case "added": {
@@ -3332,8 +3396,8 @@ function render() {
 
   <td>${rolePill(u.role)}</td>
   <td>${pill(u.status)}</td>
-  <td>${groupPill(u.group)}</td>
-  <td>${storageCellHtml(u)}</td>
+  <td>${storageStateCellHtml(u)}</td>
+  <td>${storagePoolCellHtml(u)}</td>
   <td class="mono userQuotaCell">${fmtQuotaCell(u)}</td>
   <td class="mono">${esc(u.added_at || "")}</td>
 
@@ -3553,6 +3617,17 @@ async function refresh() {
     actorFp = String(j.actor_fp || "");
     allUsers = (j.users || []).sort((a,b) => (a.fingerprint||"").localeCompare(b.fingerprint||""));
     adminUsersPruneSelection();
+    refreshAdminUsersPoolFilter();
+
+    // Keep quota-aware pool labels fresh after user metadata changes.
+    // Migration switches storage_pool_id in users.json, so the bulk target
+    // dropdown must be rebuilt from the newly loaded allUsers data.
+    try {
+        await refreshAdminUsersBulkDestPools();
+    } catch (e) {
+        console.warn("Admin Users pool label refresh failed:", e?.message || e);
+    }
+
     refreshAdminUsersPoolFilter();
     render();
     renderAdminUsersStorageJobPanel();
