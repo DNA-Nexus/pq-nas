@@ -333,7 +333,56 @@ try {
     	}
 	} catch (...) {}
 
-		reply_json(res, 200, json{
+
+        auto is_allowed_quota_overbooking_percent = [](int pct) -> bool {
+            return pct == 0 || pct == 10 || pct == 15 || pct == 20 || pct == 25;
+        };
+
+        auto normalize_storage_quota_overbooking_for_response = [&](const json& persisted_settings) -> json {
+            json out = json{{"pools", json::object()}};
+
+            auto add_pool = [&](const std::string& raw_pool_id) {
+                const std::string pid = trim_copy(raw_pool_id).empty()
+                    ? std::string("default")
+                    : trim_copy(raw_pool_id);
+                out["pools"][pid] = 0;
+            };
+
+            add_pool("default");
+
+            if (storage_roots.contains("pools") && storage_roots["pools"].is_array()) {
+                for (const auto& p : storage_roots["pools"]) {
+                    if (!p.is_object()) continue;
+                    add_pool(p.value("pool_id", std::string("")));
+                }
+            }
+
+            if (!persisted_settings.contains("storage_quota_overbooking") ||
+                !persisted_settings["storage_quota_overbooking"].is_object()) {
+                return out;
+            }
+
+            const json& cfg = persisted_settings["storage_quota_overbooking"];
+            if (!cfg.contains("pools") || !cfg["pools"].is_object()) {
+                return out;
+            }
+
+            for (auto& it : out["pools"].items()) {
+                const std::string pid = it.key();
+                auto src = cfg["pools"].find(pid);
+                if (src == cfg["pools"].end() || !src->is_number_integer()) continue;
+
+                const int pct = src->get<int>();
+                it.value() = is_allowed_quota_overbooking_percent(pct) ? pct : 0;
+            }
+
+            return out;
+        };
+
+        json storage_quota_overbooking =
+            normalize_storage_quota_overbooking_for_response(persisted);
+
+reply_json(res, 200, json{
     		{"ok", true},
 
     		{"audit_min_level", get_level_safe(persisted, audit.min_level_str())},
@@ -351,6 +400,7 @@ try {
 			{"snapshots", snapshots},
 			{"storage_roots", storage_roots},
 			{"tiering", tiering},
+            {"storage_quota_overbooking", storage_quota_overbooking},
 			{"dna_connect_alerts", dna_connect_alerts},
 			{"dna_connect_identity", dna_connect_identity},
 			{"upload_tiering_candidates", build_upload_tiering_candidates_json()},
@@ -519,6 +569,81 @@ srv.Post("/api/v4/admin/settings", [&](const httplib::Request& req, httplib::Res
 	auto is_allowed_dna_alert_level = [&](const std::string& s) -> bool {
 	    return (s == "security" || s == "error" || s == "warning" || s == "info");
 	};
+
+    auto is_allowed_quota_overbooking_percent = [](int pct) -> bool {
+        return pct == 0 || pct == 10 || pct == 15 || pct == 20 || pct == 25;
+    };
+
+    auto known_storage_pool_ids = [&]() -> std::vector<std::string> {
+        std::vector<std::string> ids;
+        ids.push_back("default");
+
+        std::lock_guard<std::mutex> lk(pool_mu());
+        for (const auto& kv : pool_mount_by_id()) {
+            const std::string pid = trim_copy(kv.first);
+            if (!pid.empty()) ids.push_back(pid);
+        }
+
+        std::sort(ids.begin(), ids.end());
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+        return ids;
+    };
+
+    auto storage_pool_id_known = [&](const std::vector<std::string>& ids, const std::string& pid) -> bool {
+        return std::find(ids.begin(), ids.end(), pid) != ids.end();
+    };
+
+    auto normalize_storage_quota_overbooking = [&](const json& in_cfg, std::string& err) -> json {
+        err.clear();
+
+        if (!in_cfg.is_object()) {
+            err = "storage_quota_overbooking must be an object";
+            return json();
+        }
+
+        json pools_in = json::object();
+        if (in_cfg.contains("pools")) {
+            if (!in_cfg["pools"].is_object()) {
+                err = "storage_quota_overbooking.pools must be an object";
+                return json();
+            }
+            pools_in = in_cfg["pools"];
+        }
+
+        const std::vector<std::string> known = known_storage_pool_ids();
+        json pools_out = json::object();
+
+        for (const auto& pid : known) {
+            pools_out[pid] = 0;
+        }
+
+        for (const auto& it : pools_in.items()) {
+            const std::string pid = trim_copy(it.key());
+
+            // Security: pool IDs are treated as untrusted admin input.
+            // Persist only currently known local pool IDs to avoid confusing
+            // later storage accounting with arbitrary JSON keys.
+            if (!storage_pool_id_known(known, pid)) {
+                err = "unknown pool_id in storage_quota_overbooking: " + pid;
+                return json();
+            }
+
+            if (!it.value().is_number_integer()) {
+                err = "storage_quota_overbooking.pools." + pid + " must be integer";
+                return json();
+            }
+
+            const int pct = it.value().get<int>();
+            if (!is_allowed_quota_overbooking_percent(pct)) {
+                err = "storage_quota_overbooking.pools." + pid + " must be one of: 0, 10, 15, 20, 25";
+                return json();
+            }
+
+            pools_out[pid] = pct;
+        }
+
+        return json{{"pools", pools_out}};
+    };
 
 	auto normalize_dna_connect_alerts = [&](const json& in_cfg, std::string& err) -> json {
 	    err.clear();
@@ -1002,6 +1127,7 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
         bool changed_snapshots = false;
         bool changed_transport = false;
 		bool changed_tiering   = false;
+        bool changed_storage_quota_overbooking = false;
         bool changed_dna_alerts = false;
 
         json patch = json::object();
@@ -1251,6 +1377,42 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
 		        audit_append(ev);
 		    } catch (...) {}
 		}
+
+        // ---- storage_quota_overbooking (optional) ----
+        if (in.contains("storage_quota_overbooking")) {
+            std::string err;
+            json norm = normalize_storage_quota_overbooking(in["storage_quota_overbooking"], err);
+            if (!err.empty()) {
+                reply_json(res, 400, json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {"message", err}
+                }.dump());
+                return;
+            }
+
+            json before_overbooking = json::object();
+            if (persisted.contains("storage_quota_overbooking") && persisted["storage_quota_overbooking"].is_object()) {
+                before_overbooking = persisted["storage_quota_overbooking"];
+            }
+
+            patch["storage_quota_overbooking"] = norm;
+            persisted["storage_quota_overbooking"] = norm;
+            changed_storage_quota_overbooking = true;
+
+            try {
+                pqnas::AuditEvent ev;
+                ev.event = "admin.settings_changed";
+                ev.outcome = "ok";
+                ev.f["storage_quota_overbooking_before"] = before_overbooking.is_null() ? json::object() : before_overbooking;
+                ev.f["storage_quota_overbooking_after"]  = norm;
+                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                auto it_ua = req.headers.find("User-Agent");
+                ev.f["ua"] = pqnas::shorten(it_ua == req.headers.end() ? "" : it_ua->second);
+                audit_append(ev);
+            } catch (...) {}
+        }
+
 // ---- transport_max_upload_bytes (optional) ----
         if (in.contains("transport_max_upload_bytes")) {
             // Accept: integer only (safe-by-default)
@@ -1309,11 +1471,12 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
         }
 
         if (!changed_level && !changed_ret && !changed_rotation && !changed_theme &&
-                !changed_snapshots && !changed_transport && !changed_tiering && !changed_dna_alerts) {
+                !changed_snapshots && !changed_transport && !changed_tiering &&
+                !changed_storage_quota_overbooking && !changed_dna_alerts) {
             reply_json(res, 400, json{
                 {"ok", false},
                 {"error", "bad_request"},
-                                {"message", "nothing to update (provide audit_min_level and/or audit_retention and/or audit_rotation and/or ui_theme and/or snapshots and/or tiering and/or dna_connect_alerts and/or transport_max_upload_bytes)"}
+                                {"message", "nothing to update (provide audit_min_level and/or audit_retention and/or audit_rotation and/or ui_theme and/or snapshots and/or tiering and/or storage_quota_overbooking and/or dna_connect_alerts and/or transport_max_upload_bytes)"}
             }.dump());
             return;
         }
@@ -1351,6 +1514,17 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
 		if (!tiering.contains("max_candidates_per_pass") || !tiering["max_candidates_per_pass"].is_number_integer()) {
 		    tiering["max_candidates_per_pass"] = 8;
 		}
+        std::string storage_overbooking_response_err;
+        json storage_quota_overbooking = normalize_storage_quota_overbooking(
+            persisted.contains("storage_quota_overbooking") && persisted["storage_quota_overbooking"].is_object()
+                ? persisted["storage_quota_overbooking"]
+                : json{{"pools", json::object()}},
+            storage_overbooking_response_err
+        );
+        if (!storage_overbooking_response_err.empty()) {
+            storage_quota_overbooking = json{{"pools", json::object()}};
+        }
+
 		json dna_connect_alerts = json::object();
 		if (persisted.contains("dna_connect_alerts") && persisted["dna_connect_alerts"].is_object()) {
 		    dna_connect_alerts = persisted["dna_connect_alerts"];
@@ -1485,6 +1659,7 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
             {"snapshots", snapshots},
             {"storage_roots", storage_roots},
 			{"tiering", tiering},
+            {"storage_quota_overbooking", storage_quota_overbooking},
 			{"dna_connect_alerts", dna_connect_alerts},
     		{"upload_tiering_candidates", build_upload_tiering_candidates_json()},
 

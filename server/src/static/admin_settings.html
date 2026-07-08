@@ -861,6 +861,34 @@
             font-weight:900;
             color:rgba(var(--fg-rgb),0.70);
         }
+        .overbookingActions{
+            display:flex;
+            flex-wrap:wrap;
+            gap:10px;
+            align-items:center;
+            margin-bottom:12px;
+        }
+
+        .overbookingNote{
+            border:1px solid var(--border2);
+            background:var(--panel2);
+            border-radius:14px;
+            padding:10px 12px;
+            color:var(--fg-dim);
+            font-size:12px;
+            line-height:1.5;
+            margin-bottom:12px;
+        }
+
+        .overbookingTable td{
+            white-space:normal;
+            vertical-align:middle;
+        }
+
+        .overbookingSelect{
+            min-width:120px;
+        }
+
     </style>
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
@@ -1372,6 +1400,50 @@
                 </div>
             </div>
 
+
+            <div class="card accordion" data-acc="settings">
+                <div class="hd" role="button" tabindex="0" aria-expanded="false">
+                    <div class="h"><span data-i18n="admin.storage_overbooking.title">Storage quota overbooking</span></div>
+                    <div class="pill info" id="storageOverbookingPill">
+                        <span class="k" data-i18n="admin.common.policy">Policy:</span> <span class="v">—</span>
+                    </div>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </div>
+
+                <div class="bd">
+                    <div class="overbookingNote" data-i18n="admin.storage_overbooking.note">
+                        Overbooking increases how much user quota can be assigned on a pool. It does not create physical space and does not bypass real free-space checks during upload or migration.
+                    </div>
+
+                    <div class="overbookingActions">
+                        <button id="btnStorageOverbookingSave" class="pq-btn primary" type="button">
+                            <span data-i18n="admin.storage_overbooking.save">Save overbooking</span>
+                        </button>
+                        <button id="btnStorageOverbookingReload" class="pq-btn" type="button">
+                            <span data-i18n="admin.common.reload">Reload</span>
+                        </button>
+                    </div>
+
+                    <div class="tableWrap">
+                        <table class="overbookingTable">
+                            <thead>
+                            <tr>
+                                <th style="width:18%;" data-i18n="admin.storage_overbooking.pool">Pool</th>
+                                <th style="width:42%;" data-i18n="admin.storage_overbooking.mount">Mount</th>
+                                <th style="width:20%;" data-i18n="admin.storage_overbooking.overbooking">Overbooking</th>
+                                <th style="width:20%;" data-i18n="admin.storage_overbooking.meaning">Meaning</th>
+                            </tr>
+                            </thead>
+                            <tbody id="storageOverbookingTbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="note" data-i18n="admin.storage_overbooking.safety_note">
+                        Recommended start: 10–20% for consumer storage after monitoring real usage. Use 0% for strict/SLA pools.
+                    </div>
+                </div>
+            </div>
+
             <div class="card accordion" data-acc="settings">
                 <div class="hd" role="button" tabindex="0" aria-expanded="false">
                     <div class="h"><span data-i18n="admin.uploads.title">Uploads</span></div>
@@ -1550,7 +1622,7 @@
                                 <input id="notifyInfoExtraEmails"
                                        class="pq-input"
                                        type="text"
-                                      
+
                                        placeholder="ops@example.com, admin2@example.com"
                                        data-i18n-placeholder="admin.notifications.extra_emails_placeholder" />
                             </label>
@@ -1588,7 +1660,7 @@
                                 <input id="notifyTelegramToken"
                                        class="pq-input mono"
                                        type="password"
-                                      
+
                                        autocomplete="off"
                                        placeholder="123456:ABC..."
                                        data-i18n-placeholder="admin.notifications.telegram_token_placeholder" />
@@ -1599,7 +1671,7 @@
                                 <input id="notifyTelegramChatId"
                                        class="pq-input mono"
                                        type="text"
-                                      
+
                                        autocomplete="off"
                                        placeholder="-1001234567890"
                                        data-i18n-placeholder="admin.notifications.telegram_chat_id_placeholder" />

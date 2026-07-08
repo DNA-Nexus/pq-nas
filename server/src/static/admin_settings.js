@@ -126,6 +126,12 @@
     const tieringEligibilityPill = $("tieringEligibilityPill");
     const tieringWarnPill = $("tieringWarnPill");
 
+    // --- storage quota overbooking ---
+    const storageOverbookingPill = $("storageOverbookingPill");
+    const storageOverbookingTbody = $("storageOverbookingTbody");
+    const btnStorageOverbookingSave = $("btnStorageOverbookingSave");
+    const btnStorageOverbookingReload = $("btnStorageOverbookingReload");
+
     const btnUploadsHelp = $("btnUploadsHelp");
     const helpModalBackdrop = $("helpModalBackdrop");
     const btnHelpModalClose = $("btnHelpModalClose");
@@ -184,6 +190,10 @@
     const ALLOWED_ROT_MODES = new Set(["manual", "daily", "size_mb", "daily_or_size_mb"]);
     let gStorageRoots = null; // populated from GET /api/v4/admin/settings
     let gTieringCandidates = []; // populated from GET /api/v4/admin/settings
+    let gStorageQuotaOverbooking = { pools: {} };
+    let gStorageOverbookingUsers = [];
+    let gStorageOverbookingRuntimePools = [];
+    const STORAGE_OVERBOOKING_PCTS = [0, 10, 15, 20, 25];
     let gSnapshotsLast = null;
     let gSnapshotPoolCandidates = [];
 
@@ -1760,6 +1770,351 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
         return `${(x / (1024 ** 3)).toFixed(1)} GiB`;
     }
 
+    function storageOverbookingPoolsFromSettings() {
+        const out = [];
+        const seen = new Set();
+
+        const runtimeByPoolId = new Map();
+        const runtimeByMount = new Map();
+
+        for (const p of Array.isArray(gStorageOverbookingRuntimePools) ? gStorageOverbookingRuntimePools : []) {
+            const poolId = String(p?.pool_id || p?.id || "").trim();
+            const mount = String(p?.mount || p?.mount_path || "").trim();
+
+            if (poolId) runtimeByPoolId.set(poolId, p);
+            if (mount) runtimeByMount.set(mount, p);
+        }
+
+        const pushPool = (poolId, mount, raw) => {
+            const id = String(poolId || "").trim() || "default";
+            const m = String(mount || "").trim();
+
+            if (!id || seen.has(id)) return;
+
+            // UI safety: quota overbooking is only for user-storage allocation
+            // targets. Runtime Btrfs status may also include the install/root
+            // filesystem such as /srv/pqnas; do not offer policy controls for it.
+            if (id !== "default" && !m.includes("/pools/")) return;
+
+            const runtime =
+                runtimeByPoolId.get(id) ||
+                runtimeByMount.get(m) ||
+                {};
+
+            seen.add(id);
+            out.push({
+                pool_id: id,
+                mount: m,
+                raw: {
+                    ...(raw && typeof raw === "object" ? raw : {}),
+                    ...(runtime && typeof runtime === "object" ? runtime : {})
+                }
+            });
+        };
+
+        pushPool("default", serverDataRootOrFallback(), { pool_id: "default", mount: serverDataRootOrFallback() });
+
+        const pools = Array.isArray(gStorageRoots?.pools) ? gStorageRoots.pools : [];
+        for (const p of pools) {
+            pushPool(p?.pool_id || p?.id || "default", p?.mount || p?.mount_path || "", p);
+        }
+
+        // Fallback for older settings payloads: include runtime pools only when
+        // they are clearly managed user pools under /pools/.
+        for (const p of Array.isArray(gStorageOverbookingRuntimePools) ? gStorageOverbookingRuntimePools : []) {
+            const poolId = String(p?.pool_id || p?.id || "").trim();
+            const mount = String(p?.mount || p?.mount_path || "").trim();
+            if (poolId && mount.includes("/pools/")) {
+                pushPool(poolId, mount, p);
+            }
+        }
+
+        out.sort((a, b) => {
+            if (a.pool_id === "default") return -1;
+            if (b.pool_id === "default") return 1;
+            return a.pool_id.localeCompare(b.pool_id, undefined, { numeric: true, sensitivity: "base" });
+        });
+
+        return out;
+    }
+
+    function normalizeStorageOverbookingPct(raw) {
+        const n = Number(raw);
+        if (!Number.isInteger(n)) return 0;
+        return STORAGE_OVERBOOKING_PCTS.includes(n) ? n : 0;
+    }
+
+    function storageOverbookingCapacityNumber(pool, keys) {
+        const p = pool?.raw && typeof pool.raw === "object" ? pool.raw : (pool || {});
+
+        for (const key of keys) {
+            if (!Object.prototype.hasOwnProperty.call(p, key)) continue;
+
+            const raw = p[key];
+            if (raw === null || raw === undefined) continue;
+            if (typeof raw === "string" && raw.trim() === "") continue;
+
+            const n = Number(raw);
+            if (Number.isFinite(n) && n >= 0) return n;
+        }
+
+        return null;
+    }
+
+    function storageOverbookingPoolTotalBytes(pool) {
+        const n = storageOverbookingCapacityNumber(pool, [
+            "usable_total_bytes",
+            "effective_total_bytes",
+            "quota_total_bytes",
+            "logical_total_bytes",
+            "total_bytes",
+            "pool_total_bytes",
+            "capacity_bytes",
+            "bytes_total",
+            "fs_total_bytes",
+            "stat_total_bytes",
+            "size_bytes"
+        ]);
+
+        // UI safety: 0 B from an incomplete/default runtime record means
+        // "capacity unknown" here, not a real quota policy limit.
+        if (!Number.isFinite(Number(n)) || Number(n) <= 0) return null;
+
+        return Number(n);
+    }
+
+    function storageOverbookingPoolIdForUser(u) {
+        const raw =
+            u?.storage_pool_id ?? u?.pool_id ?? u?.pool ?? u?.storage_pool ?? "";
+        const s = String(raw || "").trim();
+        return s || "default";
+    }
+
+    function storageOverbookingAllocatedQuotaBytes(poolId) {
+        const want = String(poolId || "default").trim() || "default";
+        const rows = Array.isArray(gStorageOverbookingUsers) ? gStorageOverbookingUsers : [];
+
+        let total = 0;
+        for (const u of rows) {
+            if (String(u?.storage_state || "unallocated").toLowerCase() !== "allocated") continue;
+            if (storageOverbookingPoolIdForUser(u) !== want) continue;
+
+            const quota = Number(u?.quota_bytes ?? 0);
+            if (!Number.isFinite(quota) || quota <= 0) continue;
+
+            // UI accounting only: backend remains authoritative for policy enforcement.
+            total = Math.min(Number.MAX_SAFE_INTEGER, total + quota);
+        }
+
+        return total;
+    }
+
+    function storageOverbookingQuotaCapacityBytes(baseBytes, pctRaw) {
+        const base = Number(baseBytes);
+        const pct = normalizeStorageOverbookingPct(pctRaw);
+
+        if (!Number.isFinite(base) || base < 0) return null;
+        if (pct <= 0) return Math.floor(base);
+
+        const next = Math.floor(base * (100 + pct) / 100);
+        return Number.isFinite(next) ? Math.min(Number.MAX_SAFE_INTEGER, next) : Number.MAX_SAFE_INTEGER;
+    }
+
+    function storageOverbookingPolicyStatus(pool, pctRaw) {
+        const pct = normalizeStorageOverbookingPct(pctRaw);
+        const total = storageOverbookingPoolTotalBytes(pool);
+        const allocated = storageOverbookingAllocatedQuotaBytes(pool?.pool_id || "default");
+        const capacity = storageOverbookingQuotaCapacityBytes(total, pct);
+
+        // UI safety: do not raise policy-overcommit warnings when pool capacity
+        // is unknown or zero. Backend remains authoritative for enforcement.
+        if (!Number.isFinite(Number(capacity)) || Number(capacity) <= 0) {
+            return {
+                known: false,
+                allocated,
+                capacity: null,
+                overLimitBytes: 0
+            };
+        }
+
+        return {
+            known: true,
+            allocated,
+            capacity,
+            overLimitBytes: allocated > capacity ? allocated - capacity : 0
+        };
+    }
+
+    async function refreshStorageOverbookingRuntimePoolsBestEffort() {
+        try {
+            const j = await fetchJsonOrThrow("/api/v4/storage/pools", { cache: "no-store" });
+            const pools = Array.isArray(j?.pools) ? j.pools : (Array.isArray(j) ? j : []);
+            gStorageOverbookingRuntimePools = pools;
+        } catch (e) {
+            console.warn("Storage overbooking runtime pools load failed:", e?.message || e);
+            gStorageOverbookingRuntimePools = [];
+        }
+    }
+
+    async function refreshStorageOverbookingUsersBestEffort() {
+        try {
+            const j = await fetchJsonOrThrow("/api/v4/admin/users", { cache: "no-store" });
+            gStorageOverbookingUsers = Array.isArray(j?.users) ? j.users : [];
+        } catch (e) {
+            console.warn("Storage overbooking users load failed:", e?.message || e);
+            gStorageOverbookingUsers = [];
+        }
+    }
+
+    function storageOverbookingConfigFromSettings(j) {
+        const cfg = (j && typeof j.storage_quota_overbooking === "object" && j.storage_quota_overbooking)
+            ? j.storage_quota_overbooking
+            : {};
+        const poolsIn = (cfg.pools && typeof cfg.pools === "object") ? cfg.pools : {};
+        const poolsOut = {};
+
+        for (const p of storageOverbookingPoolsFromSettings()) {
+            poolsOut[p.pool_id] = normalizeStorageOverbookingPct(poolsIn[p.pool_id]);
+        }
+
+        return { pools: poolsOut };
+    }
+
+    function overbookingMeaningText(poolOrPct, maybePct) {
+        const pool = maybePct === undefined ? null : poolOrPct;
+        const n = normalizeStorageOverbookingPct(maybePct === undefined ? poolOrPct : maybePct);
+        const policy = n === 0
+            ? tr("admin.storage_overbooking.meaning_none", null, "No extra quota")
+            : tr(
+                "admin.storage_overbooking.meaning_pct",
+                { pct: String(n), multiplier: `${100 + n}%` },
+                `${100 + n}% quota limit`
+            );
+
+        if (pool) {
+            const status = storageOverbookingPolicyStatus(pool, n);
+            if (status.overLimitBytes > 0) {
+                return tr(
+                    "admin.storage_overbooking.meaning_overlimit",
+                    { policy, over: fmtBytesGiB(status.overLimitBytes) },
+                    `${policy} • ${fmtBytesGiB(status.overLimitBytes)} over quota policy`
+                );
+            }
+        }
+
+        return policy;
+    }
+
+    function renderStorageOverbookingTable() {
+        if (!storageOverbookingTbody) return;
+        storageOverbookingTbody.innerHTML = "";
+
+        const pools = storageOverbookingPoolsFromSettings();
+        const cfg = gStorageQuotaOverbooking && typeof gStorageQuotaOverbooking === "object"
+            ? gStorageQuotaOverbooking
+            : { pools: {} };
+
+        if (!pools.length) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td colspan="4">${escapeHtml(tr("admin.settings.no_pools_available", null, "(no pools available)"))}</td>`;
+            storageOverbookingTbody.appendChild(row);
+            return;
+        }
+
+        for (const p of pools) {
+            const poolId = String(p.pool_id || "default");
+            const pct = normalizeStorageOverbookingPct(cfg.pools?.[poolId]);
+            const row = document.createElement("tr");
+
+            const options = STORAGE_OVERBOOKING_PCTS.map(v => {
+                const selected = v === pct ? " selected" : "";
+                const label = v === 0
+                    ? tr("admin.storage_overbooking.zero", null, "0% — strict")
+                    : tr("admin.storage_overbooking.percent_option", { pct: String(v) }, `+${v}%`);
+                return `<option value="${v}"${selected}>${escapeHtml(label)}</option>`;
+            }).join("");
+
+            row.innerHTML = `
+                <td class="mono">${escapeHtml(poolId)}</td>
+                <td class="mono" title="${escapeHtml(p.mount || "—")}">${escapeHtml(p.mount || "—")}</td>
+                <td>
+                    <select class="pq-select overbookingSelect" data-pool-id="${escapeHtml(poolId)}">
+                        ${options}
+                    </select>
+                </td>
+                <td>${escapeHtml(overbookingMeaningText(p, pct))}</td>
+            `;
+
+            row.querySelector(".overbookingSelect")?.addEventListener("change", (ev) => {
+                const select = ev.currentTarget;
+                const nextPct = normalizeStorageOverbookingPct(select?.value);
+                const meaning = select?.closest("tr")?.querySelector("td:last-child");
+                if (meaning) meaning.textContent = overbookingMeaningText(p, nextPct);
+                updateStorageOverbookingPill();
+            });
+
+            storageOverbookingTbody.appendChild(row);
+        }
+    }
+
+    function currentStorageOverbookingFromUi() {
+        const pools = {};
+        const selects = storageOverbookingTbody
+            ? storageOverbookingTbody.querySelectorAll("select[data-pool-id]")
+            : [];
+
+        for (const sel of selects) {
+            const poolId = String(sel.getAttribute("data-pool-id") || "").trim();
+            if (!poolId) continue;
+            pools[poolId] = normalizeStorageOverbookingPct(sel.value);
+        }
+
+        return { pools };
+    }
+
+    function updateStorageOverbookingPill() {
+        if (!storageOverbookingPill) return;
+
+        const cfg = currentStorageOverbookingFromUi();
+        const values = Object.values(cfg.pools || {}).map(normalizeStorageOverbookingPct);
+        const active = values.filter(v => v > 0);
+
+        const overLimitPools = storageOverbookingPoolsFromSettings()
+            .map((p) => {
+                const pct = normalizeStorageOverbookingPct(cfg.pools?.[p.pool_id]);
+                return storageOverbookingPolicyStatus(p, pct);
+            })
+            .filter((s) => s.overLimitBytes > 0);
+
+        let txt = "";
+        if (overLimitPools.length) {
+            const maxOver = Math.max(...overLimitPools.map(s => s.overLimitBytes));
+            txt = tr(
+                "admin.storage_overbooking.overlimit_summary",
+                { count: String(overLimitPools.length), over: fmtBytesGiB(maxOver) },
+                `${overLimitPools.length} pool(s) over policy • max ${fmtBytesGiB(maxOver)}`
+            );
+        } else if (active.length) {
+            txt = tr(
+                "admin.storage_overbooking.active_summary",
+                { count: String(active.length), max: String(Math.max(...active)) },
+                `${active.length} pool(s) • max +${Math.max(...active)}%`
+            );
+        } else {
+            txt = tr("admin.storage_overbooking.strict_summary", null, "Strict quota limits");
+        }
+
+        storageOverbookingPill.className = "pill " + (overLimitPools.length ? "fail" : (active.length ? "warn" : "info"));
+        storageOverbookingPill.innerHTML =
+            `<span class="k">${escapeHtml(tr("admin.common.policy", null, "Policy:"))}</span> <span class="v">${escapeHtml(txt)}</span>`;
+    }
+
+    function applyStorageOverbookingToUi(j) {
+        gStorageQuotaOverbooking = storageOverbookingConfigFromSettings(j);
+        renderStorageOverbookingTable();
+        updateStorageOverbookingPill();
+    }
+
     function tieringWarningsText(c) {
         const ws = Array.isArray(c?.warnings) ? c.warnings : [];
         if (!ws.length) return tr("admin.uploads.none", null, "None");
@@ -2389,6 +2744,11 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
             // upload limits
             applyUploadLimitsToUi(j);
 
+            // storage quota overbooking
+            await refreshStorageOverbookingRuntimePoolsBestEffort();
+            await refreshStorageOverbookingUsersBestEffort();
+            applyStorageOverbookingToUi(j);
+
             // tiering
             applyTieringToUi(j);
 
@@ -2733,6 +3093,33 @@ html[data-theme="win_classic"] .adminConfirmBackdrop{
     btnTieringReload?.addEventListener("click", (ev) => {
         ev.preventDefault();
         refreshAll();
+    });
+    btnStorageOverbookingReload?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        refreshAll();
+    });
+    btnStorageOverbookingSave?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+
+        const cfg = currentStorageOverbookingFromUi();
+        btnStorageOverbookingSave.disabled = true;
+        setStatusPill("warn", "saving…");
+
+        try {
+            await apiSettingsPost({ storage_quota_overbooking: cfg });
+            showToast(
+                "ok",
+                tr("admin.common.saved", null, "Saved"),
+                tr("admin.storage_overbooking.saved", null, "Storage quota overbooking saved")
+            );
+            await refreshAll();
+        } catch (e) {
+            console.error(e);
+            showToast("fail", tr("admin.common.save_failed", null, "Save failed"), String(e.message || e));
+            setStatusPill("error", "error");
+        } finally {
+            btnStorageOverbookingSave.disabled = false;
+        }
     });
     tieringLandingPool?.addEventListener("change", () => {
         updateTieringDetailPills();

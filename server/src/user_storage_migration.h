@@ -114,6 +114,8 @@ struct UserStorageMigrationCapacityCheck {
     std::uint64_t dest_total_bytes = 0;
     std::uint64_t dest_free_bytes = 0;
     std::uint64_t required_free_bytes = 0;
+    std::uint64_t dest_quota_capacity_bytes = 0;
+    int dest_overbooking_percent = 0;
     std::uint64_t dest_allocated_other_bytes = 0;
     std::uint64_t dest_would_total_quota_bytes = 0;
     std::uint64_t user_quota_bytes = 0;
