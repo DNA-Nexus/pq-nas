@@ -1947,3 +1947,22 @@ Allowed pattern:
 Security reason: the update apply helper is an executable trust boundary.
 Environment-controlled helper paths can redirect privileged update validation or
 dry-run execution to attacker-controlled code.
+
+## Drop Zone database path
+
+Drop Zone database paths must not have per-file runtime environment variable
+overrides.
+
+Do not add environment variables such as `PQNAS_DROPZONE_DB_PATH` that redirect
+`dropzones.sqlite3` at runtime.
+
+Allowed pattern:
+
+- derive `dropzones.sqlite3` beside the active `users.json`
+- keep Drop Zone links/uploads on the same deterministic config state root
+- keep related local SQLite state derived from that same directory
+- do not allow a standalone environment-selected Drop Zone database path
+
+Security reason: Drop Zone links and upload history are access-control and
+sharing state. Per-file database path overrides can split Drop Zone state from
+the active user registry and sharing configuration.

@@ -9673,12 +9673,11 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
         (std::filesystem::path(users_path).parent_path() / "shares.json").string();
     std::cerr << "[cfg] shares_path=" << shares_path << std::endl;
 
+    // Security: Drop Zone index state belongs beside the active users.json.
+    // Do not allow a per-file environment override that could split Drop Zone
+    // links/uploads from the active identity and sharing state.
     std::filesystem::path dropzone_db_path =
-    std::filesystem::path(users_path).parent_path() / "dropzones.sqlite3";
-
-    if (const char* p = std::getenv("PQNAS_DROPZONE_DB_PATH")) {
-        dropzone_db_path = p;
-    }
+        std::filesystem::path(users_path).parent_path() / "dropzones.sqlite3";
 
     std::cerr << "[cfg] dropzone_db_path=" << dropzone_db_path.string() << std::endl;
 
