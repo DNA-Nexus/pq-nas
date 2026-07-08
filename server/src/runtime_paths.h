@@ -7,6 +7,8 @@ namespace pqnas {
 
     std::string data_root_dir();
     std::filesystem::path data_root_path();
+    std::string storage_root_dir();
+    std::filesystem::path storage_root_path();
     std::string config_root_dir();
     std::filesystem::path config_root_path();
     std::filesystem::path opaque_credentials_path();

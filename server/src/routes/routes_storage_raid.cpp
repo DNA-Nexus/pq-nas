@@ -2336,8 +2336,7 @@ static int run_btrfs_status_helper_capture(const std::string& action,
     const std::vector<std::string>& devices,
     bool force)
 {
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    std::string root = pqnas::storage_root_dir();
 
     const std::string mount = root + "/pools/" + pool_id;
 
@@ -2406,8 +2405,7 @@ static int run_btrfs_status_helper_capture(const std::string& action,
 
 // copied transitional helper from main.cpp: detect_system_pool_root_disk
 [[maybe_unused]] static std::string detect_system_pool_root_disk() {
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    std::string root = pqnas::storage_root_dir();
 
     std::string source_out;
     int ec_src = 0;
@@ -3220,9 +3218,8 @@ j["no_stats_available"] = has("no stats available");
 
 // copied transitional helper from main.cpp: pools_cfg_path_from_users_path
 [[maybe_unused]] static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path) {
-    // Mutable config should live under PQNAS_STORAGE_ROOT/config (default /srv/pqnas/config)
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    // Mutable config should live under the centralized storage root config directory.
+    std::string root = pqnas::storage_root_dir();
 
     std::filesystem::path p = std::filesystem::path(root) / "config" / "pools.json";
 
@@ -4244,8 +4241,7 @@ srv.Get("/api/v4/storage/status", [&](const httplib::Request& req, httplib::Resp
 
 
     // Default mount: prefer configured storage root
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     // default mount inside allowed_prefix
     std::string mount = allowed_prefix + "/data";
@@ -4439,8 +4435,7 @@ srv.Get("/api/v4/storage/pools", [&](const httplib::Request& req, httplib::Respo
         (*pj)["accounting_pool_total_bytes"] = accounting_pool_total_bytes;
         (*pj)["accounting_pool_free_bytes"] = accounting_pool_free_bytes;
     };
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     const std::string test_prefix  = "/srv/pqnas-test";
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
@@ -4841,8 +4836,7 @@ srv.Post("/api/v4/storage/pools/set-name", [&](const httplib::Request& req, http
     while (!name.empty() && (name.back()  == ' ' || name.back()  == '\t')) name.pop_back();
 
     // Only allow setting name for allowed mounts (same allowlist as GET pools)
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string test_prefix  = "/srv/pqnas-test";
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
 
@@ -5019,8 +5013,7 @@ srv.Post("/api/v4/storage/pools/rename", [&](const httplib::Request& req, httpli
     if (display_name.size() > 64) display_name.resize(64);
 
     // Allowed prefix (storage root)
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string test_prefix  = "/srv/pqnas-test";
     const std::string test_prefix2 = "/srv/pqnas-test-btrfs";
 
@@ -5175,8 +5168,7 @@ srv.Post("/api/v4/poolmgr/add-slot", [&](const httplib::Request& req, httplib::R
         return;
     }
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string pools_root = allowed_prefix + "/pools/";
 
     if (!starts_with(mount, pools_root)) {
@@ -5263,8 +5255,7 @@ srv.Post("/api/v4/poolmgr/remove-slot", [&](const httplib::Request& req, httplib
         return;
     }
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string pools_root = allowed_prefix + "/pools/";
 
     if (!starts_with(mount, pools_root)) {
@@ -5377,8 +5368,7 @@ srv.Post("/api/v4/poolmgr/set-layout", [&](const httplib::Request& req, httplib:
         return;
     }
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string pools_root = allowed_prefix + "/pools/";
 
     if (!starts_with(mount, pools_root)) {
@@ -5505,8 +5495,7 @@ srv.Post("/api/v4/poolmgr/plan-layout", [&](const httplib::Request& req, httplib
         return;
     }
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     const std::string pools_root = allowed_prefix + "/pools/";
 
     if (!starts_with(mount, pools_root)) {
@@ -5808,8 +5797,7 @@ srv.Get("/api/v4/storage/overview", [&](const httplib::Request& req, httplib::Re
     json disks_j = storage_list_disks_json(&raw_lsblk);
 
     // -------------------- mount selection --------------------
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");
@@ -6000,8 +5988,7 @@ srv.Get("/api/v4/raid/discovery", [&](const httplib::Request& req, httplib::Resp
     json disks_j = storage_list_disks_json(&raw_lsblk);
 
     // -------------------- mount selection --------------------
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");
@@ -6175,8 +6162,7 @@ srv.Get("/api/v4/raid/balance-status", [&](const httplib::Request& req, httplib:
     if (!require_admin_cookie_users(req, res, COOKIE_KEY, users_path, &users)) return;
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");
@@ -6324,8 +6310,7 @@ srv.Get("/api/v4/raid/scrub-status", [&](const httplib::Request& req, httplib::R
     if (!require_admin_cookie_users(req, res, COOKIE_KEY, users_path, &users)) return;
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");
@@ -6463,8 +6448,7 @@ srv.Post("/api/v4/raid/plan/scrub", [&](const httplib::Request& req, httplib::Re
     const bool readonly = in.value("readonly", false); // informational for now
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     if (!is_abs_path_safe(mount)) {
@@ -6696,8 +6680,7 @@ srv.Post("/api/v4/raid/execute/scrub", [&](const httplib::Request& req, httplib:
     }
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     if (!is_abs_path_safe(mount)) {
@@ -7064,8 +7047,7 @@ srv.Get("/api/v4/raid/status", [&](const httplib::Request& req, httplib::Respons
     if (!require_admin_cookie_users(req, res, COOKIE_KEY, users_path, &users)) return;
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");
@@ -7279,8 +7261,7 @@ srv.Post("/api/v4/raid/plan/add-device", [&](const httplib::Request& req, httpli
     bool force           = in.value("force", false);
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     // Validate inputs
@@ -7618,8 +7599,7 @@ srv.Post("/api/v4/raid/plan/convert-mode", [&](const httplib::Request& req, http
     std::string mount = in.value("mount", "");
     std::string mode  = in.value("mode", "single"); // single|raid1
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     if (!is_abs_path_safe(mount)) {
@@ -7896,8 +7876,7 @@ srv.Post("/api/v4/raid/execute/convert-mode", [&](const httplib::Request& req, h
     bool confirm      = in.value("confirm", false);
     const std::string client_plan_id = in.value("plan_id", "");
 
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     if (!is_abs_path_safe(mount)) {
@@ -8199,8 +8178,7 @@ srv.Post("/api/v4/raid/plan/remove-device", [&](const httplib::Request& req, htt
     bool force                = in.value("force", false);
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     // Validate inputs
@@ -8541,8 +8519,7 @@ srv.Post("/api/v4/raid/plan/create-pool", [&](const httplib::Request& req, httpl
         return;
     }
 
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    std::string root = pqnas::storage_root_dir();
 
     const std::string mount = root + "/pools/" + pool_id;
     if (std::filesystem::exists(mount)) {
@@ -8719,8 +8696,7 @@ srv.Post("/api/v4/raid/execute/add-device", [&](const httplib::Request& req, htt
         return;
     }
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     // Validate inputs
@@ -9295,9 +9271,8 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
         return;
     }
 
-    // Allow only destroying pools under PQNAS_STORAGE_ROOT/pools
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    // Allow only destroying pools under the centralized storage root pools directory.
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     const std::string pools_root = allowed_prefix + "/pools/";
     if (mount.rfind(pools_root, 0) != 0) {
@@ -9306,7 +9281,7 @@ srv.Post("/api/v4/raid/execute/destroy-pool", [&](const httplib::Request& req, h
         reply_json(res, 400, json{
             {"ok", false},
             {"error", "mount_not_allowed"},
-            {"message", "destroy is only allowed under PQNAS_STORAGE_ROOT/pools"},
+            {"message", "destroy is only allowed under the configured storage root pools directory"},
             {"mount", mount},
             {"pools_root", pools_root}
         }.dump());
@@ -9597,8 +9572,7 @@ srv.Post("/api/v4/raid/execute/remove-device", [&](const httplib::Request& req, 
     const std::string client_plan_id = in.value("plan_id", "");
 
     // Allowed_prefix + default mount
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
     if (mount.empty()) mount = allowed_prefix + "/data";
 
     // Validate inputs
@@ -10102,8 +10076,7 @@ srv.Post("/api/v4/raid/execute/create-pool", [&](const httplib::Request& req, ht
 
     std::vector<std::string> devices; // canonical validated device list
 
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    std::string root = pqnas::storage_root_dir();
     const std::string mount = root + "/pools/" + pool_id;
     const std::string label = "PQNAS_" + upper_ascii(pool_id);
 
@@ -10478,8 +10451,7 @@ srv.Get("/api/v4/raid/health", [&](const httplib::Request& req, httplib::Respons
     if (!require_admin_cookie_users(req, res, COOKIE_KEY, users_path, &users)) return;
 
     // -------------------- mount selection --------------------
-    std::string allowed_prefix = getenv_str("PQNAS_STORAGE_ROOT");
-    if (allowed_prefix.empty()) allowed_prefix = "/srv/pqnas";
+    std::string allowed_prefix = pqnas::storage_root_dir();
 
     std::string mount = allowed_prefix + "/data";
     if (req.has_param("mount")) mount = req.get_param_value("mount");

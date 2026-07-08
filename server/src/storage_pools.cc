@@ -1,4 +1,5 @@
 #include "storage_pools.h"
+#include "runtime_paths.h"
 
 #include <algorithm>
 #include <array>
@@ -18,11 +19,6 @@
 namespace pqnas {
 
 namespace {
-
-std::string getenv_str(const std::string& key) {
-    const char* v = std::getenv(key.c_str());
-    return v ? std::string(v) : std::string();
-}
 
 bool read_text_file(const std::string& path, std::string* out) {
     if (out) out->clear();
@@ -477,13 +473,15 @@ int find_matching_runtime_member(const json& saved_slot,
 }
 
 std::filesystem::path pools_cfg_path_from_users_path_local(const std::string& users_path) {
-    std::string root = getenv_str("PQNAS_STORAGE_ROOT");
-    if (root.empty()) root = "/srv/pqnas";
+    // Security: use the centralized sanitized storage root before deriving the
+    // mutable pools.json path. This avoids every storage module parsing
+    // storage-root deployment configuration differently.
+    const std::filesystem::path root = storage_root_path();
 
-    std::filesystem::path p = std::filesystem::path(root) / "config" / "pools.json";
+    const std::filesystem::path p = root / "config" / "pools.json";
 
     std::error_code ec;
-    auto st = std::filesystem::status(std::filesystem::path(root) / "config", ec);
+    auto st = std::filesystem::status(root / "config", ec);
     if (!ec && std::filesystem::is_directory(st)) return p;
 
     return std::filesystem::path(users_path).parent_path() / "pools.json";

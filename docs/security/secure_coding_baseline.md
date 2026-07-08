@@ -1825,3 +1825,24 @@ Security reason: the Nodus identity selects the local federation origin.
 Redirecting it through environment-controlled paths can create split-brain
 federation identity, impersonation-by-misconfiguration, or unintended reads from
 the wrong identity directory.
+
+## Storage root paths
+
+Storage-manager code must not read `PQNAS_STORAGE_ROOT` directly in route
+handlers, pool helpers, or destructive storage operations.
+
+Allowed pattern:
+
+- read deployment-level `PQNAS_STORAGE_ROOT` only through `pqnas::storage_root_dir()`
+  or `pqnas::storage_root_path()`
+- require the configured root to be absolute and normalized
+- reject empty, relative, or filesystem-root values
+- derive `config/pools.json`, `pools/<pool_id>`, and default `data` paths from
+  the centralized sanitized storage root
+- keep request-provided mount paths behind separate absolute-path and
+  allowed-prefix checks
+
+Security reason: the storage root is used as an allow-list boundary for pool
+mounts and storage-manager operations. Parsing it in multiple places risks
+inconsistent validation, path manipulation, and accidentally broad destructive
+operation scopes.
