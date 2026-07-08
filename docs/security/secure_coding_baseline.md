@@ -1867,3 +1867,26 @@ Security reason: password and OPAQUE credential files are authentication state.
 Per-file path overrides can split login, cleanup, migration, and revoke flows
 across different stores, leaving stale credentials or authenticating against an
 unexpected file.
+
+## Core configuration file paths
+
+Core configuration and authorization files must not have per-file environment
+variable overrides.
+
+Do not add environment variables such as `PQNAS_ADMIN_SETTINGS_PATH`,
+`PQNAS_POLICY_PATH`, `PQNAS_USERS_PATH`, `PQNAS_APP_AUTH_PATH`, or
+`PQNAS_SHARES_PATH` that redirect individual core state files at runtime.
+
+Allowed pattern:
+
+- derive core config files from the trusted runtime config root
+- use fixed filenames such as `admin_settings.json`, `policy.json`,
+  `users.json`, `app_auth.json`, and `shares.json`
+- keep `shares.json` beside the active `users.json`
+- keep backup, login, admin, and sharing flows on the same deterministic files
+- use explicit repository config fallbacks only for local development
+
+Security reason: these files hold identity, authorization, device auth, sharing,
+and admin policy state. Per-file path overrides can split security state across
+different files, causing stale access rules, missed revocation, or authentication
+against an unexpected registry.

@@ -458,36 +458,40 @@ std::vector<SystemBackupSource> default_sources() {
         "core/etc/pqnas/pqnas.env"
     );
 
-    // Current installer/runtime layout uses /etc/pqnas through env vars.
+    // Current installer/runtime layout uses the trusted config root.
     // Keep /srv/pqnas fallbacks so older dev/prototype installs still back up.
+    // Security: core config/auth files must not be redirected with per-file
+    // environment overrides; backup the same deterministic stores used at runtime.
+    const std::filesystem::path config_root = pqnas::config_root_path();
+
     const std::filesystem::path admin_settings_path = configured_path_local(
-        "PQNAS_ADMIN_SETTINGS_PATH",
-        {"/etc/pqnas/admin_settings.json", "/srv/pqnas/config/admin_settings.json"}
+        nullptr,
+        {config_root / "admin_settings.json", "/etc/pqnas/admin_settings.json", "/srv/pqnas/config/admin_settings.json"}
     );
 
     const std::filesystem::path policy_path = configured_path_local(
-        "PQNAS_POLICY_PATH",
-        {"/etc/pqnas/policy.json", "/srv/pqnas/config/policy.json"}
+        nullptr,
+        {config_root / "policy.json", "/etc/pqnas/policy.json", "/srv/pqnas/config/policy.json"}
     );
 
     const std::filesystem::path users_path = configured_path_local(
-        "PQNAS_USERS_PATH",
-        {"/etc/pqnas/users.json", "/srv/pqnas/config/users.json", "/srv/pqnas/users.json"}
+        nullptr,
+        {config_root / "users.json", "/etc/pqnas/users.json", "/srv/pqnas/config/users.json", "/srv/pqnas/users.json"}
     );
 
     const std::filesystem::path shares_path = configured_path_local(
-        "PQNAS_SHARES_PATH",
-        {"/etc/pqnas/shares.json", "/srv/pqnas/config/shares.json", "/srv/pqnas/shares.json"}
+        nullptr,
+        {users_path.parent_path() / "shares.json", config_root / "shares.json", "/etc/pqnas/shares.json", "/srv/pqnas/config/shares.json", "/srv/pqnas/shares.json"}
     );
 
     const std::filesystem::path pools_path = configured_path_local(
-        "PQNAS_POOLS_PATH",
-        {"/etc/pqnas/pools.json", "/srv/pqnas/config/pools.json"}
+        nullptr,
+        {config_root / "pools.json", "/etc/pqnas/pools.json", "/srv/pqnas/config/pools.json"}
     );
 
     const std::filesystem::path app_auth_path = configured_path_local(
-        "PQNAS_APP_AUTH_PATH",
-        {"/etc/pqnas/app_auth.json", "/srv/pqnas/config/app_auth.json"}
+        nullptr,
+        {config_root / "app_auth.json", "/etc/pqnas/app_auth.json", "/srv/pqnas/config/app_auth.json"}
     );
 
     const std::filesystem::path notifications_path =
