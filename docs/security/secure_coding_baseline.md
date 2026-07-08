@@ -2005,3 +2005,22 @@ Allowed pattern:
 Security reason: public share and gallery export staging can contain
 user-selected content. Standalone temp directory overrides can redirect staging
 outside the expected service-owned runtime tree.
+
+## Legacy broad root environment variable
+
+Runtime code must not depend on a broad legacy `PQNAS_ROOT` environment variable
+for security-sensitive paths.
+
+Do not add new `PQNAS_ROOT` fallbacks for config, data, storage, temporary,
+audit, auth, helper, or update paths.
+
+Allowed pattern:
+
+- use specific trusted root helpers such as config root, data root, and storage root
+- derive fixed child paths from those specific roots
+- keep installer output aligned with specific root variables
+- avoid broad root fallbacks that can silently move unrelated security state
+
+Security reason: a broad root fallback can mix config, data, temporary files,
+audit logs, and storage state under an unexpected layout. Specific roots make the
+trust boundary and deployment intent explicit.

@@ -9266,21 +9266,11 @@ int main()
         return v ? std::string(v) : std::string();
     };
 
-    // Prefer explicit config root/env, then fall back to the service WorkingDirectory (/srv/pqnas),
-    // and finally fall back to REPO_ROOT for dev runs.
-    std::string config_root = getenv_str("PQNAS_CONFIG_ROOT");
-    if (config_root.empty()) {
-        config_root = getenv_str("PQNAS_ROOT"); // optional if you already use it elsewhere
-    }
-    if (config_root.empty()) {
-        // If systemd sets WorkingDirectory=/srv/pqnas, CWD is /srv/pqnas.
-        // In dev, CWD is usually repo root.
-        config_root = (std::filesystem::path(std::filesystem::current_path()) / "config").string();
-    }
-
-    // Final: admin settings path
-    std::string admin_settings_path =
-        (std::filesystem::path(config_root) / "admin_settings.json").string();
+    // Security: use the shared runtime config-root helper instead of the legacy
+    // broad root fallback. This keeps admin settings aligned with the same
+    // trusted config root used by policy/users/auth state.
+    const std::string admin_settings_path =
+        (pqnas::config_root_path() / "admin_settings.json").string();
 
 
 

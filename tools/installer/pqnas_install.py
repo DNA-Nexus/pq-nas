@@ -1935,7 +1935,6 @@ def write_env_file(
     env_path = os.path.join(etc_dir, "pqnas.env")
 
     lines = [
-        f"PQNAS_ROOT={root}",
         "PQNAS_CONFIG=/etc/pqnas",
         "",
         "PQNAS_ADMIN_SETTINGS_PATH=/etc/pqnas/admin_settings.json",
