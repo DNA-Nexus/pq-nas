@@ -2744,11 +2744,13 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
     };
 
     {
-        std::string tmp_root = getenv_str("PQNAS_TMP_DIR");
-        if (tmp_root.empty()) {
-            const std::string pqnas_root = getenv_str("PQNAS_ROOT");
-            tmp_root = pqnas_root.empty() ? "/srv/pqnas/tmp" : (pqnas_root + "/tmp");
-        }
+        // Security: public share/gallery export staging contains user-selected
+        // content. Do not allow standalone tmp-dir overrides; derive it from the
+        // trusted runtime data-root layout so staging stays under the PQ-NAS
+        // service-owned runtime tree.
+        const std::filesystem::path tmp_root_path =
+            pqnas::data_root_path().parent_path() / "tmp";
+        const std::string tmp_root = tmp_root_path.string();
 
         std::error_code tmp_ec;
         std::filesystem::create_directories(tmp_root, tmp_ec);

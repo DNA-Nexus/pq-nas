@@ -166,9 +166,8 @@ Do not use global `/tmp` for sensitive or user-data-related staging unless there
 
 Preferred locations:
 
-- `PQNAS_TMP_DIR`
-- `<PQNAS_ROOT>/tmp`
-- `/srv/pqnas/tmp`
+- the deterministic sibling `tmp/` directory beside the trusted data root
+- `/srv/pqnas/tmp` only as the default derived layout
 
 Temporary files should be:
 
@@ -1986,3 +1985,23 @@ Allowed pattern:
 Security reason: audit logs are the security trail. Standalone audit directory
 overrides can split, hide, or redirect audit history away from the expected
 runtime layout.
+
+## Public share temporary staging path
+
+Public share and gallery export temporary staging paths must not have standalone
+runtime environment variable overrides.
+
+Do not add environment variables such as `PQNAS_TMP_DIR` that redirect export
+staging at runtime.
+
+Allowed pattern:
+
+- derive temporary staging from the trusted runtime data-root layout
+- keep staging in the deterministic sibling `tmp/` directory beside `data/`
+- keep installer output aligned with the derived runtime path
+- create per-export directories with safe unique names such as `mkdtemp`
+- clean staging directories on success and failure
+
+Security reason: public share and gallery export staging can contain
+user-selected content. Standalone temp directory overrides can redirect staging
+outside the expected service-owned runtime tree.
