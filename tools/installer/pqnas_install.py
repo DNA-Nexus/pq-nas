@@ -2020,10 +2020,10 @@ def write_env_file(
         lines += [f"PQNAS_TLS_SPKI_SHA256_PIN={tls_spki_pin_sha256}"]
 
 
-    # DNA engine .so path for /api/v4/verify
-    if dna_lib_path:
-        lines += ["", f"PQNAS_DNA_LIB={dna_lib_path}"]
-
+    # Security: do not write PQNAS_DNA_LIB into the server environment.
+    # Server-side DNA identity generation loads libdna_lib.so from the fixed
+    # root-managed runtime path to avoid environment-controlled dlopen().
+    # The installer still installs the library to that fixed path.
     with open(env_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
