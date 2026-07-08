@@ -2,6 +2,7 @@
 
 #include "dna_identity_generator.h"
 #include "password_credentials.h"
+#include "runtime_paths.h"
 #include "opaque_credentials.h"
 #include "workspace_access_shared.h"
 
@@ -953,10 +954,8 @@ bool workspace_external_opaque_auth_enabled_local() {
 
 std::string workspace_external_password_credentials_path_local(
     const WorkspaceExternalInviteRouteDeps& deps) {
-    const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
-    const std::string env_path = trim_copy_safe(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
-
+    // Security: password credentials are authentication state. Do not allow
+    // external-invite routes to redirect them with a per-file environment path.
     if (!deps.users_path.empty()) {
         std::filesystem::path p(deps.users_path);
         return (p.parent_path() / "password_credentials.json").string();
@@ -967,28 +966,12 @@ std::string workspace_external_password_credentials_path_local(
 
 std::string workspace_external_opaque_credentials_path_local(
     const WorkspaceExternalInviteRouteDeps& deps) {
-    const char* raw = std::getenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
-    const std::string env_path = trim_copy_safe(raw ? raw : "");
-    if (!env_path.empty()) return env_path;
+    (void)deps;
 
-    const char* cfg_env = std::getenv("PQNAS_CONFIG");
-    const std::string cfg_path = trim_copy_safe(cfg_env ? cfg_env : "");
-    if (!cfg_path.empty()) {
-        return (std::filesystem::path(cfg_path) / "opaque_credentials.json").string();
-    }
-
-    const char* cfg_root_env = std::getenv("PQNAS_CONFIG_ROOT");
-    const std::string cfg_root_path = trim_copy_safe(cfg_root_env ? cfg_root_env : "");
-    if (!cfg_root_path.empty()) {
-        return (std::filesystem::path(cfg_root_path) / "opaque_credentials.json").string();
-    }
-
-    if (!deps.users_path.empty()) {
-        std::filesystem::path p(deps.users_path);
-        return (p.parent_path() / "opaque_credentials.json").string();
-    }
-
-    return "/etc/pqnas/opaque_credentials.json";
+    // Security: OPAQUE credentials are authentication state. Use the shared
+    // runtime path helper so external-invite routes cannot split credentials
+    // into an environment-controlled per-file store.
+    return pqnas::opaque_credentials_path().string();
 }
 
 void clear_string_best_effort_local(std::string& s) {

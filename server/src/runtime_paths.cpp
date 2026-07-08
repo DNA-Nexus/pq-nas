@@ -120,9 +120,9 @@ namespace pqnas {
     }
 
     std::filesystem::path opaque_credentials_path() {
-        const std::string env = getenv_str_local("PQNAS_OPAQUE_CREDENTIALS_PATH");
-        if (!env.empty()) return std::filesystem::path(env);
-
+        // Security: OPAQUE credentials are authentication state. Do not allow a
+        // per-file environment override to redirect this store; derive it from
+        // the trusted runtime config root with a fixed filename.
         return config_root_path() / "opaque_credentials.json";
     }
 

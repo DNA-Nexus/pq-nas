@@ -181,10 +181,8 @@ namespace pqnas {
     static std::string ws_files_password_credentials_path_local(
         const WorkspaceFileRouteDeps& deps
     ) {
-        const char* raw = std::getenv("PQNAS_PASSWORD_CREDENTIALS_PATH");
-        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
-        if (!env_path.empty()) return env_path;
-
+        // Security: password credentials are authentication state. Do not allow
+        // workspace routes to redirect them with a per-file environment path.
         if (!deps.users_path.empty()) {
             std::filesystem::path p(deps.users_path);
             return (p.parent_path() / "password_credentials.json").string();
@@ -196,29 +194,12 @@ namespace pqnas {
     static std::string ws_files_opaque_credentials_path_local(
         const WorkspaceFileRouteDeps& deps
     ) {
-        const char* raw = std::getenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
-        const std::string env_path = ws_files_external_trim_copy_local(raw ? raw : "");
-        if (!env_path.empty()) return env_path;
+        (void)deps;
 
-        const char* cfg_env = std::getenv("PQNAS_CONFIG");
-        const std::string cfg_path = ws_files_external_trim_copy_local(cfg_env ? cfg_env : "");
-        if (!cfg_path.empty()) {
-            return (std::filesystem::path(cfg_path) / "opaque_credentials.json").string();
-        }
-
-        const char* cfg_root_env = std::getenv("PQNAS_CONFIG_ROOT");
-        const std::string cfg_root_path =
-            ws_files_external_trim_copy_local(cfg_root_env ? cfg_root_env : "");
-        if (!cfg_root_path.empty()) {
-            return (std::filesystem::path(cfg_root_path) / "opaque_credentials.json").string();
-        }
-
-        if (!deps.users_path.empty()) {
-            std::filesystem::path p(deps.users_path);
-            return (p.parent_path() / "opaque_credentials.json").string();
-        }
-
-        return "/etc/pqnas/opaque_credentials.json";
+        // Security: OPAQUE credentials are authentication state. Use the shared
+        // runtime path helper so workspace routes cannot split credentials into
+        // an environment-controlled per-file store.
+        return pqnas::opaque_credentials_path().string();
     }
 
     static std::string ws_files_opaque_enrollments_path_local(
