@@ -62,6 +62,22 @@ for needle in [
     if needle not in text:
         fail(f"missing argv/fail-closed marker: {needle}")
 
+root_helper = function_body("static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,")
+if root_helper:
+    for marker in [
+        'cmd.rfind("RAID_ROOT ", 0)',
+        "raid_root_args_are_supported(args)",
+        '"/usr/local/sbin/pqnas-raid-root"',
+        "argv.insert(argv.end(), args.begin(), args.end())",
+        "unsupported RAID_ROOT command",
+        'cmd.rfind("BTRFS_STATUS ", 0)',
+        "raid_btrfs_status_args_are_supported(args)",
+        '"/usr/local/sbin/pqnas-btrfs-status"',
+        "unsupported BTRFS_STATUS command",
+    ]:
+        if marker not in root_helper:
+            fail(f"raid root helper dispatcher missing pseudo-command marker: {marker}")
+
 run_capture = function_body("[[maybe_unused]] static int run_capture(const std::string& cmd, std::string* out)")
 if run_capture:
     if "raid_try_run_known_root_helper_argv" not in run_capture:

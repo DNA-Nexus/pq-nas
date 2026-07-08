@@ -589,6 +589,90 @@ static bool raid_try_run_known_root_helper_argv(const std::string& cmd_in,
         cmd = raid_cmd_trim_copy(cmd);
     }
 
+    // Security: support the internal RAID_ROOT pseudo-command without ever
+    // falling back to a shell. This keeps create-pool plans readable while the
+    // actual privileged helper still receives a strict argv list.
+    if (cmd.rfind("RAID_ROOT ", 0) == 0) {
+        const std::string tail = raid_cmd_trim_copy(cmd.substr(std::string("RAID_ROOT ").size()));
+        if (tail.empty()) {
+            if (out) *out = "err: RAID_ROOT format is: RAID_ROOT <action> [args...]\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        std::istringstream iss(tail);
+        std::vector<std::string> args;
+        std::string arg;
+        while (iss >> arg) {
+            args.push_back(arg);
+        }
+
+        // Security: fail closed before sudo. The shell script validates again,
+        // but the C++ dispatcher must not forward malformed root operations.
+        if (!raid_root_args_are_supported(args)) {
+            if (out) *out = "err: unsupported RAID_ROOT command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        std::vector<std::string> argv = {
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/pqnas-raid-root"
+        };
+        argv.insert(argv.end(), args.begin(), args.end());
+
+        return run_argv_capture_limited(
+            argv,
+            out,
+            exit_code,
+            24 * 60 * 60 * 1000,
+            2u * 1024u * 1024u
+        );
+    }
+
+    // Security: support the internal BTRFS_STATUS pseudo-command without shell fallback.
+    // This lets create-pool verification call the narrow btrfs-status helper through
+    // argv while still validating the action and mount before sudo.
+    if (cmd.rfind("BTRFS_STATUS ", 0) == 0) {
+        const std::string tail = raid_cmd_trim_copy(cmd.substr(std::string("BTRFS_STATUS ").size()));
+        if (tail.empty()) {
+            if (out) *out = "err: BTRFS_STATUS format is: BTRFS_STATUS <action> <mount>\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        std::istringstream iss(tail);
+        std::vector<std::string> args;
+        std::string arg;
+        while (iss >> arg) {
+            args.push_back(arg);
+        }
+
+        // Security: fail closed before sudo. The helper validates again, but the
+        // C++ dispatcher must not forward unsupported status operations.
+        if (!raid_btrfs_status_args_are_supported(args)) {
+            if (out) *out = "err: unsupported BTRFS_STATUS command\n";
+            if (exit_code) *exit_code = 2;
+            return true;
+        }
+
+        std::vector<std::string> argv = {
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/pqnas-btrfs-status"
+        };
+        argv.insert(argv.end(), args.begin(), args.end());
+
+        return run_argv_capture_limited(
+            argv,
+            out,
+            exit_code,
+            10000,
+            2u * 1024u * 1024u
+        );
+    }
+
     struct KnownHelper {
         const char* prefix;
         const char* helper;
