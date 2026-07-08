@@ -2039,6 +2039,8 @@ Do not write removed overrides such as:
 - `PQNAS_POOLS_PATH`
 - `PQNAS_APP_AUTH_PATH`
 - `PQNAS_NOTIFICATIONS_PATH`
+- `PQNAS_UPDATE_APPLY_HELPER_PATH`
+- `PQNAS_NODUS_IDENTITY_DIR`
 
 Allowed pattern:
 
