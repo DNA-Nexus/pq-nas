@@ -25,9 +25,6 @@ std::filesystem::path temp_root() {
 void unset_opaque_env() {
     ::unsetenv("PQNAS_CONFIG_ROOT");
     ::unsetenv("PQNAS_CONFIG");
-    ::unsetenv("PQNAS_OPAQUE_CREDENTIALS_PATH");
-    ::unsetenv("PQNAS_OPAQUE_SERVER_SETUP_PATH");
-    ::unsetenv("PQNAS_OPAQUE_HELPER");
 }
 
 } // namespace
@@ -68,19 +65,8 @@ int main() {
     require_true(pqnas::opaque_server_setup_path() == root / "opaque_server_setup.bin",
                  "config root override should affect server setup path");
 
-    require_true(::setenv("PQNAS_OPAQUE_CREDENTIALS_PATH", "/tmp/custom_opaque_credentials.json", 1) == 0,
-                 "setenv PQNAS_OPAQUE_CREDENTIALS_PATH should succeed");
-    require_true(::setenv("PQNAS_OPAQUE_SERVER_SETUP_PATH", "/tmp/custom_opaque_server_setup.bin", 1) == 0,
-                 "setenv PQNAS_OPAQUE_SERVER_SETUP_PATH should succeed");
-    require_true(::setenv("PQNAS_OPAQUE_HELPER", "/tmp/custom_pqnas_opaque_helper", 1) == 0,
-                 "setenv PQNAS_OPAQUE_HELPER should succeed");
-
-    require_true(pqnas::opaque_credentials_path() == fs::path("/tmp/custom_opaque_credentials.json"),
-                 "explicit credentials path override should win");
-    require_true(pqnas::opaque_server_setup_path() == fs::path("/tmp/custom_opaque_server_setup.bin"),
-                 "explicit server setup path override should win");
-    require_true(pqnas::opaque_helper_path() == fs::path("/tmp/custom_pqnas_opaque_helper"),
-                 "explicit helper path override should win");
+    require_true(pqnas::opaque_helper_path() == fs::path("/usr/local/libexec/pqnas/pqnas_opaque_helper"),
+                 "OPAQUE helper path should remain pinned to the root-managed libexec path");
 
     unset_opaque_env();
 
