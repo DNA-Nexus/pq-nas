@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Låser…",
   "filemgr.locks.lock_failed": "Låsning misslyckades: {error}",
   "filemgr.locks.unlocking": "Låser upp…",
-  "filemgr.locks.unlock_failed": "Upplåsning misslyckades: {error}"
+  "filemgr.locks.unlock_failed": "Upplåsning misslyckades: {error}",
+  "filemgr.spreadsheet.title": "Förhandsgranskning av kalkylblad",
+  "filemgr.spreadsheet.empty": "Detta blad är tomt.",
+  "filemgr.spreadsheet.empty_workbook": "Inga blad hittades.",
+  "filemgr.spreadsheet.truncated": "stort kalkylblad kortades av för förhandsgranskning",
+  "filemgr.spreadsheet.loading": "Läser in förhandsgranskning av kalkylblad: {name}…",
+  "filemgr.spreadsheet.previewing": "Förhandsgranskar kalkylblad: {name}",
+  "filemgr.spreadsheet.failed": "Förhandsgranskning av kalkylblad misslyckades: {error}",
+  "external.spreadsheet.title": "Förhandsgranskning av kalkylblad",
+  "external.spreadsheet.empty": "Detta blad är tomt.",
+  "external.spreadsheet.empty_workbook": "Inga blad hittades.",
+  "external.spreadsheet.truncated": "stort kalkylblad kortades av för förhandsgranskning",
+  "external.spreadsheet.failed": "Förhandsgranskning av kalkylblad misslyckades: {error}",
+  "external.menu.open_spreadsheet_preview": "Öppna kalkylbladsförhandsgranskning"
 }

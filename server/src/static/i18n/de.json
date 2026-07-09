@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Wird gesperrt…",
   "filemgr.locks.lock_failed": "Sperren fehlgeschlagen: {error}",
   "filemgr.locks.unlocking": "Wird entsperrt…",
-  "filemgr.locks.unlock_failed": "Entsperren fehlgeschlagen: {error}"
+  "filemgr.locks.unlock_failed": "Entsperren fehlgeschlagen: {error}",
+  "filemgr.spreadsheet.title": "Tabellenvorschau",
+  "filemgr.spreadsheet.empty": "Dieses Tabellenblatt ist leer.",
+  "filemgr.spreadsheet.empty_workbook": "Keine Tabellenblätter gefunden.",
+  "filemgr.spreadsheet.truncated": "große Tabelle für die Vorschau gekürzt",
+  "filemgr.spreadsheet.loading": "Tabellenvorschau wird geladen: {name}…",
+  "filemgr.spreadsheet.previewing": "Tabelle wird angezeigt: {name}",
+  "filemgr.spreadsheet.failed": "Tabellenvorschau fehlgeschlagen: {error}",
+  "external.spreadsheet.title": "Tabellenvorschau",
+  "external.spreadsheet.empty": "Dieses Tabellenblatt ist leer.",
+  "external.spreadsheet.empty_workbook": "Keine Tabellenblätter gefunden.",
+  "external.spreadsheet.truncated": "große Tabelle für die Vorschau gekürzt",
+  "external.spreadsheet.failed": "Tabellenvorschau fehlgeschlagen: {error}",
+  "external.menu.open_spreadsheet_preview": "Tabellenvorschau öffnen"
 }

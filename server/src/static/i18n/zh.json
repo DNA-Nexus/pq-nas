@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "正在锁定…",
   "filemgr.locks.lock_failed": "锁定失败：{error}",
   "filemgr.locks.unlocking": "正在解锁…",
-  "filemgr.locks.unlock_failed": "解锁失败：{error}"
+  "filemgr.locks.unlock_failed": "解锁失败：{error}",
+  "filemgr.spreadsheet.title": "电子表格预览",
+  "filemgr.spreadsheet.empty": "此工作表为空。",
+  "filemgr.spreadsheet.empty_workbook": "未找到工作表。",
+  "filemgr.spreadsheet.truncated": "大型工作表已截断以便预览",
+  "filemgr.spreadsheet.loading": "正在加载电子表格预览：{name}…",
+  "filemgr.spreadsheet.previewing": "正在预览电子表格：{name}",
+  "filemgr.spreadsheet.failed": "电子表格预览失败：{error}",
+  "external.spreadsheet.title": "电子表格预览",
+  "external.spreadsheet.empty": "此工作表为空。",
+  "external.spreadsheet.empty_workbook": "未找到工作表。",
+  "external.spreadsheet.truncated": "大型工作表已截断以便预览",
+  "external.spreadsheet.failed": "电子表格预览失败：{error}",
+  "external.menu.open_spreadsheet_preview": "打开电子表格预览"
 }

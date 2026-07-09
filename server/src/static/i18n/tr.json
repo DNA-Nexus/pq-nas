@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Kilitleniyor…",
   "filemgr.locks.lock_failed": "Kilitleme başarısız: {error}",
   "filemgr.locks.unlocking": "Kilit açılıyor…",
-  "filemgr.locks.unlock_failed": "Kilit açma başarısız: {error}"
+  "filemgr.locks.unlock_failed": "Kilit açma başarısız: {error}",
+  "filemgr.spreadsheet.title": "Elektronik tablo önizlemesi",
+  "filemgr.spreadsheet.empty": "Bu sayfa boş.",
+  "filemgr.spreadsheet.empty_workbook": "Sayfa bulunamadı.",
+  "filemgr.spreadsheet.truncated": "büyük tablo önizleme için kısaltıldı",
+  "filemgr.spreadsheet.loading": "Elektronik tablo önizlemesi yükleniyor: {name}…",
+  "filemgr.spreadsheet.previewing": "Elektronik tablo önizleniyor: {name}",
+  "filemgr.spreadsheet.failed": "Elektronik tablo önizlemesi başarısız: {error}",
+  "external.spreadsheet.title": "Elektronik tablo önizlemesi",
+  "external.spreadsheet.empty": "Bu sayfa boş.",
+  "external.spreadsheet.empty_workbook": "Sayfa bulunamadı.",
+  "external.spreadsheet.truncated": "büyük tablo önizleme için kısaltıldı",
+  "external.spreadsheet.failed": "Elektronik tablo önizlemesi başarısız: {error}",
+  "external.menu.open_spreadsheet_preview": "Elektronik tablo önizlemesini aç"
 }

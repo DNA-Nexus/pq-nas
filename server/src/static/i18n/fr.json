@@ -5532,5 +5532,18 @@
   "filemgr.locks.locking": "Verrouillage…",
   "filemgr.locks.lock_failed": "Échec du verrouillage : {error}",
   "filemgr.locks.unlocking": "Déverrouillage…",
-  "filemgr.locks.unlock_failed": "Échec du déverrouillage : {error}"
+  "filemgr.locks.unlock_failed": "Échec du déverrouillage : {error}",
+  "filemgr.spreadsheet.title": "Aperçu de feuille de calcul",
+  "filemgr.spreadsheet.empty": "Cette feuille est vide.",
+  "filemgr.spreadsheet.empty_workbook": "Aucune feuille trouvée.",
+  "filemgr.spreadsheet.truncated": "grande feuille tronquée pour l’aperçu",
+  "filemgr.spreadsheet.loading": "Chargement de l’aperçu de la feuille de calcul : {name}…",
+  "filemgr.spreadsheet.previewing": "Aperçu de la feuille de calcul : {name}",
+  "filemgr.spreadsheet.failed": "Échec de l’aperçu de la feuille de calcul : {error}",
+  "external.spreadsheet.title": "Aperçu de feuille de calcul",
+  "external.spreadsheet.empty": "Cette feuille est vide.",
+  "external.spreadsheet.empty_workbook": "Aucune feuille trouvée.",
+  "external.spreadsheet.truncated": "grande feuille tronquée pour l’aperçu",
+  "external.spreadsheet.failed": "Échec de l’aperçu de la feuille de calcul : {error}",
+  "external.menu.open_spreadsheet_preview": "Ouvrir l’aperçu de la feuille de calcul"
 }

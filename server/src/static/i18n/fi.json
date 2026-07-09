@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Lukitaan…",
   "filemgr.locks.lock_failed": "Lukitus epäonnistui: {error}",
   "filemgr.locks.unlocking": "Poistetaan lukitusta…",
-  "filemgr.locks.unlock_failed": "Lukituksen poisto epäonnistui: {error}"
+  "filemgr.locks.unlock_failed": "Lukituksen poisto epäonnistui: {error}",
+  "filemgr.spreadsheet.title": "Laskentataulukon esikatselu",
+  "filemgr.spreadsheet.empty": "Tämä taulukon välilehti on tyhjä.",
+  "filemgr.spreadsheet.empty_workbook": "Välilehtiä ei löytynyt.",
+  "filemgr.spreadsheet.truncated": "Suuri taulukko katkaistiin esikatselua varten.",
+  "filemgr.spreadsheet.loading": "Ladataan laskentataulukon esikatselua: {name}…",
+  "filemgr.spreadsheet.previewing": "Esikatsellaan laskentataulukkoa: {name}",
+  "filemgr.spreadsheet.failed": "Laskentataulukon esikatselu epäonnistui: {error}",
+  "external.spreadsheet.title": "Laskentataulukon esikatselu",
+  "external.spreadsheet.empty": "Tämä taulukon välilehti on tyhjä.",
+  "external.spreadsheet.empty_workbook": "Välilehtiä ei löytynyt.",
+  "external.spreadsheet.truncated": "Suuri taulukko katkaistiin esikatselua varten.",
+  "external.spreadsheet.failed": "Laskentataulukon esikatselu epäonnistui: {error}",
+  "external.menu.open_spreadsheet_preview": "Avaa laskentataulukon esikatselu"
 }
