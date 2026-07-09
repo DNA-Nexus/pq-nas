@@ -591,18 +591,9 @@ Create `/etc/pqnas/pqnas.env`:
 
 ```bash
 sudo tee /etc/pqnas/pqnas.env >/dev/null <<'EOF'
-PQNAS_ROOT=/srv/pqnas
 PQNAS_CONFIG=/etc/pqnas
 
-PQNAS_ADMIN_SETTINGS_PATH=/etc/pqnas/admin_settings.json
-PQNAS_POLICY_PATH=/etc/pqnas/policy.json
-PQNAS_USERS_PATH=/etc/pqnas/users.json
-PQNAS_SHARES_PATH=/etc/pqnas/shares.json
-PQNAS_POOLS_PATH=/etc/pqnas/pools.json
-PQNAS_APP_AUTH_PATH=/etc/pqnas/app_auth.json
 
-PQNAS_AUDIT_DIR=/srv/pqnas/audit
-PQNAS_TMP_DIR=/srv/pqnas/tmp
 
 PQNAS_DATA_ROOT=/srv/pqnas/data
 PQNAS_STATIC_ROOT=/opt/pqnas/static

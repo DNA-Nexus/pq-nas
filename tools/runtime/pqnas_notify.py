@@ -8,7 +8,7 @@ Runs from systemd timers:
 
 Reads:
   - /etc/pqnas/pqnas.env
-  - PQNAS_NOTIFICATIONS_PATH, default /etc/pqnas/notifications.json
+  - notifications.json from the trusted config root
 
 Secrets:
   - Telegram bot token is read from server-side config only.
@@ -123,13 +123,38 @@ def save_json_private(path: Path, data: Any) -> None:
     os.chmod(path, 0o600)
 
 
+def normalized_deployment_root_or_default(raw: str, default: Path) -> Path:
+    # Security: notification worker roots are deployment configuration. Accept
+    # only absolute, normalized, non-root paths so settings/users/data lookups
+    # cannot be redirected with relative or ambiguous env values.
+    if not raw:
+        return default
+
+    candidate = Path(raw).expanduser()
+    try:
+        candidate = candidate.resolve(strict=False)
+    except Exception:
+        return default
+
+    if not candidate.is_absolute() or candidate == Path("/"):
+        return default
+
+    return candidate
+
+
 def config_paths(env: Dict[str, str]) -> Tuple[Path, Path, Path]:
-    settings = Path(env.get("PQNAS_NOTIFICATIONS_PATH") or str(DEFAULT_SETTINGS_PATH))
+    config_root = normalized_deployment_root_or_default(
+        env.get("PQNAS_CONFIG_ROOT") or env.get("PQNAS_CONFIG") or env.get("PQNAS_CONFIG_DIR") or "",
+        Path("/etc/pqnas"),
+    )
 
-    config_root = Path(env.get("PQNAS_CONFIG") or env.get("PQNAS_CONFIG_DIR") or "/etc/pqnas")
-    users = Path(env.get("PQNAS_USERS_PATH") or str(config_root / "users.json"))
+    settings = config_root / "notifications.json"
+    users = config_root / "users.json"
 
-    data_root = Path(env.get("PQNAS_DATA_ROOT") or "/srv/pqnas/data")
+    data_root = normalized_deployment_root_or_default(
+        env.get("PQNAS_DATA_ROOT") or "",
+        Path("/srv/pqnas/data"),
+    )
     return settings, users, data_root
 
 
