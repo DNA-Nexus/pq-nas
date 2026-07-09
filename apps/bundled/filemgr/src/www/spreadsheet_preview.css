@@ -1,0 +1,330 @@
+.spreadsheetPreviewModal {
+  --spreadsheet-overlay: var(--fm_modal_overlay, var(--modal-backdrop, var(--overlay-bg)));
+  --spreadsheet-surface: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
+  --spreadsheet-surface-2: var(--elevated-bg, var(--fm_surface2, var(--panel2, var(--spreadsheet-surface))));
+  --spreadsheet-header-bg: var(--sheet-header-bg, var(--table-header-bg, var(--spreadsheet-surface-2)));
+  --spreadsheet-cell-bg: var(--sheet-cell-bg, var(--table-cell-bg, var(--spreadsheet-surface)));
+  --spreadsheet-muted-text: var(--muted-text, var(--fg-dim, var(--text)));
+
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 9999;
+  background: var(--spreadsheet-overlay);
+  padding: 22px;
+  box-sizing: border-box;
+}
+
+.spreadsheetPreviewModal.show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spreadsheetPreviewBox {
+  width: min(1320px, 96vw);
+  height: min(860px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--spreadsheet-surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg, var(--shadow));
+  resize: none;
+  min-width: min(720px, 96vw);
+  min-height: min(420px, 92vh);
+  max-width: 96vw;
+  max-height: 92vh;
+  position: relative;
+}
+
+.spreadsheetPreviewHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  user-select: none;
+  background: var(--spreadsheet-surface-2);
+}
+
+.spreadsheetPreviewTitleWrap {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spreadsheetPreviewTitle {
+  font-weight: 900;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spreadsheetPreviewPath {
+  color: var(--spreadsheet-muted-text);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spreadsheetPreviewActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.spreadsheetPreviewInfo {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--spreadsheet-muted-text);
+  background: var(--spreadsheet-surface);
+}
+
+.spreadsheetPreviewTabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  background: var(--spreadsheet-surface);
+}
+
+.spreadsheetPreviewTab {
+  border: 1px solid var(--border);
+  background: var(--button-bg, var(--spreadsheet-surface-2));
+  color: var(--button-text, var(--text));
+  border-radius: 999px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.spreadsheetPreviewTab.active {
+  background: var(--accent-bg, var(--button-active-bg, var(--button-bg, var(--spreadsheet-surface-2))));
+  color: var(--accent-text, var(--button-text, var(--text)));
+  border-color: var(--accent, var(--border));
+}
+
+.spreadsheetPreviewBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--spreadsheet-surface);
+}
+
+.spreadsheetPreviewTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 13px;
+}
+
+.spreadsheetPreviewTable th,
+.spreadsheetPreviewTable td {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  min-width: 96px;
+  max-width: 360px;
+  height: 28px;
+  vertical-align: top;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spreadsheetPreviewTable thead th,
+.spreadsheetPreviewTable .rowHead {
+  background: var(--spreadsheet-header-bg);
+  color: var(--table-header-text, var(--text));
+  font-weight: 900;
+}
+
+.spreadsheetPreviewTable td {
+  background: var(--spreadsheet-cell-bg);
+  color: var(--table-cell-text, var(--text));
+}
+
+.spreadsheetPreviewTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: center;
+}
+
+.spreadsheetPreviewTable .rowHead {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 54px;
+  width: 54px;
+  text-align: right;
+  font-weight: 800;
+}
+
+.spreadsheetPreviewTable thead .corner {
+  left: 0;
+  z-index: 4;
+}
+
+.spreadsheetPreviewEmpty,
+.spreadsheetPreviewError {
+  padding: 22px;
+  color: var(--text);
+}
+
+.spreadsheetPreviewError {
+  color: var(--danger, var(--text));
+}
+
+@media (max-width: 720px) {
+  .spreadsheetPreviewModal { padding: 8px; }
+  .spreadsheetPreviewBox {
+    width: 100%;
+    height: 96vh;
+    border-radius: 12px;
+    resize: none;
+    min-width: 0;
+    min-height: 0;
+  }
+  .spreadsheetPreviewHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .spreadsheetPreviewActions {
+    width: 100%;
+  }
+}
+
+
+.spreadsheetPreviewResizeHandle {
+  position: absolute;
+  z-index: 8;
+  background: var(--border2, var(--border));
+  opacity: .42;
+  touch-action: none;
+}
+
+.spreadsheetPreviewResizeHandle:hover,
+.spreadsheetPreviewResizeHandle.active {
+  opacity: .78;
+}
+
+.spreadsheetPreviewResizeRight {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.spreadsheetPreviewResizeBottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+@media (max-width: 720px) {
+  .spreadsheetPreviewResizeHandle {
+    display: none;
+  }
+}
+
+/* pqnas-spreadsheet-edge-resize-rails-20260709
+   Visible token-based resize rails. Keep them out of the table scrollbars:
+   right rail gets its own reserved strip, bottom rail is in normal flex flow. */
+.spreadsheetPreviewHead,
+.spreadsheetPreviewInfo,
+.spreadsheetPreviewTabs,
+.spreadsheetPreviewBody {
+  margin-right: 14px;
+}
+
+.spreadsheetPreviewResizeHandle {
+  background: var(--accent, var(--border2, var(--border)));
+  opacity: .62;
+}
+
+.spreadsheetPreviewResizeHandle:hover,
+.spreadsheetPreviewResizeHandle.active {
+  opacity: .88;
+}
+
+.spreadsheetPreviewResizeRight {
+  top: 0;
+  right: 0;
+  bottom: 14px;
+  width: 14px;
+  cursor: ew-resize;
+  border-left: 1px solid var(--border);
+}
+
+.spreadsheetPreviewResizeBottom {
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  width: auto;
+  height: 14px;
+  flex: 0 0 14px;
+  cursor: ns-resize;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .spreadsheetPreviewHead,
+  .spreadsheetPreviewInfo,
+  .spreadsheetPreviewTabs,
+  .spreadsheetPreviewBody {
+    margin-right: 0;
+  }
+}
+
+/* pqnas-spreadsheet-corner-resize-handle-20260709
+   Corner handle is separate from side/bottom rails so it stays reachable. */
+.spreadsheetPreviewResizeRight {
+  bottom: 16px;
+}
+
+.spreadsheetPreviewResizeBottom {
+  right: 16px;
+}
+
+.spreadsheetPreviewResizeCorner {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  z-index: 10;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: var(--accent, var(--border2, var(--border)));
+  opacity: .76;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.spreadsheetPreviewResizeCorner:hover,
+.spreadsheetPreviewResizeCorner.active {
+  opacity: .95;
+}
+
+@media (max-width: 720px) {
+  .spreadsheetPreviewResizeCorner {
+    display: none;
+  }
+}
+

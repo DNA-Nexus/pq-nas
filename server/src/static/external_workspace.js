@@ -2323,7 +2323,7 @@ html[data-theme="bright"] .externalDialogInput{
         "java", "kt", "kts", "go", "rs", "py", "rb", "php", "pl", "pm", "lua",
         "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd",
         "ini", "cfg", "conf", "cnf", "env", "properties",
-        "yaml", "yml", "toml", "sql", "csv", "tsv",
+        "yaml", "yml", "toml", "sql",
         "cmake", "mk", "make", "gradle", "dockerfile",
         "service", "timer", "socket", "desktop", "rules",
         "srt", "vtt", "svg"
@@ -2349,6 +2349,15 @@ html[data-theme="bright"] .externalDialogInput{
 
     function isTextFileItem(item) {
         return !!item && !item.isDir && isTextPreviewableName(item.name || item.rel || "");
+    }
+
+    function isSpreadsheetPreviewableName(name) {
+        const mod = window.PQNAS_EXTERNAL_SPREADSHEET_PREVIEW;
+        return !!(mod && typeof mod.isSpreadsheetName === "function" && mod.isSpreadsheetName(name));
+    }
+
+    function isSpreadsheetFileItem(item) {
+        return !!item && !item.isDir && isSpreadsheetPreviewableName(item.name || item.rel || "");
     }
 
     function configureExternalItemContextMenu(item) {
@@ -2400,14 +2409,17 @@ html[data-theme="bright"] .externalDialogInput{
         }
 
         const isText = isTextFileItem(item);
+        const isSpreadsheet = isSpreadsheetFileItem(item);
 
         if (previewBtn) {
             previewBtn.classList.remove("hidden");
             previewBtn.style.display = "";
             previewBtn.textContent = isText
                 ? tr("external.menu.open_edit_text", null, "Open / edit text?")
-                : tr("external.menu.open_preview", null, "Open preview");
-            previewBtn.disabled = item.isDir || !isText;
+                : (isSpreadsheet
+                    ? tr("external.menu.open_spreadsheet_preview", null, "Open spreadsheet preview")
+                    : tr("external.menu.open_preview", null, "Open preview"));
+            previewBtn.disabled = item.isDir || !(isText || isSpreadsheet);
         }
 
         if (openBtn) {
@@ -4333,6 +4345,14 @@ resetMarqueeVisual();
             loadFiles(item.rel).catch((e) => setStatus(tr("external.open_folder_failed", { error: e.message || e }, `Open folder failed: ${e.message || e}`), "bad"));
             return;
         }
+        const spreadsheetPreview = window.PQNAS_EXTERNAL_SPREADSHEET_PREVIEW;
+        if (spreadsheetPreview && typeof spreadsheetPreview.isSpreadsheetName === "function" &&
+            typeof spreadsheetPreview.open === "function" &&
+            spreadsheetPreview.isSpreadsheetName(item.name || item.rel || "")) {
+            spreadsheetPreview.open(item);
+            return;
+        }
+
         const pdfPreview = window.PQNAS_EXTERNAL_PDF_PREVIEW;
         if (pdfPreview && typeof pdfPreview.isPdfName === "function" &&
             typeof pdfPreview.open === "function" &&
@@ -4835,11 +4855,14 @@ resetMarqueeVisual();
                 }
             } else {
                 const canTextPreview = isTextPreviewableName(contextItem.name || contextItem.rel || "");
+                const canSpreadsheetPreview = isSpreadsheetPreviewableName(contextItem.name || contextItem.rel || "");
                 if (openBtn) openBtn.textContent = tr("external.menu.open_original", null, "Open original");
                 if (downloadBtn) downloadBtn.textContent = tr("external.menu.download", null, "Download");
                 if (previewBtn) {
-                    previewBtn.textContent = tr("external.menu.open_edit_text", null, "Open / edit text?");
-                    previewBtn.disabled = !canTextPreview;
+                    previewBtn.textContent = canSpreadsheetPreview
+                        ? tr("external.menu.open_spreadsheet_preview", null, "Open spreadsheet preview")
+                        : tr("external.menu.open_edit_text", null, "Open / edit text?");
+                    previewBtn.disabled = !(canTextPreview || canSpreadsheetPreview);
                 }
             }
 
@@ -5208,10 +5231,13 @@ resetMarqueeVisual();
                 downloadBtn.disabled = false;
             } else {
                 const canTextPreview = isTextPreviewableName(contextItem && (contextItem.name || contextItem.rel) || "");
+                const canSpreadsheetPreview = isSpreadsheetPreviewableName(contextItem && (contextItem.name || contextItem.rel) || "");
                 openBtn.textContent = tr("external.menu.open_original", null, "Open original");
                 downloadBtn.textContent = tr("external.menu.download", null, "Download");
-                previewBtn.textContent = tr("external.menu.open_edit_text", null, "Open / edit text?");
-                previewBtn.disabled = !canTextPreview;
+                previewBtn.textContent = canSpreadsheetPreview
+                    ? tr("external.menu.open_spreadsheet_preview", null, "Open spreadsheet preview")
+                    : tr("external.menu.open_edit_text", null, "Open / edit text?");
+                previewBtn.disabled = !(canTextPreview || canSpreadsheetPreview);
                 downloadBtn.disabled = false;
             }
 
@@ -5331,6 +5357,14 @@ resetMarqueeVisual();
         }
 
         if (action === "preview") {
+            if (isSpreadsheetFileItem(item)) {
+                const spreadsheetPreview = window.PQNAS_EXTERNAL_SPREADSHEET_PREVIEW;
+                if (spreadsheetPreview && typeof spreadsheetPreview.open === "function") {
+                    spreadsheetPreview.open(item);
+                    return;
+                }
+            }
+
             if (!isTextFileItem(item)) {
                 return showPlaceholder("Preview");
             }
