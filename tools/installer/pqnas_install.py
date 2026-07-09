@@ -253,7 +253,10 @@ def install_pqnas_smartctl_sudoers(log: Optional[Log] = None) -> None:
     smartctl access while still allowing the supported drive health probes and
     SMART self-test start commands.
     """
-    asset_root = resolve_asset_root()
+    # Security: install the guarded smartctl wrapper from the already resolved
+    # package/repo asset root. Do not resolve paths through an undefined helper
+    # or runtime environment at sudoers-install time.
+    asset_root = ASSET_ROOT
     wrapper_src = find_smartctl_wrapper_source(asset_root)
     wrapper_dst = "/usr/local/sbin/pqnas-smartctl"
 
