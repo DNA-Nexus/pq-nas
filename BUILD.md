@@ -602,7 +602,6 @@ PQNAS_POOLS_PATH=/etc/pqnas/pools.json
 PQNAS_APP_AUTH_PATH=/etc/pqnas/app_auth.json
 
 PQNAS_AUDIT_DIR=/srv/pqnas/audit
-PQNAS_LOG_DIR=/srv/pqnas/logs
 PQNAS_TMP_DIR=/srv/pqnas/tmp
 
 PQNAS_DATA_ROOT=/srv/pqnas/data

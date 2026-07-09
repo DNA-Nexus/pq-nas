@@ -2041,6 +2041,7 @@ Do not write removed overrides such as:
 - `PQNAS_NOTIFICATIONS_PATH`
 - `PQNAS_UPDATE_APPLY_HELPER_PATH`
 - `PQNAS_NODUS_IDENTITY_DIR`
+- `PQNAS_LOG_DIR`
 
 Allowed pattern:
 
