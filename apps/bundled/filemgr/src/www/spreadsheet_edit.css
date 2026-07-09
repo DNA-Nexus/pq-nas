@@ -1,0 +1,197 @@
+.spreadsheetEditorModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 24%, transparent));
+  backdrop-filter: blur(8px);
+}
+
+.spreadsheetEditorModal.show {
+  display: flex;
+}
+
+.spreadsheetEditorBox {
+  width: min(1180px, 96vw);
+  height: min(820px, 92vh);
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  overflow: hidden;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-lg, 18px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetEditorHead {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  background: var(--panel-2, var(--panel));
+}
+
+.spreadsheetEditorTitle {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.spreadsheetEditorPath {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spreadsheetEditorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.spreadsheetEditorInfo {
+  min-height: 1.4em;
+  padding: 9px 14px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  font-size: 13px;
+}
+
+.spreadsheetEditorInfo[data-kind="ok"] {
+  color: var(--ok, var(--accent));
+}
+
+.spreadsheetEditorInfo[data-kind="warn"] {
+  color: var(--warn, var(--accent));
+}
+
+.spreadsheetEditorInfo[data-kind="err"] {
+  color: var(--bad, var(--danger));
+}
+
+.spreadsheetEditorTabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  background: var(--panel);
+}
+
+.spreadsheetEditorTab {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--button-bg, var(--panel-2, var(--panel)));
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.spreadsheetEditorTab.active {
+  border-color: var(--accent, var(--link));
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetEditorBody {
+  overflow: auto;
+  background: var(--panel);
+}
+
+.spreadsheetEditorTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 13px;
+}
+
+.spreadsheetEditorTable th,
+.spreadsheetEditorTable td {
+  border-right: 1px solid var(--border, var(--panel-border));
+  border-bottom: 1px solid var(--border, var(--panel-border));
+}
+
+.spreadsheetEditorTable th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 96px;
+  padding: 7px;
+  background: var(--panel-2, var(--panel));
+  color: var(--muted);
+  text-align: center;
+  font-weight: 850;
+}
+
+.spreadsheetEditorTable .rowHead {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 44px;
+  width: 44px;
+  background: var(--panel-2, var(--panel));
+}
+
+.spreadsheetEditorTable .corner {
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+
+.spreadsheetEditorTable td {
+  min-width: 120px;
+  padding: 0;
+  background: var(--input-bg, var(--panel));
+}
+
+.spreadsheetEditorTable input {
+  width: 100%;
+  min-width: 120px;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+
+.spreadsheetEditorTable input:focus {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorError {
+  margin: 16px;
+  padding: 12px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  color: var(--bad, var(--danger));
+  background: var(--panel-2, var(--panel));
+}
+
+@media (max-width: 760px) {
+  .spreadsheetEditorModal {
+    align-items: stretch;
+    padding: 8px;
+  }
+
+  .spreadsheetEditorBox {
+    width: 100%;
+    height: 100%;
+  }
+
+  .spreadsheetEditorHead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .spreadsheetEditorActions {
+    justify-content: flex-start;
+  }
+}

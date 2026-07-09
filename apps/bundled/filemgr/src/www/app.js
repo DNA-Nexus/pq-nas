@@ -7893,6 +7893,32 @@ function describeMoveItems(items) {
     }
     await uploadRelFiles([{ rel: name, file, source: "generated" }]);
   };
+  FM.saveGeneratedFileOverwrite = async (file, relPath) => {
+    const rel = normalizeRelPath(relPath || (file && file.name) || "");
+    const cur = normalizeRelPath(curPath || "");
+    if (!file || !rel || !validateRelPath(rel)) {
+      throw new Error("invalid generated file path");
+    }
+
+    let leaf = rel;
+    if (cur) {
+      if (!rel.startsWith(cur + "/")) {
+        throw new Error("generated overwrite is outside the current folder");
+      }
+      leaf = rel.slice(cur.length + 1);
+    }
+
+    // Generated overwrites are confined to a file in the current folder;
+    // the editor cannot supply an arbitrary path or traverse directories.
+    if (!leaf || !validateRelPath(leaf) || parentPath(leaf)) {
+      throw new Error("invalid generated overwrite file name");
+    }
+
+    await uploadFileSmartTo(leaf, file, null, { overwrite: true });
+    await refreshQuotaInfoIfNeeded(true).then(applyQuotaUi).catch(() => {});
+    clearFileListCache();
+    await load(true);
+  };
   load().catch((e) => {
     console.warn("Initial load failed:", e);
   });

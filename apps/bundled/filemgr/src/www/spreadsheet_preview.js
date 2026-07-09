@@ -18,6 +18,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let tabsEl = null;
   let bodyEl = null;
   let downloadBtn = null;
+  let editBtn = null;
+  let currentEditContext = null;
+  let spreadsheetEditLoadPromise = null;
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -52,6 +55,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return SPREADSHEET_EXTS.has(fileExtLower(name));
   }
 
+  function canEditFor(item) {
+    if (!item || item.type !== "file") return false;
+    if (fileExtLower(item.name || item.rel || "") !== "xlsx") return false;
+    try {
+      if (FM && typeof FM.canWriteCurrentScope === "function") return !!FM.canWriteCurrentScope();
+    } catch (_) {}
+    return true;
+  }
+
   function safeName(item) {
     return String(item && item.name ? item.name : tr("filemgr.spreadsheet.title", null, "Spreadsheet preview"));
   }
@@ -70,6 +82,72 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return FM.apiGetUrl(rel);
     }
     return `/api/v4/files/get?path=${encodeURIComponent(rel || "")}`;
+  }
+
+  function loadScriptOnce(src, attrName) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[${attrName}="1"]`);
+      if (existing) {
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", () => reject(new Error(`failed to load ${src}`)), { once: true });
+        window.setTimeout(resolve, 0);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = src;
+      script.defer = true;
+      script.setAttribute(attrName, "1");
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`failed to load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  function loadStyleOnce(href, attrName) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`link[${attrName}="1"]`);
+      if (existing) {
+        window.setTimeout(resolve, 0);
+        return;
+      }
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.setAttribute(attrName, "1");
+      link.onload = resolve;
+      link.onerror = () => reject(new Error(`failed to load ${href}`));
+      document.head.appendChild(link);
+    });
+  }
+
+  function ensureSpreadsheetEditor() {
+    if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") {
+      return Promise.resolve(FM.spreadsheetEdit);
+    }
+    if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
+
+    spreadsheetEditLoadPromise = Promise.all([
+      loadStyleOnce("./spreadsheet_edit.css", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-1", "data-pqnas-spreadsheet-edit-js")
+    ]).then(() => {
+      if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
+      throw new Error("spreadsheet editor did not register");
+    });
+
+    return spreadsheetEditLoadPromise;
+  }
+
+  async function openSpreadsheetEditor() {
+    if (!currentEditContext) return;
+    try {
+      setInfo(tr("filemgr.spreadsheet.editor_loading", null, "Loading spreadsheet editor…"), "warn");
+      const editor = await ensureSpreadsheetEditor();
+      close();
+      editor.open(currentEditContext);
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : e);
+      setInfo(tr("filemgr.spreadsheet_editor.failed", { error: msg }, `Spreadsheet editor failed: ${msg}`), "err");
+    }
   }
 
   function columnName(idx) {
@@ -282,6 +360,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <div id="spreadsheetPreviewPath" class="spreadsheetPreviewPath mono"></div>
           </div>
           <div class="spreadsheetPreviewActions">
+            <button id="spreadsheetPreviewEdit" type="button" class="btn secondary" hidden>${tr("filemgr.spreadsheet.edit", null, "Edit")}</button>
             <button id="spreadsheetPreviewDownload" type="button" class="btn secondary">${tr("filemgr.preview.download", null, "Download")}</button>
             <button id="spreadsheetPreviewClose" type="button" class="btn secondary">${tr("filemgr.preview.close", null, "Close")}</button>
           </div>
@@ -302,7 +381,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     tabsEl = modal.querySelector("#spreadsheetPreviewTabs");
     bodyEl = modal.querySelector("#spreadsheetPreviewBody");
     downloadBtn = modal.querySelector("#spreadsheetPreviewDownload");
+    editBtn = modal.querySelector("#spreadsheetPreviewEdit");
 
+    editBtn?.addEventListener("click", openSpreadsheetEditor);
     modal.querySelector("#spreadsheetPreviewClose")?.addEventListener("click", close);
     modal.addEventListener("click", (ev) => {
       if (ev.target === modal) close();
@@ -460,11 +541,25 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const ext = fileExtLower(item.name || rel);
     const downloadUrl = getDownloadUrl(rel);
 
+    currentEditContext = {
+      item,
+      rel,
+      name: safeName(item),
+      url: downloadUrl,
+      ext
+    };
+
     if (titleEl) titleEl.textContent = tr("filemgr.spreadsheet.title", null, "Spreadsheet preview");
     if (pathEl) pathEl.textContent = "/" + rel;
     if (tabsEl) tabsEl.innerHTML = "";
     if (bodyEl) bodyEl.innerHTML = "";
     if (downloadBtn) downloadBtn.onclick = () => { window.location.href = downloadUrl; };
+    if (editBtn) {
+      const editable = canEditFor(item);
+      editBtn.hidden = !editable;
+      editBtn.disabled = !editable;
+      editBtn.title = tr("filemgr.spreadsheet.edit_title", null, "Edit spreadsheet");
+    }
 
     show();
     setInfo(tr("common.loading", null, "Loading…"));
