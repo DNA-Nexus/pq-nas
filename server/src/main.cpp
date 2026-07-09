@@ -617,22 +617,33 @@ static bool dir_exists(const std::string& p) {
     return std::filesystem::exists(p, ec) && !ec && std::filesystem::is_directory(p, ec);
 }
 
-static std::string static_root_dir() {
-    // 1) explicit override
-    const std::string env = getenv_str("PQNAS_STATIC_ROOT");
-    if (!env.empty()) return env;
+static std::filesystem::path normalized_deployment_root_or_empty(const std::string& raw) {
+    // Security: these roots are deployment-level configuration. Accept only
+    // absolute, normalized, non-root paths so static/app/config lookups cannot
+    // be redirected by relative or ambiguous environment values.
+    if (raw.empty()) return {};
+    const std::filesystem::path candidate = std::filesystem::path(raw).lexically_normal();
+    if (candidate.empty() || !candidate.is_absolute() || candidate == std::filesystem::path("/")) {
+        return {};
+    }
+    return candidate;
+}
 
-    // 2) service-friendly default
+static std::string static_root_dir() {
+    const std::filesystem::path env =
+        normalized_deployment_root_or_empty(getenv_str("PQNAS_STATIC_ROOT"));
+    if (!env.empty()) return env.string();
+
     const std::string opt = "/opt/pqnas/static";
     if (dir_exists(opt)) return opt;
 
-    // 3) dev fallback
     return (std::filesystem::path(REPO_ROOT) / "server/src/static").string();
 }
 
 static std::string apps_root_dir() {
-    const std::string env = getenv_str("PQNAS_APPS_ROOT");
-    if (!env.empty()) return env;
+    const std::filesystem::path env =
+        normalized_deployment_root_or_empty(getenv_str("PQNAS_APPS_ROOT"));
+    if (!env.empty()) return env.string();
 
     const std::string srv = "/srv/pqnas/apps";
     if (dir_exists(srv)) return srv;
@@ -641,8 +652,14 @@ static std::string apps_root_dir() {
 }
 
 static std::string config_root_dir() {
-    const std::string env = getenv_str("PQNAS_CONFIG_ROOT");
-    if (!env.empty()) return env;
+    const std::filesystem::path env =
+        normalized_deployment_root_or_empty(getenv_str("PQNAS_CONFIG_ROOT"));
+    if (!env.empty()) return env.string();
+
+    const std::filesystem::path runtime_config = pqnas::config_root_path();
+    if (!runtime_config.empty() && dir_exists(runtime_config.string())) {
+        return runtime_config.string();
+    }
 
     const std::string srv = "/srv/pqnas/config";
     if (dir_exists(srv)) return srv;

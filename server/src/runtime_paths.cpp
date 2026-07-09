@@ -103,14 +103,19 @@ namespace pqnas {
     }
 
     std::string config_root_dir() {
-        const std::string explicit_root = getenv_str_local("PQNAS_CONFIG_ROOT");
-        if (!explicit_root.empty()) return explicit_root;
+        // Security: config root controls policy, users, auth state, and other
+        // trusted server configuration. Keep the deployment override, but only
+        // accept absolute, normalized, non-root paths.
+        const std::filesystem::path explicit_root =
+            absolute_normalized_path_or_empty_local(getenv_str_local("PQNAS_CONFIG_ROOT"));
+        if (!explicit_root.empty()) return explicit_root.string();
 
         // Existing deployments use PQNAS_CONFIG for the runtime config
         // directory. Keep PQNAS_CONFIG_ROOT as the clearer new name, but honor
-        // PQNAS_CONFIG so OPAQUE files land beside the rest of PQ-NAS config.
-        const std::string legacy_config = getenv_str_local("PQNAS_CONFIG");
-        if (!legacy_config.empty()) return legacy_config;
+        // validated PQNAS_CONFIG so OPAQUE files land beside the rest of config.
+        const std::filesystem::path legacy_config =
+            absolute_normalized_path_or_empty_local(getenv_str_local("PQNAS_CONFIG"));
+        if (!legacy_config.empty()) return legacy_config.string();
 
         return "/etc/pqnas";
     }

@@ -2070,3 +2070,27 @@ Allowed pattern:
 Security reason: update packages and apply staging are security-sensitive.
 Relative, ambiguous, or root-level update directories can redirect package state
 outside the expected service-owned update tree.
+
+## Deployment root environment variables
+
+Deployment-level root environment variables may be supported, but their values
+must be validated before use.
+
+This applies to roots such as:
+
+- `PQNAS_STATIC_ROOT`
+- `PQNAS_APPS_ROOT`
+- `PQNAS_CONFIG_ROOT`
+- legacy `PQNAS_CONFIG`
+
+Allowed pattern:
+
+- accept only absolute paths
+- normalize paths before deriving child paths
+- reject empty values and filesystem root `/`
+- fall back to the fixed installed default or repo-local development path
+- keep static assets, bundled apps, and config state on separate explicit roots
+
+Security reason: deployment roots are trust boundaries. Relative, ambiguous, or
+root-level values can redirect static content, app bundles, or config state away
+from the expected service-owned layout.
