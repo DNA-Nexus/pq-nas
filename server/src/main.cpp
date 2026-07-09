@@ -9291,9 +9291,15 @@ int main()
 
 
 
-    // If running installed (static root set), require PQNAS_DATA_ROOT explicitly.
-    if (!getenv_str("PQNAS_STATIC_ROOT").empty() && getenv_str("PQNAS_DATA_ROOT").empty()) {
-        std::cerr << "PQNAS_DATA_ROOT is required when PQNAS_STATIC_ROOT is set (installed mode)." << std::endl;
+    // If running installed (static root set), require a valid explicit
+    // PQNAS_DATA_ROOT. This prevents installed mode from silently falling back
+    // to exe_dir()/data when the data-root override is missing or invalid.
+    const bool installed_static_root_configured =
+        !normalized_deployment_root_or_empty(getenv_str("PQNAS_STATIC_ROOT")).empty();
+    const bool installed_data_root_configured =
+        !normalized_deployment_root_or_empty(getenv_str("PQNAS_DATA_ROOT")).empty();
+    if (installed_static_root_configured && !installed_data_root_configured) {
+        std::cerr << "A valid PQNAS_DATA_ROOT is required when PQNAS_STATIC_ROOT is set (installed mode)." << std::endl;
         return 2;
     }
     std::atomic<bool> snapshots_stop{false};

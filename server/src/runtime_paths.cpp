@@ -73,8 +73,13 @@ namespace pqnas {
     } // namespace
 
     std::string data_root_dir() {
-        const std::string env = getenv_str_local("PQNAS_DATA_ROOT");
-        if (!env.empty()) return env;
+        // Security: data root is deployment-level configuration and is used as
+        // the anchor for user data plus derived runtime siblings such as audit
+        // and temporary staging. Accept only absolute, normalized, non-root
+        // paths so runtime state cannot be redirected by relative values.
+        const std::filesystem::path env_root =
+            absolute_normalized_path_or_empty_local(getenv_str_local("PQNAS_DATA_ROOT"));
+        if (!env_root.empty()) return env_root.string();
 
         const std::string srv = "/srv/pqnas/data";
         if (dir_exists_local(srv)) return srv;

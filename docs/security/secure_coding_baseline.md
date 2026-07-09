@@ -2094,3 +2094,20 @@ Allowed pattern:
 Security reason: deployment roots are trust boundaries. Relative, ambiguous, or
 root-level values can redirect static content, app bundles, or config state away
 from the expected service-owned layout.
+
+## Data root environment variable
+
+`PQNAS_DATA_ROOT` is deployment-level configuration and may be supported, but
+the value must be validated before use.
+
+Allowed pattern:
+
+- accept only absolute paths
+- normalize the path before deriving child or sibling paths
+- reject empty values and filesystem root `/`
+- fall back to the fixed installed default or repo-local development path
+- require a valid explicit data root when running in installed static-root mode
+
+Security reason: the data root anchors user data and derived runtime siblings
+such as audit logs and temporary staging. Relative, ambiguous, or root-level
+values can redirect runtime state away from the expected service-owned layout.
