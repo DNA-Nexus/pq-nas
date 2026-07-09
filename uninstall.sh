@@ -10,7 +10,7 @@ set -euo pipefail
 # - installer-generated nginx site config, only if it contains our marker
 #
 # Keeps:
-# - /srv/pqnas or configured PQNAS_ROOT data
+# - /srv/pqnas or configured PQNAS_DATA_ROOT data
 # - /etc/pqnas configuration
 # - users, shares, workspaces, storage pools, and user files
 #
@@ -56,7 +56,7 @@ strip_matching_quotes() {
   printf '%s\n' "$s"
 }
 
-read_pqnas_root_from_env() {
+read_pqnas_data_root_from_env() {
   local env="/etc/pqnas/pqnas.env"
   local line=""
   local value=""
@@ -66,7 +66,7 @@ read_pqnas_root_from_env() {
     return 0
   fi
 
-  line="$(grep -E '^[[:space:]]*PQNAS_ROOT[[:space:]]*=' "$env" | tail -n 1 || true)"
+  line="$(grep -E '^[[:space:]]*PQNAS_DATA_ROOT[[:space:]]*=' "$env" | tail -n 1 || true)"
   if [[ -z "$line" ]]; then
     echo ""
     return 0
@@ -272,7 +272,7 @@ confirm() {
   echo "  - optionally remove installer-generated nginx pqnas site config"
   echo
   echo "It will NOT delete:"
-  echo "  - /srv/pqnas or your configured PQNAS_ROOT data"
+  echo "  - /srv/pqnas or your configured PQNAS_DATA_ROOT data"
   echo "  - /etc/pqnas configuration"
   echo "  - users, shares, workspaces, storage pools, or uploaded files"
   echo

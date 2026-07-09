@@ -623,11 +623,11 @@ Recommended future installer behavior for OPAQUE:
 - set mode to `0600`
 - refuse `PQNAS_LOGIN_MODE=opaque` unless helper is installed, unless explicitly allowing scaffold/dev mode
 
-Possible future setting:
+Helper path policy:
 
-```text
-PQNAS_OPAQUE_HELPER=/usr/local/libexec/pqnas/pqnas_opaque_helper
-```
+The helper path is pinned by the server runtime path helper and must not be
+redirected with a runtime environment variable.
+
 
 ## Helper contract draft
 
