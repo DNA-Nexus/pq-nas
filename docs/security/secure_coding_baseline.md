@@ -2052,3 +2052,21 @@ Allowed pattern:
 Security reason: stale env lines make it look like per-file path overrides are
 still supported. That can hide configuration drift and reintroduce split-state
 path bugs later.
+
+## Update Center root path
+
+Update Center root paths are deployment-level configuration and may use a
+supported environment variable such as `PQNAS_UPDATES_ROOT`, but the value must
+be validated before use.
+
+Allowed pattern:
+
+- use a fixed safe fallback such as `/var/lib/pqnas/updates`
+- accept only absolute paths
+- normalize paths before deriving child directories
+- reject empty values and filesystem root `/`
+- derive incoming, staged, work, and state paths from the validated root
+
+Security reason: update packages and apply staging are security-sensitive.
+Relative, ambiguous, or root-level update directories can redirect package state
+outside the expected service-owned update tree.

@@ -457,9 +457,20 @@ std::string update_apply_helper_path() {
 
 
 std::filesystem::path updates_root_dir(const UpdateCenterRoutesDeps& deps) {
+    // Security: update packages and apply staging live under this root. Keep the
+    // deployment override, but only accept absolute, normalized, non-root paths
+    // so update state cannot be redirected via relative or ambiguous paths.
+    const std::filesystem::path fallback("/var/lib/pqnas/updates");
+
     const std::string env = deps.getenv_str ? deps.getenv_str("PQNAS_UPDATES_ROOT") : "";
-    if (!env.empty()) return std::filesystem::path(env);
-    return std::filesystem::path("/var/lib/pqnas/updates");
+    if (env.empty()) return fallback;
+
+    const std::filesystem::path candidate = std::filesystem::path(env).lexically_normal();
+    if (candidate.empty() || !candidate.is_absolute() || candidate == std::filesystem::path("/")) {
+        return fallback;
+    }
+
+    return candidate;
 }
 
 std::filesystem::path update_incoming_dir(const UpdateCenterRoutesDeps& deps) {
