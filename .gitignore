@@ -40,3 +40,6 @@ apps/bundled/*/*.zip
 build-mlkem/
 
 .dart_tool/
+
+# Local runtime/deploy notes
+runtime_paths.local.md
