@@ -1,0 +1,211 @@
+.spreadsheetCreateBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 22%, transparent));
+  backdrop-filter: blur(8px);
+}
+
+.spreadsheetCreateBackdrop[hidden] {
+  display: none;
+}
+
+.spreadsheetCreateCard {
+  width: min(760px, 96vw);
+  max-height: min(760px, 92vh);
+  overflow: auto;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-lg, 18px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetCreateHead,
+.spreadsheetCreateFoot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-color: var(--border, var(--panel-border));
+}
+
+.spreadsheetCreateHead {
+  border-bottom: 1px solid var(--border, var(--panel-border));
+}
+
+.spreadsheetCreateFoot {
+  border-top: 1px solid var(--border, var(--panel-border));
+}
+
+.spreadsheetCreateTitle {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.spreadsheetCreateSub {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.spreadsheetCreateBody {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.spreadsheetCreateTemplates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
+}
+
+.spreadsheetCreateTemplate {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  padding: 14px;
+  text-align: left;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--button-bg, var(--panel-2, var(--panel)));
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.spreadsheetCreateTemplate:hover {
+  border-color: var(--accent, var(--link));
+}
+
+.spreadsheetCreateTemplate[aria-pressed="true"] {
+  border-color: var(--accent, var(--link));
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetCreateTemplateTitle {
+  font-weight: 900;
+}
+
+.spreadsheetCreateTemplateDesc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.spreadsheetCreateForm {
+  display: grid;
+  gap: 12px;
+}
+
+.spreadsheetCreateFolder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--muted);
+}
+
+.spreadsheetCreateFolder strong {
+  color: var(--fg);
+}
+
+.spreadsheetCreateField {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.spreadsheetCreateField input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--input-bg, var(--panel));
+  color: var(--fg);
+  font: inherit;
+}
+
+.spreadsheetCreateStatus {
+  min-height: 1.35em;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.spreadsheetCreateStatus[data-kind="err"] {
+  color: var(--bad, var(--danger));
+}
+
+.spreadsheetCreateStatus[data-kind="warn"] {
+  color: var(--warn, var(--accent));
+}
+
+@media (max-width: 620px) {
+  .spreadsheetCreateBackdrop {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .spreadsheetCreateCard {
+    width: 100%;
+    max-height: 100%;
+  }
+
+  .spreadsheetCreateHead,
+  .spreadsheetCreateFoot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+.fmActionsMenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.fmActionsMenuPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2600;
+  min-width: 190px;
+  display: none;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 24%, transparent));
+}
+
+.fmActionsMenu.open .fmActionsMenuPanel {
+  display: grid;
+  gap: 4px;
+}
+
+.fmActionsMenuItem {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fmActionsMenuItem:hover,
+.fmActionsMenuItem:focus-visible {
+  background: var(--button-bg, var(--panel-2, var(--panel)));
+  outline: none;
+}

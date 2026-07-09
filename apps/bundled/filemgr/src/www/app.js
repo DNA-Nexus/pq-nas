@@ -7884,6 +7884,15 @@ function describeMoveItems(items) {
   FM.isProbablyVideoPreviewableName = isProbablyVideoPreviewableName;
   FM.isProbablyOfficePreviewableName = isProbablyOfficePreviewableName;
   FM.isProbablyAudioPreviewableName = isProbablyAudioPreviewableName;
+  FM.canWriteCurrentScope = canWriteCurrentScope;
+  FM.uploadGeneratedFile = async (file, relName) => {
+    const name = normalizeRelPath(relName || (file && file.name) || "");
+    // Generated files are leaf-only so a crafted name cannot escape the current folder.
+    if (!file || !name || !validateRelPath(name) || parentPath(name)) {
+      throw new Error("invalid generated file name");
+    }
+    await uploadRelFiles([{ rel: name, file, source: "generated" }]);
+  };
   load().catch((e) => {
     console.warn("Initial load failed:", e);
   });
