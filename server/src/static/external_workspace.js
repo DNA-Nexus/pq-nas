@@ -657,6 +657,63 @@ html[data-theme="bright"] .externalDialogInput{
         }
     }
 
+    function externalHoverCommentLinesFromItem(item) {
+        if (!item || typeof item !== "object") return [];
+
+        const out = [];
+        const pushText = (value) => {
+            if (value == null) return;
+
+            if (Array.isArray(value)) {
+                for (const x of value) pushText(x);
+                return;
+            }
+
+            if (typeof value === "object") {
+                pushText(value.body || value.text || value.comment || value.message || value.note || "");
+                return;
+            }
+
+            const ss = String(value || "").trim();
+            if (ss) out.push(ss.replace(/\s+/g, " ").slice(0, 240));
+        };
+
+        pushText(item.comment);
+        pushText(item.comments);
+        pushText(item.note);
+        pushText(item.notes);
+        pushText(item.latest_comment);
+        pushText(item.latestComment);
+        pushText(item.description);
+
+        return out.filter(Boolean).slice(0, 3);
+    }
+
+    function externalHoverTitleForItem(item, rel, name, meta) {
+        const lines = [String(name || "item")];
+        const cleanRel = normalizeRelPath(rel || "");
+
+        if (cleanRel && cleanRel !== String(name || "")) {
+            lines.push("/" + cleanRel);
+        }
+
+        if (meta) lines.push(String(meta));
+
+        if (item && isWorkspaceLinkItem(item) && item.url) {
+            lines.push(String(item.url || "").trim());
+        }
+
+        // Security: keep hover text escaped/native; do not inject comments as HTML.
+        const comments = externalHoverCommentLinesFromItem(item);
+        if (comments.length) {
+            lines.push("");
+            lines.push(tr("external.hover.comments", null, "Comments:"));
+            lines.push(...comments);
+        }
+
+        return lines.join("\n");
+    }
+
     async function apiJson(path, opts = {}) {
         const r = await fetch(path, {
             credentials: "include",
@@ -1885,11 +1942,12 @@ html[data-theme="bright"] .externalDialogInput{
         }));
     }
 
-    function workspaceLinkRowHtml(it) {
+    function workspaceLinkRowHtml(it, hoverTitle = "") {
         const name = String((it && (it.name || it.path)) || "Link");
         const id = String((it && (it.link_id || it.id)) || "");
         const url = String((it && it.url) || "");
         const meta = externalLinkMeta(it);
+        const hover = hoverTitle || externalHoverTitleForItem(it, "", name, meta);
         const mtime = String((it && (it.updated_at_epoch || it.mtime_unix || "")) || "");
         return `
             <div class="fileRow clickable linkRow"
@@ -1900,7 +1958,7 @@ html[data-theme="bright"] .externalDialogInput{
                  data-type="link"
                  data-size="0"
                  data-mtime="${escapeHtml(mtime)}"
-                 title="${escapeHtml(url || name)}">
+                 title="${escapeHtml(hover)}">
                 <div class="fileMain">
                     ${externalLinkIconHtml(it)}
                     <div class="fileText">
@@ -3705,10 +3763,11 @@ resetMarqueeVisual();
                 ? tr("external.trash.type_folder", null, "Folder")
                 : (isLink ? tr("external.links.link", null, "Link") : fmtSize(it.size_bytes || it.size || it.bytes || 0));
             const meta = isLink ? externalLinkMeta(it) : (mtime ? `${size} · ${mtime}` : size);
+            const hover = externalHoverTitleForItem(it, rel, name, meta);
 
             if (isDir) {
                 rows.push(`
-                    <div class="fileRow clickable" data-dir="${escapeHtml(rel)}" data-name="${escapeHtml(name)}" data-type="dir" data-size="0" data-mtime="${escapeHtml(it.mtime_unix || "")}" title="${escapeHtml(name)}">
+                    <div class="fileRow clickable" data-dir="${escapeHtml(rel)}" data-name="${escapeHtml(name)}" data-type="dir" data-size="0" data-mtime="${escapeHtml(it.mtime_unix || "")}" title="${escapeHtml(hover)}">
                         <div class="fileMain">
                             ${externalFileIconHtml(name, true)}
                             <div class="fileText">
@@ -3719,10 +3778,10 @@ resetMarqueeVisual();
                     </div>
                 `);
             } else if (isLink) {
-                rows.push(workspaceLinkRowHtml(it));
+                rows.push(workspaceLinkRowHtml(it, hover));
             } else {
                 rows.push(`
-                    <div class="fileRow clickable" data-file="${escapeHtml(rel)}" data-name="${escapeHtml(name)}" data-type="file" data-size="${escapeHtml(it.size_bytes || it.size || it.bytes || 0)}" data-mtime="${escapeHtml(it.mtime_unix || "")}" title="${escapeHtml(name)}">
+                    <div class="fileRow clickable" data-file="${escapeHtml(rel)}" data-name="${escapeHtml(name)}" data-type="file" data-size="${escapeHtml(it.size_bytes || it.size || it.bytes || 0)}" data-mtime="${escapeHtml(it.mtime_unix || "")}" title="${escapeHtml(hover)}">
                         <div class="fileMain">
                             ${externalFileIconHtml(name, false)}
                             <div class="fileText">

@@ -18,6 +18,15 @@
     }[c]));
   }
 
+  function tr(key, vars = null, fallback = "") {
+    try {
+      if (window.PQNAS_I18N && typeof window.PQNAS_I18N.t === "function") {
+        return window.PQNAS_I18N.t(key, vars, fallback || key);
+      }
+    } catch (_) {}
+    return fallback || key;
+  }
+
   function installStyle() {
     if ($(STYLE_ID)) return;
 
@@ -235,7 +244,9 @@
     const when = new Date(Number(note.updated_at_epoch) * 1000).toLocaleString();
     const by = String(note.updated_by_label || note.updated_by_fp_short || "").trim();
 
-    return by ? `Saved by ${by} · ${when}` : `Saved · ${when}`;
+    return by
+      ? tr("filemgr.annotations.saved_by", { by, when }, "Saved by {by} · {when}")
+      : tr("filemgr.annotations.saved_at", { when }, "Saved · {when}");
   }
 
   let activeSignature = "";
@@ -254,13 +265,33 @@
       if (!badge) {
         badge = document.createElement("div");
         badge.className = "fmAnnoTileBadge";
-        badge.title = "Has description";
+        badge.title = tr("filemgr.annotations.has_description", null, "Has description");
         badge.textContent = "💬";
         tile.appendChild(badge);
       }
     } else if (badge) {
       badge.remove();
     }
+  }
+
+  function compactDescriptionText(note) {
+    const desc = String((note && note.description) || "").trim();
+    return desc ? desc.replace(/\s+/g, " ").slice(0, 480) : "";
+  }
+
+  function setTileHoverDescription(tile, note) {
+    if (!tile) return;
+
+    if (!tile.dataset.fmAnnoBaseTitle) {
+      tile.dataset.fmAnnoBaseTitle = tile.title || "";
+    }
+
+    const base = tile.dataset.fmAnnoBaseTitle || "";
+    const desc = compactDescriptionText(note);
+
+    // Security: description stays in the native title attribute, never as HTML.
+    const label = tr("filemgr.annotations.description", null, "Description");
+    tile.title = desc ? `${base}\n\n${label}:\n${desc}` : base;
   }
 
   function scheduleBadgeRefresh(force = false) {
@@ -301,7 +332,9 @@
     for (const tile of tiles) {
       const rel = String(tile.dataset.relPath || "").replace(/^\/+/, "");
       const note = notes[rel];
-      setTileBadge(tile, !!(note && note.has_description));
+      const hasDescription = !!(note && note.has_description);
+      setTileBadge(tile, hasDescription);
+      setTileHoverDescription(tile, hasDescription ? note : null);
     }
   }
 
@@ -322,15 +355,19 @@
     if (existing && existing.dataset.signature === signature) return;
     if (existing) existing.remove();
 
+    const itemLabel = itemKind === "dir"
+      ? tr("filemgr.item.folder", null, "folder")
+      : tr("filemgr.item.file", null, "file");
+
     const panel = document.createElement("section");
     panel.id = PANEL_ID;
     panel.dataset.signature = signature;
     panel.innerHTML = `
       <div class="fmAnnoHead">
-        <div class="fmAnnoTitle">Description</div>
-        <div class="fmAnnoStatus mono">Loading…</div>
+        <div class="fmAnnoTitle">${esc(tr("filemgr.annotations.description", null, "Description"))}</div>
+        <div class="fmAnnoStatus mono">${esc(tr("filemgr.annotations.loading", null, "Loading…"))}</div>
       </div>
-      <textarea placeholder="Add a short note or description for this ${esc(itemKind === "dir" ? "folder" : "file")}…" ${scope.can_write ? "" : "readonly"}></textarea>
+      <textarea placeholder="${esc(tr("filemgr.annotations.placeholder", { item: itemLabel }, "Add a short note or description for this {item}…"))}" ${scope.can_write ? "" : "readonly"}></textarea>
       <div class="fmAnnoActions">
         ${scope.can_write ? `<button class="btn secondary fmAnnoSave" type="button">Save description</button>` : ""}
         <button class="btn secondary fmAnnoReload" type="button">Reload</button>
@@ -344,9 +381,12 @@
     const saveBtn = panel.querySelector(".fmAnnoSave");
     const reloadBtn = panel.querySelector(".fmAnnoReload");
 
+    if (saveBtn) saveBtn.textContent = tr("filemgr.annotations.save", null, "Save description");
+    if (reloadBtn) reloadBtn.textContent = tr("filemgr.annotations.reload", null, "Reload");
+
     async function load() {
       activeSignature = signature;
-      status.textContent = "Loading…";
+      status.textContent = tr("filemgr.annotations.loading", null, "Loading…");
 
       try {
         const j = await apiGetNote(scope, path);
@@ -356,28 +396,30 @@
         textarea.value = String(note.description || "");
 
         if (j.resolved && note.updated_at_epoch) {
-          status.textContent = noteStatusText(note, "Saved");
+          status.textContent = noteStatusText(note, tr("filemgr.annotations.saved", null, "Saved"));
         } else {
-          status.textContent = scope.can_write ? "No description yet" : "No description";
+          status.textContent = scope.can_write ? tr("filemgr.annotations.no_description_yet", null, "No description yet") : tr("filemgr.annotations.no_description", null, "No description");
         }
       } catch (e) {
-        status.textContent = `Load failed: ${String(e && e.message ? e.message : e)}`;
+        const msg = String(e && e.message ? e.message : e);
+        status.textContent = tr("filemgr.annotations.load_failed", { error: msg }, `Load failed: ${msg}`);
       }
     }
 
     saveBtn?.addEventListener("click", async () => {
       const old = saveBtn.textContent;
       saveBtn.disabled = true;
-      saveBtn.textContent = "Saving…";
-      status.textContent = "Saving…";
+      saveBtn.textContent = tr("filemgr.annotations.saving", null, "Saving…");
+      status.textContent = tr("filemgr.annotations.saving", null, "Saving…");
 
       try {
         const j = await apiSaveNote(scope, path, itemKind, textarea.value);
         const note = j.note || {};
-        status.textContent = noteStatusText(note, "Saved");
+        status.textContent = noteStatusText(note, tr("filemgr.annotations.saved", null, "Saved"));
         scheduleBadgeRefresh(true);
       } catch (e) {
-        status.textContent = `Save failed: ${String(e && e.message ? e.message : e)}`;
+        const msg = String(e && e.message ? e.message : e);
+        status.textContent = tr("filemgr.annotations.save_failed", { error: msg }, `Save failed: ${msg}`);
       } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = old;

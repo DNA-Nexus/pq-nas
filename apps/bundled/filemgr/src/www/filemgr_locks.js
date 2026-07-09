@@ -256,7 +256,7 @@
 
   function expiryLabel(epoch) {
     const n = Number(epoch || 0);
-    if (!n) return "Manual";
+    if (!n) return tr("filemgr.locks.expiry_manual", null, "Manual");
     try {
       return new Date(n * 1000).toLocaleString();
     } catch (_) {
@@ -359,25 +359,29 @@
     if (existing && existing.dataset.signature === signature) return;
     if (existing) existing.remove();
 
+    const itemLabel = itemKind === "dir"
+      ? tr("filemgr.item.folder", null, "folder")
+      : tr("filemgr.item.file", null, "file");
+
     const panel = document.createElement("section");
     panel.id = PANEL_ID;
     panel.dataset.signature = signature;
     panel.innerHTML = `
       <div class="fmLockHead">
-        <div class="fmLockTitle">Lock</div>
-        <div class="fmLockStatus mono">Loading…</div>
+        <div class="fmLockTitle">${esc(tr("filemgr.locks.title", null, "Lock"))}</div>
+        <div class="fmLockStatus mono">${esc(tr("filemgr.locks.loading", null, "Loading…"))}</div>
       </div>
       <div class="fmLockInfo"></div>
-      <textarea class="fmLockNote" maxlength="2000" placeholder="Optional lock note, e.g. editing metadata now…"></textarea>
+      <textarea class="fmLockNote" maxlength="2000" placeholder="${esc(tr("filemgr.locks.note_placeholder", null, "Optional lock note, e.g. editing metadata now…"))}"></textarea>
       <div class="fmLockControls">
         <select class="fmLockExpiry">
-          <option value="86400">24 hours</option>
-          <option value="604800">7 days</option>
-          <option value="0">Manual</option>
+          <option value="86400">${esc(tr("filemgr.locks.expiry_24h", null, "24 hours"))}</option>
+          <option value="604800">${esc(tr("filemgr.locks.expiry_7d", null, "7 days"))}</option>
+          <option value="0">${esc(tr("filemgr.locks.expiry_manual", null, "Manual"))}</option>
         </select>
-        <button class="btn secondary fmLockBtn" type="button">Lock item</button>
-        <button class="btn secondary fmUnlockBtn" type="button" style="display:none;">Unlock</button>
-        <button class="btn secondary fmLockReloadBtn" type="button">Reload</button>
+        <button class="btn secondary fmLockBtn" type="button">${esc(tr("filemgr.locks.lock_item", null, "Lock item"))}</button>
+        <button class="btn secondary fmUnlockBtn" type="button" style="display:none;">${esc(tr("filemgr.locks.unlock", null, "Unlock"))}</button>
+        <button class="btn secondary fmLockReloadBtn" type="button">${esc(tr("filemgr.locks.reload", null, "Reload"))}</button>
       </div>
     `;
 
@@ -402,8 +406,8 @@
       const locked = !!(j && j.locked && lock);
 
       if (!locked) {
-        status.textContent = "Not locked";
-        info.innerHTML = `<div class="mini">No active lock for this ${esc(itemKind === "dir" ? "folder" : "file")}.</div>`;
+        status.textContent = tr("filemgr.locks.not_locked", null, "Not locked");
+        info.innerHTML = `<div class="mini">${esc(tr("filemgr.locks.no_active", { item: itemLabel }, "No active lock for this {item}."))}</div>`;
         lockBtn.style.display = scope.can_write ? "" : "none";
         expiryEl.style.display = scope.can_write ? "" : "none";
         noteEl.style.display = scope.can_write ? "" : "none";
@@ -412,42 +416,48 @@
         return;
       }
 
-      const by = lock.locked_by_label || lock.locked_by_fp_short || "Someone";
+      const by = lock.locked_by_label || lock.locked_by_fp_short || tr("filemgr.locks.someone", null, "Someone");
       const own = !!lock.own_lock;
       const canUnlock = !!lock.can_unlock;
 
-      status.textContent = own ? "Locked by you" : `Locked by ${by}`;
+      status.textContent = own
+        ? tr("filemgr.locks.locked_by_you", null, "Locked by you")
+        : tr("filemgr.locks.locked_by_user", { by }, "Locked by {by}");
       info.innerHTML = `
-        <div><b>Locked by:</b> ${esc(by)} ${own ? "(you)" : ""}</div>
-        <div><b>Expires:</b> ${esc(expiryLabel(lock.expires_at_epoch))}</div>
-        ${lock.note ? `<div><b>Note:</b> ${esc(lock.note)}</div>` : ""}
+        <div><b>${esc(tr("filemgr.locks.locked_by_label", null, "Locked by:"))}</b> ${esc(by)} ${own ? esc(tr("filemgr.locks.you", null, "(you)")) : ""}</div>
+        <div><b>${esc(tr("filemgr.locks.expires_label", null, "Expires:"))}</b> ${esc(expiryLabel(lock.expires_at_epoch))}</div>
+        ${lock.note ? `<div><b>${esc(tr("filemgr.locks.note_label", null, "Note:"))}</b> ${esc(lock.note)}</div>` : ""}
       `;
 
       lockBtn.style.display = "none";
       expiryEl.style.display = "none";
       noteEl.style.display = "none";
       unlockBtn.style.display = canUnlock ? "" : "none";
-      unlockBtn.textContent = own ? "Unlock" : "Force unlock";
+      unlockBtn.dataset.forceUnlock = own ? "0" : "1";
+      unlockBtn.textContent = own
+        ? tr("filemgr.locks.unlock", null, "Unlock")
+        : tr("filemgr.locks.force_unlock", null, "Force unlock");
     }
 
     async function load() {
       activeSignature = signature;
-      status.textContent = "Loading…";
+      status.textContent = tr("filemgr.locks.loading", null, "Loading…");
       info.innerHTML = "";
       try {
         const j = await apiStatus(scope, path);
         if (activeSignature !== signature || !document.body.contains(panel)) return;
         renderStatus(j);
       } catch (e) {
-        status.textContent = `Load failed: ${String(e && e.message ? e.message : e)}`;
+        const msg = String(e && e.message ? e.message : e);
+        status.textContent = tr("filemgr.locks.load_failed", { error: msg }, `Load failed: ${msg}`);
       }
     }
 
     lockBtn.addEventListener("click", async () => {
       const old = lockBtn.textContent;
       lockBtn.disabled = true;
-      lockBtn.textContent = "Locking…";
-      status.textContent = "Locking…";
+      lockBtn.textContent = tr("filemgr.locks.locking", null, "Locking…");
+      status.textContent = tr("filemgr.locks.locking", null, "Locking…");
 
       try {
         const j = await apiLock(scope, path, itemKind, noteEl.value, expiryEl.value);
@@ -458,7 +468,8 @@
         if (lock) {
           renderStatus({ locked: true, lock });
         }
-        status.textContent = `Lock failed: ${String(e && e.message ? e.message : e)}`;
+        const msg = String(e && e.message ? e.message : e);
+        status.textContent = tr("filemgr.locks.lock_failed", { error: msg }, `Lock failed: ${msg}`);
       } finally {
         lockBtn.disabled = false;
         lockBtn.textContent = old;
@@ -466,8 +477,8 @@
     });
 
     unlockBtn.addEventListener("click", async () => {
-      const label = unlockBtn.textContent || tr("filemgr.locks.unlock", null, "Unlock");
-      if (label.toLowerCase().includes("force")) {
+      const forceUnlock = unlockBtn.dataset.forceUnlock === "1";
+      if (forceUnlock) {
         const ok = await openFileLockConfirmModal({
           title: tr("filemgr.locks.force_unlock_title", null, "Force unlock this item?"),
           message: tr("filemgr.locks.force_unlock_note", null, "This removes another user's lock."),
@@ -480,15 +491,16 @@
 
       const old = unlockBtn.textContent;
       unlockBtn.disabled = true;
-      unlockBtn.textContent = "Unlocking…";
-      status.textContent = "Unlocking…";
+      unlockBtn.textContent = tr("filemgr.locks.unlocking", null, "Unlocking…");
+      status.textContent = tr("filemgr.locks.unlocking", null, "Unlocking…");
 
       try {
         const j = await apiUnlock(scope, path);
         renderStatus(j);
         changed();
       } catch (e) {
-        status.textContent = `Unlock failed: ${String(e && e.message ? e.message : e)}`;
+        const msg = String(e && e.message ? e.message : e);
+        status.textContent = tr("filemgr.locks.unlock_failed", { error: msg }, `Unlock failed: ${msg}`);
       } finally {
         unlockBtn.disabled = false;
         unlockBtn.textContent = old;
