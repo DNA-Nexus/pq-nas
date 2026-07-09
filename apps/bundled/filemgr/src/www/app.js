@@ -1144,6 +1144,67 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return d.toISOString().replace("T", " ").replace("Z", "");
   }
 
+  function hoverCommentLinesFromItem(item) {
+    if (!item || typeof item !== "object") return [];
+
+    const out = [];
+    const pushText = (value) => {
+      if (value == null) return;
+
+      if (Array.isArray(value)) {
+        for (const x of value) pushText(x);
+        return;
+      }
+
+      if (typeof value === "object") {
+        pushText(value.body || value.text || value.comment || value.message || value.note || "");
+        return;
+      }
+
+      const s = String(value || "").trim();
+      if (s) out.push(s.replace(/\s+/g, " ").slice(0, 240));
+    };
+
+    pushText(item.comment);
+    pushText(item.comments);
+    pushText(item.note);
+    pushText(item.notes);
+    pushText(item.latest_comment);
+    pushText(item.latestComment);
+    pushText(item.description);
+
+    return out.filter(Boolean).slice(0, 3);
+  }
+
+  function hoverTitleForFilemgrItem(item, relPath) {
+    const name = String(item && (item.name || item.path || item.url) || "").trim() || "(unnamed)";
+    const rel = String(relPath || "").replace(/^\/+/, "").trim();
+
+    const lines = [name];
+
+    if (rel && rel !== name) {
+      lines.push("/" + rel);
+    }
+
+    if (item && item.type !== "dir" && item.type !== "link") {
+      lines.push(fmtSize(item.size_bytes || item.size || item.bytes || 0));
+    }
+
+    if (item && item.type === "link" && item.url) {
+      lines.push(String(item.url || "").trim());
+    }
+
+    // Security: use the native title attribute only; never render comments as HTML.
+    const comments = hoverCommentLinesFromItem(item);
+    if (comments.length) {
+      lines.push("");
+      lines.push(tr("filemgr.hover.comments", null, "Comments:"));
+      lines.push(...comments);
+    }
+
+    return lines.join("\n");
+  }
+
   function workspaceLinkUrlValidationError(value) {
     const url = String(value || "").trim();
 
@@ -6877,6 +6938,7 @@ function describeMoveItems(items) {
     t.dataset.relPath = currentRelPathFor(item);
     t.dataset.itemType = item.type === "link" ? "link" : (item.type === "dir" ? "dir" : "file");
     t.dataset.name = item.name || "";
+    t.title = hoverTitleForFilemgrItem(item, t.dataset.relPath);
     t.style.position = "relative";
 
     const caps = fmCaps();
