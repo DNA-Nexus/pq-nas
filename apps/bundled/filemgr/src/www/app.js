@@ -173,7 +173,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   const OFFICE_PREVIEW_EXTS = new Set([
     "doc", "docx",
-    "xls", "xlsx",
+    "xls", "xlsx", "csv", "tsv",
     "ppt", "pptx",
     "odt", "ods", "odp",
     "rtf"
@@ -1688,7 +1688,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     "txt","md","json","js","ts","jsx","tsx","html","htm","css",
     "xml","yml","yaml","toml","ini","conf","log",
     "c","cc","cpp","cxx","h","hh","hpp","hxx",
-    "py","sh","bash","zsh","sql","csv","tsv",
+    "py","sh","bash","zsh","sql",
     "java","go","rs","rb","php","lua","swift","kt"
   ]);
 
