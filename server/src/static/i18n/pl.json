@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Blokowanie…",
   "filemgr.locks.lock_failed": "Blokowanie nie powiodło się: {error}",
   "filemgr.locks.unlocking": "Odblokowywanie…",
-  "filemgr.locks.unlock_failed": "Odblokowanie nie powiodło się: {error}"
+  "filemgr.locks.unlock_failed": "Odblokowanie nie powiodło się: {error}",
+  "filemgr.spreadsheet.title": "Podgląd arkusza kalkulacyjnego",
+  "filemgr.spreadsheet.empty": "Ten arkusz jest pusty.",
+  "filemgr.spreadsheet.empty_workbook": "Nie znaleziono arkuszy.",
+  "filemgr.spreadsheet.truncated": "duży arkusz został skrócony do podglądu",
+  "filemgr.spreadsheet.loading": "Ładowanie podglądu arkusza: {name}…",
+  "filemgr.spreadsheet.previewing": "Podgląd arkusza: {name}",
+  "filemgr.spreadsheet.failed": "Podgląd arkusza nie powiódł się: {error}",
+  "external.spreadsheet.title": "Podgląd arkusza kalkulacyjnego",
+  "external.spreadsheet.empty": "Ten arkusz jest pusty.",
+  "external.spreadsheet.empty_workbook": "Nie znaleziono arkuszy.",
+  "external.spreadsheet.truncated": "duży arkusz został skrócony do podglądu",
+  "external.spreadsheet.failed": "Podgląd arkusza nie powiódł się: {error}",
+  "external.menu.open_spreadsheet_preview": "Otwórz podgląd arkusza"
 }

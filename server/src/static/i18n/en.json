@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Locking…",
   "filemgr.locks.lock_failed": "Lock failed: {error}",
   "filemgr.locks.unlocking": "Unlocking…",
-  "filemgr.locks.unlock_failed": "Unlock failed: {error}"
+  "filemgr.locks.unlock_failed": "Unlock failed: {error}",
+  "filemgr.spreadsheet.title": "Spreadsheet preview",
+  "filemgr.spreadsheet.empty": "This sheet is empty.",
+  "filemgr.spreadsheet.empty_workbook": "No sheets found.",
+  "filemgr.spreadsheet.truncated": "large sheet truncated for preview",
+  "filemgr.spreadsheet.loading": "Loading spreadsheet preview: {name}…",
+  "filemgr.spreadsheet.previewing": "Previewing spreadsheet: {name}",
+  "filemgr.spreadsheet.failed": "Spreadsheet preview failed: {error}",
+  "external.spreadsheet.title": "Spreadsheet preview",
+  "external.spreadsheet.empty": "This sheet is empty.",
+  "external.spreadsheet.empty_workbook": "No sheets found.",
+  "external.spreadsheet.truncated": "large sheet truncated for preview",
+  "external.spreadsheet.failed": "Spreadsheet preview failed: {error}",
+  "external.menu.open_spreadsheet_preview": "Open spreadsheet preview"
 }

@@ -5532,5 +5532,18 @@
   "filemgr.locks.locking": "Блокування…",
   "filemgr.locks.lock_failed": "Не вдалося заблокувати: {error}",
   "filemgr.locks.unlocking": "Розблокування…",
-  "filemgr.locks.unlock_failed": "Не вдалося розблокувати: {error}"
+  "filemgr.locks.unlock_failed": "Не вдалося розблокувати: {error}",
+  "filemgr.spreadsheet.title": "Попередній перегляд таблиці",
+  "filemgr.spreadsheet.empty": "Цей аркуш порожній.",
+  "filemgr.spreadsheet.empty_workbook": "Аркушів не знайдено.",
+  "filemgr.spreadsheet.truncated": "велику таблицю обрізано для попереднього перегляду",
+  "filemgr.spreadsheet.loading": "Завантаження попереднього перегляду таблиці: {name}…",
+  "filemgr.spreadsheet.previewing": "Попередній перегляд таблиці: {name}",
+  "filemgr.spreadsheet.failed": "Не вдалося переглянути таблицю: {error}",
+  "external.spreadsheet.title": "Попередній перегляд таблиці",
+  "external.spreadsheet.empty": "Цей аркуш порожній.",
+  "external.spreadsheet.empty_workbook": "Аркушів не знайдено.",
+  "external.spreadsheet.truncated": "велику таблицю обрізано для попереднього перегляду",
+  "external.spreadsheet.failed": "Не вдалося переглянути таблицю: {error}",
+  "external.menu.open_spreadsheet_preview": "Відкрити попередній перегляд таблиці"
 }

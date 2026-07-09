@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Bloqueando…",
   "filemgr.locks.lock_failed": "Error al bloquear: {error}",
   "filemgr.locks.unlocking": "Desbloqueando…",
-  "filemgr.locks.unlock_failed": "Error al desbloquear: {error}"
+  "filemgr.locks.unlock_failed": "Error al desbloquear: {error}",
+  "filemgr.spreadsheet.title": "Vista previa de hoja de cálculo",
+  "filemgr.spreadsheet.empty": "Esta hoja está vacía.",
+  "filemgr.spreadsheet.empty_workbook": "No se encontraron hojas.",
+  "filemgr.spreadsheet.truncated": "hoja grande recortada para la vista previa",
+  "filemgr.spreadsheet.loading": "Cargando vista previa de hoja de cálculo: {name}…",
+  "filemgr.spreadsheet.previewing": "Mostrando vista previa de hoja de cálculo: {name}",
+  "filemgr.spreadsheet.failed": "Error en la vista previa de la hoja de cálculo: {error}",
+  "external.spreadsheet.title": "Vista previa de hoja de cálculo",
+  "external.spreadsheet.empty": "Esta hoja está vacía.",
+  "external.spreadsheet.empty_workbook": "No se encontraron hojas.",
+  "external.spreadsheet.truncated": "hoja grande recortada para la vista previa",
+  "external.spreadsheet.failed": "Error en la vista previa de la hoja de cálculo: {error}",
+  "external.menu.open_spreadsheet_preview": "Abrir vista previa de hoja de cálculo"
 }

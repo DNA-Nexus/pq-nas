@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Lukustamine…",
   "filemgr.locks.lock_failed": "Lukustamine ebaõnnestus: {error}",
   "filemgr.locks.unlocking": "Lukustuse eemaldamine…",
-  "filemgr.locks.unlock_failed": "Lukustuse eemaldamine ebaõnnestus: {error}"
+  "filemgr.locks.unlock_failed": "Lukustuse eemaldamine ebaõnnestus: {error}",
+  "filemgr.spreadsheet.title": "Arvutustabeli eelvaade",
+  "filemgr.spreadsheet.empty": "See leht on tühi.",
+  "filemgr.spreadsheet.empty_workbook": "Lehti ei leitud.",
+  "filemgr.spreadsheet.truncated": "suur tabel kärbiti eelvaate jaoks",
+  "filemgr.spreadsheet.loading": "Arvutustabeli eelvaate laadimine: {name}…",
+  "filemgr.spreadsheet.previewing": "Arvutustabeli eelvaade: {name}",
+  "filemgr.spreadsheet.failed": "Arvutustabeli eelvaade ebaõnnestus: {error}",
+  "external.spreadsheet.title": "Arvutustabeli eelvaade",
+  "external.spreadsheet.empty": "See leht on tühi.",
+  "external.spreadsheet.empty_workbook": "Lehti ei leitud.",
+  "external.spreadsheet.truncated": "suur tabel kärbiti eelvaate jaoks",
+  "external.spreadsheet.failed": "Arvutustabeli eelvaade ebaõnnestus: {error}",
+  "external.menu.open_spreadsheet_preview": "Ava arvutustabeli eelvaade"
 }

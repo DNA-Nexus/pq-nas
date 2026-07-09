@@ -5540,5 +5540,18 @@
   "filemgr.locks.locking": "Blocco…",
   "filemgr.locks.lock_failed": "Blocco non riuscito: {error}",
   "filemgr.locks.unlocking": "Sblocco…",
-  "filemgr.locks.unlock_failed": "Sblocco non riuscito: {error}"
+  "filemgr.locks.unlock_failed": "Sblocco non riuscito: {error}",
+  "filemgr.spreadsheet.title": "Anteprima foglio di calcolo",
+  "filemgr.spreadsheet.empty": "Questo foglio è vuoto.",
+  "filemgr.spreadsheet.empty_workbook": "Nessun foglio trovato.",
+  "filemgr.spreadsheet.truncated": "foglio grande troncato per l’anteprima",
+  "filemgr.spreadsheet.loading": "Caricamento anteprima foglio di calcolo: {name}…",
+  "filemgr.spreadsheet.previewing": "Anteprima foglio di calcolo: {name}",
+  "filemgr.spreadsheet.failed": "Anteprima foglio di calcolo non riuscita: {error}",
+  "external.spreadsheet.title": "Anteprima foglio di calcolo",
+  "external.spreadsheet.empty": "Questo foglio è vuoto.",
+  "external.spreadsheet.empty_workbook": "Nessun foglio trovato.",
+  "external.spreadsheet.truncated": "foglio grande troncato per l’anteprima",
+  "external.spreadsheet.failed": "Anteprima foglio di calcolo non riuscita: {error}",
+  "external.menu.open_spreadsheet_preview": "Apri anteprima foglio di calcolo"
 }
