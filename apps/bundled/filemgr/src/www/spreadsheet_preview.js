@@ -149,7 +149,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-scrollbar-fix-2", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-js")
     ]).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
