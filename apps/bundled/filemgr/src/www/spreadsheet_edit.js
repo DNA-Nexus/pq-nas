@@ -1968,6 +1968,190 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     box.style.maxHeight = "calc(100vh - 16px)";
   }
 
+  let editorDragState = null;
+  let editorResizeState = null;
+
+  function clampEditorWindowNumber(value, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, Math.round(n)));
+  }
+
+  function editorWindowBounds() {
+    const pad = 8;
+    const viewportW = Math.max(320, window.innerWidth || 0);
+    const viewportH = Math.max(260, window.innerHeight || 0);
+    const maxW = Math.max(320, viewportW - pad * 2);
+    const maxH = Math.max(260, viewportH - pad * 2);
+
+    return {
+      pad,
+      viewportW,
+      viewportH,
+      minW: Math.min(720, maxW),
+      minH: Math.min(420, maxH),
+      maxW,
+      maxH
+    };
+  }
+
+  function makeEditorWindowDetached(box) {
+    if (!box) return null;
+
+    const rect = box.getBoundingClientRect();
+    const b = editorWindowBounds();
+
+    const width = clampEditorWindowNumber(rect.width, b.minW, b.maxW);
+    const height = clampEditorWindowNumber(rect.height, b.minH, b.maxH);
+    const left = clampEditorWindowNumber(rect.left, b.pad, Math.max(b.pad, b.viewportW - width - b.pad));
+    const top = clampEditorWindowNumber(rect.top, b.pad, Math.max(b.pad, b.viewportH - height - b.pad));
+
+    box.style.position = "fixed";
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+    box.style.width = `${width}px`;
+    box.style.height = `${height}px`;
+    box.style.maxWidth = "calc(100vw - 16px)";
+    box.style.maxHeight = "calc(100vh - 16px)";
+    box.style.margin = "0";
+
+    return { left, top, width, height };
+  }
+
+  function beginEditorDrag(ev, box) {
+    if (!box || !ev || ev.button !== 0) return;
+
+    const target = ev.target;
+    if (target && target.closest && target.closest("button, a, input, textarea, select, [data-spreadsheet-editor-resize]")) {
+      return;
+    }
+
+    const detached = makeEditorWindowDetached(box);
+    if (!detached) return;
+
+    ev.preventDefault();
+
+    editorDragState = {
+      startX: ev.clientX,
+      startY: ev.clientY,
+      left: detached.left,
+      top: detached.top,
+      width: detached.width,
+      height: detached.height
+    };
+
+    document.body.classList.add("spreadsheetEditorDragging");
+
+    const onMove = (moveEv) => {
+      if (!editorDragState) return;
+
+      const b = editorWindowBounds();
+      const nextLeft = clampEditorWindowNumber(
+        editorDragState.left + moveEv.clientX - editorDragState.startX,
+        b.pad,
+        Math.max(b.pad, b.viewportW - 80)
+      );
+      const nextTop = clampEditorWindowNumber(
+        editorDragState.top + moveEv.clientY - editorDragState.startY,
+        b.pad,
+        Math.max(b.pad, b.viewportH - 60)
+      );
+
+      box.style.left = `${nextLeft}px`;
+      box.style.top = `${nextTop}px`;
+    };
+
+    const onUp = () => {
+      editorDragState = null;
+      document.body.classList.remove("spreadsheetEditorDragging");
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+  }
+
+  function beginEditorResize(ev, box, mode) {
+    if (!box || !ev || ev.button !== 0) return;
+    if (mode !== "right" && mode !== "bottom" && mode !== "corner") return;
+
+    const detached = makeEditorWindowDetached(box);
+    if (!detached) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    editorResizeState = {
+      mode,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      width: detached.width,
+      height: detached.height
+    };
+
+    document.body.classList.add("spreadsheetEditorResizing");
+
+    const onMove = (moveEv) => {
+      if (!editorResizeState) return;
+
+      const b = editorWindowBounds();
+
+      if (editorResizeState.mode === "right" || editorResizeState.mode === "corner") {
+        box.style.width = `${clampEditorWindowNumber(
+          editorResizeState.width + moveEv.clientX - editorResizeState.startX,
+          b.minW,
+          b.maxW
+        )}px`;
+      }
+
+      if (editorResizeState.mode === "bottom" || editorResizeState.mode === "corner") {
+        box.style.height = `${clampEditorWindowNumber(
+          editorResizeState.height + moveEv.clientY - editorResizeState.startY,
+          b.minH,
+          b.maxH
+        )}px`;
+      }
+    };
+
+    const onUp = () => {
+      editorResizeState = null;
+      document.body.classList.remove("spreadsheetEditorResizing");
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+  }
+
+  function appendEditorResizeHandle(box, className, mode) {
+    if (!box || box.querySelector(`[data-spreadsheet-editor-resize="${mode}"]`)) return;
+
+    const handle = document.createElement("div");
+    handle.className = `spreadsheetEditorResizeHandle ${className}`;
+    handle.dataset.spreadsheetEditorResize = mode;
+    handle.setAttribute("aria-hidden", "true");
+    handle.addEventListener("pointerdown", (ev) => beginEditorResize(ev, box, mode));
+
+    box.appendChild(handle);
+  }
+
+  function attachEditorWindowControls() {
+    const box = modal ? modal.querySelector(".spreadsheetEditorBox") : null;
+    const head = modal ? modal.querySelector(".spreadsheetEditorHead") : null;
+    if (!box || !head) return;
+
+    if (head.dataset.editorDragAttached !== "1") {
+      head.dataset.editorDragAttached = "1";
+      head.addEventListener("pointerdown", (ev) => beginEditorDrag(ev, box));
+    }
+
+    appendEditorResizeHandle(box, "spreadsheetEditorResizeRight", "right");
+    appendEditorResizeHandle(box, "spreadsheetEditorResizeBottom", "bottom");
+    appendEditorResizeHandle(box, "spreadsheetEditorResizeCorner", "corner");
+  }
+
   function ensureModal() {
     if (modal) return;
 
@@ -2079,6 +2263,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function show() {
     ensureModal();
 
+    attachEditorWindowControls();
     const box = modal ? modal.querySelector(".spreadsheetEditorBox") : null;
     if (box) {
       box.style.removeProperty("position");

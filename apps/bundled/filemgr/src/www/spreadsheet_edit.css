@@ -553,3 +553,76 @@
   border-radius: 999px;
   background: var(--spreadsheet-text-preview, transparent);
 }
+.spreadsheetEditorBox {
+  position: relative;
+}
+
+.spreadsheetEditorHead {
+  cursor: grab;
+  touch-action: none;
+}
+
+.spreadsheetEditorHead button,
+.spreadsheetEditorHead input,
+.spreadsheetEditorHead select,
+.spreadsheetEditorHead textarea,
+.spreadsheetEditorHead a {
+  cursor: auto;
+}
+
+.spreadsheetEditorDragging,
+.spreadsheetEditorResizing {
+  user-select: none;
+}
+
+.spreadsheetEditorDragging .spreadsheetEditorHead {
+  cursor: grabbing;
+}
+
+.spreadsheetEditorResizeHandle {
+  position: absolute;
+  z-index: 20;
+  opacity: 0;
+}
+
+.spreadsheetEditorResizeRight {
+  top: 0;
+  right: 0;
+  bottom: 18px;
+  width: 12px;
+  cursor: ew-resize;
+}
+
+.spreadsheetEditorResizeBottom {
+  left: 0;
+  right: 18px;
+  bottom: 0;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.spreadsheetEditorResizeCorner {
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  opacity: 1;
+}
+
+.spreadsheetEditorResizeCorner::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted-fg, var(--fg));
+  border-bottom: 2px solid var(--muted-fg, var(--fg));
+  opacity: 0.55;
+}
+
+.spreadsheetEditorResizeHandle:hover,
+.spreadsheetEditorResizeHandle:focus-visible {
+  opacity: 1;
+}
