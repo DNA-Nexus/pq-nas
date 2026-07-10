@@ -195,3 +195,207 @@
     justify-content: flex-start;
   }
 }
+.spreadsheetEditorConfirmModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 28%, transparent));
+  backdrop-filter: blur(8px);
+}
+
+.spreadsheetEditorConfirmBox {
+  width: min(440px, 94vw);
+  padding: 18px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-lg, 18px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetEditorConfirmTitle {
+  font-size: 17px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.spreadsheetEditorConfirmText {
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+.spreadsheetEditorConfirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.spreadsheetEditorTable th[data-col],
+.spreadsheetEditorTable th[data-row] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.spreadsheetEditorTable th[data-col]:hover,
+.spreadsheetEditorTable th[data-row]:hover,
+.spreadsheetEditorTable th[data-col]:focus-visible,
+.spreadsheetEditorTable th[data-row]:focus-visible {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorTable .spreadsheetAxisSelectedHeader {
+  background: color-mix(in srgb, var(--accent, var(--link)) 34%, var(--panel-2, var(--panel)));
+  color: var(--fg);
+  box-shadow:
+    inset 0 0 0 3px var(--accent, var(--link)),
+    inset 0 -4px 0 0 var(--accent, var(--link));
+}
+
+.spreadsheetEditorTable td.spreadsheetAxisSelectedCell {
+  background: color-mix(in srgb, var(--accent, var(--link)) 28%, var(--panel));
+  box-shadow:
+    inset 0 0 0 2px var(--accent, var(--link)),
+    inset 4px 0 0 0 var(--accent, var(--link)),
+    inset -4px 0 0 0 var(--accent, var(--link));
+}
+
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput {
+  background: color-mix(in srgb, var(--accent, var(--link)) 34%, var(--panel));
+  color: var(--fg);
+  box-shadow:
+    inset 0 0 0 2px var(--accent, var(--link)),
+    inset 0 0 0 999px color-mix(in srgb, var(--accent, var(--link)) 18%, transparent);
+}
+
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput:focus {
+  outline: 3px solid var(--accent, var(--link));
+  outline-offset: -3px;
+}
+.spreadsheetAxisMenu {
+  position: fixed;
+  z-index: 3800;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetAxisMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetAxisMenu button {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetAxisMenu button:hover,
+.spreadsheetAxisMenu button:focus-visible {
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+.spreadsheetEditorTable .colHead {
+  position: sticky;
+  padding-right: 16px;
+}
+
+.spreadsheetColumnLabel {
+  pointer-events: none;
+}
+
+.spreadsheetColumnResize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.spreadsheetColumnResize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.spreadsheetColumnResize:hover::after,
+.spreadsheetColumnResize:focus-visible::after,
+.spreadsheetColumnResizing .spreadsheetColumnResize::after {
+  background: Highlight;
+}
+
+.spreadsheetColumnResizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.spreadsheetToolBtn {
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
+.spreadsheetToolBtn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spreadsheetToolBtn.active {
+  border-color: var(--accent, var(--link));
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetToolSep {
+  width: 1px;
+  min-height: 28px;
+  align-self: center;
+  background: var(--border, var(--panel-border));
+}
+.spreadsheetEditorTable td.spreadsheetActiveCell {
+  box-shadow:
+    inset 0 0 0 3px Highlight,
+    inset 0 0 0 999px color-mix(in srgb, Highlight 10%, transparent);
+}
+
+.spreadsheetEditorTable input.spreadsheetActiveCellInput {
+  outline: 3px solid Highlight;
+  outline-offset: -3px;
+}
+
+.spreadsheetEditorTable input.spreadsheetActiveCellInput:focus {
+  outline: 3px solid Highlight;
+  outline-offset: -3px;
+}

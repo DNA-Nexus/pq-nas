@@ -5620,5 +5620,20 @@
   "filemgr.spreadsheet_editor.cell_grid": "Editable spreadsheet cells",
   "filemgr.spreadsheet_editor.row_limit": "Row limit reached.",
   "filemgr.spreadsheet_editor.col_limit": "Column limit reached.",
-  "filemgr.spreadsheet_editor.save_helper_missing": "Spreadsheet save helper is not ready."
+  "filemgr.spreadsheet_editor.save_helper_missing": "Spreadsheet save helper is not ready.",
+  "filemgr.spreadsheet_editor.discard_title": "Unsaved changes",
+  "filemgr.spreadsheet_editor.keep_editing": "Keep editing",
+  "filemgr.spreadsheet_editor.discard_changes": "Discard changes",
+  "filemgr.spreadsheet_editor.select_column": "Select column {col}",
+  "filemgr.spreadsheet_editor.select_row": "Select row {row}",
+  "filemgr.spreadsheet_editor.insert_column_here": "Insert column here",
+  "filemgr.spreadsheet_editor.insert_row_here": "Insert row here",
+  "filemgr.spreadsheet_editor.delete_column": "Delete column",
+  "filemgr.spreadsheet_editor.delete_row": "Delete row",
+  "filemgr.spreadsheet_editor.resize_column": "Drag to resize column",
+  "filemgr.spreadsheet_editor.bold": "Bold",
+  "filemgr.spreadsheet_editor.italic": "Italic",
+  "filemgr.spreadsheet_editor.align_left": "Align left",
+  "filemgr.spreadsheet_editor.align_center": "Align center",
+  "filemgr.spreadsheet_editor.select_cell_first": "Select a cell, row or column first."
 }

@@ -5620,5 +5620,20 @@
   "filemgr.spreadsheet_editor.cell_grid": "Muokattavat taulukon solut",
   "filemgr.spreadsheet_editor.row_limit": "Riviraja saavutettu.",
   "filemgr.spreadsheet_editor.col_limit": "Sarakeraja saavutettu.",
-  "filemgr.spreadsheet_editor.save_helper_missing": "Taulukon tallennusapuri ei ole valmis."
+  "filemgr.spreadsheet_editor.save_helper_missing": "Taulukon tallennusapuri ei ole valmis.",
+  "filemgr.spreadsheet_editor.discard_title": "Tallentamattomia muutoksia",
+  "filemgr.spreadsheet_editor.keep_editing": "Jatka muokkausta",
+  "filemgr.spreadsheet_editor.discard_changes": "Hylkää muutokset",
+  "filemgr.spreadsheet_editor.select_column": "Valitse sarake {col}",
+  "filemgr.spreadsheet_editor.select_row": "Valitse rivi {row}",
+  "filemgr.spreadsheet_editor.insert_column_here": "Lisää sarake tähän",
+  "filemgr.spreadsheet_editor.insert_row_here": "Lisää rivi tähän",
+  "filemgr.spreadsheet_editor.delete_column": "Poista sarake",
+  "filemgr.spreadsheet_editor.delete_row": "Poista rivi",
+  "filemgr.spreadsheet_editor.resize_column": "Muuta sarakkeen leveyttä vetämällä",
+  "filemgr.spreadsheet_editor.bold": "Lihavointi",
+  "filemgr.spreadsheet_editor.italic": "Kursivointi",
+  "filemgr.spreadsheet_editor.align_left": "Tasaa vasemmalle",
+  "filemgr.spreadsheet_editor.align_center": "Keskitä",
+  "filemgr.spreadsheet_editor.select_cell_first": "Valitse ensin solu, rivi tai sarake."
 }
