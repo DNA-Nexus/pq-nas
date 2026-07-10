@@ -5635,5 +5635,8 @@
   "filemgr.spreadsheet_editor.text_green": "Green",
   "filemgr.spreadsheet_editor.text_blue": "Blue",
   "filemgr.spreadsheet_editor.text_gray": "Gray",
-  "filemgr.spreadsheet_editor.text_white": "White"
+  "filemgr.spreadsheet_editor.text_white": "White",
+  "filemgr.spreadsheet_editor.underline": "Underline",
+  "filemgr.spreadsheet_editor.font_size": "Font size",
+  "filemgr.spreadsheet_editor.font_size_default": "Size"
 }
