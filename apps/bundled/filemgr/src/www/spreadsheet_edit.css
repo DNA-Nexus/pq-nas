@@ -585,27 +585,16 @@
   opacity: 0;
 }
 
-.spreadsheetEditorResizeRight {
-  top: 0;
-  right: 0;
-  bottom: 18px;
-  width: 12px;
-  cursor: ew-resize;
-}
-
+.spreadsheetEditorResizeRight,
 .spreadsheetEditorResizeBottom {
-  left: 0;
-  right: 18px;
-  bottom: 0;
-  height: 12px;
-  cursor: ns-resize;
+  display: none;
 }
 
 .spreadsheetEditorResizeCorner {
-  right: 0;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
+  right: -9px;
+  bottom: -9px;
+  width: 22px;
+  height: 22px;
   cursor: nwse-resize;
   opacity: 1;
 }
