@@ -5612,5 +5612,20 @@
   "filemgr.spreadsheet_editor.cell_grid": "Cellules de tableur modifiables",
   "filemgr.spreadsheet_editor.row_limit": "Limite de lignes atteinte.",
   "filemgr.spreadsheet_editor.col_limit": "Limite de colonnes atteinte.",
-  "filemgr.spreadsheet_editor.save_helper_missing": "L’assistant d’enregistrement du tableur n’est pas prêt."
+  "filemgr.spreadsheet_editor.save_helper_missing": "L’assistant d’enregistrement du tableur n’est pas prêt.",
+  "filemgr.spreadsheet_editor.fill_color": "Fill color",
+  "filemgr.spreadsheet_editor.fill_none": "No fill",
+  "filemgr.spreadsheet_editor.fill_yellow": "Yellow",
+  "filemgr.spreadsheet_editor.fill_green": "Green",
+  "filemgr.spreadsheet_editor.fill_blue": "Blue",
+  "filemgr.spreadsheet_editor.fill_red": "Red",
+  "filemgr.spreadsheet_editor.fill_gray": "Gray",
+  "filemgr.spreadsheet_editor.text_color": "Text color",
+  "filemgr.spreadsheet_editor.text_none": "Default text",
+  "filemgr.spreadsheet_editor.text_black": "Black",
+  "filemgr.spreadsheet_editor.text_red": "Red",
+  "filemgr.spreadsheet_editor.text_green": "Green",
+  "filemgr.spreadsheet_editor.text_blue": "Blue",
+  "filemgr.spreadsheet_editor.text_gray": "Gray",
+  "filemgr.spreadsheet_editor.text_white": "White"
 }

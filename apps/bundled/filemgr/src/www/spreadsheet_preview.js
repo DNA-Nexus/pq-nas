@@ -21,6 +21,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let editBtn = null;
   let currentEditContext = null;
   let spreadsheetEditLoadPromise = null;
+
+  const STYLE_SHEET_NAME = "_pqnas_styles";
+  const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
+
+  // Document content colors used by the spreadsheet editor metadata. These are
+  // spreadsheet values, not DNA-Nexus UI theme colors.
+  const PREVIEW_FILL_COLORS = Object.freeze({
+    yellow: "rgb(255, 242, 204)",
+    green: "rgb(217, 234, 211)",
+    blue: "rgb(207, 226, 243)",
+    red: "rgb(244, 204, 204)",
+    gray: "rgb(217, 217, 217)"
+  });
+
+  const PREVIEW_TEXT_COLORS = Object.freeze({
+    black: "rgb(0, 0, 0)",
+    red: "rgb(204, 0, 0)",
+    green: "rgb(56, 118, 29)",
+    blue: "rgb(17, 85, 204)",
+    gray: "rgb(102, 102, 102)",
+    white: "rgb(255, 255, 255)"
+  });
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -127,8 +149,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-format-toggle-1", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-format-toggle-1", "data-pqnas-spreadsheet-edit-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-default-modal-1", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-default-modal-1", "data-pqnas-spreadsheet-edit-js")
     ]).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -253,6 +275,153 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return xlsxLoadPromise;
   }
 
+  function safePreviewSheetName(name, idx) {
+    const raw = String(name || `Sheet${idx + 1}`).trim() || `Sheet${idx + 1}`;
+    return raw.replace(/[:\\/?*\[\]]/g, "-").slice(0, 31) || `Sheet${idx + 1}`;
+  }
+
+  function normalizePreviewCellFormat(fmt) {
+    const src = fmt && typeof fmt === "object" ? fmt : {};
+    const align = src.align === "center" || src.align === "left" ? src.align : "";
+    const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
+    const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
+
+    return {
+      bold: !!src.bold,
+      italic: !!src.italic,
+      align,
+      bg,
+      fg
+    };
+  }
+
+  function previewFillKeyFromRgb(value) {
+    const raw = String(value || "").replace(/^#/, "").toUpperCase();
+    const normalized = raw.length === 6 ? "FF" + raw : raw;
+
+    const map = {
+      FFFFF2CC: "yellow",
+      FFD9EAD3: "green",
+      FFCFE2F3: "blue",
+      FFF4CCCC: "red",
+      FFD9D9D9: "gray"
+    };
+
+    return map[normalized] || "";
+  }
+
+  function previewTextKeyFromRgb(value) {
+    const raw = String(value || "").replace(/^#/, "").toUpperCase();
+    const normalized = raw.length === 6 ? "FF" + raw : raw;
+
+    const map = {
+      FF000000: "black",
+      FFCC0000: "red",
+      FF38761D: "green",
+      FF1155CC: "blue",
+      FF666666: "gray",
+      FFFFFFFF: "white"
+    };
+
+    return map[normalized] || "";
+  }
+
+  function readStoredPreviewCellFormats(wb) {
+    const ws = wb && wb.Sheets ? wb.Sheets[STYLE_SHEET_NAME] : null;
+    if (!ws) return {};
+
+    const raw = ws.A2 && (ws.A2.v != null ? ws.A2.v : ws.A2.w);
+    if (!raw) return {};
+
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (!parsed || parsed.version !== STYLE_META_VERSION || !parsed.sheets || typeof parsed.sheets !== "object") {
+        return {};
+      }
+      return parsed.sheets;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function clampPreviewColumnWidth(width) {
+    const n = Number(width);
+    if (!Number.isFinite(n)) return 120;
+    return Math.max(72, Math.min(520, Math.round(n)));
+  }
+
+  function xlsxPreviewColumnToPixelWidth(col) {
+    if (!col || typeof col !== "object") return 120;
+    if (Number.isFinite(col.wpx)) return clampPreviewColumnWidth(col.wpx);
+    if (Number.isFinite(col.width)) return clampPreviewColumnWidth((col.width * 8) + 16);
+    if (Number.isFinite(col.wch)) return clampPreviewColumnWidth((col.wch * 8) + 16);
+    return 120;
+  }
+
+  function previewColumnWidths(ws, colCount) {
+    const count = Math.max(0, Number.isInteger(colCount) ? colCount : 0);
+    return Array.from({ length: count }, (_v, c) => {
+      const meta = ws && ws["!cols"] && ws["!cols"][c];
+      return xlsxPreviewColumnToPixelWidth(meta);
+    });
+  }
+
+  function applyPreviewColumnWidth(el, width) {
+    if (!el || !Number.isFinite(Number(width))) return;
+    const px = `${clampPreviewColumnWidth(width)}px`;
+    el.style.width = px;
+    el.style.minWidth = px;
+    el.style.maxWidth = px;
+  }
+
+  function extractPreviewCellFormats(XLSX, ws, rows, cols) {
+    const rowCount = Math.max(0, Number.isInteger(rows) ? rows : 0);
+    const colCount = Math.max(0, Number.isInteger(cols) ? cols : 0);
+    const out = Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => null));
+
+    if (!ws || !ws["!ref"] || !XLSX || !XLSX.utils) return out;
+
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const addr = XLSX.utils.encode_cell({ r: range.s.r + r, c: range.s.c + c });
+        const style = ws[addr] && ws[addr].s;
+
+        const fmt = normalizePreviewCellFormat({
+          bold: !!(style && style.font && style.font.bold),
+          italic: !!(style && style.font && style.font.italic),
+          align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
+          bg: previewFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
+          fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
+        });
+
+        if (fmt.bold || fmt.italic || fmt.align || fmt.bg || fmt.fg) {
+          out[r][c] = fmt;
+        }
+      }
+    }
+
+    return out;
+  }
+
+  function applyPreviewCellFormat(td, fmt) {
+    if (!td) return;
+
+    const f = normalizePreviewCellFormat(fmt);
+    td.style.fontWeight = f.bold ? "700" : "";
+    td.style.fontStyle = f.italic ? "italic" : "";
+    td.style.textAlign = f.align || "";
+
+    if (f.bg && PREVIEW_FILL_COLORS[f.bg]) {
+      td.style.background = PREVIEW_FILL_COLORS[f.bg];
+    }
+
+    if (f.fg && PREVIEW_TEXT_COLORS[f.fg]) {
+      td.style.color = PREVIEW_TEXT_COLORS[f.fg];
+    }
+  }
+
   async function readWorkbookRows(url, ext) {
     const r = await fetch(url, { credentials: "include", cache: "no-store" });
     if (!r.ok) {
@@ -275,11 +444,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       cellFormula: false,
       cellHTML: false,
       cellNF: false,
-      cellStyles: false
+      cellStyles: true
     });
 
-    const names = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
-    return names.map((name) => {
+    const storedCellFormats = readStoredPreviewCellFormats(wb);
+    const names = Array.isArray(wb.SheetNames)
+      ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
+      : [];
+
+    return names.map((name, idx) => {
       const ws = wb.Sheets[name];
       const rows = XLSX.utils.sheet_to_json(ws, {
         header: 1,
@@ -287,7 +460,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         defval: "",
         blankrows: false
       });
-      return { name, rows };
+
+      const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+      const safeName = safePreviewSheetName(name, idx);
+      const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
+
+      return {
+        name,
+        rows,
+        colWidths: previewColumnWidths(ws, colCount),
+        cellFormats: Array.isArray(storedFormats)
+          ? storedFormats
+          : extractPreviewCellFormats(XLSX, ws, rows.length, colCount)
+      };
     });
   }
 
@@ -481,6 +666,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const table = document.createElement("table");
     table.className = "spreadsheetPreviewTable";
 
+    const colWidths = Array.isArray(sheet.colWidths) ? sheet.colWidths : [];
+    const colgroup = document.createElement("colgroup");
+    const rowHeadCol = document.createElement("col");
+    rowHeadCol.style.width = "44px";
+    colgroup.appendChild(rowHeadCol);
+
+    for (let c = 0; c < normalized.cols; c++) {
+      const colEl = document.createElement("col");
+      applyPreviewColumnWidth(colEl, colWidths[c]);
+      colgroup.appendChild(colEl);
+    }
+
+    table.appendChild(colgroup);
+
     const thead = document.createElement("thead");
     const hr = document.createElement("tr");
     const corner = document.createElement("th");
@@ -490,6 +689,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     for (let c = 0; c < normalized.cols; c++) {
       const th = document.createElement("th");
+      applyPreviewColumnWidth(th, colWidths[c]);
       th.textContent = columnName(c);
       hr.appendChild(th);
     }
@@ -507,6 +707,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       for (let c = 0; c < normalized.cols; c++) {
         const td = document.createElement("td");
+        applyPreviewColumnWidth(td, colWidths[c]);
+        applyPreviewCellFormat(td, sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c]);
         // Security: always render cell values as text, never HTML.
         td.textContent = row[c] == null ? "" : String(row[c]);
         trEl.appendChild(td);
