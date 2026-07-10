@@ -24,6 +24,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   const STYLE_SHEET_NAME = "_pqnas_styles";
   const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
+  const STYLE_META_CHUNK_SIZE = 30000;
 
   // Document content colors used by the spreadsheet editor metadata. These are
   // spreadsheet values, not DNA-Nexus UI theme colors.
@@ -45,6 +46,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   });
 
   const PREVIEW_FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
+  const PREVIEW_BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
+  const PREVIEW_BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -151,8 +154,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-cell-visual-owner-1", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-cell-visual-owner-1", "data-pqnas-spreadsheet-edit-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-borders-3", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-borders-3", "data-pqnas-spreadsheet-edit-js")
     ]).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -282,6 +285,37 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return raw.replace(/[:\\/?*\[\]]/g, "-").slice(0, 31) || `Sheet${idx + 1}`;
   }
 
+  function previewCssRgbToArgb(value) {
+    const m = String(value || "").match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (!m) return "";
+
+    const parts = [m[1], m[2], m[3]].map((part) => {
+      const n = Math.max(0, Math.min(255, Number(part) || 0));
+      return n.toString(16).padStart(2, "0").toUpperCase();
+    });
+
+    return `FF${parts.join("")}`;
+  }
+
+  function previewColorKeyFromRgb(value, palette) {
+    const raw = String(value || "").replace(/^#/, "").toUpperCase();
+    const normalized = raw.length === 6 ? `FF${raw}` : raw;
+
+    for (const [key, cssValue] of Object.entries(palette || {})) {
+      if (previewCssRgbToArgb(cssValue) === normalized) return key;
+    }
+
+    return "";
+  }
+
+  function previewFillKeyFromRgb(value) {
+    return previewColorKeyFromRgb(value, PREVIEW_FILL_COLORS);
+  }
+
+  function previewTextKeyFromRgb(value) {
+    return previewColorKeyFromRgb(value, PREVIEW_TEXT_COLORS);
+  }
+
   function normalizePreviewFontSize(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
@@ -289,12 +323,78 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return PREVIEW_FONT_SIZE_OPTIONS.includes(rounded) ? rounded : 0;
   }
 
+  function normalizePreviewBorderSide(value) {
+    const key = String(value || "").trim();
+    return PREVIEW_BORDER_STYLE_KEYS.includes(key) ? key : "";
+  }
+
+  function normalizePreviewBorderFormat(border) {
+    const src = border && typeof border === "object" ? border : {};
+    return {
+      top: normalizePreviewBorderSide(src.top),
+      right: normalizePreviewBorderSide(src.right),
+      bottom: normalizePreviewBorderSide(src.bottom),
+      left: normalizePreviewBorderSide(src.left)
+    };
+  }
+
+  function isEmptyPreviewBorderFormat(border) {
+    const b = normalizePreviewBorderFormat(border);
+    return !b.top && !b.right && !b.bottom && !b.left;
+  }
+
+  function previewBorderCssWidth(style) {
+    return style === "thick" ? "3px" : style === "thin" ? "1px" : "";
+  }
+
+  function previewBorderSideFromXlsx(side) {
+    const style = String(side && side.style || "").toLowerCase();
+    if (!style || style === "none") return "";
+    return style === "medium" || style === "thick" ? "thick" : "thin";
+  }
+
+  function previewBorderFromXlsxStyle(border) {
+    const src = border && typeof border === "object" ? border : {};
+    return normalizePreviewBorderFormat({
+      top: previewBorderSideFromXlsx(src.top),
+      right: previewBorderSideFromXlsx(src.right),
+      bottom: previewBorderSideFromXlsx(src.bottom),
+      left: previewBorderSideFromXlsx(src.left)
+    });
+  }
+
+  function applyPreviewBorderFormat(td, border) {
+    if (!td) return;
+
+    const b = normalizePreviewBorderFormat(border);
+    const sideMap = { top: "Top", right: "Right", bottom: "Bottom", left: "Left" };
+
+    let hasBorder = false;
+    for (const side of PREVIEW_BORDER_SIDES) {
+      const cssSide = sideMap[side];
+      const width = previewBorderCssWidth(b[side]);
+      const prop = `border${cssSide}`;
+
+      if (width) {
+        hasBorder = true;
+        td.style[prop] = `${width} solid var(--fg)`;
+      } else {
+        td.style.removeProperty(`border-${side}`);
+      }
+    }
+
+    if (hasBorder) {
+      td.dataset.spreadsheetCellBorder = "1";
+    } else {
+      td.removeAttribute("data-spreadsheet-cell-border");
+    }
+  }
+
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
     const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
-
     return {
       bold: !!src.bold,
       italic: !!src.italic,
@@ -302,46 +402,32 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       align,
       bg,
-      fg
+      fg,
+      border: normalizePreviewBorderFormat(src.border)
     };
   }
 
-  function previewFillKeyFromRgb(value) {
-    const raw = String(value || "").replace(/^#/, "").toUpperCase();
-    const normalized = raw.length === 6 ? "FF" + raw : raw;
+  function readPreviewStyleMetadataJsonFromSheet(ws) {
+    if (!ws) return "";
 
-    const map = {
-      FFFFF2CC: "yellow",
-      FFD9EAD3: "green",
-      FFCFE2F3: "blue",
-      FFF4CCCC: "red",
-      FFD9D9D9: "gray"
-    };
+    const chunks = [];
+    for (let row = 2; row < 100000; row++) {
+      const cell = ws[`A${row}`];
+      if (!cell) break;
 
-    return map[normalized] || "";
-  }
+      const value = cell.v != null ? cell.v : cell.w;
+      if (value == null) break;
+      chunks.push(String(value));
+    }
 
-  function previewTextKeyFromRgb(value) {
-    const raw = String(value || "").replace(/^#/, "").toUpperCase();
-    const normalized = raw.length === 6 ? "FF" + raw : raw;
-
-    const map = {
-      FF000000: "black",
-      FFCC0000: "red",
-      FF38761D: "green",
-      FF1155CC: "blue",
-      FF666666: "gray",
-      FFFFFFFF: "white"
-    };
-
-    return map[normalized] || "";
+    return chunks.join("");
   }
 
   function readStoredPreviewCellFormats(wb) {
     const ws = wb && wb.Sheets ? wb.Sheets[STYLE_SHEET_NAME] : null;
     if (!ws) return {};
 
-    const raw = ws.A2 && (ws.A2.v != null ? ws.A2.v : ws.A2.w);
+    const raw = readPreviewStyleMetadataJsonFromSheet(ws);
     if (!raw) return {};
 
     try {
@@ -406,10 +492,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           fontSize: normalizePreviewFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           bg: previewFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
-          fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
+          fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
+          border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.bg || fmt.fg) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
@@ -435,6 +522,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (f.fg && PREVIEW_TEXT_COLORS[f.fg]) {
       td.style.color = PREVIEW_TEXT_COLORS[f.fg];
     }
+
+    applyPreviewBorderFormat(td, f.border);
   }
 
   async function readWorkbookRows(url, ext) {

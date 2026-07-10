@@ -659,3 +659,50 @@
 .spreadsheetEditorTable input.spreadsheetActiveCellInput:focus {
   outline: 0;
 }
+
+.spreadsheetBorderMenu {
+  position: fixed;
+  z-index: 3900;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetBorderMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetBorderMenuTitle {
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.spreadsheetBorderMenu button {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetBorderMenu button:hover,
+.spreadsheetBorderMenu button:focus-visible {
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
+  --spreadsheet-cell-border-color: var(--fg);
+}

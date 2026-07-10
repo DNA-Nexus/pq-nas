@@ -16,6 +16,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MAX_COL_WIDTH = 520;
   const STYLE_SHEET_NAME = "_pqnas_styles";
   const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
+  const STYLE_META_CHUNK_SIZE = 30000;
 
   // Document content colors: these are spreadsheet cell fill values, not
   // DNA-Nexus UI theme colors. Fixed values are intentional for XLSX output.
@@ -38,6 +39,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   });
 
   const FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
+  const BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
+  const BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
+  const BORDER_XLSX_COLOR = "FF000000";
 
   let modal = null;
   let titleEl = null;
@@ -61,6 +65,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let axisMenu = null;
   let fillMenu = null;
   let textColorMenu = null;
+  let borderMenu = null;
   let xlsxLoadPromise = null;
   let formulaFocus = null;
 
@@ -158,6 +163,96 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return FONT_SIZE_OPTIONS.includes(rounded) ? rounded : 0;
   }
 
+  function normalizeBorderSide(value) {
+    const key = String(value || "").trim();
+    return BORDER_STYLE_KEYS.includes(key) ? key : "";
+  }
+
+  function normalizeBorderFormat(border) {
+    const src = border && typeof border === "object" ? border : {};
+    return {
+      top: normalizeBorderSide(src.top),
+      right: normalizeBorderSide(src.right),
+      bottom: normalizeBorderSide(src.bottom),
+      left: normalizeBorderSide(src.left)
+    };
+  }
+
+  function isEmptyBorderFormat(border) {
+    const b = normalizeBorderFormat(border);
+    return !b.top && !b.right && !b.bottom && !b.left;
+  }
+
+  function borderCssWidth(style) {
+    return style === "thick" ? "3px" : style === "thin" ? "1px" : "";
+  }
+
+  function borderXlsxStyle(style) {
+    if (style === "thick") return "medium";
+    if (style === "thin") return "thin";
+    return "";
+  }
+
+  function cellBorderSideFromXlsx(side) {
+    const style = String(side && side.style || "").toLowerCase();
+    if (!style || style === "none") return "";
+    return style === "medium" || style === "thick" ? "thick" : "thin";
+  }
+
+  function cellBorderFromXlsxStyle(border) {
+    const src = border && typeof border === "object" ? border : {};
+    return normalizeBorderFormat({
+      top: cellBorderSideFromXlsx(src.top),
+      right: cellBorderSideFromXlsx(src.right),
+      bottom: cellBorderSideFromXlsx(src.bottom),
+      left: cellBorderSideFromXlsx(src.left)
+    });
+  }
+
+  function applyBorderFormatToCell(cell, border) {
+    if (!cell) return;
+
+    const b = normalizeBorderFormat(border);
+    const sideMap = { top: "Top", right: "Right", bottom: "Bottom", left: "Left" };
+
+    let hasBorder = false;
+    for (const side of BORDER_SIDES) {
+      const cssSide = sideMap[side];
+      const width = borderCssWidth(b[side]);
+      const prop = `border${cssSide}`;
+
+      if (width) {
+        hasBorder = true;
+        cell.style[prop] = `${width} solid var(--spreadsheet-cell-border-color, currentColor)`;
+      } else {
+        cell.style.removeProperty(`border-${side}`);
+      }
+    }
+
+    if (hasBorder) {
+      cell.dataset.spreadsheetCellBorder = "1";
+    } else {
+      cell.removeAttribute("data-spreadsheet-cell-border");
+    }
+  }
+
+  function outputBorderStyle(border) {
+    const b = normalizeBorderFormat(border);
+    if (isEmptyBorderFormat(b)) return null;
+
+    const out = {};
+    for (const side of BORDER_SIDES) {
+      const style = borderXlsxStyle(b[side]);
+      if (!style) continue;
+      out[side] = {
+        style,
+        color: { rgb: BORDER_XLSX_COLOR }
+      };
+    }
+
+    return Object.keys(out).length ? out : null;
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
@@ -168,13 +263,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       fontSize: normalizeFontSize(src.fontSize || src.sz),
       align,
       bg: normalizeFillColorKey(src.bg),
-      fg: normalizeTextColorKey(src.fg)
+      fg: normalizeTextColorKey(src.fg),
+      border: normalizeBorderFormat(src.border)
     };
   }
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.bg && !f.fg;
+    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -243,8 +339,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
 
-    // The td owns spreadsheet cell fill. This prevents fill color from
-    // covering only the input-sized part of a wider table cell.
+    // The td owns spreadsheet cell fill and borders. This prevents visual
+    // formatting from covering only the input-sized part of a wider table cell.
     input.removeAttribute("data-spreadsheet-cell-bg");
     input.style.removeProperty("--spreadsheet-cell-bg");
 
@@ -256,6 +352,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         cell.removeAttribute("data-spreadsheet-cell-bg");
         cell.style.removeProperty("--spreadsheet-cell-bg");
       }
+
+      applyBorderFormatToCell(cell, f.border);
     }
 
     if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
@@ -320,6 +418,85 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!input || !sheet) return;
 
     applyCellFormatToInput(input, getCellFormat(sheet, row, col));
+  }
+
+  function formatTargetsContainCell(row, col) {
+    return formatTargetCells().some((cell) => cell.row === row && cell.col === col);
+  }
+
+  function applyBorderCommand(action, style = "thin") {
+    if (state.readOnly || state.tooLarge) return;
+
+    const sheet = state.sheets[state.active];
+    const cells = formatTargetCells();
+    if (!sheet || !cells.length) {
+      setStatus(tr("filemgr.spreadsheet_editor.select_cell_first", null, "Select a cell, row or column first."), "warn");
+      return;
+    }
+
+    const borderStyle = normalizeBorderSide(style) || "thin";
+    const rows = cells.map((cell) => cell.row);
+    const cols = cells.map((cell) => cell.col);
+    const row1 = Math.min(...rows);
+    const row2 = Math.max(...rows);
+    const col1 = Math.min(...cols);
+    const col2 = Math.max(...cols);
+
+    for (const { row, col } of cells) {
+      const fmt = getCellFormat(sheet, row, col);
+      const border = normalizeBorderFormat(fmt.border);
+
+      // Border menu actions replace the custom borders for the target cells.
+      for (const side of BORDER_SIDES) {
+        border[side] = "";
+      }
+
+      if (action === "all") {
+        // Draw all grid lines without doubling internal left/top borders.
+        border.top = row === row1 ? borderStyle : "";
+        border.left = col === col1 ? borderStyle : "";
+        border.right = borderStyle;
+        border.bottom = borderStyle;
+      } else if (action === "outside") {
+        if (row === row1) border.top = borderStyle;
+        if (row === row2) border.bottom = borderStyle;
+        if (col === col1) border.left = borderStyle;
+        if (col === col2) border.right = borderStyle;
+      } else if (action === "bottom") {
+        border.bottom = borderStyle;
+      }
+
+      fmt.border = border;
+      setCellFormat(sheet, row, col, fmt);
+      paintVisibleCellFormat(row, col);
+    }
+
+    setDirty(true);
+    updateFormatToolbar();
+  }
+
+  function openCellBorderMenu(ev, input) {
+    if (!input || state.readOnly || state.tooLarge) return;
+
+    const row = Number(input.dataset.row);
+    const col = Number(input.dataset.col);
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (!formatTargetsContainCell(row, col)) {
+      state.selection = null;
+      state.rangeSelection = null;
+      state.activeCell = { row, col };
+      repaintSpreadsheetSelection();
+      updateFormatToolbar();
+    }
+
+    hideTextColorMenu();
+    hideFillMenu();
+    hideAxisMenu();
+    openBorderMenu(ev.clientX, ev.clientY);
   }
 
   function applyFormatCommand(kind, value = null) {
@@ -437,11 +614,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return out;
   }
 
+  function readStyleMetadataJsonFromSheet(ws) {
+    if (!ws) return "";
+
+    const chunks = [];
+    for (let row = 2; row < 100000; row++) {
+      const cell = ws[`A${row}`];
+      if (!cell) break;
+
+      const value = cell.v != null ? cell.v : cell.w;
+      if (value == null) break;
+      chunks.push(String(value));
+    }
+
+    return chunks.join("");
+  }
+
   function readStoredCellFormats(XLSX, wb) {
     const ws = wb && wb.Sheets ? wb.Sheets[STYLE_SHEET_NAME] : null;
     if (!ws) return {};
 
-    const raw = ws.A2 && (ws.A2.v != null ? ws.A2.v : ws.A2.w);
+    const raw = readStyleMetadataJsonFromSheet(ws);
     if (!raw) return {};
 
     try {
@@ -456,10 +649,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function appendStyleMetadataSheet(XLSX, wb, stylePayload) {
-    const ws = XLSX.utils.aoa_to_sheet([
-      [STYLE_META_VERSION],
-      [JSON.stringify({ version: STYLE_META_VERSION, sheets: stylePayload || {} })]
-    ]);
+    const json = JSON.stringify({ version: STYLE_META_VERSION, sheets: stylePayload || {} });
+    const rows = [[STYLE_META_VERSION]];
+
+    // XLSX cells have a hard text length limit of 32767 characters. Store the
+    // style metadata JSON as safe chunks so heavily formatted sheets still save.
+    for (let i = 0; i < json.length; i += STYLE_META_CHUNK_SIZE) {
+      rows.push([json.slice(i, i + STYLE_META_CHUNK_SIZE)]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
 
     XLSX.utils.book_append_sheet(wb, ws, STYLE_SHEET_NAME);
 
@@ -498,6 +697,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         patternType: "solid",
         fgColor: { rgb: CELL_FILL_COLORS[f.bg].rgb }
       };
+    }
+
+    const border = outputBorderStyle(f.border);
+    if (border) {
+      style.border = border;
     }
 
     return style;
@@ -1510,6 +1714,86 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     menu.style.top = `${top}px`;
   }
 
+  function hideBorderMenu() {
+    if (!borderMenu || borderMenu.hidden) return false;
+    borderMenu.hidden = true;
+    borderMenu.replaceChildren();
+    return true;
+  }
+
+  function borderMenuLabel(action, style = "") {
+    if (action === "clear") return tr("filemgr.spreadsheet_editor.border_none", null, "No custom borders");
+    if (action === "all" && style === "thin") return tr("filemgr.spreadsheet_editor.border_all_thin", null, "All thin borders");
+    if (action === "outside" && style === "thin") return tr("filemgr.spreadsheet_editor.border_outside_thin", null, "Outside thin border");
+    if (action === "outside" && style === "thick") return tr("filemgr.spreadsheet_editor.border_outside_thick", null, "Outside thick border");
+    if (action === "bottom" && style === "thin") return tr("filemgr.spreadsheet_editor.border_bottom_thin", null, "Bottom thin border");
+    if (action === "bottom" && style === "thick") return tr("filemgr.spreadsheet_editor.border_bottom_thick", null, "Bottom thick border");
+    return tr("filemgr.spreadsheet_editor.borders", null, "Borders");
+  }
+
+  function ensureBorderMenu() {
+    if (borderMenu) return borderMenu;
+
+    borderMenu = document.createElement("div");
+    borderMenu.className = "spreadsheetBorderMenu";
+    borderMenu.hidden = true;
+    borderMenu.setAttribute("role", "menu");
+
+    borderMenu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.addEventListener("click", () => hideBorderMenu());
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") hideBorderMenu();
+    });
+
+    document.body.appendChild(borderMenu);
+    return borderMenu;
+  }
+
+  function makeBorderMenuButton(action, style = "") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "menuitem");
+    btn.textContent = borderMenuLabel(action, style);
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideBorderMenu();
+      applyBorderCommand(action, style);
+    });
+    return btn;
+  }
+
+  function openBorderMenu(x, y) {
+    const menu = ensureBorderMenu();
+    menu.replaceChildren();
+
+    const title = document.createElement("div");
+    title.className = "spreadsheetBorderMenuTitle";
+    title.textContent = tr("filemgr.spreadsheet_editor.borders", null, "Borders");
+    menu.appendChild(title);
+
+    menu.appendChild(makeBorderMenuButton("clear"));
+    menu.appendChild(makeBorderMenuButton("all", "thin"));
+    menu.appendChild(makeBorderMenuButton("outside", "thin"));
+    menu.appendChild(makeBorderMenuButton("outside", "thick"));
+    menu.appendChild(makeBorderMenuButton("bottom", "thin"));
+    menu.appendChild(makeBorderMenuButton("bottom", "thick"));
+
+    menu.hidden = false;
+    menu.style.left = `${Math.max(8, Number(x) || 8)}px`;
+    menu.style.top = `${Math.max(8, Number(y) || 8)}px`;
+
+    const rect = menu.getBoundingClientRect();
+    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+
+    menu.style.left = `${Math.min(Math.max(8, Number(x) || 8), maxLeft)}px`;
+    menu.style.top = `${Math.min(Math.max(8, Number(y) || 8), maxTop)}px`;
+  }
+
   function hideAxisMenu() {
     if (!axisMenu || axisMenu.hidden) return false;
     axisMenu.hidden = true;
@@ -1787,7 +2071,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           fontSize: normalizeFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           bg: cellFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
-          fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
+          fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
+          border: cellBorderFromXlsxStyle(style && style.border)
         });
         cellFormats[r][c] = isEmptyCellFormat(fmt) ? null : fmt;
       }
@@ -2557,7 +2842,6 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         input.dataset.row = String(rIdx);
         input.dataset.col = String(c);
         applyColumnWidth(input, colWidths[c]);
-        applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
         input.title = isFormulaValue(cellRaw(sheet, rIdx, c)) ? cellRaw(sheet, rIdx, c) : "";
         input.disabled = state.readOnly || state.tooLarge;
 
@@ -2670,7 +2954,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
         // Security: cell content is edited through input.value and never
         // injected as HTML, so workbook text cannot become executable markup.
+        input.addEventListener("contextmenu", (ev) => openCellBorderMenu(ev, input));
+
         td.appendChild(input);
+        applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
+
         trEl.appendChild(td);
       }
 
