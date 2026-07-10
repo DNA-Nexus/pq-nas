@@ -151,8 +151,10 @@
 }
 
 .spreadsheetEditorTable input {
+  display: block;
   width: 100%;
-  min-width: 120px;
+  min-width: 0;
+  max-width: none;
   box-sizing: border-box;
   padding: 8px 9px;
   border: 0;
@@ -421,8 +423,12 @@
   outline: 3px solid Highlight;
   outline-offset: -3px;
 }
-.spreadsheetEditorTable input[data-spreadsheet-cell-bg="1"] {
+.spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] {
   background: var(--spreadsheet-cell-bg);
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] > input {
+  background: transparent;
 }
 
 .spreadsheetFillToolBtn {
@@ -636,4 +642,67 @@
 .spreadsheetEditorResizeHandle:hover,
 .spreadsheetEditorResizeHandle:focus-visible {
   opacity: 1;
+}
+
+/* The td owns spreadsheet selection/fill visuals. Inputs stay transparent
+   full-cell editors so cells do not look split into nested boxes. */
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput,
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput {
+  background: transparent;
+  box-shadow: none;
+}
+
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput,
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput:focus,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput:focus {
+  outline: 0;
+}
+
+.spreadsheetBorderMenu {
+  position: fixed;
+  z-index: 3900;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetBorderMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetBorderMenuTitle {
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.spreadsheetBorderMenu button {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetBorderMenu button:hover,
+.spreadsheetBorderMenu button:focus-visible {
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
+  --spreadsheet-cell-border-color: var(--fg);
 }

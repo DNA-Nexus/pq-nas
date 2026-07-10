@@ -5630,5 +5630,12 @@
   "filemgr.spreadsheet_editor.text_white": "White",
   "filemgr.spreadsheet_editor.underline": "Underline",
   "filemgr.spreadsheet_editor.font_size": "Font size",
-  "filemgr.spreadsheet_editor.font_size_default": "Size"
+  "filemgr.spreadsheet_editor.font_size_default": "Size",
+  "filemgr.spreadsheet_editor.borders": "Borders",
+  "filemgr.spreadsheet_editor.border_none": "No custom borders",
+  "filemgr.spreadsheet_editor.border_all_thin": "All thin borders",
+  "filemgr.spreadsheet_editor.border_outside_thin": "Outside thin border",
+  "filemgr.spreadsheet_editor.border_outside_thick": "Outside thick border",
+  "filemgr.spreadsheet_editor.border_bottom_thin": "Bottom thin border",
+  "filemgr.spreadsheet_editor.border_bottom_thick": "Bottom thick border"
 }

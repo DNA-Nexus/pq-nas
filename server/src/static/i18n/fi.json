@@ -5653,5 +5653,12 @@
   "filemgr.spreadsheet_editor.text_white": "Valkoinen",
   "filemgr.spreadsheet_editor.underline": "Alleviivaus",
   "filemgr.spreadsheet_editor.font_size": "Fonttikoko",
-  "filemgr.spreadsheet_editor.font_size_default": "Koko"
+  "filemgr.spreadsheet_editor.font_size_default": "Koko",
+  "filemgr.spreadsheet_editor.borders": "Reunat",
+  "filemgr.spreadsheet_editor.border_none": "Ei mukautettuja reunoja",
+  "filemgr.spreadsheet_editor.border_all_thin": "Kaikki ohuet reunat",
+  "filemgr.spreadsheet_editor.border_outside_thin": "Ulkoreuna ohut",
+  "filemgr.spreadsheet_editor.border_outside_thick": "Ulkoreuna paksu",
+  "filemgr.spreadsheet_editor.border_bottom_thin": "Alareuna ohut",
+  "filemgr.spreadsheet_editor.border_bottom_thick": "Alareuna paksu"
 }
