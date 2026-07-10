@@ -149,8 +149,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-default-modal-1", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-default-modal-1", "data-pqnas-spreadsheet-edit-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-js")
     ]).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
