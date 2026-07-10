@@ -1,0 +1,401 @@
+.spreadsheetEditorModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 24%, transparent));
+  backdrop-filter: blur(8px);
+}
+
+.spreadsheetEditorModal.show {
+  display: flex;
+}
+
+.spreadsheetEditorBox {
+  width: min(1180px, 96vw);
+  height: min(820px, 92vh);
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  overflow: hidden;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-lg, 18px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetEditorHead {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  background: var(--panel-2, var(--panel));
+}
+
+.spreadsheetEditorTitle {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.spreadsheetEditorPath {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spreadsheetEditorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.spreadsheetEditorInfo {
+  min-height: 1.4em;
+  padding: 9px 14px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  font-size: 13px;
+}
+
+.spreadsheetEditorInfo[data-kind="ok"] {
+  color: var(--ok, var(--accent));
+}
+
+.spreadsheetEditorInfo[data-kind="warn"] {
+  color: var(--warn, var(--accent));
+}
+
+.spreadsheetEditorInfo[data-kind="err"] {
+  color: var(--bad, var(--danger));
+}
+
+.spreadsheetEditorTabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  background: var(--panel);
+}
+
+.spreadsheetEditorTab {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--button-bg, var(--panel-2, var(--panel)));
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.spreadsheetEditorTab.active {
+  border-color: var(--accent, var(--link));
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetEditorBody {
+  overflow: auto;
+  background: var(--panel);
+}
+
+.spreadsheetEditorTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 13px;
+}
+
+.spreadsheetEditorTable th,
+.spreadsheetEditorTable td {
+  border-right: 1px solid var(--border, var(--panel-border));
+  border-bottom: 1px solid var(--border, var(--panel-border));
+}
+
+.spreadsheetEditorTable th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 96px;
+  padding: 7px;
+  background: var(--panel-2, var(--panel));
+  color: var(--muted);
+  text-align: center;
+  font-weight: 850;
+}
+
+.spreadsheetEditorTable .rowHead {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 44px;
+  width: 44px;
+  background: var(--panel-2, var(--panel));
+}
+
+.spreadsheetEditorTable .corner {
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+
+.spreadsheetEditorTable td {
+  min-width: 120px;
+  padding: 0;
+  background: var(--input-bg, var(--panel));
+}
+
+.spreadsheetEditorTable input {
+  width: 100%;
+  min-width: 120px;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+
+.spreadsheetEditorTable input:focus {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorError {
+  margin: 16px;
+  padding: 12px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  color: var(--bad, var(--danger));
+  background: var(--panel-2, var(--panel));
+}
+
+@media (max-width: 760px) {
+  .spreadsheetEditorModal {
+    align-items: stretch;
+    padding: 8px;
+  }
+
+  .spreadsheetEditorBox {
+    width: 100%;
+    height: 100%;
+  }
+
+  .spreadsheetEditorHead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .spreadsheetEditorActions {
+    justify-content: flex-start;
+  }
+}
+.spreadsheetEditorConfirmModal {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 28%, transparent));
+  backdrop-filter: blur(8px);
+}
+
+.spreadsheetEditorConfirmBox {
+  width: min(440px, 94vw);
+  padding: 18px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-lg, 18px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetEditorConfirmTitle {
+  font-size: 17px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.spreadsheetEditorConfirmText {
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+.spreadsheetEditorConfirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.spreadsheetEditorTable th[data-col],
+.spreadsheetEditorTable th[data-row] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.spreadsheetEditorTable th[data-col]:hover,
+.spreadsheetEditorTable th[data-row]:hover,
+.spreadsheetEditorTable th[data-col]:focus-visible,
+.spreadsheetEditorTable th[data-row]:focus-visible {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetEditorTable .spreadsheetAxisSelectedHeader {
+  background: color-mix(in srgb, var(--accent, var(--link)) 34%, var(--panel-2, var(--panel)));
+  color: var(--fg);
+  box-shadow:
+    inset 0 0 0 3px var(--accent, var(--link)),
+    inset 0 -4px 0 0 var(--accent, var(--link));
+}
+
+.spreadsheetEditorTable td.spreadsheetAxisSelectedCell {
+  background: color-mix(in srgb, var(--accent, var(--link)) 28%, var(--panel));
+  box-shadow:
+    inset 0 0 0 2px var(--accent, var(--link)),
+    inset 4px 0 0 0 var(--accent, var(--link)),
+    inset -4px 0 0 0 var(--accent, var(--link));
+}
+
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput {
+  background: color-mix(in srgb, var(--accent, var(--link)) 34%, var(--panel));
+  color: var(--fg);
+  box-shadow:
+    inset 0 0 0 2px var(--accent, var(--link)),
+    inset 0 0 0 999px color-mix(in srgb, var(--accent, var(--link)) 18%, transparent);
+}
+
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput:focus {
+  outline: 3px solid var(--accent, var(--link));
+  outline-offset: -3px;
+}
+.spreadsheetAxisMenu {
+  position: fixed;
+  z-index: 3800;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetAxisMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetAxisMenu button {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetAxisMenu button:hover,
+.spreadsheetAxisMenu button:focus-visible {
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+.spreadsheetEditorTable .colHead {
+  position: sticky;
+  padding-right: 16px;
+}
+
+.spreadsheetColumnLabel {
+  pointer-events: none;
+}
+
+.spreadsheetColumnResize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.spreadsheetColumnResize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.spreadsheetColumnResize:hover::after,
+.spreadsheetColumnResize:focus-visible::after,
+.spreadsheetColumnResizing .spreadsheetColumnResize::after {
+  background: Highlight;
+}
+
+.spreadsheetColumnResizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.spreadsheetToolBtn {
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
+.spreadsheetToolBtn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spreadsheetToolBtn.active {
+  border-color: var(--accent, var(--link));
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetToolSep {
+  width: 1px;
+  min-height: 28px;
+  align-self: center;
+  background: var(--border, var(--panel-border));
+}
+.spreadsheetEditorTable td.spreadsheetActiveCell {
+  box-shadow:
+    inset 0 0 0 3px Highlight,
+    inset 0 0 0 999px color-mix(in srgb, Highlight 10%, transparent);
+}
+
+.spreadsheetEditorTable input.spreadsheetActiveCellInput {
+  outline: 3px solid Highlight;
+  outline-offset: -3px;
+}
+
+.spreadsheetEditorTable input.spreadsheetActiveCellInput:focus {
+  outline: 3px solid Highlight;
+  outline-offset: -3px;
+}
