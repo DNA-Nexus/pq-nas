@@ -5635,5 +5635,20 @@
   "filemgr.spreadsheet_editor.italic": "Kursivointi",
   "filemgr.spreadsheet_editor.align_left": "Tasaa vasemmalle",
   "filemgr.spreadsheet_editor.align_center": "Keskitä",
-  "filemgr.spreadsheet_editor.select_cell_first": "Valitse ensin solu, rivi tai sarake."
+  "filemgr.spreadsheet_editor.select_cell_first": "Valitse ensin solu, rivi tai sarake.",
+  "filemgr.spreadsheet_editor.fill_color": "Täyttöväri",
+  "filemgr.spreadsheet_editor.fill_none": "Ei väriä",
+  "filemgr.spreadsheet_editor.fill_yellow": "Keltainen",
+  "filemgr.spreadsheet_editor.fill_green": "Vihreä",
+  "filemgr.spreadsheet_editor.fill_blue": "Sininen",
+  "filemgr.spreadsheet_editor.fill_red": "Punainen",
+  "filemgr.spreadsheet_editor.fill_gray": "Harmaa",
+  "filemgr.spreadsheet_editor.text_color": "Tekstin väri",
+  "filemgr.spreadsheet_editor.text_none": "Oletusteksti",
+  "filemgr.spreadsheet_editor.text_black": "Musta",
+  "filemgr.spreadsheet_editor.text_red": "Punainen",
+  "filemgr.spreadsheet_editor.text_green": "Vihreä",
+  "filemgr.spreadsheet_editor.text_blue": "Sininen",
+  "filemgr.spreadsheet_editor.text_gray": "Harmaa",
+  "filemgr.spreadsheet_editor.text_white": "Valkoinen"
 }

@@ -17,6 +17,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const STYLE_SHEET_NAME = "_pqnas_styles";
   const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
 
+  // Document content colors: these are spreadsheet cell fill values, not
+  // DNA-Nexus UI theme colors. Fixed values are intentional for XLSX output.
+  const CELL_FILL_COLORS = Object.freeze({
+    yellow: { css: "rgb(255, 242, 204)", rgb: "FFFFF2CC" },
+    green: { css: "rgb(217, 234, 211)", rgb: "FFD9EAD3" },
+    blue: { css: "rgb(207, 226, 243)", rgb: "FFCFE2F3" },
+    red: { css: "rgb(244, 204, 204)", rgb: "FFF4CCCC" },
+    gray: { css: "rgb(217, 217, 217)", rgb: "FFD9D9D9" }
+  });
+
+  // Document content colors for spreadsheet text/font color.
+  const TEXT_COLOR_COLORS = Object.freeze({
+    black: { css: "rgb(0, 0, 0)", rgb: "FF000000" },
+    red: { css: "rgb(204, 0, 0)", rgb: "FFCC0000" },
+    green: { css: "rgb(56, 118, 29)", rgb: "FF38761D" },
+    blue: { css: "rgb(17, 85, 204)", rgb: "FF1155CC" },
+    gray: { css: "rgb(102, 102, 102)", rgb: "FF666666" },
+    white: { css: "rgb(255, 255, 255)", rgb: "FFFFFFFF" }
+  });
+
   let modal = null;
   let titleEl = null;
   let pathEl = null;
@@ -30,9 +50,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let italicBtn = null;
   let alignLeftBtn = null;
   let alignCenterBtn = null;
+  let textColorBtn = null;
+  let fillBtn = null;
   let closeBtn = null;
   let confirmModal = null;
   let axisMenu = null;
+  let fillMenu = null;
+  let textColorMenu = null;
   let xlsxLoadPromise = null;
   let formulaFocus = null;
 
@@ -48,7 +72,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     readOnly: false,
     tooLarge: false,
     selection: null,
-    activeCell: null
+    activeCell: null,
+    rangeSelection: null,
+    editorGeometry: null
   };
 
   function tr(key, vars = null, fallback = "") {
@@ -81,19 +107,61 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return out;
   }
 
+  function isValidTextColorKey(value) {
+    return Object.prototype.hasOwnProperty.call(TEXT_COLOR_COLORS, String(value || ""));
+  }
+
+  function normalizeTextColorKey(value) {
+    const key = String(value || "").trim();
+    return isValidTextColorKey(key) ? key : "";
+  }
+
+  function cellTextColorKeyFromRgb(value) {
+    const raw = String(value || "").replace(/^#/, "").toUpperCase();
+    const normalized = raw.length === 6 ? "FF" + raw : raw;
+
+    for (const [key, def] of Object.entries(TEXT_COLOR_COLORS)) {
+      if (String(def.rgb || "").toUpperCase() === normalized) return key;
+    }
+
+    return "";
+  }
+
+  function isValidFillColorKey(value) {
+    return Object.prototype.hasOwnProperty.call(CELL_FILL_COLORS, String(value || ""));
+  }
+
+  function normalizeFillColorKey(value) {
+    const key = String(value || "").trim();
+    return isValidFillColorKey(key) ? key : "";
+  }
+
+  function cellFillKeyFromRgb(value) {
+    const raw = String(value || "").replace(/^#/, "").toUpperCase();
+    const normalized = raw.length === 6 ? "FF" + raw : raw;
+
+    for (const [key, def] of Object.entries(CELL_FILL_COLORS)) {
+      if (String(def.rgb || "").toUpperCase() === normalized) return key;
+    }
+
+    return "";
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     return {
       bold: !!src.bold,
       italic: !!src.italic,
-      align
+      align,
+      bg: normalizeFillColorKey(src.bg),
+      fg: normalizeTextColorKey(src.fg)
     };
   }
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.align;
+    return !f.bold && !f.italic && !f.align && !f.bg && !f.fg;
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -157,6 +225,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.style.fontWeight = f.bold ? "700" : "";
     input.style.fontStyle = f.italic ? "italic" : "";
     input.style.textAlign = f.align || "";
+
+    if (f.bg && CELL_FILL_COLORS[f.bg]) {
+      input.dataset.spreadsheetCellBg = "1";
+      input.style.setProperty("--spreadsheet-cell-bg", CELL_FILL_COLORS[f.bg].css);
+    } else {
+      input.removeAttribute("data-spreadsheet-cell-bg");
+      input.style.removeProperty("--spreadsheet-cell-bg");
+    }
+
+    if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
+      input.dataset.spreadsheetCellFg = "1";
+      input.style.setProperty("--spreadsheet-cell-fg", TEXT_COLOR_COLORS[f.fg].css);
+      input.style.color = TEXT_COLOR_COLORS[f.fg].css;
+    } else {
+      input.removeAttribute("data-spreadsheet-cell-fg");
+      input.style.removeProperty("--spreadsheet-cell-fg");
+      input.style.color = "";
+    }
   }
 
   function formatTargetCells() {
@@ -165,6 +251,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const rowCount = sheet.rows.length;
     const colCount = sheet.rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+
+    const range = normalizedRangeSelection();
+    if (range) {
+      const cells = [];
+      for (let row = range.row1; row <= range.row2; row++) {
+        for (let col = range.col1; col <= range.col2; col++) {
+          if (row >= 0 && row < rowCount && col >= 0 && col < colCount) {
+            cells.push({ row, col });
+          }
+        }
+      }
+      return cells;
+    }
 
     if (state.selection && state.selection.type === "row") {
       const row = Number(state.selection.index);
@@ -221,6 +320,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         fmt[kind] = enable;
       } else if (kind === "align") {
         fmt.align = value === "center" ? "center" : "left";
+      } else if (kind === "bg") {
+        fmt.bg = normalizeFillColorKey(value);
+      } else if (kind === "fg") {
+        fmt.fg = normalizeTextColorKey(value);
       }
 
       setCellFormat(sheet, row, col, fmt);
@@ -248,7 +351,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const sheet = state.sheets[state.active];
     const fmt = first && sheet ? getCellFormat(sheet, first.row, first.col) : normalizeCellFormat(null);
 
-    for (const btn of [boldBtn, italicBtn, alignLeftBtn, alignCenterBtn]) {
+    for (const btn of [boldBtn, italicBtn, alignLeftBtn, alignCenterBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
 
@@ -256,6 +359,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     setToolButtonActive(italicBtn, !!fmt.italic);
     setToolButtonActive(alignLeftBtn, fmt.align === "left" || !fmt.align);
     setToolButtonActive(alignCenterBtn, fmt.align === "center");
+    setToolButtonActive(textColorBtn, !!fmt.fg);
+    if (textColorBtn) {
+      textColorBtn.dataset.fg = fmt.fg || "";
+      if (fmt.fg && TEXT_COLOR_COLORS[fmt.fg]) {
+        textColorBtn.style.setProperty("--spreadsheet-text-preview", TEXT_COLOR_COLORS[fmt.fg].css);
+      } else {
+        textColorBtn.style.removeProperty("--spreadsheet-text-preview");
+      }
+    }
+    setToolButtonActive(fillBtn, !!fmt.bg);
+    if (fillBtn) {
+      fillBtn.dataset.fill = fmt.bg || "";
+      if (fmt.bg && CELL_FILL_COLORS[fmt.bg]) {
+        fillBtn.style.setProperty("--spreadsheet-fill-preview", CELL_FILL_COLORS[fmt.bg].css);
+      } else {
+        fillBtn.style.removeProperty("--spreadsheet-fill-preview");
+      }
+    }
   }
 
   function compactCellFormats(sheet) {
@@ -326,14 +447,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (isEmptyCellFormat(f)) return null;
 
     const style = {};
-    if (f.bold || f.italic) {
+    if (f.bold || f.italic || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
       style.font = {};
       if (f.bold) style.font.bold = true;
       if (f.italic) style.font.italic = true;
+      if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
+        style.font.color = { rgb: TEXT_COLOR_COLORS[f.fg].rgb };
+      }
     }
 
     if (f.align) {
       style.alignment = { horizontal: f.align };
+    }
+
+    if (f.bg && CELL_FILL_COLORS[f.bg]) {
+      style.fill = {
+        patternType: "solid",
+        fgColor: { rgb: CELL_FILL_COLORS[f.bg].rgb }
+      };
     }
 
     return style;
@@ -993,6 +1124,115 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+  function normalizedRangeSelection(range = state.rangeSelection) {
+    if (!range) return null;
+
+    const sr = Number(range.startRow);
+    const sc = Number(range.startCol);
+    const er = Number(range.endRow);
+    const ec = Number(range.endCol);
+
+    if (![sr, sc, er, ec].every(Number.isInteger)) return null;
+
+    return {
+      row1: Math.min(sr, er),
+      row2: Math.max(sr, er),
+      col1: Math.min(sc, ec),
+      col2: Math.max(sc, ec)
+    };
+  }
+
+  function clearRangeSelectionClasses() {
+    if (!bodyEl) return;
+
+    for (const el of bodyEl.querySelectorAll(".spreadsheetRangeSelectedCell, .spreadsheetRangeSelectedInput")) {
+      el.classList.remove("spreadsheetRangeSelectedCell", "spreadsheetRangeSelectedInput");
+      el.removeAttribute("aria-selected");
+    }
+  }
+
+  function paintRangeSelection() {
+    clearRangeSelectionClasses();
+
+    const range = normalizedRangeSelection();
+    if (!range || !bodyEl) return;
+
+    for (let r = range.row1; r <= range.row2; r++) {
+      for (let c = range.col1; c <= range.col2; c++) {
+        const input = bodyEl.querySelector(`input[data-row="${r}"][data-col="${c}"]`);
+        if (!input) continue;
+
+        const cell = input.closest("td[data-row][data-col]");
+        if (cell) {
+          cell.classList.add("spreadsheetRangeSelectedCell");
+          cell.setAttribute("aria-selected", "true");
+        }
+
+        input.classList.add("spreadsheetRangeSelectedInput");
+        input.setAttribute("aria-selected", "true");
+      }
+    }
+  }
+
+  function setRangeSelection(startRow, startCol, endRow, endCol) {
+    if (![startRow, startCol, endRow, endCol].every(Number.isInteger)) return;
+
+    state.selection = null;
+    state.activeCell = null;
+    state.rangeSelection = null;
+    state.rangeSelection = { startRow, startCol, endRow, endCol };
+
+    repaintSpreadsheetSelection();
+    updateFormatToolbar();
+  }
+
+  function beginCellRangePointer(ev, row, col) {
+    if (state.readOnly || state.tooLarge) return;
+    if (!ev || ev.button !== 0) return;
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+
+    const activeFormula = formulaFocus && formulaFocus.input;
+    if (activeFormula && activeFormula !== ev.currentTarget && String(activeFormula.value || "").startsWith("=")) {
+      return;
+    }
+
+    const startX = Number(ev.clientX);
+    const startY = Number(ev.clientY);
+    let dragging = false;
+
+    const onMove = (moveEv) => {
+      const dx = Math.abs(Number(moveEv.clientX) - startX);
+      const dy = Math.abs(Number(moveEv.clientY) - startY);
+
+      if (!dragging && dx < 4 && dy < 4) return;
+
+      const target = document.elementFromPoint(moveEv.clientX, moveEv.clientY);
+      const input = target && target.closest
+        ? target.closest("input[data-row][data-col]")
+        : null;
+
+      if (!input || !bodyEl || !bodyEl.contains(input)) return;
+
+      const endRow = Number(input.dataset.row);
+      const endCol = Number(input.dataset.col);
+      if (!Number.isInteger(endRow) || !Number.isInteger(endCol)) return;
+
+      dragging = true;
+      moveEv.preventDefault();
+      document.body.classList.add("spreadsheetRangeSelecting");
+      setRangeSelection(row, col, endRow, endCol);
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("spreadsheetRangeSelecting");
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+  }
+
   function clearActiveCellHighlight() {
     if (!bodyEl) return;
 
@@ -1005,7 +1245,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function paintActiveCellSelection() {
     clearActiveCellHighlight();
 
-    if (state.selection || !state.activeCell || !bodyEl) return;
+    if (state.selection || state.rangeSelection || !state.activeCell || !bodyEl) return;
 
     const row = Number(state.activeCell.row);
     const col = Number(state.activeCell.col);
@@ -1026,6 +1266,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function repaintSpreadsheetSelection() {
     paintAxisSelection();
+    paintRangeSelection();
     paintActiveCellSelection();
   }
 
@@ -1036,6 +1277,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     state.selection = { type, index };
     state.activeCell = null;
+    state.rangeSelection = null;
     repaintSpreadsheetSelection();
     updateFormatToolbar();
   }
@@ -1052,8 +1294,176 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     state.selection = same ? null : { type, index };
     state.activeCell = null;
+    state.rangeSelection = null;
     repaintSpreadsheetSelection();
     updateFormatToolbar();
+  }
+
+  function hideTextColorMenu() {
+    if (!textColorMenu || textColorMenu.hidden) return false;
+    textColorMenu.hidden = true;
+    textColorMenu.replaceChildren();
+    return true;
+  }
+
+  function textColorLabel(key) {
+    switch (key) {
+      case "black": return tr("filemgr.spreadsheet_editor.text_black", null, "Black");
+      case "red": return tr("filemgr.spreadsheet_editor.text_red", null, "Red");
+      case "green": return tr("filemgr.spreadsheet_editor.text_green", null, "Green");
+      case "blue": return tr("filemgr.spreadsheet_editor.text_blue", null, "Blue");
+      case "gray": return tr("filemgr.spreadsheet_editor.text_gray", null, "Gray");
+      case "white": return tr("filemgr.spreadsheet_editor.text_white", null, "White");
+      default: return tr("filemgr.spreadsheet_editor.text_none", null, "Default text");
+    }
+  }
+
+  function ensureTextColorMenu() {
+    if (textColorMenu) return textColorMenu;
+
+    textColorMenu = document.createElement("div");
+    textColorMenu.className = "spreadsheetTextColorMenu";
+    textColorMenu.hidden = true;
+    textColorMenu.setAttribute("role", "menu");
+
+    textColorMenu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.body.appendChild(textColorMenu);
+    return textColorMenu;
+  }
+
+  function makeTextColorMenuButton(key) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "menuitem");
+    btn.dataset.fg = key || "";
+
+    const swatch = document.createElement("span");
+    swatch.className = "spreadsheetTextColorSwatch";
+    if (key && TEXT_COLOR_COLORS[key]) {
+      swatch.style.setProperty("--spreadsheet-text-preview", TEXT_COLOR_COLORS[key].css);
+    }
+
+    const label = document.createElement("span");
+    label.textContent = textColorLabel(key);
+
+    btn.appendChild(swatch);
+    btn.appendChild(label);
+
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideTextColorMenu();
+      applyFormatCommand("fg", key || "");
+    });
+
+    return btn;
+  }
+
+  function openTextColorMenu() {
+    if (!textColorBtn) return;
+
+    const menu = ensureTextColorMenu();
+    menu.replaceChildren();
+
+    menu.appendChild(makeTextColorMenuButton(""));
+    for (const key of Object.keys(TEXT_COLOR_COLORS)) {
+      menu.appendChild(makeTextColorMenuButton(key));
+    }
+
+    const rect = textColorBtn.getBoundingClientRect();
+    menu.hidden = false;
+
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8));
+    const top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8));
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  function hideFillMenu() {
+    if (!fillMenu || fillMenu.hidden) return false;
+    fillMenu.hidden = true;
+    fillMenu.replaceChildren();
+    return true;
+  }
+
+  function fillColorLabel(key) {
+    switch (key) {
+      case "yellow": return tr("filemgr.spreadsheet_editor.fill_yellow", null, "Yellow");
+      case "green": return tr("filemgr.spreadsheet_editor.fill_green", null, "Green");
+      case "blue": return tr("filemgr.spreadsheet_editor.fill_blue", null, "Blue");
+      case "red": return tr("filemgr.spreadsheet_editor.fill_red", null, "Red");
+      case "gray": return tr("filemgr.spreadsheet_editor.fill_gray", null, "Gray");
+      default: return tr("filemgr.spreadsheet_editor.fill_none", null, "No fill");
+    }
+  }
+
+  function ensureFillMenu() {
+    if (fillMenu) return fillMenu;
+
+    fillMenu = document.createElement("div");
+    fillMenu.className = "spreadsheetFillMenu";
+    fillMenu.hidden = true;
+    fillMenu.setAttribute("role", "menu");
+
+    fillMenu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.body.appendChild(fillMenu);
+    return fillMenu;
+  }
+
+  function makeFillMenuButton(key) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "menuitem");
+    btn.dataset.fill = key || "";
+
+    const swatch = document.createElement("span");
+    swatch.className = "spreadsheetFillSwatch";
+    if (key && CELL_FILL_COLORS[key]) {
+      swatch.style.setProperty("--spreadsheet-fill-preview", CELL_FILL_COLORS[key].css);
+    }
+
+    const label = document.createElement("span");
+    label.textContent = fillColorLabel(key);
+
+    btn.appendChild(swatch);
+    btn.appendChild(label);
+
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideFillMenu();
+      applyFormatCommand("bg", key || "");
+    });
+
+    return btn;
+  }
+
+  function openFillMenu() {
+    if (!fillBtn) return;
+
+    const menu = ensureFillMenu();
+    menu.replaceChildren();
+
+    menu.appendChild(makeFillMenuButton(""));
+    for (const key of Object.keys(CELL_FILL_COLORS)) {
+      menu.appendChild(makeFillMenuButton(key));
+    }
+
+    const rect = fillBtn.getBoundingClientRect();
+    menu.hidden = false;
+
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8));
+    const top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8));
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
   }
 
   function hideAxisMenu() {
@@ -1329,7 +1739,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const fmt = normalizeCellFormat({
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
-          align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : ""
+          align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
+          bg: cellFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
+          fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
         });
         cellFormats[r][c] = isEmptyCellFormat(fmt) ? null : fmt;
       }
@@ -1509,6 +1921,53 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     updateFormatToolbar();
   }
 
+  function clampEditorGeometryNumber(value, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, Math.round(n)));
+  }
+
+  function normalizeEditorGeometry(geometry) {
+    if (!geometry || typeof geometry !== "object") return null;
+
+    const pad = 16;
+    const viewportW = Math.max(320, window.innerWidth || 0);
+    const viewportH = Math.max(260, window.innerHeight || 0);
+
+    const maxW = Math.max(320, viewportW - pad);
+    const maxH = Math.max(260, viewportH - pad);
+
+    return {
+      width: clampEditorGeometryNumber(geometry.width, 320, maxW),
+      height: clampEditorGeometryNumber(geometry.height, 260, maxH)
+    };
+  }
+
+  function applyEditorGeometry() {
+    const box = modal ? modal.querySelector(".spreadsheetEditorBox") : null;
+    if (!box) return;
+
+    box.style.removeProperty("position");
+    box.style.removeProperty("left");
+    box.style.removeProperty("top");
+    box.style.removeProperty("margin");
+
+    const geometry = normalizeEditorGeometry(state.editorGeometry);
+    if (!geometry) {
+      box.style.removeProperty("width");
+      box.style.removeProperty("height");
+      box.style.removeProperty("max-width");
+      box.style.removeProperty("max-height");
+      return;
+    }
+
+    // Keep the editor centered by CSS, but inherit the preview size.
+    box.style.width = `${geometry.width}px`;
+    box.style.height = `${geometry.height}px`;
+    box.style.maxWidth = "calc(100vw - 16px)";
+    box.style.maxHeight = "calc(100vh - 16px)";
+  }
+
   function ensureModal() {
     if (modal) return;
 
@@ -1536,6 +1995,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorAlignCenter" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}" title="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M7 10h10"></path><path d="M5 14h14"></path><path d="M8 18h8"></path></svg>
             </button>
+            <button id="spreadsheetEditorTextColor" type="button" class="btn secondary spreadsheetToolBtn spreadsheetTextToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}" title="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 6 20"></path><path d="M12 4 18 20"></path><path d="M8 14h8"></path><path d="M5 22h14"></path></svg>
+            </button>
+            <button id="spreadsheetEditorFill" type="button" class="btn secondary spreadsheetToolBtn spreadsheetFillToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.fill_color", null, "Fill color")}" title="${tr("filemgr.spreadsheet_editor.fill_color", null, "Fill color")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14 12 6l6 6-8 8z"></path><path d="M14 4 20 10"></path><path d="M4 14h16"></path></svg>
+            </button>
             <span class="spreadsheetToolSep" aria-hidden="true"></span>
             <button id="spreadsheetEditorSave" type="button" class="btn">${tr("filemgr.spreadsheet_editor.save", null, "Save")}</button>
             <button id="spreadsheetEditorClose" type="button" class="btn secondary">${tr("filemgr.close", null, "Close")}</button>
@@ -1561,18 +2026,36 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
     alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
     alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
+    textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
+    fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
 
     boldBtn?.addEventListener("click", () => applyFormatCommand("bold"));
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));
     alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
     alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
+    textColorBtn?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideAxisMenu();
+      hideFillMenu();
+      openTextColorMenu();
+    });
+    fillBtn?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideAxisMenu();
+      hideTextColorMenu();
+      openFillMenu();
+    });
     saveBtn?.addEventListener("click", saveCurrent);
     addRowBtn?.addEventListener("click", addRow);
     addColBtn?.addEventListener("click", addColumn);
     closeBtn?.addEventListener("click", close);
 
     modal.addEventListener("click", (ev) => {
+      hideTextColorMenu();
+      hideFillMenu();
       hideAxisMenu();
       if (ev.target === modal) close();
     });
@@ -1584,7 +2067,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         saveCurrent();
       }
       if (ev.key === "Escape") {
-        if (hideAxisMenu()) {
+        if (hideTextColorMenu() || hideFillMenu() || hideAxisMenu()) {
           ev.preventDefault();
           return;
         }
@@ -1595,6 +2078,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function show() {
     ensureModal();
+
+    const box = modal ? modal.querySelector(".spreadsheetEditorBox") : null;
+    if (box) {
+      box.style.removeProperty("position");
+      box.style.removeProperty("left");
+      box.style.removeProperty("top");
+      box.style.removeProperty("width");
+      box.style.removeProperty("height");
+      box.style.removeProperty("max-width");
+      box.style.removeProperty("max-height");
+      box.style.removeProperty("margin");
+    }
+
     modal.classList.add("show");
     modal.setAttribute("aria-hidden", "false");
   }
@@ -1831,16 +2327,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           insertFormulaReference(active, rIdx, c);
         });
 
+        input.addEventListener("pointerdown", (ev) => {
+          beginCellRangePointer(ev, rIdx, c);
+        });
+
         input.addEventListener("focus", () => {
           const r = Number(input.dataset.row);
           const col = Number(input.dataset.col);
           state.activeCell = Number.isInteger(r) && Number.isInteger(col) ? { row: r, col } : null;
 
-          if (state.selection) {
+          if (state.selection || state.rangeSelection) {
             state.selection = null;
+            state.rangeSelection = null;
           }
 
           hideAxisMenu();
+          hideFillMenu();
+          hideTextColorMenu();
           repaintSpreadsheetSelection();
           updateFormatToolbar();
 
@@ -2269,6 +2772,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.tooLarge = false;
     state.selection = null;
     state.activeCell = null;
+    state.rangeSelection = null;
+    state.editorGeometry = null;
 
     if (titleEl) titleEl.textContent = tr("filemgr.spreadsheet_editor.title", null, "Edit spreadsheet");
     if (pathEl) pathEl.textContent = "/" + rel;
