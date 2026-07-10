@@ -37,6 +37,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     white: { css: "rgb(255, 255, 255)", rgb: "FFFFFFFF" }
   });
 
+  const FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
+
   let modal = null;
   let titleEl = null;
   let pathEl = null;
@@ -48,6 +50,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let addColBtn = null;
   let boldBtn = null;
   let italicBtn = null;
+  let underlineBtn = null;
+  let fontSizeSelect = null;
   let alignLeftBtn = null;
   let alignCenterBtn = null;
   let textColorBtn = null;
@@ -147,12 +151,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return "";
   }
 
+  function normalizeFontSize(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    const rounded = Math.round(n);
+    return FONT_SIZE_OPTIONS.includes(rounded) ? rounded : 0;
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     return {
       bold: !!src.bold,
       italic: !!src.italic,
+      underline: !!src.underline,
+      fontSize: normalizeFontSize(src.fontSize || src.sz),
       align,
       bg: normalizeFillColorKey(src.bg),
       fg: normalizeTextColorKey(src.fg)
@@ -161,7 +174,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.align && !f.bg && !f.fg;
+    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.bg && !f.fg;
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -224,6 +237,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const f = normalizeCellFormat(fmt);
     input.style.fontWeight = f.bold ? "700" : "";
     input.style.fontStyle = f.italic ? "italic" : "";
+    input.style.textDecoration = f.underline ? "underline" : "";
+    input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
 
     if (f.bg && CELL_FILL_COLORS[f.bg]) {
@@ -309,15 +324,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     let enable = true;
-    if (kind === "bold" || kind === "italic") {
+    if (kind === "bold" || kind === "italic" || kind === "underline") {
       enable = !cells.every(({ row, col }) => !!getCellFormat(sheet, row, col)[kind]);
     }
 
     for (const { row, col } of cells) {
       const fmt = getCellFormat(sheet, row, col);
 
-      if (kind === "bold" || kind === "italic") {
+      if (kind === "bold" || kind === "italic" || kind === "underline") {
         fmt[kind] = enable;
+      } else if (kind === "fontSize") {
+        fmt.fontSize = normalizeFontSize(value);
       } else if (kind === "align") {
         fmt.align = value === "center" ? "center" : "left";
       } else if (kind === "bg") {
@@ -351,12 +368,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const sheet = state.sheets[state.active];
     const fmt = first && sheet ? getCellFormat(sheet, first.row, first.col) : normalizeCellFormat(null);
 
-    for (const btn of [boldBtn, italicBtn, alignLeftBtn, alignCenterBtn, textColorBtn, fillBtn]) {
+    for (const btn of [boldBtn, italicBtn, underlineBtn, alignLeftBtn, alignCenterBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
+    if (fontSizeSelect) fontSizeSelect.disabled = disabled;
 
     setToolButtonActive(boldBtn, !!fmt.bold);
     setToolButtonActive(italicBtn, !!fmt.italic);
+    setToolButtonActive(underlineBtn, !!fmt.underline);
+    if (fontSizeSelect) {
+      fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
+    }
     setToolButtonActive(alignLeftBtn, fmt.align === "left" || !fmt.align);
     setToolButtonActive(alignCenterBtn, fmt.align === "center");
     setToolButtonActive(textColorBtn, !!fmt.fg);
@@ -447,10 +469,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (isEmptyCellFormat(f)) return null;
 
     const style = {};
-    if (f.bold || f.italic || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
+    if (f.bold || f.italic || f.underline || f.fontSize || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
       style.font = {};
       if (f.bold) style.font.bold = true;
       if (f.italic) style.font.italic = true;
+      if (f.underline) style.font.underline = true;
+      if (f.fontSize) style.font.sz = f.fontSize;
       if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
         style.font.color = { rgb: TEXT_COLOR_COLORS[f.fg].rgb };
       }
@@ -1739,6 +1763,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const fmt = normalizeCellFormat({
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
+          underline: !!(style && style.font && style.font.underline),
+          fontSize: normalizeFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           bg: cellFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
@@ -2173,6 +2199,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorItalic" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.italic", null, "Italic")}" title="${tr("filemgr.spreadsheet_editor.italic", null, "Italic")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5h8"></path><path d="M6 19h8"></path><path d="M15 5 9 19"></path></svg>
             </button>
+            <button id="spreadsheetEditorUnderline" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}" title="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v6a5 5 0 0 0 10 0V5"></path><path d="M5 21h14"></path></svg>
+            </button>
+            <select id="spreadsheetEditorFontSize" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}" title="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}">
+              <option value="">${tr("filemgr.spreadsheet_editor.font_size_default", null, "Size")}</option>
+              ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}">${size}</option>`).join("")}
+            </select>
             <button id="spreadsheetEditorAlignLeft" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}" title="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M5 10h10"></path><path d="M5 14h14"></path><path d="M5 18h8"></path></svg>
             </button>
@@ -2208,6 +2241,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     addColBtn = modal.querySelector("#spreadsheetEditorAddCol");
     boldBtn = modal.querySelector("#spreadsheetEditorBold");
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
+    underlineBtn = modal.querySelector("#spreadsheetEditorUnderline");
+    fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
     alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
     alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
@@ -2216,6 +2251,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     boldBtn?.addEventListener("click", () => applyFormatCommand("bold"));
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));
+    underlineBtn?.addEventListener("click", () => applyFormatCommand("underline"));
+    fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
     alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
     alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
     textColorBtn?.addEventListener("click", (ev) => {

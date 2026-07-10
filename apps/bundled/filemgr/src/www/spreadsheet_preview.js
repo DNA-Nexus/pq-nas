@@ -43,6 +43,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     gray: "rgb(102, 102, 102)",
     white: "rgb(255, 255, 255)"
   });
+
+  const PREVIEW_FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -149,8 +151,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-detached-resize-1", "data-pqnas-spreadsheet-edit-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-edit-font-size-underline-5", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-edit-font-size-underline-5", "data-pqnas-spreadsheet-edit-js")
     ]).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -280,6 +282,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return raw.replace(/[:\\/?*\[\]]/g, "-").slice(0, 31) || `Sheet${idx + 1}`;
   }
 
+  function normalizePreviewFontSize(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    const rounded = Math.round(n);
+    return PREVIEW_FONT_SIZE_OPTIONS.includes(rounded) ? rounded : 0;
+  }
+
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
@@ -289,6 +298,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return {
       bold: !!src.bold,
       italic: !!src.italic,
+      underline: !!src.underline,
+      fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       align,
       bg,
       fg
@@ -391,12 +402,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const fmt = normalizePreviewCellFormat({
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
+          underline: !!(style && style.font && style.font.underline),
+          fontSize: normalizePreviewFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           bg: previewFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb)
         });
 
-        if (fmt.bold || fmt.italic || fmt.align || fmt.bg || fmt.fg) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.bg || fmt.fg) {
           out[r][c] = fmt;
         }
       }
@@ -411,6 +424,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const f = normalizePreviewCellFormat(fmt);
     td.style.fontWeight = f.bold ? "700" : "";
     td.style.fontStyle = f.italic ? "italic" : "";
+    td.style.textDecoration = f.underline ? "underline" : "";
+    td.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     td.style.textAlign = f.align || "";
 
     if (f.bg && PREVIEW_FILL_COLORS[f.bg]) {

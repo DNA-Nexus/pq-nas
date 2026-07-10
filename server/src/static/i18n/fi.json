@@ -5650,5 +5650,8 @@
   "filemgr.spreadsheet_editor.text_green": "Vihreä",
   "filemgr.spreadsheet_editor.text_blue": "Sininen",
   "filemgr.spreadsheet_editor.text_gray": "Harmaa",
-  "filemgr.spreadsheet_editor.text_white": "Valkoinen"
+  "filemgr.spreadsheet_editor.text_white": "Valkoinen",
+  "filemgr.spreadsheet_editor.underline": "Alleviivaus",
+  "filemgr.spreadsheet_editor.font_size": "Fonttikoko",
+  "filemgr.spreadsheet_editor.font_size_default": "Koko"
 }

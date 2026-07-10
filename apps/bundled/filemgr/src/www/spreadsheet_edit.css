@@ -384,6 +384,28 @@
   align-self: center;
   background: var(--border, var(--panel-border));
 }
+
+.spreadsheetFontSizeSelect {
+  min-width: 76px;
+  height: 34px;
+  border: 1px solid var(--button-border, var(--border, var(--panel-border)));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--button-bg, var(--panel));
+  color: var(--fg);
+  font: inherit;
+  padding: 0 8px;
+}
+
+.spreadsheetFontSizeSelect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spreadsheetFontSizeSelect:focus-visible {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: 2px;
+}
+
 .spreadsheetEditorTable td.spreadsheetActiveCell {
   box-shadow:
     inset 0 0 0 3px Highlight,
