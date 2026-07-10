@@ -151,8 +151,10 @@
 }
 
 .spreadsheetEditorTable input {
+  display: block;
   width: 100%;
-  min-width: 120px;
+  min-width: 0;
+  max-width: none;
   box-sizing: border-box;
   padding: 8px 9px;
   border: 0;
@@ -421,8 +423,12 @@
   outline: 3px solid Highlight;
   outline-offset: -3px;
 }
-.spreadsheetEditorTable input[data-spreadsheet-cell-bg="1"] {
+.spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] {
   background: var(--spreadsheet-cell-bg);
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] > input {
+  background: transparent;
 }
 
 .spreadsheetFillToolBtn {
@@ -636,4 +642,20 @@
 .spreadsheetEditorResizeHandle:hover,
 .spreadsheetEditorResizeHandle:focus-visible {
   opacity: 1;
+}
+
+/* The td owns spreadsheet selection/fill visuals. Inputs stay transparent
+   full-cell editors so cells do not look split into nested boxes. */
+.spreadsheetEditorTable input.spreadsheetAxisSelectedInput,
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput {
+  background: transparent;
+  box-shadow: none;
+}
+
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput,
+.spreadsheetEditorTable input.spreadsheetRangeSelectedInput:focus,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput,
+.spreadsheetEditorTable input.spreadsheetActiveCellInput:focus {
+  outline: 0;
 }

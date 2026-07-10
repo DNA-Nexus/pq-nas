@@ -234,19 +234,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function applyCellFormatToInput(input, fmt) {
     if (!input) return;
 
+    const cell = input.closest ? input.closest("td[data-row][data-col]") : null;
     const f = normalizeCellFormat(fmt);
+
     input.style.fontWeight = f.bold ? "700" : "";
     input.style.fontStyle = f.italic ? "italic" : "";
     input.style.textDecoration = f.underline ? "underline" : "";
     input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
 
-    if (f.bg && CELL_FILL_COLORS[f.bg]) {
-      input.dataset.spreadsheetCellBg = "1";
-      input.style.setProperty("--spreadsheet-cell-bg", CELL_FILL_COLORS[f.bg].css);
-    } else {
-      input.removeAttribute("data-spreadsheet-cell-bg");
-      input.style.removeProperty("--spreadsheet-cell-bg");
+    // The td owns spreadsheet cell fill. This prevents fill color from
+    // covering only the input-sized part of a wider table cell.
+    input.removeAttribute("data-spreadsheet-cell-bg");
+    input.style.removeProperty("--spreadsheet-cell-bg");
+
+    if (cell) {
+      if (f.bg && CELL_FILL_COLORS[f.bg]) {
+        cell.dataset.spreadsheetCellBg = "1";
+        cell.style.setProperty("--spreadsheet-cell-bg", CELL_FILL_COLORS[f.bg].css);
+      } else {
+        cell.removeAttribute("data-spreadsheet-cell-bg");
+        cell.style.removeProperty("--spreadsheet-cell-bg");
+      }
     }
 
     if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
@@ -553,6 +562,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function applyColumnWidth(el, width) {
     if (!el) return;
+
+    // Keep spreadsheet inputs as full-cell editors. The td owns the actual
+    // cell geometry; pinning input width/maxWidth can create a visible split
+    // when browser table layout expands the cell.
+    if (String(el.tagName || "").toUpperCase() === "INPUT") {
+      el.style.width = "100%";
+      el.style.minWidth = "0";
+      el.style.maxWidth = "none";
+      return;
+    }
+
     const px = `${clampColumnWidth(width)}px`;
     el.style.width = px;
     el.style.minWidth = px;
@@ -1100,10 +1120,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const input = cell.querySelector("input");
     if (input) {
       input.dataset.spreadsheetAxisStyle = "1";
-      input.style.setProperty("background", "Highlight");
+      input.style.setProperty("background", "transparent");
       input.style.setProperty("color", "HighlightText");
-      input.style.setProperty("border-color", "Highlight");
-      input.style.setProperty("box-shadow", "inset 0 0 0 2px Highlight");
+      input.style.removeProperty("border-color");
+      input.style.removeProperty("box-shadow");
     }
   }
 
