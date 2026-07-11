@@ -455,16 +455,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return cells;
     }
 
-    if (state.selection && state.selection.type === "row") {
-      const row = Number(state.selection.index);
-      if (!Number.isInteger(row) || row < 0 || row >= rowCount) return [];
-      return Array.from({ length: colCount }, (_v, col) => ({ row, col }));
-    }
-
-    if (state.selection && state.selection.type === "column") {
-      const col = Number(state.selection.index);
-      if (!Number.isInteger(col) || col < 0 || col >= colCount) return [];
-      return Array.from({ length: rowCount }, (_v, row) => ({ row, col }));
+    if (state.selection) {
+      const api = FM && FM.spreadsheetAxis;
+      if (api && typeof api.targetCells === "function") {
+        return api.targetCells(state.selection, rowCount, colCount);
+      }
+      return [];
     }
 
     if (state.activeCell) {
@@ -2590,39 +2586,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     clearSelectionClasses();
 
-    if (!state.selection) return;
+    const api = FM && FM.spreadsheetAxis;
+    if (!api || typeof api.paintSelection !== "function") return;
 
-    const type = state.selection.type;
-    const index = Number(state.selection.index);
-    if (!Number.isInteger(index) || index < 0) return;
-
-    const headerSelector = type === "column"
-      ? `th[data-col="${index}"]`
-      : `th[data-row="${index}"]`;
-
-    const cellMatcher = type === "column"
-      ? (cell) => Number(cell.dataset.col) === index
-      : (cell) => Number(cell.dataset.row) === index;
-
-    const header = table.querySelector(headerSelector);
-    if (header) {
-      header.classList.add("spreadsheetAxisSelectedHeader");
-      header.setAttribute("aria-selected", "true");
-      markAxisHeader(header);
-    }
-
-    for (const cell of table.querySelectorAll("td[data-row][data-col]")) {
-      if (!cellMatcher(cell)) continue;
-
-      cell.classList.add("spreadsheetAxisSelectedCell");
-      cell.setAttribute("aria-selected", "true");
-
-      const input = cell.querySelector("input");
-      if (input) {
-        input.classList.add("spreadsheetAxisSelectedInput");
-      }
-      markAxisCell(cell);
-    }
+    api.paintSelection(table, state.selection, {
+      markHeader: markAxisHeader,
+      markCell: markAxisCell
+    });
   }
 
   function normalizedRangeSelection(range = state.rangeSelection) {
@@ -2771,29 +2741,83 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     paintActiveCellSelection();
   }
 
+  function axisApi() {
+    return FM && FM.spreadsheetAxis ? FM.spreadsheetAxis : null;
+  }
+
+  function axisSelectionRange(selection = state.selection) {
+    const api = axisApi();
+    return api && typeof api.range === "function" ? api.range(selection) : null;
+  }
+
+  function axisSelectionContains(type, index) {
+    const api = axisApi();
+    return !!(api && typeof api.contains === "function" && api.contains(state.selection, type, index));
+  }
+
+  function axisSelectionCount(type) {
+    const range = axisSelectionRange();
+    return range && range.type === type ? Math.max(1, range.count || 1) : 1;
+  }
+
+  function axisOperationLabel(action, type) {
+    const api = axisApi();
+    if (!api || typeof api.operationLabel !== "function") return "";
+    return api.operationLabel(action, type, axisSelectionCount(type));
+  }
+
+  function axisInsertSpec(type, fallbackIndex, total, limit) {
+    const api = axisApi();
+    if (!api || typeof api.insertSpec !== "function") return { index: 0, count: 0 };
+    return api.insertSpec(state.selection, type, fallbackIndex, total, limit);
+  }
+
+  function axisDeleteSpec(type, fallbackIndex, total) {
+    const api = axisApi();
+    if (!api || typeof api.deleteSpec !== "function") return { index: 0, count: 0 };
+    return api.deleteSpec(state.selection, type, fallbackIndex, total);
+  }
+
+  function makeAxisSelection(type, index, modifiers = {}) {
+    const api = axisApi();
+    if (!api || typeof api.selectionFromClick !== "function") return null;
+    return api.selectionFromClick(state.selection, type, index, modifiers);
+  }
+
   function setSpreadsheetAxisSelection(type, index) {
     if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) {
       return;
     }
 
-    state.selection = { type, index };
+    state.selection = makeAxisSelection(type, index, {});
     state.activeCell = null;
     state.rangeSelection = null;
     repaintSpreadsheetSelection();
     updateFormatToolbar();
   }
 
-  function selectSpreadsheetAxis(type, index) {
+  function selectSpreadsheetAxis(type, index, ev = null) {
     if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) {
       return;
     }
 
-    const same =
-      state.selection &&
-      state.selection.type === type &&
-      state.selection.index === index;
+    const modifiers = {
+      shiftKey: !!(ev && ev.shiftKey),
+      ctrlKey: !!(ev && ev.ctrlKey),
+      metaKey: !!(ev && ev.metaKey)
+    };
 
-    state.selection = same ? null : { type, index };
+    const current = axisSelectionRange();
+    const sameSingle =
+      !modifiers.shiftKey &&
+      !modifiers.ctrlKey &&
+      !modifiers.metaKey &&
+      current &&
+      current.type === type &&
+      current.start === index &&
+      current.end === index;
+
+    state.selection = sameSingle ? null : makeAxisSelection(type, index, modifiers);
     state.activeCell = null;
     state.rangeSelection = null;
     repaintSpreadsheetSelection();
@@ -3048,146 +3072,44 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function hideAxisMenu() {
-    if (!axisMenu || axisMenu.hidden) return false;
-    axisMenu.hidden = true;
-    axisMenu.replaceChildren();
-    return true;
-  }
-
-  function makeAxisMenuButton(label, onClick) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = label;
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      hideAxisMenu();
-      onClick();
-    });
-    return btn;
-  }
-
-  function ensureAxisMenu() {
-    if (axisMenu) return axisMenu;
-
-    axisMenu = document.createElement("div");
-    axisMenu.className = "spreadsheetAxisMenu";
-    axisMenu.hidden = true;
-    axisMenu.setAttribute("role", "menu");
-
-    axisMenu.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-    });
-
-    document.body.appendChild(axisMenu);
-    return axisMenu;
-  }
-
-  function positionAxisMenu(menu, x, y) {
-    menu.style.left = `${Math.max(8, x)}px`;
-    menu.style.top = `${Math.max(8, y)}px`;
-
-    const rect = menu.getBoundingClientRect();
-    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
-    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
-
-    menu.style.left = `${Math.min(Math.max(8, x), maxLeft)}px`;
-    menu.style.top = `${Math.min(Math.max(8, y), maxTop)}px`;
+    const api = FM && FM.spreadsheetAxis;
+    if (api && typeof api.hideContextMenu === "function") {
+      return api.hideContextMenu();
+    }
+    return false;
   }
 
   function openAxisMenu(type, index, x, y) {
     if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) return;
     if (state.readOnly || state.tooLarge) return;
 
-    setSpreadsheetAxisSelection(type, index);
+    const api = FM && FM.spreadsheetAxis;
+    if (!api || typeof api.openContextMenu !== "function") return;
 
-    const menu = ensureAxisMenu();
-    menu.replaceChildren();
-
-    if (type === "column") {
-      menu.appendChild(makeAxisMenuButton(
-        tr("filemgr.spreadsheet_editor.insert_column_here", null, "Insert column here"),
-        () => addColumn()
-      ));
-      menu.appendChild(makeAxisMenuButton(
-        tr("filemgr.spreadsheet_editor.delete_column", null, "Delete column"),
-        () => deleteSelectedAxis("column", index)
-      ));
-    } else {
-      menu.appendChild(makeAxisMenuButton(
-        tr("filemgr.spreadsheet_editor.insert_row_here", null, "Insert row here"),
-        () => addRow()
-      ));
-      menu.appendChild(makeAxisMenuButton(
-        tr("filemgr.spreadsheet_editor.delete_row", null, "Delete row"),
-        () => deleteSelectedAxis("row", index)
-      ));
-    }
-
-    menu.hidden = false;
-    positionAxisMenu(menu, x, y);
-  }
-
-  function attachSpreadsheetSelectionHandlers(table) {
-    if (!table || table.dataset.axisSelectionCleanAttached === "1") return;
-    table.dataset.axisSelectionCleanAttached = "1";
-
-    const activate = (ev) => {
-      const header = ev.target && ev.target.closest
-        ? ev.target.closest("th[data-col], th[data-row]")
-        : null;
-
-      if (!header || !table.contains(header)) return;
-
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (typeof ev.stopImmediatePropagation === "function") {
-        ev.stopImmediatePropagation();
-      }
-
-      if (header.dataset.col != null) {
-        const col = Number(header.dataset.col);
-        if (Number.isInteger(col)) selectSpreadsheetAxis("column", col);
-        return;
-      }
-
-      if (header.dataset.row != null) {
-        const row = Number(header.dataset.row);
-        if (Number.isInteger(row)) selectSpreadsheetAxis("row", row);
-      }
-    };
-
-    table.addEventListener("click", activate, true);
-    table.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") activate(ev);
-    }, true);
-
-    table.addEventListener("contextmenu", (ev) => {
-      const header = ev.target && ev.target.closest
-        ? ev.target.closest("th[data-col], th[data-row]")
-        : null;
-
-      if (!header || !table.contains(header)) return;
-
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (header.dataset.col != null) {
-        const col = Number(header.dataset.col);
-        if (Number.isInteger(col)) openAxisMenu("column", col, ev.clientX, ev.clientY);
-        return;
-      }
-
-      if (header.dataset.row != null) {
-        const row = Number(header.dataset.row);
-        if (Number.isInteger(row)) openAxisMenu("row", row, ev.clientX, ev.clientY);
-      }
-    }, true);
+    api.openContextMenu(type, index, x, y, {
+      disabled: state.readOnly || state.tooLarge,
+      contains: (axisType, axisIndex) => axisSelectionContains(axisType, axisIndex),
+      select: (axisType, axisIndex) => setSpreadsheetAxisSelection(axisType, axisIndex),
+      label: (action, axisType) => axisOperationLabel(action, axisType),
+      insert: (axisType) => {
+        if (axisType === "column") addColumn();
+        else addRow();
+      },
+      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex)
+    });
   }
 
   function attachHeaderSelectionHandlers(table) {
-    attachSpreadsheetSelectionHandlers(table);
+    const api = FM && FM.spreadsheetAxis;
+
+    if (!api || typeof api.attachHeaderSelectionHandlers !== "function") {
+      return;
+    }
+
+    api.attachHeaderSelectionHandlers(table, {
+      select: (type, index, ev) => selectSpreadsheetAxis(type, index, ev),
+      contextMenu: (type, index, ev) => openAxisMenu(type, index, ev.clientX, ev.clientY)
+    });
   }
 
   function insertFormulaReference(input, row, col) {
@@ -4029,7 +3951,6 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const table = document.createElement("table");
     table.className = "spreadsheetEditorTable";
     table.setAttribute("aria-label", tr("filemgr.spreadsheet_editor.cell_grid", null, "Editable spreadsheet cells"));
-    attachSpreadsheetSelectionHandlers(table);
     attachHeaderSelectionHandlers(table);
 
     const colgroup = document.createElement("colgroup");
@@ -4077,11 +3998,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       th.appendChild(colLabel);
       th.appendChild(resizeHandle);
       th.title = tr("filemgr.spreadsheet_editor.select_column", { col: columnName(c) }, `Select column ${columnName(c)}`);
-      th.addEventListener("click", () => selectSpreadsheetAxis("column", c));
+      th.addEventListener("click", (ev) => selectSpreadsheetAxis("column", c, ev));
       th.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          selectSpreadsheetAxis("column", c);
+          selectSpreadsheetAxis("column", c, ev);
         }
       });
       headRow.appendChild(th);
@@ -4114,11 +4035,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       rh.appendChild(rowResize);
 
       rh.title = tr("filemgr.spreadsheet_editor.select_row", { row: String(rIdx + 1) }, `Select row ${rIdx + 1}`);
-      rh.addEventListener("click", () => selectSpreadsheetAxis("row", rIdx));
+      rh.addEventListener("click", (ev) => selectSpreadsheetAxis("row", rIdx, ev));
       rh.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          selectSpreadsheetAxis("row", rIdx);
+          selectSpreadsheetAxis("row", rIdx, ev);
         }
       });
       trEl.appendChild(rh);
@@ -4472,18 +4393,33 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     const cols = sheet.rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), DEFAULT_COLS);
-    const insertAt = state.selection && state.selection.type === "row" && Number.isInteger(state.selection.index)
-      ? Math.max(0, Math.min(state.selection.index, sheet.rows.length))
+    const fallbackIndex = state.selection && state.selection.type === "row" && Number.isInteger(state.selection.index)
+      ? state.selection.index
       : sheet.rows.length;
+    const spec = axisInsertSpec("row", fallbackIndex, sheet.rows.length, MAX_EDIT_ROWS);
+    const insertAt = Math.max(0, Math.min(spec.index, sheet.rows.length));
+    const count = Math.max(0, Math.min(spec.count, MAX_EDIT_ROWS - sheet.rows.length));
 
-    adjustSheetFormulasForAxisChange(sheet, "row", insertAt, 1);
+    if (!count) {
+      setStatus(tr("filemgr.spreadsheet_editor.row_limit", null, "Row limit reached."), "warn");
+      return;
+    }
+
+    for (let i = 0; i < count; i++) {
+      adjustSheetFormulasForAxisChange(sheet, "row", insertAt, 1);
+    }
+
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
     ensureSheetRowHeights(sheet, sheet.rows.length);
-    sheet.cellFormats.splice(insertAt, 0, Array.from({ length: cols }, () => null));
-    sheet.rowHeights.splice(insertAt, 0, DEFAULT_ROW_HEIGHT);
-    sheet.rows.splice(insertAt, 0, Array.from({ length: cols }, () => ""));
 
-    state.selection = { type: "row", index: insertAt };
+    for (let i = 0; i < count; i++) {
+      const pos = insertAt + i;
+      sheet.cellFormats.splice(pos, 0, Array.from({ length: cols }, () => null));
+      sheet.rowHeights.splice(pos, 0, DEFAULT_ROW_HEIGHT);
+      sheet.rows.splice(pos, 0, Array.from({ length: cols }, () => ""));
+    }
+
+    state.selection = { type: "row", index: insertAt, start: insertAt, end: insertAt + count - 1, anchor: insertAt };
     setDirty(true);
     render();
   }
@@ -4499,28 +4435,43 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
-    const insertAt = state.selection && state.selection.type === "column" && Number.isInteger(state.selection.index)
-      ? Math.max(0, Math.min(state.selection.index, cols))
+    const fallbackIndex = state.selection && state.selection.type === "column" && Number.isInteger(state.selection.index)
+      ? state.selection.index
       : cols;
+    const spec = axisInsertSpec("column", fallbackIndex, cols, MAX_EDIT_COLS);
+    const insertAt = Math.max(0, Math.min(spec.index, cols));
+    const count = Math.max(0, Math.min(spec.count, MAX_EDIT_COLS - cols));
 
-    adjustSheetFormulasForAxisChange(sheet, "column", insertAt, 1);
+    if (!count) {
+      setStatus(tr("filemgr.spreadsheet_editor.col_limit", null, "Column limit reached."), "warn");
+      return;
+    }
+
+    for (let i = 0; i < count; i++) {
+      adjustSheetFormulasForAxisChange(sheet, "column", insertAt, 1);
+    }
+
     ensureSheetColWidths(sheet, cols);
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
-    sheet.colWidths.splice(insertAt, 0, DEFAULT_COL_WIDTH);
+
+    sheet.colWidths.splice(insertAt, 0, ...Array.from({ length: count }, () => DEFAULT_COL_WIDTH));
+
     for (const fmtRow of sheet.cellFormats) {
-      if (Array.isArray(fmtRow)) fmtRow.splice(insertAt, 0, null);
+      if (Array.isArray(fmtRow)) {
+        fmtRow.splice(insertAt, 0, ...Array.from({ length: count }, () => null));
+      }
     }
 
     if (!sheet.rows.length) {
-      sheet.rows.push(Array.from({ length: Math.max(1, insertAt + 1) }, () => ""));
+      sheet.rows.push(Array.from({ length: Math.max(1, insertAt + count) }, () => ""));
     }
 
     for (const row of sheet.rows) {
       while (row.length < cols) row.push("");
-      row.splice(insertAt, 0, "");
+      row.splice(insertAt, 0, ...Array.from({ length: count }, () => ""));
     }
 
-    state.selection = { type: "column", index: insertAt };
+    state.selection = { type: "column", index: insertAt, start: insertAt, end: insertAt + count - 1, anchor: insertAt };
     setDirty(true);
     render();
   }
@@ -4532,19 +4483,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!sheet || !Array.isArray(sheet.rows)) return;
 
     if (type === "row") {
-      if (!Number.isInteger(index) || index < 0 || index >= sheet.rows.length) return;
+      if (!sheet.rows.length) return;
 
       const cols = Math.max(
         DEFAULT_COLS,
         sheet.rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0)
       );
+      const spec = axisDeleteSpec("row", index, sheet.rows.length);
+      const deleteAt = Math.max(0, Math.min(spec.index, sheet.rows.length - 1));
+      const count = Math.max(0, Math.min(spec.count, sheet.rows.length - deleteAt));
+      if (!count) return;
 
-      adjustSheetFormulasForAxisChange(sheet, "row", index, -1);
       ensureSheetCellFormats(sheet);
       ensureSheetRowHeights(sheet, sheet.rows.length);
-      sheet.cellFormats.splice(index, 1);
-      sheet.rowHeights.splice(index, 1);
-      sheet.rows.splice(index, 1);
+
+      for (let i = 0; i < count && sheet.rows.length; i++) {
+        adjustSheetFormulasForAxisChange(sheet, "row", deleteAt, -1);
+        sheet.cellFormats.splice(deleteAt, 1);
+        sheet.rowHeights.splice(deleteAt, 1);
+        sheet.rows.splice(deleteAt, 1);
+      }
 
       if (!sheet.rows.length) {
         sheet.rows.push(Array.from({ length: cols }, () => ""));
@@ -4553,10 +4511,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         ensureSheetRowHeights(sheet, sheet.rows.length);
       }
 
-      state.selection = {
-        type: "row",
-        index: Math.min(index, sheet.rows.length - 1)
-      };
+      const nextIndex = Math.max(0, Math.min(deleteAt, sheet.rows.length - 1));
+      state.selection = { type: "row", index: nextIndex, start: nextIndex, end: nextIndex, anchor: nextIndex };
 
       setDirty(true);
       render();
@@ -4564,18 +4520,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     if (type === "column") {
-      const colCount = sheet.rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
-      if (!Number.isInteger(index) || index < 0 || index >= colCount) return;
-
       if (!sheet.rows.length) {
         sheet.rows.push(Array.from({ length: DEFAULT_COLS }, () => ""));
       }
 
-      adjustSheetFormulasForAxisChange(sheet, "column", index, -1);
+      const colCount = sheet.rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+      if (!colCount) return;
+
+      const spec = axisDeleteSpec("column", index, colCount);
+      const deleteAt = Math.max(0, Math.min(spec.index, colCount - 1));
+      const count = Math.max(0, Math.min(spec.count, colCount - deleteAt));
+      if (!count) return;
+
       ensureSheetColWidths(sheet, colCount);
       ensureSheetCellFormats(sheet, sheet.rows.length, colCount);
 
-      if (colCount <= 1) {
+      for (let i = 0; i < count; i++) {
+        adjustSheetFormulasForAxisChange(sheet, "column", deleteAt, -1);
+      }
+
+      if (colCount <= count) {
         sheet.colWidths = [DEFAULT_COL_WIDTH];
         sheet.cellFormats = sheet.rows.map(() => [null]);
         for (const row of sheet.rows) {
@@ -4583,23 +4547,22 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           row.splice(0, row.length, "");
         }
 
-        state.selection = { type: "column", index: 0 };
+        state.selection = { type: "column", index: 0, start: 0, end: 0, anchor: 0 };
       } else {
-        sheet.colWidths.splice(index, 1);
+        sheet.colWidths.splice(deleteAt, count);
+
         for (const fmtRow of sheet.cellFormats) {
-          if (Array.isArray(fmtRow)) fmtRow.splice(index, 1);
+          if (Array.isArray(fmtRow)) fmtRow.splice(deleteAt, count);
         }
 
         for (const row of sheet.rows) {
           if (!Array.isArray(row)) continue;
           while (row.length < colCount) row.push("");
-          row.splice(index, 1);
+          row.splice(deleteAt, count);
         }
 
-        state.selection = {
-          type: "column",
-          index: Math.min(index, colCount - 2)
-        };
+        const nextIndex = Math.max(0, Math.min(deleteAt, colCount - count - 1));
+        state.selection = { type: "column", index: nextIndex, start: nextIndex, end: nextIndex, anchor: nextIndex };
       }
 
       setDirty(true);
