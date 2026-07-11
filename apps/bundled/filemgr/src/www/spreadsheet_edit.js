@@ -3235,66 +3235,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     positionAxisMenu(menu, x, y);
   }
 
-  function attachSpreadsheetSelectionHandlers(table) {
-    if (!table || table.dataset.axisSelectionCleanAttached === "1") return;
-    table.dataset.axisSelectionCleanAttached = "1";
-
-    const activate = (ev) => {
-      const header = ev.target && ev.target.closest
-        ? ev.target.closest("th[data-col], th[data-row]")
-        : null;
-
-      if (!header || !table.contains(header)) return;
-
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (typeof ev.stopImmediatePropagation === "function") {
-        ev.stopImmediatePropagation();
-      }
-
-      if (header.dataset.col != null) {
-        const col = Number(header.dataset.col);
-        if (Number.isInteger(col)) selectSpreadsheetAxis("column", col, ev);
-        return;
-      }
-
-      if (header.dataset.row != null) {
-        const row = Number(header.dataset.row);
-        if (Number.isInteger(row)) selectSpreadsheetAxis("row", row, ev);
-      }
-    };
-
-    table.addEventListener("click", activate, true);
-    table.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") activate(ev);
-    }, true);
-
-    table.addEventListener("contextmenu", (ev) => {
-      const header = ev.target && ev.target.closest
-        ? ev.target.closest("th[data-col], th[data-row]")
-        : null;
-
-      if (!header || !table.contains(header)) return;
-
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (header.dataset.col != null) {
-        const col = Number(header.dataset.col);
-        if (Number.isInteger(col)) openAxisMenu("column", col, ev.clientX, ev.clientY);
-        return;
-      }
-
-      if (header.dataset.row != null) {
-        const row = Number(header.dataset.row);
-        if (Number.isInteger(row)) openAxisMenu("row", row, ev.clientX, ev.clientY);
-      }
-    }, true);
-  }
-
   function attachHeaderSelectionHandlers(table) {
-    attachSpreadsheetSelectionHandlers(table);
+    const api = FM && FM.spreadsheetAxis;
+
+    if (!api || typeof api.attachHeaderSelectionHandlers !== "function") {
+      return;
+    }
+
+    api.attachHeaderSelectionHandlers(table, {
+      select: (type, index, ev) => selectSpreadsheetAxis(type, index, ev),
+      contextMenu: (type, index, ev) => openAxisMenu(type, index, ev.clientX, ev.clientY)
+    });
   }
 
   function insertFormulaReference(input, row, col) {
@@ -4136,7 +4087,6 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const table = document.createElement("table");
     table.className = "spreadsheetEditorTable";
     table.setAttribute("aria-label", tr("filemgr.spreadsheet_editor.cell_grid", null, "Editable spreadsheet cells"));
-    attachSpreadsheetSelectionHandlers(table);
     attachHeaderSelectionHandlers(table);
 
     const colgroup = document.createElement("colgroup");

@@ -122,6 +122,65 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return "";
   }
 
+  function headerAxisFromEvent(table, ev) {
+    const header = ev && ev.target && ev.target.closest
+      ? ev.target.closest("th[data-col], th[data-row]")
+      : null;
+
+    if (!header || !table || !table.contains(header)) return null;
+
+    if (header.dataset.col != null) {
+      const index = toIndex(header.dataset.col);
+      return index >= 0 ? { type: "column", index } : null;
+    }
+
+    if (header.dataset.row != null) {
+      const index = toIndex(header.dataset.row);
+      return index >= 0 ? { type: "row", index } : null;
+    }
+
+    return null;
+  }
+
+  function stopAxisHeaderEvent(ev) {
+    if (!ev) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (typeof ev.stopImmediatePropagation === "function") {
+      ev.stopImmediatePropagation();
+    }
+  }
+
+  function attachHeaderSelectionHandlers(table, handlers = {}) {
+    if (!table || table.dataset.axisSelectionCleanAttached === "1") return;
+    table.dataset.axisSelectionCleanAttached = "1";
+
+    const onSelect = typeof handlers.select === "function" ? handlers.select : null;
+    const onContextMenu = typeof handlers.contextMenu === "function" ? handlers.contextMenu : null;
+
+    const activate = (ev) => {
+      const axis = headerAxisFromEvent(table, ev);
+      if (!axis || !onSelect) return;
+
+      stopAxisHeaderEvent(ev);
+      onSelect(axis.type, axis.index, ev);
+    };
+
+    table.addEventListener("click", activate, true);
+    table.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") activate(ev);
+    }, true);
+
+    table.addEventListener("contextmenu", (ev) => {
+      const axis = headerAxisFromEvent(table, ev);
+      if (!axis || !onContextMenu) return;
+
+      stopAxisHeaderEvent(ev);
+      onContextMenu(axis.type, axis.index, ev);
+    }, true);
+  }
+
   FM.spreadsheetAxis = {
     normalizeSelection,
     selectionFromClick,
@@ -129,6 +188,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     contains,
     insertSpec,
     deleteSpec,
-    operationLabel
+    operationLabel,
+    attachHeaderSelectionHandlers
   };
 })();
