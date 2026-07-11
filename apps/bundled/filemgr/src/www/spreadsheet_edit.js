@@ -1583,6 +1583,233 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     sheet.rows[row][col] = String(value == null ? "" : value);
   }
 
+  function spreadsheetInputHasPartialTextSelection(input) {
+    if (!input) return false;
+
+    const value = String(input.value || "");
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : 0;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+
+    return start !== end && !(start === 0 && end === value.length);
+  }
+
+  function spreadsheetTargetCells(input) {
+    const cells = formatTargetCells();
+    if (cells.length) return cells;
+
+    const row = Number(input && input.dataset ? input.dataset.row : NaN);
+    const col = Number(input && input.dataset ? input.dataset.col : NaN);
+    if (Number.isInteger(row) && Number.isInteger(col) && row >= 0 && col >= 0) {
+      return [{ row, col }];
+    }
+
+    return [];
+  }
+
+  function spreadsheetTargetRange(input) {
+    const cells = spreadsheetTargetCells(input);
+    if (!cells.length) return null;
+
+    const rows = cells.map((cell) => cell.row);
+    const cols = cells.map((cell) => cell.col);
+
+    return {
+      row1: Math.min(...rows),
+      row2: Math.max(...rows),
+      col1: Math.min(...cols),
+      col2: Math.max(...cols)
+    };
+  }
+
+  function spreadsheetClipboardCellText(value) {
+    // Security: clipboard export is plain text TSV only, not HTML.
+    // Tabs/newlines inside a cell are flattened so copied data cannot reshape
+    // the TSV in surprising ways.
+    return String(value == null ? "" : value)
+      .replace(/\r\n/g, "\n")
+      .replace(/[\r\n\t]/g, " ");
+  }
+
+  function buildSpreadsheetClipboardText(input) {
+    const sheet = state.sheets[state.active];
+    const range = spreadsheetTargetRange(input);
+    if (!sheet || !range) return null;
+
+    const lines = [];
+    for (let row = range.row1; row <= range.row2; row++) {
+      const values = [];
+      for (let col = range.col1; col <= range.col2; col++) {
+        values.push(spreadsheetClipboardCellText(cellRaw(sheet, row, col)));
+      }
+      lines.push(values.join("\t"));
+    }
+
+    return lines.join("\r\n");
+  }
+
+  function handleSpreadsheetCopy(ev, input) {
+    if (!ev || !ev.clipboardData || typeof ev.clipboardData.setData !== "function") return false;
+    if (!state.rangeSelection && !state.selection && spreadsheetInputHasPartialTextSelection(input)) return false;
+
+    const text = buildSpreadsheetClipboardText(input);
+    if (text == null) return false;
+
+    // Security: only text/plain is written to the clipboard. We do not generate
+    // HTML clipboard content, so workbook data cannot become executable markup.
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.clipboardData.setData("text/plain", text);
+    return true;
+  }
+
+  function parseSpreadsheetClipboardText(text) {
+    const normalized = String(text == null ? "" : text)
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
+
+    if (!normalized.length) return [];
+
+    const withoutFinalExcelNewline = normalized.endsWith("\n")
+      ? normalized.slice(0, -1)
+      : normalized;
+
+    return withoutFinalExcelNewline.split("\n").map((line) => line.split("\t"));
+  }
+
+  function spreadsheetPasteStartCell(input) {
+    const row = Number(input && input.dataset ? input.dataset.row : NaN);
+    const col = Number(input && input.dataset ? input.dataset.col : NaN);
+    if (Number.isInteger(row) && Number.isInteger(col) && row >= 0 && col >= 0) {
+      return { row, col };
+    }
+
+    if (state.activeCell && Number.isInteger(state.activeCell.row) && Number.isInteger(state.activeCell.col)) {
+      return { row: state.activeCell.row, col: state.activeCell.col };
+    }
+
+    const range = normalizedRangeSelection();
+    if (range) return { row: range.row1, col: range.col1 };
+
+    const first = firstFormatTargetCell();
+    return first ? { row: first.row, col: first.col } : null;
+  }
+
+  function pasteSpreadsheetClipboardText(input, text) {
+    if (state.readOnly || state.tooLarge) return false;
+
+    const sheet = state.sheets[state.active];
+    const start = spreadsheetPasteStartCell(input);
+    const rows = parseSpreadsheetClipboardText(text);
+
+    if (!sheet || !start || !rows.length) return false;
+
+    let changed = false;
+    for (let r = 0; r < rows.length; r++) {
+      const targetRow = start.row + r;
+      if (targetRow < 0 || targetRow >= MAX_EDIT_ROWS) continue;
+
+      const cols = rows[r];
+      for (let c = 0; c < cols.length; c++) {
+        const targetCol = start.col + c;
+        if (targetCol < 0 || targetCol >= MAX_EDIT_COLS) continue;
+
+        const next = String(cols[c] == null ? "" : cols[c]);
+        if (cellRaw(sheet, targetRow, targetCol) !== next) changed = true;
+        setCellRaw(sheet, targetRow, targetCol, next);
+      }
+    }
+
+    formulaFocus = null;
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = { row: start.row, col: start.col };
+
+    if (changed) setDirty(true);
+    render();
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(start.row, start.col, { select: true });
+    });
+
+    return true;
+  }
+
+  function handleSpreadsheetPaste(ev, input) {
+    if (!ev || !ev.clipboardData || typeof ev.clipboardData.getData !== "function") return false;
+
+    const text = ev.clipboardData.getData("text/plain");
+    if (!text) return false;
+
+    if (
+      !state.rangeSelection &&
+      !state.selection &&
+      spreadsheetInputHasPartialTextSelection(input) &&
+      !/[\t\r\n]/.test(text)
+    ) {
+      return false;
+    }
+
+    // Security: paste reads text/plain only and writes through state/input
+    // values. Pasted clipboard data is never injected as HTML.
+    const applied = pasteSpreadsheetClipboardText(input, text);
+    if (!applied) return false;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    return true;
+  }
+
+  function shouldSpreadsheetClearKey(input, ev) {
+    if (!ev || (ev.key !== "Delete" && ev.key !== "Backspace")) return false;
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return false;
+    if (formulaFocus && formulaFocus.input === input) return false;
+
+    const value = String(input && input.value || "");
+    const start = Number.isInteger(input && input.selectionStart) ? input.selectionStart : 0;
+    const end = Number.isInteger(input && input.selectionEnd) ? input.selectionEnd : start;
+
+    // Text editing must win over range clearing: when the user selects only
+    // part of a cell's text, Backspace/Delete should remove those characters,
+    // not clear the whole spreadsheet cell/range.
+    if (value.length && start !== end && !(start === 0 && end === value.length)) {
+      return false;
+    }
+
+    if (state.rangeSelection || state.selection) return true;
+    if (!value.length) return true;
+
+    return start === 0 && end === value.length;
+  }
+
+  function clearSpreadsheetTargets(input) {
+    if (state.readOnly || state.tooLarge) return false;
+
+    const sheet = state.sheets[state.active];
+    const cells = spreadsheetTargetCells(input);
+    if (!sheet || !cells.length) return false;
+
+    let changed = false;
+    for (const { row, col } of cells) {
+      if (cellRaw(sheet, row, col) !== "") changed = true;
+      setCellRaw(sheet, row, col, "");
+    }
+
+    const anchorCell = cells[0];
+    formulaFocus = null;
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = { row: anchorCell.row, col: anchorCell.col };
+
+    if (changed) setDirty(true);
+    render();
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(anchorCell.row, anchorCell.col, { select: true });
+    });
+
+    return true;
+  }
+
   function colLettersToIndex(letters) {
     let n = 0;
     const s = String(letters || "").toUpperCase();
@@ -3538,6 +3765,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             }
           }
 
+          if (ev.key === "Delete" || ev.key === "Backspace") {
+            if (shouldSpreadsheetClearKey(input, ev)) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              clearSpreadsheetTargets(input);
+              return;
+            }
+
+            // Keep spreadsheet text editing local to the cell. Without this,
+            // Delete can bubble to File Manager's global delete shortcut and
+            // open the trash confirmation for the selected file/item.
+            ev.stopPropagation();
+            return;
+          }
+
           if (ev.key === "Enter") {
             ev.preventDefault();
             ev.stopPropagation();
@@ -3570,6 +3812,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             ev.stopPropagation();
             navigateSpreadsheetCell(input, delta[0], delta[1]);
           }
+        });
+
+        input.addEventListener("copy", (ev) => {
+          handleSpreadsheetCopy(ev, input);
+        });
+
+        input.addEventListener("paste", (ev) => {
+          handleSpreadsheetPaste(ev, input);
         });
 
         input.addEventListener("input", () => {
