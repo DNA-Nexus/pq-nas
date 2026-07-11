@@ -47,6 +47,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let titleEl = null;
   let pathEl = null;
   let infoEl = null;
+  let formulaBarNameEl = null;
+  let formulaBarInput = null;
   let tabsEl = null;
   let bodyEl = null;
   let saveBtn = null;
@@ -651,6 +653,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         fillBtn.style.removeProperty("--spreadsheet-fill-preview");
       }
     }
+
+    updateFormulaBar();
   }
 
   function compactCellFormats(sheet) {
@@ -1581,6 +1585,143 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     while (sheet.rows.length <= row) sheet.rows.push([]);
     while (sheet.rows[row].length <= col) sheet.rows[row].push("");
     sheet.rows[row][col] = String(value == null ? "" : value);
+  }
+
+  function activeFormulaBarCell() {
+    const sheet = state.sheets[state.active];
+    const row = Number(state.activeCell && state.activeCell.row);
+    const col = Number(state.activeCell && state.activeCell.col);
+
+    if (!sheet || !Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0) {
+      return null;
+    }
+
+    return { sheet, row, col };
+  }
+
+  function updateFormulaBar(forceValue = false) {
+    if (!formulaBarNameEl || !formulaBarInput) return;
+
+    const cell = activeFormulaBarCell();
+    const disabled = state.saving || state.readOnly || state.tooLarge || !cell;
+
+    formulaBarInput.disabled = disabled;
+
+    if (!cell) {
+      formulaBarNameEl.textContent = "";
+      formulaBarInput.removeAttribute("data-row");
+      formulaBarInput.removeAttribute("data-col");
+      if (forceValue || document.activeElement !== formulaBarInput) {
+        formulaBarInput.value = "";
+      }
+      return;
+    }
+
+    formulaBarNameEl.textContent = coordToRef(cell.row, cell.col);
+    formulaBarInput.dataset.row = String(cell.row);
+    formulaBarInput.dataset.col = String(cell.col);
+
+    if (forceValue || document.activeElement !== formulaBarInput) {
+      // Security: spreadsheet cell content is assigned as input.value, never as
+      // HTML, so formulas/text cannot become executable markup.
+      formulaBarInput.value = cellRaw(cell.sheet, cell.row, cell.col);
+    }
+  }
+
+  function syncVisibleInputForCell(row, col) {
+    if (!bodyEl) return;
+
+    const sheet = state.sheets[state.active];
+    const input = bodyEl.querySelector(`input[data-row="${row}"][data-col="${col}"]`);
+    if (!sheet || !input) return;
+
+    if (document.activeElement !== input) {
+      input.value = displayCellValue(sheet, row, col);
+    }
+
+    input.title = isFormulaValue(cellRaw(sheet, row, col)) ? cellRaw(sheet, row, col) : "";
+  }
+
+  function beginFormulaBarEdit() {
+    const cell = activeFormulaBarCell();
+    if (!formulaBarInput || !cell) return;
+
+    const raw = cellRaw(cell.sheet, cell.row, cell.col);
+    formulaBarInput.value = raw;
+
+    if (String(raw || "").startsWith("=")) {
+      formulaFocus = {
+        input: formulaBarInput,
+        row: cell.row,
+        col: cell.col,
+        originalRaw: raw,
+        wasDirty: state.dirty
+      };
+    } else if (formulaFocus && formulaFocus.input === formulaBarInput) {
+      formulaFocus = null;
+    }
+  }
+
+  function updateActiveCellFromFormulaBar() {
+    if (state.readOnly || state.tooLarge || !formulaBarInput) return false;
+
+    const cell = activeFormulaBarCell();
+    if (!cell) return false;
+
+    const previousRaw = cellRaw(cell.sheet, cell.row, cell.col);
+    const previousFormulaFocus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
+    const nextRaw = String(formulaBarInput.value == null ? "" : formulaBarInput.value);
+
+    setCellRaw(cell.sheet, cell.row, cell.col, nextRaw);
+
+    if (String(nextRaw || "").startsWith("=")) {
+      formulaFocus = {
+        input: formulaBarInput,
+        row: cell.row,
+        col: cell.col,
+        originalRaw: previousFormulaFocus ? previousFormulaFocus.originalRaw : previousRaw,
+        wasDirty: previousFormulaFocus ? previousFormulaFocus.wasDirty : state.dirty
+      };
+    } else if (formulaFocus && formulaFocus.input === formulaBarInput) {
+      formulaFocus = null;
+    }
+
+    if (previousRaw !== nextRaw) {
+      setDirty(true);
+    }
+
+    refreshFormulaDisplays(null);
+    syncVisibleInputForCell(cell.row, cell.col);
+    updateFormatToolbar();
+    return true;
+  }
+
+  function cancelFormulaBarEdit() {
+    const focus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
+    const cell = activeFormulaBarCell();
+
+    if (!focus || !cell || !formulaBarInput) return false;
+
+    const originalRaw = Object.prototype.hasOwnProperty.call(focus, "originalRaw")
+      ? String(focus.originalRaw == null ? "" : focus.originalRaw)
+      : cellRaw(cell.sheet, cell.row, cell.col);
+
+    setCellRaw(cell.sheet, cell.row, cell.col, originalRaw);
+    formulaFocus = null;
+
+    formulaBarInput.value = originalRaw;
+    setDirty(!!focus.wasDirty);
+    refreshFormulaDisplays(null);
+    syncVisibleInputForCell(cell.row, cell.col);
+    updateFormulaBar(true);
+
+    return true;
+  }
+
+  function focusActiveCellFromFormulaBar() {
+    const cell = activeFormulaBarCell();
+    if (!cell) return false;
+    return focusSpreadsheetCell(cell.row, cell.col, { end: true });
   }
 
   function spreadsheetInputHasPartialTextSelection(input) {
@@ -3372,6 +3513,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           </div>
         </div>
         <div id="spreadsheetEditorInfo" class="spreadsheetEditorInfo">${tr("common.loading", null, "Loading…")}</div>
+        <div class="spreadsheetFormulaBar" aria-label="${tr("filemgr.spreadsheet_editor.formula_bar", null, "Formula bar")}">
+          <div id="spreadsheetFormulaBarName" class="spreadsheetFormulaBarName mono" aria-label="${tr("filemgr.spreadsheet_editor.active_cell", null, "Active cell")}"></div>
+          <input id="spreadsheetFormulaBarInput" class="spreadsheetFormulaBarInput" type="text" autocomplete="off" spellcheck="false" aria-label="${tr("filemgr.spreadsheet_editor.cell_contents", null, "Cell contents")}">
+        </div>
         <div id="spreadsheetEditorTabs" class="spreadsheetEditorTabs"></div>
         <div id="spreadsheetEditorBody" class="spreadsheetEditorBody"></div>
       </div>
@@ -3382,6 +3527,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     titleEl = modal.querySelector("#spreadsheetEditorTitle");
     pathEl = modal.querySelector("#spreadsheetEditorPath");
     infoEl = modal.querySelector("#spreadsheetEditorInfo");
+    formulaBarNameEl = modal.querySelector("#spreadsheetFormulaBarName");
+    formulaBarInput = modal.querySelector("#spreadsheetFormulaBarInput");
     tabsEl = modal.querySelector("#spreadsheetEditorTabs");
     bodyEl = modal.querySelector("#spreadsheetEditorBody");
     saveBtn = modal.querySelector("#spreadsheetEditorSave");
@@ -3422,6 +3569,45 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     addColBtn?.addEventListener("click", addColumn);
     closeBtn?.addEventListener("click", close);
 
+    formulaBarInput?.addEventListener("focus", () => {
+      beginFormulaBarEdit();
+      updateFormulaBar(true);
+    });
+
+    formulaBarInput?.addEventListener("input", () => {
+      updateActiveCellFromFormulaBar();
+    });
+
+    formulaBarInput?.addEventListener("blur", () => {
+      if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
+      updateFormulaBar(true);
+    });
+
+    formulaBarInput?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
+        refreshFormulaDisplays(null);
+        focusActiveCellFromFormulaBar();
+        return;
+      }
+
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        cancelFormulaBarEdit();
+        formulaBarInput.blur();
+        return;
+      }
+
+      if ((ev.key === "Delete" || ev.key === "Backspace") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        // Keep formula bar text editing local to the spreadsheet editor. This
+        // prevents File Manager's global delete shortcut from seeing the key.
+        ev.stopPropagation();
+      }
+    });
+
     modal.addEventListener("click", () => {
       hideTextColorMenu();
       hideFillMenu();
@@ -3439,6 +3625,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         saveCurrent();
       }
       if (ev.key === "Escape") {
+        if (document.activeElement === formulaBarInput) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (hideTextColorMenu() || hideFillMenu() || hideAxisMenu()) {
           ev.preventDefault();
           return;
@@ -3585,6 +3776,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     renderTabs();
     bodyEl.replaceChildren();
     formulaFocus = null;
+    updateFormulaBar();
 
     const sheet = state.sheets[state.active] || { rows: [] };
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
@@ -3718,6 +3910,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           hideTextColorMenu();
           repaintSpreadsheetSelection();
           updateFormatToolbar();
+          updateFormulaBar(true);
 
           const raw = cellRaw(sheet, r, col);
 
@@ -3744,6 +3937,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           refreshFormulaDisplays(null);
           input.value = displayCellValue(sheet, r, col);
           input.title = isFormulaValue(cellRaw(sheet, r, col)) ? cellRaw(sheet, r, col) : "";
+          updateFormulaBar();
         });
 
         input.addEventListener("keydown", (ev) => {
@@ -3847,6 +4041,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
           setDirty(true);
           refreshFormulaDisplays(input);
+          updateFormulaBar();
         });
 
         // Security: cell content is edited through input.value and never
