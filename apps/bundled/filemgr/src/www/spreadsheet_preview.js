@@ -51,6 +51,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const PREVIEW_FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
   const PREVIEW_BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
   const PREVIEW_BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
+  const PREVIEW_MIN_DECIMAL_PLACES = 0;
+  const PREVIEW_MAX_DECIMAL_PLACES = 10;
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -157,11 +159,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-undo-history-1", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-undo-history-1", "data-pqnas-spreadsheet-axis-js"),
-      loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-undo-history-1", "data-pqnas-spreadsheet-history-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
+      loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-undo-history-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -407,18 +409,52 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+  function normalizePreviewDecimalPlaces(value) {
+    if (value == null || value === "") return null;
+
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+
+    const rounded = Math.round(n);
+    return Math.max(PREVIEW_MIN_DECIMAL_PLACES, Math.min(PREVIEW_MAX_DECIMAL_PLACES, rounded));
+  }
+
+  function parsePreviewPlainNumber(value) {
+    const s = String(value == null ? "" : value).trim();
+    if (!s) return { blank: true, number: 0 };
+
+    if (/^-?\d+(?:[.,]\d+)?$/.test(s)) {
+      const n = Number(s.replace(",", "."));
+      if (Number.isFinite(n)) return { blank: false, number: n };
+    }
+
+    return { blank: false, text: s };
+  }
+
+  function displayPreviewCellValue(value, fmt) {
+    const f = normalizePreviewCellFormat(fmt);
+    const parsed = parsePreviewPlainNumber(value);
+
+    if (f.decimals != null && !parsed.blank && typeof parsed.number === "number") {
+      return parsed.number.toFixed(f.decimals);
+    }
+
+    return String(value == null ? "" : value);
+  }
+
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
     const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
+    const decimals = normalizePreviewDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
+      decimals,
       align,
-      valign: normalizePreviewVerticalAlign(src.valign || src.verticalAlign || src.vertical),
       bg,
       fg,
       border: normalizePreviewBorderFormat(src.border)
@@ -544,7 +580,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.decimals != null || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
@@ -869,9 +905,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const td = document.createElement("td");
         applyPreviewColumnWidth(td, colWidths[c]);
         applyPreviewRowHeight(td, rowHeight);
-        applyPreviewCellFormat(td, sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c]);
+        const fmt = sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c];
+        applyPreviewCellFormat(td, fmt);
         // Security: always render cell values as text, never HTML.
-        td.textContent = row[c] == null ? "" : String(row[c]);
+        td.textContent = displayPreviewCellValue(row[c], fmt);
         trEl.appendChild(td);
       }
 

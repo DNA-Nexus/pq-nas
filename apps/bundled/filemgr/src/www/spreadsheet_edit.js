@@ -45,6 +45,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
   const BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
   const BORDER_XLSX_COLOR = "FF000000";
+  const MIN_DECIMAL_PLACES = 0;
+  const MAX_DECIMAL_PLACES = 10;
 
   let modal = null;
   let titleEl = null;
@@ -61,6 +63,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let italicBtn = null;
   let underlineBtn = null;
   let fontSizeSelect = null;
+  let decreaseDecimalsBtn = null;
+  let increaseDecimalsBtn = null;
   let alignLeftBtn = null;
   let alignCenterBtn = null;
   let valignTopBtn = null;
@@ -315,15 +319,69 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return Object.keys(out).length ? out : null;
   }
 
+  function normalizeDecimalPlaces(value) {
+    if (value == null || value === "") return null;
+
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+
+    const rounded = Math.round(n);
+    return Math.max(MIN_DECIMAL_PLACES, Math.min(MAX_DECIMAL_PLACES, rounded));
+  }
+
+  function decimalPlacesFromText(value) {
+    const s = String(value == null ? "" : value).trim();
+    const m = s.match(/^-?\d+(?:[.,](\d+))?$/);
+    return m && m[1] ? Math.min(MAX_DECIMAL_PLACES, m[1].length) : 0;
+  }
+
+  function decimalPlacesFromNumber(value) {
+    if (!Number.isFinite(Number(value))) return 0;
+
+    const text = formatFormulaNumber(Number(value));
+    const dot = text.indexOf(".");
+    return dot >= 0 ? Math.min(MAX_DECIMAL_PLACES, text.length - dot - 1) : 0;
+  }
+
+  function formatDecimalNumber(value, decimals) {
+    const places = normalizeDecimalPlaces(decimals);
+    const n = Number(value);
+
+    if (places == null || !Number.isFinite(n)) {
+      return String(value == null ? "" : value);
+    }
+
+    return n.toFixed(places);
+  }
+
+  function inferCellDecimalPlaces(sheet, row, col, cache = null) {
+    const raw = cellRaw(sheet, row, col);
+
+    if (isFormulaValue(raw)) {
+      const effectiveCache = cache || computeSheetCache(sheet);
+      const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
+      return typeof result.value === "number" && Number.isFinite(result.value)
+        ? decimalPlacesFromNumber(result.value)
+        : 0;
+    }
+
+    const parsed = parsePlainNumber(raw);
+    if (parsed.blank || typeof parsed.number !== "number") return 0;
+
+    return decimalPlacesFromText(raw);
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     const valign = normalizeVerticalAlign(src.valign || src.verticalAlign || src.vertical);
+    const decimals = normalizeDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
       fontSize: normalizeFontSize(src.fontSize || src.sz),
+      decimals,
       align,
       valign,
       bg: normalizeFillColorKey(src.bg),
@@ -334,7 +392,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
+    return !f.bold && !f.italic && !f.underline && !f.fontSize && f.decimals == null && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -603,6 +661,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       fmt.border = border;
       setCellFormat(sheet, row, col, fmt);
       paintVisibleCellFormat(row, col);
+
     }
 
     commitHistorySnapshot(historyBefore);
@@ -650,6 +709,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       enable = !cells.every(({ row, col }) => !!getCellFormat(sheet, row, col)[kind]);
     }
 
+    const decimalCache = kind === "decimals" ? computeSheetCache(sheet) : null;
+    const decimalDelta = value === "increase" ? 1 : value === "decrease" ? -1 : 0;
+
     for (const { row, col } of cells) {
       const fmt = getCellFormat(sheet, row, col);
 
@@ -661,6 +723,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         fmt.align = value === "center" ? "center" : "left";
       } else if (kind === "valign") {
         fmt.valign = normalizeVerticalAlign(value);
+      } else if (kind === "decimals") {
+        const current = fmt.decimals == null
+          ? inferCellDecimalPlaces(sheet, row, col, decimalCache)
+          : fmt.decimals;
+        fmt.decimals = normalizeDecimalPlaces(current + decimalDelta);
       } else if (kind === "bg") {
         fmt.bg = normalizeFillColorKey(value);
       } else if (kind === "fg") {
@@ -669,6 +736,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       setCellFormat(sheet, row, col, fmt);
       paintVisibleCellFormat(row, col);
+
+      if (kind === "decimals") {
+        const refreshDecimalCell = () => syncVisibleInputForCell(row, col, { forceValue: true });
+
+        refreshDecimalCell();
+
+        // Toolbar clicks can interleave with input focus/blur. Refresh once more
+        // after the browser has settled focus so decimal formatting is visible
+        // immediately instead of only after another click.
+        window.requestAnimationFrame(refreshDecimalCell);
+      }
     }
 
     commitHistorySnapshot(historyBefore);
@@ -692,7 +770,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const sheet = state.sheets[state.active];
     const fmt = first && sheet ? getCellFormat(sheet, first.row, first.col) : normalizeCellFormat(null);
 
-    for (const btn of [boldBtn, italicBtn, underlineBtn, alignLeftBtn, alignCenterBtn, valignTopBtn, valignMiddleBtn, valignBottomBtn, textColorBtn, fillBtn]) {
+    for (const btn of [boldBtn, italicBtn, underlineBtn, decreaseDecimalsBtn, increaseDecimalsBtn, alignLeftBtn, alignCenterBtn, valignTopBtn, valignMiddleBtn, valignBottomBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
@@ -703,6 +781,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (fontSizeSelect) {
       fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
     }
+    setToolButtonActive(decreaseDecimalsBtn, false);
+    setToolButtonActive(increaseDecimalsBtn, false);
     setToolButtonActive(alignLeftBtn, fmt.align === "left" || !fmt.align);
     setToolButtonActive(alignCenterBtn, fmt.align === "center");
     setToolButtonActive(valignTopBtn, fmt.valign === "top");
@@ -2088,14 +2168,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
-  function syncVisibleInputForCell(row, col) {
+  function syncVisibleInputForCell(row, col, options = {}) {
     if (!bodyEl) return;
 
     const sheet = state.sheets[state.active];
     const input = bodyEl.querySelector(`input[data-row="${row}"][data-col="${col}"]`);
     if (!sheet || !input) return;
 
-    if (document.activeElement !== input) {
+    const forceValue = !!(options && options.forceValue);
+
+    if (forceValue || document.activeElement !== input) {
       input.value = displayCellValue(sheet, row, col);
     }
 
@@ -2753,10 +2835,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function displayCellValue(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
-    if (!isFormulaValue(raw)) return raw;
+    const fmt = getCellFormat(sheet, row, col);
+
+    if (!isFormulaValue(raw)) {
+      const parsed = parsePlainNumber(raw);
+      if (fmt.decimals != null && !parsed.blank && typeof parsed.number === "number") {
+        return formatDecimalNumber(parsed.number, fmt.decimals);
+      }
+      return raw;
+    }
+
     const effectiveCache = cache || computeSheetCache(sheet);
     const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
     if (result.error) return result.error;
+
+    if (fmt.decimals != null && typeof result.value === "number") {
+      return formatDecimalNumber(result.value, fmt.decimals);
+    }
+
     return formatFormulaNumber(result.value);
   }
 
@@ -3893,6 +3989,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
               <option value="">${tr("filemgr.spreadsheet_editor.font_size_default", null, "Size")}</option>
               ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}">${size}</option>`).join("")}
             </select>
+            <button id="spreadsheetEditorDecimalsDecrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}">.0←</button>
+            <button id="spreadsheetEditorDecimalsIncrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}">.00→</button>
             <button id="spreadsheetEditorAlignLeft" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}" title="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M5 10h10"></path><path d="M5 14h14"></path><path d="M5 18h8"></path></svg>
             </button>
@@ -3945,6 +4043,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
     underlineBtn = modal.querySelector("#spreadsheetEditorUnderline");
     fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
+    decreaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsDecrease");
+    increaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsIncrease");
     alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
     alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
     valignTopBtn = modal.querySelector("#spreadsheetEditorValignTop");
@@ -3958,6 +4058,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));
     underlineBtn?.addEventListener("click", () => applyFormatCommand("underline"));
     fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
+    decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
+    increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));
     alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
     alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
     valignTopBtn?.addEventListener("click", () => applyFormatCommand("valign", "top"));
@@ -4352,7 +4454,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             recorded: false
           };
 
-          input.value = raw;
+          // Keep formatted numeric cells visually formatted when merely selected.
+          // Raw formulas are still shown for direct formula editing; raw numeric
+          // values remain available in the formula bar.
+          input.value = isFormulaValue(raw) ? raw : displayCellValue(sheet, r, col);
 
           if (String(raw || "").startsWith("=")) {
             formulaFocus = {
