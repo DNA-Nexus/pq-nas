@@ -420,6 +420,72 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     applyCellFormatToInput(input, getCellFormat(sheet, row, col));
   }
 
+  function focusSpreadsheetCell(row, col, options = {}) {
+    if (!bodyEl || !Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0) {
+      return false;
+    }
+
+    const input = bodyEl.querySelector(`input[data-row="${row}"][data-col="${col}"]`);
+    if (!input || input.disabled) return false;
+
+    try {
+      input.focus({ preventScroll: true });
+    } catch (_) {
+      input.focus();
+    }
+
+    if (options.select) {
+      try {
+        input.select();
+      } catch (_) {}
+    } else if (options.end) {
+      const len = String(input.value || "").length;
+      try {
+        input.setSelectionRange(len, len);
+      } catch (_) {}
+    }
+
+    try {
+      input.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } catch (_) {}
+
+    return true;
+  }
+
+  function navigateSpreadsheetCell(input, rowDelta, colDelta) {
+    if (!input || !input.dataset) return false;
+
+    const row = Number(input.dataset.row);
+    const col = Number(input.dataset.col);
+
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return false;
+
+    const nextRow = row + rowDelta;
+    const nextCol = col + colDelta;
+
+    if (nextRow < 0 || nextCol < 0) return false;
+
+    return focusSpreadsheetCell(nextRow, nextCol, { select: true });
+  }
+
+  function shouldSpreadsheetArrowNavigate(input, key) {
+    if (!input) return false;
+
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      return true;
+    }
+
+    const value = String(input.value || "");
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : 0;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+
+    if (start !== end) return true;
+    if (key === "ArrowLeft") return start <= 0;
+    if (key === "ArrowRight") return end >= value.length;
+
+    return false;
+  }
+
   function formatTargetsContainCell(row, col) {
     return formatTargetCells().some((cell) => cell.row === row && cell.col === col);
   }
@@ -3129,11 +3195,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     addColBtn?.addEventListener("click", addColumn);
     closeBtn?.addEventListener("click", close);
 
-    modal.addEventListener("click", (ev) => {
+    modal.addEventListener("click", () => {
       hideTextColorMenu();
       hideFillMenu();
       hideAxisMenu();
-      if (ev.target === modal) close();
+      hideBorderMenu();
+      // Clicking the editor backdrop should not be treated as an intent to
+      // close. This protects normal spreadsheet work from accidental discard
+      // prompts when the user clicks outside the grid area.
     });
 
     document.addEventListener("keydown", (ev) => {
@@ -3471,7 +3540,35 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
           if (ev.key === "Enter") {
             ev.preventDefault();
-            input.blur();
+            ev.stopPropagation();
+            navigateSpreadsheetCell(input, ev.shiftKey ? -1 : 1, 0);
+            return;
+          }
+
+          if (ev.key === "Tab") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateSpreadsheetCell(input, 0, ev.shiftKey ? -1 : 1);
+            return;
+          }
+
+          if (!ev.altKey && !ev.ctrlKey && !ev.metaKey && (
+            ev.key === "ArrowUp" ||
+            ev.key === "ArrowDown" ||
+            ev.key === "ArrowLeft" ||
+            ev.key === "ArrowRight"
+          )) {
+            if (!shouldSpreadsheetArrowNavigate(input, ev.key)) return;
+
+            const delta =
+              ev.key === "ArrowUp" ? [-1, 0] :
+              ev.key === "ArrowDown" ? [1, 0] :
+              ev.key === "ArrowLeft" ? [0, -1] :
+              [0, 1];
+
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateSpreadsheetCell(input, delta[0], delta[1]);
           }
         });
 
