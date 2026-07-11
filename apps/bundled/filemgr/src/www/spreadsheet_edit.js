@@ -3153,86 +3153,31 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function hideAxisMenu() {
-    if (!axisMenu || axisMenu.hidden) return false;
-    axisMenu.hidden = true;
-    axisMenu.replaceChildren();
-    return true;
-  }
-
-  function makeAxisMenuButton(label, onClick) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = label;
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      hideAxisMenu();
-      onClick();
-    });
-    return btn;
-  }
-
-  function ensureAxisMenu() {
-    if (axisMenu) return axisMenu;
-
-    axisMenu = document.createElement("div");
-    axisMenu.className = "spreadsheetAxisMenu";
-    axisMenu.hidden = true;
-    axisMenu.setAttribute("role", "menu");
-
-    axisMenu.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-    });
-
-    document.body.appendChild(axisMenu);
-    return axisMenu;
-  }
-
-  function positionAxisMenu(menu, x, y) {
-    menu.style.left = `${Math.max(8, x)}px`;
-    menu.style.top = `${Math.max(8, y)}px`;
-
-    const rect = menu.getBoundingClientRect();
-    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
-    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
-
-    menu.style.left = `${Math.min(Math.max(8, x), maxLeft)}px`;
-    menu.style.top = `${Math.min(Math.max(8, y), maxTop)}px`;
+    const api = FM && FM.spreadsheetAxis;
+    if (api && typeof api.hideContextMenu === "function") {
+      return api.hideContextMenu();
+    }
+    return false;
   }
 
   function openAxisMenu(type, index, x, y) {
     if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) return;
     if (state.readOnly || state.tooLarge) return;
 
-    if (!axisSelectionContains(type, index)) {
-      setSpreadsheetAxisSelection(type, index);
-    }
+    const api = FM && FM.spreadsheetAxis;
+    if (!api || typeof api.openContextMenu !== "function") return;
 
-    const menu = ensureAxisMenu();
-    menu.replaceChildren();
-
-    if (type === "column") {
-      menu.appendChild(makeAxisMenuButton(
-        axisOperationLabel("insert", "column"),
-        () => addColumn()
-      ));
-      menu.appendChild(makeAxisMenuButton(
-        axisOperationLabel("delete", "column"),
-        () => deleteSelectedAxis("column", index)
-      ));
-    } else {
-      menu.appendChild(makeAxisMenuButton(
-        axisOperationLabel("insert", "row"),
-        () => addRow()
-      ));
-      menu.appendChild(makeAxisMenuButton(
-        axisOperationLabel("delete", "row"),
-        () => deleteSelectedAxis("row", index)
-      ));
-    }
-
-    menu.hidden = false;
-    positionAxisMenu(menu, x, y);
+    api.openContextMenu(type, index, x, y, {
+      disabled: state.readOnly || state.tooLarge,
+      contains: (axisType, axisIndex) => axisSelectionContains(axisType, axisIndex),
+      select: (axisType, axisIndex) => setSpreadsheetAxisSelection(axisType, axisIndex),
+      label: (action, axisType) => axisOperationLabel(action, axisType),
+      insert: (axisType) => {
+        if (axisType === "column") addColumn();
+        else addRow();
+      },
+      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex)
+    });
   }
 
   function attachHeaderSelectionHandlers(table) {

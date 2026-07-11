@@ -181,6 +181,93 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }, true);
   }
 
+
+  let contextMenu = null;
+
+  function hideContextMenu() {
+    if (!contextMenu || contextMenu.hidden) return false;
+    contextMenu.hidden = true;
+    contextMenu.replaceChildren();
+    return true;
+  }
+
+  function makeContextMenuButton(label, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = String(label || "");
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      hideContextMenu();
+      if (typeof onClick === "function") onClick();
+    });
+    return btn;
+  }
+
+  function ensureContextMenu() {
+    if (contextMenu) return contextMenu;
+
+    contextMenu = document.createElement("div");
+    contextMenu.className = "spreadsheetAxisMenu";
+    contextMenu.hidden = true;
+    contextMenu.setAttribute("role", "menu");
+
+    contextMenu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.body.appendChild(contextMenu);
+    return contextMenu;
+  }
+
+  function positionContextMenu(menu, x, y) {
+    const left = Math.max(8, Number(x) || 8);
+    const top = Math.max(8, Number(y) || 8);
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    const rect = menu.getBoundingClientRect();
+    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+
+    menu.style.left = `${Math.min(left, maxLeft)}px`;
+    menu.style.top = `${Math.min(top, maxTop)}px`;
+  }
+
+  function openContextMenu(type, index, x, y, options = {}) {
+    if (!isAxis(type) || toIndex(index) < 0) return;
+    if (options.disabled) return;
+
+    const i = toIndex(index);
+
+    if (typeof options.contains === "function" && !options.contains(type, i)) {
+      if (typeof options.select === "function") options.select(type, i);
+    }
+
+    const labelFor = (action) => {
+      if (typeof options.label === "function") {
+        const label = options.label(action, type);
+        if (label) return label;
+      }
+      return operationLabel(action, type, 1);
+    };
+
+    const menu = ensureContextMenu();
+    menu.replaceChildren();
+
+    menu.appendChild(makeContextMenuButton(labelFor("insert"), () => {
+      if (typeof options.insert === "function") options.insert(type, i);
+    }));
+
+    menu.appendChild(makeContextMenuButton(labelFor("delete"), () => {
+      if (typeof options.delete === "function") options.delete(type, i);
+    }));
+
+    menu.hidden = false;
+    positionContextMenu(menu, x, y);
+  }
+
   FM.spreadsheetAxis = {
     normalizeSelection,
     selectionFromClick,
@@ -189,6 +276,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     insertSpec,
     deleteSpec,
     operationLabel,
-    attachHeaderSelectionHandlers
+    attachHeaderSelectionHandlers,
+    hideContextMenu,
+    openContextMenu
   };
 })();
