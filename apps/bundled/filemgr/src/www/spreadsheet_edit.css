@@ -18,7 +18,7 @@
   width: min(1180px, 96vw);
   height: min(820px, 92vh);
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr;
   overflow: hidden;
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-lg, 18px);
@@ -73,6 +73,50 @@
 
 .spreadsheetEditorInfo[data-kind="err"] {
   color: var(--bad, var(--danger));
+}
+
+.spreadsheetFormulaBar {
+  display: grid;
+  grid-template-columns: minmax(56px, auto) 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, var(--panel-border));
+  background: var(--panel);
+}
+
+.spreadsheetFormulaBarName {
+  min-width: 56px;
+  padding: 7px 9px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--panel-2, var(--panel));
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.spreadsheetFormulaBarInput {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--input-bg, var(--panel));
+  color: var(--fg);
+  font: inherit;
+}
+
+.spreadsheetFormulaBarInput:focus {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: 2px;
+}
+
+.spreadsheetFormulaBarInput:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
 }
 
 .spreadsheetEditorTabs {
@@ -191,6 +235,14 @@
   .spreadsheetEditorHead {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .spreadsheetFormulaBar {
+    grid-template-columns: 1fr;
+  }
+
+  .spreadsheetFormulaBarName {
+    width: fit-content;
   }
 
   .spreadsheetEditorActions {
