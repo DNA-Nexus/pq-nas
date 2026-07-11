@@ -182,6 +182,60 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
+
+  function paintSelection(table, selection, callbacks = {}) {
+    if (!table) return;
+
+    const axisRange = range(selection);
+    if (!axisRange) return;
+
+    const markHeader = typeof callbacks.markHeader === "function"
+      ? callbacks.markHeader
+      : () => {};
+    const markCell = typeof callbacks.markCell === "function"
+      ? callbacks.markCell
+      : () => {};
+
+    const type = axisRange.type;
+
+    for (let i = axisRange.start; i <= axisRange.end; i++) {
+      const headerSelector = type === "column"
+        ? `th[data-col="${i}"]`
+        : `th[data-row="${i}"]`;
+
+      const header = table.querySelector(headerSelector);
+      if (header) {
+        header.classList.add("spreadsheetAxisSelectedHeader");
+        header.setAttribute("aria-selected", "true");
+        markHeader(header);
+      }
+    }
+
+    const cellMatcher = type === "column"
+      ? (cell) => {
+          const col = toIndex(cell.dataset.col);
+          return col >= axisRange.start && col <= axisRange.end;
+        }
+      : (cell) => {
+          const row = toIndex(cell.dataset.row);
+          return row >= axisRange.start && row <= axisRange.end;
+        };
+
+    for (const cell of table.querySelectorAll("td[data-row][data-col]")) {
+      if (!cellMatcher(cell)) continue;
+
+      cell.classList.add("spreadsheetAxisSelectedCell");
+      cell.setAttribute("aria-selected", "true");
+
+      const input = cell.querySelector("input");
+      if (input) {
+        input.classList.add("spreadsheetAxisSelectedInput");
+      }
+
+      markCell(cell);
+    }
+  }
+
   let contextMenu = null;
 
   function hideContextMenu() {
@@ -277,6 +331,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     deleteSpec,
     operationLabel,
     attachHeaderSelectionHandlers,
+    paintSelection,
     hideContextMenu,
     openContextMenu
   };

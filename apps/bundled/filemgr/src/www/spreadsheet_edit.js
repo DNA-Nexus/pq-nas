@@ -2606,46 +2606,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     clearSelectionClasses();
 
-    const axisRange = axisSelectionRange();
-    if (!axisRange) return;
+    const api = FM && FM.spreadsheetAxis;
+    if (!api || typeof api.paintSelection !== "function") return;
 
-    const type = axisRange.type;
-
-    for (let i = axisRange.start; i <= axisRange.end; i++) {
-      const headerSelector = type === "column"
-        ? `th[data-col="${i}"]`
-        : `th[data-row="${i}"]`;
-
-      const header = table.querySelector(headerSelector);
-      if (header) {
-        header.classList.add("spreadsheetAxisSelectedHeader");
-        header.setAttribute("aria-selected", "true");
-        markAxisHeader(header);
-      }
-    }
-
-    const cellMatcher = type === "column"
-      ? (cell) => {
-          const col = Number(cell.dataset.col);
-          return Number.isInteger(col) && col >= axisRange.start && col <= axisRange.end;
-        }
-      : (cell) => {
-          const row = Number(cell.dataset.row);
-          return Number.isInteger(row) && row >= axisRange.start && row <= axisRange.end;
-        };
-
-    for (const cell of table.querySelectorAll("td[data-row][data-col]")) {
-      if (!cellMatcher(cell)) continue;
-
-      cell.classList.add("spreadsheetAxisSelectedCell");
-      cell.setAttribute("aria-selected", "true");
-
-      const input = cell.querySelector("input");
-      if (input) {
-        input.classList.add("spreadsheetAxisSelectedInput");
-      }
-      markAxisCell(cell);
-    }
+    api.paintSelection(table, state.selection, {
+      markHeader: markAxisHeader,
+      markCell: markAxisCell
+    });
   }
 
   function normalizedRangeSelection(range = state.rangeSelection) {
