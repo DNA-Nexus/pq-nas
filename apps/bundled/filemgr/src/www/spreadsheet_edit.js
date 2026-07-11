@@ -14,6 +14,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const DEFAULT_COL_WIDTH = 120;
   const MIN_COL_WIDTH = 72;
   const MAX_COL_WIDTH = 520;
+  const DEFAULT_ROW_HEIGHT = 34;
+  const MIN_ROW_HEIGHT = 24;
+  const MAX_ROW_HEIGHT = 220;
   const STYLE_SHEET_NAME = "_pqnas_styles";
   const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
   const STYLE_META_CHUNK_SIZE = 30000;
@@ -60,6 +63,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let fontSizeSelect = null;
   let alignLeftBtn = null;
   let alignCenterBtn = null;
+  let valignTopBtn = null;
+  let valignMiddleBtn = null;
+  let valignBottomBtn = null;
   let textColorBtn = null;
   let fillBtn = null;
   let closeBtn = null;
@@ -170,6 +176,57 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return BORDER_STYLE_KEYS.includes(key) ? key : "";
   }
 
+  function normalizeVerticalAlign(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "center") return "middle";
+    return key === "top" || key === "middle" || key === "bottom" ? key : "";
+  }
+
+  function cellVerticalAlignCss(value) {
+    const key = normalizeVerticalAlign(value);
+    return key === "top" ? "top" : key === "bottom" ? "bottom" : "middle";
+  }
+
+  function applyInputVerticalAlign(input, fmt) {
+    if (!input) return;
+
+    const f = normalizeCellFormat(fmt);
+    const rowHeight = clampRowHeight(
+      parseFloat(input.style.height) ||
+      (typeof input.getBoundingClientRect === "function" ? input.getBoundingClientRect().height : 0) ||
+      DEFAULT_ROW_HEIGHT
+    );
+
+    const fontPx = f.fontSize || 13;
+    const lineHeight = Math.max(14, Math.ceil(fontPx * 1.35));
+    const spare = Math.max(0, rowHeight - lineHeight);
+    const edgePad = Math.min(8, Math.max(2, Math.floor(spare * 0.18)));
+
+    let topPad = Math.floor(spare / 2);
+    let bottomPad = spare - topPad;
+
+    if (f.valign === "top") {
+      topPad = spare > 0 ? Math.min(edgePad, spare) : 0;
+      bottomPad = Math.max(0, spare - topPad);
+    } else if (f.valign === "bottom") {
+      bottomPad = spare > 0 ? Math.min(edgePad, spare) : 0;
+      topPad = Math.max(0, spare - bottomPad);
+    }
+
+    // Native text inputs do not obey td vertical-align for their internal text.
+    // Use padding/line-height on the input itself so editor view matches preview
+    // and exported XLSX vertical alignment.
+    input.style.lineHeight = `${lineHeight}px`;
+    input.style.paddingTop = `${topPad}px`;
+    input.style.paddingBottom = `${bottomPad}px`;
+  }
+
+  function cellVerticalAlignXlsx(value) {
+    const key = normalizeVerticalAlign(value);
+    if (key === "middle") return "center";
+    return key === "top" || key === "bottom" ? key : "";
+  }
+
   function normalizeBorderFormat(border) {
     const src = border && typeof border === "object" ? border : {};
     return {
@@ -258,12 +315,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
+    const valign = normalizeVerticalAlign(src.valign || src.verticalAlign || src.vertical);
     return {
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
       fontSize: normalizeFontSize(src.fontSize || src.sz),
       align,
+      valign,
       bg: normalizeFillColorKey(src.bg),
       fg: normalizeTextColorKey(src.fg),
       border: normalizeBorderFormat(src.border)
@@ -272,7 +331,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
+    return !f.bold && !f.italic && !f.underline && !f.fontSize && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -340,6 +399,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.style.textDecoration = f.underline ? "underline" : "";
     input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
+    applyInputVerticalAlign(input, f);
+
+    // The td owns vertical alignment metadata for table layout/preview parity.
+    // The input gets matching padding/line-height above for visible edit mode.
+    if (cell) {
+      cell.style.verticalAlign = cellVerticalAlignCss(f.valign);
+    }
 
     // The td owns spreadsheet cell fill and borders. This prevents visual
     // formatting from covering only the input-sized part of a wider table cell.
@@ -591,6 +657,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         fmt.fontSize = normalizeFontSize(value);
       } else if (kind === "align") {
         fmt.align = value === "center" ? "center" : "left";
+      } else if (kind === "valign") {
+        fmt.valign = normalizeVerticalAlign(value);
       } else if (kind === "bg") {
         fmt.bg = normalizeFillColorKey(value);
       } else if (kind === "fg") {
@@ -622,7 +690,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const sheet = state.sheets[state.active];
     const fmt = first && sheet ? getCellFormat(sheet, first.row, first.col) : normalizeCellFormat(null);
 
-    for (const btn of [boldBtn, italicBtn, underlineBtn, alignLeftBtn, alignCenterBtn, textColorBtn, fillBtn]) {
+    for (const btn of [boldBtn, italicBtn, underlineBtn, alignLeftBtn, alignCenterBtn, valignTopBtn, valignMiddleBtn, valignBottomBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
@@ -635,6 +703,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
     setToolButtonActive(alignLeftBtn, fmt.align === "left" || !fmt.align);
     setToolButtonActive(alignCenterBtn, fmt.align === "center");
+    setToolButtonActive(valignTopBtn, fmt.valign === "top");
+    setToolButtonActive(valignMiddleBtn, fmt.valign === "middle" || !fmt.valign);
+    setToolButtonActive(valignBottomBtn, fmt.valign === "bottom");
     setToolButtonActive(textColorBtn, !!fmt.fg);
     if (textColorBtn) {
       textColorBtn.dataset.fg = fmt.fg || "";
@@ -758,8 +829,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     }
 
-    if (f.align) {
-      style.alignment = { horizontal: f.align };
+    const outputValign = cellVerticalAlignXlsx(f.valign);
+    if (f.align || outputValign) {
+      style.alignment = {};
+      if (f.align) style.alignment.horizontal = f.align;
+      if (outputValign) style.alignment.vertical = outputValign;
     }
 
     if (f.bg && CELL_FILL_COLORS[f.bg]) {
@@ -827,7 +901,22 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return Math.max(1, Math.round(((widthPx - 5) / 7) * 100) / 100);
   }
 
+  function xlsxRowPixelHeightToPointHeight(px) {
+    const heightPx = clampRowHeight(px);
+
+    // Excel row heights are points. Browser CSS pixels are approximately
+    // 0.75 pt at 96 DPI, so this is intentionally an approximation.
+    return Math.max(1, Math.round((heightPx * 0.75) * 100) / 100);
+  }
+
   function xlsxRowHeightForSheetRow(sheet, rowIndex, colCount) {
+    const explicitHeights = ensureSheetRowHeights(sheet, Math.max(rowIndex + 1, 0));
+    const explicitPx = explicitHeights[rowIndex];
+
+    if (Number.isFinite(explicitPx) && clampRowHeight(explicitPx) !== DEFAULT_ROW_HEIGHT) {
+      return xlsxRowPixelHeightToPointHeight(explicitPx);
+    }
+
     let maxFontSize = 11;
 
     for (let c = 0; c < colCount; c++) {
@@ -995,7 +1084,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const fill = ensureFill(f);
       const border = ensureBorder(f);
       const align = f.align || "";
-      const key = JSON.stringify({ font, fill, border, align });
+      const valign = cellVerticalAlignXlsx(f.valign);
+      const key = JSON.stringify({ font, fill, border, align, valign });
 
       if (xfIds.has(key)) return xfIds.get(key);
 
@@ -1010,9 +1100,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (font) attrs.push('applyFont="1"');
       if (fill) attrs.push('applyFill="1"');
       if (border) attrs.push('applyBorder="1"');
-      if (align) attrs.push('applyAlignment="1"');
+      if (align || valign) attrs.push('applyAlignment="1"');
 
-      const alignment = align ? `<alignment horizontal="${xlsxAttrEscape(align)}"/>` : "";
+      const alignmentAttrs = [];
+      if (align) alignmentAttrs.push(`horizontal="${xlsxAttrEscape(align)}"`);
+      if (valign) alignmentAttrs.push(`vertical="${xlsxAttrEscape(valign)}"`);
+      const alignment = alignmentAttrs.length ? `<alignment ${alignmentAttrs.join(" ")}/>` : "";
       const xml = alignment
         ? `<xf ${attrs.join(" ")}>${alignment}</xf>`
         : `<xf ${attrs.join(" ")}/>`;
@@ -1047,6 +1140,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const rowCount = rows.length;
     const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
     const colWidths = ensureSheetColWidths(sheet, colCount);
+    const rowHeights = ensureSheetRowHeights(sheet, rowCount);
     const cache = computeSheetCache(sheet);
 
     const colsXml = colWidths.length
@@ -1093,8 +1187,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         }
       }
 
-      if (cells.length) {
-        const rowHeight = xlsxRowHeightForSheetRow(sheet, r, colCount);
+      const rowHeight = xlsxRowHeightForSheetRow(sheet, r, colCount);
+      const explicitCustomHeight = clampRowHeight(rowHeights[r]) !== DEFAULT_ROW_HEIGHT;
+
+      if (cells.length || explicitCustomHeight) {
         const rowAttrs = rowHeight ? ` r="${r + 1}" ht="${rowHeight}" customHeight="1"` : ` r="${r + 1}"`;
         rowXml.push(`<row${rowAttrs}>${cells.join("")}</row>`);
       }
@@ -1400,12 +1496,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, Math.round(n)));
   }
 
+  function clampRowHeight(height) {
+    const n = Number(height);
+    if (!Number.isFinite(n)) return DEFAULT_ROW_HEIGHT;
+    return Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.round(n)));
+  }
+
   function xlsxColumnToPixelWidth(col) {
     if (!col || typeof col !== "object") return DEFAULT_COL_WIDTH;
     if (Number.isFinite(col.wpx)) return clampColumnWidth(col.wpx);
     if (Number.isFinite(col.width)) return clampColumnWidth((col.width * 8) + 16);
     if (Number.isFinite(col.wch)) return clampColumnWidth((col.wch * 8) + 16);
     return DEFAULT_COL_WIDTH;
+  }
+
+  function xlsxRowToPixelHeight(row) {
+    if (!row || typeof row !== "object") return DEFAULT_ROW_HEIGHT;
+    if (Number.isFinite(row.hpx)) return clampRowHeight(row.hpx);
+    if (Number.isFinite(row.ht)) return clampRowHeight(row.ht / 0.75);
+    if (Number.isFinite(row.hpt)) return clampRowHeight(row.hpt / 0.75);
+    return DEFAULT_ROW_HEIGHT;
   }
 
   function ensureSheetColWidths(sheet, colCount) {
@@ -1453,6 +1563,66 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     el.style.width = px;
     el.style.minWidth = px;
     el.style.maxWidth = px;
+  }
+
+  function ensureSheetRowHeights(sheet, rowCount) {
+    if (!sheet) return [];
+    const count = Math.max(0, Number.isInteger(rowCount) ? rowCount : 0);
+
+    if (!Array.isArray(sheet.rowHeights)) {
+      sheet.rowHeights = [];
+    }
+
+    while (sheet.rowHeights.length < count) {
+      sheet.rowHeights.push(DEFAULT_ROW_HEIGHT);
+    }
+
+    if (sheet.rowHeights.length > count) {
+      sheet.rowHeights.length = count;
+    }
+
+    for (let i = 0; i < sheet.rowHeights.length; i++) {
+      sheet.rowHeights[i] = clampRowHeight(sheet.rowHeights[i]);
+    }
+
+    return sheet.rowHeights;
+  }
+
+  function sheetRowHeight(sheet, row) {
+    const heights = ensureSheetRowHeights(sheet, row + 1);
+    return clampRowHeight(heights[row]);
+  }
+
+  function applyRowHeight(el, height) {
+    if (!el) return;
+
+    const px = `${clampRowHeight(height)}px`;
+    el.style.height = px;
+    el.style.minHeight = px;
+  }
+
+  function paintVisibleRowHeight(row, height) {
+    if (!bodyEl || !Number.isInteger(row) || row < 0) return;
+
+    const table = bodyEl.querySelector(".spreadsheetEditorTable");
+    if (!table) return;
+
+    const pxHeight = clampRowHeight(height);
+    const header = table.querySelector(`th[data-row="${row}"]`);
+    applyRowHeight(header, pxHeight);
+
+    const sheet = state.sheets[state.active];
+
+    for (const cell of table.querySelectorAll(`td[data-row="${row}"]`)) {
+      applyRowHeight(cell, pxHeight);
+      const input = cell.querySelector("input");
+      applyRowHeight(input, pxHeight);
+
+      const col = Number(cell.dataset.col);
+      if (sheet && input && Number.isInteger(col)) {
+        applyCellFormatToInput(input, getCellFormat(sheet, row, col));
+      }
+    }
   }
 
   function paintVisibleColumnWidth(col, width) {
@@ -1521,6 +1691,53 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
 
     document.body.classList.add("spreadsheetColumnResizing");
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+  }
+
+  function startRowResize(ev, row) {
+    if (state.readOnly || state.tooLarge) return;
+
+    const sheet = state.sheets[state.active];
+    if (!sheet || !Number.isInteger(row) || row < 0) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (typeof ev.stopImmediatePropagation === "function") {
+      ev.stopImmediatePropagation();
+    }
+
+    hideAxisMenu();
+
+    const startY = Number(ev.clientY);
+    const startHeight = sheetRowHeight(sheet, row);
+    let changed = false;
+
+    const onMove = (moveEv) => {
+      const dy = Number(moveEv.clientY) - startY;
+      const nextHeight = clampRowHeight(startHeight + dy);
+
+      ensureSheetRowHeights(sheet, row + 1);
+      if (sheet.rowHeights[row] === nextHeight) return;
+
+      sheet.rowHeights[row] = nextHeight;
+      paintVisibleRowHeight(row, nextHeight);
+
+      if (!changed) {
+        changed = true;
+        setDirty(true);
+      }
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("spreadsheetRowResizing");
+      repaintSpreadsheetSelection();
+    };
+
+    document.body.classList.add("spreadsheetRowResizing");
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp, { once: true });
   }
@@ -3055,6 +3272,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return {
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
+        rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
         tooLarge: false
       };
     }
@@ -3094,6 +3312,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return xlsxColumnToPixelWidth(meta);
     });
 
+    const rowHeights = Array.from({ length: rowCount }, (_v, r) => {
+      const meta = ws["!rows"] && ws["!rows"][r];
+      return xlsxRowToPixelHeight(meta);
+    });
+
     const cellFormats = Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => null));
 
     for (let r = 0; r < rowCount; r++) {
@@ -3106,6 +3329,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           underline: !!(style && style.font && style.font.underline),
           fontSize: normalizeFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
+          valign: normalizeVerticalAlign(style && style.alignment && style.alignment.vertical),
           bg: cellFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
           border: cellBorderFromXlsxStyle(style && style.border)
@@ -3114,7 +3338,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     }
 
-    return { rows, colWidths, cellFormats, tooLarge };
+    return { rows, colWidths, rowHeights, cellFormats, tooLarge };
   }
 
   async function readWorkbook(ctx) {
@@ -3151,6 +3375,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         name: tr("filemgr.spreadsheet_create.sheet.sheet1", null, "Sheet1"),
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
+        rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
         cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null))
       }];
     }
@@ -3165,6 +3390,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         name: safeName,
         rows: converted.rows,
         colWidths: converted.colWidths,
+        rowHeights: converted.rowHeights,
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats
       };
     });
@@ -3501,6 +3727,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorAlignCenter" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}" title="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M7 10h10"></path><path d="M5 14h14"></path><path d="M8 18h8"></path></svg>
             </button>
+            <button id="spreadsheetEditorValignTop" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_top", null, "Align top")}" title="${tr("filemgr.spreadsheet_editor.valign_top", null, "Align top")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14"></path><path d="M8 10h8"></path><path d="M8 14h8"></path><path d="M12 20V9"></path><path d="M9 12l3-3 3 3"></path></svg>
+            </button>
+            <button id="spreadsheetEditorValignMiddle" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_middle", null, "Align middle")}" title="${tr("filemgr.spreadsheet_editor.valign_middle", null, "Align middle")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14"></path><path d="M5 19h14"></path><path d="M8 12h8"></path><path d="M12 8v8"></path><path d="M9 11l3-3 3 3"></path><path d="M9 13l3 3 3-3"></path></svg>
+            </button>
+            <button id="spreadsheetEditorValignBottom" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Align bottom")}" title="${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Align bottom")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h14"></path><path d="M8 10h8"></path><path d="M8 14h8"></path><path d="M12 4v11"></path><path d="M9 12l3 3 3-3"></path></svg>
+            </button>
             <button id="spreadsheetEditorTextColor" type="button" class="btn secondary spreadsheetToolBtn spreadsheetTextToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}" title="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 6 20"></path><path d="M12 4 18 20"></path><path d="M8 14h8"></path><path d="M5 22h14"></path></svg>
             </button>
@@ -3540,6 +3775,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
     alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
     alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
+    valignTopBtn = modal.querySelector("#spreadsheetEditorValignTop");
+    valignMiddleBtn = modal.querySelector("#spreadsheetEditorValignMiddle");
+    valignBottomBtn = modal.querySelector("#spreadsheetEditorValignBottom");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
     fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
@@ -3550,6 +3788,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
     alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
     alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
+    valignTopBtn?.addEventListener("click", () => applyFormatCommand("valign", "top"));
+    valignMiddleBtn?.addEventListener("click", () => applyFormatCommand("valign", "middle"));
+    valignBottomBtn?.addEventListener("click", () => applyFormatCommand("valign", "bottom"));
     textColorBtn?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -3782,6 +4023,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
     const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
     const colWidths = ensureSheetColWidths(sheet, colCount);
+    const rowHeights = ensureSheetRowHeights(sheet, rows.length);
     const cache = computeSheetCache(sheet);
 
     const table = document.createElement("table");
@@ -3856,7 +4098,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       rh.className = "rowHead";
       rh.dataset.row = String(rIdx);
       rh.tabIndex = 0;
-      rh.textContent = String(rIdx + 1);
+      applyRowHeight(rh, rowHeights[rIdx]);
+
+      const rowLabel = document.createElement("span");
+      rowLabel.className = "spreadsheetRowLabel";
+      rowLabel.textContent = String(rIdx + 1);
+      rh.appendChild(rowLabel);
+
+      const rowResize = document.createElement("span");
+      rowResize.className = "spreadsheetRowResize";
+      rowResize.setAttribute("role", "separator");
+      rowResize.setAttribute("aria-orientation", "horizontal");
+      rowResize.setAttribute("aria-label", tr("filemgr.spreadsheet_editor.resize_row", { row: String(rIdx + 1) }, `Resize row ${rIdx + 1}`));
+      rowResize.addEventListener("pointerdown", (ev) => startRowResize(ev, rIdx));
+      rh.appendChild(rowResize);
+
       rh.title = tr("filemgr.spreadsheet_editor.select_row", { row: String(rIdx + 1) }, `Select row ${rIdx + 1}`);
       rh.addEventListener("click", () => selectSpreadsheetAxis("row", rIdx));
       rh.addEventListener("keydown", (ev) => {
@@ -3872,6 +4128,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         td.dataset.row = String(rIdx);
         td.dataset.col = String(c);
         applyColumnWidth(td, colWidths[c]);
+        applyRowHeight(td, rowHeights[rIdx]);
 
         const input = document.createElement("input");
 
@@ -3880,6 +4137,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         input.dataset.row = String(rIdx);
         input.dataset.col = String(c);
         applyColumnWidth(input, colWidths[c]);
+        applyRowHeight(input, rowHeights[rIdx]);
         input.title = isFormulaValue(cellRaw(sheet, rIdx, c)) ? cellRaw(sheet, rIdx, c) : "";
         input.disabled = state.readOnly || state.tooLarge;
 
@@ -4220,7 +4478,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     adjustSheetFormulasForAxisChange(sheet, "row", insertAt, 1);
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
+    ensureSheetRowHeights(sheet, sheet.rows.length);
     sheet.cellFormats.splice(insertAt, 0, Array.from({ length: cols }, () => null));
+    sheet.rowHeights.splice(insertAt, 0, DEFAULT_ROW_HEIGHT);
     sheet.rows.splice(insertAt, 0, Array.from({ length: cols }, () => ""));
 
     state.selection = { type: "row", index: insertAt };
@@ -4281,11 +4541,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       adjustSheetFormulasForAxisChange(sheet, "row", index, -1);
       ensureSheetCellFormats(sheet);
+      ensureSheetRowHeights(sheet, sheet.rows.length);
       sheet.cellFormats.splice(index, 1);
+      sheet.rowHeights.splice(index, 1);
       sheet.rows.splice(index, 1);
 
       if (!sheet.rows.length) {
         sheet.rows.push(Array.from({ length: cols }, () => ""));
+        sheet.rowHeights = [DEFAULT_ROW_HEIGHT];
+      } else {
+        ensureSheetRowHeights(sheet, sheet.rows.length);
       }
 
       state.selection = {

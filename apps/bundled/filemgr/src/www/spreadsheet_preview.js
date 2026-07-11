@@ -10,6 +10,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MAX_RENDER_ROWS = 1000;
   const MAX_RENDER_COLS = 80;
   const XLSX_VENDOR_URL = "./vendor/xlsx.full.min.js";
+  const DEFAULT_PREVIEW_ROW_HEIGHT = 28;
+  const MIN_PREVIEW_ROW_HEIGHT = 20;
+  const MAX_PREVIEW_ROW_HEIGHT = 260;
 
   let modal = null;
   let titleEl = null;
@@ -328,6 +331,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return PREVIEW_BORDER_STYLE_KEYS.includes(key) ? key : "";
   }
 
+  function normalizePreviewVerticalAlign(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "center") return "middle";
+    return key === "top" || key === "middle" || key === "bottom" ? key : "";
+  }
+
+  function previewVerticalAlignCss(value) {
+    const key = normalizePreviewVerticalAlign(value);
+    return key === "top" ? "top" : key === "bottom" ? "bottom" : "middle";
+  }
+
   function normalizePreviewBorderFormat(border) {
     const src = border && typeof border === "object" ? border : {};
     return {
@@ -401,6 +415,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       underline: !!src.underline,
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       align,
+      valign: normalizePreviewVerticalAlign(src.valign || src.verticalAlign || src.vertical),
       bg,
       fg,
       border: normalizePreviewBorderFormat(src.border)
@@ -447,12 +462,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return Math.max(72, Math.min(520, Math.round(n)));
   }
 
+  function clampPreviewRowHeight(height) {
+    const n = Number(height);
+    if (!Number.isFinite(n)) return DEFAULT_PREVIEW_ROW_HEIGHT;
+    return Math.max(MIN_PREVIEW_ROW_HEIGHT, Math.min(MAX_PREVIEW_ROW_HEIGHT, Math.round(n)));
+  }
+
   function xlsxPreviewColumnToPixelWidth(col) {
     if (!col || typeof col !== "object") return 120;
     if (Number.isFinite(col.wpx)) return clampPreviewColumnWidth(col.wpx);
     if (Number.isFinite(col.width)) return clampPreviewColumnWidth((col.width * 8) + 16);
     if (Number.isFinite(col.wch)) return clampPreviewColumnWidth((col.wch * 8) + 16);
     return 120;
+  }
+
+  function xlsxPreviewRowToPixelHeight(row) {
+    if (!row || typeof row !== "object") return 0;
+    if (Number.isFinite(row.hpx)) return clampPreviewRowHeight(row.hpx);
+    if (Number.isFinite(row.ht)) return clampPreviewRowHeight(row.ht / 0.75);
+    if (Number.isFinite(row.hpt)) return clampPreviewRowHeight(row.hpt / 0.75);
+    return 0;
   }
 
   function previewColumnWidths(ws, colCount) {
@@ -463,12 +492,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
   }
 
+  function previewRowHeights(ws, rowCount) {
+    const count = Math.max(0, Number.isInteger(rowCount) ? rowCount : 0);
+    return Array.from({ length: count }, (_v, r) => {
+      const meta = ws && ws["!rows"] && ws["!rows"][r];
+      return xlsxPreviewRowToPixelHeight(meta);
+    });
+  }
+
   function applyPreviewColumnWidth(el, width) {
     if (!el || !Number.isFinite(Number(width))) return;
     const px = `${clampPreviewColumnWidth(width)}px`;
     el.style.width = px;
     el.style.minWidth = px;
     el.style.maxWidth = px;
+  }
+
+  function applyPreviewRowHeight(el, height) {
+    if (!el || !Number.isFinite(Number(height)) || Number(height) <= 0) return;
+    const px = `${clampPreviewRowHeight(height)}px`;
+    el.style.height = px;
+    el.style.minHeight = px;
   }
 
   function extractPreviewCellFormats(XLSX, ws, rows, cols) {
@@ -491,12 +535,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           underline: !!(style && style.font && style.font.underline),
           fontSize: normalizePreviewFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
+          valign: normalizePreviewVerticalAlign(style && style.alignment && style.alignment.vertical),
           bg: previewFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
           border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
@@ -514,6 +559,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.style.textDecoration = f.underline ? "underline" : "";
     td.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     td.style.textAlign = f.align || "";
+    td.style.verticalAlign = previewVerticalAlignCss(f.valign);
 
     if (f.bg && PREVIEW_FILL_COLORS[f.bg]) {
       td.style.background = PREVIEW_FILL_COLORS[f.bg];
@@ -573,6 +619,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         name,
         rows,
         colWidths: previewColumnWidths(ws, colCount),
+        rowHeights: previewRowHeights(ws, rows.length),
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats
           : extractPreviewCellFormats(XLSX, ws, rows.length, colCount)
@@ -771,6 +818,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     table.className = "spreadsheetPreviewTable";
 
     const colWidths = Array.isArray(sheet.colWidths) ? sheet.colWidths : [];
+    const rowHeights = Array.isArray(sheet.rowHeights) ? sheet.rowHeights : [];
     const colgroup = document.createElement("colgroup");
     const rowHeadCol = document.createElement("col");
     rowHeadCol.style.width = "44px";
@@ -804,14 +852,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const tbody = document.createElement("tbody");
     normalized.rows.forEach((row, rIdx) => {
       const trEl = document.createElement("tr");
+      const rowHeight = rowHeights[rIdx];
+
+      applyPreviewRowHeight(trEl, rowHeight);
+
       const rh = document.createElement("th");
       rh.className = "rowHead";
+      applyPreviewRowHeight(rh, rowHeight);
       rh.textContent = String(rIdx + 1);
       trEl.appendChild(rh);
 
       for (let c = 0; c < normalized.cols; c++) {
         const td = document.createElement("td");
         applyPreviewColumnWidth(td, colWidths[c]);
+        applyPreviewRowHeight(td, rowHeight);
         applyPreviewCellFormat(td, sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c]);
         // Security: always render cell values as text, never HTML.
         td.textContent = row[c] == null ? "" : String(row[c]);
