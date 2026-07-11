@@ -76,6 +76,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let borderMenu = null;
   let xlsxLoadPromise = null;
   let formulaFocus = null;
+  let spreadsheetHistory = null;
+  let historyKeyboardAttached = false;
+  let pendingCellEditHistory = null;
 
   const state = {
     rel: "",
@@ -564,6 +567,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
+    const historyBefore = captureHistorySnapshot();
     const borderStyle = normalizeBorderSide(style) || "thin";
     const rows = cells.map((cell) => cell.row);
     const cols = cells.map((cell) => cell.col);
@@ -601,7 +605,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       paintVisibleCellFormat(row, col);
     }
 
-    setDirty(true);
+    commitHistorySnapshot(historyBefore);
     updateFormatToolbar();
   }
 
@@ -639,6 +643,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
+    const historyBefore = captureHistorySnapshot();
+
     let enable = true;
     if (kind === "bold" || kind === "italic" || kind === "underline") {
       enable = !cells.every(({ row, col }) => !!getCellFormat(sheet, row, col)[kind]);
@@ -665,7 +671,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       paintVisibleCellFormat(row, col);
     }
 
-    setDirty(true);
+    commitHistorySnapshot(historyBefore);
     updateFormatToolbar();
   }
 
@@ -1661,6 +1667,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const startX = Number(ev.clientX);
     const startWidth = sheetColumnWidth(sheet, col);
+    const historyBefore = captureHistorySnapshot();
     let changed = false;
 
     const onMove = (moveEv) => {
@@ -1683,6 +1690,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.body.classList.remove("spreadsheetColumnResizing");
+      if (changed) commitHistorySnapshot(historyBefore);
       repaintSpreadsheetSelection();
     };
 
@@ -1708,6 +1716,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const startY = Number(ev.clientY);
     const startHeight = sheetRowHeight(sheet, row);
+    const historyBefore = captureHistorySnapshot();
     let changed = false;
 
     const onMove = (moveEv) => {
@@ -1730,6 +1739,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.body.classList.remove("spreadsheetRowResizing");
+      if (changed) commitHistorySnapshot(historyBefore);
       repaintSpreadsheetSelection();
     };
 
@@ -1798,6 +1808,243 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     while (sheet.rows.length <= row) sheet.rows.push([]);
     while (sheet.rows[row].length <= col) sheet.rows[row].push("");
     sheet.rows[row][col] = String(value == null ? "" : value);
+  }
+
+  function cloneHistoryValue(value) {
+    try {
+      return JSON.parse(JSON.stringify(value == null ? null : value));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function resetSpreadsheetHistory() {
+    const api = FM && FM.spreadsheetHistory;
+    spreadsheetHistory = api && typeof api.create === "function"
+      ? api.create({ maxDepth: 100 })
+      : null;
+
+    if (spreadsheetHistory && typeof spreadsheetHistory.markClean === "function") {
+      spreadsheetHistory.markClean();
+    }
+
+    pendingCellEditHistory = null;
+  }
+
+  function captureHistorySnapshot() {
+    // Security: undo snapshots contain plain workbook state only. DOM nodes,
+    // generated HTML, credentials, and file paths outside the editor state are
+    // never stored in the history stack.
+    return {
+      sheets: cloneHistoryValue(state.sheets),
+      active: state.active,
+      selection: cloneHistoryValue(state.selection),
+      activeCell: cloneHistoryValue(state.activeCell),
+      rangeSelection: cloneHistoryValue(state.rangeSelection)
+    };
+  }
+
+  function historyDirtyState() {
+    if (spreadsheetHistory && typeof spreadsheetHistory.isDirty === "function") {
+      return spreadsheetHistory.isDirty();
+    }
+    return !!state.dirty;
+  }
+
+  function commitHistorySnapshot(beforeSnapshot) {
+    if (spreadsheetHistory && beforeSnapshot && typeof spreadsheetHistory.record === "function") {
+      spreadsheetHistory.record(beforeSnapshot);
+      setDirty(historyDirtyState());
+      return;
+    }
+
+    setDirty(true);
+  }
+
+  function restoreHistorySnapshot(snapshot, label) {
+    if (!snapshot || !Array.isArray(snapshot.sheets)) return false;
+
+    const restoredSheets = cloneHistoryValue(snapshot.sheets);
+    if (!Array.isArray(restoredSheets)) return false;
+
+    state.sheets = restoredSheets;
+    state.active = Math.max(0, Math.min(
+      Number.isInteger(snapshot.active) ? snapshot.active : 0,
+      Math.max(0, state.sheets.length - 1)
+    ));
+    state.selection = cloneHistoryValue(snapshot.selection);
+    state.activeCell = cloneHistoryValue(snapshot.activeCell);
+    state.rangeSelection = cloneHistoryValue(snapshot.rangeSelection);
+    state.dirty = historyDirtyState();
+
+    formulaFocus = null;
+    pendingCellEditHistory = null;
+
+    render();
+    setStatus(label, state.dirty ? "warn" : "");
+    return true;
+  }
+
+  function undoSpreadsheetHistory() {
+    if (!spreadsheetHistory || state.saving || state.readOnly || state.tooLarge) return false;
+    if (typeof spreadsheetHistory.undo !== "function") return false;
+
+    const snapshot = spreadsheetHistory.undo(captureHistorySnapshot());
+    if (!snapshot) return false;
+
+    return restoreHistorySnapshot(snapshot, tr("filemgr.spreadsheet_editor.undo_status", null, "Undone."));
+  }
+
+  function redoSpreadsheetHistory() {
+    if (!spreadsheetHistory || state.saving || state.readOnly || state.tooLarge) return false;
+    if (typeof spreadsheetHistory.redo !== "function") return false;
+
+    const snapshot = spreadsheetHistory.redo(captureHistorySnapshot());
+    if (!snapshot) return false;
+
+    return restoreHistorySnapshot(snapshot, tr("filemgr.spreadsheet_editor.redo_status", null, "Redone."));
+  }
+
+  function shouldLetNativeTextUndoHandle(ev) {
+    const target = ev && ev.target;
+    if (!target) return false;
+
+    if (target === formulaBarInput) {
+      const cell = activeFormulaBarCell();
+      if (!cell) return false;
+      return String(formulaBarInput.value == null ? "" : formulaBarInput.value) !== cellRaw(cell.sheet, cell.row, cell.col);
+    }
+
+    const tag = String(target.tagName || "").toUpperCase();
+    if (tag === "TEXTAREA") return true;
+
+    if (tag === "INPUT" && target.closest && target.closest(".spreadsheetEditorTable")) {
+      const row = Number(target.dataset ? target.dataset.row : NaN);
+      const col = Number(target.dataset ? target.dataset.col : NaN);
+      const pending = pendingCellEditHistory;
+
+      // Let the browser handle Ctrl+Z only while the user is actively editing
+      // text inside the focused cell. Once focus has moved to another unchanged
+      // cell, Ctrl+Z should be workbook-level undo instead.
+      return !!(
+        pending &&
+        pending.input === target &&
+        pending.row === row &&
+        pending.col === col &&
+        String(target.value == null ? "" : target.value) !== pending.originalRaw
+      );
+    }
+
+    return !!target.isContentEditable;
+  }
+
+  function shouldLetTextDeleteHandle(ev) {
+    const target = ev && ev.target;
+    if (!target) return false;
+
+    if (target === formulaBarInput) return true;
+
+    const tag = String(target.tagName || "").toUpperCase();
+    if (tag === "TEXTAREA") return true;
+
+    if (tag === "INPUT" && target.closest && target.closest(".spreadsheetEditorTable")) {
+      return true;
+    }
+
+    return !!target.isContentEditable;
+  }
+
+  function handleHistoryKeyboard(ev) {
+    if (!ev || ev.defaultPrevented) return;
+    if (!modal || !modal.classList.contains("show")) return;
+
+    if (
+      (ev.key === "Delete" || ev.key === "Backspace") &&
+      !ev.altKey &&
+      !ev.ctrlKey &&
+      !ev.metaKey
+    ) {
+      if (shouldLetTextDeleteHandle(ev)) return;
+
+      if (state.selection || state.rangeSelection || state.activeCell) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        // Keep spreadsheet Delete/Backspace local to the editor. Without this,
+        // row/column header focus can bubble to File Manager's global delete
+        // shortcut and open the trash confirmation for the selected file.
+        clearSpreadsheetTargets(null);
+        return;
+      }
+    }
+
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+
+    const key = String(ev.key || "").toLowerCase();
+    const wantsUndo = key === "z" && !ev.shiftKey;
+    const wantsRedo = key === "y" || (key === "z" && ev.shiftKey);
+    if (!wantsUndo && !wantsRedo) return;
+
+    if (shouldLetNativeTextUndoHandle(ev)) return;
+
+    const handled = wantsRedo ? redoSpreadsheetHistory() : undoSpreadsheetHistory();
+    if (!handled) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  function attachHistoryKeyboard() {
+    if (historyKeyboardAttached) return;
+    historyKeyboardAttached = true;
+    document.addEventListener("keydown", handleHistoryKeyboard, true);
+  }
+
+  function beginPendingCellEditHistory(input, row, col, previousRaw) {
+    if (!input) return;
+
+    const pending = pendingCellEditHistory;
+    if (pending && pending.input === input && pending.row === row && pending.col === col) {
+      if (pending.recorded) return;
+      commitHistorySnapshot(pending.before);
+      pending.recorded = true;
+      return;
+    }
+
+    // Capture workbook undo before the first text mutation. Waiting until blur
+    // can record only focus/selection changes after the cell value has already
+    // been written into state.rows.
+    const before = captureHistorySnapshot();
+
+    pendingCellEditHistory = {
+      input,
+      row,
+      col,
+      originalRaw: String(previousRaw == null ? "" : previousRaw),
+      before,
+      recorded: false
+    };
+
+    commitHistorySnapshot(before);
+    pendingCellEditHistory.recorded = true;
+  }
+
+  function commitPendingCellEditHistory(input, row, col) {
+    const pending = pendingCellEditHistory;
+    if (!pending || pending.input !== input || pending.row !== row || pending.col !== col) return;
+
+    pendingCellEditHistory = null;
+
+    if (!pending.recorded) {
+      const sheet = state.sheets[state.active];
+      const currentRaw = cellRaw(sheet, row, col);
+      if (currentRaw !== pending.originalRaw) {
+        commitHistorySnapshot(captureHistorySnapshot());
+        return;
+      }
+    }
+
+    setDirty(historyDirtyState());
   }
 
   function activeFormulaBarCell() {
@@ -1884,6 +2131,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const previousRaw = cellRaw(cell.sheet, cell.row, cell.col);
     const previousFormulaFocus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
     const nextRaw = String(formulaBarInput.value == null ? "" : formulaBarInput.value);
+    const historyBefore = previousRaw !== nextRaw ? captureHistorySnapshot() : null;
 
     setCellRaw(cell.sheet, cell.row, cell.col, nextRaw);
 
@@ -1900,7 +2148,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     if (previousRaw !== nextRaw) {
-      setDirty(true);
+      commitHistorySnapshot(historyBefore);
     }
 
     refreshFormulaDisplays(null);
@@ -2057,6 +2305,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!sheet || !start || !rows.length) return false;
 
+    const historyBefore = captureHistorySnapshot();
     let changed = false;
     for (let r = 0; r < rows.length; r++) {
       const targetRow = start.row + r;
@@ -2078,7 +2327,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.rangeSelection = null;
     state.activeCell = { row: start.row, col: start.col };
 
-    if (changed) setDirty(true);
+    if (changed) commitHistorySnapshot(historyBefore);
     render();
 
     window.requestAnimationFrame(() => {
@@ -2142,6 +2391,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const cells = spreadsheetTargetCells(input);
     if (!sheet || !cells.length) return false;
 
+    const historyBefore = captureHistorySnapshot();
     let changed = false;
     for (const { row, col } of cells) {
       if (cellRaw(sheet, row, col) !== "") changed = true;
@@ -2154,7 +2404,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.rangeSelection = null;
     state.activeCell = { row: anchorCell.row, col: anchorCell.col };
 
-    if (changed) setDirty(true);
+    if (changed) commitHistorySnapshot(historyBefore);
     render();
 
     window.requestAnimationFrame(() => {
@@ -4093,6 +4343,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
           const raw = cellRaw(sheet, r, col);
 
+          pendingCellEditHistory = {
+            input,
+            row: r,
+            col,
+            originalRaw: String(raw == null ? "" : raw),
+            before: captureHistorySnapshot(),
+            recorded: false
+          };
+
           input.value = raw;
 
           if (String(raw || "").startsWith("=")) {
@@ -4113,6 +4372,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           const col = Number(input.dataset.col);
           if (!Number.isInteger(r) || !Number.isInteger(col)) return;
           if (formulaFocus && formulaFocus.input === input) formulaFocus = null;
+          commitPendingCellEditHistory(input, r, col);
           refreshFormulaDisplays(null);
           input.value = displayCellValue(sheet, r, col);
           input.title = isFormulaValue(cellRaw(sheet, r, col)) ? cellRaw(sheet, r, col) : "";
@@ -4203,6 +4463,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
           const previousRaw = cellRaw(state.sheets[state.active], r, col);
           const previousFormulaFocus = formulaFocus && formulaFocus.input === input ? formulaFocus : null;
+
+          if (previousRaw !== String(input.value == null ? "" : input.value)) {
+            beginPendingCellEditHistory(input, r, col, previousRaw);
+          }
 
           setCellRaw(state.sheets[state.active], r, col, input.value);
 
@@ -4405,6 +4669,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
+    const historyBefore = captureHistorySnapshot();
+
     for (let i = 0; i < count; i++) {
       adjustSheetFormulasForAxisChange(sheet, "row", insertAt, 1);
     }
@@ -4420,7 +4686,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     state.selection = { type: "row", index: insertAt, start: insertAt, end: insertAt + count - 1, anchor: insertAt };
-    setDirty(true);
+    commitHistorySnapshot(historyBefore);
     render();
   }
 
@@ -4447,6 +4713,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
+    const historyBefore = captureHistorySnapshot();
+
     for (let i = 0; i < count; i++) {
       adjustSheetFormulasForAxisChange(sheet, "column", insertAt, 1);
     }
@@ -4472,7 +4740,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     state.selection = { type: "column", index: insertAt, start: insertAt, end: insertAt + count - 1, anchor: insertAt };
-    setDirty(true);
+    commitHistorySnapshot(historyBefore);
     render();
   }
 
@@ -4494,6 +4762,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const count = Math.max(0, Math.min(spec.count, sheet.rows.length - deleteAt));
       if (!count) return;
 
+      const historyBefore = captureHistorySnapshot();
+
       ensureSheetCellFormats(sheet);
       ensureSheetRowHeights(sheet, sheet.rows.length);
 
@@ -4514,7 +4784,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const nextIndex = Math.max(0, Math.min(deleteAt, sheet.rows.length - 1));
       state.selection = { type: "row", index: nextIndex, start: nextIndex, end: nextIndex, anchor: nextIndex };
 
-      setDirty(true);
+      commitHistorySnapshot(historyBefore);
       render();
       return;
     }
@@ -4531,6 +4801,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const deleteAt = Math.max(0, Math.min(spec.index, colCount - 1));
       const count = Math.max(0, Math.min(spec.count, colCount - deleteAt));
       if (!count) return;
+
+      const historyBefore = captureHistorySnapshot();
 
       ensureSheetColWidths(sheet, colCount);
       ensureSheetCellFormats(sheet, sheet.rows.length, colCount);
@@ -4565,7 +4837,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         state.selection = { type: "column", index: nextIndex, start: nextIndex, end: nextIndex, anchor: nextIndex };
       }
 
-      setDirty(true);
+      commitHistorySnapshot(historyBefore);
       render();
     }
   }
@@ -4587,6 +4859,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const file = makeOutputFile(XLSX);
       await FM.saveGeneratedFileOverwrite(file, state.rel);
 
+      if (spreadsheetHistory && typeof spreadsheetHistory.markClean === "function") {
+        spreadsheetHistory.markClean();
+      }
       state.dirty = false;
       setStatus(tr("filemgr.spreadsheet_editor.saved", null, "Saved."), "ok");
 
@@ -4631,11 +4906,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (tabsEl) tabsEl.replaceChildren();
 
     show();
+    attachHistoryKeyboard();
     setStatus(tr("filemgr.spreadsheet_editor.loading", null, "Loading spreadsheet editor…"), "warn");
     updateButtons();
 
     try {
       state.sheets = await readWorkbook({ rel, name, url });
+      resetSpreadsheetHistory();
       render();
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
