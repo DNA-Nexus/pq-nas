@@ -76,6 +76,36 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return !!r && r.type === type && i >= r.start && i <= r.end;
   }
 
+  function targetCells(selection, rowCount, colCount) {
+    const r = range(selection);
+    const rows = Math.max(0, Number(rowCount) || 0);
+    const cols = Math.max(0, Number(colCount) || 0);
+    if (!r || !rows || !cols) return [];
+
+    const cells = [];
+
+    if (r.type === "row") {
+      for (let row = r.start; row <= r.end; row++) {
+        if (row < 0 || row >= rows) continue;
+        for (let col = 0; col < cols; col++) {
+          cells.push({ row, col });
+        }
+      }
+      return cells;
+    }
+
+    if (r.type === "column") {
+      for (let col = r.start; col <= r.end; col++) {
+        if (col < 0 || col >= cols) continue;
+        for (let row = 0; row < rows; row++) {
+          cells.push({ row, col });
+        }
+      }
+    }
+
+    return cells;
+  }
+
   function insertSpec(selection, type, fallbackIndex, total, limit) {
     const totalCount = Math.max(0, Number(total) || 0);
     const maxCount = Math.max(0, Number(limit) || 0);
@@ -327,6 +357,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     selectionFromClick,
     range,
     contains,
+    targetCells,
     insertSpec,
     deleteSpec,
     operationLabel,

@@ -455,32 +455,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return cells;
     }
 
-    if (state.selection && state.selection.type === "row") {
-      const axisRange = axisSelectionRange();
-      if (!axisRange || axisRange.type !== "row") return [];
-
-      const cells = [];
-      for (let row = axisRange.start; row <= axisRange.end; row++) {
-        if (row < 0 || row >= rowCount) continue;
-        for (let col = 0; col < colCount; col++) {
-          cells.push({ row, col });
-        }
+    if (state.selection) {
+      const api = FM && FM.spreadsheetAxis;
+      if (api && typeof api.targetCells === "function") {
+        return api.targetCells(state.selection, rowCount, colCount);
       }
-      return cells;
-    }
-
-    if (state.selection && state.selection.type === "column") {
-      const axisRange = axisSelectionRange();
-      if (!axisRange || axisRange.type !== "column") return [];
-
-      const cells = [];
-      for (let col = axisRange.start; col <= axisRange.end; col++) {
-        if (col < 0 || col >= colCount) continue;
-        for (let row = 0; row < rowCount; row++) {
-          cells.push({ row, col });
-        }
-      }
-      return cells;
+      return [];
     }
 
     if (state.activeCell) {
@@ -2761,75 +2741,47 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     paintActiveCellSelection();
   }
 
-  function axisSelectionRange(selection = state.selection) {
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.range === "function") return api.range(selection);
+  function axisApi() {
+    return FM && FM.spreadsheetAxis ? FM.spreadsheetAxis : null;
+  }
 
-    if (!selection || (selection.type !== "row" && selection.type !== "column")) return null;
-    const index = Number(selection.index);
-    if (!Number.isInteger(index) || index < 0) return null;
-    return { type: selection.type, start: index, end: index, count: 1 };
+  function axisSelectionRange(selection = state.selection) {
+    const api = axisApi();
+    return api && typeof api.range === "function" ? api.range(selection) : null;
   }
 
   function axisSelectionContains(type, index) {
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.contains === "function") return api.contains(state.selection, type, index);
-
-    const range = axisSelectionRange();
-    return !!range && range.type === type && index >= range.start && index <= range.end;
+    const api = axisApi();
+    return !!(api && typeof api.contains === "function" && api.contains(state.selection, type, index));
   }
 
   function axisSelectionCount(type) {
     const range = axisSelectionRange();
-    if (!range || range.type !== type) return 1;
-    return Math.max(1, range.count || (range.end - range.start + 1));
+    return range && range.type === type ? Math.max(1, range.count || 1) : 1;
   }
 
   function axisOperationLabel(action, type) {
-    const count = axisSelectionCount(type);
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.operationLabel === "function") {
-      const label = api.operationLabel(action, type, count);
-      if (label) return label;
-    }
-
-    if (action === "insert" && type === "row") return count > 1 ? `Insert ${count} rows here` : "Insert row here";
-    if (action === "delete" && type === "row") return count > 1 ? `Delete ${count} rows` : "Delete row";
-    if (action === "insert" && type === "column") return count > 1 ? `Insert ${count} columns here` : "Insert column here";
-    if (action === "delete" && type === "column") return count > 1 ? `Delete ${count} columns` : "Delete column";
-    return "";
+    const api = axisApi();
+    if (!api || typeof api.operationLabel !== "function") return "";
+    return api.operationLabel(action, type, axisSelectionCount(type));
   }
 
   function axisInsertSpec(type, fallbackIndex, total, limit) {
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.insertSpec === "function") {
-      return api.insertSpec(state.selection, type, fallbackIndex, total, limit);
-    }
-
-    const index = Number.isInteger(fallbackIndex) ? fallbackIndex : Number(total) || 0;
-    const remaining = Math.max(0, (Number(limit) || 0) - (Number(total) || 0));
-    return { index: Math.max(0, Math.min(index, Number(total) || 0)), count: remaining ? 1 : 0 };
+    const api = axisApi();
+    if (!api || typeof api.insertSpec !== "function") return { index: 0, count: 0 };
+    return api.insertSpec(state.selection, type, fallbackIndex, total, limit);
   }
 
   function axisDeleteSpec(type, fallbackIndex, total) {
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.deleteSpec === "function") {
-      return api.deleteSpec(state.selection, type, fallbackIndex, total);
-    }
-
-    const max = Math.max(0, Number(total) || 0);
-    const index = Math.max(0, Math.min(Number(fallbackIndex) || 0, Math.max(0, max - 1)));
-    return { index, count: max ? 1 : 0 };
+    const api = axisApi();
+    if (!api || typeof api.deleteSpec !== "function") return { index: 0, count: 0 };
+    return api.deleteSpec(state.selection, type, fallbackIndex, total);
   }
 
   function makeAxisSelection(type, index, modifiers = {}) {
-    const api = FM && FM.spreadsheetAxis;
-    if (api && typeof api.selectionFromClick === "function") {
-      return api.selectionFromClick(state.selection, type, index, modifiers);
-    }
-
-    if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) return null;
-    return { type, index, start: index, end: index, anchor: index };
+    const api = axisApi();
+    if (!api || typeof api.selectionFromClick !== "function") return null;
+    return api.selectionFromClick(state.selection, type, index, modifiers);
   }
 
   function setSpreadsheetAxisSelection(type, index) {
