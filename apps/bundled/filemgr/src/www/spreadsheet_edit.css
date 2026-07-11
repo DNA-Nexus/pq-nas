@@ -371,7 +371,12 @@
   padding-right: 16px;
 }
 
-.spreadsheetColumnLabel {
+.spreadsheetEditorTable .rowHead {
+  padding-bottom: 10px;
+}
+
+.spreadsheetColumnLabel,
+.spreadsheetRowLabel {
   pointer-events: none;
 }
 
@@ -405,6 +410,39 @@
 
 .spreadsheetColumnResizing {
   cursor: col-resize;
+  user-select: none;
+}
+
+.spreadsheetRowResize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 8px;
+  z-index: 5;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.spreadsheetRowResize::after {
+  content: "";
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  top: 3px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.spreadsheetRowResize:hover::after,
+.spreadsheetRowResize:focus-visible::after,
+.spreadsheetRowResizing .spreadsheetRowResize::after {
+  background: var(--accent, var(--link));
+}
+
+.spreadsheetRowResizing {
+  cursor: row-resize;
   user-select: none;
 }
 .spreadsheetToolBtn {
