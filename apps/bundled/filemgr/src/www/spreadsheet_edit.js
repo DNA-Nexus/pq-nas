@@ -1062,6 +1062,18 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return JSON.stringify(normalizeBorderFormat(f.border));
   }
 
+  function xlsxDecimalNumFmtCode(decimals) {
+    const places = normalizeDecimalPlaces(decimals);
+    if (places == null) return "";
+
+    return places === 0 ? "0" : `0.${"0".repeat(places)}`;
+  }
+
+  function xlsxStyleNumberFormatKey(fmt) {
+    const f = normalizeCellFormat(fmt);
+    return xlsxDecimalNumFmtCode(f.decimals);
+  }
+
   function buildXlsxStyleCatalog() {
     const fonts = [{
       xml: '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>'
@@ -1076,11 +1088,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const xfs = [{
       xml: '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
     }];
+    const numFmts = [];
 
     const fontIds = new Map([["", 0]]);
     const fillIds = new Map([["", 0]]);
     const borderIds = new Map([["", 0]]);
+    const numFmtIds = new Map();
     const xfIds = new Map([["", 0]]);
+    let nextCustomNumFmtId = 164;
+
+    function ensureNumFmt(fmt) {
+      const code = xlsxStyleNumberFormatKey(fmt);
+      if (!code) return 0;
+      if (numFmtIds.has(code)) return numFmtIds.get(code);
+
+      const id = nextCustomNumFmtId++;
+      numFmtIds.set(code, id);
+      numFmts.push({
+        id,
+        xml: `<numFmt numFmtId="${id}" formatCode="${xlsxAttrEscape(code)}"/>`
+      });
+      return id;
+    }
 
     function ensureFont(fmt) {
       const f = normalizeCellFormat(fmt);
@@ -1162,23 +1191,25 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const f = normalizeCellFormat(fmt);
       if (isEmptyCellFormat(f)) return 0;
 
+      const numFmtId = ensureNumFmt(f);
       const font = ensureFont(f);
       const fill = ensureFill(f);
       const border = ensureBorder(f);
       const align = f.align || "";
       const valign = cellVerticalAlignXlsx(f.valign);
-      const key = JSON.stringify({ font, fill, border, align, valign });
+      const key = JSON.stringify({ numFmtId, font, fill, border, align, valign });
 
       if (xfIds.has(key)) return xfIds.get(key);
 
       const attrs = [
-        'numFmtId="0"',
+        `numFmtId="${numFmtId}"`,
         `fontId="${font}"`,
         `fillId="${fill}"`,
         `borderId="${border}"`,
         'xfId="0"'
       ];
 
+      if (numFmtId) attrs.push('applyNumberFormat="1"');
       if (font) attrs.push('applyFont="1"');
       if (fill) attrs.push('applyFill="1"');
       if (border) attrs.push('applyBorder="1"');
@@ -1199,9 +1230,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     function stylesXml() {
+      const numFmtsXml = numFmts.length
+        ? `<numFmts count="${numFmts.length}">${numFmts.map((f) => f.xml).join("")}</numFmts>`
+        : "";
+
       return [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+        numFmtsXml,
         `<fonts count="${fonts.length}" x14ac:knownFonts="1" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">${fonts.map((f) => f.xml).join("")}</fonts>`,
         `<fills count="${fills.length}">${fills.map((f) => f.xml).join("")}</fills>`,
         `<borders count="${borders.length}">${borders.map((b) => b.xml).join("")}</borders>`,
