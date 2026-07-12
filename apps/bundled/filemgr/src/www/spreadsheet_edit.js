@@ -48,6 +48,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MIN_DECIMAL_PLACES = 0;
   const MAX_DECIMAL_PLACES = 10;
 
+  // Whitelisted display formats only. Do not accept arbitrary Excel format
+  // strings from user content; export builds safe numFmt values from this map.
+  const CURRENCY_FORMATS = Object.freeze({
+    eur: { label: "€ Euro", prefix: "", suffix: " €" },
+    usd: { label: "$ Dollar", prefix: "$", suffix: "" },
+    gbp: { label: "£ Pound", prefix: "£", suffix: "" },
+    sek: { label: "kr Krona", prefix: "", suffix: " kr" },
+    cny: { label: "¥ Yuan", prefix: "¥", suffix: "" }
+  });
+
   let modal = null;
   let titleEl = null;
   let pathEl = null;
@@ -65,6 +75,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let fontSizeSelect = null;
   let decreaseDecimalsBtn = null;
   let increaseDecimalsBtn = null;
+  let numberFormatSelect = null;
   let alignLeftBtn = null;
   let alignCenterBtn = null;
   let valignTopBtn = null;
@@ -354,6 +365,35 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return n.toFixed(places);
   }
 
+  function isValidCurrencyKey(value) {
+    return Object.prototype.hasOwnProperty.call(CURRENCY_FORMATS, String(value || ""));
+  }
+
+  function normalizeCurrencyKey(value) {
+    const key = String(value || "").trim().toLowerCase();
+    return isValidCurrencyKey(key) ? key : "";
+  }
+
+  function normalizeNumberFormat(value, currency) {
+    const key = String(value || "").trim().toLowerCase();
+    return key === "currency" && normalizeCurrencyKey(currency) ? "currency" : "";
+  }
+
+  function formatNumericDisplayValue(value, fmt) {
+    const f = normalizeCellFormat(fmt);
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return String(value == null ? "" : value);
+    }
+
+    const currency = f.numberFormat === "currency" ? CURRENCY_FORMATS[f.currency] : null;
+    const decimals = currency && f.decimals == null ? 2 : f.decimals;
+    const base = decimals == null ? String(value == null ? "" : value) : formatDecimalNumber(n, decimals);
+
+    return currency ? `${currency.prefix}${base}${currency.suffix}` : base;
+  }
+
   function inferCellDecimalPlaces(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
 
@@ -375,6 +415,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     const valign = normalizeVerticalAlign(src.valign || src.verticalAlign || src.vertical);
+    const currency = normalizeCurrencyKey(src.currency);
+    const numberFormat = normalizeNumberFormat(src.numberFormat, currency);
     const decimals = normalizeDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
@@ -382,6 +424,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       underline: !!src.underline,
       fontSize: normalizeFontSize(src.fontSize || src.sz),
       decimals,
+      numberFormat,
+      currency,
       align,
       valign,
       bg: normalizeFillColorKey(src.bg),
@@ -392,7 +436,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && f.decimals == null && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
+    return !f.bold && !f.italic && !f.underline && !f.fontSize && f.decimals == null && !f.numberFormat && !f.currency && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -728,6 +772,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           ? inferCellDecimalPlaces(sheet, row, col, decimalCache)
           : fmt.decimals;
         fmt.decimals = normalizeDecimalPlaces(current + decimalDelta);
+      } else if (kind === "numberFormat") {
+        const rawValue = String(value || "");
+        const currencyMatch = rawValue.match(/^currency:([a-z0-9]+)$/i);
+        const currency = currencyMatch ? normalizeCurrencyKey(currencyMatch[1]) : "";
+        const wasCurrency = fmt.numberFormat === "currency" && !!fmt.currency;
+
+        if (currency) {
+          fmt.numberFormat = "currency";
+          fmt.currency = currency;
+
+          // Currency formats default to two decimals when converting from a
+          // plain/number cell. When switching between currencies, preserve any
+          // decimal count the user already chose.
+          if (!wasCurrency || fmt.decimals == null) fmt.decimals = 2;
+        } else {
+          fmt.numberFormat = "";
+          fmt.currency = "";
+        }
       } else if (kind === "bg") {
         fmt.bg = normalizeFillColorKey(value);
       } else if (kind === "fg") {
@@ -737,15 +799,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       setCellFormat(sheet, row, col, fmt);
       paintVisibleCellFormat(row, col);
 
-      if (kind === "decimals") {
-        const refreshDecimalCell = () => syncVisibleInputForCell(row, col, { forceValue: true });
+      if (kind === "decimals" || kind === "numberFormat") {
+        const refreshFormattedCell = () => syncVisibleInputForCell(row, col, { forceValue: true });
 
-        refreshDecimalCell();
+        refreshFormattedCell();
 
         // Toolbar clicks can interleave with input focus/blur. Refresh once more
-        // after the browser has settled focus so decimal formatting is visible
+        // after the browser has settled focus so number formatting is visible
         // immediately instead of only after another click.
-        window.requestAnimationFrame(refreshDecimalCell);
+        window.requestAnimationFrame(refreshFormattedCell);
       }
     }
 
@@ -774,12 +836,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (btn) btn.disabled = disabled;
     }
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
+    if (numberFormatSelect) numberFormatSelect.disabled = disabled;
 
     setToolButtonActive(boldBtn, !!fmt.bold);
     setToolButtonActive(italicBtn, !!fmt.italic);
     setToolButtonActive(underlineBtn, !!fmt.underline);
     if (fontSizeSelect) {
       fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
+    }
+    if (numberFormatSelect) {
+      numberFormatSelect.value = fmt.numberFormat === "currency" && fmt.currency ? `currency:${fmt.currency}` : "";
     }
     setToolButtonActive(decreaseDecimalsBtn, false);
     setToolButtonActive(increaseDecimalsBtn, false);
@@ -1069,8 +1135,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return places === 0 ? "0" : `0.${"0".repeat(places)}`;
   }
 
+  function xlsxCurrencyNumFmtCode(currency, decimals) {
+    const key = normalizeCurrencyKey(currency);
+    if (!key) return "";
+
+    const base = xlsxDecimalNumFmtCode(decimals == null ? 2 : decimals);
+    if (!base) return "";
+
+    if (key === "eur") return `${base} "€"`;
+    if (key === "usd") return `"$"${base}`;
+    if (key === "gbp") return `"£"${base}`;
+    if (key === "sek") return `${base} "kr"`;
+    if (key === "cny") return `"¥"${base}`;
+    return "";
+  }
+
   function xlsxStyleNumberFormatKey(fmt) {
     const f = normalizeCellFormat(fmt);
+    if (f.numberFormat === "currency" && f.currency) {
+      return xlsxCurrencyNumFmtCode(f.currency, f.decimals);
+    }
     return xlsxDecimalNumFmtCode(f.decimals);
   }
 
@@ -2875,8 +2959,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!isFormulaValue(raw)) {
       const parsed = parsePlainNumber(raw);
-      if (fmt.decimals != null && !parsed.blank && typeof parsed.number === "number") {
-        return formatDecimalNumber(parsed.number, fmt.decimals);
+      if ((fmt.decimals != null || fmt.numberFormat === "currency") && !parsed.blank && typeof parsed.number === "number") {
+        return formatNumericDisplayValue(parsed.number, fmt);
       }
       return raw;
     }
@@ -2885,8 +2969,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
     if (result.error) return result.error;
 
-    if (fmt.decimals != null && typeof result.value === "number") {
-      return formatDecimalNumber(result.value, fmt.decimals);
+    if ((fmt.decimals != null || fmt.numberFormat === "currency") && typeof result.value === "number") {
+      return formatNumericDisplayValue(result.value, fmt);
     }
 
     return formatFormulaNumber(result.value);
@@ -4027,6 +4111,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             </select>
             <button id="spreadsheetEditorDecimalsDecrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}">.0←</button>
             <button id="spreadsheetEditorDecimalsIncrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}">.00→</button>
+            <select id="spreadsheetEditorNumberFormat" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}" title="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}">
+              <option value="">${tr("filemgr.spreadsheet_editor.number_format_plain", null, "Plain")}</option>
+              <option value="currency:eur">€ Euro</option>
+              <option value="currency:usd">$ Dollar</option>
+              <option value="currency:gbp">£ Pound</option>
+              <option value="currency:sek">kr Krona</option>
+              <option value="currency:cny">¥ Yuan</option>
+            </select>
             <button id="spreadsheetEditorAlignLeft" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}" title="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M5 10h10"></path><path d="M5 14h14"></path><path d="M5 18h8"></path></svg>
             </button>
@@ -4081,6 +4173,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
     decreaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsDecrease");
     increaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsIncrease");
+    numberFormatSelect = modal.querySelector("#spreadsheetEditorNumberFormat");
     alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
     alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
     valignTopBtn = modal.querySelector("#spreadsheetEditorValignTop");
@@ -4096,6 +4189,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
     decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
     increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));
+    numberFormatSelect?.addEventListener("change", () => applyFormatCommand("numberFormat", numberFormatSelect.value));
     alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
     alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
     valignTopBtn?.addEventListener("click", () => applyFormatCommand("valign", "top"));

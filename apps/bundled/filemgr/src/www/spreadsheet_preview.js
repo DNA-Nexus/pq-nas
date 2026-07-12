@@ -53,6 +53,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const PREVIEW_BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
   const PREVIEW_MIN_DECIMAL_PLACES = 0;
   const PREVIEW_MAX_DECIMAL_PLACES = 10;
+
+  const PREVIEW_CURRENCY_FORMATS = Object.freeze({
+    eur: { prefix: "", suffix: " €" },
+    usd: { prefix: "$", suffix: "" },
+    gbp: { prefix: "£", suffix: "" },
+    sek: { prefix: "", suffix: " kr" },
+    cny: { prefix: "¥", suffix: "" }
+  });
   let openSeq = 0;
   let dragState = null;
   let resizeState = null;
@@ -431,12 +439,37 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return { blank: false, text: s };
   }
 
+  function normalizePreviewCurrencyKey(value) {
+    const key = String(value || "").trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(PREVIEW_CURRENCY_FORMATS, key) ? key : "";
+  }
+
+  function normalizePreviewNumberFormat(value, currency) {
+    const key = String(value || "").trim().toLowerCase();
+    return key === "currency" && normalizePreviewCurrencyKey(currency) ? "currency" : "";
+  }
+
+  function formatPreviewNumericDisplayValue(value, fmt) {
+    const f = normalizePreviewCellFormat(fmt);
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return String(value == null ? "" : value);
+    }
+
+    const currency = f.numberFormat === "currency" ? PREVIEW_CURRENCY_FORMATS[f.currency] : null;
+    const decimals = currency && f.decimals == null ? 2 : f.decimals;
+    const base = decimals == null ? String(value == null ? "" : value) : n.toFixed(decimals);
+
+    return currency ? `${currency.prefix}${base}${currency.suffix}` : base;
+  }
+
   function displayPreviewCellValue(value, fmt) {
     const f = normalizePreviewCellFormat(fmt);
     const parsed = parsePreviewPlainNumber(value);
 
-    if (f.decimals != null && !parsed.blank && typeof parsed.number === "number") {
-      return parsed.number.toFixed(f.decimals);
+    if ((f.decimals != null || f.numberFormat === "currency") && !parsed.blank && typeof parsed.number === "number") {
+      return formatPreviewNumericDisplayValue(parsed.number, f);
     }
 
     return String(value == null ? "" : value);
@@ -447,6 +480,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const align = src.align === "center" || src.align === "left" ? src.align : "";
     const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
     const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
+    const currency = normalizePreviewCurrencyKey(src.currency);
+    const numberFormat = normalizePreviewNumberFormat(src.numberFormat, currency);
     const decimals = normalizePreviewDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
@@ -454,6 +489,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       underline: !!src.underline,
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       decimals,
+      numberFormat,
+      currency,
       align,
       bg,
       fg,
@@ -580,7 +617,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.decimals != null || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
