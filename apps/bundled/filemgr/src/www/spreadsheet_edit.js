@@ -76,11 +76,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let decreaseDecimalsBtn = null;
   let increaseDecimalsBtn = null;
   let numberFormatSelect = null;
-  let alignLeftBtn = null;
-  let alignCenterBtn = null;
-  let valignTopBtn = null;
-  let valignMiddleBtn = null;
-  let valignBottomBtn = null;
+  let alignSelect = null;
+  let valignSelect = null;
   let textColorBtn = null;
   let fillBtn = null;
   let closeBtn = null;
@@ -376,6 +373,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function normalizeNumberFormat(value, currency) {
     const key = String(value || "").trim().toLowerCase();
+    if (key === "percent") return "percent";
     return key === "currency" && normalizeCurrencyKey(currency) ? "currency" : "";
   }
 
@@ -385,6 +383,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!Number.isFinite(n)) {
       return String(value == null ? "" : value);
+    }
+
+    if (f.numberFormat === "percent") {
+      const decimals = f.decimals == null ? 2 : f.decimals;
+      return `${formatDecimalNumber(n * 100, decimals)}%`;
     }
 
     const currency = f.numberFormat === "currency" ? CURRENCY_FORMATS[f.currency] : null;
@@ -413,10 +416,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
-    const align = src.align === "center" || src.align === "left" ? src.align : "";
+    const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
     const valign = normalizeVerticalAlign(src.valign || src.verticalAlign || src.vertical);
-    const currency = normalizeCurrencyKey(src.currency);
-    const numberFormat = normalizeNumberFormat(src.numberFormat, currency);
+    const rawCurrency = normalizeCurrencyKey(src.currency);
+    const numberFormat = normalizeNumberFormat(src.numberFormat, rawCurrency);
+    const currency = numberFormat === "currency" ? rawCurrency : "";
     const decimals = normalizeDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
@@ -764,7 +768,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       } else if (kind === "fontSize") {
         fmt.fontSize = normalizeFontSize(value);
       } else if (kind === "align") {
-        fmt.align = value === "center" ? "center" : "left";
+        fmt.align = value === "center" || value === "right" ? value : "left";
       } else if (kind === "valign") {
         fmt.valign = normalizeVerticalAlign(value);
       } else if (kind === "decimals") {
@@ -776,16 +780,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const rawValue = String(value || "");
         const currencyMatch = rawValue.match(/^currency:([a-z0-9]+)$/i);
         const currency = currencyMatch ? normalizeCurrencyKey(currencyMatch[1]) : "";
-        const wasCurrency = fmt.numberFormat === "currency" && !!fmt.currency;
+        const wasFormattedNumber = fmt.numberFormat === "currency" || fmt.numberFormat === "percent";
 
         if (currency) {
           fmt.numberFormat = "currency";
           fmt.currency = currency;
 
           // Currency formats default to two decimals when converting from a
-          // plain/number cell. When switching between currencies, preserve any
-          // decimal count the user already chose.
-          if (!wasCurrency || fmt.decimals == null) fmt.decimals = 2;
+          // plain/number cell. When switching from another number format,
+          // preserve any decimal count the user already chose.
+          if (!wasFormattedNumber || fmt.decimals == null) fmt.decimals = 2;
+        } else if (rawValue === "percent") {
+          fmt.numberFormat = "percent";
+          fmt.currency = "";
+
+          // Percent uses Excel-style display: raw 0.12 becomes 12.00%.
+          // Default to two decimals when converting from plain/number cells.
+          if (!wasFormattedNumber || fmt.decimals == null) fmt.decimals = 2;
         } else {
           fmt.numberFormat = "";
           fmt.currency = "";
@@ -832,11 +843,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const sheet = state.sheets[state.active];
     const fmt = first && sheet ? getCellFormat(sheet, first.row, first.col) : normalizeCellFormat(null);
 
-    for (const btn of [boldBtn, italicBtn, underlineBtn, decreaseDecimalsBtn, increaseDecimalsBtn, alignLeftBtn, alignCenterBtn, valignTopBtn, valignMiddleBtn, valignBottomBtn, textColorBtn, fillBtn]) {
+    for (const btn of [boldBtn, italicBtn, underlineBtn, decreaseDecimalsBtn, increaseDecimalsBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
     if (numberFormatSelect) numberFormatSelect.disabled = disabled;
+    if (alignSelect) alignSelect.disabled = disabled;
+    if (valignSelect) valignSelect.disabled = disabled;
 
     setToolButtonActive(boldBtn, !!fmt.bold);
     setToolButtonActive(italicBtn, !!fmt.italic);
@@ -845,15 +858,18 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
     }
     if (numberFormatSelect) {
-      numberFormatSelect.value = fmt.numberFormat === "currency" && fmt.currency ? `currency:${fmt.currency}` : "";
+      numberFormatSelect.value = fmt.numberFormat === "currency" && fmt.currency
+        ? `currency:${fmt.currency}`
+        : fmt.numberFormat === "percent" ? "percent" : "";
+    }
+    if (alignSelect) {
+      alignSelect.value = fmt.align || "left";
+    }
+    if (valignSelect) {
+      valignSelect.value = fmt.valign || "middle";
     }
     setToolButtonActive(decreaseDecimalsBtn, false);
     setToolButtonActive(increaseDecimalsBtn, false);
-    setToolButtonActive(alignLeftBtn, fmt.align === "left" || !fmt.align);
-    setToolButtonActive(alignCenterBtn, fmt.align === "center");
-    setToolButtonActive(valignTopBtn, fmt.valign === "top");
-    setToolButtonActive(valignMiddleBtn, fmt.valign === "middle" || !fmt.valign);
-    setToolButtonActive(valignBottomBtn, fmt.valign === "bottom");
     setToolButtonActive(textColorBtn, !!fmt.fg);
     if (textColorBtn) {
       textColorBtn.dataset.fg = fmt.fg || "";
@@ -1150,8 +1166,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return "";
   }
 
+  function xlsxPercentNumFmtCode(decimals) {
+    const base = xlsxDecimalNumFmtCode(decimals == null ? 2 : decimals);
+    return base ? `${base}%` : "";
+  }
+
   function xlsxStyleNumberFormatKey(fmt) {
     const f = normalizeCellFormat(fmt);
+    if (f.numberFormat === "percent") {
+      return xlsxPercentNumFmtCode(f.decimals);
+    }
     if (f.numberFormat === "currency" && f.currency) {
       return xlsxCurrencyNumFmtCode(f.currency, f.decimals);
     }
@@ -2959,7 +2983,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!isFormulaValue(raw)) {
       const parsed = parsePlainNumber(raw);
-      if ((fmt.decimals != null || fmt.numberFormat === "currency") && !parsed.blank && typeof parsed.number === "number") {
+      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && !parsed.blank && typeof parsed.number === "number") {
         return formatNumericDisplayValue(parsed.number, fmt);
       }
       return raw;
@@ -2969,7 +2993,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
     if (result.error) return result.error;
 
-    if ((fmt.decimals != null || fmt.numberFormat === "currency") && typeof result.value === "number") {
+    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && typeof result.value === "number") {
       return formatNumericDisplayValue(result.value, fmt);
     }
 
@@ -4109,31 +4133,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
               <option value="">${tr("filemgr.spreadsheet_editor.font_size_default", null, "Size")}</option>
               ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}">${size}</option>`).join("")}
             </select>
-            <button id="spreadsheetEditorDecimalsDecrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}">.0←</button>
-            <button id="spreadsheetEditorDecimalsIncrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}">.00→</button>
+            <button id="spreadsheetEditorDecimalsDecrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_decrease", null, "Decrease decimals")}">−.0</button>
+            <button id="spreadsheetEditorDecimalsIncrease" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}" title="${tr("filemgr.spreadsheet_editor.decimals_increase", null, "Increase decimals")}">+.0</button>
             <select id="spreadsheetEditorNumberFormat" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}" title="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}">
               <option value="">${tr("filemgr.spreadsheet_editor.number_format_plain", null, "Plain")}</option>
+              <option value="percent">% Percent</option>
               <option value="currency:eur">€ Euro</option>
               <option value="currency:usd">$ Dollar</option>
               <option value="currency:gbp">£ Pound</option>
               <option value="currency:sek">kr Krona</option>
               <option value="currency:cny">¥ Yuan</option>
             </select>
-            <button id="spreadsheetEditorAlignLeft" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}" title="${tr("filemgr.spreadsheet_editor.align_left", null, "Align left")}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M5 10h10"></path><path d="M5 14h14"></path><path d="M5 18h8"></path></svg>
-            </button>
-            <button id="spreadsheetEditorAlignCenter" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}" title="${tr("filemgr.spreadsheet_editor.align_center", null, "Align center")}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14"></path><path d="M7 10h10"></path><path d="M5 14h14"></path><path d="M8 18h8"></path></svg>
-            </button>
-            <button id="spreadsheetEditorValignTop" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_top", null, "Align top")}" title="${tr("filemgr.spreadsheet_editor.valign_top", null, "Align top")}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14"></path><path d="M8 10h8"></path><path d="M8 14h8"></path><path d="M12 20V9"></path><path d="M9 12l3-3 3 3"></path></svg>
-            </button>
-            <button id="spreadsheetEditorValignMiddle" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_middle", null, "Align middle")}" title="${tr("filemgr.spreadsheet_editor.valign_middle", null, "Align middle")}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14"></path><path d="M5 19h14"></path><path d="M8 12h8"></path><path d="M12 8v8"></path><path d="M9 11l3-3 3 3"></path><path d="M9 13l3 3 3-3"></path></svg>
-            </button>
-            <button id="spreadsheetEditorValignBottom" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Align bottom")}" title="${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Align bottom")}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h14"></path><path d="M8 10h8"></path><path d="M8 14h8"></path><path d="M12 4v11"></path><path d="M9 12l3 3 3-3"></path></svg>
-            </button>
+            <select id="spreadsheetEditorAlign" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}" title="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}">
+              <option value="left">${tr("filemgr.spreadsheet_editor.align_left", null, "Left")}</option>
+              <option value="center">${tr("filemgr.spreadsheet_editor.align_center", null, "Center")}</option>
+              <option value="right">${tr("filemgr.spreadsheet_editor.align_right", null, "Right")}</option>
+            </select>
+            <select id="spreadsheetEditorValign" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}" title="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}">
+              <option value="top">${tr("filemgr.spreadsheet_editor.valign_top", null, "Top")}</option>
+              <option value="middle">${tr("filemgr.spreadsheet_editor.valign_middle", null, "Middle")}</option>
+              <option value="bottom">${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Bottom")}</option>
+            </select>
             <button id="spreadsheetEditorTextColor" type="button" class="btn secondary spreadsheetToolBtn spreadsheetTextToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}" title="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 6 20"></path><path d="M12 4 18 20"></path><path d="M8 14h8"></path><path d="M5 22h14"></path></svg>
             </button>
@@ -4174,11 +4194,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     decreaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsDecrease");
     increaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsIncrease");
     numberFormatSelect = modal.querySelector("#spreadsheetEditorNumberFormat");
-    alignLeftBtn = modal.querySelector("#spreadsheetEditorAlignLeft");
-    alignCenterBtn = modal.querySelector("#spreadsheetEditorAlignCenter");
-    valignTopBtn = modal.querySelector("#spreadsheetEditorValignTop");
-    valignMiddleBtn = modal.querySelector("#spreadsheetEditorValignMiddle");
-    valignBottomBtn = modal.querySelector("#spreadsheetEditorValignBottom");
+    alignSelect = modal.querySelector("#spreadsheetEditorAlign");
+    valignSelect = modal.querySelector("#spreadsheetEditorValign");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
     fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
@@ -4190,11 +4207,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
     increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));
     numberFormatSelect?.addEventListener("change", () => applyFormatCommand("numberFormat", numberFormatSelect.value));
-    alignLeftBtn?.addEventListener("click", () => applyFormatCommand("align", "left"));
-    alignCenterBtn?.addEventListener("click", () => applyFormatCommand("align", "center"));
-    valignTopBtn?.addEventListener("click", () => applyFormatCommand("valign", "top"));
-    valignMiddleBtn?.addEventListener("click", () => applyFormatCommand("valign", "middle"));
-    valignBottomBtn?.addEventListener("click", () => applyFormatCommand("valign", "bottom"));
+    alignSelect?.addEventListener("change", () => applyFormatCommand("align", alignSelect.value));
+    valignSelect?.addEventListener("change", () => applyFormatCommand("valign", valignSelect.value));
     textColorBtn?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();

@@ -446,6 +446,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function normalizePreviewNumberFormat(value, currency) {
     const key = String(value || "").trim().toLowerCase();
+    if (key === "percent") return "percent";
     return key === "currency" && normalizePreviewCurrencyKey(currency) ? "currency" : "";
   }
 
@@ -455,6 +456,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!Number.isFinite(n)) {
       return String(value == null ? "" : value);
+    }
+
+    if (f.numberFormat === "percent") {
+      const decimals = f.decimals == null ? 2 : f.decimals;
+      return `${(n * 100).toFixed(decimals)}%`;
     }
 
     const currency = f.numberFormat === "currency" ? PREVIEW_CURRENCY_FORMATS[f.currency] : null;
@@ -468,7 +474,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const f = normalizePreviewCellFormat(fmt);
     const parsed = parsePreviewPlainNumber(value);
 
-    if ((f.decimals != null || f.numberFormat === "currency") && !parsed.blank && typeof parsed.number === "number") {
+    if ((f.decimals != null || f.numberFormat === "currency" || f.numberFormat === "percent") && !parsed.blank && typeof parsed.number === "number") {
       return formatPreviewNumericDisplayValue(parsed.number, f);
     }
 
@@ -477,11 +483,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
-    const align = src.align === "center" || src.align === "left" ? src.align : "";
+    const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
     const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
     const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
-    const currency = normalizePreviewCurrencyKey(src.currency);
-    const numberFormat = normalizePreviewNumberFormat(src.numberFormat, currency);
+    const rawCurrency = normalizePreviewCurrencyKey(src.currency);
+    const numberFormat = normalizePreviewNumberFormat(src.numberFormat, rawCurrency);
+    const currency = numberFormat === "currency" ? rawCurrency : "";
     const decimals = normalizePreviewDecimalPlaces(src.decimals);
     return {
       bold: !!src.bold,
