@@ -91,6 +91,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let spreadsheetHistory = null;
   let historyKeyboardAttached = false;
   let pendingCellEditHistory = null;
+  let preserveSelectionForContextMenu = null;
 
   const state = {
     rel: "",
@@ -497,6 +498,215 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     sheet.cellFormats[row][col] = isEmptyCellFormat(normalized) ? null : normalized;
   }
 
+
+  function normalizeMergeRange(merge, rowCount = null, colCount = null) {
+    const src = merge && typeof merge === "object" ? merge : {};
+    const start = src.s && typeof src.s === "object" ? src.s : {};
+    const end = src.e && typeof src.e === "object" ? src.e : {};
+
+    const sr = Number(start.r);
+    const sc = Number(start.c);
+    const er = Number(end.r);
+    const ec = Number(end.c);
+
+    if (![sr, sc, er, ec].every(Number.isInteger)) return null;
+
+    let row1 = Math.min(sr, er);
+    let row2 = Math.max(sr, er);
+    let col1 = Math.min(sc, ec);
+    let col2 = Math.max(sc, ec);
+
+    if (Number.isInteger(rowCount) && rowCount > 0) {
+      if (row1 >= rowCount || row2 < 0) return null;
+      row1 = Math.max(0, row1);
+      row2 = Math.min(rowCount - 1, row2);
+    }
+
+    if (Number.isInteger(colCount) && colCount > 0) {
+      if (col1 >= colCount || col2 < 0) return null;
+      col1 = Math.max(0, col1);
+      col2 = Math.min(colCount - 1, col2);
+    }
+
+    if (row1 < 0 || col1 < 0 || row2 < row1 || col2 < col1) return null;
+    if (row1 === row2 && col1 === col2) return null;
+
+    return { s: { r: row1, c: col1 }, e: { r: row2, c: col2 } };
+  }
+
+  function mergeRangeKey(merge) {
+    const m = normalizeMergeRange(merge);
+    return m ? `${m.s.r}:${m.s.c}:${m.e.r}:${m.e.c}` : "";
+  }
+
+  function mergeRangesOverlap(a, b) {
+    const ma = normalizeMergeRange(a);
+    const mb = normalizeMergeRange(b);
+    if (!ma || !mb) return false;
+
+    return ma.s.r <= mb.e.r &&
+      ma.e.r >= mb.s.r &&
+      ma.s.c <= mb.e.c &&
+      ma.e.c >= mb.s.c;
+  }
+
+  function ensureSheetMerges(sheet, rowCount = null, colCount = null) {
+    if (!sheet) return [];
+
+    const src = Array.isArray(sheet.merges) ? sheet.merges : [];
+    const out = [];
+    const seen = new Set();
+
+    for (const raw of src) {
+      const merge = normalizeMergeRange(raw, rowCount, colCount);
+      if (!merge) continue;
+
+      const key = mergeRangeKey(merge);
+      if (!key || seen.has(key)) continue;
+      if (out.some((existing) => mergeRangesOverlap(existing, merge))) continue;
+
+      seen.add(key);
+      out.push(merge);
+    }
+
+    sheet.merges = out;
+    return sheet.merges;
+  }
+
+  function mergeContainsCell(merge, row, col) {
+    const m = normalizeMergeRange(merge);
+    return !!m &&
+      Number.isInteger(row) &&
+      Number.isInteger(col) &&
+      row >= m.s.r &&
+      row <= m.e.r &&
+      col >= m.s.c &&
+      col <= m.e.c;
+  }
+
+  function mergeIsAnchorCell(merge, row, col) {
+    const m = normalizeMergeRange(merge);
+    return !!m && row === m.s.r && col === m.s.c;
+  }
+
+  function mergeAtCell(sheet, row, col) {
+    const merges = ensureSheetMerges(sheet);
+    return merges.find((merge) => mergeContainsCell(merge, row, col)) || null;
+  }
+
+  function isMergeCoveredCell(sheet, row, col) {
+    const merge = mergeAtCell(sheet, row, col);
+    return !!merge && !mergeIsAnchorCell(merge, row, col);
+  }
+
+  function selectedMergeRange() {
+    const range = normalizedRangeSelection();
+    if (!range) return null;
+    if (range.row1 === range.row2 && range.col1 === range.col2) return null;
+
+    return normalizeMergeRange({
+      s: { r: range.row1, c: range.col1 },
+      e: { r: range.row2, c: range.col2 }
+    });
+  }
+
+  function mergeColumnPixelWidth(colWidths, col1, col2) {
+    let total = 0;
+    for (let c = col1; c <= col2; c++) {
+      total += clampColumnWidth(colWidths[c]);
+    }
+    return Math.max(MIN_COL_WIDTH, total);
+  }
+
+  function mergeRowPixelHeight(rowHeights, row1, row2) {
+    let total = 0;
+    for (let r = row1; r <= row2; r++) {
+      total += clampRowHeight(rowHeights[r]);
+    }
+    return Math.max(MIN_ROW_HEIGHT, total);
+  }
+
+  function mergeRangeHasHiddenData(sheet, merge) {
+    const m = normalizeMergeRange(merge);
+    if (!sheet || !m) return false;
+
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (r === m.s.r && c === m.s.c) continue;
+        if (String(cellRaw(sheet, r, c) || "").trim() !== "") return true;
+      }
+    }
+
+    return false;
+  }
+
+  function applyMergeSelectedCells() {
+    if (state.readOnly || state.tooLarge) return;
+
+    const sheet = state.sheets[state.active];
+    const merge = selectedMergeRange();
+
+    if (!sheet || !merge) {
+      setStatus(tr("filemgr.spreadsheet_editor.merge_select_range", null, "Select a cell range first."), "warn");
+      return;
+    }
+
+    const existing = ensureSheetMerges(sheet);
+    if (existing.some((item) => mergeRangesOverlap(item, merge))) {
+      setStatus(tr("filemgr.spreadsheet_editor.merge_overlaps", null, "Cannot merge a range that overlaps existing merged cells."), "warn");
+      return;
+    }
+
+    if (mergeRangeHasHiddenData(sheet, merge)) {
+      setStatus(tr(
+        "filemgr.spreadsheet_editor.merge_hidden_data",
+        null,
+        "Cannot merge cells because the selected range contains values outside the top-left cell."
+      ), "warn");
+      return;
+    }
+
+    const historyBefore = captureHistorySnapshot();
+
+    // Preserve workbook data: merging keeps the top-left cell as the only value
+    // owner and only allows the operation when no hidden cell values would be lost.
+    ensureSheetMerges(sheet).push(merge);
+    state.rangeSelection = null;
+    state.selection = null;
+    state.activeCell = { row: merge.s.r, col: merge.s.c };
+    setDirty(true);
+
+    commitHistorySnapshot(historyBefore);
+    render();
+    setStatus(tr("filemgr.spreadsheet_editor.merge_done", null, "Merged cells."), "");
+  }
+
+  function applyUnmergeAtCell(row, col) {
+    if (state.readOnly || state.tooLarge) return;
+
+    const sheet = state.sheets[state.active];
+    if (!sheet) return;
+
+    const merge = mergeAtCell(sheet, row, col);
+    if (!merge) {
+      setStatus(tr("filemgr.spreadsheet_editor.unmerge_none", null, "This cell is not merged."), "warn");
+      return;
+    }
+
+    const key = mergeRangeKey(merge);
+    const historyBefore = captureHistorySnapshot();
+
+    sheet.merges = ensureSheetMerges(sheet).filter((item) => mergeRangeKey(item) !== key);
+    state.rangeSelection = null;
+    state.selection = null;
+    state.activeCell = { row: merge.s.r, col: merge.s.c };
+    setDirty(true);
+
+    commitHistorySnapshot(historyBefore);
+    render();
+    setStatus(tr("filemgr.spreadsheet_editor.unmerge_done", null, "Unmerged cells."), "");
+  }
+
   function applyCellFormatToInput(input, fmt) {
     if (!input) return;
 
@@ -737,7 +947,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     hideTextColorMenu();
     hideFillMenu();
     hideAxisMenu();
-    openBorderMenu(ev.clientX, ev.clientY);
+    openBorderMenu(ev.clientX, ev.clientY, row, col);
   }
 
   function applyFormatCommand(kind, value = null) {
@@ -1361,12 +1571,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return { styleIndexForFormat, stylesXml };
   }
 
+
+  function xlsxMergeCellsXml(sheet, rowCount, colCount) {
+    const merges = ensureSheetMerges(sheet, rowCount, colCount);
+    if (!merges.length) return "";
+
+    const refs = merges.map((merge) => {
+      const ref = `${xlsxCellRef(merge.s.r, merge.s.c)}:${xlsxCellRef(merge.e.r, merge.e.c)}`;
+      // Merge refs are generated from normalized numeric coordinates, not user
+      // strings; still XML-escape before serializing into worksheet XML.
+      return `<mergeCell ref="${xlsxAttrEscape(ref)}"/>`;
+    });
+
+    return `<mergeCells count="${refs.length}">${refs.join("")}</mergeCells>`;
+  }
+
   function buildWorksheetXml(sheet, styleCatalog) {
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
     const rowCount = rows.length;
     const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
     const colWidths = ensureSheetColWidths(sheet, colCount);
     const rowHeights = ensureSheetRowHeights(sheet, rowCount);
+    const mergeCellsXml = xlsxMergeCellsXml(sheet, rowCount, colCount);
     const cache = computeSheetCache(sheet);
 
     const colsXml = colWidths.length
@@ -1383,6 +1609,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const cells = [];
 
       for (let c = 0; c < colCount; c++) {
+        if (isMergeCoveredCell(sheet, r, c)) continue;
+
         const raw = row[c] == null ? "" : String(row[c]);
         const fmt = getCellFormat(sheet, r, c);
         const styleIndex = styleCatalog.styleIndexForFormat(fmt);
@@ -1430,6 +1658,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       '<sheetFormatPr defaultRowHeight="15"/>',
       colsXml,
       `<sheetData>${rowXml.join("")}</sheetData>`,
+      mergeCellsXml,
       '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>',
       '</worksheet>'
     ].join("");
@@ -3519,23 +3748,52 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return borderMenu;
   }
 
-  function makeBorderMenuButton(action, style = "") {
+  function makeCellContextMenuButton(label, handler, disabled = false) {
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.disabled = !!disabled;
     btn.setAttribute("role", "menuitem");
-    btn.textContent = borderMenuLabel(action, style);
+    btn.textContent = label;
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
+      if (btn.disabled) return;
       hideBorderMenu();
-      applyBorderCommand(action, style);
+      handler();
     });
     return btn;
   }
 
-  function openBorderMenu(x, y) {
+  function makeBorderMenuButton(action, style = "") {
+    return makeCellContextMenuButton(borderMenuLabel(action, style), () => applyBorderCommand(action, style));
+  }
+
+  function openBorderMenu(x, y, row = null, col = null) {
     const menu = ensureBorderMenu();
     menu.replaceChildren();
+
+    const sheet = state.sheets[state.active];
+    const clickedMerge = Number.isInteger(row) && Number.isInteger(col) ? mergeAtCell(sheet, row, col) : null;
+    const mergeSelection = selectedMergeRange();
+
+    if (clickedMerge || mergeSelection) {
+      const cellTitle = document.createElement("div");
+      cellTitle.className = "spreadsheetBorderMenuTitle";
+      cellTitle.textContent = tr("filemgr.spreadsheet_editor.cell", null, "Cell");
+      menu.appendChild(cellTitle);
+
+      if (clickedMerge) {
+        menu.appendChild(makeCellContextMenuButton(
+          tr("filemgr.spreadsheet_editor.unmerge_cells", null, "Unmerge cells"),
+          () => applyUnmergeAtCell(row, col)
+        ));
+      } else if (mergeSelection) {
+        menu.appendChild(makeCellContextMenuButton(
+          tr("filemgr.spreadsheet_editor.merge_cells", null, "Merge cells"),
+          () => applyMergeSelectedCells()
+        ));
+      }
+    }
 
     const title = document.createElement("div");
     title.className = "spreadsheetBorderMenuTitle";
@@ -3679,12 +3937,40 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return { rows: out, tooLarge };
   }
 
+
+  function worksheetMergeRanges(XLSX, ws, rowCount, colCount) {
+    if (!ws || !ws["!ref"] || !Array.isArray(ws["!merges"]) || !XLSX || !XLSX.utils) return [];
+
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    const out = [];
+
+    for (const raw of ws["!merges"]) {
+      const merge = normalizeMergeRange({
+        s: {
+          r: Number(raw && raw.s && raw.s.r) - range.s.r,
+          c: Number(raw && raw.s && raw.s.c) - range.s.c
+        },
+        e: {
+          r: Number(raw && raw.e && raw.e.r) - range.s.r,
+          c: Number(raw && raw.e && raw.e.c) - range.s.c
+        }
+      }, rowCount, colCount);
+
+      if (!merge) continue;
+      if (out.some((existing) => mergeRangesOverlap(existing, merge))) continue;
+      out.push(merge);
+    }
+
+    return out;
+  }
+
   function worksheetToEditableRows(XLSX, ws) {
     if (!ws || !ws["!ref"]) {
       return {
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
         rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
+        merges: [],
         tooLarge: false
       };
     }
@@ -3750,7 +4036,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     }
 
-    return { rows, colWidths, rowHeights, cellFormats, tooLarge };
+    const merges = worksheetMergeRanges(XLSX, ws, rowCount, colCount);
+
+    return { rows, colWidths, rowHeights, cellFormats, merges, tooLarge };
   }
 
   async function readWorkbook(ctx) {
@@ -3788,7 +4076,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
         rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
-        cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null))
+        cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null)),
+        merges: []
       }];
     }
 
@@ -3803,7 +4092,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rows: converted.rows,
         colWidths: converted.colWidths,
         rowHeights: converted.rowHeights,
-        cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats
+        cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
+        merges: converted.merges
       };
     });
 
@@ -4541,11 +4831,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       trEl.appendChild(rh);
 
       for (let c = 0; c < colCount; c++) {
+        const merge = mergeAtCell(sheet, rIdx, c);
+        if (merge && !mergeIsAnchorCell(merge, rIdx, c)) continue;
+
+        const colSpan = merge ? Math.max(1, merge.e.c - merge.s.c + 1) : 1;
+        const rowSpan = merge ? Math.max(1, merge.e.r - merge.s.r + 1) : 1;
+        const cellWidth = merge ? mergeColumnPixelWidth(colWidths, merge.s.c, merge.e.c) : colWidths[c];
+        const cellHeight = merge ? mergeRowPixelHeight(rowHeights, merge.s.r, merge.e.r) : rowHeights[rIdx];
+
         const td = document.createElement("td");
         td.dataset.row = String(rIdx);
         td.dataset.col = String(c);
-        applyColumnWidth(td, colWidths[c]);
-        applyRowHeight(td, rowHeights[rIdx]);
+        if (colSpan > 1) td.colSpan = colSpan;
+        if (rowSpan > 1) td.rowSpan = rowSpan;
+        applyColumnWidth(td, cellWidth);
+        applyRowHeight(td, cellHeight);
 
         const input = document.createElement("input");
 
@@ -4553,8 +4853,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         input.value = displayCellValue(sheet, rIdx, c, cache);
         input.dataset.row = String(rIdx);
         input.dataset.col = String(c);
-        applyColumnWidth(input, colWidths[c]);
-        applyRowHeight(input, rowHeights[rIdx]);
+        applyColumnWidth(input, cellWidth);
+        applyRowHeight(input, cellHeight);
         input.title = isFormulaValue(cellRaw(sheet, rIdx, c)) ? cellRaw(sheet, rIdx, c) : "";
         input.disabled = state.readOnly || state.tooLarge;
 
@@ -4567,17 +4867,32 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         });
 
         input.addEventListener("pointerdown", (ev) => {
+          if (ev.button === 2 && formatTargetsContainCell(rIdx, c)) {
+            // Right-clicking inside an existing selection should open the cell
+            // context menu without collapsing the selected merge/border target.
+            preserveSelectionForContextMenu = { row: rIdx, col: c };
+            return;
+          }
+
           beginCellRangePointer(ev, rIdx, c);
         });
 
         input.addEventListener("focus", () => {
           const r = Number(input.dataset.row);
           const col = Number(input.dataset.col);
-          state.activeCell = Number.isInteger(r) && Number.isInteger(col) ? { row: r, col } : null;
+          const preserveContextSelection =
+            preserveSelectionForContextMenu &&
+            preserveSelectionForContextMenu.row === r &&
+            preserveSelectionForContextMenu.col === col &&
+            formatTargetsContainCell(r, col);
 
-          if (state.selection || state.rangeSelection) {
-            state.selection = null;
-            state.rangeSelection = null;
+          if (!preserveContextSelection) {
+            state.activeCell = Number.isInteger(r) && Number.isInteger(col) ? { row: r, col } : null;
+
+            if (state.selection || state.rangeSelection) {
+              state.selection = null;
+              state.rangeSelection = null;
+            }
           }
 
           hideAxisMenu();
@@ -4738,7 +5053,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
         // Security: cell content is edited through input.value and never
         // injected as HTML, so workbook text cannot become executable markup.
-        input.addEventListener("contextmenu", (ev) => openCellBorderMenu(ev, input));
+        input.addEventListener("contextmenu", (ev) => {
+          openCellBorderMenu(ev, input);
+          preserveSelectionForContextMenu = null;
+        });
 
         td.appendChild(input);
         applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));

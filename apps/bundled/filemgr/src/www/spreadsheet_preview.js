@@ -10,6 +10,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MAX_RENDER_ROWS = 1000;
   const MAX_RENDER_COLS = 80;
   const XLSX_VENDOR_URL = "./vendor/xlsx.full.min.js";
+  const DEFAULT_PREVIEW_COL_WIDTH = 120;
+  const MIN_PREVIEW_COL_WIDTH = 72;
+  const MAX_PREVIEW_COL_WIDTH = 520;
   const DEFAULT_PREVIEW_ROW_HEIGHT = 28;
   const MIN_PREVIEW_ROW_HEIGHT = 20;
   const MAX_PREVIEW_ROW_HEIGHT = 260;
@@ -541,8 +544,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function clampPreviewColumnWidth(width) {
     const n = Number(width);
-    if (!Number.isFinite(n)) return 120;
-    return Math.max(72, Math.min(520, Math.round(n)));
+    if (!Number.isFinite(n)) return DEFAULT_PREVIEW_COL_WIDTH;
+    return Math.max(MIN_PREVIEW_COL_WIDTH, Math.min(MAX_PREVIEW_COL_WIDTH, Math.round(n)));
   }
 
   function clampPreviewRowHeight(height) {
@@ -552,11 +555,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function xlsxPreviewColumnToPixelWidth(col) {
-    if (!col || typeof col !== "object") return 120;
+    if (!col || typeof col !== "object") return DEFAULT_PREVIEW_COL_WIDTH;
     if (Number.isFinite(col.wpx)) return clampPreviewColumnWidth(col.wpx);
     if (Number.isFinite(col.width)) return clampPreviewColumnWidth((col.width * 8) + 16);
     if (Number.isFinite(col.wch)) return clampPreviewColumnWidth((col.wch * 8) + 16);
-    return 120;
+    return DEFAULT_PREVIEW_COL_WIDTH;
   }
 
   function xlsxPreviewRowToPixelHeight(row) {
@@ -655,6 +658,171 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     applyPreviewBorderFormat(td, f.border);
   }
 
+
+  function normalizePreviewMergeRange(merge, rowCount = null, colCount = null) {
+    const src = merge && typeof merge === "object" ? merge : {};
+    const start = src.s && typeof src.s === "object" ? src.s : {};
+    const end = src.e && typeof src.e === "object" ? src.e : {};
+
+    const sr = Number(start.r);
+    const sc = Number(start.c);
+    const er = Number(end.r);
+    const ec = Number(end.c);
+
+    if (![sr, sc, er, ec].every(Number.isInteger)) return null;
+
+    let row1 = Math.min(sr, er);
+    let row2 = Math.max(sr, er);
+    let col1 = Math.min(sc, ec);
+    let col2 = Math.max(sc, ec);
+
+    if (Number.isInteger(rowCount) && rowCount > 0) {
+      if (row1 >= rowCount || row2 < 0) return null;
+      row1 = Math.max(0, row1);
+      row2 = Math.min(rowCount - 1, row2);
+    }
+
+    if (Number.isInteger(colCount) && colCount > 0) {
+      if (col1 >= colCount || col2 < 0) return null;
+      col1 = Math.max(0, col1);
+      col2 = Math.min(colCount - 1, col2);
+    }
+
+    if (row1 < 0 || col1 < 0 || row2 < row1 || col2 < col1) return null;
+    if (row1 === row2 && col1 === col2) return null;
+
+    return { s: { r: row1, c: col1 }, e: { r: row2, c: col2 } };
+  }
+
+  function previewMergeRangesOverlap(a, b) {
+    const ma = normalizePreviewMergeRange(a);
+    const mb = normalizePreviewMergeRange(b);
+    if (!ma || !mb) return false;
+
+    return ma.s.r <= mb.e.r &&
+      ma.e.r >= mb.s.r &&
+      ma.s.c <= mb.e.c &&
+      ma.e.c >= mb.s.c;
+  }
+
+  function extractPreviewMerges(XLSX, ws, rowCount, colCount) {
+    if (!ws || !ws["!ref"] || !Array.isArray(ws["!merges"]) || !XLSX || !XLSX.utils) return [];
+
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    const out = [];
+
+    for (const raw of ws["!merges"]) {
+      const merge = normalizePreviewMergeRange({
+        s: {
+          r: Number(raw && raw.s && raw.s.r) - range.s.r,
+          c: Number(raw && raw.s && raw.s.c) - range.s.c
+        },
+        e: {
+          r: Number(raw && raw.e && raw.e.r) - range.s.r,
+          c: Number(raw && raw.e && raw.e.c) - range.s.c
+        }
+      }, rowCount, colCount);
+
+      if (!merge) continue;
+      if (out.some((existing) => previewMergeRangesOverlap(existing, merge))) continue;
+      out.push(merge);
+    }
+
+    return out;
+  }
+
+  function previewMergeAtCell(sheet, row, col) {
+    const merges = Array.isArray(sheet && sheet.merges) ? sheet.merges : [];
+    return merges
+      .map((merge) => normalizePreviewMergeRange(merge))
+      .find((merge) =>
+        merge &&
+        row >= merge.s.r &&
+        row <= merge.e.r &&
+        col >= merge.s.c &&
+        col <= merge.e.c
+      ) || null;
+  }
+
+  function previewMergeIsAnchorCell(merge, row, col) {
+    const m = normalizePreviewMergeRange(merge);
+    return !!m && row === m.s.r && col === m.s.c;
+  }
+
+  function previewMergeColumnPixelWidth(colWidths, col1, col2) {
+    let total = 0;
+    for (let c = col1; c <= col2; c++) {
+      total += clampPreviewColumnWidth(colWidths[c]);
+    }
+    return Math.max(MIN_PREVIEW_COL_WIDTH, total);
+  }
+
+  function previewMergeRowPixelHeight(rowHeights, row1, row2) {
+    let total = 0;
+    for (let r = row1; r <= row2; r++) {
+      total += clampPreviewRowHeight(rowHeights[r]);
+    }
+    return Math.max(MIN_PREVIEW_ROW_HEIGHT, total);
+  }
+
+
+  function worksheetPreviewBounds(XLSX, ws, rows) {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const range = ws && ws["!ref"] && XLSX && XLSX.utils
+      ? XLSX.utils.decode_range(ws["!ref"])
+      : null;
+
+    // Preserve the workbook coordinate grid. Hidden/empty rows must not be
+    // collapsed, because merge refs and cell formats use original row indexes.
+    let rowCount = range ? Math.max(0, range.e.r - range.s.r + 1) : sourceRows.length;
+    let colCount = range
+      ? Math.max(0, range.e.c - range.s.c + 1)
+      : sourceRows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+
+    rowCount = Math.max(rowCount, sourceRows.length);
+    colCount = Math.max(colCount, sourceRows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0));
+
+    const origin = range || { s: { r: 0, c: 0 } };
+
+    if (ws && Array.isArray(ws["!merges"])) {
+      for (const raw of ws["!merges"]) {
+        const endRow = Number(raw && raw.e && raw.e.r) - origin.s.r;
+        const endCol = Number(raw && raw.e && raw.e.c) - origin.s.c;
+
+        if (Number.isInteger(endRow) && endRow >= 0) {
+          rowCount = Math.max(rowCount, endRow + 1);
+        }
+        if (Number.isInteger(endCol) && endCol >= 0) {
+          colCount = Math.max(colCount, endCol + 1);
+        }
+      }
+    }
+
+    return {
+      rows: Math.max(0, Math.min(MAX_RENDER_ROWS, rowCount)),
+      cols: Math.max(0, Math.min(MAX_RENDER_COLS, colCount))
+    };
+  }
+
+  function padPreviewRowsForBounds(rows, rowCount, colCount) {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const out = [];
+
+    for (let r = 0; r < rowCount; r++) {
+      const sourceRow = Array.isArray(sourceRows[r]) ? sourceRows[r] : [];
+      const row = [];
+
+      for (let c = 0; c < colCount; c++) {
+        const value = sourceRow[c];
+        row.push(value == null ? "" : value);
+      }
+
+      out.push(row);
+    }
+
+    return out;
+  }
+
   async function readWorkbookRows(url, ext) {
     const r = await fetch(url, { credentials: "include", cache: "no-store" });
     if (!r.ok) {
@@ -687,14 +855,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     return names.map((name, idx) => {
       const ws = wb.Sheets[name];
-      const rows = XLSX.utils.sheet_to_json(ws, {
+      const rawRows = XLSX.utils.sheet_to_json(ws, {
         header: 1,
         raw: false,
         defval: "",
-        blankrows: false
+        blankrows: true
       });
-
-      const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+      const bounds = worksheetPreviewBounds(XLSX, ws, rawRows);
+      const rows = padPreviewRowsForBounds(rawRows, bounds.rows, bounds.cols);
+      const colCount = bounds.cols;
       const safeName = safePreviewSheetName(name, idx);
       const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
 
@@ -705,7 +874,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rowHeights: previewRowHeights(ws, rows.length),
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats
-          : extractPreviewCellFormats(XLSX, ws, rows.length, colCount)
+          : extractPreviewCellFormats(XLSX, ws, rows.length, colCount),
+        merges: extractPreviewMerges(XLSX, ws, rows.length, colCount)
       };
     });
   }
@@ -946,9 +1116,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       trEl.appendChild(rh);
 
       for (let c = 0; c < normalized.cols; c++) {
+        const merge = previewMergeAtCell(sheet, rIdx, c);
+        if (merge && !previewMergeIsAnchorCell(merge, rIdx, c)) continue;
+
+        const colSpan = merge ? Math.max(1, merge.e.c - merge.s.c + 1) : 1;
+        const rowSpan = merge ? Math.max(1, merge.e.r - merge.s.r + 1) : 1;
+        const cellWidth = merge ? previewMergeColumnPixelWidth(colWidths, merge.s.c, merge.e.c) : colWidths[c];
+        const cellHeight = merge ? previewMergeRowPixelHeight(rowHeights, merge.s.r, merge.e.r) : rowHeight;
+
         const td = document.createElement("td");
-        applyPreviewColumnWidth(td, colWidths[c]);
-        applyPreviewRowHeight(td, rowHeight);
+        if (colSpan > 1) td.colSpan = colSpan;
+        if (rowSpan > 1) td.rowSpan = rowSpan;
+        applyPreviewColumnWidth(td, cellWidth);
+        applyPreviewRowHeight(td, cellHeight);
         const fmt = sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c];
         applyPreviewCellFormat(td, fmt);
         // Security: always render cell values as text, never HTML.
