@@ -107,7 +107,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     selection: null,
     activeCell: null,
     rangeSelection: null,
-    editorGeometry: null
+    editorGeometry: null,
+    selectedImageId: ""
   };
 
   function tr(key, vars = null, fallback = "") {
@@ -2363,6 +2364,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.selection = cloneHistoryValue(snapshot.selection);
     state.activeCell = cloneHistoryValue(snapshot.activeCell);
     state.rangeSelection = cloneHistoryValue(snapshot.rangeSelection);
+    state.selectedImageId = "";
     state.dirty = historyDirtyState();
 
     formulaFocus = null;
@@ -4285,15 +4287,25 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       anyTooLarge = anyTooLarge || converted.tooLarge;
       const safeName = safeSheetName(name, idx);
       const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
-      return {
+      const sheetImages = workbookImages.filter((image) => image.sheetIndex === idx);
+      const sheet = {
         name: safeName,
         rows: converted.rows,
         colWidths: converted.colWidths,
         rowHeights: converted.rowHeights,
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
         merges: converted.merges,
-        images: workbookImages.filter((image) => image.sheetIndex === idx)
+        images: sheetImages
       };
+
+      if (imageApi && typeof imageApi.expandSheetForImages === "function") {
+        imageApi.expandSheetForImages(sheet, {
+          defaultColWidth: DEFAULT_COL_WIDTH,
+          defaultRowHeight: DEFAULT_ROW_HEIGHT
+        });
+      }
+
+      return sheet;
     });
 
     state.tooLarge = anyTooLarge;
@@ -5277,9 +5289,35 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (overlayApi && typeof overlayApi.render === "function") {
       overlayApi.render(surface, table, sheet, {
         defaultColWidth: DEFAULT_COL_WIDTH,
-        defaultRowHeight: DEFAULT_ROW_HEIGHT
+        defaultRowHeight: DEFAULT_ROW_HEIGHT,
+        selectable: true,
+        selectedImageId: state.selectedImageId,
+        onSelect: (imageId) => {
+          state.selectedImageId = String(imageId || "");
+          state.selection = null;
+          state.rangeSelection = null;
+          state.activeCell = null;
+          formulaFocus = null;
+
+          repaintSpreadsheetSelection();
+          updateFormulaBar(true);
+          updateFormatToolbar();
+
+          if (typeof overlayApi.select === "function") {
+            overlayApi.select(surface, state.selectedImageId);
+          }
+        }
       });
     }
+
+    table.addEventListener("pointerdown", () => {
+      if (!state.selectedImageId) return;
+
+      state.selectedImageId = "";
+      if (overlayApi && typeof overlayApi.select === "function") {
+        overlayApi.select(surface, "");
+      }
+    });
 
     repaintSpreadsheetSelection();
     updateButtons();
@@ -5776,6 +5814,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.activeCell = null;
     state.rangeSelection = null;
     state.editorGeometry = null;
+    state.selectedImageId = "";
     state.workbookImageInfo = null;
     state.workbookImageWarning = "";
 
