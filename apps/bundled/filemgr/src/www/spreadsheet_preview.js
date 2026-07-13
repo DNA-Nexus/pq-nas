@@ -10,11 +10,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MAX_RENDER_ROWS = 1000;
   const MAX_RENDER_COLS = 80;
   const XLSX_VENDOR_URL = "./vendor/xlsx.full.min.js";
-  const DEFAULT_PREVIEW_COL_WIDTH = 120;
+  const DEFAULT_PREVIEW_COL_WIDTH = 96;
   const MIN_PREVIEW_COL_WIDTH = 72;
   const MAX_PREVIEW_COL_WIDTH = 520;
-  const DEFAULT_PREVIEW_ROW_HEIGHT = 28;
-  const MIN_PREVIEW_ROW_HEIGHT = 20;
+  const DEFAULT_PREVIEW_ROW_HEIGHT = 22;
+  const MIN_PREVIEW_ROW_HEIGHT = 18;
   const MAX_PREVIEW_ROW_HEIGHT = 260;
 
   let modal = null;

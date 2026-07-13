@@ -152,7 +152,8 @@
   border-collapse: separate;
   border-spacing: 0;
   min-width: 100%;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .spreadsheetEditorTable th,
@@ -165,8 +166,8 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  min-width: 96px;
-  padding: 7px;
+  min-width: 80px;
+  padding: 5px 6px;
   background: var(--panel-2, var(--panel));
   color: var(--muted);
   text-align: center;
@@ -177,8 +178,8 @@
   position: sticky;
   left: 0;
   z-index: 1;
-  min-width: 44px;
-  width: 44px;
+  min-width: 34px;
+  width: 34px;
   background: var(--panel-2, var(--panel));
 }
 
@@ -189,7 +190,7 @@
 }
 
 .spreadsheetEditorTable td {
-  min-width: 120px;
+  min-width: 96px;
   padding: 0;
   background: var(--input-bg, var(--panel));
 }
@@ -200,7 +201,7 @@
   min-width: 0;
   max-width: none;
   box-sizing: border-box;
-  padding: 8px 9px;
+  padding: 4px 6px;
   border: 0;
   background: transparent;
   color: var(--fg);
@@ -368,11 +369,11 @@
 }
 .spreadsheetEditorTable .colHead {
   position: sticky;
-  padding-right: 16px;
+  padding-right: 14px;
 }
 
 .spreadsheetEditorTable .rowHead {
-  padding-bottom: 10px;
+  padding-bottom: 6px;
 }
 
 .spreadsheetColumnLabel,
