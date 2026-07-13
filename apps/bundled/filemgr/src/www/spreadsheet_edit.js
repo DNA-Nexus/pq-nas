@@ -5213,6 +5213,100 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+
+  function adjustMergeIntervalForInsert(start, end, index, count) {
+    if (index <= start) {
+      return { start: start + count, end: end + count };
+    }
+
+    if (index <= end) {
+      return { start, end: end + count };
+    }
+
+    return { start, end };
+  }
+
+  function adjustMergeIntervalForDelete(start, end, index, count) {
+    const deleteEnd = index + count - 1;
+
+    if (end < index) {
+      return { start, end };
+    }
+
+    if (start > deleteEnd) {
+      return { start: start - count, end: end - count };
+    }
+
+    if (index <= start && deleteEnd >= end) {
+      return null;
+    }
+
+    if (index <= start) {
+      return { start: index, end: end - count };
+    }
+
+    if (deleteEnd >= end) {
+      return { start, end: index - 1 };
+    }
+
+    return { start, end: end - count };
+  }
+
+  function adjustMergeRangeForAxisChange(merge, axis, index, count, action) {
+    const m = normalizeMergeRange(merge);
+    if (!m) return null;
+
+    const change =
+      action === "insert" ? adjustMergeIntervalForInsert :
+      action === "delete" ? adjustMergeIntervalForDelete :
+      null;
+
+    if (!change) return m;
+
+    if (axis === "row") {
+      const rows = change(m.s.r, m.e.r, index, count);
+      if (!rows) return null;
+
+      return normalizeMergeRange({
+        s: { r: rows.start, c: m.s.c },
+        e: { r: rows.end, c: m.e.c }
+      });
+    }
+
+    if (axis === "column") {
+      const cols = change(m.s.c, m.e.c, index, count);
+      if (!cols) return null;
+
+      return normalizeMergeRange({
+        s: { r: m.s.r, c: cols.start },
+        e: { r: m.e.r, c: cols.end }
+      });
+    }
+
+    return m;
+  }
+
+  function adjustSheetMergesForAxisChange(sheet, axis, index, count, action) {
+    if (!sheet || (axis !== "row" && axis !== "column")) return;
+    if (!Number.isInteger(index) || index < 0) return;
+    if (!Number.isInteger(count) || count <= 0) return;
+
+    const adjusted = [];
+
+    for (const merge of ensureSheetMerges(sheet)) {
+      const next = adjustMergeRangeForAxisChange(merge, axis, index, count, action);
+      if (!next) continue;
+
+      // Keep the merge model valid after structural edits. 1x1 ranges are
+      // intentionally dropped so export never writes invalid/useless merges.
+      if (!adjusted.some((existing) => mergeRangesOverlap(existing, next))) {
+        adjusted.push(next);
+      }
+    }
+
+    sheet.merges = adjusted;
+  }
+
   function addRow() {
     if (state.readOnly || state.tooLarge) return;
     const sheet = state.sheets[state.active];
@@ -5241,6 +5335,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (let i = 0; i < count; i++) {
       adjustSheetFormulasForAxisChange(sheet, "row", insertAt, 1);
     }
+    adjustSheetMergesForAxisChange(sheet, "row", insertAt, count, "insert");
 
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
     ensureSheetRowHeights(sheet, sheet.rows.length);
@@ -5285,6 +5380,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (let i = 0; i < count; i++) {
       adjustSheetFormulasForAxisChange(sheet, "column", insertAt, 1);
     }
+    adjustSheetMergesForAxisChange(sheet, "column", insertAt, count, "insert");
 
     ensureSheetColWidths(sheet, cols);
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
@@ -5333,6 +5429,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       ensureSheetCellFormats(sheet);
       ensureSheetRowHeights(sheet, sheet.rows.length);
+      adjustSheetMergesForAxisChange(sheet, "row", deleteAt, count, "delete");
 
       for (let i = 0; i < count && sheet.rows.length; i++) {
         adjustSheetFormulasForAxisChange(sheet, "row", deleteAt, -1);
@@ -5377,6 +5474,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       for (let i = 0; i < count; i++) {
         adjustSheetFormulasForAxisChange(sheet, "column", deleteAt, -1);
       }
+      adjustSheetMergesForAxisChange(sheet, "column", deleteAt, count, "delete");
 
       if (colCount <= count) {
         sheet.colWidths = [DEFAULT_COL_WIDTH];
