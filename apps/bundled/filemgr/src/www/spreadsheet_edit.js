@@ -2687,6 +2687,106 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       .replace(/[\r\n\t]/g, " ");
   }
 
+
+  function spreadsheetCellKey(row, col) {
+    return `${row}:${col}`;
+  }
+
+  function mergeRangeOverlapsRect(merge, row1, col1, row2, col2) {
+    const m = normalizeMergeRange(merge);
+    if (!m) return false;
+
+    return m.s.r <= row2 &&
+      m.e.r >= row1 &&
+      m.s.c <= col2 &&
+      m.e.c >= col1;
+  }
+
+  function rangeIntersectsMergedCells(sheet, row1, col1, row2, col2) {
+    if (!sheet) return false;
+
+    const r1 = Math.min(row1, row2);
+    const r2 = Math.max(row1, row2);
+    const c1 = Math.min(col1, col2);
+    const c2 = Math.max(col1, col2);
+
+    return ensureSheetMerges(sheet).some((merge) => mergeRangeOverlapsRect(merge, r1, c1, r2, c2));
+  }
+
+  function mergedWriteTargetCell(sheet, row, col) {
+    const merge = mergeAtCell(sheet, row, col);
+    if (!merge) return { row, col, merge: null };
+
+    return {
+      row: merge.s.r,
+      col: merge.s.c,
+      merge
+    };
+  }
+
+  function clearMergeRangeValues(sheet, merge) {
+    const m = normalizeMergeRange(merge);
+    if (!sheet || !m) return false;
+
+    let changed = false;
+
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (cellRaw(sheet, r, c) !== "") changed = true;
+        setCellRaw(sheet, r, c, "");
+      }
+    }
+
+    return changed;
+  }
+
+  function clearSpreadsheetCellsWithMergeSafety(sheet, cells) {
+    if (!sheet || !Array.isArray(cells) || !cells.length) return false;
+
+    const targets = new Map();
+
+    for (const { row, col } of cells) {
+      if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0) continue;
+
+      const merge = mergeAtCell(sheet, row, col);
+      if (merge) {
+        const m = normalizeMergeRange(merge);
+        if (!m) continue;
+
+        for (let r = m.s.r; r <= m.e.r; r++) {
+          for (let c = m.s.c; c <= m.e.c; c++) {
+            targets.set(spreadsheetCellKey(r, c), { row: r, col: c });
+          }
+        }
+      } else {
+        targets.set(spreadsheetCellKey(row, col), { row, col });
+      }
+    }
+
+    let changed = false;
+
+    // Merge safety: clear every physical cell in an intersected merge so covered
+    // cells cannot keep hidden data that later appears after unmerge.
+    for (const { row, col } of targets.values()) {
+      if (cellRaw(sheet, row, col) !== "") changed = true;
+      setCellRaw(sheet, row, col, "");
+    }
+
+    return changed;
+  }
+
+  function clipboardRowsColumnCount(rows) {
+    if (!Array.isArray(rows)) return 0;
+    return rows.reduce((max, row) => Math.max(max, Array.isArray(row) ? row.length : 0), 0);
+  }
+
+  function isSingleCellClipboardRows(rows) {
+    return Array.isArray(rows) &&
+      rows.length === 1 &&
+      Array.isArray(rows[0]) &&
+      rows[0].length <= 1;
+  }
+
   function buildSpreadsheetClipboardText(input) {
     const sheet = state.sheets[state.active];
     const range = spreadsheetTargetRange(input);
@@ -2696,7 +2796,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (let row = range.row1; row <= range.row2; row++) {
       const values = [];
       for (let col = range.col1; col <= range.col2; col++) {
-        values.push(spreadsheetClipboardCellText(cellRaw(sheet, row, col)));
+        values.push(isMergeCoveredCell(sheet, row, col) ? "" : spreadsheetClipboardCellText(cellRaw(sheet, row, col)));
       }
       lines.push(values.join("\t"));
     }
@@ -2760,33 +2860,75 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!sheet || !start || !rows.length) return false;
 
+    const pasteRowCount = rows.length;
+    const pasteColCount = clipboardRowsColumnCount(rows);
+    if (!pasteColCount) return false;
+
+    const singleCellPaste = isSingleCellClipboardRows(rows);
+
+    if (!singleCellPaste && rangeIntersectsMergedCells(
+      sheet,
+      start.row,
+      start.col,
+      start.row + pasteRowCount - 1,
+      start.col + pasteColCount - 1
+    )) {
+      setStatus(tr(
+        "filemgr.spreadsheet_editor.paste_over_merge_blocked",
+        null,
+        "Cannot paste multiple cells over merged cells."
+      ), "warn");
+
+      // Consume blocked spreadsheet paste events. Otherwise the browser's
+      // native input paste writes tab-separated values into the merged anchor.
+      return true;
+    }
+
     const historyBefore = captureHistorySnapshot();
     let changed = false;
-    for (let r = 0; r < rows.length; r++) {
-      const targetRow = start.row + r;
-      if (targetRow < 0 || targetRow >= MAX_EDIT_ROWS) continue;
+    let focusRow = start.row;
+    let focusCol = start.col;
 
-      const cols = rows[r];
-      for (let c = 0; c < cols.length; c++) {
-        const targetCol = start.col + c;
-        if (targetCol < 0 || targetCol >= MAX_EDIT_COLS) continue;
+    if (singleCellPaste) {
+      const target = mergedWriteTargetCell(sheet, start.row, start.col);
+      const next = String((rows[0] && rows[0][0]) == null ? "" : rows[0][0]);
 
-        const next = String(cols[c] == null ? "" : cols[c]);
-        if (cellRaw(sheet, targetRow, targetCol) !== next) changed = true;
-        setCellRaw(sheet, targetRow, targetCol, next);
+      if (target.merge) {
+        changed = clearMergeRangeValues(sheet, target.merge) || changed;
+      }
+
+      if (cellRaw(sheet, target.row, target.col) !== next) changed = true;
+      setCellRaw(sheet, target.row, target.col, next);
+
+      focusRow = target.row;
+      focusCol = target.col;
+    } else {
+      for (let r = 0; r < rows.length; r++) {
+        const targetRow = start.row + r;
+        if (targetRow < 0 || targetRow >= MAX_EDIT_ROWS) continue;
+
+        const cols = rows[r];
+        for (let c = 0; c < cols.length; c++) {
+          const targetCol = start.col + c;
+          if (targetCol < 0 || targetCol >= MAX_EDIT_COLS) continue;
+
+          const next = String(cols[c] == null ? "" : cols[c]);
+          if (cellRaw(sheet, targetRow, targetCol) !== next) changed = true;
+          setCellRaw(sheet, targetRow, targetCol, next);
+        }
       }
     }
 
     formulaFocus = null;
     state.selection = null;
     state.rangeSelection = null;
-    state.activeCell = { row: start.row, col: start.col };
+    state.activeCell = { row: focusRow, col: focusCol };
 
     if (changed) commitHistorySnapshot(historyBefore);
     render();
 
     window.requestAnimationFrame(() => {
-      focusSpreadsheetCell(start.row, start.col, { select: true });
+      focusSpreadsheetCell(focusRow, focusCol, { select: true });
     });
 
     return true;
@@ -2847,11 +2989,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!sheet || !cells.length) return false;
 
     const historyBefore = captureHistorySnapshot();
-    let changed = false;
-    for (const { row, col } of cells) {
-      if (cellRaw(sheet, row, col) !== "") changed = true;
-      setCellRaw(sheet, row, col, "");
-    }
+    const changed = clearSpreadsheetCellsWithMergeSafety(sheet, cells);
 
     const anchorCell = cells[0];
     formulaFocus = null;
