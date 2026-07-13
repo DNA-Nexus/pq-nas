@@ -5661,5 +5661,5 @@
   "filemgr.spreadsheet_editor.border_outside_thick": "Ulkoreuna paksu",
   "filemgr.spreadsheet_editor.border_bottom_thin": "Alareuna ohut",
   "filemgr.spreadsheet_editor.border_bottom_thick": "Alareuna paksu",
-  "filemgr.spreadsheet_editor.images_detected": "Tämä työkirja sisältää kuvia/piirrosobjekteja ({summary}). Kuvien säilytystä ei ole vielä toteutettu; tallennus voi poistaa ne."
+  "filemgr.spreadsheet_editor.images_detected": "Tämä työkirja sisältää kuvia/piirrosobjekteja ({summary}). Olemassa olevat kuvat säilytetään tallennuksessa, mutta kuvien muokkausta ei ole vielä toteutettu."
 }

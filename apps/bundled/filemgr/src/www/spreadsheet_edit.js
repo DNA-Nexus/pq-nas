@@ -1586,13 +1586,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return `<mergeCells count="${refs.length}">${refs.join("")}</mergeCells>`;
   }
 
-  function buildWorksheetXml(sheet, styleCatalog) {
+  function buildWorksheetXml(sheet, styleCatalog, drawingRelId = "") {
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
     const rowCount = rows.length;
     const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
     const colWidths = ensureSheetColWidths(sheet, colCount);
     const rowHeights = ensureSheetRowHeights(sheet, rowCount);
     const mergeCellsXml = xlsxMergeCellsXml(sheet, rowCount, colCount);
+    const drawingXml = drawingRelId ? `<drawing r:id="${xlsxAttrEscape(drawingRelId)}"/>` : "";
     const cache = computeSheetCache(sheet);
 
     const colsXml = colWidths.length
@@ -1659,6 +1660,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       colsXml,
       `<sheetData>${rowXml.join("")}</sheetData>`,
       mergeCellsXml,
+      drawingXml,
       '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>',
       '</worksheet>'
     ].join("");
@@ -1730,18 +1732,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     ].join("");
   }
 
-  function buildContentTypesXml(sheetCount) {
+  function buildContentTypesXml(sheetCount, imageExport = null) {
     const sheetOverrides = Array.from({ length: sheetCount }, (_v, i) =>
       `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
     ).join("");
+
+    const imageApi = FM && FM.spreadsheetXlsxImages;
+    const imageDefaults = imageApi && typeof imageApi.contentTypeDefaultsXml === "function"
+      ? imageApi.contentTypeDefaultsXml(imageExport)
+      : "";
+    const imageOverrides = imageApi && typeof imageApi.contentTypeOverridesXml === "function"
+      ? imageApi.contentTypeOverridesXml(imageExport)
+      : "";
 
     return [
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
       '<Default Extension="xml" ContentType="application/xml"/>',
+      imageDefaults,
       '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
       sheetOverrides,
+      imageOverrides,
       '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
       '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
       '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
@@ -1825,12 +1837,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function buildZipStore(entries) {
     const prepared = entries.map((entry) => {
       const nameBytes = textToUtf8Bytes(entry.name);
-      const dataBytes = zipEntryBytes(entry.data);
+      const raw = entry && entry.raw && entry.raw.compressedData instanceof Uint8Array
+        ? entry.raw
+        : null;
+      const dataBytes = raw ? raw.compressedData : zipEntryBytes(entry.data);
+      const method = raw && (raw.method === 0 || raw.method === 8) ? raw.method : 0;
+      const compressedSize = raw ? dataBytes.length : dataBytes.length;
+      const uncompressedSize = raw && Number.isInteger(raw.uncompressedSize) ? raw.uncompressedSize : dataBytes.length;
+      const crc = raw && Number.isInteger(raw.crc) ? (raw.crc >>> 0) : zipCrc32(dataBytes);
+
       return {
         name: entry.name,
         nameBytes,
         dataBytes,
-        crc: zipCrc32(dataBytes)
+        method,
+        compressedSize,
+        uncompressedSize,
+        crc
       };
     });
 
@@ -1839,7 +1862,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     let centralSize = 0;
 
     for (const entry of prepared) {
-      localSize += 30 + entry.nameBytes.length + entry.dataBytes.length;
+      localSize += 30 + entry.nameBytes.length + entry.compressedSize;
       centralSize += 46 + entry.nameBytes.length;
     }
 
@@ -1854,12 +1877,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       writeU32(out, offset, 0x04034B50); offset += 4;
       writeU16(out, offset, 20); offset += 2;
       writeU16(out, offset, 0x0800); offset += 2; // UTF-8 names
-      writeU16(out, offset, 0); offset += 2;      // stored, no compression
+      writeU16(out, offset, entry.method); offset += 2;
       writeU16(out, offset, dosTime); offset += 2;
       writeU16(out, offset, dosDate); offset += 2;
       writeU32(out, offset, entry.crc); offset += 4;
-      writeU32(out, offset, entry.dataBytes.length); offset += 4;
-      writeU32(out, offset, entry.dataBytes.length); offset += 4;
+      writeU32(out, offset, entry.compressedSize); offset += 4;
+      writeU32(out, offset, entry.uncompressedSize); offset += 4;
       writeU16(out, offset, entry.nameBytes.length); offset += 2;
       writeU16(out, offset, 0); offset += 2;
       out.set(entry.nameBytes, offset); offset += entry.nameBytes.length;
@@ -1875,12 +1898,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       writeU16(out, offset, 20); offset += 2;
       writeU16(out, offset, 20); offset += 2;
       writeU16(out, offset, 0x0800); offset += 2;
-      writeU16(out, offset, 0); offset += 2;
+      writeU16(out, offset, entry.method); offset += 2;
       writeU16(out, offset, dosTime); offset += 2;
       writeU16(out, offset, dosDate); offset += 2;
       writeU32(out, offset, entry.crc); offset += 4;
-      writeU32(out, offset, entry.dataBytes.length); offset += 4;
-      writeU32(out, offset, entry.dataBytes.length); offset += 4;
+      writeU32(out, offset, entry.compressedSize); offset += 4;
+      writeU32(out, offset, entry.uncompressedSize); offset += 4;
       writeU16(out, offset, entry.nameBytes.length); offset += 2;
       writeU16(out, offset, 0); offset += 2;
       writeU16(out, offset, 0); offset += 2;
@@ -1919,13 +1942,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     const allSheetNames = visibleSheets.map((item) => item.outputName).concat([STYLE_SHEET_NAME]);
+    const imageApi = FM && FM.spreadsheetXlsxImages;
+    const imageExport = imageApi && typeof imageApi.prepareExport === "function"
+      ? imageApi.prepareExport(state.workbookImageInfo, visibleSheets.length)
+      : null;
     const entries = [];
 
     for (let i = 0; i < visibleSheets.length; i++) {
       const item = visibleSheets[i];
+      const drawingRelId = imageApi && typeof imageApi.worksheetDrawingRelId === "function"
+        ? imageApi.worksheetDrawingRelId(imageExport, i)
+        : "";
+
       entries.push({
         name: `xl/worksheets/sheet${i + 1}.xml`,
-        data: buildWorksheetXml(item.sheet, styleCatalog)
+        data: buildWorksheetXml(item.sheet, styleCatalog, drawingRelId)
       });
     }
 
@@ -1934,13 +1965,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       data: buildStyleMetadataWorksheetXml(stylePayload)
     });
 
-    entries.push({ name: "[Content_Types].xml", data: buildContentTypesXml(allSheetNames.length) });
+    entries.push({ name: "[Content_Types].xml", data: buildContentTypesXml(allSheetNames.length, imageExport) });
     entries.push({ name: "_rels/.rels", data: buildRootRelsXml() });
     entries.push({ name: "docProps/core.xml", data: buildCorePropsXml() });
     entries.push({ name: "docProps/app.xml", data: buildAppPropsXml(allSheetNames) });
     entries.push({ name: "xl/workbook.xml", data: buildWorkbookXml(allSheetNames) });
     entries.push({ name: "xl/_rels/workbook.xml.rels", data: buildWorkbookRelsXml(allSheetNames.length) });
     entries.push({ name: "xl/styles.xml", data: styleCatalog.stylesXml() });
+
+    if (imageApi && typeof imageApi.appendExportEntries === "function") {
+      imageApi.appendExportEntries(entries, imageExport);
+    }
 
     return buildZipStore(entries);
   }
@@ -5723,6 +5758,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.activeCell = null;
     state.rangeSelection = null;
     state.editorGeometry = null;
+    state.workbookImageInfo = null;
+    state.workbookImageWarning = "";
 
     if (titleEl) titleEl.textContent = tr("filemgr.spreadsheet_editor.title", null, "Edit spreadsheet");
     if (pathEl) pathEl.textContent = "/" + rel;
