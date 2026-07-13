@@ -335,6 +335,245 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
+
+  const MAX_OVERLAY_IMAGES = 20;
+  const MAX_OVERLAY_IMAGE_BYTES = 8 * 1024 * 1024;
+
+  function workbookFileBytes(file) {
+    const content = file && file.content != null ? file.content : null;
+    if (content instanceof Uint8Array) return content;
+    if (content instanceof ArrayBuffer) return new Uint8Array(content);
+    if (typeof content === "string") {
+      const out = new Uint8Array(content.length);
+      for (let i = 0; i < content.length; i++) out[i] = content.charCodeAt(i) & 0xFF;
+      return out;
+    }
+    if (Array.isArray(content)) return new Uint8Array(content);
+    return null;
+  }
+
+  function workbookFileText(file) {
+    const bytes = workbookFileBytes(file);
+    if (!bytes) return "";
+
+    try {
+      return new TextDecoder("utf-8").decode(bytes);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function bytesToBase64(bytes) {
+    if (!(bytes instanceof Uint8Array)) return "";
+
+    let binary = "";
+    const chunk = 0x8000;
+
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+
+    return btoa(binary);
+  }
+
+  function dirname(path) {
+    const normalized = safeName(path);
+    const idx = normalized.lastIndexOf("/");
+    return idx >= 0 ? normalized.slice(0, idx) : "";
+  }
+
+  function normalizeZipPath(path) {
+    const parts = String(path || "").replace(/\\/g, "/").split("/");
+    const out = [];
+
+    for (const part of parts) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        out.pop();
+        continue;
+      }
+      out.push(part);
+    }
+
+    return safeName(out.join("/"));
+  }
+
+  function resolveZipTarget(sourcePart, target) {
+    const raw = String(target || "").replace(/\\/g, "/");
+    if (!raw || raw.includes("\0")) return "";
+
+    if (raw.startsWith("/")) return normalizeZipPath(raw.slice(1));
+    return normalizeZipPath(`${dirname(sourcePart)}/${raw}`);
+  }
+
+  function drawingRelsPath(drawingPath) {
+    return `${dirname(drawingPath)}/_rels/${basename(drawingPath)}.rels`;
+  }
+
+  function workbookSheetPart(sheetIndex) {
+    return `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+  }
+
+  function workbookSheetRelsPart(sheetIndex) {
+    return `xl/worksheets/_rels/sheet${sheetIndex + 1}.xml.rels`;
+  }
+
+  function localNameElements(root, localName) {
+    if (!root || !root.getElementsByTagName) return [];
+    return Array.from(root.getElementsByTagName("*")).filter((el) => el.localName === localName);
+  }
+
+  function directLocalNameElement(root, localName) {
+    if (!root || !root.children) return null;
+
+    for (const child of Array.from(root.children)) {
+      if (child.localName === localName) return child;
+    }
+
+    return null;
+  }
+
+  function localText(root, localName) {
+    const el = directLocalNameElement(root, localName);
+    return el ? String(el.textContent || "") : "";
+  }
+
+  function relAttr(el, name) {
+    if (!el || !el.getAttribute) return "";
+    return el.getAttribute(name) || el.getAttribute(`r:${name}`) || "";
+  }
+
+  function parseXml(text) {
+    if (typeof DOMParser === "undefined") return null;
+
+    try {
+      const doc = new DOMParser().parseFromString(String(text || ""), "application/xml");
+      if (doc.getElementsByTagName("parsererror").length) return null;
+      return doc;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function parseRelationships(xmlText) {
+    const doc = parseXml(xmlText);
+    if (!doc) return [];
+
+    return localNameElements(doc, "Relationship").map((el) => ({
+      id: el.getAttribute("Id") || "",
+      type: el.getAttribute("Type") || "",
+      target: el.getAttribute("Target") || ""
+    })).filter((rel) => rel.id && rel.target);
+  }
+
+  function parseMarker(anchor, markerName) {
+    const marker = directLocalNameElement(anchor, markerName);
+    if (!marker) return null;
+
+    return {
+      col: Number(localText(marker, "col")) || 0,
+      colOff: Number(localText(marker, "colOff")) || 0,
+      row: Number(localText(marker, "row")) || 0,
+      rowOff: Number(localText(marker, "rowOff")) || 0
+    };
+  }
+
+  function firstBlipEmbed(anchor) {
+    const blips = localNameElements(anchor, "blip");
+    const blip = blips[0];
+    return relAttr(blip, "embed");
+  }
+
+  function firstPictureName(anchor) {
+    const props = localNameElements(anchor, "cNvPr")[0];
+    return {
+      name: props && props.getAttribute ? props.getAttribute("name") || "" : "",
+      descr: props && props.getAttribute ? props.getAttribute("descr") || "" : ""
+    };
+  }
+
+  function mediaDataUrl(mediaPath, file) {
+    const bytes = workbookFileBytes(file);
+    if (!bytes || bytes.byteLength <= 0 || bytes.byteLength > MAX_OVERLAY_IMAGE_BYTES) return "";
+
+    const ext = extensionForName(mediaPath);
+    const mime = IMAGE_CONTENT_TYPES[ext];
+    if (!mime) return "";
+
+    const encoded = bytesToBase64(bytes);
+    return encoded ? `data:${mime};base64,${encoded}` : "";
+  }
+
+  function imagesFromDrawing(files, sheetIndex, drawingPath) {
+    const drawingXml = workbookFileText(files[drawingPath]);
+    const drawingDoc = parseXml(drawingXml);
+    if (!drawingDoc) return [];
+
+    const relsPath = drawingRelsPath(drawingPath);
+    const rels = parseRelationships(workbookFileText(files[relsPath]));
+    const relTargets = new Map();
+
+    for (const rel of rels) {
+      relTargets.set(rel.id, resolveZipTarget(drawingPath, rel.target));
+    }
+
+    const anchors = localNameElements(drawingDoc, "twoCellAnchor");
+    const out = [];
+
+    for (const anchor of anchors) {
+      const from = parseMarker(anchor, "from");
+      const to = parseMarker(anchor, "to");
+      const embedId = firstBlipEmbed(anchor);
+
+      if (!from || !to || !embedId) continue;
+
+      const mediaPath = relTargets.get(embedId);
+      const src = mediaDataUrl(mediaPath, files[mediaPath]);
+      if (!src) continue;
+
+      out.push({
+        sheetIndex,
+        mediaPath,
+        drawingPath,
+        from,
+        to,
+        ...firstPictureName(anchor),
+        src
+      });
+
+      if (out.length >= MAX_OVERLAY_IMAGES) break;
+    }
+
+    return out;
+  }
+
+  function imagesFromWorkbookFiles(wb, visibleSheetNames) {
+    const files = wb && wb.files && typeof wb.files === "object" ? wb.files : null;
+    const sheetNames = Array.isArray(visibleSheetNames) ? visibleSheetNames : [];
+
+    if (!files || !sheetNames.length) return [];
+
+    const out = [];
+
+    for (let sheetIndex = 0; sheetIndex < sheetNames.length; sheetIndex++) {
+      const sheetPart = workbookSheetPart(sheetIndex);
+      const relsPart = workbookSheetRelsPart(sheetIndex);
+      const rels = parseRelationships(workbookFileText(files[relsPart]));
+
+      for (const rel of rels) {
+        if (rel.type !== REL_DRAWING_TYPE) continue;
+
+        const drawingPath = resolveZipTarget(sheetPart, rel.target);
+        if (!drawingPath || isUnsafeZipName(drawingPath)) continue;
+
+        out.push(...imagesFromDrawing(files, sheetIndex, drawingPath));
+        if (out.length >= MAX_OVERLAY_IMAGES) return out.slice(0, MAX_OVERLAY_IMAGES);
+      }
+    }
+
+    return out.slice(0, MAX_OVERLAY_IMAGES);
+  }
+
   FM.spreadsheetXlsxImages = {
     inspectArrayBuffer,
     prepareExport,
@@ -342,6 +581,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     contentTypeDefaultsXml,
     contentTypeOverridesXml,
     worksheetDrawingRelId,
-    appendExportEntries
+    appendExportEntries,
+    imagesFromWorkbookFiles
   };
 })();

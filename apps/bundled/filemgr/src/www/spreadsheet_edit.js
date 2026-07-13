@@ -4256,12 +4256,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       cellFormula: true,
       cellHTML: false,
       cellNF: false,
-      cellStyles: true
+      cellStyles: true,
+      bookFiles: true
     });
 
     const storedCellFormats = readStoredCellFormats(XLSX, wb);
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
+      : [];
+    const workbookImages = imageApi && typeof imageApi.imagesFromWorkbookFiles === "function"
+      ? imageApi.imagesFromWorkbookFiles(wb, names)
       : [];
 
     if (!names.length) {
@@ -4287,7 +4291,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         colWidths: converted.colWidths,
         rowHeights: converted.rowHeights,
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
-        merges: converted.merges
+        merges: converted.merges,
+        images: workbookImages.filter((image) => image.sheetIndex === idx)
       };
     });
 
@@ -5262,7 +5267,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
 
     table.appendChild(tbody);
-    bodyEl.appendChild(table);
+
+    const surface = document.createElement("div");
+    surface.className = "spreadsheetSheetSurface";
+    surface.appendChild(table);
+    bodyEl.appendChild(surface);
+
+    const overlayApi = FM && FM.spreadsheetImageOverlay;
+    if (overlayApi && typeof overlayApi.render === "function") {
+      overlayApi.render(surface, table, sheet, {
+        defaultColWidth: DEFAULT_COL_WIDTH,
+        defaultRowHeight: DEFAULT_ROW_HEIGHT
+      });
+    }
+
     repaintSpreadsheetSelection();
     updateButtons();
     updateFormatToolbar();

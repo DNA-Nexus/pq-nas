@@ -27,6 +27,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let editBtn = null;
   let currentEditContext = null;
   let spreadsheetEditLoadPromise = null;
+  let spreadsheetImageLoadPromise = null;
 
   const STYLE_SHEET_NAME = "_pqnas_styles";
   const STYLE_META_VERSION = "pqnas-spreadsheet-style-v1";
@@ -173,7 +174,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
-      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-investigation-1", "data-pqnas-spreadsheet-xlsx-images-js")
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
       return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
@@ -268,6 +270,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     row.push(field);
     if (row.length > 1 || row[0] !== "" || rows.length === 0) rows.push(row);
     return rows;
+  }
+
+  function ensureSpreadsheetImageModules() {
+    if (
+      FM &&
+      FM.spreadsheetXlsxImages &&
+      FM.spreadsheetImageOverlay &&
+      typeof FM.spreadsheetXlsxImages.imagesFromWorkbookFiles === "function" &&
+      typeof FM.spreadsheetImageOverlay.render === "function"
+    ) {
+      return Promise.resolve();
+    }
+
+    if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
+
+    spreadsheetImageLoadPromise = Promise.all([
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-image-overlay-js")
+    ]);
+
+    return spreadsheetImageLoadPromise;
   }
 
   function ensureXlsxLibrary() {
@@ -837,6 +860,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     const XLSX = await ensureXlsxLibrary();
+    await ensureSpreadsheetImageModules();
     const buf = await r.arrayBuffer();
 
     // Security: parse the workbook as data only; do not execute macros, formulas,
@@ -846,12 +870,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       cellFormula: false,
       cellHTML: false,
       cellNF: false,
-      cellStyles: true
+      cellStyles: true,
+      bookFiles: true
     });
 
     const storedCellFormats = readStoredPreviewCellFormats(wb);
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
+      : [];
+    const imageApi = FM && FM.spreadsheetXlsxImages;
+    const workbookImages = imageApi && typeof imageApi.imagesFromWorkbookFiles === "function"
+      ? imageApi.imagesFromWorkbookFiles(wb, names)
       : [];
 
     return names.map((name, idx) => {
@@ -876,7 +905,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats
           : extractPreviewCellFormats(XLSX, ws, rows.length, colCount),
-        merges: extractPreviewMerges(XLSX, ws, rows.length, colCount)
+        merges: extractPreviewMerges(XLSX, ws, rows.length, colCount),
+        images: workbookImages.filter((image) => image.sheetIndex === idx)
       };
     });
   }
@@ -1141,7 +1171,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
 
     table.appendChild(tbody);
-    bodyEl.appendChild(table);
+
+    const surface = document.createElement("div");
+    surface.className = "spreadsheetSheetSurface";
+    surface.appendChild(table);
+    bodyEl.appendChild(surface);
+
+    const overlayApi = FM && FM.spreadsheetImageOverlay;
+    if (overlayApi && typeof overlayApi.render === "function") {
+      overlayApi.render(surface, table, sheet, {
+        defaultColWidth: DEFAULT_PREVIEW_COL_WIDTH,
+        defaultRowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+      });
+    }
 
     const notes = [];
     notes.push(`${normalized.rows.length} × ${normalized.cols}`);

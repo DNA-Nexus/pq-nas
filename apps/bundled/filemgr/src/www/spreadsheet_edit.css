@@ -796,3 +796,29 @@
 .spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
   --spreadsheet-cell-border-color: var(--fg);
 }
+
+.spreadsheetSheetSurface {
+  position: relative;
+  display: inline-block;
+  min-width: max-content;
+  min-height: var(--spreadsheet-image-overlay-height, auto);
+}
+
+.spreadsheetImageSurface {
+  min-width: var(--spreadsheet-image-overlay-width, max-content);
+  min-height: var(--spreadsheet-image-overlay-height, auto);
+}
+
+.spreadsheetImageOverlayLayer {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.spreadsheetImageOverlayImage {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
