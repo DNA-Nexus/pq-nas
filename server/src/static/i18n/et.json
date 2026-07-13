@@ -5646,5 +5646,5 @@
   "filemgr.spreadsheet_editor.border_outside_thick": "Outside thick border",
   "filemgr.spreadsheet_editor.border_bottom_thin": "Bottom thin border",
   "filemgr.spreadsheet_editor.border_bottom_thick": "Bottom thick border",
-  "filemgr.spreadsheet_editor.images_detected": "See töövihik sisaldab pilte/joonistusobjekte ({summary}). Piltide säilitamist pole veel teostatud; salvestamine võib need eemaldada."
+  "filemgr.spreadsheet_editor.images_detected": "See töövihik sisaldab pilte/joonistusobjekte ({summary}). Olemasolevad pildid säilitatakse salvestamisel, kuid piltide muutmist pole veel teostatud."
 }

@@ -5646,5 +5646,5 @@
   "filemgr.spreadsheet_editor.border_outside_thick": "Outside thick border",
   "filemgr.spreadsheet_editor.border_bottom_thin": "Bottom thin border",
   "filemgr.spreadsheet_editor.border_bottom_thick": "Bottom thick border",
-  "filemgr.spreadsheet_editor.images_detected": "Questa cartella di lavoro contiene immagini/oggetti di disegno ({summary}). La conservazione delle immagini non è ancora implementata; il salvataggio potrebbe rimuoverle."
+  "filemgr.spreadsheet_editor.images_detected": "Questa cartella di lavoro contiene immagini/oggetti di disegno ({summary}). Le immagini esistenti verranno conservate al salvataggio, ma la modifica delle immagini non è ancora implementata."
 }
