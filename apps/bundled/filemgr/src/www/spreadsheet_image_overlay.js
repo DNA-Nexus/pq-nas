@@ -68,6 +68,103 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
+  function imageIdFor(image, index) {
+    const explicit = String(image && image.id ? image.id : "").trim();
+    if (explicit) return explicit;
+
+    const parts = [
+      image && image.sheetIndex,
+      image && image.drawingPath,
+      image && image.mediaPath,
+      image && image.from && image.from.row,
+      image && image.from && image.from.col,
+      index
+    ];
+
+    return parts.map((part) => String(part == null ? "" : part)).join(":");
+  }
+
+  function cssPx(value) {
+    const n = Number.parseFloat(String(value || ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function imageAnchorRect(img) {
+    return {
+      left: cssPx((img && img.dataset && img.dataset.spreadsheetAnchorLeft) || (img && img.style && img.style.left)),
+      top: cssPx((img && img.dataset && img.dataset.spreadsheetAnchorTop) || (img && img.style && img.style.top)),
+      width: cssPx((img && img.dataset && img.dataset.spreadsheetAnchorWidth) || (img && img.style && img.style.width)),
+      height: cssPx((img && img.dataset && img.dataset.spreadsheetAnchorHeight) || (img && img.style && img.style.height))
+    };
+  }
+
+  function visibleImageRect(img) {
+    const anchor = imageAnchorRect(img);
+    const naturalWidth = Number(img && img.naturalWidth);
+    const naturalHeight = Number(img && img.naturalHeight);
+
+    if (
+      anchor.width > 0 &&
+      anchor.height > 0 &&
+      naturalWidth > 0 &&
+      naturalHeight > 0
+    ) {
+      const scale = Math.min(anchor.width / naturalWidth, anchor.height / naturalHeight);
+
+      return {
+        left: clampPixel(anchor.left),
+        top: clampPixel(anchor.top),
+        width: clampPixel(naturalWidth * scale),
+        height: clampPixel(naturalHeight * scale)
+      };
+    }
+
+    return {
+      left: clampPixel(anchor.left),
+      top: clampPixel(anchor.top),
+      width: clampPixel(anchor.width),
+      height: clampPixel(anchor.height)
+    };
+  }
+
+  function fitSelectableImageHitbox(img) {
+    if (!img || !img.classList || !img.classList.contains("spreadsheetImageOverlayImageSelectable")) {
+      return;
+    }
+
+    const rect = visibleImageRect(img);
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    // Keep pointer hit testing on the visible image only. The larger XLSX anchor
+    // rectangle may include blank space and must not block spreadsheet cells.
+    img.style.left = `${rect.left}px`;
+    img.style.top = `${rect.top}px`;
+    img.style.width = `${rect.width}px`;
+    img.style.height = `${rect.height}px`;
+  }
+
+  function appendSelectionFrame(layer, img) {
+    if (!layer || !img) return;
+
+    const rect = visibleImageRect(img);
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const frame = document.createElement("div");
+    frame.className = "spreadsheetImageSelectionFrame";
+    frame.style.left = `${rect.left}px`;
+    frame.style.top = `${rect.top}px`;
+    frame.style.width = `${rect.width}px`;
+    frame.style.height = `${rect.height}px`;
+
+    for (const pos of ["nw", "ne", "se", "sw"]) {
+      const handle = document.createElement("span");
+      handle.className = `spreadsheetImageSelectionHandle spreadsheetImageSelectionHandle-${pos}`;
+      frame.appendChild(handle);
+    }
+
+    layer.appendChild(frame);
+  }
+
   function clear(surface) {
     if (!surface) return;
 
@@ -75,8 +172,32 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       node.remove();
     }
 
+    surface.classList.remove("spreadsheetImageSurface");
     surface.style.removeProperty("--spreadsheet-image-overlay-width");
     surface.style.removeProperty("--spreadsheet-image-overlay-height");
+  }
+
+  function select(surface, selectedImageId = "") {
+    if (!surface) return;
+
+    const layer = surface.querySelector(":scope > .spreadsheetImageOverlayLayer");
+    if (!layer) return;
+
+    for (const frame of layer.querySelectorAll(".spreadsheetImageSelectionFrame")) {
+      frame.remove();
+    }
+
+    const selected = String(selectedImageId || "");
+
+    for (const img of layer.querySelectorAll(".spreadsheetImageOverlayImage")) {
+      const isSelected = !!selected && img.dataset.spreadsheetImageId === selected;
+      img.classList.toggle("selected", isSelected);
+      img.setAttribute("aria-selected", isSelected ? "true" : "false");
+
+      if (isSelected) {
+        appendSelectionFrame(layer, img);
+      }
+    }
   }
 
   function render(surface, table, sheet, options = {}) {
@@ -87,6 +208,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const images = Array.isArray(sheet && sheet.images) ? sheet.images : [];
     if (!images.length) return;
 
+    const selectable = options.selectable === true;
+    const selectedImageId = String(options.selectedImageId || "");
+    const onSelect = typeof options.onSelect === "function" ? options.onSelect : null;
+
     const defaults = {
       colWidth: Number(options.defaultColWidth) || 120,
       rowHeight: Number(options.defaultRowHeight) || 28
@@ -95,17 +220,22 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const metrics = tableHeaderMetrics(table);
     const layer = document.createElement("div");
     layer.className = "spreadsheetImageOverlayLayer";
-    layer.setAttribute("aria-hidden", "true");
+    if (selectable) {
+      layer.classList.add("spreadsheetImageOverlayLayerSelectable");
+      layer.removeAttribute("aria-hidden");
+    } else {
+      layer.setAttribute("aria-hidden", "true");
+    }
 
     let maxRight = table.scrollWidth || 0;
     let maxBottom = table.scrollHeight || 0;
 
-    for (const image of images) {
+    images.forEach((image, imageIndex) => {
       const from = image && image.from;
       const to = image && image.to;
       const src = image && image.src;
 
-      if (!from || !to || !src) continue;
+      if (!from || !to || !src) return;
 
       const p1 = pointForMarker(sheet, from, defaults);
       const p2 = pointForMarker(sheet, to, defaults);
@@ -114,6 +244,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const top = clampPixel(metrics.colHeaderHeight + p1.y);
       const width = clampPixel(Math.max(8, p2.x - p1.x));
       const height = clampPixel(Math.max(8, p2.y - p1.y));
+      const imageId = imageIdFor(image, imageIndex);
 
       const img = document.createElement("img");
       img.className = "spreadsheetImageOverlayImage";
@@ -126,11 +257,49 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       img.style.top = `${top}px`;
       img.style.width = `${width}px`;
       img.style.height = `${height}px`;
+      img.dataset.spreadsheetImageId = imageId;
+      img.dataset.spreadsheetAnchorLeft = String(left);
+      img.dataset.spreadsheetAnchorTop = String(top);
+      img.dataset.spreadsheetAnchorWidth = String(width);
+      img.dataset.spreadsheetAnchorHeight = String(height);
+
+      if (selectable) {
+        img.classList.add("spreadsheetImageOverlayImageSelectable");
+        img.tabIndex = 0;
+        img.setAttribute("role", "button");
+        img.setAttribute("aria-selected", imageId === selectedImageId ? "true" : "false");
+
+        img.addEventListener("pointerdown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (onSelect) onSelect(imageId, image, ev);
+        });
+
+        img.addEventListener("keydown", (ev) => {
+          if (ev.key !== "Enter" && ev.key !== " ") return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (onSelect) onSelect(imageId, image, ev);
+        });
+
+        img.addEventListener("load", () => {
+          fitSelectableImageHitbox(img);
+
+          if (img.classList.contains("selected")) {
+            select(surface, selectedImageId);
+          }
+        }, { once: true });
+      }
 
       layer.appendChild(img);
+
+      if (img.complete) {
+        fitSelectableImageHitbox(img);
+      }
+
       maxRight = Math.max(maxRight, left + width);
       maxBottom = Math.max(maxBottom, top + height);
-    }
+    });
 
     if (!layer.childElementCount) return;
 
@@ -138,10 +307,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     surface.style.setProperty("--spreadsheet-image-overlay-width", `${Math.ceil(maxRight)}px`);
     surface.style.setProperty("--spreadsheet-image-overlay-height", `${Math.ceil(maxBottom)}px`);
     surface.appendChild(layer);
+
+    if (selectedImageId) {
+      select(surface, selectedImageId);
+    }
   }
 
   FM.spreadsheetImageOverlay = {
     clear,
+    select,
     render
   };
 })();

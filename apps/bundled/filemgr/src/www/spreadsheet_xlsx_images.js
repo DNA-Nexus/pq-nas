@@ -574,6 +574,52 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return out.slice(0, MAX_OVERLAY_IMAGES);
   }
 
+
+  function imageAnchorBounds(images) {
+    const list = Array.isArray(images) ? images : [];
+    let rows = 0;
+    let cols = 0;
+
+    for (const image of list) {
+      const from = image && image.from;
+      const to = image && image.to;
+
+      for (const marker of [from, to]) {
+        const row = Number(marker && marker.row);
+        const col = Number(marker && marker.col);
+
+        if (Number.isInteger(row) && row >= 0) rows = Math.max(rows, row + 1);
+        if (Number.isInteger(col) && col >= 0) cols = Math.max(cols, col + 1);
+      }
+    }
+
+    return { rows, cols };
+  }
+
+  function expandSheetForImages(sheet, options = {}) {
+    if (!sheet || !Array.isArray(sheet.images) || !sheet.images.length) return sheet;
+
+    const bounds = imageAnchorBounds(sheet.images);
+    const defaultColWidth = Number(options.defaultColWidth) || 120;
+    const defaultRowHeight = Number(options.defaultRowHeight) || 28;
+
+    if (!Array.isArray(sheet.rows)) sheet.rows = [];
+    if (!Array.isArray(sheet.colWidths)) sheet.colWidths = [];
+    if (!Array.isArray(sheet.rowHeights)) sheet.rowHeights = [];
+
+    while (sheet.rows.length < bounds.rows) sheet.rows.push([]);
+
+    for (let r = 0; r < sheet.rows.length; r++) {
+      if (!Array.isArray(sheet.rows[r])) sheet.rows[r] = [];
+      while (sheet.rows[r].length < bounds.cols) sheet.rows[r].push("");
+    }
+
+    while (sheet.colWidths.length < bounds.cols) sheet.colWidths.push(defaultColWidth);
+    while (sheet.rowHeights.length < bounds.rows) sheet.rowHeights.push(defaultRowHeight);
+
+    return sheet;
+  }
+
   FM.spreadsheetXlsxImages = {
     inspectArrayBuffer,
     prepareExport,
@@ -582,6 +628,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     contentTypeOverridesXml,
     worksheetDrawingRelId,
     appendExportEntries,
-    imagesFromWorkbookFiles
+    imagesFromWorkbookFiles,
+    imageAnchorBounds,
+    expandSheetForImages
   };
 })();

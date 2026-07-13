@@ -171,11 +171,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
-      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
       return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
@@ -286,8 +286,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-overlay-1", "data-pqnas-spreadsheet-image-overlay-js")
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-image-overlay-js")
     ]);
 
     return spreadsheetImageLoadPromise;
@@ -897,7 +898,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const safeName = safePreviewSheetName(name, idx);
       const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
 
-      return {
+      const sheetImages = workbookImages.filter((image) => image.sheetIndex === idx);
+      const sheet = {
         name,
         rows,
         colWidths: previewColumnWidths(ws, colCount),
@@ -906,8 +908,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           ? storedFormats
           : extractPreviewCellFormats(XLSX, ws, rows.length, colCount),
         merges: extractPreviewMerges(XLSX, ws, rows.length, colCount),
-        images: workbookImages.filter((image) => image.sheetIndex === idx)
+        images: sheetImages
       };
+
+      if (imageApi && typeof imageApi.expandSheetForImages === "function") {
+        imageApi.expandSheetForImages(sheet, {
+          defaultColWidth: DEFAULT_PREVIEW_COL_WIDTH,
+          defaultRowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+        });
+      }
+
+      return sheet;
     });
   }
 

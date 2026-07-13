@@ -819,6 +819,49 @@
 .spreadsheetImageOverlayImage {
   position: absolute;
   object-fit: contain;
+  object-position: left top;
   pointer-events: none;
   user-select: none;
+}
+
+.spreadsheetImageOverlayLayerSelectable .spreadsheetImageOverlayImageSelectable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+
+.spreadsheetImageSelectionFrame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--accent-color, currentColor);
+  pointer-events: none;
+}
+
+.spreadsheetImageSelectionHandle {
+  position: absolute;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  background: var(--panel-bg, Canvas);
+  border: 1px solid var(--accent-color, currentColor);
+}
+
+.spreadsheetImageSelectionHandle-nw {
+  left: -5px;
+  top: -5px;
+}
+
+.spreadsheetImageSelectionHandle-ne {
+  right: -5px;
+  top: -5px;
+}
+
+.spreadsheetImageSelectionHandle-se {
+  right: -5px;
+  bottom: -5px;
+}
+
+.spreadsheetImageSelectionHandle-sw {
+  left: -5px;
+  bottom: -5px;
 }
