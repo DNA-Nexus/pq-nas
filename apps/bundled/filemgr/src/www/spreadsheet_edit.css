@@ -154,6 +154,13 @@
   min-width: 100%;
   font-size: 12px;
   line-height: 1.25;
+
+  /* Keep cell editors visually inside the cell. Win Classic applies
+     global input chrome through field tokens, so neutralize it locally. */
+  --field-bg: transparent;
+  --field-bg2: transparent;
+  --field-border: transparent;
+  --field-fg: var(--fg);
 }
 
 .spreadsheetEditorTable th,
