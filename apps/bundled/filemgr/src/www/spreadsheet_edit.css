@@ -880,3 +880,31 @@
   left: -5px;
   bottom: -5px;
 }
+
+
+/* pqnas-spreadsheet-editor-surface-diagnostic-20260714 */
+.spreadsheetEditorModal {
+  --spreadsheet-editor-surface: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
+  --spreadsheet-editor-surface-2: var(--elevated-bg, var(--fm_surface2, var(--panel2, var(--spreadsheet-editor-surface))));
+  --spreadsheet-editor-cell-bg: var(--sheet-cell-bg, var(--table-cell-bg, var(--spreadsheet-editor-surface)));
+}
+
+.spreadsheetEditorBox,
+.spreadsheetEditorBody {
+  background: var(--spreadsheet-editor-surface);
+}
+
+.spreadsheetEditorHead,
+.spreadsheetFormulaBarName,
+.spreadsheetEditorError {
+  background: var(--spreadsheet-editor-surface-2);
+}
+
+.spreadsheetFormulaBar,
+.spreadsheetEditorTabs {
+  background: var(--spreadsheet-editor-surface);
+}
+
+.spreadsheetEditorTable td {
+  background: var(--spreadsheet-editor-cell-bg);
+}
