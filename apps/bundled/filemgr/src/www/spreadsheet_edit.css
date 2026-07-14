@@ -1,4 +1,9 @@
 .spreadsheetEditorModal {
+  --spreadsheet-editor-surface: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
+  --spreadsheet-editor-surface-2: var(--elevated-bg, var(--fm_surface2, var(--panel2, var(--spreadsheet-editor-surface))));
+  --spreadsheet-editor-toolbar-bg: color-mix(in srgb, Highlight 12%, var(--spreadsheet-editor-surface));
+  --spreadsheet-editor-cell-bg: var(--sheet-cell-bg, var(--table-cell-bg, var(--spreadsheet-editor-surface)));
+
   position: fixed;
   inset: 0;
   z-index: 3400;
@@ -22,7 +27,7 @@
   overflow: hidden;
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-lg, 18px);
-  background: var(--panel);
+  background: var(--spreadsheet-editor-surface);
   color: var(--fg);
   box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
 }
@@ -34,8 +39,10 @@
   justify-content: space-between;
   padding: 14px;
   border-bottom: 1px solid var(--border, var(--panel-border));
-  background: var(--panel-2, var(--panel));
+  background: var(--spreadsheet-editor-toolbar-bg);
 }
+
+
 
 .spreadsheetEditorTitle {
   font-size: 17px;
@@ -82,7 +89,7 @@
   align-items: center;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border, var(--panel-border));
-  background: var(--panel);
+  background: var(--spreadsheet-editor-surface);
 }
 
 .spreadsheetFormulaBarName {
@@ -125,7 +132,7 @@
   overflow-x: auto;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border, var(--panel-border));
-  background: var(--panel);
+  background: var(--spreadsheet-editor-surface);
 }
 
 .spreadsheetEditorTab {
@@ -145,7 +152,7 @@
 
 .spreadsheetEditorBody {
   overflow: auto;
-  background: var(--panel);
+  background: var(--spreadsheet-editor-surface);
 }
 
 .spreadsheetEditorTable {
@@ -214,7 +221,7 @@
   z-index: 2;
   min-width: 80px;
   padding: 5px 6px;
-  background: var(--panel-2, var(--panel));
+  background: var(--spreadsheet-editor-surface-2);
   color: var(--muted);
   text-align: center;
   font-weight: 850;
@@ -226,7 +233,7 @@
   z-index: 1;
   min-width: 34px;
   width: 34px;
-  background: var(--panel-2, var(--panel));
+  background: var(--spreadsheet-editor-surface-2);
 }
 
 .spreadsheetEditorTable .corner {
@@ -238,7 +245,7 @@
 .spreadsheetEditorTable td {
   min-width: 96px;
   padding: 0;
-  background: var(--input-bg, var(--panel));
+  background: var(--spreadsheet-editor-cell-bg);
 }
 
 .spreadsheetEditorTable input {
@@ -265,7 +272,7 @@
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-md, 14px);
   color: var(--bad, var(--danger));
-  background: var(--panel-2, var(--panel));
+  background: var(--spreadsheet-editor-surface-2);
 }
 
 @media (max-width: 760px) {
@@ -942,32 +949,4 @@
 .spreadsheetImageSelectionHandle-sw {
   left: -5px;
   bottom: -5px;
-}
-
-
-/* pqnas-spreadsheet-editor-surface-diagnostic-20260714 */
-.spreadsheetEditorModal {
-  --spreadsheet-editor-surface: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
-  --spreadsheet-editor-surface-2: var(--elevated-bg, var(--fm_surface2, var(--panel2, var(--spreadsheet-editor-surface))));
-  --spreadsheet-editor-cell-bg: var(--sheet-cell-bg, var(--table-cell-bg, var(--spreadsheet-editor-surface)));
-}
-
-.spreadsheetEditorBox,
-.spreadsheetEditorBody {
-  background: var(--spreadsheet-editor-surface);
-}
-
-.spreadsheetEditorHead,
-.spreadsheetFormulaBarName,
-.spreadsheetEditorError {
-  background: var(--spreadsheet-editor-surface-2);
-}
-
-.spreadsheetFormulaBar,
-.spreadsheetEditorTabs {
-  background: var(--spreadsheet-editor-surface);
-}
-
-.spreadsheetEditorTable td {
-  background: var(--spreadsheet-editor-cell-bg);
 }
