@@ -161,6 +161,10 @@
   text-align: center;
 }
 
+.spreadsheetPreviewTable thead th:not(.corner) {
+  box-shadow: inset 0 -2px 0 var(--accent, var(--fg));
+}
+
 .spreadsheetPreviewTable .rowHead {
   position: sticky;
   left: 0;
@@ -169,6 +173,10 @@
   width: 54px;
   text-align: right;
   font-weight: 800;
+}
+
+.spreadsheetPreviewTable tbody th.rowHead {
+  box-shadow: inset -2px 0 0 var(--accent, var(--fg));
 }
 
 .spreadsheetPreviewTable thead .corner {
@@ -327,4 +335,3 @@
     display: none;
   }
 }
-

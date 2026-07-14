@@ -1270,10 +1270,16 @@
       border:1px solid var(--fm-scope-chip-border);
       background: var(--fm-scope-chip-bg);
       color: var(--fg);
+      color-scheme: var(--field-color-scheme, dark);
       font-family:var(--sans);
       font-size:12px;
       font-weight:800;
       transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .scopeSelect option{
+      background: var(--field-menu-bg, var(--elevated-bg, var(--panel2, var(--panel))));
+      color: var(--field-menu-fg, var(--fg));
     }
 
     .scopeRole{

@@ -154,6 +154,13 @@
   min-width: 100%;
   font-size: 12px;
   line-height: 1.25;
+
+  /* Keep cell editors visually inside the cell. Win Classic applies
+     global input chrome through field tokens, so neutralize it locally. */
+  --field-bg: transparent;
+  --field-bg2: transparent;
+  --field-border: transparent;
+  --field-fg: var(--fg);
 }
 
 .spreadsheetEditorTable th,
@@ -372,13 +379,27 @@
   padding-right: 14px;
 }
 
+.spreadsheetEditorTable th.colHead:not(.spreadsheetAxisSelectedHeader) {
+  box-shadow: inset 0 -2px 0 var(--accent, var(--fg));
+}
+
 .spreadsheetEditorTable .rowHead {
   padding-bottom: 6px;
+}
+
+.spreadsheetEditorTable tbody th.rowHead:not(.spreadsheetAxisSelectedHeader) {
+  box-shadow: inset -2px 0 0 var(--accent, var(--fg));
 }
 
 .spreadsheetColumnLabel,
 .spreadsheetRowLabel {
   pointer-events: none;
+}
+
+.spreadsheetEditorTable th.colHead[data-spreadsheet-axis-style="1"] .spreadsheetColumnLabel {
+  position: relative;
+  z-index: 6;
+  color: var(--fg);
 }
 
 .spreadsheetColumnResize {
@@ -796,6 +817,23 @@
 
 .spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
   --spreadsheet-cell-border-color: var(--fg);
+  position: relative;
+  z-index: 1;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-border="1"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: var(--spreadsheet-cell-border-color, currentColor);
+  border-top-width: var(--spreadsheet-cell-border-top-width, 0);
+  border-right-width: var(--spreadsheet-cell-border-right-width, 0);
+  border-bottom-width: var(--spreadsheet-cell-border-bottom-width, 0);
+  border-left-width: var(--spreadsheet-cell-border-left-width, 0);
 }
 
 .spreadsheetSheetSurface {
@@ -865,4 +903,32 @@
 .spreadsheetImageSelectionHandle-sw {
   left: -5px;
   bottom: -5px;
+}
+
+
+/* pqnas-spreadsheet-editor-surface-diagnostic-20260714 */
+.spreadsheetEditorModal {
+  --spreadsheet-editor-surface: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
+  --spreadsheet-editor-surface-2: var(--elevated-bg, var(--fm_surface2, var(--panel2, var(--spreadsheet-editor-surface))));
+  --spreadsheet-editor-cell-bg: var(--sheet-cell-bg, var(--table-cell-bg, var(--spreadsheet-editor-surface)));
+}
+
+.spreadsheetEditorBox,
+.spreadsheetEditorBody {
+  background: var(--spreadsheet-editor-surface);
+}
+
+.spreadsheetEditorHead,
+.spreadsheetFormulaBarName,
+.spreadsheetEditorError {
+  background: var(--spreadsheet-editor-surface-2);
+}
+
+.spreadsheetFormulaBar,
+.spreadsheetEditorTabs {
+  background: var(--spreadsheet-editor-surface);
+}
+
+.spreadsheetEditorTable td {
+  background: var(--spreadsheet-editor-cell-bg);
 }
