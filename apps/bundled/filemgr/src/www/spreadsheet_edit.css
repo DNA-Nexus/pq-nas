@@ -566,6 +566,82 @@
   outline-offset: 2px;
 }
 
+.spreadsheetEditorHead select,
+.spreadsheetFontSizeSelect {
+  color-scheme: var(--field-color-scheme, dark);
+}
+
+.spreadsheetEditorHead select option,
+.spreadsheetFontSizeSelect option {
+  background: var(--field-menu-bg, var(--elevated-bg, var(--panel2, var(--panel))));
+  color: var(--field-menu-fg, var(--fg));
+}
+
+.spreadsheetIconMenuBtn {
+  flex: 0 0 auto;
+  border: 1px solid var(--button-border, var(--border, var(--panel-border)));
+  background: var(--spreadsheet-editor-surface);
+  color: var(--fg);
+}
+
+.spreadsheetIconMenuBtn:hover,
+.spreadsheetIconMenuBtn:focus-visible,
+.spreadsheetIconMenuBtn[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent, var(--link)) 16%, var(--spreadsheet-editor-surface));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: 2px;
+}
+
+.spreadsheetIconMenu {
+  position: fixed;
+  z-index: 3900;
+  min-width: 170px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetIconMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetIconMenu button {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetIconMenu button:hover,
+.spreadsheetIconMenu button:focus-visible,
+.spreadsheetIconMenu button[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent, var(--link)) 16%, var(--spreadsheet-editor-surface));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetIconMenu svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .spreadsheetEditorTable td.spreadsheetActiveCell {
   box-shadow:
     inset 0 0 0 3px Highlight,

@@ -78,6 +78,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let numberFormatSelect = null;
   let alignSelect = null;
   let valignSelect = null;
+  let alignMenu = null;
+  let valignMenu = null;
   let textColorBtn = null;
   let fillBtn = null;
   let closeBtn = null;
@@ -118,6 +120,137 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     } catch (_) {}
     return fallback || key;
+  }
+
+  const TOOLBAR_ICON_OPTIONS = Object.freeze({
+    align: Object.freeze({
+      left: Object.freeze({ key: "filemgr.spreadsheet_editor.align_left", fallback: "Left" }),
+      center: Object.freeze({ key: "filemgr.spreadsheet_editor.align_center", fallback: "Center" }),
+      right: Object.freeze({ key: "filemgr.spreadsheet_editor.align_right", fallback: "Tasaa oikealle" })
+    }),
+    valign: Object.freeze({
+      top: Object.freeze({ key: "filemgr.spreadsheet_editor.valign_top", fallback: "Top" }),
+      middle: Object.freeze({ key: "filemgr.spreadsheet_editor.valign_middle", fallback: "Middle" }),
+      bottom: Object.freeze({ key: "filemgr.spreadsheet_editor.valign_bottom", fallback: "Bottom" })
+    })
+  });
+
+  function normalizeToolbarIconValue(kind, value) {
+    const key = String(value || "").trim();
+    const options = TOOLBAR_ICON_OPTIONS[kind] || {};
+    if (Object.prototype.hasOwnProperty.call(options, key)) return key;
+    return kind === "valign" ? "middle" : "left";
+  }
+
+  function toolbarIconLabel(kind, value) {
+    const normalized = normalizeToolbarIconValue(kind, value);
+    const def = TOOLBAR_ICON_OPTIONS[kind] && TOOLBAR_ICON_OPTIONS[kind][normalized];
+    return def ? tr(def.key, null, def.fallback) : normalized;
+  }
+
+  function toolbarIconPath(kind, value) {
+    const normalized = normalizeToolbarIconValue(kind, value);
+
+    // Security: toolbar icons are selected from a fixed whitelist. Workbook or
+    // user-controlled values are never rendered as arbitrary SVG/HTML.
+    if (kind === "valign") {
+      if (normalized === "top") return "M5 5h14M8 10h8M8 14h8M12 20V8M9 11l3-3 3 3";
+      if (normalized === "bottom") return "M5 19h14M8 10h8M8 14h8M12 4v12M9 13l3 3 3-3";
+      return "M5 12h14M8 7h8M8 17h8M12 4v5M9 7l3 3 3-3M12 20v-5M9 17l3-3 3 3";
+    }
+
+    if (normalized === "center") return "M4 6h16M7 10h10M4 14h16M8 18h8";
+    if (normalized === "right") return "M4 6h16M9 10h11M4 14h16M10 18h10";
+    return "M4 6h16M4 10h11M4 14h16M4 18h10";
+  }
+
+  function toolbarIconSvg(kind, value) {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${toolbarIconPath(kind, value)}"/></svg>`;
+  }
+
+  function createToolbarIconSvg(kind, value) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", toolbarIconPath(kind, value));
+    svg.appendChild(path);
+
+    return svg;
+  }
+
+  function setToolbarIconButtonValue(button, kind, value) {
+    if (!button) return;
+
+    const normalized = normalizeToolbarIconValue(kind, value);
+    const label = toolbarIconLabel(kind, normalized);
+
+    button.value = normalized;
+    button.replaceChildren(createToolbarIconSvg(kind, normalized));
+    button.title = label;
+    button.setAttribute("aria-label", label);
+
+    const menu = kind === "valign" ? valignMenu : alignMenu;
+    if (!menu) return;
+
+    for (const item of menu.querySelectorAll("[data-spreadsheet-toolbar-value]")) {
+      item.setAttribute("aria-checked", item.dataset.spreadsheetToolbarValue === normalized ? "true" : "false");
+    }
+  }
+
+  function closeToolbarIconMenus(exceptMenu = null) {
+    for (const [button, menu] of [[alignSelect, alignMenu], [valignSelect, valignMenu]]) {
+      if (!menu || menu === exceptMenu) continue;
+      menu.hidden = true;
+      if (button) button.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function positionToolbarIconMenu(button, menu) {
+    if (!button || !menu) return;
+
+    const rect = button.getBoundingClientRect();
+    const gap = 6;
+
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+    menu.hidden = false;
+
+    const menuRect = menu.getBoundingClientRect();
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - menuRect.width - 8));
+    const top = Math.min(Math.max(8, rect.bottom + gap), Math.max(8, window.innerHeight - menuRect.height - 8));
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  function toggleToolbarIconMenu(button, menu) {
+    if (!button || !menu || button.disabled) return;
+
+    const willOpen = menu.hidden;
+    closeToolbarIconMenus(menu);
+
+    if (willOpen) {
+      positionToolbarIconMenu(button, menu);
+      button.setAttribute("aria-expanded", "true");
+    } else {
+      menu.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function bindToolbarIconMenu(menu, kind, button) {
+    if (!menu || !button) return;
+
+    for (const item of menu.querySelectorAll("[data-spreadsheet-toolbar-value]")) {
+      item.addEventListener("click", () => {
+        const value = normalizeToolbarIconValue(kind, item.dataset.spreadsheetToolbarValue);
+        applyFormatCommand(kind, value);
+        setToolbarIconButtonValue(button, kind, value);
+        closeToolbarIconMenus();
+      });
+    }
   }
 
   function fileExtLower(name) {
@@ -1083,12 +1216,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         ? `currency:${fmt.currency}`
         : fmt.numberFormat === "percent" ? "percent" : "";
     }
-    if (alignSelect) {
-      alignSelect.value = fmt.align || "left";
-    }
-    if (valignSelect) {
-      valignSelect.value = fmt.valign || "middle";
-    }
+    setToolbarIconButtonValue(alignSelect, "align", fmt.align || "left");
+    setToolbarIconButtonValue(valignSelect, "valign", fmt.valign || "middle");
     setToolButtonActive(decreaseDecimalsBtn, false);
     setToolButtonActive(increaseDecimalsBtn, false);
     setToolButtonActive(textColorBtn, !!fmt.fg);
@@ -4765,16 +4894,18 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
               <option value="currency:sek">kr Krona</option>
               <option value="currency:cny">¥ Yuan</option>
             </select>
-            <select id="spreadsheetEditorAlign" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}" title="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}">
-              <option value="left">${tr("filemgr.spreadsheet_editor.align_left", null, "Left")}</option>
-              <option value="center">${tr("filemgr.spreadsheet_editor.align_center", null, "Center")}</option>
-              <option value="right">${tr("filemgr.spreadsheet_editor.align_right", null, "Right")}</option>
-            </select>
-            <select id="spreadsheetEditorValign" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}" title="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}">
-              <option value="top">${tr("filemgr.spreadsheet_editor.valign_top", null, "Top")}</option>
-              <option value="middle">${tr("filemgr.spreadsheet_editor.valign_middle", null, "Middle")}</option>
-              <option value="bottom">${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Bottom")}</option>
-            </select>
+            <button id="spreadsheetEditorAlign" class="spreadsheetToolBtn spreadsheetIconMenuBtn" type="button" value="left" aria-haspopup="menu" aria-expanded="false" aria-label="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}" title="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}">${toolbarIconSvg("align", "left")}</button>
+            <div id="spreadsheetEditorAlignMenu" class="spreadsheetIconMenu" role="menu" hidden aria-label="${tr("filemgr.spreadsheet_editor.horizontal_align", null, "Horizontal align")}">
+              <button type="button" role="menuitemradio" aria-checked="true" data-spreadsheet-toolbar-value="left">${toolbarIconSvg("align", "left")}<span>${tr("filemgr.spreadsheet_editor.align_left", null, "Left")}</span></button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-spreadsheet-toolbar-value="center">${toolbarIconSvg("align", "center")}<span>${tr("filemgr.spreadsheet_editor.align_center", null, "Center")}</span></button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-spreadsheet-toolbar-value="right">${toolbarIconSvg("align", "right")}<span>${tr("filemgr.spreadsheet_editor.align_right", null, "Align right")}</span></button>
+            </div>
+            <button id="spreadsheetEditorValign" class="spreadsheetToolBtn spreadsheetIconMenuBtn" type="button" value="middle" aria-haspopup="menu" aria-expanded="false" aria-label="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}" title="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}">${toolbarIconSvg("valign", "middle")}</button>
+            <div id="spreadsheetEditorValignMenu" class="spreadsheetIconMenu" role="menu" hidden aria-label="${tr("filemgr.spreadsheet_editor.vertical_align", null, "Vertical align")}">
+              <button type="button" role="menuitemradio" aria-checked="false" data-spreadsheet-toolbar-value="top">${toolbarIconSvg("valign", "top")}<span>${tr("filemgr.spreadsheet_editor.valign_top", null, "Top")}</span></button>
+              <button type="button" role="menuitemradio" aria-checked="true" data-spreadsheet-toolbar-value="middle">${toolbarIconSvg("valign", "middle")}<span>${tr("filemgr.spreadsheet_editor.valign_middle", null, "Middle")}</span></button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-spreadsheet-toolbar-value="bottom">${toolbarIconSvg("valign", "bottom")}<span>${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Bottom")}</span></button>
+            </div>
             <button id="spreadsheetEditorTextColor" type="button" class="btn secondary spreadsheetToolBtn spreadsheetTextToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}" title="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 6 20"></path><path d="M12 4 18 20"></path><path d="M8 14h8"></path><path d="M5 22h14"></path></svg>
             </button>
@@ -4817,6 +4948,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     numberFormatSelect = modal.querySelector("#spreadsheetEditorNumberFormat");
     alignSelect = modal.querySelector("#spreadsheetEditorAlign");
     valignSelect = modal.querySelector("#spreadsheetEditorValign");
+    alignMenu = modal.querySelector("#spreadsheetEditorAlignMenu");
+    valignMenu = modal.querySelector("#spreadsheetEditorValignMenu");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
     fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
@@ -4828,8 +4961,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
     increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));
     numberFormatSelect?.addEventListener("change", () => applyFormatCommand("numberFormat", numberFormatSelect.value));
-    alignSelect?.addEventListener("change", () => applyFormatCommand("align", alignSelect.value));
-    valignSelect?.addEventListener("change", () => applyFormatCommand("valign", valignSelect.value));
+    alignSelect?.addEventListener("click", () => toggleToolbarIconMenu(alignSelect, alignMenu));
+    valignSelect?.addEventListener("click", () => toggleToolbarIconMenu(valignSelect, valignMenu));
+    bindToolbarIconMenu(alignMenu, "align", alignSelect);
+    bindToolbarIconMenu(valignMenu, "valign", valignSelect);
+    document.addEventListener("click", (ev) => {
+      const target = ev.target;
+      if (target && target.closest && target.closest(".spreadsheetIconMenu, .spreadsheetIconMenuBtn")) return;
+      closeToolbarIconMenus();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") closeToolbarIconMenus();
+    });
+    window.addEventListener("resize", () => closeToolbarIconMenus());
+    window.addEventListener("scroll", () => closeToolbarIconMenus(), true);
     textColorBtn?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
