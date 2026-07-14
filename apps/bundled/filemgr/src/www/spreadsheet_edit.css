@@ -385,6 +385,12 @@
   pointer-events: none;
 }
 
+.spreadsheetEditorTable th.colHead[data-spreadsheet-axis-style="1"] .spreadsheetColumnLabel {
+  position: relative;
+  z-index: 6;
+  color: var(--fg);
+}
+
 .spreadsheetColumnResize {
   position: absolute;
   top: 0;
