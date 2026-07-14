@@ -175,6 +175,10 @@
   font-weight: 800;
 }
 
+.spreadsheetPreviewTable tbody th.rowHead {
+  box-shadow: inset -2px 0 0 var(--accent, var(--fg));
+}
+
 .spreadsheetPreviewTable thead .corner {
   left: 0;
   z-index: 4;
@@ -331,4 +335,3 @@
     display: none;
   }
 }
-

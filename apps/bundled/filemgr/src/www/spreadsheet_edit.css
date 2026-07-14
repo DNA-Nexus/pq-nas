@@ -380,6 +380,10 @@
   padding-bottom: 6px;
 }
 
+.spreadsheetEditorTable tbody th.rowHead:not(.spreadsheetAxisSelectedHeader) {
+  box-shadow: inset -2px 0 0 var(--accent, var(--fg));
+}
+
 .spreadsheetColumnLabel,
 .spreadsheetRowLabel {
   pointer-events: none;
