@@ -296,12 +296,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const cssSide = sideMap[side];
       const width = borderCssWidth(b[side]);
       const prop = `border${cssSide}`;
+      const varName = `--spreadsheet-cell-border-${side}-width`;
+
+      // Custom spreadsheet borders are painted by a td::after overlay. This
+      // avoids theme-level table border overrides, especially Win Classic's
+      // global tbody td border-bottom rule, from hiding the user's border.
+      cell.style.removeProperty(prop);
+      cell.style.removeProperty(`border-${side}`);
 
       if (width) {
         hasBorder = true;
-        cell.style[prop] = `${width} solid var(--spreadsheet-cell-border-color, currentColor)`;
+        cell.style.setProperty(varName, width);
       } else {
-        cell.style.removeProperty(`border-${side}`);
+        cell.style.removeProperty(varName);
       }
     }
 
@@ -309,6 +316,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       cell.dataset.spreadsheetCellBorder = "1";
     } else {
       cell.removeAttribute("data-spreadsheet-cell-border");
+      for (const side of BORDER_SIDES) {
+        cell.style.removeProperty(`--spreadsheet-cell-border-${side}-width`);
+      }
     }
   }
 

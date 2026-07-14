@@ -817,6 +817,23 @@
 
 .spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
   --spreadsheet-cell-border-color: var(--fg);
+  position: relative;
+  z-index: 1;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-cell-border="1"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: var(--spreadsheet-cell-border-color, currentColor);
+  border-top-width: var(--spreadsheet-cell-border-top-width, 0);
+  border-right-width: var(--spreadsheet-cell-border-right-width, 0);
+  border-bottom-width: var(--spreadsheet-cell-border-bottom-width, 0);
+  border-left-width: var(--spreadsheet-cell-border-left-width, 0);
 }
 
 .spreadsheetSheetSurface {
