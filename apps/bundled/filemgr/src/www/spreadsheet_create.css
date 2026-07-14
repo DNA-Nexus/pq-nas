@@ -179,7 +179,7 @@
   padding: 6px;
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-md, 14px);
-  background: var(--panel);
+  background: var(--elevated-bg, var(--fm_surface, var(--modal-bg, var(--panel))));
   color: var(--fg);
   box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 24%, transparent));
 }
