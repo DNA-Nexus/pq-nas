@@ -626,6 +626,62 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     el.style.minHeight = px;
   }
 
+  function isPreviewPlainTextOverflowCandidate(value, fmt) {
+    const text = String(value == null ? "" : value);
+    if (!text || /[\r\n]/.test(text)) return false;
+
+    const f = normalizePreviewCellFormat(fmt);
+    if (f.align === "center" || f.align === "right") return false;
+
+    // Match spreadsheet behavior for plain text. Numeric-looking values should
+    // remain clipped to their own cell instead of spilling across the grid.
+    return !/^[+-]?(?:\d+|\d*[.,]\d+)(?:[%€$])?$/.test(text.trim());
+  }
+
+  function isPreviewOverflowEmptyCell(sheet, rows, row, col) {
+    if (!Array.isArray(rows) || row < 0 || row >= rows.length || col < 0) return false;
+    if (previewMergeAtCell(sheet, row, col)) return false;
+
+    const sourceRow = Array.isArray(rows[row]) ? rows[row] : [];
+    return String(sourceRow[col] == null ? "" : sourceRow[col]) === "";
+  }
+
+  function previewTextOverflowWidth(sheet, rows, row, col, colWidths, colCount) {
+    let width = clampPreviewColumnWidth(colWidths[col]);
+
+    for (let c = col + 1; c < colCount; c++) {
+      if (!isPreviewOverflowEmptyCell(sheet, rows, row, c)) break;
+      width += clampPreviewColumnWidth(colWidths[c]);
+    }
+
+    return width;
+  }
+
+  function renderPreviewCellText(td, sheet, rows, row, col, colWidths, colCount, value, fmt) {
+    const text = displayPreviewCellValue(value, fmt);
+
+    if (!isPreviewPlainTextOverflowCandidate(text, fmt)) {
+      td.textContent = text;
+      return;
+    }
+
+    const overflowWidth = previewTextOverflowWidth(sheet, rows, row, col, colWidths, colCount);
+    const ownWidth = clampPreviewColumnWidth(colWidths[col]);
+
+    if (overflowWidth <= ownWidth) {
+      td.textContent = text;
+      return;
+    }
+
+    td.dataset.spreadsheetTextOverflow = "1";
+    td.style.setProperty("--spreadsheet-text-overflow-width", `${overflowWidth}px`);
+
+    const span = document.createElement("span");
+    span.className = "spreadsheetPreviewTextOverflow";
+    span.textContent = text;
+    td.appendChild(span);
+  }
+
   function extractPreviewCellFormats(XLSX, ws, rows, cols) {
     const rowCount = Math.max(0, Number.isInteger(rows) ? rows : 0);
     const colCount = Math.max(0, Number.isInteger(cols) ? cols : 0);
@@ -1174,7 +1230,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const fmt = sheet.cellFormats && sheet.cellFormats[rIdx] && sheet.cellFormats[rIdx][c];
         applyPreviewCellFormat(td, fmt);
         // Security: always render cell values as text, never HTML.
-        td.textContent = displayPreviewCellValue(row[c], fmt);
+        renderPreviewCellText(td, sheet, normalized.rows, rIdx, c, colWidths, normalized.cols, row[c], fmt);
         trEl.appendChild(td);
       }
 

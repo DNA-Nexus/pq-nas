@@ -2102,6 +2102,116 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     el.style.minHeight = px;
   }
 
+  function isEditorPlainTextOverflowCandidate(value, fmt) {
+    const text = String(value == null ? "" : value);
+    if (!text || /[\r\n]/.test(text)) return false;
+
+    const f = normalizeCellFormat(fmt);
+    if (f.align === "center" || f.align === "right") return false;
+
+    // Match spreadsheet behavior for plain text. Numeric-looking values should
+    // stay inside their own cell instead of spilling across the grid.
+    return !/^[+-]?(?:\d+|\d*[.,]\d+)(?:[%€$])?$/.test(text.trim());
+  }
+
+  function isEditorOverflowEmptyCell(sheet, rows, row, col) {
+    if (!Array.isArray(rows) || row < 0 || row >= rows.length || col < 0) return false;
+    if (mergeAtCell(sheet, row, col)) return false;
+
+    const sourceRow = Array.isArray(rows[row]) ? rows[row] : [];
+    return String(sourceRow[col] == null ? "" : sourceRow[col]) === "";
+  }
+
+  function editorTextOverflowWidth(sheet, rows, row, col, colWidths, colCount) {
+    let width = clampColumnWidth(colWidths[col]);
+
+    for (let c = col + 1; c < colCount; c++) {
+      if (!isEditorOverflowEmptyCell(sheet, rows, row, c)) break;
+      width += clampColumnWidth(colWidths[c]);
+    }
+
+    return width;
+  }
+
+  function clearEditorTextOverflow(td, input) {
+    if (td) {
+      td.removeAttribute("data-spreadsheet-text-overflow");
+      td.style.removeProperty("--spreadsheet-text-overflow-width");
+      for (const el of td.querySelectorAll(".spreadsheetEditorTextOverflow")) {
+        el.remove();
+      }
+    }
+
+    if (input) {
+      input.removeAttribute("data-spreadsheet-text-overflow-input");
+    }
+  }
+
+  function applyEditorOverflowTextStyle(span, fmt) {
+    const f = normalizeCellFormat(fmt);
+
+    span.style.fontWeight = f.bold ? "700" : "";
+    span.style.fontStyle = f.italic ? "italic" : "";
+    span.style.textDecoration = f.underline ? "underline" : "";
+    span.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
+
+    if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
+      span.style.color = TEXT_COLOR_COLORS[f.fg].css;
+    }
+  }
+
+  function renderEditorCellTextOverflow(td, input, sheet, rows, row, col, colWidths, colCount, cache = null) {
+    clearEditorTextOverflow(td, input);
+
+    if (!td || !input || !sheet || mergeAtCell(sheet, row, col)) return;
+
+    const fmt = getCellFormat(sheet, row, col);
+    const text = displayCellValue(sheet, row, col, cache || computeSheetCache(sheet));
+
+    if (!isEditorPlainTextOverflowCandidate(text, fmt)) return;
+
+    const overflowWidth = editorTextOverflowWidth(sheet, rows, row, col, colWidths, colCount);
+    const ownWidth = clampColumnWidth(colWidths[col]);
+
+    if (overflowWidth <= ownWidth) return;
+
+    td.dataset.spreadsheetTextOverflow = "1";
+    td.style.setProperty("--spreadsheet-text-overflow-width", `${overflowWidth}px`);
+    input.dataset.spreadsheetTextOverflowInput = "1";
+
+    const span = document.createElement("span");
+    span.className = "spreadsheetEditorTextOverflow";
+    span.textContent = text;
+    applyEditorOverflowTextStyle(span, fmt);
+    td.appendChild(span);
+  }
+
+  function refreshVisibleEditorTextOverflows() {
+    if (!bodyEl) return;
+
+    const sheet = state.sheets[state.active];
+    const rows = sheet && Array.isArray(sheet.rows) ? sheet.rows : [];
+    const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+    const colWidths = ensureSheetColWidths(sheet, colCount);
+    const cache = sheet ? computeSheetCache(sheet) : null;
+
+    const table = bodyEl.querySelector(".spreadsheetEditorTable");
+    if (!table || !sheet) return;
+
+    for (const td of table.querySelectorAll("td[data-row][data-col]")) {
+      const row = Number(td.dataset.row);
+      const col = Number(td.dataset.col);
+      const input = td.querySelector("input[data-row][data-col]");
+
+      if (!Number.isInteger(row) || !Number.isInteger(col) || !input) {
+        clearEditorTextOverflow(td, input);
+        continue;
+      }
+
+      renderEditorCellTextOverflow(td, input, sheet, rows, row, col, colWidths, colCount, cache);
+    }
+  }
+
   function paintVisibleRowHeight(row, height) {
     if (!bodyEl || !Number.isInteger(row) || row < 0) return;
 
@@ -5161,6 +5271,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           refreshFormulaDisplays(null);
           input.value = displayCellValue(sheet, r, col);
           input.title = isFormulaValue(cellRaw(sheet, r, col)) ? cellRaw(sheet, r, col) : "";
+          refreshVisibleEditorTextOverflows();
           updateFormulaBar();
         });
 
@@ -5269,6 +5380,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
           setDirty(true);
           refreshFormulaDisplays(input);
+          refreshVisibleEditorTextOverflows();
           updateFormulaBar();
         });
 
@@ -5281,6 +5393,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
         td.appendChild(input);
         applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
+        renderEditorCellTextOverflow(td, input, sheet, rows, rIdx, c, colWidths, colCount, cache);
 
         trEl.appendChild(td);
       }

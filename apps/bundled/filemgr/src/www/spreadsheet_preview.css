@@ -154,6 +154,27 @@
   color: var(--table-cell-text, var(--text));
 }
 
+.spreadsheetPreviewTable td[data-spreadsheet-text-overflow="1"] {
+  position: relative;
+  overflow: visible;
+  z-index: 1;
+}
+
+.spreadsheetPreviewTextOverflow {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  width: calc(var(--spreadsheet-text-overflow-width, 100%) - 16px);
+  max-width: calc(var(--spreadsheet-text-overflow-width, 100%) - 16px);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+  pointer-events: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
 .spreadsheetPreviewTable thead th {
   position: sticky;
   top: 0;

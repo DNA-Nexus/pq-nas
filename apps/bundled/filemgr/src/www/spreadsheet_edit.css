@@ -169,6 +169,45 @@
   border-bottom: 1px solid var(--border, var(--panel-border));
 }
 
+
+.spreadsheetEditorTable td[data-spreadsheet-text-overflow="1"] {
+  position: relative;
+  overflow: visible;
+  z-index: 2;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-text-overflow="1"] > input:not(:focus) {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-text-overflow="1"]:focus-within > input {
+  color: var(--spreadsheet-cell-fg, var(--fg));
+  -webkit-text-fill-color: var(--spreadsheet-cell-fg, var(--fg));
+  caret-color: auto;
+}
+
+.spreadsheetEditorTable td[data-spreadsheet-text-overflow="1"]:focus-within .spreadsheetEditorTextOverflow {
+  display: none;
+}
+
+.spreadsheetEditorTextOverflow {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  z-index: 3;
+  width: calc(var(--spreadsheet-text-overflow-width, 100%) - 12px);
+  max-width: calc(var(--spreadsheet-text-overflow-width, 100%) - 12px);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+  pointer-events: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
 .spreadsheetEditorTable th {
   position: sticky;
   top: 0;
