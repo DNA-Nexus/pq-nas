@@ -80,6 +80,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let valignSelect = null;
   let alignMenu = null;
   let valignMenu = null;
+  let freezeTopRowBtn = null;
+  let freezeFirstColumnBtn = null;
   let textColorBtn = null;
   let fillBtn = null;
   let closeBtn = null;
@@ -1726,6 +1728,189 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return `<mergeCells count="${refs.length}">${refs.join("")}</mergeCells>`;
   }
 
+
+  function clampSheetFreezeCount(value, limit) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+
+    const max = Math.max(0, Number(limit) || 0);
+    return Math.max(0, Math.min(max, Math.floor(n)));
+  }
+
+  function normalizeSheetFreeze(src, rowCount = MAX_EDIT_ROWS, colCount = MAX_EDIT_COLS) {
+    const topRows = clampSheetFreezeCount(src && src.topRows, rowCount);
+    const leftCols = clampSheetFreezeCount(src && src.leftCols, colCount);
+
+    return { topRows, leftCols };
+  }
+
+  function hasSheetFreeze(freeze) {
+    const f = normalizeSheetFreeze(freeze);
+    return f.topRows > 0 || f.leftCols > 0;
+  }
+
+  function xlsxWorksheetTopLeftCell(topRows, leftCols) {
+    return xlsxCellRef(Math.max(0, topRows), Math.max(0, leftCols));
+  }
+
+  function xlsxSheetActivePane(freeze) {
+    const f = normalizeSheetFreeze(freeze);
+
+    if (f.topRows > 0 && f.leftCols > 0) return "bottomRight";
+    if (f.topRows > 0) return "bottomLeft";
+    if (f.leftCols > 0) return "topRight";
+    return "";
+  }
+
+  function xlsxSheetViewsXml(sheet, rowCount, colCount) {
+    const freeze = normalizeSheetFreeze(sheet && sheet.freeze, rowCount, colCount);
+
+    if (!hasSheetFreeze(freeze)) {
+      return '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
+    }
+
+    const paneAttrs = [];
+    if (freeze.leftCols > 0) paneAttrs.push(`xSplit="${freeze.leftCols}"`);
+    if (freeze.topRows > 0) paneAttrs.push(`ySplit="${freeze.topRows}"`);
+
+    paneAttrs.push(`topLeftCell="${xlsxAttrEscape(xlsxWorksheetTopLeftCell(freeze.topRows, freeze.leftCols))}"`);
+
+    const activePane = xlsxSheetActivePane(freeze);
+    if (activePane) paneAttrs.push(`activePane="${xlsxAttrEscape(activePane)}"`);
+
+    paneAttrs.push('state="frozen"');
+
+    return `<sheetViews><sheetView workbookViewId="0"><pane ${paneAttrs.join(" ")}/></sheetView></sheetViews>`;
+  }
+
+  function xlsxXmlAttrMap(tag) {
+    const out = {};
+    const src = String(tag || "");
+    const attrRe = /([A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*"([^"]*)"/g;
+    let m = null;
+
+    while ((m = attrRe.exec(src))) {
+      out[m[1]] = m[2];
+    }
+
+    return out;
+  }
+
+  function worksheetFreezeFromPaneAttrs(attrs) {
+    const stateValue = String(attrs && attrs.state || "").toLowerCase();
+
+    // Only treat Excel frozen panes as persisted freeze metadata. Plain split
+    // panes use the same xSplit/ySplit attributes with different units.
+    if (!stateValue.startsWith("frozen")) return { topRows: 0, leftCols: 0 };
+
+    return normalizeSheetFreeze({
+      topRows: attrs.ySplit,
+      leftCols: attrs.xSplit
+    });
+  }
+
+  function worksheetFreezeFromXml(xml) {
+    const src = String(xml || "");
+    const m = src.match(/<pane\b[^>]*>/i);
+
+    if (!m) return { topRows: 0, leftCols: 0 };
+
+    return worksheetFreezeFromPaneAttrs(xlsxXmlAttrMap(m[0]));
+  }
+
+  function sheetJsFileBytes(file) {
+    if (!file) return null;
+    if (file instanceof Uint8Array) return file;
+    if (file instanceof ArrayBuffer) return new Uint8Array(file);
+
+    for (const key of ["content", "data", "_data"]) {
+      const value = file[key];
+      if (value instanceof Uint8Array) return value;
+      if (value instanceof ArrayBuffer) return new Uint8Array(value);
+      if (Array.isArray(value)) return new Uint8Array(value);
+    }
+
+    if (typeof file.asUint8Array === "function") {
+      const value = file.asUint8Array();
+      if (value instanceof Uint8Array) return value;
+    }
+
+    return null;
+  }
+
+  function sheetJsFileText(file) {
+    if (!file) return "";
+    if (typeof file === "string") return file;
+
+    const bytes = sheetJsFileBytes(file);
+    if (!bytes) return "";
+
+    try {
+      return new TextDecoder("utf-8").decode(bytes);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function workbookFileByName(wb, name) {
+    const wanted = String(name || "").replace(/^\/+/, "");
+
+    if (!wanted || !wb || !wb.files) return null;
+
+    const files = wb.files;
+
+    if (files[wanted]) return files[wanted];
+    if (files["/" + wanted]) return files["/" + wanted];
+
+    if (Array.isArray(files.FileIndex)) {
+      for (const file of files.FileIndex) {
+        const rawName = String(file && file.name || "").replace(/^\/+/, "");
+        if (rawName === wanted) return file;
+      }
+    }
+
+    return null;
+  }
+
+  function worksheetXmlTextFromWorkbook(wb, sheetIndex) {
+    const sheetNo = Math.max(1, Number(sheetIndex) + 1 || 1);
+    const path = `xl/worksheets/sheet${sheetNo}.xml`;
+
+    return sheetJsFileText(workbookFileByName(wb, path));
+  }
+
+  function worksheetFreezeFromSheetJs(ws) {
+    const views = Array.isArray(ws && ws["!views"]) ? ws["!views"] : [];
+
+    for (const view of views) {
+      const pane = view && (view.pane || view);
+      const freeze = worksheetFreezeFromPaneAttrs({
+        state: pane && pane.state,
+        xSplit: pane && pane.xSplit,
+        ySplit: pane && pane.ySplit
+      });
+
+      if (hasSheetFreeze(freeze)) return freeze;
+    }
+
+    const rawFreeze = ws && ws["!freeze"];
+    if (rawFreeze) {
+      return normalizeSheetFreeze({
+        topRows: rawFreeze.ySplit ?? rawFreeze.topRows,
+        leftCols: rawFreeze.xSplit ?? rawFreeze.leftCols
+      });
+    }
+
+    return { topRows: 0, leftCols: 0 };
+  }
+
+  function worksheetFreezeFromWorkbook(_XLSX, wb, ws, sheetIndex) {
+    const fromSheetJs = worksheetFreezeFromSheetJs(ws);
+    if (hasSheetFreeze(fromSheetJs)) return fromSheetJs;
+
+    return worksheetFreezeFromXml(worksheetXmlTextFromWorkbook(wb, sheetIndex));
+  }
+
   function buildWorksheetXml(sheet, styleCatalog, drawingRelId = "") {
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
     const rowCount = rows.length;
@@ -1795,7 +1980,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
       `<dimension ref="${xlsxDimensionRef(rowCount || 1, colCount || 1)}"/>`,
-      '<sheetViews><sheetView workbookViewId="0"/></sheetViews>',
+      xlsxSheetViewsXml(sheet, rowCount || 1, colCount || 1),
       '<sheetFormatPr defaultRowHeight="15"/>',
       colsXml,
       `<sheetData>${rowXml.join("")}</sheetData>`,
@@ -4526,7 +4711,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
         rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
         cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null)),
-        merges: []
+        merges: [],
+        freeze: { topRows: 0, leftCols: 0 }
       }];
     }
 
@@ -4544,6 +4730,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rowHeights: converted.rowHeights,
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
         merges: converted.merges,
+        freeze: worksheetFreezeFromWorkbook(XLSX, wb, wb.Sheets[name], idx),
         images: sheetImages
       };
 
@@ -4912,6 +5099,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorFill" type="button" class="btn secondary spreadsheetToolBtn spreadsheetFillToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.fill_color", null, "Fill color")}" title="${tr("filemgr.spreadsheet_editor.fill_color", null, "Fill color")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14 12 6l6 6-8 8z"></path><path d="M14 4 20 10"></path><path d="M4 14h16"></path></svg>
             </button>
+            <button id="spreadsheetEditorFreezeTopRow" type="button" class="btn secondary spreadsheetToolBtn spreadsheetFreezeToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.freeze_top_row", null, "Freeze top row")}" title="${tr("filemgr.spreadsheet_editor.freeze_top_row", null, "Freeze top row")}">
+              <span aria-hidden="true">1↕</span>
+            </button>
+            <button id="spreadsheetEditorFreezeFirstColumn" type="button" class="btn secondary spreadsheetToolBtn spreadsheetFreezeToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.freeze_first_column", null, "Freeze first column")}" title="${tr("filemgr.spreadsheet_editor.freeze_first_column", null, "Freeze first column")}">
+              <span aria-hidden="true">A↔</span>
+            </button>
             <span class="spreadsheetToolSep" aria-hidden="true"></span>
             <button id="spreadsheetEditorSave" type="button" class="btn">${tr("filemgr.spreadsheet_editor.save", null, "Save")}</button>
             <button id="spreadsheetEditorClose" type="button" class="btn secondary">${tr("filemgr.close", null, "Close")}</button>
@@ -4950,6 +5143,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     valignSelect = modal.querySelector("#spreadsheetEditorValign");
     alignMenu = modal.querySelector("#spreadsheetEditorAlignMenu");
     valignMenu = modal.querySelector("#spreadsheetEditorValignMenu");
+    freezeTopRowBtn = modal.querySelector("#spreadsheetEditorFreezeTopRow");
+    freezeFirstColumnBtn = modal.querySelector("#spreadsheetEditorFreezeFirstColumn");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
     fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
@@ -4965,6 +5160,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     valignSelect?.addEventListener("click", () => toggleToolbarIconMenu(valignSelect, valignMenu));
     bindToolbarIconMenu(alignMenu, "align", alignSelect);
     bindToolbarIconMenu(valignMenu, "valign", valignSelect);
+
+    freezeTopRowBtn?.addEventListener("click", () => {
+      const freeze = currentEditorFreeze();
+      setEditorFreezeMode("topRow", !(freeze.topRows > 0));
+    });
+
+    freezeFirstColumnBtn?.addEventListener("click", () => {
+      const freeze = currentEditorFreeze();
+      setEditorFreezeMode("firstColumn", !(freeze.leftCols > 0));
+    });
     document.addEventListener("click", (ev) => {
       const target = ev.target;
       if (target && target.closest && target.closest(".spreadsheetIconMenu, .spreadsheetIconMenuBtn")) return;
@@ -5196,6 +5401,72 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
   }
 
+
+  function currentEditorFreeze() {
+    const sheet = state.sheets[state.active];
+    return normalizeSheetFreeze(sheet && sheet.freeze);
+  }
+
+  function updateFreezeToolbarButtons() {
+    const freeze = currentEditorFreeze();
+
+    if (freezeTopRowBtn) {
+      const active = freeze.topRows > 0;
+      freezeTopRowBtn.setAttribute("aria-pressed", active ? "true" : "false");
+      freezeTopRowBtn.classList.toggle("active", active);
+    }
+
+    if (freezeFirstColumnBtn) {
+      const active = freeze.leftCols > 0;
+      freezeFirstColumnBtn.setAttribute("aria-pressed", active ? "true" : "false");
+      freezeFirstColumnBtn.classList.toggle("active", active);
+    }
+  }
+
+  function setEditorFreezeMode(kind, enabled) {
+    const sheet = state.sheets[state.active];
+    if (!sheet) return;
+
+    const before = captureHistorySnapshot();
+    const freeze = normalizeSheetFreeze(sheet.freeze);
+
+    if (kind === "topRow") {
+      freeze.topRows = enabled ? 1 : 0;
+    } else if (kind === "firstColumn") {
+      freeze.leftCols = enabled ? 1 : 0;
+    } else {
+      return;
+    }
+
+    sheet.freeze = freeze;
+    commitHistorySnapshot(before);
+    state.dirty = true;
+
+    updateButtons();
+    render();
+  }
+
+  function applyEditorFreezeMode(table, sheet) {
+    if (!table) return;
+
+    const freeze = normalizeSheetFreeze(sheet && sheet.freeze);
+    table.toggleAttribute("data-spreadsheet-freeze-top-row", freeze.topRows > 0);
+    table.toggleAttribute("data-spreadsheet-freeze-first-column", freeze.leftCols > 0);
+  }
+
+  function refreshEditorFreezeOffsets(table) {
+    if (!table) return;
+
+    const corner = table.querySelector("thead th.corner");
+    const firstRowHead = table.querySelector("tbody th.rowHead");
+
+    const topOffset = Math.ceil(corner ? corner.getBoundingClientRect().height : 24);
+    const leftOffset = Math.ceil(firstRowHead ? firstRowHead.getBoundingClientRect().width : 44);
+
+    table.style.setProperty("--spreadsheet-editor-freeze-top-offset", `${topOffset}px`);
+    table.style.setProperty("--spreadsheet-editor-freeze-left-offset", `${leftOffset}px`);
+  }
+
   function render() {
     if (!bodyEl) return;
     renderTabs();
@@ -5213,6 +5484,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const table = document.createElement("table");
     table.className = "spreadsheetEditorTable";
     table.setAttribute("aria-label", tr("filemgr.spreadsheet_editor.cell_grid", null, "Editable spreadsheet cells"));
+    applyEditorFreezeMode(table, sheet);
     attachHeaderSelectionHandlers(table);
 
     const colgroup = document.createElement("colgroup");
@@ -5552,6 +5824,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     surface.className = "spreadsheetSheetSurface";
     surface.appendChild(table);
     bodyEl.appendChild(surface);
+    refreshEditorFreezeOffsets(table);
+    requestAnimationFrame(() => refreshEditorFreezeOffsets(table));
+    updateFreezeToolbarButtons();
 
     const overlayApi = FM && FM.spreadsheetImageOverlay;
     if (overlayApi && typeof overlayApi.render === "function") {

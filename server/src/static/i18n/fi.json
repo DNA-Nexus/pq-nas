@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.paste_over_merge_blocked": "Liittäminen yhdistettyjen solujen päälle estettiin.",
   "filemgr.spreadsheet_editor.cell": "Solu",
   "filemgr.spreadsheet_editor.merge_cells": "Yhdistä solut",
-  "filemgr.spreadsheet_editor.unmerge_cells": "Pura solujen yhdistys"
+  "filemgr.spreadsheet_editor.unmerge_cells": "Pura solujen yhdistys",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Jäädytä ylin rivi",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Jäädytä ensimmäinen sarake"
 }

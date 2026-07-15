@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.paste_over_merge_blocked": "Pasting over merged cells was blocked.",
   "filemgr.spreadsheet_editor.cell": "Cell",
   "filemgr.spreadsheet_editor.merge_cells": "Merge cells",
-  "filemgr.spreadsheet_editor.unmerge_cells": "Unmerge cells"
+  "filemgr.spreadsheet_editor.unmerge_cells": "Unmerge cells",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Freeze top row",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Freeze first column"
 }

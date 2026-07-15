@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Alla",
   "filemgr.spreadsheet_editor.valign_middle": "Keskele",
   "filemgr.spreadsheet_editor.valign_top": "Üles",
-  "filemgr.spreadsheet_editor.vertical_align": "Vertikaalne joondus"
+  "filemgr.spreadsheet_editor.vertical_align": "Vertikaalne joondus",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Kinnita ülemine rida",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Kinnita esimene veerg"
 }

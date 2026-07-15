@@ -5679,5 +5679,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Внизу",
   "filemgr.spreadsheet_editor.valign_middle": "Посередині",
   "filemgr.spreadsheet_editor.valign_top": "Вгорі",
-  "filemgr.spreadsheet_editor.vertical_align": "Вертикальне вирівнювання"
+  "filemgr.spreadsheet_editor.vertical_align": "Вертикальне вирівнювання",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Закріпити верхній рядок",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Закріпити перший стовпець"
 }

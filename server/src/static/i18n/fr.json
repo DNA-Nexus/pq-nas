@@ -5679,5 +5679,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Bas",
   "filemgr.spreadsheet_editor.valign_middle": "Milieu",
   "filemgr.spreadsheet_editor.valign_top": "Haut",
-  "filemgr.spreadsheet_editor.vertical_align": "Alignement vertical"
+  "filemgr.spreadsheet_editor.vertical_align": "Alignement vertical",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Figer la ligne supérieure",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Figer la première colonne"
 }
