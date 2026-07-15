@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Dół",
   "filemgr.spreadsheet_editor.valign_middle": "Środek",
   "filemgr.spreadsheet_editor.valign_top": "Góra",
-  "filemgr.spreadsheet_editor.vertical_align": "Wyrównanie pionowe"
+  "filemgr.spreadsheet_editor.vertical_align": "Wyrównanie pionowe",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Zablokuj górny wiersz",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Zablokuj pierwszą kolumnę"
 }

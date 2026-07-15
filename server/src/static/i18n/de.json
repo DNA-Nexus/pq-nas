@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Unten",
   "filemgr.spreadsheet_editor.valign_middle": "Mitte",
   "filemgr.spreadsheet_editor.valign_top": "Oben",
-  "filemgr.spreadsheet_editor.vertical_align": "Vertikale Ausrichtung"
+  "filemgr.spreadsheet_editor.vertical_align": "Vertikale Ausrichtung",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Oberste Zeile fixieren",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Erste Spalte fixieren"
 }

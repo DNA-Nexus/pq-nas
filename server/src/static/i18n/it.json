@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "In basso",
   "filemgr.spreadsheet_editor.valign_middle": "Al centro",
   "filemgr.spreadsheet_editor.valign_top": "In alto",
-  "filemgr.spreadsheet_editor.vertical_align": "Allineamento verticale"
+  "filemgr.spreadsheet_editor.vertical_align": "Allineamento verticale",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Blocca riga superiore",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Blocca prima colonna"
 }

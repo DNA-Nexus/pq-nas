@@ -5687,5 +5687,7 @@
   "filemgr.spreadsheet_editor.valign_bottom": "Abajo",
   "filemgr.spreadsheet_editor.valign_middle": "Medio",
   "filemgr.spreadsheet_editor.valign_top": "Arriba",
-  "filemgr.spreadsheet_editor.vertical_align": "Alineación vertical"
+  "filemgr.spreadsheet_editor.vertical_align": "Alineación vertical",
+  "filemgr.spreadsheet_editor.freeze_top_row": "Inmovilizar fila superior",
+  "filemgr.spreadsheet_editor.freeze_first_column": "Inmovilizar primera columna"
 }
