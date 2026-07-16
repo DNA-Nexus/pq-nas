@@ -5138,9 +5138,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
       : [];
-    const workbookImages = imageApi && typeof imageApi.imagesFromWorkbookFiles === "function"
-      ? imageApi.imagesFromWorkbookFiles(wb, names)
-      : [];
+    const workbookImages =
+      imageApi &&
+      typeof imageApi.imagesFromWorkbookFiles ===
+        "function"
+        ? imageApi.imagesFromWorkbookFiles(
+            wb,
+            names,
+            state.workbookImageInfo
+          )
+        : [];
 
     if (!names.length) {
       return [{
@@ -7331,7 +7338,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     requestAnimationFrame(() => refreshEditorFreezeOffsets(table));
     updateFreezeToolbarButtons();
 
-    const overlayApi = FM && FM.spreadsheetImageOverlay;
+    const overlayApi =
+      FM && FM.spreadsheetImageOverlay;
+
+    const imageGeometryApi =
+      FM && FM.spreadsheetXlsxImages;
+
+    let imageTransformBefore = null;
+
     if (overlayApi && typeof overlayApi.render === "function") {
       overlayApi.render(surface, table, sheet, {
         defaultColWidth: sheetDefaultColumnWidth(sheet),
@@ -7352,6 +7366,61 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           if (typeof overlayApi.select === "function") {
             overlayApi.select(surface, state.selectedImageId);
           }
+        },
+
+        onTransformStart: () => {
+          imageTransformBefore =
+            captureHistorySnapshot();
+        },
+
+        onTransformCancel: () => {
+          imageTransformBefore = null;
+        },
+
+        onTransformCommit: (
+          imageId,
+          image,
+          rect,
+          geometry
+        ) => {
+          const before = imageTransformBefore;
+          imageTransformBefore = null;
+
+          if (
+            !before ||
+            state.sheets[state.active] !== sheet ||
+            !imageGeometryApi ||
+            typeof imageGeometryApi.applyImagePixelRect !==
+              "function"
+          ) {
+            render();
+            return;
+          }
+
+          const changed =
+            imageGeometryApi.applyImagePixelRect(
+              image,
+              sheet,
+              rect,
+              {
+                ...geometry,
+                imageId
+              }
+            );
+
+          if (!changed) {
+            render();
+            return;
+          }
+
+          state.selectedImageId = String(
+            imageId ||
+            image.id ||
+            ""
+          );
+
+          commitHistorySnapshot(before);
+          render();
         }
       });
     }
@@ -7802,6 +7871,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       render();
     }
   }
+
 
   async function saveCurrent() {
     if (state.saving || state.readOnly || state.tooLarge || !state.dirty) return;

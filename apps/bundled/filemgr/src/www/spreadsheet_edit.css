@@ -1129,7 +1129,14 @@
 
 .spreadsheetImageOverlayLayerSelectable .spreadsheetImageOverlayImageSelectable {
   pointer-events: auto;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+.spreadsheetImageMoving,
+.spreadsheetImageMoving .spreadsheetImageOverlayImageSelectable {
+  cursor: grabbing;
+  user-select: none;
 }
 
 

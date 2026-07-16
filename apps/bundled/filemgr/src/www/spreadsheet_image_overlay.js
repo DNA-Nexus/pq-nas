@@ -270,6 +270,246 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     img.style.height = `${rect.height}px`;
   }
 
+
+  function setImageRect(img, frame, rect) {
+    if (!img || !rect) return;
+
+    const left = clampPixel(rect.left);
+    const top = clampPixel(rect.top);
+    const width = clampPixel(
+      Math.max(8, Number(rect.width) || 8)
+    );
+    const height = clampPixel(
+      Math.max(8, Number(rect.height) || 8)
+    );
+
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+    img.style.width = `${width}px`;
+    img.style.height = `${height}px`;
+
+    img.dataset.spreadsheetAnchorLeft =
+      String(left);
+
+    img.dataset.spreadsheetAnchorTop =
+      String(top);
+
+    img.dataset.spreadsheetAnchorWidth =
+      String(width);
+
+    img.dataset.spreadsheetAnchorHeight =
+      String(height);
+
+    if (frame) {
+      frame.style.left = `${left}px`;
+      frame.style.top = `${top}px`;
+      frame.style.width = `${width}px`;
+      frame.style.height = `${height}px`;
+    }
+  }
+
+  function beginImageMove(
+    ev,
+    surface,
+    layer,
+    img,
+    imageId,
+    image,
+    geometry,
+    callbacks
+  ) {
+    if (
+      !ev ||
+      ev.button !== 0 ||
+      !surface ||
+      !layer ||
+      !img
+    ) {
+      return;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const startRect = visibleImageRect(img);
+
+    if (
+      startRect.width <= 0 ||
+      startRect.height <= 0
+    ) {
+      return;
+    }
+
+    if (callbacks.onSelect) {
+      callbacks.onSelect(
+        imageId,
+        image,
+        ev
+      );
+    }
+
+    const frame = layer.querySelector(
+      ".spreadsheetImageSelectionFrame"
+    );
+
+    const startX = Number(ev.clientX);
+    const startY = Number(ev.clientY);
+
+    let changed = false;
+    let currentRect = {
+      ...startRect
+    };
+
+    if (callbacks.onTransformStart) {
+      callbacks.onTransformStart(
+        imageId,
+        image,
+        startRect,
+        geometry
+      );
+    }
+
+    const cleanup = () => {
+      document.removeEventListener(
+        "pointermove",
+        onMove
+      );
+
+      document.removeEventListener(
+        "pointerup",
+        onUp
+      );
+
+      document.removeEventListener(
+        "pointercancel",
+        onCancel
+      );
+
+      document.body.classList.remove(
+        "spreadsheetImageMoving"
+      );
+    };
+
+    const onMove = (moveEv) => {
+      const dx =
+        Number(moveEv.clientX) - startX;
+
+      const dy =
+        Number(moveEv.clientY) - startY;
+
+      if (
+        !Number.isFinite(dx) ||
+        !Number.isFinite(dy)
+      ) {
+        return;
+      }
+
+      if (
+        !changed &&
+        Math.abs(dx) < 1 &&
+        Math.abs(dy) < 1
+      ) {
+        return;
+      }
+
+      changed = true;
+
+      currentRect = {
+        left: Math.max(
+          geometry.gridLeft,
+          startRect.left + dx
+        ),
+        top: Math.max(
+          geometry.gridTop,
+          startRect.top + dy
+        ),
+        width: startRect.width,
+        height: startRect.height
+      };
+
+      setImageRect(
+        img,
+        frame,
+        currentRect
+      );
+
+      if (callbacks.onTransformPreview) {
+        callbacks.onTransformPreview(
+          imageId,
+          image,
+          currentRect,
+          geometry
+        );
+      }
+    };
+
+    const onUp = () => {
+      cleanup();
+
+      if (!changed) {
+        if (callbacks.onTransformCancel) {
+          callbacks.onTransformCancel(
+            imageId,
+            image,
+            startRect,
+            geometry
+          );
+        }
+
+        return;
+      }
+
+      if (callbacks.onTransformCommit) {
+        callbacks.onTransformCommit(
+          imageId,
+          image,
+          currentRect,
+          geometry
+        );
+      }
+    };
+
+    const onCancel = () => {
+      cleanup();
+
+      setImageRect(
+        img,
+        frame,
+        startRect
+      );
+
+      if (callbacks.onTransformCancel) {
+        callbacks.onTransformCancel(
+          imageId,
+          image,
+          startRect,
+          geometry
+        );
+      }
+    };
+
+    document.body.classList.add(
+      "spreadsheetImageMoving"
+    );
+
+    document.addEventListener(
+      "pointermove",
+      onMove
+    );
+
+    document.addEventListener(
+      "pointerup",
+      onUp,
+      { once: true }
+    );
+
+    document.addEventListener(
+      "pointercancel",
+      onCancel,
+      { once: true }
+    );
+  }
+
   function appendSelectionFrame(layer, img) {
     if (!layer || !img) return;
 
@@ -337,7 +577,30 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const selectable = options.selectable === true;
     const selectedImageId = String(options.selectedImageId || "");
-    const onSelect = typeof options.onSelect === "function" ? options.onSelect : null;
+    const onSelect =
+      typeof options.onSelect === "function"
+        ? options.onSelect
+        : null;
+
+    const onTransformStart =
+      typeof options.onTransformStart === "function"
+        ? options.onTransformStart
+        : null;
+
+    const onTransformPreview =
+      typeof options.onTransformPreview === "function"
+        ? options.onTransformPreview
+        : null;
+
+    const onTransformCommit =
+      typeof options.onTransformCommit === "function"
+        ? options.onTransformCommit
+        : null;
+
+    const onTransformCancel =
+      typeof options.onTransformCancel === "function"
+        ? options.onTransformCancel
+        : null;
 
     const defaults = {
       colWidth: Number(options.defaultColWidth) || 120,
@@ -345,6 +608,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
 
     const metrics = tableHeaderMetrics(table);
+
+    const gridOrigin = pointForMarker(
+      surface,
+      table,
+      sheet,
+      {
+        col: 0,
+        colOff: 0,
+        row: 0,
+        rowOff: 0
+      },
+      defaults,
+      metrics
+    );
+
+    const transformGeometry = {
+      gridLeft: clampPixel(gridOrigin.x),
+      gridTop: clampPixel(gridOrigin.y),
+      defaultColWidth: defaults.colWidth,
+      defaultRowHeight: defaults.rowHeight
+    };
+
     const layer = document.createElement("div");
     layer.className = "spreadsheetImageOverlayLayer";
     if (selectable) {
@@ -430,11 +715,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         img.setAttribute("role", "button");
         img.setAttribute("aria-selected", imageId === selectedImageId ? "true" : "false");
 
-        img.addEventListener("pointerdown", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          if (onSelect) onSelect(imageId, image, ev);
-        });
+        img.addEventListener(
+          "pointerdown",
+          (ev) => {
+            beginImageMove(
+              ev,
+              surface,
+              layer,
+              img,
+              imageId,
+              image,
+              transformGeometry,
+              {
+                onSelect,
+                onTransformStart,
+                onTransformPreview,
+                onTransformCommit,
+                onTransformCancel
+              }
+            );
+          }
+        );
 
         img.addEventListener("keydown", (ev) => {
           if (ev.key !== "Enter" && ev.key !== " ") return;
