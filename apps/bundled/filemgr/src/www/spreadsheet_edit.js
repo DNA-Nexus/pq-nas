@@ -113,7 +113,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     activeCell: null,
     rangeSelection: null,
     editorGeometry: null,
-    selectedImageId: ""
+    selectedImageId: "",
+    workbookFont: null
   };
 
   function tr(key, vars = null, fallback = "") {
@@ -1546,9 +1547,52 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return xlsxDecimalNumFmtCode(f.decimals);
   }
 
-  function buildXlsxStyleCatalog() {
+  function normalizedWorkbookFont(font = null) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontDescriptor === "function") {
+      return api.normalizeFontDescriptor(font || state.workbookFont);
+    }
+
+    const source = font && typeof font === "object"
+      ? font
+      : (state.workbookFont && typeof state.workbookFont === "object"
+          ? state.workbookFont
+          : {});
+
+    return {
+      name: String(source.name || "Calibri"),
+      size: Number(source.size) > 0 ? Number(source.size) : 11,
+      family: String(source.family || "2"),
+      scheme: String(source.scheme || "minor")
+    };
+  }
+
+  function xlsxFontXml(font) {
+    const normalized = normalizedWorkbookFont(font);
+    const parts = [
+      "<font>",
+      `<sz val="${xlsxAttrEscape(normalized.size)}"/>`,
+      '<color theme="1"/>',
+      `<name val="${xlsxAttrEscape(normalized.name)}"/>`
+    ];
+
+    if (normalized.family) {
+      parts.push(`<family val="${xlsxAttrEscape(normalized.family)}"/>`);
+    }
+
+    if (normalized.scheme) {
+      parts.push(`<scheme val="${xlsxAttrEscape(normalized.scheme)}"/>`);
+    }
+
+    parts.push("</font>");
+    return parts.join("");
+  }
+
+  function buildXlsxStyleCatalog(workbookFont = null) {
+    const baseFont = normalizedWorkbookFont(workbookFont);
     const fonts = [{
-      xml: '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>'
+      xml: xlsxFontXml(baseFont)
     }];
     const fills = [
       { xml: '<fill><patternFill patternType="none"/></fill>' },
@@ -1595,7 +1639,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (f.bold) parts.push("<b/>");
       if (f.italic) parts.push("<i/>");
       if (f.underline) parts.push("<u/>");
-      parts.push(`<sz val="${f.fontSize || 11}"/>`);
+      parts.push(`<sz val="${f.fontSize || baseFont.size}"/>`);
 
       if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
         parts.push(`<color rgb="${xlsxAttrEscape(TEXT_COLOR_COLORS[f.fg].rgb)}"/>`);
@@ -1603,9 +1647,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         parts.push('<color theme="1"/>');
       }
 
-      parts.push('<name val="Calibri"/>');
-      parts.push('<family val="2"/>');
-      parts.push('<scheme val="minor"/>');
+      parts.push(`<name val="${xlsxAttrEscape(baseFont.name)}"/>`);
+
+      if (baseFont.family) {
+        parts.push(`<family val="${xlsxAttrEscape(baseFont.family)}"/>`);
+      }
+
+      if (baseFont.scheme) {
+        parts.push(`<scheme val="${xlsxAttrEscape(baseFont.scheme)}"/>`);
+      }
+
       parts.push("</font>");
 
       const id = fonts.length;
@@ -2277,7 +2328,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function buildStyledXlsxArrayBuffer() {
-    const styleCatalog = buildXlsxStyleCatalog();
+    const styleCatalog = buildXlsxStyleCatalog(state.workbookFont);
     const usedNames = new Set();
     const visibleSheets = [];
     const stylePayload = {};
@@ -4853,6 +4904,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bookFiles: true
     });
 
+    const fontsApi = FM && FM.spreadsheetFonts;
+    state.workbookFont =
+      fontsApi && typeof fontsApi.readWorkbookDefaultFont === "function"
+        ? fontsApi.readWorkbookDefaultFont(wb)
+        : normalizedWorkbookFont(null);
+
     const storedCellFormats = readStoredCellFormats(XLSX, wb);
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
@@ -7261,6 +7318,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.rangeSelection = null;
     state.editorGeometry = null;
     state.selectedImageId = "";
+    state.workbookFont = null;
     state.workbookImageInfo = null;
     state.workbookImageWarning = "";
 
