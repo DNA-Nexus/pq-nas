@@ -171,15 +171,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-editor-row-box-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
-      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
-      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-onecell-transform-1", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-onecell-transform-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-editor-exact-rows-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -290,12 +290,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-editor-row-box-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
 
-      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
-      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
+      loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-onecell-transform-1", "data-pqnas-spreadsheet-xlsx-images-js"),
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-onecell-transform-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]);
 
     return spreadsheetImageLoadPromise;
@@ -656,13 +656,54 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return clampPreviewRowHeight(defaultHeight);
   }
 
-  function previewColumnWidths(ws, colCount, defaultWidth) {
-    const count = Math.max(0, Number.isInteger(colCount) ? colCount : 0);
+  function previewColumnWidths(
+    wb,
+    ws,
+    sheetIndex,
+    colCount,
+    defaultWidth
+  ) {
+    const count = Math.max(
+      0,
+      Number.isInteger(colCount) ? colCount : 0
+    );
 
-    return Array.from({ length: count }, (_v, c) => {
-      const meta = ws && ws["!cols"] && ws["!cols"][c];
-      return xlsxPreviewColumnToPixelWidth(meta, defaultWidth);
-    });
+    const api =
+      FM && FM.spreadsheetXlsxDimensions;
+
+    if (
+      api &&
+      typeof api.worksheetColumnWidths ===
+        "function"
+    ) {
+      return api.worksheetColumnWidths(
+        wb,
+        sheetIndex,
+        count,
+        {
+          defaultColWidth: defaultWidth,
+          defaultRowHeight:
+            DEFAULT_PREVIEW_ROW_HEIGHT
+        }
+      ).map((width) =>
+        clampPreviewColumnWidth(width)
+      );
+    }
+
+    return Array.from(
+      { length: count },
+      (_v, col) => {
+        const meta =
+          ws &&
+          ws["!cols"] &&
+          ws["!cols"][col];
+
+        return xlsxPreviewColumnToPixelWidth(
+          meta,
+          defaultWidth
+        );
+      }
+    );
   }
 
   function previewRowHeights(ws, rowCount, defaultHeight) {
@@ -1216,20 +1257,82 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         defval: "",
         blankrows: true
       });
-      const bounds = worksheetPreviewBounds(XLSX, ws, rawRows);
-      const rows = padPreviewRowsForBounds(rawRows, bounds.rows, bounds.cols);
-      const colCount = bounds.cols;
-      const safeName = safePreviewSheetName(name, idx);
-      const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
+      const bounds = worksheetPreviewBounds(
+        XLSX,
+        ws,
+        rawRows
+      );
 
-      const sheetImages = workbookImages.filter((image) => image.sheetIndex === idx);
-      const defaults = previewWorksheetDefaults(wb, idx);
+      const sheetImages = workbookImages.filter(
+        (image) => image.sheetIndex === idx
+      );
+
+      const imageBounds =
+        imageApi &&
+        typeof imageApi.imageAnchorBounds ===
+          "function"
+          ? imageApi.imageAnchorBounds(
+              sheetImages
+            )
+          : {
+              rows: 0,
+              cols: 0
+            };
+
+      /*
+       * Images can extend beyond the worksheet's populated cell range.
+       * Determine the final grid bounds before reading row and column
+       * geometry, so extended columns retain their raw OOXML widths instead
+       * of receiving the generic preview fallback width.
+       */
+      const rowCount = Math.max(
+        bounds.rows,
+        Math.max(
+          0,
+          Math.floor(
+            Number(imageBounds.rows) || 0
+          )
+        )
+      );
+
+      const colCount = Math.max(
+        bounds.cols,
+        Math.max(
+          0,
+          Math.floor(
+            Number(imageBounds.cols) || 0
+          )
+        )
+      );
+
+      const rows = padPreviewRowsForBounds(
+        rawRows,
+        rowCount,
+        colCount
+      );
+
+      const safeName =
+        safePreviewSheetName(name, idx);
+
+      const storedFormats =
+        storedCellFormats[safeName] ||
+        storedCellFormats[name] ||
+        null;
+
+      const defaults =
+        previewWorksheetDefaults(wb, idx);
       const sheet = {
         name,
         rows,
         defaultColWidth: defaults.colWidth,
         defaultRowHeight: defaults.rowHeight,
-        colWidths: previewColumnWidths(ws, colCount, defaults.colWidth),
+        colWidths: previewColumnWidths(
+          wb,
+          ws,
+          idx,
+          colCount,
+          defaults.colWidth
+        ),
         rowHeights: previewRowHeights(ws, rows.length, defaults.rowHeight),
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats

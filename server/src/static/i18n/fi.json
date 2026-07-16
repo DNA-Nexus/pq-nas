@@ -5701,5 +5701,13 @@
   "filemgr.spreadsheet_editor.delete_sheet_title": "Poista välilehti?",
   "filemgr.spreadsheet_editor.delete_sheet_message": "Välilehti “{name}” ja kaikki sen sisältö poistetaan.",
   "filemgr.spreadsheet_editor.delete_sheet_confirm": "Poista",
-  "filemgr.spreadsheet_editor.delete_last_sheet": "Viimeistä jäljellä olevaa välilehteä ei voi poistaa."
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Viimeistä jäljellä olevaa välilehteä ei voi poistaa.",
+  "filemgr.spreadsheet_editor.insert_image": "Lisää kuva",
+  "filemgr.spreadsheet_editor.image_added": "Kuva lisätty: {name}",
+  "filemgr.spreadsheet_editor.image_invalid": "Vain kelvollisia PNG- ja JPEG-kuvia tuetaan.",
+  "filemgr.spreadsheet_editor.image_too_large": "Valittu kuva on tyhjä tai suurempi kuin 8 MiB.",
+  "filemgr.spreadsheet_editor.image_dimensions_too_large": "Kuvan mitat ovat liian suuret.",
+  "filemgr.spreadsheet_editor.image_count_limit": "Taulukon kuvamäärän raja on saavutettu.",
+  "filemgr.spreadsheet_editor.image_add_failed": "Kuvan lisääminen epäonnistui.",
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Kuvien lisäämistä välilehdelle, jolla on jo tuotuja piirrosobjekteja, ei vielä tueta."
 }

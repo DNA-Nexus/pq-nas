@@ -132,8 +132,9 @@
 .spreadsheetPreviewTable {
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
   width: max-content;
-  min-width: 100%;
+  min-width: 0;
   font-size: 13px;
 }
 

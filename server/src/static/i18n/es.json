@@ -5701,5 +5701,13 @@
   "filemgr.spreadsheet_editor.delete_sheet_title": "¿Eliminar hoja?",
   "filemgr.spreadsheet_editor.delete_sheet_message": "Se eliminarán la hoja “{name}” y todo su contenido.",
   "filemgr.spreadsheet_editor.delete_sheet_confirm": "Eliminar",
-  "filemgr.spreadsheet_editor.delete_last_sheet": "No se puede eliminar la última hoja."
+  "filemgr.spreadsheet_editor.delete_last_sheet": "No se puede eliminar la última hoja.",
+  "filemgr.spreadsheet_editor.insert_image": "Insert image",
+  "filemgr.spreadsheet_editor.image_added": "Image added: {name}",
+  "filemgr.spreadsheet_editor.image_invalid": "Only valid PNG and JPEG images are supported.",
+  "filemgr.spreadsheet_editor.image_too_large": "The selected image is empty or larger than 8 MiB.",
+  "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
+  "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
+  "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
 }

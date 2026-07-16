@@ -18,6 +18,58 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return Number.isFinite(n) ? n : 0;
   }
 
+
+  function oneCellTransformSize(image) {
+    if (
+      String(image && image.editAs || "") !==
+      "oneCell"
+    ) {
+      return null;
+    }
+
+    const transform =
+      image && image.transform;
+
+    const cx = Number(
+      transform && transform.cx
+    );
+
+    const cy = Number(
+      transform && transform.cy
+    );
+
+    if (
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy) ||
+      cx <= 0 ||
+      cy <= 0
+    ) {
+      return null;
+    }
+
+    /*
+     * oneCell objects move with their anchor cell but retain their DrawingML
+     * size. Using the rendered width of the from/to columns would make the
+     * image change size between preview, editor, LibreOffice and Excel.
+     */
+    return {
+      width: Math.max(
+        8,
+        Math.min(
+          MAX_OVERLAY_EDGE,
+          cx / EMU_PER_PIXEL
+        )
+      ),
+      height: Math.max(
+        8,
+        Math.min(
+          MAX_OVERLAY_EDGE,
+          cy / EMU_PER_PIXEL
+        )
+      )
+    };
+  }
+
   function sumDimension(values, count, fallback) {
     const n = Math.max(0, Math.min(MAX_OVERLAY_EDGE, Number(count) || 0));
     let total = 0;
@@ -332,8 +384,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       const left = clampPixel(p1.x);
       const top = clampPixel(p1.y);
-      const width = clampPixel(Math.max(8, p2.x - p1.x));
-      const height = clampPixel(Math.max(8, p2.y - p1.y));
+      const fixedSize = oneCellTransformSize(image);
+
+      const width = fixedSize
+        ? clampPixel(fixedSize.width)
+        : clampPixel(Math.max(8, p2.x - p1.x));
+
+      const height = fixedSize
+        ? clampPixel(fixedSize.height)
+        : clampPixel(Math.max(8, p2.y - p1.y));
+
       const imageId = imageIdFor(image, imageIndex);
 
       const img = document.createElement("img");
@@ -352,6 +412,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       img.dataset.spreadsheetAnchorTop = String(top);
       img.dataset.spreadsheetAnchorWidth = String(width);
       img.dataset.spreadsheetAnchorHeight = String(height);
+      img.dataset.spreadsheetImageEditAs = String(
+        image && image.editAs || ""
+      );
+
+      if (fixedSize) {
+        img.dataset.spreadsheetTransformWidth =
+          String(fixedSize.width);
+
+        img.dataset.spreadsheetTransformHeight =
+          String(fixedSize.height);
+      }
 
       if (selectable) {
         img.classList.add("spreadsheetImageOverlayImageSelectable");
