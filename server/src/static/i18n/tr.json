@@ -5639,6 +5639,8 @@
   "filemgr.spreadsheet_editor.underline": "Altı çizili",
   "filemgr.spreadsheet_editor.font_size": "Yazı tipi boyutu",
   "filemgr.spreadsheet_editor.font_size_default": "Boyut",
+  "filemgr.spreadsheet_editor.font_family": "Yazı tipi",
+  "filemgr.spreadsheet_editor.font_family_default": "Varsayılan ({font})",
   "filemgr.spreadsheet_editor.borders": "Kenarlıklar",
   "filemgr.spreadsheet_editor.border_none": "Özel kenarlık yok",
   "filemgr.spreadsheet_editor.border_all_thin": "Tüm ince kenarlıklar",

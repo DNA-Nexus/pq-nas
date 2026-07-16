@@ -11,10 +11,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const MAX_RENDER_COLS = 80;
   const XLSX_VENDOR_URL = "./vendor/xlsx.full.min.js";
   const DEFAULT_PREVIEW_COL_WIDTH = 96;
-  const MIN_PREVIEW_COL_WIDTH = 72;
+  const MIN_PREVIEW_COL_WIDTH = 1;
   const MAX_PREVIEW_COL_WIDTH = 520;
   const DEFAULT_PREVIEW_ROW_HEIGHT = 22;
-  const MIN_PREVIEW_ROW_HEIGHT = 18;
+  const MIN_PREVIEW_ROW_HEIGHT = 1;
   const MAX_PREVIEW_ROW_HEIGHT = 260;
 
   let modal = null;
@@ -171,13 +171,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
+      loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
+      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -275,8 +277,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function ensureSpreadsheetImageModules() {
     if (
       FM &&
+      FM.spreadsheetXlsxDimensions &&
       FM.spreadsheetXlsxImages &&
       FM.spreadsheetImageOverlay &&
+      typeof FM.spreadsheetXlsxDimensions.worksheetDefaults === "function" &&
       typeof FM.spreadsheetXlsxImages.imagesFromWorkbookFiles === "function" &&
       typeof FM.spreadsheetImageOverlay.render === "function"
     ) {
@@ -286,9 +290,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
+
+      loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]);
 
     return spreadsheetImageLoadPromise;
@@ -509,6 +516,33 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return String(value == null ? "" : value);
   }
 
+  function normalizePreviewFontName(value) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontName === "function") {
+      return api.normalizeFontName(value);
+    }
+
+    return String(value == null ? "" : value)
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .trim()
+      .slice(0, 128);
+  }
+
+  function previewCssFontFamily(value, fallback = "") {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.cssFontFamily === "function") {
+      return api.cssFontFamily(value, fallback);
+    }
+
+    const name =
+      normalizePreviewFontName(value) ||
+      normalizePreviewFontName(fallback);
+
+    return name ? `"${name}"` : "";
+  }
+
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
@@ -522,6 +556,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
+      fontName: normalizePreviewFontName(
+        src.fontName || src.fontFamily || src.font
+      ),
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       decimals,
       numberFormat,
@@ -570,44 +607,70 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function clampPreviewColumnWidth(width) {
     const n = Number(width);
     if (!Number.isFinite(n)) return DEFAULT_PREVIEW_COL_WIDTH;
-    return Math.max(MIN_PREVIEW_COL_WIDTH, Math.min(MAX_PREVIEW_COL_WIDTH, Math.round(n)));
+    return Math.max(MIN_PREVIEW_COL_WIDTH, Math.min(MAX_PREVIEW_COL_WIDTH, n));
   }
 
   function clampPreviewRowHeight(height) {
     const n = Number(height);
     if (!Number.isFinite(n)) return DEFAULT_PREVIEW_ROW_HEIGHT;
-    return Math.max(MIN_PREVIEW_ROW_HEIGHT, Math.min(MAX_PREVIEW_ROW_HEIGHT, Math.round(n)));
+    return Math.max(MIN_PREVIEW_ROW_HEIGHT, Math.min(MAX_PREVIEW_ROW_HEIGHT, n));
   }
 
-  function xlsxPreviewColumnToPixelWidth(col) {
-    if (!col || typeof col !== "object") return DEFAULT_PREVIEW_COL_WIDTH;
-    if (Number.isFinite(col.wpx)) return clampPreviewColumnWidth(col.wpx);
-    if (Number.isFinite(col.width)) return clampPreviewColumnWidth((col.width * 8) + 16);
-    if (Number.isFinite(col.wch)) return clampPreviewColumnWidth((col.wch * 8) + 16);
-    return DEFAULT_PREVIEW_COL_WIDTH;
+  function previewWorksheetDefaults(wb, sheetIndex) {
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.worksheetDefaults === "function") {
+      return api.worksheetDefaults(wb, sheetIndex, {
+        defaultColWidth: DEFAULT_PREVIEW_COL_WIDTH,
+        defaultRowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+      });
+    }
+
+    return {
+      colWidth: DEFAULT_PREVIEW_COL_WIDTH,
+      rowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+    };
   }
 
-  function xlsxPreviewRowToPixelHeight(row) {
-    if (!row || typeof row !== "object") return 0;
-    if (Number.isFinite(row.hpx)) return clampPreviewRowHeight(row.hpx);
-    if (Number.isFinite(row.ht)) return clampPreviewRowHeight(row.ht / 0.75);
-    if (Number.isFinite(row.hpt)) return clampPreviewRowHeight(row.hpt / 0.75);
-    return 0;
+  function xlsxPreviewColumnToPixelWidth(col, defaultWidth) {
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.columnToCssPixels === "function") {
+      return clampPreviewColumnWidth(
+        api.columnToCssPixels(col, defaultWidth)
+      );
+    }
+
+    return clampPreviewColumnWidth(defaultWidth);
   }
 
-  function previewColumnWidths(ws, colCount) {
+  function xlsxPreviewRowToPixelHeight(row, defaultHeight) {
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.rowToCssPixels === "function") {
+      return clampPreviewRowHeight(
+        api.rowToCssPixels(row, defaultHeight)
+      );
+    }
+
+    return clampPreviewRowHeight(defaultHeight);
+  }
+
+  function previewColumnWidths(ws, colCount, defaultWidth) {
     const count = Math.max(0, Number.isInteger(colCount) ? colCount : 0);
+
     return Array.from({ length: count }, (_v, c) => {
       const meta = ws && ws["!cols"] && ws["!cols"][c];
-      return xlsxPreviewColumnToPixelWidth(meta);
+      return xlsxPreviewColumnToPixelWidth(meta, defaultWidth);
     });
   }
 
-  function previewRowHeights(ws, rowCount) {
+  function previewRowHeights(ws, rowCount, defaultHeight) {
     const count = Math.max(0, Number.isInteger(rowCount) ? rowCount : 0);
+
     return Array.from({ length: count }, (_v, r) => {
       const meta = ws && ws["!rows"] && ws["!rows"][r];
-      return xlsxPreviewRowToPixelHeight(meta);
+      return xlsxPreviewRowToPixelHeight(meta, defaultHeight);
     });
   }
 
@@ -700,6 +763,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
           underline: !!(style && style.font && style.font.underline),
+          fontName: normalizePreviewFontName(
+            style && style.font && style.font.name
+          ),
           fontSize: normalizePreviewFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           valign: normalizePreviewVerticalAlign(style && style.alignment && style.alignment.vertical),
@@ -708,7 +774,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontName || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
@@ -724,6 +790,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.style.fontWeight = f.bold ? "700" : "";
     td.style.fontStyle = f.italic ? "italic" : "";
     td.style.textDecoration = f.underline ? "underline" : "";
+    td.style.fontFamily = f.fontName
+      ? previewCssFontFamily(f.fontName)
+      : "";
     td.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     td.style.textAlign = f.align || "";
     td.style.verticalAlign = previewVerticalAlignCss(f.valign);
@@ -1154,11 +1223,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
 
       const sheetImages = workbookImages.filter((image) => image.sheetIndex === idx);
+      const defaults = previewWorksheetDefaults(wb, idx);
       const sheet = {
         name,
         rows,
-        colWidths: previewColumnWidths(ws, colCount),
-        rowHeights: previewRowHeights(ws, rows.length),
+        defaultColWidth: defaults.colWidth,
+        defaultRowHeight: defaults.rowHeight,
+        colWidths: previewColumnWidths(ws, colCount, defaults.colWidth),
+        rowHeights: previewRowHeights(ws, rows.length, defaults.rowHeight),
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats
           : extractPreviewCellFormats(XLSX, ws, rows.length, colCount),
@@ -1169,8 +1241,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       if (imageApi && typeof imageApi.expandSheetForImages === "function") {
         imageApi.expandSheetForImages(sheet, {
-          defaultColWidth: DEFAULT_PREVIEW_COL_WIDTH,
-          defaultRowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+          defaultColWidth: sheet.defaultColWidth,
+          defaultRowHeight: sheet.defaultRowHeight
         });
       }
 
@@ -1454,8 +1526,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const overlayApi = FM && FM.spreadsheetImageOverlay;
     if (overlayApi && typeof overlayApi.render === "function") {
       overlayApi.render(surface, table, sheet, {
-        defaultColWidth: DEFAULT_PREVIEW_COL_WIDTH,
-        defaultRowHeight: DEFAULT_PREVIEW_ROW_HEIGHT
+        defaultColWidth: Number(sheet.defaultColWidth) || DEFAULT_PREVIEW_COL_WIDTH,
+        defaultRowHeight: Number(sheet.defaultRowHeight) || DEFAULT_PREVIEW_ROW_HEIGHT
       });
     }
 

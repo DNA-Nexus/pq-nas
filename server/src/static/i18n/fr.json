@@ -5631,6 +5631,8 @@
   "filemgr.spreadsheet_editor.underline": "Souligné",
   "filemgr.spreadsheet_editor.font_size": "Taille de police",
   "filemgr.spreadsheet_editor.font_size_default": "Taille",
+  "filemgr.spreadsheet_editor.font_family": "Police",
+  "filemgr.spreadsheet_editor.font_family_default": "Par défaut ({font})",
   "filemgr.spreadsheet_editor.borders": "Bordures",
   "filemgr.spreadsheet_editor.border_none": "Aucune bordure personnalisée",
   "filemgr.spreadsheet_editor.border_all_thin": "Toutes les bordures fines",

@@ -72,6 +72,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let boldBtn = null;
   let italicBtn = null;
   let underlineBtn = null;
+  let fontNameSelect = null;
   let fontSizeSelect = null;
   let decreaseDecimalsBtn = null;
   let increaseDecimalsBtn = null;
@@ -113,7 +114,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     activeCell: null,
     rangeSelection: null,
     editorGeometry: null,
-    selectedImageId: ""
+    selectedImageId: "",
+    workbookFont: null
   };
 
   function tr(key, vars = null, fallback = "") {
@@ -344,9 +346,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!input) return;
 
     const f = normalizeCellFormat(fmt);
-    const rowHeight = clampRowHeight(
+    const rowHeight = normalizeRowGeometry(
       parseFloat(input.style.height) ||
-      (typeof input.getBoundingClientRect === "function" ? input.getBoundingClientRect().height : 0) ||
+      (typeof input.getBoundingClientRect === "function" ? input.getBoundingClientRect().height : 0),
       DEFAULT_ROW_HEIGHT
     );
 
@@ -562,6 +564,43 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return decimalPlacesFromText(raw);
   }
 
+  function normalizeSpreadsheetFontName(value) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontName === "function") {
+      return api.normalizeFontName(value);
+    }
+
+    return String(value == null ? "" : value)
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .trim()
+      .slice(0, 128);
+  }
+
+  function workbookDefaultFontName() {
+    const font = normalizedWorkbookFont(state.workbookFont);
+    return normalizeSpreadsheetFontName(font.name) || "Calibri";
+  }
+
+  function effectiveCellFontName(fmt) {
+    const f = normalizeCellFormat(fmt);
+    return f.fontName || workbookDefaultFontName();
+  }
+
+  function spreadsheetCssFontFamily(name, fallback = "") {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.cssFontFamily === "function") {
+      return api.cssFontFamily(name, fallback);
+    }
+
+    const normalized =
+      normalizeSpreadsheetFontName(name) ||
+      normalizeSpreadsheetFontName(fallback);
+
+    return normalized ? `"${normalized}"` : "";
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
@@ -574,6 +613,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
+      fontName: normalizeSpreadsheetFontName(
+        src.fontName || src.fontFamily || src.font
+      ),
       fontSize: normalizeFontSize(src.fontSize || src.sz),
       decimals,
       numberFormat,
@@ -588,7 +630,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && f.decimals == null && !f.numberFormat && !f.currency && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
+    return !f.bold && !f.italic && !f.underline && !f.fontName && !f.fontSize && f.decimals == null && !f.numberFormat && !f.currency && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -760,17 +802,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function mergeColumnPixelWidth(colWidths, col1, col2) {
     let total = 0;
     for (let c = col1; c <= col2; c++) {
-      total += clampColumnWidth(colWidths[c]);
+      total += normalizeColumnGeometry(colWidths[c], DEFAULT_COL_WIDTH);
     }
-    return Math.max(MIN_COL_WIDTH, total);
+    return Math.max(1, total);
   }
 
   function mergeRowPixelHeight(rowHeights, row1, row2) {
     let total = 0;
     for (let r = row1; r <= row2; r++) {
-      total += clampRowHeight(rowHeights[r]);
+      total += normalizeRowGeometry(rowHeights[r], DEFAULT_ROW_HEIGHT);
     }
-    return Math.max(MIN_ROW_HEIGHT, total);
+    return Math.max(1, total);
   }
 
   function mergeRangeHasHiddenData(sheet, merge) {
@@ -863,6 +905,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.style.fontWeight = f.bold ? "700" : "";
     input.style.fontStyle = f.italic ? "italic" : "";
     input.style.textDecoration = f.underline ? "underline" : "";
+    input.style.fontFamily = spreadsheetCssFontFamily(
+      effectiveCellFontName(f)
+    );
     input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
     applyInputVerticalAlign(input, f);
@@ -1122,6 +1167,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       if (kind === "bold" || kind === "italic" || kind === "underline") {
         fmt[kind] = enable;
+      } else if (kind === "fontName") {
+        fmt.fontName = normalizeSpreadsheetFontName(value);
       } else if (kind === "fontSize") {
         fmt.fontSize = normalizeFontSize(value);
       } else if (kind === "align") {
@@ -1194,6 +1241,66 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
+  function workbookFormatFontNames() {
+    const names = [];
+
+    for (const sheet of Array.isArray(state.sheets) ? state.sheets : []) {
+      const rows = Array.isArray(sheet && sheet.cellFormats)
+        ? sheet.cellFormats
+        : [];
+
+      for (const row of rows) {
+        for (const rawFormat of Array.isArray(row) ? row : []) {
+          const name = normalizeCellFormat(rawFormat).fontName;
+          if (name) names.push(name);
+        }
+      }
+    }
+
+    return names;
+  }
+
+  function refreshFontNameOptions(selectedName = "") {
+    if (!fontNameSelect) return;
+
+    const defaultName = workbookDefaultFontName();
+    const api = FM && FM.spreadsheetFonts;
+    const names =
+      api && typeof api.availableFontNames === "function"
+        ? api.availableFontNames(
+            state.workbookFont,
+            workbookFormatFontNames().concat([selectedName])
+          )
+        : [defaultName, "Arial", "Calibri", "Courier New", "Georgia", "Verdana"];
+
+    fontNameSelect.replaceChildren();
+
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = tr(
+      "filemgr.spreadsheet_editor.font_family_default",
+      { font: defaultName },
+      `Default (${defaultName})`
+    );
+    defaultOption.style.fontFamily = spreadsheetCssFontFamily(defaultName);
+    fontNameSelect.appendChild(defaultOption);
+
+    /*
+     * Security: workbook-provided font names are assigned with value and
+     * textContent. They are never inserted through innerHTML.
+     */
+    for (const rawName of names) {
+      const name = normalizeSpreadsheetFontName(rawName);
+      if (!name) continue;
+
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      option.style.fontFamily = spreadsheetCssFontFamily(name);
+      fontNameSelect.appendChild(option);
+    }
+  }
+
   function updateFormatToolbar() {
     const disabled = state.saving || state.readOnly || state.tooLarge;
     const first = firstFormatTargetCell();
@@ -1203,6 +1310,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (const btn of [boldBtn, italicBtn, underlineBtn, decreaseDecimalsBtn, increaseDecimalsBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
+    if (fontNameSelect) fontNameSelect.disabled = disabled;
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
     if (numberFormatSelect) numberFormatSelect.disabled = disabled;
     if (alignSelect) alignSelect.disabled = disabled;
@@ -1211,6 +1319,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     setToolButtonActive(boldBtn, !!fmt.bold);
     setToolButtonActive(italicBtn, !!fmt.italic);
     setToolButtonActive(underlineBtn, !!fmt.underline);
+
+    if (fontNameSelect) {
+      refreshFontNameOptions(fmt.fontName);
+      fontNameSelect.value = fmt.fontName || "";
+    }
+
     if (fontSizeSelect) {
       fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
     }
@@ -1335,11 +1449,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (isEmptyCellFormat(f)) return null;
 
     const style = {};
-    if (f.bold || f.italic || f.underline || f.fontSize || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
+    if (f.bold || f.italic || f.underline || f.fontName || f.fontSize || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
       style.font = {};
       if (f.bold) style.font.bold = true;
       if (f.italic) style.font.italic = true;
       if (f.underline) style.font.underline = true;
+      if (f.fontName) style.font.name = f.fontName;
       if (f.fontSize) style.font.sz = f.fontSize;
       if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
         style.font.color = { rgb: TEXT_COLOR_COLORS[f.fg].rgb };
@@ -1409,28 +1524,39 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return `A1:${xlsxCellRef(rows - 1, cols - 1)}`;
   }
 
-  function xlsxColumnPixelWidthToExcelWidth(px) {
-    const widthPx = clampColumnWidth(px);
+  function roundedXlsxDimension(value) {
+    const n = Number(value);
+    return Number.isFinite(n)
+      ? Math.round(n * 100000000) / 100000000
+      : 0;
+  }
 
-    // Excel stores column widths in character units, not pixels. This mirrors
-    // the common Calibri 11 approximation more closely than a simple /8.
-    if (widthPx <= 12) return 1;
-    return Math.max(1, Math.round(((widthPx - 5) / 7) * 100) / 100);
+  function xlsxColumnPixelWidthToExcelWidth(px) {
+    const widthPx = normalizeColumnGeometry(px, DEFAULT_COL_WIDTH);
+    const api = FM && FM.spreadsheetXlsxDimensions;
+    const converted = api && typeof api.cssPixelsToExcelColumnWidth === "function"
+      ? api.cssPixelsToExcelColumnWidth(widthPx)
+      : (widthPx <= 12 ? 1 : (widthPx - 5) / 7);
+
+    return Math.max(1, roundedXlsxDimension(converted));
   }
 
   function xlsxRowPixelHeightToPointHeight(px) {
-    const heightPx = clampRowHeight(px);
+    const heightPx = normalizeRowGeometry(px, DEFAULT_ROW_HEIGHT);
+    const api = FM && FM.spreadsheetXlsxDimensions;
+    const converted = api && typeof api.cssPixelsToPoints === "function"
+      ? api.cssPixelsToPoints(heightPx)
+      : heightPx * 0.75;
 
-    // Excel row heights are points. Browser CSS pixels are approximately
-    // 0.75 pt at 96 DPI, so this is intentionally an approximation.
-    return Math.max(1, Math.round((heightPx * 0.75) * 100) / 100);
+    return Math.max(1, roundedXlsxDimension(converted));
   }
 
   function xlsxRowHeightForSheetRow(sheet, rowIndex, colCount) {
     const explicitHeights = ensureSheetRowHeights(sheet, Math.max(rowIndex + 1, 0));
     const explicitPx = explicitHeights[rowIndex];
+    const defaultPx = sheetDefaultRowHeight(sheet);
 
-    if (Number.isFinite(explicitPx) && clampRowHeight(explicitPx) !== DEFAULT_ROW_HEIGHT) {
+    if (!sameSheetDimension(explicitPx, defaultPx)) {
       return xlsxRowPixelHeightToPointHeight(explicitPx);
     }
 
@@ -1482,6 +1608,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!f.bold,
       italic: !!f.italic,
       underline: !!f.underline,
+      fontName: f.fontName || "",
       fontSize: f.fontSize || 0,
       fg: f.fg || ""
     });
@@ -1535,9 +1662,52 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return xlsxDecimalNumFmtCode(f.decimals);
   }
 
-  function buildXlsxStyleCatalog() {
+  function normalizedWorkbookFont(font = null) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontDescriptor === "function") {
+      return api.normalizeFontDescriptor(font || state.workbookFont);
+    }
+
+    const source = font && typeof font === "object"
+      ? font
+      : (state.workbookFont && typeof state.workbookFont === "object"
+          ? state.workbookFont
+          : {});
+
+    return {
+      name: String(source.name || "Calibri"),
+      size: Number(source.size) > 0 ? Number(source.size) : 11,
+      family: String(source.family || "2"),
+      scheme: String(source.scheme || "minor")
+    };
+  }
+
+  function xlsxFontXml(font) {
+    const normalized = normalizedWorkbookFont(font);
+    const parts = [
+      "<font>",
+      `<sz val="${xlsxAttrEscape(normalized.size)}"/>`,
+      '<color theme="1"/>',
+      `<name val="${xlsxAttrEscape(normalized.name)}"/>`
+    ];
+
+    if (normalized.family) {
+      parts.push(`<family val="${xlsxAttrEscape(normalized.family)}"/>`);
+    }
+
+    if (normalized.scheme) {
+      parts.push(`<scheme val="${xlsxAttrEscape(normalized.scheme)}"/>`);
+    }
+
+    parts.push("</font>");
+    return parts.join("");
+  }
+
+  function buildXlsxStyleCatalog(workbookFont = null) {
+    const baseFont = normalizedWorkbookFont(workbookFont);
     const fonts = [{
-      xml: '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>'
+      xml: xlsxFontXml(baseFont)
     }];
     const fills = [
       { xml: '<fill><patternFill patternType="none"/></fill>' },
@@ -1575,7 +1745,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     function ensureFont(fmt) {
       const f = normalizeCellFormat(fmt);
       const key = xlsxStyleFontKey(f);
-      const defaultKey = JSON.stringify({ bold: false, italic: false, underline: false, fontSize: 0, fg: "" });
+      const defaultKey = JSON.stringify({ bold: false, italic: false, underline: false, fontName: "", fontSize: 0, fg: "" });
 
       if (key === defaultKey) return 0;
       if (fontIds.has(key)) return fontIds.get(key);
@@ -1584,7 +1754,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (f.bold) parts.push("<b/>");
       if (f.italic) parts.push("<i/>");
       if (f.underline) parts.push("<u/>");
-      parts.push(`<sz val="${f.fontSize || 11}"/>`);
+      parts.push(`<sz val="${f.fontSize || baseFont.size}"/>`);
 
       if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
         parts.push(`<color rgb="${xlsxAttrEscape(TEXT_COLOR_COLORS[f.fg].rgb)}"/>`);
@@ -1592,9 +1762,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         parts.push('<color theme="1"/>');
       }
 
-      parts.push('<name val="Calibri"/>');
-      parts.push('<family val="2"/>');
-      parts.push('<scheme val="minor"/>');
+      const fontsApi = FM && FM.spreadsheetFonts;
+      const selectedFont =
+        fontsApi && typeof fontsApi.fontDescriptorForName === "function"
+          ? fontsApi.fontDescriptorForName(f.fontName, baseFont)
+          : {
+              ...baseFont,
+              name: f.fontName || baseFont.name,
+              scheme: f.fontName ? "" : baseFont.scheme
+            };
+
+      parts.push(`<name val="${xlsxAttrEscape(selectedFont.name)}"/>`);
+
+      if (selectedFont.family) {
+        parts.push(`<family val="${xlsxAttrEscape(selectedFont.family)}"/>`);
+      }
+
+      if (selectedFont.scheme) {
+        parts.push(`<scheme val="${xlsxAttrEscape(selectedFont.scheme)}"/>`);
+      }
+
       parts.push("</font>");
 
       const id = fonts.length;
@@ -1922,10 +2109,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const drawingXml = drawingRelId ? `<drawing r:id="${xlsxAttrEscape(drawingRelId)}"/>` : "";
     const cache = computeSheetCache(sheet);
 
-    const colsXml = colWidths.length
-      ? `<cols>${colWidths.map((w, i) => {
-          const width = xlsxColumnPixelWidthToExcelWidth(w);
-          return `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`;
+    const defaultColWidthPx = sheetDefaultColumnWidth(sheet);
+    const defaultRowHeightPx = sheetDefaultRowHeight(sheet);
+    const defaultColWidth = xlsxColumnPixelWidthToExcelWidth(defaultColWidthPx);
+    const defaultRowHeight = xlsxRowPixelHeightToPointHeight(defaultRowHeightPx);
+
+    const customCols = colWidths
+      .map((width, index) => ({ width, index }))
+      .filter((item) => !sameSheetDimension(item.width, defaultColWidthPx));
+
+    const colsXml = customCols.length
+      ? `<cols>${customCols.map((item) => {
+          const width = xlsxColumnPixelWidthToExcelWidth(item.width);
+          return `<col min="${item.index + 1}" max="${item.index + 1}" width="${width}" customWidth="1"/>`;
         }).join("")}</cols>`
       : "";
 
@@ -1969,10 +2165,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
 
       const rowHeight = xlsxRowHeightForSheetRow(sheet, r, colCount);
-      const explicitCustomHeight = clampRowHeight(rowHeights[r]) !== DEFAULT_ROW_HEIGHT;
+      const explicitCustomHeight = rowHeight > 0;
 
       if (cells.length || explicitCustomHeight) {
-        const rowAttrs = rowHeight ? ` r="${r + 1}" ht="${rowHeight}" customHeight="1"` : ` r="${r + 1}"`;
+        const rowAttrs = explicitCustomHeight
+          ? ` r="${r + 1}" ht="${rowHeight}" customHeight="1"`
+          : ` r="${r + 1}"`;
         rowXml.push(`<row${rowAttrs}>${cells.join("")}</row>`);
       }
     }
@@ -1982,7 +2180,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
       `<dimension ref="${xlsxDimensionRef(rowCount || 1, colCount || 1)}"/>`,
       xlsxSheetViewsXml(sheet, rowCount || 1, colCount || 1),
-      '<sheetFormatPr defaultRowHeight="15"/>',
+      `<sheetFormatPr defaultColWidth="${defaultColWidth}" defaultRowHeight="${defaultRowHeight}"/>`,
       colsXml,
       `<sheetData>${rowXml.join("")}</sheetData>`,
       mergeCellsXml,
@@ -2255,7 +2453,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function buildStyledXlsxArrayBuffer() {
-    const styleCatalog = buildXlsxStyleCatalog();
+    const styleCatalog = buildXlsxStyleCatalog(state.workbookFont);
     const usedNames = new Set();
     const visibleSheets = [];
     const stylePayload = {};
@@ -2309,33 +2507,122 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function clampColumnWidth(width) {
     const n = Number(width);
     if (!Number.isFinite(n)) return DEFAULT_COL_WIDTH;
+
+    // Interactive resizing keeps the existing usability limits.
     return Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, Math.round(n)));
   }
 
   function clampRowHeight(height) {
     const n = Number(height);
     if (!Number.isFinite(n)) return DEFAULT_ROW_HEIGHT;
+
+    // Interactive resizing keeps the existing usability limits.
     return Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.round(n)));
   }
 
-  function xlsxColumnToPixelWidth(col) {
-    if (!col || typeof col !== "object") return DEFAULT_COL_WIDTH;
-    if (Number.isFinite(col.wpx)) return clampColumnWidth(col.wpx);
+  function normalizeColumnGeometry(width, fallback = DEFAULT_COL_WIDTH) {
+    const n = Number(width);
+    const fallbackValue = Number(fallback);
+    const value = Number.isFinite(n) && n > 0
+      ? n
+      : (Number.isFinite(fallbackValue) && fallbackValue > 0
+          ? fallbackValue
+          : DEFAULT_COL_WIDTH);
 
-    // Keep import as the inverse of xlsxColumnPixelWidthToExcelWidth().
-    // Otherwise every save/reopen cycle gradually widens worksheet columns.
-    if (Number.isFinite(col.width)) return clampColumnWidth((col.width * 7) + 5);
-    if (Number.isFinite(col.wch)) return clampColumnWidth((col.wch * 7) + 5);
-
-    return DEFAULT_COL_WIDTH;
+    return Math.max(1, Math.min(MAX_COL_WIDTH, value));
   }
 
-  function xlsxRowToPixelHeight(row) {
-    if (!row || typeof row !== "object") return DEFAULT_ROW_HEIGHT;
-    if (Number.isFinite(row.hpx)) return clampRowHeight(row.hpx);
-    if (Number.isFinite(row.ht)) return clampRowHeight(row.ht / 0.75);
-    if (Number.isFinite(row.hpt)) return clampRowHeight(row.hpt / 0.75);
-    return DEFAULT_ROW_HEIGHT;
+  function normalizeRowGeometry(height, fallback = DEFAULT_ROW_HEIGHT) {
+    const n = Number(height);
+    const fallbackValue = Number(fallback);
+    const value = Number.isFinite(n) && n > 0
+      ? n
+      : (Number.isFinite(fallbackValue) && fallbackValue > 0
+          ? fallbackValue
+          : DEFAULT_ROW_HEIGHT);
+
+    return Math.max(1, Math.min(MAX_ROW_HEIGHT, value));
+  }
+
+  function sheetDefaultColumnWidth(sheet) {
+    return normalizeColumnGeometry(
+      sheet && sheet.defaultColWidth,
+      DEFAULT_COL_WIDTH
+    );
+  }
+
+  function sheetDefaultRowHeight(sheet) {
+    return normalizeRowGeometry(
+      sheet && sheet.defaultRowHeight,
+      DEFAULT_ROW_HEIGHT
+    );
+  }
+
+  function sameSheetDimension(a, b) {
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.sameDimension === "function") {
+      return api.sameDimension(a, b);
+    }
+
+    const left = Number(a);
+    const right = Number(b);
+
+    return Number.isFinite(left) &&
+      Number.isFinite(right) &&
+      Math.abs(left - right) <= 0.01;
+  }
+
+  function xlsxColumnToPixelWidth(col, defaultWidth) {
+    const fallback = normalizeColumnGeometry(defaultWidth, DEFAULT_COL_WIDTH);
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.columnToCssPixels === "function") {
+      return normalizeColumnGeometry(
+        api.columnToCssPixels(col, fallback),
+        fallback
+      );
+    }
+
+    if (!col || typeof col !== "object") return fallback;
+    if (Number.isFinite(col.wpx)) {
+      return normalizeColumnGeometry(col.wpx, fallback);
+    }
+    if (Number.isFinite(col.width)) {
+      return normalizeColumnGeometry((col.width * 7) + 5, fallback);
+    }
+    if (Number.isFinite(col.wch)) {
+      return normalizeColumnGeometry((col.wch * 7) + 5, fallback);
+    }
+
+    return fallback;
+  }
+
+  function xlsxRowToPixelHeight(row, defaultHeight) {
+    const fallback = normalizeRowGeometry(defaultHeight, DEFAULT_ROW_HEIGHT);
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.rowToCssPixels === "function") {
+      return normalizeRowGeometry(
+        api.rowToCssPixels(row, fallback),
+        fallback
+      );
+    }
+
+    if (!row || typeof row !== "object") return fallback;
+
+    // SheetJS may expose hpx with the point value. Prefer hpt/ht.
+    if (Number.isFinite(row.hpt)) {
+      return normalizeRowGeometry(row.hpt / 0.75, fallback);
+    }
+    if (Number.isFinite(row.ht)) {
+      return normalizeRowGeometry(row.ht / 0.75, fallback);
+    }
+    if (Number.isFinite(row.hpx)) {
+      return normalizeRowGeometry(row.hpx, fallback);
+    }
+
+    return fallback;
   }
 
   function ensureSheetColWidths(sheet, colCount) {
@@ -2346,8 +2633,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       sheet.colWidths = [];
     }
 
+    const defaultWidth = sheetDefaultColumnWidth(sheet);
+
     while (sheet.colWidths.length < count) {
-      sheet.colWidths.push(DEFAULT_COL_WIDTH);
+      sheet.colWidths.push(defaultWidth);
     }
 
     if (sheet.colWidths.length > count) {
@@ -2355,7 +2644,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     for (let i = 0; i < sheet.colWidths.length; i++) {
-      sheet.colWidths[i] = clampColumnWidth(sheet.colWidths[i]);
+      sheet.colWidths[i] = normalizeColumnGeometry(
+        sheet.colWidths[i],
+        defaultWidth
+      );
     }
 
     return sheet.colWidths;
@@ -2363,7 +2655,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function sheetColumnWidth(sheet, col) {
     const widths = ensureSheetColWidths(sheet, col + 1);
-    return clampColumnWidth(widths[col]);
+    return normalizeColumnGeometry(
+      widths[col],
+      sheetDefaultColumnWidth(sheet)
+    );
   }
 
   function applyColumnWidth(el, width) {
@@ -2379,7 +2674,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return;
     }
 
-    const px = `${clampColumnWidth(width)}px`;
+    const px = `${normalizeColumnGeometry(width, DEFAULT_COL_WIDTH)}px`;
     el.style.width = px;
     el.style.minWidth = px;
     el.style.maxWidth = px;
@@ -2393,8 +2688,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       sheet.rowHeights = [];
     }
 
+    const defaultHeight = sheetDefaultRowHeight(sheet);
+
     while (sheet.rowHeights.length < count) {
-      sheet.rowHeights.push(DEFAULT_ROW_HEIGHT);
+      sheet.rowHeights.push(defaultHeight);
     }
 
     if (sheet.rowHeights.length > count) {
@@ -2402,7 +2699,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     for (let i = 0; i < sheet.rowHeights.length; i++) {
-      sheet.rowHeights[i] = clampRowHeight(sheet.rowHeights[i]);
+      sheet.rowHeights[i] = normalizeRowGeometry(
+        sheet.rowHeights[i],
+        defaultHeight
+      );
     }
 
     return sheet.rowHeights;
@@ -2410,13 +2710,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function sheetRowHeight(sheet, row) {
     const heights = ensureSheetRowHeights(sheet, row + 1);
-    return clampRowHeight(heights[row]);
+    return normalizeRowGeometry(
+      heights[row],
+      sheetDefaultRowHeight(sheet)
+    );
   }
 
   function applyRowHeight(el, height) {
     if (!el) return;
 
-    const px = `${clampRowHeight(height)}px`;
+    const px = `${normalizeRowGeometry(height, DEFAULT_ROW_HEIGHT)}px`;
     el.style.height = px;
     el.style.minHeight = px;
   }
@@ -2472,6 +2775,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     span.style.fontWeight = f.bold ? "700" : "";
     span.style.fontStyle = f.italic ? "italic" : "";
     span.style.textDecoration = f.underline ? "underline" : "";
+    span.style.fontFamily = spreadsheetCssFontFamily(
+      effectiveCellFontName(f)
+    );
     span.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
 
     if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
@@ -4578,12 +4884,37 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return out;
   }
 
-  function worksheetToEditableRows(XLSX, ws) {
+  function worksheetDimensionDefaults(wb, sheetIndex) {
+    const api = FM && FM.spreadsheetXlsxDimensions;
+
+    if (api && typeof api.worksheetDefaults === "function") {
+      return api.worksheetDefaults(wb, sheetIndex, {
+        defaultColWidth: DEFAULT_COL_WIDTH,
+        defaultRowHeight: DEFAULT_ROW_HEIGHT
+      });
+    }
+
+    return {
+      colWidth: DEFAULT_COL_WIDTH,
+      rowHeight: DEFAULT_ROW_HEIGHT
+    };
+  }
+
+  function worksheetToEditableRows(XLSX, ws, defaults = {}) {
+    const defaultColWidth = normalizeColumnGeometry(
+      defaults.colWidth,
+      DEFAULT_COL_WIDTH
+    );
+    const defaultRowHeight = normalizeRowGeometry(
+      defaults.rowHeight,
+      DEFAULT_ROW_HEIGHT
+    );
+
     if (!ws || !ws["!ref"]) {
       return {
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
-        colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
-        rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
+        colWidths: Array.from({ length: DEFAULT_COLS }, () => defaultColWidth),
+        rowHeights: Array.from({ length: DEFAULT_ROWS }, () => defaultRowHeight),
         merges: [],
         tooLarge: false
       };
@@ -4621,12 +4952,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const colWidths = Array.from({ length: colCount }, (_v, c) => {
       const meta = ws["!cols"] && ws["!cols"][c];
-      return xlsxColumnToPixelWidth(meta);
+      return xlsxColumnToPixelWidth(meta, defaultColWidth);
     });
 
     const rowHeights = Array.from({ length: rowCount }, (_v, r) => {
       const meta = ws["!rows"] && ws["!rows"][r];
-      return xlsxRowToPixelHeight(meta);
+      return xlsxRowToPixelHeight(meta, defaultRowHeight);
     });
 
     const cellFormats = Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => null));
@@ -4639,6 +4970,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
           underline: !!(style && style.font && style.font.underline),
+          fontName: normalizeSpreadsheetFontName(
+            style && style.font && style.font.name
+          ),
           fontSize: normalizeFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           valign: normalizeVerticalAlign(style && style.alignment && style.alignment.vertical),
@@ -4701,6 +5035,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bookFiles: true
     });
 
+    const fontsApi = FM && FM.spreadsheetFonts;
+    state.workbookFont =
+      fontsApi && typeof fontsApi.readWorkbookDefaultFont === "function"
+        ? fontsApi.readWorkbookDefaultFont(wb)
+        : normalizedWorkbookFont(null);
+
     const storedCellFormats = readStoredCellFormats(XLSX, wb);
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
@@ -4713,6 +5053,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return [{
         name: tr("filemgr.spreadsheet_create.sheet.sheet1", null, "Sheet1"),
         rows: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => "")),
+        defaultColWidth: DEFAULT_COL_WIDTH,
+        defaultRowHeight: DEFAULT_ROW_HEIGHT,
         colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
         rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
         cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null)),
@@ -4723,7 +5065,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     let anyTooLarge = false;
     const sheets = names.map((name, idx) => {
-      const converted = worksheetToEditableRows(XLSX, wb.Sheets[name]);
+      const defaults = worksheetDimensionDefaults(wb, idx);
+      const converted = worksheetToEditableRows(
+        XLSX,
+        wb.Sheets[name],
+        defaults
+      );
       anyTooLarge = anyTooLarge || converted.tooLarge;
       const safeName = safeSheetName(name, idx);
       const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
@@ -4731,6 +5078,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const sheet = {
         name: safeName,
         rows: converted.rows,
+        defaultColWidth: defaults.colWidth,
+        defaultRowHeight: defaults.rowHeight,
         colWidths: converted.colWidths,
         rowHeights: converted.rowHeights,
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
@@ -4741,8 +5090,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       if (imageApi && typeof imageApi.expandSheetForImages === "function") {
         imageApi.expandSheetForImages(sheet, {
-          defaultColWidth: DEFAULT_COL_WIDTH,
-          defaultRowHeight: DEFAULT_ROW_HEIGHT
+          defaultColWidth: sheet.defaultColWidth,
+          defaultRowHeight: sheet.defaultRowHeight
         });
       }
 
@@ -5071,6 +5420,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorUnderline" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}" title="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v6a5 5 0 0 0 10 0V5"></path><path d="M5 21h14"></path></svg>
             </button>
+            <select id="spreadsheetEditorFontName" class="spreadsheetFontSizeSelect spreadsheetFontNameSelect" aria-label="${tr("filemgr.spreadsheet_editor.font_family", null, "Font")}" title="${tr("filemgr.spreadsheet_editor.font_family", null, "Font")}"></select>
             <select id="spreadsheetEditorFontSize" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}" title="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}">
               <option value="">${tr("filemgr.spreadsheet_editor.font_size_default", null, "Size")}</option>
               ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}">${size}</option>`).join("")}
@@ -5140,6 +5490,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     boldBtn = modal.querySelector("#spreadsheetEditorBold");
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
     underlineBtn = modal.querySelector("#spreadsheetEditorUnderline");
+    fontNameSelect = modal.querySelector("#spreadsheetEditorFontName");
     fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
     decreaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsDecrease");
     increaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsIncrease");
@@ -5157,6 +5508,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     boldBtn?.addEventListener("click", () => applyFormatCommand("bold"));
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));
     underlineBtn?.addEventListener("click", () => applyFormatCommand("underline"));
+    fontNameSelect?.addEventListener("change", () => {
+      applyFormatCommand("fontName", fontNameSelect.value);
+    });
     fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
     decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
     increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));
@@ -5451,6 +5805,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function createBlankEditorSheet(name) {
     return {
       name,
+      defaultColWidth: DEFAULT_COL_WIDTH,
+      defaultRowHeight: DEFAULT_ROW_HEIGHT,
       rows: Array.from(
         { length: DEFAULT_ROWS },
         () => Array.from({ length: DEFAULT_COLS }, () => "")
@@ -6571,8 +6927,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const overlayApi = FM && FM.spreadsheetImageOverlay;
     if (overlayApi && typeof overlayApi.render === "function") {
       overlayApi.render(surface, table, sheet, {
-        defaultColWidth: DEFAULT_COL_WIDTH,
-        defaultRowHeight: DEFAULT_ROW_HEIGHT,
+        defaultColWidth: sheetDefaultColumnWidth(sheet),
+        defaultRowHeight: sheetDefaultRowHeight(sheet),
         selectable: true,
         selectedImageId: state.selectedImageId,
         onSelect: (imageId) => {
@@ -7098,6 +7454,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     state.rangeSelection = null;
     state.editorGeometry = null;
     state.selectedImageId = "";
+    state.workbookFont = null;
     state.workbookImageInfo = null;
     state.workbookImageWarning = "";
 
