@@ -89,14 +89,21 @@
 
 .spreadsheetPreviewTabs {
   display: flex;
+  flex: 0 0 auto;
+  align-items: center;
   gap: 6px;
+  min-height: 31px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  overflow-y: hidden;
   background: var(--spreadsheet-surface);
 }
 
 .spreadsheetPreviewTab {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 29px;
   border: 1px solid var(--border);
   background: var(--button-bg, var(--spreadsheet-surface-2));
   color: var(--button-text, var(--text));
@@ -104,6 +111,8 @@
   padding: 6px 10px;
   font: inherit;
   font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -178,7 +187,7 @@
 .spreadsheetPreviewTable thead th {
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 6;
   text-align: center;
 }
 
@@ -202,7 +211,41 @@
 
 .spreadsheetPreviewTable thead .corner {
   left: 0;
+  z-index: 8;
+}
+
+/* Keep the first worksheet row below the column headings while scrolling. */
+.spreadsheetPreviewTable[data-spreadsheet-freeze-top-row] tbody tr:first-child > th.rowHead {
+  top: var(--spreadsheet-preview-freeze-top-offset, 24px);
+  z-index: 5;
+  box-shadow: inset 0 -1px 0 var(--accent, var(--fg));
+}
+
+.spreadsheetPreviewTable[data-spreadsheet-freeze-top-row] tbody tr:first-child > td {
+  position: sticky;
+  top: var(--spreadsheet-preview-freeze-top-offset, 24px);
+  z-index: 3;
+  box-shadow: inset 0 -1px 0 var(--accent, var(--fg));
+}
+
+/* Keep the complete first column frozen, including its A heading. */
+.spreadsheetPreviewTable[data-spreadsheet-freeze-first-column] tbody td[data-col="0"] {
+  position: sticky;
+  left: var(--spreadsheet-preview-freeze-left-offset, 54px);
+  z-index: 3;
+  box-shadow: inset -1px 0 0 var(--accent, var(--fg));
+}
+
+.spreadsheetPreviewTable[data-spreadsheet-freeze-first-column] thead th[data-col="0"] {
+  left: var(--spreadsheet-preview-freeze-left-offset, 54px);
+  z-index: 7;
+}
+
+.spreadsheetPreviewTable[data-spreadsheet-freeze-top-row][data-spreadsheet-freeze-first-column] tbody tr:first-child > td[data-col="0"] {
   z-index: 4;
+  box-shadow:
+    inset 0 -1px 0 var(--accent, var(--fg)),
+    inset -1px 0 0 var(--accent, var(--fg));
 }
 
 .spreadsheetPreviewEmpty,

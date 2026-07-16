@@ -218,7 +218,7 @@
 .spreadsheetEditorTable th {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 6;
   min-width: 80px;
   padding: 5px 6px;
   background: var(--spreadsheet-editor-surface-2);
@@ -239,7 +239,7 @@
 .spreadsheetEditorTable .corner {
   top: 0;
   left: 0;
-  z-index: 3;
+  z-index: 8;
 }
 
 .spreadsheetEditorTable[data-spreadsheet-freeze-top-row] tbody tr:first-child > th.rowHead {
@@ -260,6 +260,13 @@
   left: var(--spreadsheet-editor-freeze-left-offset, 44px);
   z-index: 3;
   box-shadow: inset -1px 0 0 var(--accent, var(--fg));
+}
+
+/* Keep the frozen column label aligned above the frozen data column.
+   It stays below the corner cell but above scrolling headers and cells. */
+.spreadsheetEditorTable[data-spreadsheet-freeze-first-column] thead th.colHead[data-col="0"] {
+  left: var(--spreadsheet-editor-freeze-left-offset, 44px);
+  z-index: 7;
 }
 
 .spreadsheetEditorTable[data-spreadsheet-freeze-top-row][data-spreadsheet-freeze-first-column] tbody tr:first-child > td[data-col="0"] {
