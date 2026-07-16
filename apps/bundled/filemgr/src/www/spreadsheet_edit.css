@@ -191,7 +191,9 @@
 .spreadsheetEditorTable {
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 100%;
+  table-layout: fixed;
+  width: max-content;
+  min-width: 0;
   font-size: 12px;
   line-height: 1.25;
 
@@ -207,6 +209,17 @@
 .spreadsheetEditorTable td {
   border-right: 1px solid var(--border, var(--panel-border));
   border-bottom: 1px solid var(--border, var(--panel-border));
+}
+
+/*
+ * XLSX row heights describe the complete row box. Include the cell border
+ * inside that height so a 20 px workbook row does not become 21 px in the
+ * editor and gradually drift away from oneCell image geometry.
+ */
+.spreadsheetEditorTable tbody tr,
+.spreadsheetEditorTable tbody th,
+.spreadsheetEditorTable tbody td {
+  box-sizing: border-box;
 }
 
 

@@ -149,6 +149,115 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
+
+  function worksheetColumnWidths(
+    wb,
+    sheetIndex,
+    colCount,
+    options = {}
+  ) {
+    const count = Math.max(
+      0,
+      Math.floor(Number(colCount) || 0)
+    );
+
+    const defaults = worksheetDefaults(
+      wb,
+      sheetIndex,
+      options
+    );
+
+    const fallbackWidth = safeDimension(
+      defaults.colWidth,
+      options.defaultColWidth || 96
+    );
+
+    const widths = Array.from(
+      { length: count },
+      () => fallbackWidth
+    );
+
+    const files =
+      wb &&
+      wb.files &&
+      typeof wb.files === "object"
+        ? wb.files
+        : null;
+
+    if (
+      !files ||
+      !Number.isInteger(sheetIndex) ||
+      sheetIndex < 0 ||
+      count <= 0
+    ) {
+      return widths;
+    }
+
+    const worksheetPath =
+      `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+
+    const doc = parseXml(
+      workbookFileText(files[worksheetPath])
+    );
+
+    if (!doc || !doc.getElementsByTagName) {
+      return widths;
+    }
+
+    /*
+     * SheetJS may derive wpx using the font referenced by a column style.
+     * That can turn an XLSX width such as 19.43 into 272 pixels. The raw OOXML
+     * width and its min/max range are authoritative for worksheet geometry.
+     */
+    for (
+      const element of Array.from(
+        doc.getElementsByTagName("*")
+      )
+    ) {
+      if (
+        element.localName !== "col" ||
+        !element.getAttribute
+      ) {
+        continue;
+      }
+
+      const min = Math.floor(
+        Number(element.getAttribute("min"))
+      );
+
+      const max = Math.floor(
+        Number(element.getAttribute("max"))
+      );
+
+      const width = excelColumnWidthToCssPixels(
+        element.getAttribute("width")
+      );
+
+      if (
+        !Number.isInteger(min) ||
+        !Number.isInteger(max) ||
+        min < 1 ||
+        max < min ||
+        !width
+      ) {
+        continue;
+      }
+
+      const start = Math.max(0, min - 1);
+      const end = Math.min(count - 1, max - 1);
+      const safeWidth = safeDimension(
+        width,
+        fallbackWidth
+      );
+
+      for (let col = start; col <= end; col++) {
+        widths[col] = safeWidth;
+      }
+    }
+
+    return widths;
+  }
+
   function columnToCssPixels(col, defaultWidth) {
     if (col && typeof col === "object") {
       const wpx = finitePositive(col.wpx);
@@ -191,6 +300,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     cssPixelsToExcelColumnWidth,
     sameDimension,
     worksheetDefaults,
+    worksheetColumnWidths,
     columnToCssPixels,
     rowToCssPixels
   };

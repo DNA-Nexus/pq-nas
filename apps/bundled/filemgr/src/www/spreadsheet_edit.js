@@ -69,6 +69,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let saveBtn = null;
   let addRowBtn = null;
   let addColBtn = null;
+  let insertImageBtn = null;
+  let insertImageInput = null;
   let boldBtn = null;
   let italicBtn = null;
   let underlineBtn = null;
@@ -2468,7 +2470,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const allSheetNames = visibleSheets.map((item) => item.outputName).concat([STYLE_SHEET_NAME]);
     const imageApi = FM && FM.spreadsheetXlsxImages;
     const imageExport = imageApi && typeof imageApi.prepareExport === "function"
-      ? imageApi.prepareExport(state.workbookImageInfo, visibleSheets.length)
+      ? imageApi.prepareExport(
+          state.workbookImageInfo,
+          visibleSheets.map((item) => item.sheet)
+        )
       : null;
     const entries = [];
 
@@ -2719,9 +2724,32 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function applyRowHeight(el, height) {
     if (!el) return;
 
-    const px = `${normalizeRowGeometry(height, DEFAULT_ROW_HEIGHT)}px`;
+    const requestedHeight = normalizeRowGeometry(
+      height,
+      DEFAULT_ROW_HEIGHT
+    );
+
+    const tagName = String(
+      el.tagName || ""
+    ).toUpperCase();
+
+    /*
+     * XLSX row height represents the complete visible row. With separate
+     * table borders, TH/TD height acts as a content minimum and the 1 px
+     * bottom border otherwise makes every rendered row one pixel too tall.
+     *
+     * Inputs receive the same compensation so their fixed height cannot
+     * force the table row back to requestedHeight + 1.
+     */
+    const renderedHeight = tagName === "TR"
+      ? requestedHeight
+      : Math.max(1, requestedHeight - 1);
+
+    const px = `${renderedHeight}px`;
+
     el.style.height = px;
     el.style.minHeight = px;
+    el.style.maxHeight = px;
   }
 
   function isEditorPlainTextOverflowCandidate(value, fmt) {
@@ -2844,7 +2872,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!table) return;
 
     const pxHeight = clampRowHeight(height);
-    const header = table.querySelector(`th[data-row="${row}"]`);
+
+    const rowElement =
+      table.tBodies &&
+      table.tBodies[0] &&
+      table.tBodies[0].rows
+        ? table.tBodies[0].rows[row]
+        : null;
+
+    applyRowHeight(rowElement, pxHeight);
+
+    const header = table.querySelector(
+      `th[data-row="${row}"]`
+    );
+
     applyRowHeight(header, pxHeight);
 
     const sheet = state.sheets[state.active];
@@ -4926,7 +4967,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const tooLarge = sourceRows > MAX_EDIT_ROWS || sourceCols > MAX_EDIT_COLS;
 
     const rowCount = Math.max(Math.min(sourceRows, MAX_EDIT_ROWS), DEFAULT_ROWS);
-    const colCount = Math.max(Math.min(sourceCols, MAX_EDIT_COLS), DEFAULT_COLS);
+    const minimumCols = Math.min(
+      MAX_EDIT_COLS,
+      Math.max(
+        DEFAULT_COLS,
+        Math.floor(
+          Number(defaults.minimumCols) || 0
+        )
+      )
+    );
+
+    const colCount = Math.max(
+      Math.min(sourceCols, MAX_EDIT_COLS),
+      minimumCols
+    );
     const rows = [];
 
     for (let r = 0; r < rowCount; r++) {
@@ -4950,10 +5004,49 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       rows.push(row);
     }
 
-    const colWidths = Array.from({ length: colCount }, (_v, c) => {
-      const meta = ws["!cols"] && ws["!cols"][c];
-      return xlsxColumnToPixelWidth(meta, defaultColWidth);
-    });
+    const dimensionsApi =
+      FM && FM.spreadsheetXlsxDimensions;
+
+    const rawColumnWidths =
+      dimensionsApi &&
+      typeof dimensionsApi.worksheetColumnWidths ===
+        "function"
+        ? dimensionsApi.worksheetColumnWidths(
+            defaults.workbook,
+            defaults.sheetIndex,
+            colCount,
+            {
+              defaultColWidth,
+              defaultRowHeight
+            }
+          )
+        : null;
+
+    const colWidths = Array.from(
+      { length: colCount },
+      (_v, col) => {
+        if (
+          Array.isArray(rawColumnWidths) &&
+          Number.isFinite(
+            Number(rawColumnWidths[col])
+          )
+        ) {
+          return normalizeColumnGeometry(
+            rawColumnWidths[col],
+            defaultColWidth
+          );
+        }
+
+        const meta =
+          ws["!cols"] &&
+          ws["!cols"][col];
+
+        return xlsxColumnToPixelWidth(
+          meta,
+          defaultColWidth
+        );
+      }
+    );
 
     const rowHeights = Array.from({ length: rowCount }, (_v, r) => {
       const meta = ws["!rows"] && ws["!rows"][r];
@@ -5065,16 +5158,47 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     let anyTooLarge = false;
     const sheets = names.map((name, idx) => {
-      const defaults = worksheetDimensionDefaults(wb, idx);
+      const defaults =
+        worksheetDimensionDefaults(wb, idx);
+
+      const sheetImages = workbookImages.filter(
+        (image) => image.sheetIndex === idx
+      );
+
+      const imageBounds =
+        imageApi &&
+        typeof imageApi.imageAnchorBounds ===
+          "function"
+          ? imageApi.imageAnchorBounds(
+              sheetImages
+            )
+          : {
+              rows: 0,
+              cols: 0
+            };
+
       const converted = worksheetToEditableRows(
         XLSX,
         wb.Sheets[name],
-        defaults
+        {
+          ...defaults,
+          workbook: wb,
+          sheetIndex: idx,
+          minimumCols: imageBounds.cols
+        }
       );
-      anyTooLarge = anyTooLarge || converted.tooLarge;
-      const safeName = safeSheetName(name, idx);
-      const storedFormats = storedCellFormats[safeName] || storedCellFormats[name] || null;
-      const sheetImages = workbookImages.filter((image) => image.sheetIndex === idx);
+
+      anyTooLarge =
+        anyTooLarge || converted.tooLarge;
+
+      const safeName =
+        safeSheetName(name, idx);
+
+      const storedFormats =
+        storedCellFormats[safeName] ||
+        storedCellFormats[name] ||
+        null;
+
       const sheet = {
         name: safeName,
         rows: converted.rows,
@@ -5396,6 +5520,237 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     appendEditorResizeHandle(box, "spreadsheetEditorResizeCorner", "corner");
   }
 
+
+  function insertedImageTargetCell() {
+    const active = state.activeCell;
+
+    if (
+      active &&
+      Number.isInteger(active.row) &&
+      Number.isInteger(active.col) &&
+      active.row >= 0 &&
+      active.col >= 0
+    ) {
+      return {
+        row: active.row,
+        col: active.col
+      };
+    }
+
+    return {
+      row: 0,
+      col: 0
+    };
+  }
+
+  function insertedImageErrorText(error) {
+    const code = String(
+      error && error.code || ""
+    );
+
+    if (code === "unsupported_image_type") {
+      return tr(
+        "filemgr.spreadsheet_editor.image_invalid",
+        null,
+        "Only valid PNG and JPEG images are supported."
+      );
+    }
+
+    if (
+      code === "image_file_too_large" ||
+      code === "empty_image_file"
+    ) {
+      return tr(
+        "filemgr.spreadsheet_editor.image_too_large",
+        null,
+        "The selected image is empty or larger than 8 MiB."
+      );
+    }
+
+    if (code === "image_dimensions_too_large") {
+      return tr(
+        "filemgr.spreadsheet_editor.image_dimensions_too_large",
+        null,
+        "The image dimensions are too large."
+      );
+    }
+
+    if (code === "image_count_limit") {
+      return tr(
+        "filemgr.spreadsheet_editor.image_count_limit",
+        null,
+        "The spreadsheet image limit has been reached."
+      );
+    }
+
+    return tr(
+      "filemgr.spreadsheet_editor.image_add_failed",
+      null,
+      "The image could not be added."
+    );
+  }
+
+  async function insertSpreadsheetImageFile(file) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      !file
+    ) {
+      return;
+    }
+
+    const imageApi =
+      FM && FM.spreadsheetXlsxImages;
+
+    const sheetIndex = state.active;
+    const sheet = state.sheets[sheetIndex];
+
+    if (
+      !sheet ||
+      !imageApi ||
+      typeof imageApi.createInsertedImageFromFile !==
+        "function"
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.image_add_failed",
+          null,
+          "The image could not be added."
+        ),
+        "err"
+      );
+      return;
+    }
+
+    if (
+      typeof imageApi.sheetHasImportedDrawing ===
+        "function" &&
+      imageApi.sheetHasImportedDrawing(sheet)
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.image_existing_drawing_unsupported",
+          null,
+          "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+        ),
+        "warn"
+      );
+      return;
+    }
+
+    const target = insertedImageTargetCell();
+
+    try {
+      const image =
+        await imageApi.createInsertedImageFromFile(
+          file,
+          sheet,
+          {
+            row: target.row,
+            col: target.col,
+            sheetIndex,
+            defaultColWidth:
+              sheetDefaultColumnWidth(sheet),
+            defaultRowHeight:
+              sheetDefaultRowHeight(sheet)
+          }
+        );
+
+      /*
+       * The user may have changed sheet while the image was being read.
+       * Never insert the result into a stale workbook object.
+       */
+      if (
+        state.active !== sheetIndex ||
+        state.sheets[sheetIndex] !== sheet
+      ) {
+        setStatus(
+          tr(
+            "filemgr.spreadsheet_editor.image_add_failed",
+            null,
+            "The image could not be added."
+          ),
+          "err"
+        );
+        return;
+      }
+
+      const historyBefore =
+        captureHistorySnapshot();
+
+      if (!Array.isArray(sheet.images)) {
+        sheet.images = [];
+      }
+
+      sheet.images.push(image);
+
+      if (
+        typeof imageApi.expandSheetForImages ===
+        "function"
+      ) {
+        imageApi.expandSheetForImages(
+          sheet,
+          {
+            defaultColWidth:
+              sheetDefaultColumnWidth(sheet),
+            defaultRowHeight:
+              sheetDefaultRowHeight(sheet)
+          }
+        );
+      }
+
+      state.selectedImageId = String(
+        image.id || ""
+      );
+
+      state.selection = null;
+      state.rangeSelection = null;
+      state.activeCell = null;
+      formulaFocus = null;
+
+      commitHistorySnapshot(historyBefore);
+      render();
+
+      const imageName = String(
+        image.name ||
+        file.name ||
+        ""
+      );
+
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.image_added",
+          { name: imageName },
+          `Image added: ${imageName}`
+        ),
+        "ok"
+      );
+    } catch (error) {
+      console.warn(
+        "Spreadsheet image insertion failed:",
+        error
+      );
+
+      setStatus(
+        insertedImageErrorText(error),
+        "err"
+      );
+    }
+  }
+
+  function chooseSpreadsheetImage() {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      !insertImageInput
+    ) {
+      return;
+    }
+
+    insertImageInput.value = "";
+    insertImageInput.click();
+  }
+
   function ensureModal() {
     if (modal) return;
 
@@ -5460,6 +5815,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorFreezeFirstColumn" type="button" class="btn secondary spreadsheetToolBtn spreadsheetFreezeToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.freeze_first_column", null, "Freeze first column")}" title="${tr("filemgr.spreadsheet_editor.freeze_first_column", null, "Freeze first column")}">
               <span aria-hidden="true">A↔</span>
             </button>
+            <button id="spreadsheetEditorInsertImage" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("filemgr.spreadsheet_editor.insert_image", null, "Insert image")}" title="${tr("filemgr.spreadsheet_editor.insert_image", null, "Insert image")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                <circle cx="8.5" cy="9" r="1.5"></circle>
+                <path d="m5 18 5-5 3 3 2-2 4 4"></path>
+              </svg>
+            </button>
+            <input id="spreadsheetEditorInsertImageInput" type="file" accept="image/png,image/jpeg" hidden>
             <span class="spreadsheetToolSep" aria-hidden="true"></span>
             <button id="spreadsheetEditorSave" type="button" class="btn">${tr("filemgr.spreadsheet_editor.save", null, "Save")}</button>
             <button id="spreadsheetEditorClose" type="button" class="btn secondary">${tr("filemgr.close", null, "Close")}</button>
@@ -5487,6 +5850,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     saveBtn = modal.querySelector("#spreadsheetEditorSave");
     addRowBtn = modal.querySelector("#spreadsheetEditorAddRow");
     addColBtn = modal.querySelector("#spreadsheetEditorAddCol");
+    insertImageBtn = modal.querySelector("#spreadsheetEditorInsertImage");
+    insertImageInput = modal.querySelector("#spreadsheetEditorInsertImageInput");
     boldBtn = modal.querySelector("#spreadsheetEditorBold");
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
     underlineBtn = modal.querySelector("#spreadsheetEditorUnderline");
@@ -5556,6 +5921,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     saveBtn?.addEventListener("click", saveCurrent);
     addRowBtn?.addEventListener("click", addRow);
     addColBtn?.addEventListener("click", addColumn);
+
+    insertImageBtn?.addEventListener(
+      "click",
+      chooseSpreadsheetImage
+    );
+
+    insertImageInput?.addEventListener(
+      "change",
+      () => {
+        const file =
+          insertImageInput.files &&
+          insertImageInput.files[0];
+
+        insertImageInput.value = "";
+
+        if (file) {
+          void insertSpreadsheetImageFile(file);
+        }
+      }
+    );
+
     closeBtn?.addEventListener("click", close);
 
     formulaBarInput?.addEventListener("focus", () => {
@@ -5741,6 +6127,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     modal.classList.remove("show");
     modal.setAttribute("aria-hidden", "true");
+
+    const imageApi =
+      FM && FM.spreadsheetXlsxImages;
+
+    if (
+      imageApi &&
+      typeof imageApi.releaseInsertedImageAssets ===
+        "function"
+    ) {
+      imageApi.releaseInsertedImageAssets();
+    }
   }
 
   function sheetNameKey(value) {
@@ -6645,6 +7042,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     rows.forEach((row, rIdx) => {
       const trEl = document.createElement("tr");
+
+      /*
+       * Pin the actual table row to the workbook geometry. Cell and input
+       * heights alone are interpreted as minimums by the table layout.
+       */
+      applyRowHeight(
+        trEl,
+        rowHeights[rIdx]
+      );
+
       const rh = document.createElement("th");
       rh.className = "rowHead";
       rh.dataset.row = String(rIdx);
