@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.merge_cells": "Merge cells",
   "filemgr.spreadsheet_editor.unmerge_cells": "Unmerge cells",
   "filemgr.spreadsheet_editor.freeze_top_row": "Freeze top row",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Freeze first column"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Freeze first column",
+  "filemgr.spreadsheet_editor.add_sheet": "Add sheet",
+  "filemgr.spreadsheet_editor.rename_sheet": "Rename sheet",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Sheet name must contain 1–31 characters and cannot contain : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "A sheet with this name already exists.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "This sheet name is reserved by DNA-Nexus.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Delete sheet",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Delete sheet?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Sheet “{name}” and all its contents will be deleted.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Delete",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "The last remaining sheet cannot be deleted."
 }

@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.merge_cells": "Yhdistä solut",
   "filemgr.spreadsheet_editor.unmerge_cells": "Pura solujen yhdistys",
   "filemgr.spreadsheet_editor.freeze_top_row": "Jäädytä ylin rivi",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Jäädytä ensimmäinen sarake"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Jäädytä ensimmäinen sarake",
+  "filemgr.spreadsheet_editor.add_sheet": "Lisää välilehti",
+  "filemgr.spreadsheet_editor.rename_sheet": "Nimeä välilehti uudelleen",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Välilehden nimessä pitää olla 1–31 merkkiä, eikä se saa sisältää merkkejä : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Samanniminen välilehti on jo olemassa.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Tämä välilehden nimi on varattu DNA-Nexuksen sisäiseen käyttöön.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Poista välilehti",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Poista välilehti?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Välilehti “{name}” ja kaikki sen sisältö poistetaan.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Poista",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Viimeistä jäljellä olevaa välilehteä ei voi poistaa."
 }

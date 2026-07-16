@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Överst",
   "filemgr.spreadsheet_editor.vertical_align": "Vertikal justering",
   "filemgr.spreadsheet_editor.freeze_top_row": "Lås översta raden",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Lås första kolumnen"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Lås första kolumnen",
+  "filemgr.spreadsheet_editor.add_sheet": "Lägg till blad",
+  "filemgr.spreadsheet_editor.rename_sheet": "Byt namn på blad",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Bladnamnet måste innehålla 1–31 tecken och får inte innehålla : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Ett blad med detta namn finns redan.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Detta bladnamn är reserverat av DNA-Nexus.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Ta bort blad",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Ta bort blad?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Bladet ”{name}” och allt dess innehåll tas bort.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Ta bort",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Det sista återstående bladet kan inte tas bort."
 }

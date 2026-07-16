@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "顶部",
   "filemgr.spreadsheet_editor.vertical_align": "垂直对齐",
   "filemgr.spreadsheet_editor.freeze_top_row": "冻结首行",
-  "filemgr.spreadsheet_editor.freeze_first_column": "冻结首列"
+  "filemgr.spreadsheet_editor.freeze_first_column": "冻结首列",
+  "filemgr.spreadsheet_editor.add_sheet": "添加工作表",
+  "filemgr.spreadsheet_editor.rename_sheet": "重命名工作表",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "工作表名称必须包含 1–31 个字符，且不能包含 : \\ / ? * [ ]。",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "已存在同名工作表。",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "此工作表名称由 DNA-Nexus 保留。",
+  "filemgr.spreadsheet_editor.delete_sheet": "删除工作表",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "删除工作表？",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "工作表“{name}”及其所有内容将被删除。",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "删除",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "无法删除最后一个工作表。"
 }

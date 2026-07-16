@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Góra",
   "filemgr.spreadsheet_editor.vertical_align": "Wyrównanie pionowe",
   "filemgr.spreadsheet_editor.freeze_top_row": "Zablokuj górny wiersz",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Zablokuj pierwszą kolumnę"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Zablokuj pierwszą kolumnę",
+  "filemgr.spreadsheet_editor.add_sheet": "Dodaj arkusz",
+  "filemgr.spreadsheet_editor.rename_sheet": "Zmień nazwę arkusza",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Nazwa musi mieć 1–31 znaków i nie może zawierać : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Arkusz o tej nazwie już istnieje.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Ta nazwa arkusza jest zarezerwowana przez DNA-Nexus.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Usuń arkusz",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Usunąć arkusz?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Arkusz „{name}” i cała jego zawartość zostaną usunięte.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Usuń",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Nie można usunąć ostatniego pozostałego arkusza."
 }
