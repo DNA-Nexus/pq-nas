@@ -5631,6 +5631,8 @@
   "filemgr.spreadsheet_editor.underline": "Підкреслення",
   "filemgr.spreadsheet_editor.font_size": "Розмір шрифту",
   "filemgr.spreadsheet_editor.font_size_default": "Розмір",
+  "filemgr.spreadsheet_editor.font_family": "Шрифт",
+  "filemgr.spreadsheet_editor.font_family_default": "За замовчуванням ({font})",
   "filemgr.spreadsheet_editor.borders": "Межі",
   "filemgr.spreadsheet_editor.border_none": "Без користувацьких меж",
   "filemgr.spreadsheet_editor.border_all_thin": "Усі тонкі межі",

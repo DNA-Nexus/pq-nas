@@ -5639,6 +5639,8 @@
   "filemgr.spreadsheet_editor.underline": "Subrayado",
   "filemgr.spreadsheet_editor.font_size": "Tamaño de fuente",
   "filemgr.spreadsheet_editor.font_size_default": "Tamaño",
+  "filemgr.spreadsheet_editor.font_family": "Fuente",
+  "filemgr.spreadsheet_editor.font_family_default": "Predeterminado ({font})",
   "filemgr.spreadsheet_editor.borders": "Bordes",
   "filemgr.spreadsheet_editor.border_none": "Sin bordes personalizados",
   "filemgr.spreadsheet_editor.border_all_thin": "Todos los bordes finos",

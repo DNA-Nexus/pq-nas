@@ -171,15 +171,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
-      loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-fonts-1", "data-pqnas-spreadsheet-fonts-js"),
+      loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-fonts-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -290,7 +290,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
+
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-xlsx-dimensions-2", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-selection-2", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-anchor-fill-1", "data-pqnas-spreadsheet-image-overlay-js")
@@ -514,6 +516,33 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return String(value == null ? "" : value);
   }
 
+  function normalizePreviewFontName(value) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontName === "function") {
+      return api.normalizeFontName(value);
+    }
+
+    return String(value == null ? "" : value)
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .trim()
+      .slice(0, 128);
+  }
+
+  function previewCssFontFamily(value, fallback = "") {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.cssFontFamily === "function") {
+      return api.cssFontFamily(value, fallback);
+    }
+
+    const name =
+      normalizePreviewFontName(value) ||
+      normalizePreviewFontName(fallback);
+
+    return name ? `"${name}"` : "";
+  }
+
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
@@ -527,6 +556,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
+      fontName: normalizePreviewFontName(
+        src.fontName || src.fontFamily || src.font
+      ),
       fontSize: normalizePreviewFontSize(src.fontSize || src.sz),
       decimals,
       numberFormat,
@@ -731,6 +763,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
           underline: !!(style && style.font && style.font.underline),
+          fontName: normalizePreviewFontName(
+            style && style.font && style.font.name
+          ),
           fontSize: normalizePreviewFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           valign: normalizePreviewVerticalAlign(style && style.alignment && style.alignment.vertical),
@@ -739,7 +774,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           border: previewBorderFromXlsxStyle(style && style.border)
         });
 
-        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
+        if (fmt.bold || fmt.italic || fmt.underline || fmt.fontName || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
           out[r][c] = fmt;
         }
       }
@@ -755,6 +790,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.style.fontWeight = f.bold ? "700" : "";
     td.style.fontStyle = f.italic ? "italic" : "";
     td.style.textDecoration = f.underline ? "underline" : "";
+    td.style.fontFamily = f.fontName
+      ? previewCssFontFamily(f.fontName)
+      : "";
     td.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     td.style.textAlign = f.align || "";
     td.style.verticalAlign = previewVerticalAlignCss(f.valign);

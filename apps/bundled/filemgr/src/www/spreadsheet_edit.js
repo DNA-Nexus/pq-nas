@@ -72,6 +72,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let boldBtn = null;
   let italicBtn = null;
   let underlineBtn = null;
+  let fontNameSelect = null;
   let fontSizeSelect = null;
   let decreaseDecimalsBtn = null;
   let increaseDecimalsBtn = null;
@@ -563,6 +564,43 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return decimalPlacesFromText(raw);
   }
 
+  function normalizeSpreadsheetFontName(value) {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.normalizeFontName === "function") {
+      return api.normalizeFontName(value);
+    }
+
+    return String(value == null ? "" : value)
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .trim()
+      .slice(0, 128);
+  }
+
+  function workbookDefaultFontName() {
+    const font = normalizedWorkbookFont(state.workbookFont);
+    return normalizeSpreadsheetFontName(font.name) || "Calibri";
+  }
+
+  function effectiveCellFontName(fmt) {
+    const f = normalizeCellFormat(fmt);
+    return f.fontName || workbookDefaultFontName();
+  }
+
+  function spreadsheetCssFontFamily(name, fallback = "") {
+    const api = FM && FM.spreadsheetFonts;
+
+    if (api && typeof api.cssFontFamily === "function") {
+      return api.cssFontFamily(name, fallback);
+    }
+
+    const normalized =
+      normalizeSpreadsheetFontName(name) ||
+      normalizeSpreadsheetFontName(fallback);
+
+    return normalized ? `"${normalized}"` : "";
+  }
+
   function normalizeCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
@@ -575,6 +613,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!src.bold,
       italic: !!src.italic,
       underline: !!src.underline,
+      fontName: normalizeSpreadsheetFontName(
+        src.fontName || src.fontFamily || src.font
+      ),
       fontSize: normalizeFontSize(src.fontSize || src.sz),
       decimals,
       numberFormat,
@@ -589,7 +630,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function isEmptyCellFormat(fmt) {
     const f = normalizeCellFormat(fmt);
-    return !f.bold && !f.italic && !f.underline && !f.fontSize && f.decimals == null && !f.numberFormat && !f.currency && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
+    return !f.bold && !f.italic && !f.underline && !f.fontName && !f.fontSize && f.decimals == null && !f.numberFormat && !f.currency && !f.align && !f.valign && !f.bg && !f.fg && isEmptyBorderFormat(f.border);
   }
 
   function ensureSheetCellFormats(sheet, rowCount = null, colCount = null) {
@@ -864,6 +905,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.style.fontWeight = f.bold ? "700" : "";
     input.style.fontStyle = f.italic ? "italic" : "";
     input.style.textDecoration = f.underline ? "underline" : "";
+    input.style.fontFamily = spreadsheetCssFontFamily(
+      effectiveCellFontName(f)
+    );
     input.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
     input.style.textAlign = f.align || "";
     applyInputVerticalAlign(input, f);
@@ -1123,6 +1167,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       if (kind === "bold" || kind === "italic" || kind === "underline") {
         fmt[kind] = enable;
+      } else if (kind === "fontName") {
+        fmt.fontName = normalizeSpreadsheetFontName(value);
       } else if (kind === "fontSize") {
         fmt.fontSize = normalizeFontSize(value);
       } else if (kind === "align") {
@@ -1195,6 +1241,66 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
+  function workbookFormatFontNames() {
+    const names = [];
+
+    for (const sheet of Array.isArray(state.sheets) ? state.sheets : []) {
+      const rows = Array.isArray(sheet && sheet.cellFormats)
+        ? sheet.cellFormats
+        : [];
+
+      for (const row of rows) {
+        for (const rawFormat of Array.isArray(row) ? row : []) {
+          const name = normalizeCellFormat(rawFormat).fontName;
+          if (name) names.push(name);
+        }
+      }
+    }
+
+    return names;
+  }
+
+  function refreshFontNameOptions(selectedName = "") {
+    if (!fontNameSelect) return;
+
+    const defaultName = workbookDefaultFontName();
+    const api = FM && FM.spreadsheetFonts;
+    const names =
+      api && typeof api.availableFontNames === "function"
+        ? api.availableFontNames(
+            state.workbookFont,
+            workbookFormatFontNames().concat([selectedName])
+          )
+        : [defaultName, "Arial", "Calibri", "Courier New", "Georgia", "Verdana"];
+
+    fontNameSelect.replaceChildren();
+
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = tr(
+      "filemgr.spreadsheet_editor.font_family_default",
+      { font: defaultName },
+      `Default (${defaultName})`
+    );
+    defaultOption.style.fontFamily = spreadsheetCssFontFamily(defaultName);
+    fontNameSelect.appendChild(defaultOption);
+
+    /*
+     * Security: workbook-provided font names are assigned with value and
+     * textContent. They are never inserted through innerHTML.
+     */
+    for (const rawName of names) {
+      const name = normalizeSpreadsheetFontName(rawName);
+      if (!name) continue;
+
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      option.style.fontFamily = spreadsheetCssFontFamily(name);
+      fontNameSelect.appendChild(option);
+    }
+  }
+
   function updateFormatToolbar() {
     const disabled = state.saving || state.readOnly || state.tooLarge;
     const first = firstFormatTargetCell();
@@ -1204,6 +1310,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (const btn of [boldBtn, italicBtn, underlineBtn, decreaseDecimalsBtn, increaseDecimalsBtn, textColorBtn, fillBtn]) {
       if (btn) btn.disabled = disabled;
     }
+    if (fontNameSelect) fontNameSelect.disabled = disabled;
     if (fontSizeSelect) fontSizeSelect.disabled = disabled;
     if (numberFormatSelect) numberFormatSelect.disabled = disabled;
     if (alignSelect) alignSelect.disabled = disabled;
@@ -1212,6 +1319,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     setToolButtonActive(boldBtn, !!fmt.bold);
     setToolButtonActive(italicBtn, !!fmt.italic);
     setToolButtonActive(underlineBtn, !!fmt.underline);
+
+    if (fontNameSelect) {
+      refreshFontNameOptions(fmt.fontName);
+      fontNameSelect.value = fmt.fontName || "";
+    }
+
     if (fontSizeSelect) {
       fontSizeSelect.value = fmt.fontSize ? String(fmt.fontSize) : "";
     }
@@ -1336,11 +1449,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (isEmptyCellFormat(f)) return null;
 
     const style = {};
-    if (f.bold || f.italic || f.underline || f.fontSize || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
+    if (f.bold || f.italic || f.underline || f.fontName || f.fontSize || (f.fg && TEXT_COLOR_COLORS[f.fg])) {
       style.font = {};
       if (f.bold) style.font.bold = true;
       if (f.italic) style.font.italic = true;
       if (f.underline) style.font.underline = true;
+      if (f.fontName) style.font.name = f.fontName;
       if (f.fontSize) style.font.sz = f.fontSize;
       if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
         style.font.color = { rgb: TEXT_COLOR_COLORS[f.fg].rgb };
@@ -1494,6 +1608,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       bold: !!f.bold,
       italic: !!f.italic,
       underline: !!f.underline,
+      fontName: f.fontName || "",
       fontSize: f.fontSize || 0,
       fg: f.fg || ""
     });
@@ -1630,7 +1745,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     function ensureFont(fmt) {
       const f = normalizeCellFormat(fmt);
       const key = xlsxStyleFontKey(f);
-      const defaultKey = JSON.stringify({ bold: false, italic: false, underline: false, fontSize: 0, fg: "" });
+      const defaultKey = JSON.stringify({ bold: false, italic: false, underline: false, fontName: "", fontSize: 0, fg: "" });
 
       if (key === defaultKey) return 0;
       if (fontIds.has(key)) return fontIds.get(key);
@@ -1647,14 +1762,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         parts.push('<color theme="1"/>');
       }
 
-      parts.push(`<name val="${xlsxAttrEscape(baseFont.name)}"/>`);
+      const fontsApi = FM && FM.spreadsheetFonts;
+      const selectedFont =
+        fontsApi && typeof fontsApi.fontDescriptorForName === "function"
+          ? fontsApi.fontDescriptorForName(f.fontName, baseFont)
+          : {
+              ...baseFont,
+              name: f.fontName || baseFont.name,
+              scheme: f.fontName ? "" : baseFont.scheme
+            };
 
-      if (baseFont.family) {
-        parts.push(`<family val="${xlsxAttrEscape(baseFont.family)}"/>`);
+      parts.push(`<name val="${xlsxAttrEscape(selectedFont.name)}"/>`);
+
+      if (selectedFont.family) {
+        parts.push(`<family val="${xlsxAttrEscape(selectedFont.family)}"/>`);
       }
 
-      if (baseFont.scheme) {
-        parts.push(`<scheme val="${xlsxAttrEscape(baseFont.scheme)}"/>`);
+      if (selectedFont.scheme) {
+        parts.push(`<scheme val="${xlsxAttrEscape(selectedFont.scheme)}"/>`);
       }
 
       parts.push("</font>");
@@ -2650,6 +2775,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     span.style.fontWeight = f.bold ? "700" : "";
     span.style.fontStyle = f.italic ? "italic" : "";
     span.style.textDecoration = f.underline ? "underline" : "";
+    span.style.fontFamily = spreadsheetCssFontFamily(
+      effectiveCellFontName(f)
+    );
     span.style.fontSize = f.fontSize ? `${f.fontSize}px` : "";
 
     if (f.fg && TEXT_COLOR_COLORS[f.fg]) {
@@ -4842,6 +4970,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
           underline: !!(style && style.font && style.font.underline),
+          fontName: normalizeSpreadsheetFontName(
+            style && style.font && style.font.name
+          ),
           fontSize: normalizeFontSize(style && style.font && style.font.sz),
           align: style && style.alignment && style.alignment.horizontal === "center" ? "center" : "",
           valign: normalizeVerticalAlign(style && style.alignment && style.alignment.vertical),
@@ -5289,6 +5420,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <button id="spreadsheetEditorUnderline" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}" title="${tr("filemgr.spreadsheet_editor.underline", null, "Underline")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v6a5 5 0 0 0 10 0V5"></path><path d="M5 21h14"></path></svg>
             </button>
+            <select id="spreadsheetEditorFontName" class="spreadsheetFontSizeSelect spreadsheetFontNameSelect" aria-label="${tr("filemgr.spreadsheet_editor.font_family", null, "Font")}" title="${tr("filemgr.spreadsheet_editor.font_family", null, "Font")}"></select>
             <select id="spreadsheetEditorFontSize" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}" title="${tr("filemgr.spreadsheet_editor.font_size", null, "Font size")}">
               <option value="">${tr("filemgr.spreadsheet_editor.font_size_default", null, "Size")}</option>
               ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}">${size}</option>`).join("")}
@@ -5358,6 +5490,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     boldBtn = modal.querySelector("#spreadsheetEditorBold");
     italicBtn = modal.querySelector("#spreadsheetEditorItalic");
     underlineBtn = modal.querySelector("#spreadsheetEditorUnderline");
+    fontNameSelect = modal.querySelector("#spreadsheetEditorFontName");
     fontSizeSelect = modal.querySelector("#spreadsheetEditorFontSize");
     decreaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsDecrease");
     increaseDecimalsBtn = modal.querySelector("#spreadsheetEditorDecimalsIncrease");
@@ -5375,6 +5508,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     boldBtn?.addEventListener("click", () => applyFormatCommand("bold"));
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));
     underlineBtn?.addEventListener("click", () => applyFormatCommand("underline"));
+    fontNameSelect?.addEventListener("change", () => {
+      applyFormatCommand("fontName", fontNameSelect.value);
+    });
     fontSizeSelect?.addEventListener("change", () => applyFormatCommand("fontSize", fontSizeSelect.value));
     decreaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "decrease"));
     increaseDecimalsBtn?.addEventListener("click", () => applyFormatCommand("decimals", "increase"));

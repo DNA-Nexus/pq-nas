@@ -5639,6 +5639,8 @@
   "filemgr.spreadsheet_editor.underline": "Understruken",
   "filemgr.spreadsheet_editor.font_size": "Teckenstorlek",
   "filemgr.spreadsheet_editor.font_size_default": "Storlek",
+  "filemgr.spreadsheet_editor.font_family": "Teckensnitt",
+  "filemgr.spreadsheet_editor.font_family_default": "Standard ({font})",
   "filemgr.spreadsheet_editor.borders": "Kantlinjer",
   "filemgr.spreadsheet_editor.border_none": "Inga anpassade kantlinjer",
   "filemgr.spreadsheet_editor.border_all_thin": "Alla tunna kantlinjer",

@@ -5654,6 +5654,8 @@
   "filemgr.spreadsheet_editor.underline": "Alleviivaus",
   "filemgr.spreadsheet_editor.font_size": "Fonttikoko",
   "filemgr.spreadsheet_editor.font_size_default": "Koko",
+  "filemgr.spreadsheet_editor.font_family": "Fontti",
+  "filemgr.spreadsheet_editor.font_family_default": "Oletus ({font})",
   "filemgr.spreadsheet_editor.borders": "Reunat",
   "filemgr.spreadsheet_editor.border_none": "Ei mukautettuja reunoja",
   "filemgr.spreadsheet_editor.border_all_thin": "Kaikki ohuet reunat",

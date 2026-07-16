@@ -13,11 +13,115 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   const MAX_FONT_NAME_LENGTH = 128;
 
+  const COMMON_FONT_NAMES = Object.freeze([
+    "Arial",
+    "Aptos",
+    "Calibri",
+    "Cambria",
+    "Courier New",
+    "Georgia",
+    "Liberation Mono",
+    "Liberation Sans",
+    "Liberation Serif",
+    "Noto Sans",
+    "Noto Serif",
+    "Times New Roman",
+    "Verdana"
+  ]);
+
   function cleanFontName(value) {
     return String(value == null ? "" : value)
       .replace(/[\u0000-\u001F\u007F]/g, "")
       .trim()
       .slice(0, MAX_FONT_NAME_LENGTH);
+  }
+
+  function normalizeFontName(value) {
+    return cleanFontName(value);
+  }
+
+  const FONT_GENERIC_FAMILIES = Object.freeze({
+    "arial": "sans-serif",
+    "aptos": "sans-serif",
+    "calibri": "sans-serif",
+    "courier new": "monospace",
+    "liberation mono": "monospace",
+    "liberation sans": "sans-serif",
+    "noto sans": "sans-serif",
+    "verdana": "sans-serif",
+
+    "cambria": "serif",
+    "georgia": "serif",
+    "liberation serif": "serif",
+    "noto serif": "serif",
+    "times new roman": "serif"
+  });
+
+  function quotedCssFontName(value) {
+    return `"${cleanFontName(value)
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')}"`;
+  }
+
+  function cssFontFamily(value, fallback = "") {
+    const name = cleanFontName(value) || cleanFontName(fallback);
+    if (!name) return "";
+
+    const key = name.toLocaleLowerCase();
+    const generic = FONT_GENERIC_FAMILIES[key] || "sans-serif";
+
+    /*
+     * Security: font names are sanitized, quoted and assigned only through
+     * CSSOM. Workbook text is never inserted into stylesheet markup or HTML.
+     *
+     * The generic fallback affects browser rendering only. XLSX export keeps
+     * the exact selected font name.
+     */
+    return `${quotedCssFontName(name)}, ${generic}`;
+  }
+
+  function availableFontNames(defaultFont = DEFAULT_FONT, extraNames = []) {
+    const out = [];
+    const seen = new Set();
+
+    const append = (value) => {
+      const name = cleanFontName(value);
+      const key = name.toLocaleLowerCase();
+
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      out.push(name);
+    };
+
+    append(defaultFont && defaultFont.name);
+
+    for (const name of COMMON_FONT_NAMES) {
+      append(name);
+    }
+
+    for (const name of Array.isArray(extraNames) ? extraNames : []) {
+      append(name);
+    }
+
+    return out;
+  }
+
+  function fontDescriptorForName(name, fallback = DEFAULT_FONT) {
+    const base = normalizeFontDescriptor(fallback, DEFAULT_FONT);
+    const normalizedName = cleanFontName(name);
+
+    if (!normalizedName) return base;
+
+    if (normalizedName.toLocaleLowerCase() === base.name.toLocaleLowerCase()) {
+      return base;
+    }
+
+    return {
+      name: normalizedName,
+      size: base.size,
+      family: "2",
+      scheme: ""
+    };
   }
 
   function positiveNumber(value, fallback) {
@@ -187,7 +291,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   FM.spreadsheetFonts = {
     defaultFont: () => ({ ...DEFAULT_FONT }),
+    normalizeFontName,
     normalizeFontDescriptor,
+    cssFontFamily,
+    availableFontNames,
+    fontDescriptorForName,
     readWorkbookDefaultFont
   };
 })();

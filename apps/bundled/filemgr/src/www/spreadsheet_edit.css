@@ -678,6 +678,11 @@
   padding: 0 8px;
 }
 
+.spreadsheetFontNameSelect {
+  min-width: 142px;
+  max-width: 190px;
+}
+
 .spreadsheetFontSizeSelect:disabled {
   opacity: 0.55;
   cursor: not-allowed;
