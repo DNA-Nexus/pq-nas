@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "In alto",
   "filemgr.spreadsheet_editor.vertical_align": "Allineamento verticale",
   "filemgr.spreadsheet_editor.freeze_top_row": "Blocca riga superiore",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Blocca prima colonna"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Blocca prima colonna",
+  "filemgr.spreadsheet_editor.add_sheet": "Aggiungi foglio",
+  "filemgr.spreadsheet_editor.rename_sheet": "Rinomina foglio",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Il nome deve contenere da 1 a 31 caratteri e non può contenere : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Esiste già un foglio con questo nome.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Questo nome è riservato da DNA-Nexus.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Elimina foglio",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Eliminare il foglio?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Il foglio “{name}” e tutto il suo contenuto verranno eliminati.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Elimina",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Non è possibile eliminare l'ultimo foglio rimasto."
 }

@@ -86,6 +86,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let fillBtn = null;
   let closeBtn = null;
   let confirmModal = null;
+  let sheetTabMenu = null;
   let axisMenu = null;
   let fillMenu = null;
   let textColorMenu = null;
@@ -2320,8 +2321,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function xlsxColumnToPixelWidth(col) {
     if (!col || typeof col !== "object") return DEFAULT_COL_WIDTH;
     if (Number.isFinite(col.wpx)) return clampColumnWidth(col.wpx);
-    if (Number.isFinite(col.width)) return clampColumnWidth((col.width * 8) + 16);
-    if (Number.isFinite(col.wch)) return clampColumnWidth((col.wch * 8) + 16);
+
+    // Keep import as the inverse of xlsxColumnPixelWidthToExcelWidth().
+    // Otherwise every save/reopen cycle gradually widens worksheet columns.
+    if (Number.isFinite(col.width)) return clampColumnWidth((col.width * 7) + 5);
+    if (Number.isFinite(col.wch)) return clampColumnWidth((col.wch * 7) + 5);
+
     return DEFAULT_COL_WIDTH;
   }
 
@@ -5384,8 +5389,647 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     modal.setAttribute("aria-hidden", "true");
   }
 
+  function sheetNameKey(value) {
+    return String(value || "").trim().toLocaleLowerCase();
+  }
+
+  function validateEditorSheetName(value, excludeIndex = -1) {
+    const name = String(value || "").trim();
+
+    if (!name || name.length > 31 || /[:\\/?*\[\]]/.test(name)) {
+      return {
+        ok: false,
+        message: tr(
+          "filemgr.spreadsheet_editor.sheet_name_invalid",
+          null,
+          "Sheet name must contain 1–31 characters and cannot contain : \\ / ? * [ ]."
+        )
+      };
+    }
+
+    if (sheetNameKey(name) === sheetNameKey(STYLE_SHEET_NAME)) {
+      return {
+        ok: false,
+        message: tr(
+          "filemgr.spreadsheet_editor.sheet_name_reserved",
+          null,
+          "This sheet name is reserved by DNA-Nexus."
+        )
+      };
+    }
+
+    const duplicate = state.sheets.some((sheet, idx) => (
+      idx !== excludeIndex &&
+      sheetNameKey(sheet && sheet.name) === sheetNameKey(name)
+    ));
+
+    if (duplicate) {
+      return {
+        ok: false,
+        message: tr(
+          "filemgr.spreadsheet_editor.sheet_name_duplicate",
+          null,
+          "A sheet with this name already exists."
+        )
+      };
+    }
+
+    return { ok: true, name };
+  }
+
+  function nextEditorSheetName() {
+    const used = new Set(state.sheets.map((sheet) => sheetNameKey(sheet && sheet.name)));
+    let number = 1;
+
+    while (used.has(sheetNameKey(`Sheet${number}`))) {
+      number++;
+    }
+
+    return `Sheet${number}`;
+  }
+
+  function createBlankEditorSheet(name) {
+    return {
+      name,
+      rows: Array.from(
+        { length: DEFAULT_ROWS },
+        () => Array.from({ length: DEFAULT_COLS }, () => "")
+      ),
+      colWidths: Array.from({ length: DEFAULT_COLS }, () => DEFAULT_COL_WIDTH),
+      rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
+      cellFormats: Array.from(
+        { length: DEFAULT_ROWS },
+        () => Array.from({ length: DEFAULT_COLS }, () => null)
+      ),
+      merges: [],
+      freeze: { topRows: 0, leftCols: 0 },
+      images: []
+    };
+  }
+
+  function sheetNameRegexEscape(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function quotedFormulaSheetName(name) {
+    return `'${String(name || "").replace(/'/g, "''")}'!`;
+  }
+
+  function rewriteFormulaSheetReferencesOutsideStrings(segment, oldName, newName) {
+    let out = String(segment || "");
+    const quotedOld = quotedFormulaSheetName(oldName);
+    const quotedNew = quotedFormulaSheetName(newName);
+
+    out = out.replace(
+      new RegExp(sheetNameRegexEscape(quotedOld), "gi"),
+      quotedNew
+    );
+
+    const bareOld = sheetNameRegexEscape(oldName);
+    const barePattern = new RegExp(
+      `(^|[^A-Za-z0-9_.\\]'])${bareOld}!`,
+      "gi"
+    );
+
+    out = out.replace(barePattern, (_match, prefix) => `${prefix}${quotedNew}`);
+    return out;
+  }
+
+  function rewriteFormulaSheetReferences(raw, oldName, newName) {
+    const formula = String(raw == null ? "" : raw);
+    if (!formula.startsWith("=") || oldName === newName) return formula;
+
+    let out = "";
+    let segmentStart = 0;
+    let inString = false;
+
+    for (let i = 0; i < formula.length; i++) {
+      if (formula[i] !== '"') continue;
+
+      if (inString && formula[i + 1] === '"') {
+        i++;
+        continue;
+      }
+
+      if (!inString) {
+        out += rewriteFormulaSheetReferencesOutsideStrings(
+          formula.slice(segmentStart, i),
+          oldName,
+          newName
+        );
+        segmentStart = i;
+        inString = true;
+      } else {
+        out += formula.slice(segmentStart, i + 1);
+        segmentStart = i + 1;
+        inString = false;
+      }
+    }
+
+    const tail = formula.slice(segmentStart);
+    out += inString
+      ? tail
+      : rewriteFormulaSheetReferencesOutsideStrings(tail, oldName, newName);
+
+    return out;
+  }
+
+  function rewriteWorkbookSheetReferences(oldName, newName) {
+    for (const sheet of state.sheets) {
+      if (!sheet || !Array.isArray(sheet.rows)) continue;
+
+      for (const row of sheet.rows) {
+        if (!Array.isArray(row)) continue;
+
+        for (let col = 0; col < row.length; col++) {
+          const raw = row[col];
+          const next = rewriteFormulaSheetReferences(raw, oldName, newName);
+          if (next !== raw) row[col] = next;
+        }
+      }
+    }
+  }
+
+  function rewriteDeletedSheetReferencesOutsideStrings(segment, deletedName) {
+    let out = String(segment || "");
+    const quotedOld = quotedFormulaSheetName(deletedName);
+
+    // Excel converts references to a deleted worksheet into #REF!.
+    out = out.replace(
+      new RegExp(sheetNameRegexEscape(quotedOld), "gi"),
+      "#REF!"
+    );
+
+    const bareOld = sheetNameRegexEscape(deletedName);
+    const barePattern = new RegExp(
+      `(^|[^A-Za-z0-9_.\\]'])${bareOld}!`,
+      "gi"
+    );
+
+    return out.replace(
+      barePattern,
+      (_match, prefix) => `${prefix}#REF!`
+    );
+  }
+
+  function rewriteDeletedSheetReferences(raw, deletedName) {
+    const formula = String(raw == null ? "" : raw);
+    if (!formula.startsWith("=")) return formula;
+
+    let out = "";
+    let segmentStart = 0;
+    let inString = false;
+
+    for (let i = 0; i < formula.length; i++) {
+      if (formula[i] !== '"') continue;
+
+      if (inString && formula[i + 1] === '"') {
+        i++;
+        continue;
+      }
+
+      if (!inString) {
+        out += rewriteDeletedSheetReferencesOutsideStrings(
+          formula.slice(segmentStart, i),
+          deletedName
+        );
+        segmentStart = i;
+        inString = true;
+      } else {
+        out += formula.slice(segmentStart, i + 1);
+        segmentStart = i + 1;
+        inString = false;
+      }
+    }
+
+    const tail = formula.slice(segmentStart);
+    out += inString
+      ? tail
+      : rewriteDeletedSheetReferencesOutsideStrings(tail, deletedName);
+
+    return out;
+  }
+
+  function rewriteWorkbookDeletedSheetReferences(deletedName) {
+    for (const sheet of state.sheets) {
+      if (!sheet || !Array.isArray(sheet.rows)) continue;
+
+      for (const row of sheet.rows) {
+        if (!Array.isArray(row)) continue;
+
+        for (let col = 0; col < row.length; col++) {
+          const raw = row[col];
+          const next = rewriteDeletedSheetReferences(raw, deletedName);
+          if (next !== raw) row[col] = next;
+        }
+      }
+    }
+  }
+
+  function addEditorSheet() {
+    if (state.readOnly || state.tooLarge || state.saving) return;
+
+    const before = captureHistorySnapshot();
+    const name = nextEditorSheetName();
+
+    state.sheets.push(createBlankEditorSheet(name));
+    state.active = state.sheets.length - 1;
+    state.selection = null;
+    state.activeCell = null;
+    state.rangeSelection = null;
+    state.selectedImageId = "";
+
+    commitHistorySnapshot(before);
+    render();
+  }
+
+  function beginEditorSheetRename(index, button) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      !tabsEl ||
+      !button ||
+      !button.isConnected
+    ) {
+      return;
+    }
+
+    const sheet = state.sheets[index];
+    if (!sheet) return;
+
+    const oldName = String(sheet.name || `Sheet${index + 1}`);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "spreadsheetEditorTabRename";
+    input.value = oldName;
+    input.maxLength = 31;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.rename_sheet", null, "Rename sheet")
+    );
+
+    const currentWidth = Math.ceil(button.getBoundingClientRect().width);
+    if (currentWidth > 0) {
+      input.style.width = `${Math.max(120, currentWidth)}px`;
+    }
+
+    let finished = false;
+
+    const cancel = () => {
+      if (finished) return;
+      finished = true;
+      renderTabs();
+    };
+
+    const commit = () => {
+      if (finished) return;
+
+      const checked = validateEditorSheetName(input.value, index);
+      if (!checked.ok) {
+        setStatus(checked.message, "err");
+        window.requestAnimationFrame(() => {
+          input.focus();
+          input.select();
+        });
+        return;
+      }
+
+      const newName = checked.name;
+      finished = true;
+
+      if (newName === oldName) {
+        renderTabs();
+        return;
+      }
+
+      const before = captureHistorySnapshot();
+      rewriteWorkbookSheetReferences(oldName, newName);
+      sheet.name = newName;
+      commitHistorySnapshot(before);
+      render();
+    };
+
+    input.addEventListener("keydown", (ev) => {
+      ev.stopPropagation();
+
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        commit();
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        cancel();
+      }
+    });
+
+    input.addEventListener("click", (ev) => ev.stopPropagation());
+    input.addEventListener("blur", commit);
+
+    tabsEl.replaceChild(input, button);
+    input.focus();
+    input.select();
+  }
+
+
+  function confirmDeleteEditorSheet(sheetName) {
+    if (confirmModal) {
+      confirmModal.remove();
+      confirmModal = null;
+    }
+
+    return new Promise((resolve) => {
+      let done = false;
+
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+
+        document.removeEventListener("keydown", onKeyDown);
+
+        if (confirmModal) {
+          confirmModal.remove();
+          confirmModal = null;
+        }
+
+        resolve(!!ok);
+      };
+
+      const onKeyDown = (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          finish(false);
+        }
+      };
+
+      confirmModal = document.createElement("div");
+      confirmModal.className = "spreadsheetEditorConfirmModal";
+      confirmModal.setAttribute("role", "presentation");
+
+      const box = document.createElement("div");
+      box.className = "spreadsheetEditorConfirmBox";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      box.setAttribute("aria-labelledby", "spreadsheetEditorDeleteSheetTitle");
+      box.setAttribute("aria-describedby", "spreadsheetEditorDeleteSheetText");
+
+      const title = document.createElement("div");
+      title.id = "spreadsheetEditorDeleteSheetTitle";
+      title.className = "spreadsheetEditorConfirmTitle";
+      title.textContent = tr(
+        "filemgr.spreadsheet_editor.delete_sheet_title",
+        null,
+        "Delete sheet?"
+      );
+
+      const msg = document.createElement("div");
+      msg.id = "spreadsheetEditorDeleteSheetText";
+      msg.className = "spreadsheetEditorConfirmText";
+      msg.textContent = tr(
+        "filemgr.spreadsheet_editor.delete_sheet_message",
+        { name: sheetName },
+        `Sheet “${sheetName}” and all its contents will be deleted.`
+      );
+
+      const actions = document.createElement("div");
+      actions.className = "spreadsheetEditorConfirmActions";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn secondary";
+      cancelBtn.textContent = tr("common.cancel", null, "Cancel");
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn";
+      deleteBtn.textContent = tr(
+        "filemgr.spreadsheet_editor.delete_sheet_confirm",
+        null,
+        "Delete"
+      );
+
+      actions.appendChild(cancelBtn);
+      actions.appendChild(deleteBtn);
+      box.appendChild(title);
+      box.appendChild(msg);
+      box.appendChild(actions);
+      confirmModal.appendChild(box);
+
+      confirmModal.addEventListener("click", (ev) => {
+        if (ev.target === confirmModal) finish(false);
+      });
+
+      cancelBtn.addEventListener("click", () => finish(false));
+      deleteBtn.addEventListener("click", () => finish(true));
+
+      document.addEventListener("keydown", onKeyDown);
+      document.body.appendChild(confirmModal);
+
+      window.setTimeout(() => cancelBtn.focus(), 0);
+    });
+  }
+
+  async function deleteEditorSheet(index) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= state.sheets.length
+    ) {
+      return;
+    }
+
+    if (state.sheets.length <= 1) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.delete_last_sheet",
+          null,
+          "The last remaining sheet cannot be deleted."
+        ),
+        "err"
+      );
+      return;
+    }
+
+    const sheet = state.sheets[index];
+    if (!sheet) return;
+
+    const sheetName = String(sheet.name || `Sheet${index + 1}`);
+    const confirmed = await confirmDeleteEditorSheet(sheetName);
+
+    if (!confirmed) return;
+
+    // Recheck after the asynchronous confirmation in case editor state changed.
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      state.sheets.length <= 1 ||
+      state.sheets[index] !== sheet
+    ) {
+      return;
+    }
+
+    const before = captureHistorySnapshot();
+    const previousActive = state.active;
+
+    rewriteWorkbookDeletedSheetReferences(sheetName);
+    state.sheets.splice(index, 1);
+
+    if (previousActive > index) {
+      state.active = previousActive - 1;
+    } else if (previousActive === index) {
+      state.active = Math.min(index, state.sheets.length - 1);
+      state.selection = null;
+      state.activeCell = null;
+      state.rangeSelection = null;
+      state.selectedImageId = "";
+      formulaFocus = null;
+    }
+
+    commitHistorySnapshot(before);
+    render();
+  }
+
+  function hideSheetTabMenu() {
+    if (!sheetTabMenu || sheetTabMenu.hidden) return false;
+
+    sheetTabMenu.hidden = true;
+    sheetTabMenu.replaceChildren();
+    return true;
+  }
+
+  function ensureSheetTabMenu() {
+    if (sheetTabMenu) return sheetTabMenu;
+
+    sheetTabMenu = document.createElement("div");
+    sheetTabMenu.className = "spreadsheetSheetMenu";
+    sheetTabMenu.setAttribute("role", "menu");
+    sheetTabMenu.hidden = true;
+
+    document.body.appendChild(sheetTabMenu);
+
+    document.addEventListener("pointerdown", (ev) => {
+      if (
+        sheetTabMenu &&
+        !sheetTabMenu.hidden &&
+        !sheetTabMenu.contains(ev.target)
+      ) {
+        hideSheetTabMenu();
+      }
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && hideSheetTabMenu()) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    });
+
+    window.addEventListener("resize", hideSheetTabMenu);
+    window.addEventListener("scroll", hideSheetTabMenu, true);
+
+    return sheetTabMenu;
+  }
+
+  function sheetMenuButton(label, action, disabled = false, title = "") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.textContent = label;
+    button.disabled = !!disabled;
+
+    if (title) button.title = title;
+
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      hideSheetTabMenu();
+      action();
+    });
+
+    return button;
+  }
+
+  function openSheetTabMenu(index, button, x, y) {
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= state.sheets.length ||
+      !button
+    ) {
+      return;
+    }
+
+    hideAxisMenu();
+    hideTextColorMenu();
+    hideFillMenu();
+    hideBorderMenu();
+
+    const menu = ensureSheetTabMenu();
+    const disabled = state.readOnly || state.tooLarge || state.saving;
+    const lastSheet = state.sheets.length <= 1;
+
+    menu.replaceChildren();
+
+    menu.appendChild(
+      sheetMenuButton(
+        tr(
+          "filemgr.spreadsheet_editor.rename_sheet",
+          null,
+          "Rename sheet"
+        ),
+        () => beginEditorSheetRename(index, button),
+        disabled
+      )
+    );
+
+    menu.appendChild(
+      sheetMenuButton(
+        tr(
+          "filemgr.spreadsheet_editor.delete_sheet",
+          null,
+          "Delete sheet"
+        ),
+        () => {
+          void deleteEditorSheet(index);
+        },
+        disabled || lastSheet,
+        lastSheet
+          ? tr(
+              "filemgr.spreadsheet_editor.delete_last_sheet",
+              null,
+              "The last remaining sheet cannot be deleted."
+            )
+          : ""
+      )
+    );
+
+    menu.hidden = false;
+
+    const requestedLeft = Math.max(8, Number(x) || 8);
+    const requestedTop = Math.max(8, Number(y) || 8);
+
+    menu.style.left = `${requestedLeft}px`;
+    menu.style.top = `${requestedTop}px`;
+
+    const rect = menu.getBoundingClientRect();
+    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+
+    menu.style.left = `${Math.min(requestedLeft, maxLeft)}px`;
+    menu.style.top = `${Math.min(requestedTop, maxTop)}px`;
+
+    const firstEnabled = menu.querySelector("button:not(:disabled)");
+    window.setTimeout(() => firstEnabled?.focus(), 0);
+  }
+
   function renderTabs() {
     if (!tabsEl) return;
+    hideSheetTabMenu();
     tabsEl.replaceChildren();
 
     state.sheets.forEach((sheet, idx) => {
@@ -5393,12 +6037,56 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       btn.type = "button";
       btn.className = "spreadsheetEditorTab" + (idx === state.active ? " active" : "");
       btn.textContent = sheet.name || `Sheet ${idx + 1}`;
+      btn.title = tr(
+        "filemgr.spreadsheet_editor.rename_sheet",
+        null,
+        "Rename sheet"
+      );
+
       btn.addEventListener("click", () => {
+        if (state.active === idx) return;
         state.active = idx;
         render();
       });
+
+      btn.addEventListener("dblclick", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        beginEditorSheetRename(idx, btn);
+      });
+
+      btn.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openSheetTabMenu(idx, btn, ev.clientX, ev.clientY);
+      });
+
+      btn.addEventListener("keydown", (ev) => {
+        if (ev.key !== "F2") return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        beginEditorSheetRename(idx, btn);
+      });
+
       tabsEl.appendChild(btn);
     });
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "spreadsheetEditorTab spreadsheetEditorTabAdd";
+    addBtn.textContent = "+";
+    addBtn.disabled = state.readOnly || state.tooLarge || state.saving;
+    addBtn.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.add_sheet", null, "Add sheet")
+    );
+    addBtn.title = tr(
+      "filemgr.spreadsheet_editor.add_sheet",
+      null,
+      "Add sheet"
+    );
+    addBtn.addEventListener("click", addEditorSheet);
+    tabsEl.appendChild(addBtn);
   }
 
 

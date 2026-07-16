@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Üst",
   "filemgr.spreadsheet_editor.vertical_align": "Dikey hizalama",
   "filemgr.spreadsheet_editor.freeze_top_row": "Üst satırı dondur",
-  "filemgr.spreadsheet_editor.freeze_first_column": "İlk sütunu dondur"
+  "filemgr.spreadsheet_editor.freeze_first_column": "İlk sütunu dondur",
+  "filemgr.spreadsheet_editor.add_sheet": "Sayfa ekle",
+  "filemgr.spreadsheet_editor.rename_sheet": "Sayfayı yeniden adlandır",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Sayfa adı 1–31 karakter olmalı ve : \\ / ? * [ ] karakterlerini içermemelidir.",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Bu ada sahip bir sayfa zaten var.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Bu sayfa adı DNA-Nexus tarafından ayrılmıştır.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Sayfayı sil",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Sayfa silinsin mi?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "“{name}” sayfası ve tüm içeriği silinecek.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Sil",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Kalan son sayfa silinemez."
 }

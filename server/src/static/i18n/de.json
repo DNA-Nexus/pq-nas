@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Oben",
   "filemgr.spreadsheet_editor.vertical_align": "Vertikale Ausrichtung",
   "filemgr.spreadsheet_editor.freeze_top_row": "Oberste Zeile fixieren",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Erste Spalte fixieren"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Erste Spalte fixieren",
+  "filemgr.spreadsheet_editor.add_sheet": "Tabellenblatt hinzufügen",
+  "filemgr.spreadsheet_editor.rename_sheet": "Tabellenblatt umbenennen",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Der Blattname muss 1–31 Zeichen enthalten und darf : \\ / ? * [ ] nicht enthalten.",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Ein Tabellenblatt mit diesem Namen ist bereits vorhanden.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Dieser Blattname ist für DNA-Nexus reserviert.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Tabellenblatt löschen",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Tabellenblatt löschen?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Das Tabellenblatt „{name}“ und sein gesamter Inhalt werden gelöscht.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Löschen",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Das letzte verbleibende Tabellenblatt kann nicht gelöscht werden."
 }

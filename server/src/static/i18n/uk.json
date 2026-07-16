@@ -5681,5 +5681,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Вгорі",
   "filemgr.spreadsheet_editor.vertical_align": "Вертикальне вирівнювання",
   "filemgr.spreadsheet_editor.freeze_top_row": "Закріпити верхній рядок",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Закріпити перший стовпець"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Закріпити перший стовпець",
+  "filemgr.spreadsheet_editor.add_sheet": "Додати аркуш",
+  "filemgr.spreadsheet_editor.rename_sheet": "Перейменувати аркуш",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Назва має містити 1–31 символ і не може містити : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Аркуш із такою назвою вже існує.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "Цю назву аркуша зарезервовано DNA-Nexus.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Видалити аркуш",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Видалити аркуш?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Аркуш «{name}» та весь його вміст буде видалено.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Видалити",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Останній аркуш не можна видалити."
 }

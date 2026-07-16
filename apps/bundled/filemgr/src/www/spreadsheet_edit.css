@@ -128,8 +128,10 @@
 
 .spreadsheetEditorTabs {
   display: flex;
+  align-items: center;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border, var(--panel-border));
   background: var(--spreadsheet-editor-surface);
@@ -148,6 +150,37 @@
 .spreadsheetEditorTab.active {
   border-color: var(--accent, var(--link));
   background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+}
+
+.spreadsheetEditorTab {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spreadsheetEditorTabAdd {
+  min-width: 34px;
+  padding-inline: 10px;
+  font-weight: 900;
+  overflow: visible;
+}
+
+.spreadsheetEditorTabRename {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  max-width: min(260px, 50vw);
+  padding: 7px 10px;
+  border: 1px solid var(--accent, var(--link));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--field-bg, var(--spreadsheet-editor-surface-2));
+  color: var(--field-fg, var(--fg));
+  font: inherit;
+}
+
+.spreadsheetEditorTabRename:focus {
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: 1px;
 }
 
 .spreadsheetEditorBody {
@@ -340,21 +373,20 @@
 .spreadsheetEditorConfirmModal {
   position: fixed;
   inset: 0;
-  z-index: 3600;
+  z-index: 4000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
-  background: var(--modal-backdrop, color-mix(in srgb, var(--fg) 28%, transparent));
-  backdrop-filter: blur(8px);
+  padding: 24px;
+  background: var(--fm_modal_overlay, var(--modal-backdrop, var(--overlay-bg)));
 }
 
 .spreadsheetEditorConfirmBox {
-  width: min(440px, 94vw);
+  width: min(440px, calc(100vw - 32px));
   padding: 18px;
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-lg, 18px);
-  background: var(--panel);
+  background: var(--spreadsheet-editor-surface-2, var(--panel));
   color: var(--fg);
   box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
 }
@@ -453,6 +485,47 @@
   background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
   outline: 2px solid var(--accent, var(--link));
   outline-offset: -2px;
+}
+
+.spreadsheetSheetMenu {
+  position: fixed;
+  z-index: 3800;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetSheetMenu[hidden] {
+  display: none;
+}
+
+.spreadsheetSheetMenu button {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spreadsheetSheetMenu button:hover,
+.spreadsheetSheetMenu button:focus-visible {
+  background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetSheetMenu button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .spreadsheetEditorTable .colHead {
   position: sticky;
@@ -1059,4 +1132,29 @@
 .spreadsheetImageSelectionHandle-sw {
   left: -5px;
   bottom: -5px;
+}
+
+/* Spreadsheet popup surface isolation */
+/* Spreadsheet popup surface isolation
+   Active spreadsheet inputs can use z-index 3900, so sheet menus must remain
+   above them. Canvas provides an opaque base beneath theme popup colors. */
+.spreadsheetEditorConfirmBox,
+.spreadsheetSheetMenu {
+  color-scheme: var(--field-color-scheme, normal);
+  background-color: Canvas;
+  background-image: linear-gradient(
+    var(--field-menu-bg, var(--spreadsheet-editor-surface-2, transparent)),
+    var(--field-menu-bg, var(--spreadsheet-editor-surface-2, transparent))
+  );
+  color: var(--field-menu-fg, var(--fg, CanvasText));
+}
+
+.spreadsheetSheetMenu {
+  z-index: 3990;
+  min-width: 230px;
+  max-width: calc(100vw - 16px);
+}
+
+.spreadsheetSheetMenu button {
+  white-space: nowrap;
 }

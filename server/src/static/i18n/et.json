@@ -5689,5 +5689,15 @@
   "filemgr.spreadsheet_editor.valign_top": "Üles",
   "filemgr.spreadsheet_editor.vertical_align": "Vertikaalne joondus",
   "filemgr.spreadsheet_editor.freeze_top_row": "Kinnita ülemine rida",
-  "filemgr.spreadsheet_editor.freeze_first_column": "Kinnita esimene veerg"
+  "filemgr.spreadsheet_editor.freeze_first_column": "Kinnita esimene veerg",
+  "filemgr.spreadsheet_editor.add_sheet": "Lisa leht",
+  "filemgr.spreadsheet_editor.rename_sheet": "Nimeta leht ümber",
+  "filemgr.spreadsheet_editor.sheet_name_invalid": "Lehe nimi peab sisaldama 1–31 märki ega tohi sisaldada märke : \\ / ? * [ ].",
+  "filemgr.spreadsheet_editor.sheet_name_duplicate": "Selle nimega leht on juba olemas.",
+  "filemgr.spreadsheet_editor.sheet_name_reserved": "See lehe nimi on DNA-Nexuse jaoks reserveeritud.",
+  "filemgr.spreadsheet_editor.delete_sheet": "Kustuta leht",
+  "filemgr.spreadsheet_editor.delete_sheet_title": "Kas kustutada leht?",
+  "filemgr.spreadsheet_editor.delete_sheet_message": "Leht „{name}” ja kogu selle sisu kustutatakse.",
+  "filemgr.spreadsheet_editor.delete_sheet_confirm": "Kustuta",
+  "filemgr.spreadsheet_editor.delete_last_sheet": "Viimast allesjäänud lehte ei saa kustutada."
 }
