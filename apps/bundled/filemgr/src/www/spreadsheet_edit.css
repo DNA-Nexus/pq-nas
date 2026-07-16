@@ -1154,6 +1154,38 @@
   height: 8px;
   background: var(--panel-bg, Canvas);
   border: 1px solid var(--accent-color, currentColor);
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 1;
+}
+
+
+.spreadsheetImageSelectionHandle-nw,
+.spreadsheetImageSelectionHandle-se {
+  cursor: nwse-resize;
+}
+
+.spreadsheetImageSelectionHandle-ne,
+.spreadsheetImageSelectionHandle-sw {
+  cursor: nesw-resize;
+}
+
+.spreadsheetImageResizing {
+  user-select: none;
+}
+
+.spreadsheetImageResizing-nw,
+.spreadsheetImageResizing-se,
+.spreadsheetImageResizing-nw *,
+.spreadsheetImageResizing-se * {
+  cursor: nwse-resize;
+}
+
+.spreadsheetImageResizing-ne,
+.spreadsheetImageResizing-sw,
+.spreadsheetImageResizing-ne *,
+.spreadsheetImageResizing-sw * {
+  cursor: nesw-resize;
 }
 
 .spreadsheetImageSelectionHandle-nw {

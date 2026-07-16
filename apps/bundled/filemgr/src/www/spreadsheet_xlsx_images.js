@@ -790,7 +790,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function rewriteImportedDrawingXml(
     originalXml,
     drawingPath,
-    images
+    images,
+    deletions
   ) {
     const edits =
       Array.isArray(images)
@@ -799,12 +800,28 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
               image &&
               image.geometryEdited &&
               image.source !== "inserted" &&
-              String(image.drawingPath || "") ===
-                drawingPath
+              String(
+                image.drawingPath || ""
+              ) === drawingPath
           )
         : [];
 
-    if (!edits.length) {
+    const removals =
+      Array.isArray(deletions)
+        ? deletions.filter(
+            (image) =>
+              image &&
+              image.source !== "inserted" &&
+              String(
+                image.drawingPath || ""
+              ) === drawingPath
+          )
+        : [];
+
+    if (
+      !edits.length &&
+      !removals.length
+    ) {
       return originalXml;
     }
 
@@ -877,6 +894,59 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       );
     }
 
+    /*
+     * Security: resolve every deletion against the untouched anchor list
+     * before removing anything. This prevents index shifting from deleting
+     * a different picture when several imported images are removed.
+     */
+    const anchorsToRemove = [];
+
+    for (const image of removals) {
+      const anchor =
+        importedImageAnchor(
+          anchors,
+          image
+        );
+
+      if (!anchor) {
+        throw insertedImageError(
+          "imported_image_delete_anchor_not_found",
+          "The imported image could not be identified safely for deletion."
+        );
+      }
+
+      if (
+        !anchorsToRemove.includes(
+          anchor
+        )
+      ) {
+        anchorsToRemove.push(
+          anchor
+        );
+      }
+    }
+
+    for (
+      const anchor of
+      anchorsToRemove
+    ) {
+      const parent =
+        anchor.parentNode;
+
+      if (
+        !parent ||
+        typeof parent.removeChild !==
+          "function"
+      ) {
+        throw insertedImageError(
+          "imported_image_delete_failed",
+          "The imported image anchor could not be removed safely."
+        );
+      }
+
+      parent.removeChild(anchor);
+    }
+
     if (
       typeof XMLSerializer ===
         "undefined"
@@ -892,7 +962,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     try {
       serialized =
         new XMLSerializer()
-          .serializeToString(document);
+          .serializeToString(
+            document
+          );
     } catch (_) {
       serialized = "";
     }
@@ -905,8 +977,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
 
     if (
-      /^\s*<\?xml\b/i.test(originalXml) &&
-      !/^\s*<\?xml\b/i.test(serialized)
+      /^\s*<\?xml\b/i.test(
+        originalXml
+      ) &&
+      !/^\s*<\?xml\b/i.test(
+        serialized
+      )
     ) {
       serialized =
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -921,17 +997,51 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     info,
     sheets
   ) {
-    const editedByDrawing =
+    const changesByDrawing =
       new Map();
 
+    const changesForDrawing = (
+      drawingPath
+    ) => {
+      if (
+        !changesByDrawing.has(
+          drawingPath
+        )
+      ) {
+        changesByDrawing.set(
+          drawingPath,
+          {
+            edits: [],
+            deletions: []
+          }
+        );
+      }
+
+      return changesByDrawing.get(
+        drawingPath
+      );
+    };
+
     for (
-      const sheet of Array.isArray(sheets)
+      const sheet of
+      Array.isArray(sheets)
         ? sheets
         : []
     ) {
       const images =
-        Array.isArray(sheet && sheet.images)
+        Array.isArray(
+          sheet &&
+          sheet.images
+        )
           ? sheet.images
+          : [];
+
+      const deletedImages =
+        Array.isArray(
+          sheet &&
+          sheet.deletedImages
+        )
+          ? sheet.deletedImages
           : [];
 
       for (const image of images) {
@@ -950,7 +1060,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
         if (
           !drawingPath ||
-          isUnsafeZipName(drawingPath)
+          isUnsafeZipName(
+            drawingPath
+          )
         ) {
           throw insertedImageError(
             "imported_image_drawing_path_invalid",
@@ -958,24 +1070,48 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           );
         }
 
+        changesForDrawing(
+          drawingPath
+        ).edits.push(image);
+      }
+
+      for (
+        const image of
+        deletedImages
+      ) {
         if (
-          !editedByDrawing.has(
+          !image ||
+          image.source === "inserted"
+        ) {
+          continue;
+        }
+
+        const drawingPath =
+          safeName(
+            image.drawingPath
+          );
+
+        if (
+          !drawingPath ||
+          isUnsafeZipName(
             drawingPath
           )
         ) {
-          editedByDrawing.set(
-            drawingPath,
-            []
+          throw insertedImageError(
+            "imported_image_delete_path_invalid",
+            "The imported image drawing path is invalid."
           );
         }
 
-        editedByDrawing
-          .get(drawingPath)
-          .push(image);
+        changesForDrawing(
+          drawingPath
+        ).deletions.push(
+          image
+        );
       }
     }
 
-    if (!editedByDrawing.size) {
+    if (!changesByDrawing.size) {
       return;
     }
 
@@ -990,12 +1126,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     for (
       const [
         drawingPath,
-        editedImages
-      ] of editedByDrawing.entries()
+        changes
+      ] of changesByDrawing.entries()
     ) {
       const originalXml =
         String(
-          xmlByPath[drawingPath] ||
+          xmlByPath[
+            drawingPath
+          ] ||
           ""
         );
 
@@ -1003,7 +1141,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         preservedEntries.findIndex(
           (entry) =>
             entry &&
-            entry.name === drawingPath
+            entry.name ===
+              drawingPath
         );
 
       if (
@@ -1020,11 +1159,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         preservedIndex
       ] = {
         name: drawingPath,
+
         data:
           rewriteImportedDrawingXml(
             originalXml,
             drawingPath,
-            editedImages
+            changes.edits,
+            changes.deletions
           )
       };
     }

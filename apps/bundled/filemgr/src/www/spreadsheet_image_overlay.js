@@ -510,6 +510,422 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     );
   }
 
+
+  const MIN_IMAGE_RESIZE_EDGE = 8;
+
+  function clampResizeValue(
+    value,
+    minimum,
+    maximum = Number.POSITIVE_INFINITY
+  ) {
+    const numeric = Number(value);
+
+    if (!Number.isFinite(numeric)) {
+      return minimum;
+    }
+
+    return Math.max(
+      minimum,
+      Math.min(maximum, numeric)
+    );
+  }
+
+  function resizedImageRect(
+    startRect,
+    handle,
+    dx,
+    dy,
+    geometry,
+    preserveAspect
+  ) {
+    const west =
+      handle === "nw" ||
+      handle === "sw";
+
+    const north =
+      handle === "nw" ||
+      handle === "ne";
+
+    const fixedX = west
+      ? startRect.left + startRect.width
+      : startRect.left;
+
+    const fixedY = north
+      ? startRect.top + startRect.height
+      : startRect.top;
+
+    const gridLeft = Number.isFinite(
+      Number(geometry && geometry.gridLeft)
+    )
+      ? Number(geometry.gridLeft)
+      : 0;
+
+    const gridTop = Number.isFinite(
+      Number(geometry && geometry.gridTop)
+    )
+      ? Number(geometry.gridTop)
+      : 0;
+
+    const rawWidth = Math.max(
+      MIN_IMAGE_RESIZE_EDGE,
+      startRect.width +
+        (west ? -dx : dx)
+    );
+
+    const rawHeight = Math.max(
+      MIN_IMAGE_RESIZE_EDGE,
+      startRect.height +
+        (north ? -dy : dy)
+    );
+
+    const maximumWidth = west
+      ? Math.max(
+          MIN_IMAGE_RESIZE_EDGE,
+          fixedX - gridLeft
+        )
+      : Number.POSITIVE_INFINITY;
+
+    const maximumHeight = north
+      ? Math.max(
+          MIN_IMAGE_RESIZE_EDGE,
+          fixedY - gridTop
+        )
+      : Number.POSITIVE_INFINITY;
+
+    let width;
+    let height;
+
+    if (preserveAspect) {
+      const horizontalScale =
+        rawWidth / startRect.width;
+
+      const verticalScale =
+        rawHeight / startRect.height;
+
+      /*
+       * Follow the pointer axis with the larger relative change. This avoids
+       * the image jumping when a user starts a mostly horizontal or vertical
+       * corner drag.
+       */
+      let scale =
+        Math.abs(horizontalScale - 1) >=
+        Math.abs(verticalScale - 1)
+          ? horizontalScale
+          : verticalScale;
+
+      const minimumScale = Math.max(
+        MIN_IMAGE_RESIZE_EDGE /
+          startRect.width,
+
+        MIN_IMAGE_RESIZE_EDGE /
+          startRect.height
+      );
+
+      let maximumScale =
+        Number.POSITIVE_INFINITY;
+
+      if (west) {
+        maximumScale = Math.min(
+          maximumScale,
+          maximumWidth /
+            startRect.width
+        );
+      }
+
+      if (north) {
+        maximumScale = Math.min(
+          maximumScale,
+          maximumHeight /
+            startRect.height
+        );
+      }
+
+      scale = clampResizeValue(
+        scale,
+        minimumScale,
+        maximumScale
+      );
+
+      width =
+        startRect.width * scale;
+
+      height =
+        startRect.height * scale;
+    } else {
+      width = clampResizeValue(
+        rawWidth,
+        MIN_IMAGE_RESIZE_EDGE,
+        maximumWidth
+      );
+
+      height = clampResizeValue(
+        rawHeight,
+        MIN_IMAGE_RESIZE_EDGE,
+        maximumHeight
+      );
+    }
+
+    return {
+      left: west
+        ? fixedX - width
+        : fixedX,
+
+      top: north
+        ? fixedY - height
+        : fixedY,
+
+      width,
+      height
+    };
+  }
+
+  function imageRectsDiffer(a, b) {
+    if (!a || !b) return false;
+
+    return (
+      Math.abs(a.left - b.left) >= 0.1 ||
+      Math.abs(a.top - b.top) >= 0.1 ||
+      Math.abs(a.width - b.width) >= 0.1 ||
+      Math.abs(a.height - b.height) >= 0.1
+    );
+  }
+
+  function beginImageResize(
+    ev,
+    surface,
+    layer,
+    img,
+    frame,
+    handle,
+    imageId,
+    image,
+    geometry,
+    callbacks
+  ) {
+    if (
+      !ev ||
+      ev.button !== 0 ||
+      !surface ||
+      !layer ||
+      !img ||
+      !frame ||
+      !image ||
+      !["nw", "ne", "se", "sw"].includes(handle)
+    ) {
+      return;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (
+      typeof ev.stopImmediatePropagation ===
+      "function"
+    ) {
+      ev.stopImmediatePropagation();
+    }
+
+    const startRect =
+      visibleImageRect(img);
+
+    if (
+      startRect.width <
+        MIN_IMAGE_RESIZE_EDGE ||
+      startRect.height <
+        MIN_IMAGE_RESIZE_EDGE
+    ) {
+      return;
+    }
+
+    const startX = Number(ev.clientX);
+    const startY = Number(ev.clientY);
+
+    if (
+      !Number.isFinite(startX) ||
+      !Number.isFinite(startY)
+    ) {
+      return;
+    }
+
+    let changed = false;
+
+    let currentRect = {
+      ...startRect
+    };
+
+    if (callbacks.onTransformStart) {
+      callbacks.onTransformStart(
+        imageId,
+        image,
+        startRect,
+        geometry
+      );
+    }
+
+    const resizeClass =
+      `spreadsheetImageResizing-${handle}`;
+
+    const cleanup = () => {
+      document.removeEventListener(
+        "pointermove",
+        onMove
+      );
+
+      document.removeEventListener(
+        "pointerup",
+        onUp
+      );
+
+      document.removeEventListener(
+        "pointercancel",
+        onCancel
+      );
+
+      document.body.classList.remove(
+        "spreadsheetImageResizing"
+      );
+
+      document.body.classList.remove(
+        resizeClass
+      );
+    };
+
+    const onMove = (moveEv) => {
+      const dx =
+        Number(moveEv.clientX) -
+        startX;
+
+      const dy =
+        Number(moveEv.clientY) -
+        startY;
+
+      if (
+        !Number.isFinite(dx) ||
+        !Number.isFinite(dy)
+      ) {
+        return;
+      }
+
+      const nextRect =
+        resizedImageRect(
+          startRect,
+          handle,
+          dx,
+          dy,
+          geometry,
+
+          /*
+           * Preserve the current displayed aspect ratio by default. Holding
+           * Shift explicitly enables free horizontal/vertical stretching.
+           */
+          !moveEv.shiftKey
+        );
+
+      if (
+        !imageRectsDiffer(
+          startRect,
+          nextRect
+        )
+      ) {
+        return;
+      }
+
+      changed = true;
+      currentRect = nextRect;
+
+      setImageRect(
+        img,
+        frame,
+        currentRect
+      );
+
+      if (callbacks.onTransformPreview) {
+        callbacks.onTransformPreview(
+          imageId,
+          image,
+          currentRect,
+          geometry
+        );
+      }
+    };
+
+    const onUp = () => {
+      cleanup();
+
+      if (!changed) {
+        setImageRect(
+          img,
+          frame,
+          startRect
+        );
+
+        if (callbacks.onTransformCancel) {
+          callbacks.onTransformCancel(
+            imageId,
+            image,
+            startRect,
+            geometry
+          );
+        }
+
+        return;
+      }
+
+      if (callbacks.onTransformCommit) {
+        callbacks.onTransformCommit(
+          imageId,
+          image,
+          currentRect,
+          geometry
+        );
+      }
+    };
+
+    const onCancel = () => {
+      cleanup();
+
+      setImageRect(
+        img,
+        frame,
+        startRect
+      );
+
+      if (callbacks.onTransformCancel) {
+        callbacks.onTransformCancel(
+          imageId,
+          image,
+          startRect,
+          geometry
+        );
+      }
+    };
+
+    document.body.classList.add(
+      "spreadsheetImageResizing"
+    );
+
+    document.body.classList.add(
+      resizeClass
+    );
+
+    document.addEventListener(
+      "pointermove",
+      onMove
+    );
+
+    document.addEventListener(
+      "pointerup",
+      onUp,
+      { once: true }
+    );
+
+    document.addEventListener(
+      "pointercancel",
+      onCancel,
+      { once: true }
+    );
+  }
+
   function appendSelectionFrame(layer, img) {
     if (!layer || !img) return;
 
@@ -523,9 +939,53 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     frame.style.width = `${rect.width}px`;
     frame.style.height = `${rect.height}px`;
 
+    const interaction =
+      layer._spreadsheetImageInteraction;
+
+    const image =
+      img._spreadsheetImageValue;
+
+    const imageId = String(
+      img.dataset &&
+      img.dataset.spreadsheetImageId ||
+      ""
+    );
+
     for (const pos of ["nw", "ne", "se", "sw"]) {
       const handle = document.createElement("span");
-      handle.className = `spreadsheetImageSelectionHandle spreadsheetImageSelectionHandle-${pos}`;
+
+      handle.className =
+        `spreadsheetImageSelectionHandle ` +
+        `spreadsheetImageSelectionHandle-${pos}`;
+
+      handle.dataset.spreadsheetImageResizeHandle =
+        pos;
+
+      handle.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (
+            !interaction ||
+            !image
+          ) {
+            return;
+          }
+
+          beginImageResize(
+            ev,
+            interaction.surface,
+            layer,
+            img,
+            frame,
+            pos,
+            imageId,
+            image,
+            interaction.geometry,
+            interaction.callbacks
+          );
+        }
+      );
+
       frame.appendChild(handle);
     }
 
@@ -632,6 +1092,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const layer = document.createElement("div");
     layer.className = "spreadsheetImageOverlayLayer";
+
+    /*
+     * Interaction callbacks and workbook image references stay on the
+     * short-lived DOM overlay. They are never serialized into workbook state.
+     */
+    layer._spreadsheetImageInteraction = {
+      surface,
+      geometry: transformGeometry,
+      callbacks: {
+        onSelect,
+        onTransformStart,
+        onTransformPreview,
+        onTransformCommit,
+        onTransformCancel
+      }
+    };
+
     if (selectable) {
       layer.classList.add("spreadsheetImageOverlayLayerSelectable");
       layer.removeAttribute("aria-hidden");
@@ -700,6 +1177,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       img.dataset.spreadsheetImageEditAs = String(
         image && image.editAs || ""
       );
+
+      img._spreadsheetImageValue =
+        image;
 
       if (fixedSize) {
         img.dataset.spreadsheetTransformWidth =
