@@ -3214,6 +3214,207 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return !!target.isContentEditable;
   }
 
+
+  function selectedSpreadsheetImage() {
+    const sheet =
+      state.sheets[
+        state.active
+      ];
+
+    const selectedId =
+      String(
+        state.selectedImageId ||
+        ""
+      );
+
+    const images =
+      Array.isArray(
+        sheet &&
+        sheet.images
+      )
+        ? sheet.images
+        : [];
+
+    if (
+      !sheet ||
+      !selectedId ||
+      !images.length
+    ) {
+      return null;
+    }
+
+    const index =
+      images.findIndex(
+        (image) =>
+          String(
+            image &&
+            image.id ||
+            ""
+          ) === selectedId
+      );
+
+    if (index < 0) {
+      return null;
+    }
+
+    return {
+      sheet,
+      images,
+      index,
+      image: images[index]
+    };
+  }
+
+  function deleteSelectedSpreadsheetImage() {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving
+    ) {
+      return false;
+    }
+
+    const selected =
+      selectedSpreadsheetImage();
+
+    if (!selected) {
+      return false;
+    }
+
+    const {
+      sheet,
+      images,
+      index,
+      image
+    } = selected;
+
+    const imported =
+      image &&
+      image.source !== "inserted";
+
+    if (imported) {
+      const drawingPath =
+        String(
+          image.drawingPath || ""
+        );
+
+      const relationshipId =
+        String(
+          image.relationshipId || ""
+        );
+
+      const anchorIndex =
+        Number(
+          image.anchorIndex
+        );
+
+      /*
+       * Security: never remove an imported picture unless its exact drawing
+       * anchor identity was captured during XLSX import.
+       */
+      if (
+        !drawingPath ||
+        !relationshipId ||
+        !Number.isInteger(
+          anchorIndex
+        ) ||
+        anchorIndex < 0
+      ) {
+        setStatus(
+          tr(
+            "filemgr.spreadsheet_editor.image_delete_failed",
+            null,
+            "The image could not be identified safely for deletion."
+          ),
+          "warn"
+        );
+
+        return false;
+      }
+    }
+
+    const historyBefore =
+      captureHistorySnapshot();
+
+    if (imported) {
+      if (
+        !Array.isArray(
+          sheet.deletedImages
+        )
+      ) {
+        sheet.deletedImages = [];
+      }
+
+      const deletedImage = {
+        id: String(
+          image.id ||
+          state.selectedImageId ||
+          ""
+        ),
+
+        source: "imported",
+
+        drawingPath:
+          String(
+            image.drawingPath ||
+            ""
+          ),
+
+        relationshipId:
+          String(
+            image.relationshipId ||
+            ""
+          ),
+
+        anchorIndex:
+          Number(
+            image.anchorIndex
+          )
+      };
+
+      const alreadyRecorded =
+        sheet.deletedImages.some(
+          (item) =>
+            item &&
+            item.drawingPath ===
+              deletedImage.drawingPath &&
+            item.relationshipId ===
+              deletedImage.relationshipId &&
+            item.anchorIndex ===
+              deletedImage.anchorIndex
+        );
+
+      if (!alreadyRecorded) {
+        sheet.deletedImages.push(
+          deletedImage
+        );
+      }
+    }
+
+    /*
+     * Inserted binary data remains in the session asset registry until the
+     * editor closes. Undo can therefore restore a deleted inserted image
+     * without duplicating or losing its binary payload.
+     */
+    images.splice(
+      index,
+      1
+    );
+
+    state.selectedImageId = "";
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = null;
+    formulaFocus = null;
+
+    commitHistorySnapshot(
+      historyBefore
+    );
+
+    render();
+    return true;
+  }
+
   function shouldLetTextDeleteHandle(ev) {
     const target = ev && ev.target;
     if (!target) return false;
@@ -3240,6 +3441,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       !ev.ctrlKey &&
       !ev.metaKey
     ) {
+      /*
+       * Image selection takes precedence even when an old cell input still
+       * owns DOM focus. This also keeps File Manager's global delete shortcut
+       * from opening a trash confirmation for the XLSX file itself.
+       */
+      if (state.selectedImageId) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        deleteSelectedSpreadsheetImage();
+        return;
+      }
+
       if (shouldLetTextDeleteHandle(ev)) return;
 
       if (state.selection || state.rangeSelection || state.activeCell) {
@@ -5138,9 +5352,16 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
       : [];
-    const workbookImages = imageApi && typeof imageApi.imagesFromWorkbookFiles === "function"
-      ? imageApi.imagesFromWorkbookFiles(wb, names)
-      : [];
+    const workbookImages =
+      imageApi &&
+      typeof imageApi.imagesFromWorkbookFiles ===
+        "function"
+        ? imageApi.imagesFromWorkbookFiles(
+            wb,
+            names,
+            state.workbookImageInfo
+          )
+        : [];
 
     if (!names.length) {
       return [{
@@ -7331,7 +7552,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     requestAnimationFrame(() => refreshEditorFreezeOffsets(table));
     updateFreezeToolbarButtons();
 
-    const overlayApi = FM && FM.spreadsheetImageOverlay;
+    const overlayApi =
+      FM && FM.spreadsheetImageOverlay;
+
+    const imageGeometryApi =
+      FM && FM.spreadsheetXlsxImages;
+
+    let imageTransformBefore = null;
+
     if (overlayApi && typeof overlayApi.render === "function") {
       overlayApi.render(surface, table, sheet, {
         defaultColWidth: sheetDefaultColumnWidth(sheet),
@@ -7352,6 +7580,61 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           if (typeof overlayApi.select === "function") {
             overlayApi.select(surface, state.selectedImageId);
           }
+        },
+
+        onTransformStart: () => {
+          imageTransformBefore =
+            captureHistorySnapshot();
+        },
+
+        onTransformCancel: () => {
+          imageTransformBefore = null;
+        },
+
+        onTransformCommit: (
+          imageId,
+          image,
+          rect,
+          geometry
+        ) => {
+          const before = imageTransformBefore;
+          imageTransformBefore = null;
+
+          if (
+            !before ||
+            state.sheets[state.active] !== sheet ||
+            !imageGeometryApi ||
+            typeof imageGeometryApi.applyImagePixelRect !==
+              "function"
+          ) {
+            render();
+            return;
+          }
+
+          const changed =
+            imageGeometryApi.applyImagePixelRect(
+              image,
+              sheet,
+              rect,
+              {
+                ...geometry,
+                imageId
+              }
+            );
+
+          if (!changed) {
+            render();
+            return;
+          }
+
+          state.selectedImageId = String(
+            imageId ||
+            image.id ||
+            ""
+          );
+
+          commitHistorySnapshot(before);
+          render();
         }
       });
     }
@@ -7802,6 +8085,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       render();
     }
   }
+
 
   async function saveCurrent() {
     if (state.saving || state.readOnly || state.tooLarge || !state.dirty) return;

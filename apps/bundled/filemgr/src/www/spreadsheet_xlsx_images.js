@@ -12,6 +12,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const REL_DRAWING_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing";
   const REL_IMAGE_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
   const DRAWING_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.drawing+xml";
+  const DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
   const EMU_PER_PIXEL = 9525;
   const MAX_INSERTED_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -567,6 +568,609 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     ].join("");
   }
 
+
+  function updateDrawingMarker(
+    anchor,
+    markerName,
+    markerValue
+  ) {
+    const marker =
+      directLocalNameElement(
+        anchor,
+        markerName
+      );
+
+    if (!marker) return false;
+
+    const normalized =
+      normalizedImageMarker(
+        markerValue
+      );
+
+    for (
+      const key of [
+        "col",
+        "colOff",
+        "row",
+        "rowOff"
+      ]
+    ) {
+      const element =
+        directLocalNameElement(
+          marker,
+          key
+        );
+
+      if (!element) return false;
+
+      element.textContent =
+        String(normalized[key]);
+    }
+
+    return true;
+  }
+
+  function firstPictureTransformElement(anchor) {
+    const picture =
+      localNameElements(
+        anchor,
+        "pic"
+      )[0];
+
+    if (!picture) return null;
+
+    const transforms =
+      localNameElements(
+        picture,
+        "xfrm"
+      );
+
+    for (const transform of transforms) {
+      if (
+        directLocalNameElement(
+          transform,
+          "ext"
+        )
+      ) {
+        return transform;
+      }
+    }
+
+    return null;
+  }
+
+  function updateDrawingTransform(
+    anchor,
+    image
+  ) {
+    const transform =
+      firstPictureTransformElement(
+        anchor
+      );
+
+    if (!transform) return false;
+
+    const extent =
+      directLocalNameElement(
+        transform,
+        "ext"
+      );
+
+    if (!extent) return false;
+
+    let offset =
+      directLocalNameElement(
+        transform,
+        "off"
+      );
+
+    if (!offset) {
+      const document =
+        transform.ownerDocument;
+
+      if (
+        !document ||
+        typeof document.createElementNS !==
+          "function"
+      ) {
+        return false;
+      }
+
+      offset =
+        document.createElementNS(
+          DRAWINGML_NS,
+          "a:off"
+        );
+
+      transform.insertBefore(
+        offset,
+        extent
+      );
+    }
+
+    const geometry =
+      image &&
+      image.transform &&
+      typeof image.transform === "object"
+        ? image.transform
+        : null;
+
+    if (!geometry) return false;
+
+    const x = Number(geometry.x);
+    const y = Number(geometry.y);
+    const cx = Number(geometry.cx);
+    const cy = Number(geometry.cy);
+
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy) ||
+      cx <= 0 ||
+      cy <= 0
+    ) {
+      return false;
+    }
+
+    offset.setAttribute(
+      "x",
+      String(Math.max(0, Math.round(x)))
+    );
+
+    offset.setAttribute(
+      "y",
+      String(Math.max(0, Math.round(y)))
+    );
+
+    extent.setAttribute(
+      "cx",
+      String(Math.max(1, Math.round(cx)))
+    );
+
+    extent.setAttribute(
+      "cy",
+      String(Math.max(1, Math.round(cy)))
+    );
+
+    return true;
+  }
+
+  function importedImageAnchor(
+    anchors,
+    image
+  ) {
+    const anchorIndex =
+      Number(image && image.anchorIndex);
+
+    const relationshipId =
+      String(
+        image &&
+        image.relationshipId ||
+        ""
+      );
+
+    if (
+      Number.isInteger(anchorIndex) &&
+      anchorIndex >= 0 &&
+      anchorIndex < anchors.length
+    ) {
+      const candidate =
+        anchors[anchorIndex];
+
+      if (
+        relationshipId &&
+        firstBlipEmbed(candidate) ===
+          relationshipId
+      ) {
+        return candidate;
+      }
+    }
+
+    /*
+     * A relationship can theoretically be reused by multiple pictures.
+     * Only use relationship fallback when it identifies exactly one anchor.
+     */
+    if (relationshipId) {
+      const matches =
+        anchors.filter(
+          (anchor) =>
+            firstBlipEmbed(anchor) ===
+              relationshipId
+        );
+
+      if (matches.length === 1) {
+        return matches[0];
+      }
+    }
+
+    return null;
+  }
+
+  function rewriteImportedDrawingXml(
+    originalXml,
+    drawingPath,
+    images,
+    deletions
+  ) {
+    const edits =
+      Array.isArray(images)
+        ? images.filter(
+            (image) =>
+              image &&
+              image.geometryEdited &&
+              image.source !== "inserted" &&
+              String(
+                image.drawingPath || ""
+              ) === drawingPath
+          )
+        : [];
+
+    const removals =
+      Array.isArray(deletions)
+        ? deletions.filter(
+            (image) =>
+              image &&
+              image.source !== "inserted" &&
+              String(
+                image.drawingPath || ""
+              ) === drawingPath
+          )
+        : [];
+
+    if (
+      !edits.length &&
+      !removals.length
+    ) {
+      return originalXml;
+    }
+
+    const document =
+      parseXml(originalXml);
+
+    if (!document) {
+      throw insertedImageError(
+        "imported_image_drawing_invalid",
+        "The imported image drawing XML could not be parsed safely."
+      );
+    }
+
+    const anchors =
+      localNameElements(
+        document,
+        "twoCellAnchor"
+      );
+
+    for (const image of edits) {
+      const anchor =
+        importedImageAnchor(
+          anchors,
+          image
+        );
+
+      if (!anchor) {
+        throw insertedImageError(
+          "imported_image_anchor_not_found",
+          "The imported image anchor could not be identified safely."
+        );
+      }
+
+      const updatedFrom =
+        updateDrawingMarker(
+          anchor,
+          "from",
+          image.from
+        );
+
+      const updatedTo =
+        updateDrawingMarker(
+          anchor,
+          "to",
+          image.to
+        );
+
+      const updatedTransform =
+        updateDrawingTransform(
+          anchor,
+          image
+        );
+
+      if (
+        !updatedFrom ||
+        !updatedTo ||
+        !updatedTransform
+      ) {
+        throw insertedImageError(
+          "imported_image_geometry_invalid",
+          "The imported image geometry could not be updated safely."
+        );
+      }
+
+      anchor.setAttribute(
+        "editAs",
+        normalizedAnchorEditAs(
+          image.editAs
+        )
+      );
+    }
+
+    /*
+     * Security: resolve every deletion against the untouched anchor list
+     * before removing anything. This prevents index shifting from deleting
+     * a different picture when several imported images are removed.
+     */
+    const anchorsToRemove = [];
+
+    for (const image of removals) {
+      const anchor =
+        importedImageAnchor(
+          anchors,
+          image
+        );
+
+      if (!anchor) {
+        throw insertedImageError(
+          "imported_image_delete_anchor_not_found",
+          "The imported image could not be identified safely for deletion."
+        );
+      }
+
+      if (
+        !anchorsToRemove.includes(
+          anchor
+        )
+      ) {
+        anchorsToRemove.push(
+          anchor
+        );
+      }
+    }
+
+    for (
+      const anchor of
+      anchorsToRemove
+    ) {
+      const parent =
+        anchor.parentNode;
+
+      if (
+        !parent ||
+        typeof parent.removeChild !==
+          "function"
+      ) {
+        throw insertedImageError(
+          "imported_image_delete_failed",
+          "The imported image anchor could not be removed safely."
+        );
+      }
+
+      parent.removeChild(anchor);
+    }
+
+    if (
+      typeof XMLSerializer ===
+        "undefined"
+    ) {
+      throw insertedImageError(
+        "imported_image_serializer_missing",
+        "The imported drawing XML serializer is unavailable."
+      );
+    }
+
+    let serialized = "";
+
+    try {
+      serialized =
+        new XMLSerializer()
+          .serializeToString(
+            document
+          );
+    } catch (_) {
+      serialized = "";
+    }
+
+    if (!serialized) {
+      throw insertedImageError(
+        "imported_image_drawing_serialize_failed",
+        "The imported drawing XML could not be serialized safely."
+      );
+    }
+
+    if (
+      /^\s*<\?xml\b/i.test(
+        originalXml
+      ) &&
+      !/^\s*<\?xml\b/i.test(
+        serialized
+      )
+    ) {
+      serialized =
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        serialized;
+    }
+
+    return serialized;
+  }
+
+  function applyImportedDrawingEdits(
+    preservedEntries,
+    info,
+    sheets
+  ) {
+    const changesByDrawing =
+      new Map();
+
+    const changesForDrawing = (
+      drawingPath
+    ) => {
+      if (
+        !changesByDrawing.has(
+          drawingPath
+        )
+      ) {
+        changesByDrawing.set(
+          drawingPath,
+          {
+            edits: [],
+            deletions: []
+          }
+        );
+      }
+
+      return changesByDrawing.get(
+        drawingPath
+      );
+    };
+
+    for (
+      const sheet of
+      Array.isArray(sheets)
+        ? sheets
+        : []
+    ) {
+      const images =
+        Array.isArray(
+          sheet &&
+          sheet.images
+        )
+          ? sheet.images
+          : [];
+
+      const deletedImages =
+        Array.isArray(
+          sheet &&
+          sheet.deletedImages
+        )
+          ? sheet.deletedImages
+          : [];
+
+      for (const image of images) {
+        if (
+          !image ||
+          !image.geometryEdited ||
+          image.source === "inserted"
+        ) {
+          continue;
+        }
+
+        const drawingPath =
+          safeName(
+            image.drawingPath
+          );
+
+        if (
+          !drawingPath ||
+          isUnsafeZipName(
+            drawingPath
+          )
+        ) {
+          throw insertedImageError(
+            "imported_image_drawing_path_invalid",
+            "The imported image drawing path is invalid."
+          );
+        }
+
+        changesForDrawing(
+          drawingPath
+        ).edits.push(image);
+      }
+
+      for (
+        const image of
+        deletedImages
+      ) {
+        if (
+          !image ||
+          image.source === "inserted"
+        ) {
+          continue;
+        }
+
+        const drawingPath =
+          safeName(
+            image.drawingPath
+          );
+
+        if (
+          !drawingPath ||
+          isUnsafeZipName(
+            drawingPath
+          )
+        ) {
+          throw insertedImageError(
+            "imported_image_delete_path_invalid",
+            "The imported image drawing path is invalid."
+          );
+        }
+
+        changesForDrawing(
+          drawingPath
+        ).deletions.push(
+          image
+        );
+      }
+    }
+
+    if (!changesByDrawing.size) {
+      return;
+    }
+
+    const xmlByPath =
+      info &&
+      info.drawingXmlByPath &&
+      typeof info.drawingXmlByPath ===
+        "object"
+        ? info.drawingXmlByPath
+        : {};
+
+    for (
+      const [
+        drawingPath,
+        changes
+      ] of changesByDrawing.entries()
+    ) {
+      const originalXml =
+        String(
+          xmlByPath[
+            drawingPath
+          ] ||
+          ""
+        );
+
+      const preservedIndex =
+        preservedEntries.findIndex(
+          (entry) =>
+            entry &&
+            entry.name ===
+              drawingPath
+        );
+
+      if (
+        !originalXml ||
+        preservedIndex < 0
+      ) {
+        throw insertedImageError(
+          "imported_image_drawing_not_preserved",
+          "The imported drawing part is not available for safe rewriting."
+        );
+      }
+
+      preservedEntries[
+        preservedIndex
+      ] = {
+        name: drawingPath,
+
+        data:
+          rewriteImportedDrawingXml(
+            originalXml,
+            drawingPath,
+            changes.edits,
+            changes.deletions
+          )
+      };
+    }
+  }
+
   function prepareExport(info, sheetsOrCount) {
     const sheets = normalizedExportSheets(
       sheetsOrCount
@@ -596,14 +1200,44 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         ? info.media.slice()
         : [];
 
-    const sheetDrawings = preserveOriginal
-      ? buildSheetDrawingMap(
-          drawings,
-          sheets.length
-        )
-      : [];
+    const capturedSheetDrawings =
+      preserveOriginal &&
+      Array.isArray(info && info.sheetDrawings)
+        ? info.sheetDrawings.filter(
+            (item) =>
+              item &&
+              Number.isInteger(item.sheetIndex) &&
+              item.sheetIndex >= 0 &&
+              item.sheetIndex < sheets.length &&
+              item.drawing
+          )
+        : [];
+
+    const sheetDrawings =
+      capturedSheetDrawings.length
+        ? capturedSheetDrawings.map(
+            (item) => ({ ...item })
+          )
+        : (
+            preserveOriginal
+              ? buildSheetDrawingMap(
+                  drawings,
+                  sheets.length
+                )
+              : []
+          );
 
     const generatedEntries = [];
+
+    /*
+     * Replace only edited imported drawing parts. Media, relationships,
+     * unrelated pictures, charts and shapes continue through preservation.
+     */
+    applyImportedDrawingEdits(
+      preservedEntries,
+      info,
+      sheets
+    );
 
     const usedDrawingNumbers =
       usedDrawingPartNumbers(drawings);
@@ -853,6 +1487,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   const MAX_OVERLAY_IMAGES = 20;
   const MAX_OVERLAY_IMAGE_BYTES = 8 * 1024 * 1024;
+  const MAX_PRESERVED_DRAWING_XML_BYTES = 4 * 1024 * 1024;
 
   function workbookFileBytes(file) {
     const content = file && file.content != null ? file.content : null;
@@ -1109,10 +1744,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       relTargets.set(rel.id, resolveZipTarget(drawingPath, rel.target));
     }
 
-    const anchors = localNameElements(drawingDoc, "twoCellAnchor");
+    const anchors = localNameElements(
+      drawingDoc,
+      "twoCellAnchor"
+    );
+
     const out = [];
 
-    for (const anchor of anchors) {
+    for (
+      let anchorIndex = 0;
+      anchorIndex < anchors.length;
+      anchorIndex++
+    ) {
+      const anchor = anchors[anchorIndex];
       const from = parseMarker(anchor, "from");
       const to = parseMarker(anchor, "to");
       const embedId = firstBlipEmbed(anchor);
@@ -1124,9 +1768,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (!src) continue;
 
       out.push({
+        id: [
+          "xlsx-image",
+          drawingPath,
+          anchorIndex,
+          embedId
+        ].join(":"),
+
+        source: "imported",
         sheetIndex,
         mediaPath,
         drawingPath,
+        relationshipId: embedId,
+        anchorIndex,
         from,
         to,
         editAs: drawingAnchorEditAs(anchor),
@@ -1141,11 +1795,33 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return out;
   }
 
-  function imagesFromWorkbookFiles(wb, visibleSheetNames) {
-    const files = wb && wb.files && typeof wb.files === "object" ? wb.files : null;
-    const sheetNames = Array.isArray(visibleSheetNames) ? visibleSheetNames : [];
+  function imagesFromWorkbookFiles(
+    wb,
+    visibleSheetNames,
+    info = null
+  ) {
+    const files =
+      wb &&
+      wb.files &&
+      typeof wb.files === "object"
+        ? wb.files
+        : null;
+
+    const sheetNames =
+      Array.isArray(visibleSheetNames)
+        ? visibleSheetNames
+        : [];
 
     if (!files || !sheetNames.length) return [];
+
+    /*
+     * Drawing XML is workbook-level preservation data. Keep it outside
+     * sheet.images so undo snapshots do not duplicate whole XML documents.
+     */
+    if (info && typeof info === "object") {
+      info.drawingXmlByPath = {};
+      info.sheetDrawings = [];
+    }
 
     const out = [];
 
@@ -1157,10 +1833,73 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       for (const rel of rels) {
         if (rel.type !== REL_DRAWING_TYPE) continue;
 
-        const drawingPath = resolveZipTarget(sheetPart, rel.target);
-        if (!drawingPath || isUnsafeZipName(drawingPath)) continue;
+        const drawingPath =
+          resolveZipTarget(
+            sheetPart,
+            rel.target
+          );
 
-        out.push(...imagesFromDrawing(files, sheetIndex, drawingPath));
+        if (
+          !drawingPath ||
+          isUnsafeZipName(drawingPath)
+        ) {
+          continue;
+        }
+
+        if (info && typeof info === "object") {
+          const drawingBytes =
+            workbookFileBytes(
+              files[drawingPath]
+            );
+
+          /*
+           * Security: only bounded XML drawing parts are retained as editable
+           * text. Oversized or malformed parts remain protected by the normal
+           * preservation path and cannot be rewritten silently.
+           */
+          if (
+            drawingBytes &&
+            drawingBytes.byteLength > 0 &&
+            drawingBytes.byteLength <=
+              MAX_PRESERVED_DRAWING_XML_BYTES
+          ) {
+            const drawingXml =
+              workbookFileText(
+                files[drawingPath]
+              );
+
+            if (drawingXml) {
+              info.drawingXmlByPath[
+                drawingPath
+              ] = drawingXml;
+            }
+          }
+
+          if (
+            !info.sheetDrawings.some(
+              (item) =>
+                item &&
+                item.sheetIndex === sheetIndex
+            )
+          ) {
+            info.sheetDrawings.push({
+              sheetIndex,
+              relId:
+                `rIdPqnasDrawing${sheetIndex + 1}`,
+              target:
+                targetForDrawing(drawingPath),
+              drawing: drawingPath
+            });
+          }
+        }
+
+        out.push(
+          ...imagesFromDrawing(
+            files,
+            sheetIndex,
+            drawingPath
+          )
+        );
         if (out.length >= MAX_OVERLAY_IMAGES) return out.slice(0, MAX_OVERLAY_IMAGES);
       }
     }
@@ -1730,6 +2469,163 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return insertedImageAssets.size;
   }
 
+
+  function applyImagePixelRect(
+    image,
+    sheet,
+    rect,
+    options = {}
+  ) {
+    if (!image || !sheet || !rect) return false;
+
+    const left = Number(rect.left);
+    const top = Number(rect.top);
+    const width = Number(rect.width);
+    const height = Number(rect.height);
+
+    if (
+      !Number.isFinite(left) ||
+      !Number.isFinite(top) ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width < 8 ||
+      height < 8
+    ) {
+      return false;
+    }
+
+    const defaultColWidth = Math.max(
+      1,
+      Number(options.defaultColWidth) || 80
+    );
+
+    const defaultRowHeight = Math.max(
+      1,
+      Number(options.defaultRowHeight) || 20
+    );
+
+    const gridLeft = Number.isFinite(
+      Number(options.gridLeft)
+    )
+      ? Number(options.gridLeft)
+      : 0;
+
+    const gridTop = Number.isFinite(
+      Number(options.gridTop)
+    )
+      ? Number(options.gridTop)
+      : 0;
+
+    const localLeft = Math.max(
+      0,
+      left - gridLeft
+    );
+
+    const localTop = Math.max(
+      0,
+      top - gridTop
+    );
+
+    const localRight = localLeft + width;
+    const localBottom = localTop + height;
+
+    const fromCol = markerAfterPixels(
+      sheet.colWidths,
+      0,
+      localLeft,
+      defaultColWidth,
+      "col",
+      "colOff"
+    );
+
+    const fromRow = markerAfterPixels(
+      sheet.rowHeights,
+      0,
+      localTop,
+      defaultRowHeight,
+      "row",
+      "rowOff"
+    );
+
+    const toCol = markerAfterPixels(
+      sheet.colWidths,
+      0,
+      localRight,
+      defaultColWidth,
+      "col",
+      "colOff"
+    );
+
+    const toRow = markerAfterPixels(
+      sheet.rowHeights,
+      0,
+      localBottom,
+      defaultRowHeight,
+      "row",
+      "rowOff"
+    );
+
+    image.from = {
+      col: fromCol.col,
+      colOff: fromCol.colOff,
+      row: fromRow.row,
+      rowOff: fromRow.rowOff
+    };
+
+    image.to = {
+      col: toCol.col,
+      colOff: toCol.colOff,
+      row: toRow.row,
+      rowOff: toRow.rowOff
+    };
+
+    image.displayWidth = width;
+    image.displayHeight = height;
+
+    const oldTransform =
+      image.transform &&
+      typeof image.transform === "object"
+        ? image.transform
+        : {};
+
+    image.transform = {
+      ...oldTransform,
+      x: Math.max(
+        0,
+        Math.round(localLeft * EMU_PER_PIXEL)
+      ),
+      y: Math.max(
+        0,
+        Math.round(localTop * EMU_PER_PIXEL)
+      ),
+      cx: Math.max(
+        1,
+        Math.round(width * EMU_PER_PIXEL)
+      ),
+      cy: Math.max(
+        1,
+        Math.round(height * EMU_PER_PIXEL)
+      )
+    };
+
+    /*
+     * Imported images need their preserved drawing XML updated before they
+     * can be saved safely. Keep an explicit flag so save cannot silently
+     * discard a geometry edit.
+     */
+    image.geometryEdited = true;
+
+    const stableId = String(
+      options.imageId || image.id || ""
+    );
+
+    if (stableId) {
+      image.id = stableId;
+    }
+
+    return true;
+  }
+
   FM.spreadsheetXlsxImages = {
     inspectArrayBuffer,
     prepareExport,
@@ -1745,6 +2641,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     createInsertedImageFromFile,
     insertedAssetForImage,
     releaseInsertedImageAssets,
-    insertedImageAssetCount
+    insertedImageAssetCount,
+    applyImagePixelRect
   };
 })();
