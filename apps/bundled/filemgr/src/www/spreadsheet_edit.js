@@ -5467,8 +5467,64 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
-  function sheetNameRegexEscape(value) {
-    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function replaceCaseInsensitiveLiteral(source, needle, replacement) {
+    const src = String(source || "");
+    const token = String(needle || "");
+
+    if (!token) return src;
+
+    const srcKey = src.toLowerCase();
+    const tokenKey = token.toLowerCase();
+    const parts = [];
+    let cursor = 0;
+
+    while (cursor < src.length) {
+      const index = srcKey.indexOf(tokenKey, cursor);
+      if (index < 0) break;
+
+      parts.push(src.slice(cursor, index), replacement);
+      cursor = index + token.length;
+    }
+
+    parts.push(src.slice(cursor));
+    return parts.join("");
+  }
+
+  function isBareSheetReferenceBoundary(ch) {
+    return !ch || !/[A-Za-z0-9_.\]']/.test(ch);
+  }
+
+  function replaceBareSheetReferenceLiteral(source, sheetName, replacement) {
+    const src = String(source || "");
+    const name = String(sheetName || "");
+    const token = `${name}!`;
+
+    if (!name) return src;
+
+    const srcKey = src.toLowerCase();
+    const tokenKey = token.toLowerCase();
+    const parts = [];
+    let cursor = 0;
+    let searchFrom = 0;
+
+    while (searchFrom < src.length) {
+      const index = srcKey.indexOf(tokenKey, searchFrom);
+      if (index < 0) break;
+
+      const previous = index > 0 ? src[index - 1] : "";
+
+      if (!isBareSheetReferenceBoundary(previous)) {
+        searchFrom = index + 1;
+        continue;
+      }
+
+      parts.push(src.slice(cursor, index), replacement);
+      cursor = index + token.length;
+      searchFrom = cursor;
+    }
+
+    parts.push(src.slice(cursor));
+    return parts.join("");
   }
 
   function quotedFormulaSheetName(name) {
@@ -5476,23 +5532,22 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function rewriteFormulaSheetReferencesOutsideStrings(segment, oldName, newName) {
-    let out = String(segment || "");
     const quotedOld = quotedFormulaSheetName(oldName);
     const quotedNew = quotedFormulaSheetName(newName);
 
-    out = out.replace(
-      new RegExp(sheetNameRegexEscape(quotedOld), "gi"),
+    // Security: sheet names are user-controlled. Use literal scanning instead
+    // of constructing RegExp objects, avoiding ReDoS on the browser main thread.
+    const withQuotedReferences = replaceCaseInsensitiveLiteral(
+      segment,
+      quotedOld,
       quotedNew
     );
 
-    const bareOld = sheetNameRegexEscape(oldName);
-    const barePattern = new RegExp(
-      `(^|[^A-Za-z0-9_.\\]'])${bareOld}!`,
-      "gi"
+    return replaceBareSheetReferenceLiteral(
+      withQuotedReferences,
+      oldName,
+      quotedNew
     );
-
-    out = out.replace(barePattern, (_match, prefix) => `${prefix}${quotedNew}`);
-    return out;
   }
 
   function rewriteFormulaSheetReferences(raw, oldName, newName) {
@@ -5551,24 +5606,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function rewriteDeletedSheetReferencesOutsideStrings(segment, deletedName) {
-    let out = String(segment || "");
     const quotedOld = quotedFormulaSheetName(deletedName);
 
-    // Excel converts references to a deleted worksheet into #REF!.
-    out = out.replace(
-      new RegExp(sheetNameRegexEscape(quotedOld), "gi"),
+    // Security: avoid compiling a user-controlled worksheet name as a regular
+    // expression. Literal scanning also prevents browser main-thread ReDoS.
+    const withQuotedReferences = replaceCaseInsensitiveLiteral(
+      segment,
+      quotedOld,
       "#REF!"
     );
 
-    const bareOld = sheetNameRegexEscape(deletedName);
-    const barePattern = new RegExp(
-      `(^|[^A-Za-z0-9_.\\]'])${bareOld}!`,
-      "gi"
-    );
-
-    return out.replace(
-      barePattern,
-      (_match, prefix) => `${prefix}#REF!`
+    // Excel converts references to a deleted worksheet into #REF!.
+    return replaceBareSheetReferenceLiteral(
+      withQuotedReferences,
+      deletedName,
+      "#REF!"
     );
   }
 
