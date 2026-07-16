@@ -163,6 +163,25 @@
   color: var(--table-cell-text, var(--text));
 }
 
+/* XLSX row heights describe the complete row box. Vertical cell padding must
+   not make imported rows taller than the geometry used by image anchors. */
+.spreadsheetPreviewTable tbody tr,
+.spreadsheetPreviewTable tbody th,
+.spreadsheetPreviewTable tbody td {
+  box-sizing: border-box;
+}
+
+/*
+ * Imported XLSX row heights describe the complete row box. Keep worksheet
+ * content from expanding rows beyond the geometry used by image anchors.
+ */
+.spreadsheetPreviewTable tbody th,
+.spreadsheetPreviewTable tbody td {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+}
+
 .spreadsheetPreviewTable td[data-spreadsheet-text-overflow="1"] {
   position: relative;
   overflow: visible;

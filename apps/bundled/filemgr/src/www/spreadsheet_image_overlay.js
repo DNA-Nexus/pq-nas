@@ -30,7 +30,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return total;
   }
 
-  function pointForMarker(sheet, marker, defaults) {
+  function modelPointForMarker(sheet, marker, defaults) {
     const col = Math.max(0, Math.floor(markerNumber(marker, "col")));
     const row = Math.max(0, Math.floor(markerNumber(marker, "row")));
     const colOff = markerNumber(marker, "colOff") / EMU_PER_PIXEL;
@@ -39,6 +39,94 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return {
       x: sumDimension(sheet && sheet.colWidths, col, defaults.colWidth) + colOff,
       y: sumDimension(sheet && sheet.rowHeights, row, defaults.rowHeight) + rowOff
+    };
+  }
+
+  function domPointForMarker(surface, table, marker) {
+    if (!surface || !table || !marker) return null;
+
+    const col = Math.max(0, Math.floor(markerNumber(marker, "col")));
+    const row = Math.max(0, Math.floor(markerNumber(marker, "row")));
+    const colOff = markerNumber(marker, "colOff") / EMU_PER_PIXEL;
+    const rowOff = markerNumber(marker, "rowOff") / EMU_PER_PIXEL;
+
+    if (typeof surface.getBoundingClientRect !== "function") {
+      return null;
+    }
+
+    const surfaceRect = surface.getBoundingClientRect();
+
+    /*
+     * Prefer the actual worksheet cell boundary. This includes browser table
+     * borders and subpixel layout in the same geometry as the visible grid.
+     * Row/column indexes are bounded integers parsed from OOXML, not raw text.
+     */
+    const cell = table.querySelector(
+      `td[data-row="${row}"][data-col="${col}"]`
+    );
+
+    if (cell && typeof cell.getBoundingClientRect === "function") {
+      const cellRect = cell.getBoundingClientRect();
+      const x = cellRect.left - surfaceRect.left + colOff;
+      const y = cellRect.top - surfaceRect.top + rowOff;
+
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        return {
+          x: clampPixel(x),
+          y: clampPixel(y)
+        };
+      }
+    }
+
+    /*
+     * Fallback supports merged or partially rendered worksheets where the
+     * exact target cell does not exist in the DOM.
+     */
+    const columnHeader = table.querySelector(
+      `thead th[data-col="${col}"]`
+    );
+
+    const tbody = table.tBodies && table.tBodies[0];
+    const rowElement = tbody && tbody.rows
+      ? tbody.rows[row]
+      : null;
+
+    if (
+      !columnHeader ||
+      !rowElement ||
+      typeof columnHeader.getBoundingClientRect !== "function" ||
+      typeof rowElement.getBoundingClientRect !== "function"
+    ) {
+      return null;
+    }
+
+    const columnRect = columnHeader.getBoundingClientRect();
+    const rowRect = rowElement.getBoundingClientRect();
+
+    const x = columnRect.left - surfaceRect.left + colOff;
+    const y = rowRect.top - surfaceRect.top + rowOff;
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    return {
+      x: clampPixel(x),
+      y: clampPixel(y)
+    };
+  }
+
+  function pointForMarker(surface, table, sheet, marker, defaults, metrics) {
+    const domPoint = domPointForMarker(surface, table, marker);
+    if (domPoint) return domPoint;
+
+    /*
+     * Fallback keeps malformed or partially rendered worksheets usable.
+     * It uses only bounded numeric workbook dimensions.
+     */
+    const modelPoint = modelPointForMarker(sheet, marker, defaults);
+
+    return {
+      x: clampPixel(metrics.rowHeaderWidth + modelPoint.x),
+      y: clampPixel(metrics.colHeaderHeight + modelPoint.y)
     };
   }
 
@@ -100,25 +188,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   function visibleImageRect(img) {
     const anchor = imageAnchorRect(img);
-    const naturalWidth = Number(img && img.naturalWidth);
-    const naturalHeight = Number(img && img.naturalHeight);
 
-    if (
-      anchor.width > 0 &&
-      anchor.height > 0 &&
-      naturalWidth > 0 &&
-      naturalHeight > 0
-    ) {
-      const scale = Math.min(anchor.width / naturalWidth, anchor.height / naturalHeight);
-
-      return {
-        left: clampPixel(anchor.left),
-        top: clampPixel(anchor.top),
-        width: clampPixel(naturalWidth * scale),
-        height: clampPixel(naturalHeight * scale)
-      };
-    }
-
+    /*
+     * Existing XLSX images use the complete drawing anchor as their visible
+     * rectangle. Do not silently restore the media file's natural aspect ratio,
+     * because Excel may intentionally stretch the image inside its anchor.
+     */
     return {
       left: clampPixel(anchor.left),
       top: clampPixel(anchor.top),
@@ -237,11 +312,26 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       if (!from || !to || !src) return;
 
-      const p1 = pointForMarker(sheet, from, defaults);
-      const p2 = pointForMarker(sheet, to, defaults);
+      const p1 = pointForMarker(
+        surface,
+        table,
+        sheet,
+        from,
+        defaults,
+        metrics
+      );
 
-      const left = clampPixel(metrics.rowHeaderWidth + p1.x);
-      const top = clampPixel(metrics.colHeaderHeight + p1.y);
+      const p2 = pointForMarker(
+        surface,
+        table,
+        sheet,
+        to,
+        defaults,
+        metrics
+      );
+
+      const left = clampPixel(p1.x);
+      const top = clampPixel(p1.y);
       const width = clampPixel(Math.max(8, p2.x - p1.x));
       const height = clampPixel(Math.max(8, p2.y - p1.y));
       const imageId = imageIdFor(image, imageIndex);

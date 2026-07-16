@@ -544,6 +544,21 @@
   box-shadow: inset -2px 0 0 var(--accent, var(--fg));
 }
 
+/* XLSX row heights describe the complete worksheet row box. Keep the row
+   header from making imported rows taller than image-anchor geometry. */
+.spreadsheetEditorTable tbody tr,
+.spreadsheetEditorTable tbody th.rowHead,
+.spreadsheetEditorTable tbody td,
+.spreadsheetEditorTable tbody input {
+  box-sizing: border-box;
+}
+
+.spreadsheetEditorTable tbody th.rowHead {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+}
+
 .spreadsheetColumnLabel,
 .spreadsheetRowLabel {
   pointer-events: none;
@@ -1086,7 +1101,9 @@
 
 .spreadsheetImageOverlayImage {
   position: absolute;
-  object-fit: contain;
+
+  /* XLSX drawing anchors define the complete rendered image rectangle. */
+  object-fit: fill;
   object-position: left top;
   pointer-events: none;
   user-select: none;
