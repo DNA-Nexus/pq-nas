@@ -6621,6 +6621,32 @@ function describeMoveItems(items) {
     closeMenu();
   });
 
+
+  function isEditableKeyboardTarget(target) {
+    const element =
+      target instanceof Element
+        ? target
+        : null;
+
+    if (!element) return false;
+
+    const editable = element.closest(
+      [
+        "input",
+        "textarea",
+        "select",
+        '[role="textbox"]',
+        "[contenteditable]"
+      ].join(",")
+    );
+
+    if (!editable) return false;
+
+    return !editable.matches(
+      '[contenteditable="false"]'
+    );
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (shareModal && shareModal.classList.contains("show")) {
@@ -6632,6 +6658,14 @@ function describeMoveItems(items) {
         return;
       }
       closeMenu();
+      return;
+    }
+
+    /*
+     * Text editing owns Delete, Backspace and Ctrl+A. File Manager's global
+     * shortcuts must not steal those keys from inputs or editable content.
+     */
+    if (isEditableKeyboardTarget(e.target)) {
       return;
     }
 
