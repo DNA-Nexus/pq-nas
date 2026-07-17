@@ -6621,6 +6621,32 @@ function describeMoveItems(items) {
     closeMenu();
   });
 
+
+  function isEditableKeyboardTarget(target) {
+    const element =
+      target instanceof Element
+        ? target
+        : null;
+
+    if (!element) return false;
+
+    const editable = element.closest(
+      [
+        "input",
+        "textarea",
+        "select",
+        '[role="textbox"]',
+        "[contenteditable]"
+      ].join(",")
+    );
+
+    if (!editable) return false;
+
+    return !editable.matches(
+      '[contenteditable="false"]'
+    );
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (shareModal && shareModal.classList.contains("show")) {
@@ -6632,6 +6658,14 @@ function describeMoveItems(items) {
         return;
       }
       closeMenu();
+      return;
+    }
+
+    /*
+     * Text editing owns Delete, Backspace and Ctrl+A. File Manager's global
+     * shortcuts must not steal those keys from inputs or editable content.
+     */
+    if (isEditableKeyboardTarget(e.target)) {
       return;
     }
 
@@ -7758,26 +7792,47 @@ function describeMoveItems(items) {
             return String(a.name || "").localeCompare(String(b.name || ""));
           });
 
-      const items = (favoritesEnabled && favoritesOnly)
+      const favoriteItems = (favoritesEnabled && favoritesOnly)
           ? allItems.filter((it) => isFavoriteRelPath(currentRelPathFor(it), it.type))
           : allItems;
+
+      const searcher = window.PQNAS_FILEMGR && window.PQNAS_FILEMGR.search;
+      const items = searcher && typeof searcher.filterItems === "function"
+          ? searcher.filterItems(favoriteItems)
+          : favoriteItems;
+      const searchActive = !!(
+        searcher &&
+        typeof searcher.isActive === "function" &&
+        searcher.isActive()
+      );
 
       lastListedItems = items.slice();
       setBadge("ok", "ready");
 
       const sortSuffix = sortMode ? tr("filemgr.list.sort_suffix", { sort: sortMode.shortLabel }, ` • Sort: ${sortMode.shortLabel}`) : "";
 
-      status.textContent = (favoritesEnabled && favoritesOnly)
-          ? tr("filemgr.list.favorites", { shown: items.length, total: allItems.length, sort: sortSuffix }, `Favorites: ${items.length} / ${allItems.length}${sortSuffix}`)
-          : tr("filemgr.list.items", { count: items.length, sort: sortSuffix }, `Items: ${items.length}${sortSuffix}`);
+      if (searcher && typeof searcher.afterRender === "function") {
+        searcher.afterRender({
+          shown: items.length,
+          total: favoriteItems.length
+        });
+      }
+
+      status.textContent = searchActive
+          ? tr("filemgr.search.results", { shown: items.length, total: favoriteItems.length, sort: sortSuffix }, `Search: ${items.length} / ${favoriteItems.length}${sortSuffix}`)
+          : (favoritesEnabled && favoritesOnly)
+              ? tr("filemgr.list.favorites", { shown: items.length, total: allItems.length, sort: sortSuffix }, `Favorites: ${items.length} / ${allItems.length}${sortSuffix}`)
+              : tr("filemgr.list.items", { count: items.length, sort: sortSuffix }, `Items: ${items.length}${sortSuffix}`);
 
       if (!items.length) {
         const empty = document.createElement("div");
         empty.className = "tile mono";
         empty.style.cursor = "default";
-        empty.textContent = (favoritesEnabled && favoritesOnly)
-            ? tr("filemgr.list.empty_favorites", null, "(no favorites in this folder)\n\nTip: click ☆ on any item or use the context menu.")
-            : tr("filemgr.list.empty", null, "(empty)\n\nTip: drag & drop files/folders here to upload.");
+        empty.textContent = searchActive
+            ? tr("filemgr.search.empty", null, "(no matching items in this folder)")
+            : (favoritesEnabled && favoritesOnly)
+                ? tr("filemgr.list.empty_favorites", null, "(no favorites in this folder)\n\nTip: click ☆ on any item or use the context menu.")
+                : tr("filemgr.list.empty", null, "(empty)\n\nTip: drag & drop files/folders here to upload.");
         gridEl.appendChild(empty);
 
         quotaPromise

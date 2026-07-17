@@ -1243,6 +1243,111 @@ std::vector<FileLocationRecord> FileLocationIndex::list_subtree_records(const st
 }
 
 /*
+list_all_records_for_fp()
+-------------------------
+Return a bounded, logical-path-ordered snapshot of file rows for one fingerprint.
+
+This is intentionally a metadata primitive only:
+- the caller supplies the authenticated fingerprint
+- no physical path is exposed to the browser
+- request-level authorization and query matching stay in the route
+- LIMIT prevents an unbounded SQLite result allocation
+*/
+std::vector<FileLocationRecord> FileLocationIndex::list_all_records_for_fp(
+    const std::string& fp,
+    std::size_t limit,
+    std::string* err
+) {
+    if (err) err->clear();
+
+    std::vector<FileLocationRecord> out;
+    if (!db_) {
+        if (err) *err = "db not open";
+        return out;
+    }
+
+    if (fp.empty() || limit == 0) {
+        return out;
+    }
+
+    static const char* kSql =
+        "SELECT fp, logical_rel_path, current_pool, physical_path, tier_state, "
+        "size_bytes, mtime_epoch, created_epoch, updated_epoch, version "
+        "FROM file_locations "
+        "WHERE fp = ?1 "
+        "ORDER BY logical_rel_path ASC "
+        "LIMIT ?2";
+
+    sqlite3_stmt* stmt = nullptr;
+    const int prepare_rc = sqlite3_prepare_v2(
+        db_,
+        kSql,
+        -1,
+        &stmt,
+        nullptr
+    );
+
+    if (prepare_rc != SQLITE_OK) {
+        if (err) *err = sqlite3_errmsg(db_);
+        return out;
+    }
+
+    sqlite3_bind_text(stmt, 1, fp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(
+        stmt,
+        2,
+        static_cast<sqlite3_int64>(limit)
+    );
+
+    while (true) {
+        const int rc = sqlite3_step(stmt);
+
+        if (rc == SQLITE_DONE) break;
+
+        if (rc != SQLITE_ROW) {
+            if (err) *err = sqlite3_errmsg(db_);
+            out.clear();
+            sqlite3_finalize(stmt);
+            return out;
+        }
+
+        auto column_text = [&](int column) {
+            const unsigned char* value = sqlite3_column_text(stmt, column);
+            return value
+                ? std::string(reinterpret_cast<const char*>(value))
+                : std::string();
+        };
+
+        FileLocationRecord rec;
+        rec.fp = column_text(0);
+        rec.logical_rel_path = column_text(1);
+        rec.current_pool = column_text(2);
+        rec.physical_path = column_text(3);
+        rec.tier_state = column_text(4);
+        rec.size_bytes = static_cast<std::uint64_t>(
+            sqlite3_column_int64(stmt, 5)
+        );
+        rec.mtime_epoch = static_cast<std::int64_t>(
+            sqlite3_column_int64(stmt, 6)
+        );
+        rec.created_epoch = static_cast<std::int64_t>(
+            sqlite3_column_int64(stmt, 7)
+        );
+        rec.updated_epoch = static_cast<std::int64_t>(
+            sqlite3_column_int64(stmt, 8)
+        );
+        rec.version = static_cast<std::int64_t>(
+            sqlite3_column_int64(stmt, 9)
+        );
+
+        out.push_back(std::move(rec));
+    }
+
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+/*
 logical_dir_exists()
 --------------------
 A logical directory exists if there is at least one descendant row under

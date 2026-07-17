@@ -45,6 +45,10 @@ ALLOWED_SAME_AS_BASE_KEYS = {
     "contacts.type",
     "contacts.version",
 
+    # File Manager search: universal count template and the standard Italian loanword.
+    "filemgr.search.count",
+    "filemgr.search.file",
+
     "filemgr.ws.messages.button",
     "filemgr.ws.messages.contact",
     "filemgr.ws.messages.email",

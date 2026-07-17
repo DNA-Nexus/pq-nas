@@ -277,6 +277,14 @@ User session
 Important notes:
 
 - search results must follow the same authorization rules as normal listing
+- the search scope is derived from the authenticated fingerprint; a caller cannot select another user's root
+- an omitted `path` searches the user's whole logical storage namespace, including metadata-backed tiered files
+- an optional `path` must be a normalized user-relative directory below that same root
+- search is plain-text name/path matching; user input is not interpreted as a regular expression
+- search never returns absolute physical filesystem paths
+- `.pqnas` internal paths and symlinks are excluded
+- query length, returned results, scanned entries, relative depth, and wall-clock time are bounded
+- `truncated`, `scan_capped`, `depth_capped`, and `timed_out` tell the caller when safe limits may have omitted results
 - favorites must be per-user
 - favorites must not expose stale paths from inaccessible locations
 

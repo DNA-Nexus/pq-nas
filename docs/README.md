@@ -25,7 +25,7 @@ Technical documents describe implementation-level details such as APIs, database
 Existing documents:
 
 - `technical/api-overview.md` — High-level API layout, route groups, and trust levels.
-- `technical/api-main-routes.md` — Generated route inventory from `server/src/main.cpp`.
+- `technical/api-main-routes.md` — Generated route inventory from server route-registration sources.
 - `technical/file-api.md` — Human-written documentation for the `/api/v4/files/*` route group.
 - `technical/upload-api.md` — Chunked upload API flow, staging, finalization, quota, and cleanup behavior.
 
