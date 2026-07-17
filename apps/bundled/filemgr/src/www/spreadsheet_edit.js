@@ -1230,6 +1230,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     commitHistorySnapshot(historyBefore);
     updateFormatToolbar();
+
+    // Long cell text is rendered through a separate overflow element.
+    // Rebuild it after formatting so font, size and color changes are visible
+    // immediately instead of waiting for another cell focus/blur cycle.
+    refreshVisibleEditorTextOverflows();
+    window.requestAnimationFrame(refreshVisibleEditorTextOverflows);
   }
 
   function firstFormatTargetCell() {
@@ -5316,21 +5322,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       ? imageApi.inspectArrayBuffer(buf)
       : null;
 
-    if (state.workbookImageInfo && state.workbookImageInfo.hasImages) {
-      const summary = imageApi && typeof imageApi.summaryText === "function"
-        ? imageApi.summaryText(state.workbookImageInfo)
-        : "";
-
-      // Current export rebuilds the workbook and does not yet preserve drawing
-      // parts. Warn instead of silently dropping imported Excel images.
-      state.workbookImageWarning = tr(
-        "filemgr.spreadsheet_editor.images_detected",
-        { summary },
-        `This workbook contains images/drawings (${summary}). Image preservation is not implemented yet; saving may remove them.`
-      );
-      setStatus(state.workbookImageWarning, "warn");
-    }
-
+    /*
+     * Supported spreadsheet images are preserved and editable. Merely finding
+     * drawing parts is no longer an error or warning condition.
+     */
     // Security: formulas are preserved as inert strings and evaluated only by
     // our small allowlisted parser. No eval(), macros, links or active content.
     const wb = XLSX.read(buf, {
