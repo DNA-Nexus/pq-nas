@@ -1867,6 +1867,8 @@
   <noscript><link rel="stylesheet" href="./spreadsheet_preview.css"></noscript>
   <link rel="preload" href="./spreadsheet_create.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="./spreadsheet_create.css"></noscript>
+  <link rel="preload" href="./filemgr_search.css?v=filemgr-search-global-1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="./filemgr_search.css?v=filemgr-search-2"></noscript>
   <link rel="preload" href="./pdf_preview.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="./pdf_preview.css"></noscript>
   <link rel="preload" href="./audio_preview.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
@@ -1935,6 +1937,41 @@
         <button class="btn secondary" id="favoritesToggleBtn" data-tour="filemgr-favorites" type="button" title="Show favorites only">
           <span class="btnTxt" id="favoritesToggleTxt" data-i18n="filemgr.favorites">Favorites</span>
         </button>
+
+        <div class="fmSearch" id="fileSearch">
+          <button class="btn secondary fmSearchBtn" id="fileSearchBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="fileSearchPanel" title="Search files">
+            <svg class="fmSearchIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              <path d="M16 16l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+          </button>
+
+          <div class="fmSearchPanel" id="fileSearchPanel" hidden>
+            <label class="fmSearchLabel" id="fileSearchLabel" for="fileSearchInput">Search current folder</label>
+
+            <div class="fmSearchRow">
+              <input
+                class="fmSearchInput"
+                id="fileSearchInput"
+                type="search"
+                maxlength="160"
+                autocomplete="off"
+                spellcheck="false"
+                aria-labelledby="fileSearchLabel"
+                placeholder="File or folder name"
+              >
+
+              <button class="btn secondary fmSearchClear" id="fileSearchClearBtn" type="button">
+                Clear search
+              </button>
+            </div>
+
+            <div class="fmSearchCount" id="fileSearchCount" aria-live="polite" hidden></div>
+            <div class="fmSearchRemoteStatus" id="fileSearchRemoteStatus" aria-live="polite"></div>
+            <div class="fmSearchResults" id="fileSearchResults" role="list" hidden></div>
+          </div>
+        </div>
+
         <button class="btn secondary" id="trashBtn" data-tour="filemgr-trash" type="button" title="Open Trash">
   <span style="display:inline-flex; width:16px; height:16px; align-items:center; justify-content:center;">
     🗑
@@ -2231,9 +2268,10 @@
 
 <script src="./filetype_icons.js?v=20260606-traditional-media-icons-2"></script>
 <script src="./filemgr_sort.js"></script>
+<script src="./filemgr_search.js?v=filemgr-search-global-2"></script>
 <script src="/static/pqnas_folder_picker.js?v=filemgr-hide-pqnas-folders-1"></script>
 
-<script src="./app.js?v=filemgr-uiux-keyboard-1"></script>
+<script src="./app.js?v=20260717-filemgr-search-1"></script>
 
 <script defer src="./pdf_preview.js"></script>
 <script defer src="./video_preview.js"></script>

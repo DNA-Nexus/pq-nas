@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -86,6 +87,11 @@ bool rename_subtree(const std::string& fp,
 	std::vector<FileLocationRecord> list_subtree_records(const std::string& fp,
                                                      const std::string& logical_prefix,
                                                      std::string* err);
+
+    std::vector<FileLocationRecord> list_all_records_for_fp(
+        const std::string& fp,
+        std::size_t limit,
+        std::string* err);
 
 	bool logical_dir_exists(const std::string& fp,
                         	const std::string& logical_prefix,

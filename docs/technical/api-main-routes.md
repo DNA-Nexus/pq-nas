@@ -83,7 +83,7 @@ Generated: 2026-06-10 12:10:46
 | `POST` | `/api/v4/files/rmdir` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/rmrf` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/save_text` | User session | `server/src/routes/routes_files_core.inc` |
-| `POST` | `/api/v4/files/search` | User session | `server/src/routes/routes_files_core.inc` |
+| `POST` | `/api/v4/files/search` | User session | `server/src/routes/routes_files_search.inc` |
 | `GET` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat` | User session | `server/src/routes/routes_files_core.inc` |
 | `POST` | `/api/v4/files/stat_sel` | User session | `server/src/routes/routes_files_core.inc` |

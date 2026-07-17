@@ -2080,21 +2080,27 @@
       "method": "POST",
       "path": "/api/v4/files/search",
       "title": "Search files",
-      "purpose": "Search user-visible files by name/path under the authenticated user's storage.",
-      "auth": "User session. Requires allocated user storage.",
-      "source": "server/src/routes/routes_files_core.inc",
+      "purpose": "Search file and folder names across the authenticated user's bounded logical storage namespace.",
+      "auth": "User session. Requires allocated user storage. Scope is derived from the authenticated fingerprint; the caller cannot select another fingerprint.",
+      "source": "server/src/routes/routes_files_search.inc",
       "params": [
         {
           "name": "q",
           "in": "query",
           "required": "yes",
-          "description": "Search query, maximum 128 characters."
+          "description": "Plain-text search query, 2..128 bytes."
+        },
+        {
+          "name": "path",
+          "in": "query",
+          "required": "no",
+          "description": "Optional normalized user-relative directory scope. Empty or omitted searches the authenticated user's whole storage root."
         },
         {
           "name": "max",
           "in": "query",
           "required": "no",
-          "description": "Maximum results, clamped."
+          "description": "Maximum returned results, clamped to 1..200."
         }
       ],
       "body": {},
@@ -2102,12 +2108,16 @@
         "200 ok",
         "400 bad_request",
         "403 storage_unallocated",
+        "404 not_found",
         "500 server_error"
       ],
       "tags": [
         "file",
+        "folder",
         "search",
-        "find"
+        "find",
+        "bounded",
+        "fingerprint-scope"
       ],
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/files/search?q=invoice&max=100\" -H \"Cookie: $COOKIE\""
     },
