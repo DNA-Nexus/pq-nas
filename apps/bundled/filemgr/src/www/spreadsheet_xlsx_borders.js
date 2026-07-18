@@ -181,16 +181,23 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function xmlSection(xml, name) {
-    const escaped =
-      String(name || "")
-        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const source = String(xml || "");
+    let match = null;
 
-    const match = String(xml || "").match(
-      new RegExp(
-        `<${escaped}\\b[^>]*>([\\s\\S]*?)<\\/${escaped}>`,
-        "i"
-      )
-    );
+    /*
+     * Security: styles.xml parsing only needs these two known sections.
+     * Hardcoded expressions prevent user-controlled dynamic regular
+     * expressions and keep the parser bounded and Semgrep-verifiable.
+     */
+    if (name === "borders") {
+      match = source.match(
+        /<borders\b[^>]*>([\s\S]*?)<\/borders>/i
+      );
+    } else if (name === "cellXfs") {
+      match = source.match(
+        /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/i
+      );
+    }
 
     return match ? match[1] : "";
   }
