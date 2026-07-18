@@ -100,6 +100,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let historyKeyboardAttached = false;
   let pendingCellEditHistory = null;
   let preserveSelectionForContextMenu = null;
+  let fillHandleState = null;
 
   const state = {
     rel: "",
@@ -694,7 +695,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
-  function normalizeMergeRange(merge, rowCount = null, colCount = null) {
+
+
+  function cellFormatKey(fmt) {
+    return JSON.stringify(normalizeCellFormat(fmt));
+  }
+function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     const src = merge && typeof merge === "object" ? merge : {};
     const start = src.s && typeof src.s === "object" ? src.s : {};
     const end = src.e && typeof src.e === "object" ? src.e : {};
@@ -4503,7 +4509,227 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
-  function markAxisHeader(el) {
+
+
+function spreadsheetCellElement(row, col) {
+    if (!bodyEl || !Number.isInteger(row) || !Number.isInteger(col)) return null;
+    return bodyEl.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
+  }
+
+function spreadsheetFillEndRowFromViewportY(startRow, col, viewportY) {
+    if (!Number.isInteger(startRow) || !Number.isInteger(col)) return startRow;
+
+    let bestRow = startRow;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let row = startRow; row < MAX_EDIT_ROWS; row++) {
+      const td = spreadsheetCellElement(row, col);
+      if (!td) break;
+
+      const rect = td.getBoundingClientRect();
+      const middle = rect.top + rect.height / 2;
+
+      if (viewportY >= rect.top && viewportY <= rect.bottom) {
+        return row;
+      }
+
+      const distance = Math.abs(viewportY - middle);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestRow = row;
+      }
+
+      if (rect.top > viewportY && row > startRow) break;
+    }
+
+    return bestRow;
+  }
+
+  function paintFillHandlePreview(startRow, col, endRow) {
+    if (!Number.isInteger(startRow) || !Number.isInteger(col) || !Number.isInteger(endRow)) return;
+
+    state.selection = null;
+    state.activeCell = { row: startRow, col };
+
+    if (endRow <= startRow) {
+      state.rangeSelection = null;
+      repaintSpreadsheetSelection();
+      return;
+    }
+
+    // Reuse the editor's normal range-selection painter while dragging the fill
+    // handle. This keeps the preview visually consistent with regular cell
+    // selection instead of relying on a separate overlay above input elements.
+    state.rangeSelection = {
+      startRow,
+      startCol: col,
+      endRow,
+      endCol: col
+    };
+
+    repaintSpreadsheetSelection();
+  }
+
+function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
+    if (!sheet || endRow <= startRow) return false;
+
+    for (let r = startRow + 1; r <= endRow; r++) {
+      if (mergeAtCell(sheet, r, col)) return true;
+    }
+
+    return false;
+  }
+
+  function applySpreadsheetFillDown(ctx) {
+    if (!ctx || state.readOnly || state.tooLarge) return false;
+
+    const sheet = state.sheets[state.active];
+    if (!sheet) return false;
+
+    const startRow = Number(ctx.row);
+    const col = Number(ctx.col);
+    const endRow = Number(ctx.endRow);
+    if (!Number.isInteger(startRow) || !Number.isInteger(col) || !Number.isInteger(endRow)) return false;
+    if (endRow <= startRow) return false;
+
+    if (fillHandleBlockedByMerge(sheet, startRow, col, endRow)) {
+      setStatus(tr(
+        "filemgr.spreadsheet_editor.fill_merge_blocked",
+        null,
+        "Cannot fill over merged cells."
+      ), "warn");
+      return false;
+    }
+
+    const sourceRaw = cellRaw(sheet, startRow, col);
+    const sourceFormat = normalizeCellFormat(getCellFormat(sheet, startRow, col));
+    const sourceFormatKey = cellFormatKey(sourceFormat);
+    let changed = false;
+
+    for (let r = startRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
+      if (cellRaw(sheet, r, col) !== sourceRaw) changed = true;
+      if (cellFormatKey(getCellFormat(sheet, r, col)) !== sourceFormatKey) changed = true;
+
+      setCellRaw(sheet, r, col, sourceRaw);
+      setCellFormat(sheet, r, col, sourceFormat);
+    }
+
+    if (!changed) return false;
+
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = { row: startRow, col };
+    formulaFocus = null;
+
+    commitHistorySnapshot(ctx.before || captureHistorySnapshot());
+    render();
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(startRow, col, { select: true });
+    });
+
+    return true;
+  }
+
+  function finishSpreadsheetFillHandle(apply) {
+    const ctx = fillHandleState;
+    fillHandleState = null;
+
+    if (!ctx) return false;
+
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = { row: ctx.row, col: ctx.col };
+
+    if (!ctx.moved || !apply) {
+      repaintSpreadsheetSelection();
+      return false;
+    }
+
+    return applySpreadsheetFillDown(ctx);
+  }
+
+function startSpreadsheetFillHandle(ev, row, col) {
+    if (state.readOnly || state.tooLarge) return;
+    if (!ev || ev.button !== 0) return;
+
+    const sheet = state.sheets[state.active];
+    if (!sheet || mergeAtCell(sheet, row, col)) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = { row, col };
+    formulaFocus = null;
+    repaintSpreadsheetSelection();
+
+    const ctx = {
+      row,
+      col,
+      endRow: row,
+      moved: false,
+      before: captureHistorySnapshot()
+    };
+
+    fillHandleState = ctx;
+
+    const onMove = (moveEv) => {
+      if (!fillHandleState || fillHandleState !== ctx) return;
+
+      const nextEndRow = Math.max(row, spreadsheetFillEndRowFromViewportY(row, col, Number(moveEv.clientY)));
+
+      if (nextEndRow === ctx.endRow) return;
+
+      ctx.endRow = nextEndRow;
+      ctx.moved = ctx.endRow > row;
+      paintFillHandlePreview(row, col, ctx.endRow);
+    };
+
+    const cleanup = () => {
+      document.removeEventListener("pointermove", onMove, true);
+      document.removeEventListener("pointerup", onUp, true);
+      document.removeEventListener("pointercancel", onCancel, true);
+    };
+
+    const onUp = (upEv) => {
+      upEv.preventDefault();
+      upEv.stopPropagation();
+      cleanup();
+      finishSpreadsheetFillHandle(true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      finishSpreadsheetFillHandle(false);
+    };
+
+    document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointerup", onUp, true);
+    document.addEventListener("pointercancel", onCancel, true);
+  }
+
+  function createSpreadsheetFillHandle(row, col) {
+    const handle = document.createElement("span");
+    handle.className = "spreadsheetFillHandle";
+    handle.dataset.row = String(row);
+    handle.dataset.col = String(col);
+    handle.tabIndex = -1;
+    handle.setAttribute("role", "button");
+    handle.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.fill_down", null, "Drag to fill down")
+    );
+    handle.title = tr("filemgr.spreadsheet_editor.fill_down", null, "Drag to fill down");
+    handle.addEventListener("pointerdown", (ev) => startSpreadsheetFillHandle(ev, row, col));
+    handle.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    return handle;
+  }
+function markAxisHeader(el) {
     if (!el) return;
     el.dataset.spreadsheetAxisStyle = "1";
     el.style.setProperty("background", "Highlight");
@@ -7597,6 +7823,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         td.appendChild(input);
         applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
         renderEditorCellTextOverflow(td, input, sheet, rows, rIdx, c, colWidths, colCount, cache);
+        td.appendChild(createSpreadsheetFillHandle(rIdx, c));
 
         trEl.appendChild(td);
       }
