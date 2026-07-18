@@ -5331,10 +5331,96 @@ function markAxisHeader(el) {
   function clearRangeSelectionClasses() {
     if (!bodyEl) return;
 
-    for (const el of bodyEl.querySelectorAll(".spreadsheetRangeSelectedCell, .spreadsheetRangeSelectedInput")) {
-      el.classList.remove("spreadsheetRangeSelectedCell", "spreadsheetRangeSelectedInput");
+    /*
+     * Sticky spreadsheet headers need the same inline Highlight cleanup as
+     * whole-row and whole-column selections.
+     */
+    for (const el of bodyEl.querySelectorAll(
+      '[data-spreadsheet-range-header-style="1"]'
+    )) {
+      el.removeAttribute(
+        "data-spreadsheet-range-header-style"
+      );
+      el.style.removeProperty("background");
+      el.style.removeProperty("color");
+      el.style.removeProperty("box-shadow");
+      el.style.removeProperty("position");
+      el.style.removeProperty("z-index");
+    }
+
+    const classes = [
+      "spreadsheetRangeSelectedCell",
+      "spreadsheetRangeSelectedInput",
+      "spreadsheetRangeSelectedHeader",
+      "spreadsheetRangeEdgeTop",
+      "spreadsheetRangeEdgeRight",
+      "spreadsheetRangeEdgeBottom",
+      "spreadsheetRangeEdgeLeft"
+    ];
+
+    const selector = classes
+      .map((name) => `.${name}`)
+      .join(", ");
+
+    for (const el of bodyEl.querySelectorAll(selector)) {
+      el.classList.remove(...classes);
       el.removeAttribute("aria-selected");
     }
+  }
+
+  function markRangeSelectionHeader(header, axis) {
+    if (!header) return;
+
+    header.classList.add(
+      "spreadsheetRangeSelectedHeader"
+    );
+    header.dataset.spreadsheetRangeHeaderStyle = "1";
+
+    /*
+     * UI compatibility: system Highlight applied inline is reliable on sticky
+     * table headers across the supported DNA-Nexus themes.
+     */
+    header.style.setProperty(
+      "background",
+      "Highlight"
+    );
+    header.style.setProperty(
+      "color",
+      "HighlightText"
+    );
+    header.style.setProperty(
+      "box-shadow",
+      axis === "column"
+        ? "inset 0 0 0 999px Highlight"
+        : "inset -3px 0 0 Highlight"
+    );
+
+    const label = header.querySelector(
+      axis === "column"
+        ? ".spreadsheetColumnLabel"
+        : ".spreadsheetRowLabel"
+    );
+
+    if (label) {
+      label.dataset.spreadsheetRangeHeaderStyle = "1";
+      label.style.setProperty(
+        "position",
+        "relative"
+      );
+      label.style.setProperty(
+        "z-index",
+        "6"
+      );
+      label.style.setProperty(
+        "color",
+        "HighlightText"
+      );
+    }
+
+    header.setAttribute(
+      "aria-selected",
+      "true"
+    );
   }
 
   function paintRangeSelection() {
@@ -5343,19 +5429,90 @@ function markAxisHeader(el) {
     const range = normalizedRangeSelection();
     if (!range || !bodyEl) return;
 
-    for (let r = range.row1; r <= range.row2; r++) {
-      for (let c = range.col1; c <= range.col2; c++) {
-        const input = bodyEl.querySelector(`input[data-row="${r}"][data-col="${c}"]`);
+    /*
+     * UI correctness: highlight the workbook row/column headers covered by the
+     * cell range, matching familiar spreadsheet selection behavior.
+     */
+    for (let col = range.col1; col <= range.col2; col++) {
+      const header = bodyEl.querySelector(
+        `th.colHead[data-col="${col}"]`
+      );
+
+      if (!header) continue;
+
+      markRangeSelectionHeader(
+        header,
+        "column"
+      );
+    }
+
+    for (let row = range.row1; row <= range.row2; row++) {
+      const header = bodyEl.querySelector(
+        `tbody th.rowHead[data-row="${row}"]`
+      );
+
+      if (!header) continue;
+
+      markRangeSelectionHeader(
+        header,
+        "row"
+      );
+    }
+
+    for (let row = range.row1; row <= range.row2; row++) {
+      for (let col = range.col1; col <= range.col2; col++) {
+        const input = bodyEl.querySelector(
+          `input[data-row="${row}"][data-col="${col}"]`
+        );
+
         if (!input) continue;
 
-        const cell = input.closest("td[data-row][data-col]");
+        const cell = input.closest(
+          "td[data-row][data-col]"
+        );
+
         if (cell) {
-          cell.classList.add("spreadsheetRangeSelectedCell");
-          cell.setAttribute("aria-selected", "true");
+          cell.classList.add(
+            "spreadsheetRangeSelectedCell"
+          );
+
+          if (row === range.row1) {
+            cell.classList.add(
+              "spreadsheetRangeEdgeTop"
+            );
+          }
+
+          if (col === range.col2) {
+            cell.classList.add(
+              "spreadsheetRangeEdgeRight"
+            );
+          }
+
+          if (row === range.row2) {
+            cell.classList.add(
+              "spreadsheetRangeEdgeBottom"
+            );
+          }
+
+          if (col === range.col1) {
+            cell.classList.add(
+              "spreadsheetRangeEdgeLeft"
+            );
+          }
+
+          cell.setAttribute(
+            "aria-selected",
+            "true"
+          );
         }
 
-        input.classList.add("spreadsheetRangeSelectedInput");
-        input.setAttribute("aria-selected", "true");
+        input.classList.add(
+          "spreadsheetRangeSelectedInput"
+        );
+        input.setAttribute(
+          "aria-selected",
+          "true"
+        );
       }
     }
   }
