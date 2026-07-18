@@ -552,6 +552,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function inferCellDecimalPlaces(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
 
+    if (isForcedTextValue(raw)) {
+      return 0;
+    }
+
     if (isFormulaValue(raw)) {
       const effectiveCache = cache || computeSheetCache(sheet);
       const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
@@ -2160,6 +2164,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           continue;
         }
 
+        if (isForcedTextValue(raw)) {
+          const text = forcedTextDisplayValue(raw);
+          if (text === "" && !styleIndex) continue;
+          cells.push(`<c r="${ref}"${styleAttr} t="inlineStr">${xlsxInlineStringXml(text)}</c>`);
+          continue;
+        }
+
         const value = coerceCellValue(raw);
         if (value === "" && !styleIndex) continue;
 
@@ -3073,8 +3084,31 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
+  function isForcedTextValue(value) {
+    return String(value == null ? "" : value).startsWith("'");
+  }
+
+  function forcedTextDisplayValue(value) {
+    const raw = String(value == null ? "" : value);
+    return isForcedTextValue(raw) ? raw.slice(1) : raw;
+  }
+
+  function normalizeSpreadsheetUserInput(value, previousRaw = "") {
+    const text = String(value == null ? "" : value);
+
+    if (!text) return "";
+    if (text.startsWith("'")) return text;
+
+    // Excel-style text prefix: once a cell was explicitly forced to text,
+    // direct edits keep it as text so "=..." does not silently become a formula.
+    if (isForcedTextValue(previousRaw)) return "'" + text;
+
+    return text;
+  }
+
   function isFormulaValue(value) {
-    return String(value == null ? "" : value).startsWith("=");
+    const raw = String(value == null ? "" : value);
+    return raw.startsWith("=") && !isForcedTextValue(raw);
   }
 
   function cellRaw(sheet, row, col) {
@@ -3194,7 +3228,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (target === formulaBarInput) {
       const cell = activeFormulaBarCell();
       if (!cell) return false;
-      return String(formulaBarInput.value == null ? "" : formulaBarInput.value) !== cellRaw(cell.sheet, cell.row, cell.col);
+      const currentRaw = cellRaw(cell.sheet, cell.row, cell.col);
+      return normalizeSpreadsheetUserInput(formulaBarInput.value, currentRaw) !== currentRaw;
     }
 
     const tag = String(target.tagName || "").toUpperCase();
@@ -3580,7 +3615,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (forceValue || document.activeElement !== formulaBarInput) {
       // Security: spreadsheet cell content is assigned as input.value, never as
       // HTML, so formulas/text cannot become executable markup.
-      formulaBarInput.value = cellRaw(cell.sheet, cell.row, cell.col);
+      formulaBarInput.value = forcedTextDisplayValue(cellRaw(cell.sheet, cell.row, cell.col));
     }
   }
 
@@ -3605,9 +3640,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!formulaBarInput || !cell) return;
 
     const raw = cellRaw(cell.sheet, cell.row, cell.col);
-    formulaBarInput.value = raw;
+    formulaBarInput.value = forcedTextDisplayValue(raw);
 
-    if (String(raw || "").startsWith("=")) {
+    if (isFormulaValue(raw)) {
       formulaFocus = {
         input: formulaBarInput,
         row: cell.row,
@@ -3628,12 +3663,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const previousRaw = cellRaw(cell.sheet, cell.row, cell.col);
     const previousFormulaFocus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
-    const nextRaw = String(formulaBarInput.value == null ? "" : formulaBarInput.value);
+    const nextRaw = normalizeSpreadsheetUserInput(formulaBarInput.value, previousRaw);
     const historyBefore = previousRaw !== nextRaw ? captureHistorySnapshot() : null;
 
     setCellRaw(cell.sheet, cell.row, cell.col, nextRaw);
 
-    if (String(nextRaw || "").startsWith("=")) {
+    if (isFormulaValue(nextRaw)) {
       formulaFocus = {
         input: formulaBarInput,
         row: cell.row,
@@ -3668,7 +3703,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     setCellRaw(cell.sheet, cell.row, cell.col, originalRaw);
     formulaFocus = null;
 
-    formulaBarInput.value = originalRaw;
+    formulaBarInput.value = forcedTextDisplayValue(originalRaw);
     setDirty(!!focus.wasDirty);
     refreshFormulaDisplays(null);
     syncVisibleInputForCell(cell.row, cell.col);
@@ -3725,7 +3760,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     // Security: clipboard export is plain text TSV only, not HTML.
     // Tabs/newlines inside a cell are flattened so copied data cannot reshape
     // the TSV in surprising ways.
-    return String(value == null ? "" : value)
+    return forcedTextDisplayValue(value)
       .replace(/\r\n/g, "\n")
       .replace(/[\r\n\t]/g, " ");
   }
@@ -4339,6 +4374,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (cache.has(key)) return cache.get(key);
 
     const raw = cellRaw(sheet, row, col);
+
+    if (isForcedTextValue(raw)) {
+      const text = forcedTextDisplayValue(raw);
+      const result = { raw: text, value: text, blank: text === "", error: "" };
+      cache.set(key, result);
+      return result;
+    }
+
     const parsed = parsePlainNumber(raw);
 
     if (!isFormulaValue(raw)) {
@@ -4390,6 +4433,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function displayCellValue(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
     const fmt = getCellFormat(sheet, row, col);
+
+    if (isForcedTextValue(raw)) {
+      return forcedTextDisplayValue(raw);
+    }
 
     if (!isFormulaValue(raw)) {
       const parsed = parsePlainNumber(raw);
@@ -4563,7 +4610,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!Number.isInteger(row) || !Number.isInteger(col)) return;
 
     const activeFormula = formulaFocus && formulaFocus.input;
-    if (activeFormula && activeFormula !== ev.currentTarget && String(activeFormula.value || "").startsWith("=")) {
+    if (activeFormula && activeFormula !== ev.currentTarget && isFormulaValue(activeFormula.value)) {
       return;
     }
 
@@ -5161,6 +5208,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
+  function isXlsxStringCell(cell) {
+    const type = String(cell && cell.t || "");
+    return type === "s" || type === "str" || type === "inlineStr";
+  }
+
+  function importSpreadsheetCellText(cell, value) {
+    const text = String(value == null ? "" : value);
+
+    // XLSX string cells can legally contain text beginning with "=". Keep such
+    // values as explicit text so reopening our own saved file does not turn them
+    // into formulas.
+    if (isXlsxStringCell(cell) && (text.startsWith("=") || text.startsWith("'"))) {
+      return "'" + text;
+    }
+
+    return text;
+  }
+
   function worksheetToEditableRows(XLSX, ws, defaults = {}) {
     const defaultColWidth = normalizeColumnGeometry(
       defaults.colWidth,
@@ -5214,9 +5279,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         } else if (cell.f) {
           row.push("=" + String(cell.f));
         } else if (cell.w != null) {
-          row.push(String(cell.w));
+          row.push(importSpreadsheetCellText(cell, cell.w));
         } else if (cell.v != null) {
-          row.push(String(cell.v));
+          row.push(importSpreadsheetCellText(cell, cell.v));
         } else {
           row.push("");
         }
@@ -7328,7 +7393,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         input.addEventListener("pointerdown", (ev) => {
           if (!formulaFocus || formulaFocus.input === input) return;
           const active = formulaFocus.input;
-          if (!active || !String(active.value || "").startsWith("=")) return;
+          if (!active || !isFormulaValue(active.value)) return;
           ev.preventDefault();
           insertFormulaReference(active, rIdx, c);
         });
@@ -7385,7 +7450,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           // values remain available in the formula bar.
           input.value = isFormulaValue(raw) ? raw : displayCellValue(sheet, r, col);
 
-          if (String(raw || "").startsWith("=")) {
+          if (isFormulaValue(raw)) {
             formulaFocus = {
               input,
               row: r,
@@ -7418,7 +7483,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             const raw = Number.isInteger(r) && Number.isInteger(col) ? cellRaw(sheet, r, col) : "";
             const editingFormula =
               (formulaFocus && formulaFocus.input === input) ||
-              String(input.value || "").startsWith("=") ||
+              isFormulaValue(normalizeSpreadsheetUserInput(input.value, raw)) ||
               isFormulaValue(raw);
 
             if (editingFormula) {
@@ -7496,13 +7561,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           const previousRaw = cellRaw(state.sheets[state.active], r, col);
           const previousFormulaFocus = formulaFocus && formulaFocus.input === input ? formulaFocus : null;
 
-          if (previousRaw !== String(input.value == null ? "" : input.value)) {
+          const nextRaw = normalizeSpreadsheetUserInput(input.value, previousRaw);
+
+          if (previousRaw !== nextRaw) {
             beginPendingCellEditHistory(input, r, col, previousRaw);
           }
 
-          setCellRaw(state.sheets[state.active], r, col, input.value);
+          setCellRaw(state.sheets[state.active], r, col, nextRaw);
 
-          if (String(input.value || "").startsWith("=")) {
+          if (isFormulaValue(nextRaw)) {
             formulaFocus = {
               input,
               row: r,
