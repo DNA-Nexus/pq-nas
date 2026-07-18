@@ -5321,7 +5321,61 @@ function markAxisHeader(el) {
     updateFormatToolbar();
   }
 
-  function beginCellRangePointer(ev, row, col) {
+
+  function selectAllSpreadsheetCells() {
+    if (state.tooLarge) return false;
+
+    hideAxisMenu();
+    hideTextColorMenu();
+    hideFillMenu();
+    hideBorderMenu();
+
+    state.selectedImageId = "";
+    state.selection = null;
+    state.activeCell = null;
+    state.rangeSelection = {
+      startRow: 0,
+      startCol: 0,
+      endRow: MAX_EDIT_ROWS - 1,
+      endCol: MAX_EDIT_COLS - 1
+    };
+    formulaFocus = null;
+
+    repaintSpreadsheetSelection();
+    updateFormulaBar(true);
+    updateFormatToolbar();
+
+    return true;
+  }
+
+  function configureSpreadsheetSelectAllCorner(corner) {
+    if (!corner || corner.dataset.spreadsheetSelectAllCorner === "1") return;
+
+    corner.dataset.spreadsheetSelectAllCorner = "1";
+    corner.classList.add("spreadsheetSelectAllCorner");
+    corner.tabIndex = 0;
+    corner.setAttribute("role", "button");
+    corner.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.select_all_cells", null, "Select all cells")
+    );
+    corner.title = tr("filemgr.spreadsheet_editor.select_all_cells", null, "Select all cells");
+
+    const activate = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      selectAllSpreadsheetCells();
+    };
+
+    corner.addEventListener("pointerdown", activate);
+    corner.addEventListener("click", activate);
+    corner.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      activate(ev);
+    });
+  }
+
+function beginCellRangePointer(ev, row, col) {
     if (state.readOnly || state.tooLarge) return;
     if (!ev || ev.button !== 0) return;
     if (!Number.isInteger(row) || !Number.isInteger(col)) return;
@@ -8356,6 +8410,9 @@ function axisApi() {
     });
 
     table.appendChild(tbody);
+
+    const selectAllCorner = table.querySelector("thead tr:first-child th:first-child");
+    configureSpreadsheetSelectAllCorner(selectAllCorner);
 
     const surface = document.createElement("div");
     surface.className = "spreadsheetSheetSurface";

@@ -1258,3 +1258,8 @@
 .spreadsheetEditorTable td.spreadsheetFillHandleAnchorCell > .spreadsheetFillHandle {
   display: block;
 }
+
+/* Spreadsheet select-all corner: Excel-style whole-sheet selection affordance. */
+.spreadsheetSelectAllCorner {
+  cursor: pointer;
+}
