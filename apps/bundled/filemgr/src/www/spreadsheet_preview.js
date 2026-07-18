@@ -53,7 +53,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   });
 
   const PREVIEW_FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
-  const PREVIEW_BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
+  const PREVIEW_BORDER_STYLE_KEYS = Object.freeze(["thin", "medium", "double"]);
   const PREVIEW_BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
   const PREVIEW_MIN_DECIMAL_PLACES = 0;
   const PREVIEW_MAX_DECIMAL_PLACES = 10;
@@ -171,15 +171,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
+      loadScriptOnce("./spreadsheet_xlsx_borders.js?v=spreadsheet-xlsx-borders-1", "data-pqnas-spreadsheet-xlsx-borders-js"),
+      loadScriptOnce("./spreadsheet_border_menu.js?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-border-menu-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-image-warning-cleanup-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -278,9 +280,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (
       FM &&
       FM.spreadsheetXlsxDimensions &&
+      FM.spreadsheetXlsxBorders &&
       FM.spreadsheetXlsxImages &&
       FM.spreadsheetImageOverlay &&
       typeof FM.spreadsheetXlsxDimensions.worksheetDefaults === "function" &&
+      typeof FM.spreadsheetXlsxBorders.bordersBySheet === "function" &&
       typeof FM.spreadsheetXlsxImages.imagesFromWorkbookFiles === "function" &&
       typeof FM.spreadsheetImageOverlay.render === "function"
     ) {
@@ -290,10 +294,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
 
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
+      loadScriptOnce("./spreadsheet_xlsx_borders.js?v=spreadsheet-xlsx-borders-1", "data-pqnas-spreadsheet-xlsx-borders-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]);
@@ -375,7 +380,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function normalizePreviewBorderSide(value) {
-    const key = String(value || "").trim();
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.normalizeSide === "function") {
+      return api.normalizeSide(value);
+    }
+
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "thick") return "medium";
     return PREVIEW_BORDER_STYLE_KEYS.includes(key) ? key : "";
   }
 
@@ -391,6 +403,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function normalizePreviewBorderFormat(border) {
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.normalizeBorder === "function") {
+      return api.normalizeBorder(border);
+    }
+
     const src = border && typeof border === "object" ? border : {};
     return {
       top: normalizePreviewBorderSide(src.top),
@@ -401,18 +419,37 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function isEmptyPreviewBorderFormat(border) {
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.isEmptyBorder === "function") {
+      return api.isEmptyBorder(border);
+    }
+
     const b = normalizePreviewBorderFormat(border);
     return !b.top && !b.right && !b.bottom && !b.left;
   }
 
   function previewBorderCssWidth(style) {
-    return style === "thick" ? "3px" : style === "thin" ? "1px" : "";
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.cssWidth === "function") {
+      return api.cssWidth(style);
+    }
+
+    const normalized = normalizePreviewBorderSide(style);
+    if (normalized === "double") return "3px";
+    if (normalized === "medium") return "2px";
+    return normalized === "thin" ? "1px" : "";
   }
 
   function previewBorderSideFromXlsx(side) {
-    const style = String(side && side.style || "").toLowerCase();
-    if (!style || style === "none") return "";
-    return style === "medium" || style === "thick" ? "thick" : "thin";
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.fromXlsxSide === "function") {
+      return api.fromXlsxSide(side);
+    }
+
+    return normalizePreviewBorderSide(side && side.style);
   }
 
   function previewBorderFromXlsxStyle(border) {
@@ -436,10 +473,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const cssSide = sideMap[side];
       const width = previewBorderCssWidth(b[side]);
       const prop = `border${cssSide}`;
+      const borderApi = FM && FM.spreadsheetXlsxBorders;
+      const lineStyle =
+        borderApi && typeof borderApi.cssLineStyle === "function"
+          ? borderApi.cssLineStyle(b[side])
+          : (b[side] === "double" ? "double" : "solid");
 
       if (width) {
         hasBorder = true;
-        td.style[prop] = `${width} solid var(--fg)`;
+        td.style[prop] = `${width} ${lineStyle} var(--fg)`;
       } else {
         td.style.removeProperty(`border-${side}`);
       }
@@ -786,19 +828,27 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.appendChild(span);
   }
 
-  function extractPreviewCellFormats(XLSX, ws, rows, cols) {
+  function extractPreviewCellFormats(
+    XLSX,
+    ws,
+    rows,
+    cols,
+    xlsxBorders = null
+  ) {
     const rowCount = Math.max(0, Number.isInteger(rows) ? rows : 0);
     const colCount = Math.max(0, Number.isInteger(cols) ? cols : 0);
     const out = Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => null));
 
     if (!ws || !ws["!ref"] || !XLSX || !XLSX.utils) return out;
 
-    const range = XLSX.utils.decode_range(ws["!ref"]);
-
     for (let r = 0; r < rowCount; r++) {
       for (let c = 0; c < colCount; c++) {
-        const addr = XLSX.utils.encode_cell({ r: range.s.r + r, c: range.s.c + c });
+        const addr = XLSX.utils.encode_cell({ r, c });
         const style = ws[addr] && ws[addr].s;
+        const rawXlsxBorder =
+          xlsxBorders && xlsxBorders[addr]
+            ? xlsxBorders[addr]
+            : null;
 
         const fmt = normalizePreviewCellFormat({
           bold: !!(style && style.font && style.font.bold),
@@ -812,7 +862,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           valign: normalizePreviewVerticalAlign(style && style.alignment && style.alignment.vertical),
           bg: previewFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: previewTextKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
-          border: previewBorderFromXlsxStyle(style && style.border)
+          border: rawXlsxBorder ||
+            previewBorderFromXlsxStyle(style && style.border)
         });
 
         if (fmt.bold || fmt.italic || fmt.underline || fmt.fontName || fmt.fontSize || fmt.decimals != null || fmt.numberFormat || fmt.currency || fmt.align || fmt.valign || fmt.bg || fmt.fg || !isEmptyPreviewBorderFormat(fmt.border)) {
@@ -899,18 +950,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function extractPreviewMerges(XLSX, ws, rowCount, colCount) {
     if (!ws || !ws["!ref"] || !Array.isArray(ws["!merges"]) || !XLSX || !XLSX.utils) return [];
 
-    const range = XLSX.utils.decode_range(ws["!ref"]);
     const out = [];
 
     for (const raw of ws["!merges"]) {
       const merge = normalizePreviewMergeRange({
         s: {
-          r: Number(raw && raw.s && raw.s.r) - range.s.r,
-          c: Number(raw && raw.s && raw.s.c) - range.s.c
+          r: Number(raw && raw.s && raw.s.r),
+          c: Number(raw && raw.s && raw.s.c)
         },
         e: {
-          r: Number(raw && raw.e && raw.e.r) - range.s.r,
-          c: Number(raw && raw.e && raw.e.c) - range.s.c
+          r: Number(raw && raw.e && raw.e.r),
+          c: Number(raw && raw.e && raw.e.c)
         }
       }, rowCount, colCount);
 
@@ -965,20 +1015,29 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     // Preserve the workbook coordinate grid. Hidden/empty rows must not be
     // collapsed, because merge refs and cell formats use original row indexes.
-    let rowCount = range ? Math.max(0, range.e.r - range.s.r + 1) : sourceRows.length;
+    let rowCount = range
+      ? Math.max(0, range.e.r + 1)
+      : sourceRows.length;
     let colCount = range
-      ? Math.max(0, range.e.c - range.s.c + 1)
-      : sourceRows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
+      ? Math.max(0, range.e.c + 1)
+      : sourceRows.reduce(
+          (m, row) =>
+            Math.max(
+              m,
+              Array.isArray(row)
+                ? row.length
+                : 0
+            ),
+          0
+        );
 
     rowCount = Math.max(rowCount, sourceRows.length);
     colCount = Math.max(colCount, sourceRows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0));
 
-    const origin = range || { s: { r: 0, c: 0 } };
-
     if (ws && Array.isArray(ws["!merges"])) {
       for (const raw of ws["!merges"]) {
-        const endRow = Number(raw && raw.e && raw.e.r) - origin.s.r;
-        const endCol = Number(raw && raw.e && raw.e.c) - origin.s.c;
+        const endRow = Number(raw && raw.e && raw.e.r);
+        const endCol = Number(raw && raw.e && raw.e.c);
 
         if (Number.isInteger(endRow) && endRow >= 0) {
           rowCount = Math.max(rowCount, endRow + 1);
@@ -1244,6 +1303,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
       : [];
+
+    const borderApi = FM && FM.spreadsheetXlsxBorders;
+    const workbookBorders =
+      borderApi &&
+      typeof borderApi.bordersBySheet === "function"
+        ? borderApi.bordersBySheet(wb, names)
+        : [];
+
     const imageApi = FM && FM.spreadsheetXlsxImages;
     const workbookImages = imageApi && typeof imageApi.imagesFromWorkbookFiles === "function"
       ? imageApi.imagesFromWorkbookFiles(wb, names)
@@ -1251,12 +1318,37 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     return names.map((name, idx) => {
       const ws = wb.Sheets[name];
-      const rawRows = XLSX.utils.sheet_to_json(ws, {
+      const rawRowsOptions = {
         header: 1,
         raw: false,
         defval: "",
         blankrows: true
-      });
+      };
+
+      if (ws && ws["!ref"]) {
+        const usedRange =
+          XLSX.utils.decode_range(
+            ws["!ref"]
+          );
+
+        /*
+         * Correctness: request rows from A1 instead of letting SheetJS make the
+         * used range's top-left cell the first preview cell.
+         */
+        rawRowsOptions.range = {
+          s: { r: 0, c: 0 },
+          e: {
+            r: usedRange.e.r,
+            c: usedRange.e.c
+          }
+        };
+      }
+
+      const rawRows =
+        XLSX.utils.sheet_to_json(
+          ws,
+          rawRowsOptions
+        );
       const bounds = worksheetPreviewBounds(
         XLSX,
         ws,
@@ -1336,7 +1428,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rowHeights: previewRowHeights(ws, rows.length, defaults.rowHeight),
         cellFormats: Array.isArray(storedFormats)
           ? storedFormats
-          : extractPreviewCellFormats(XLSX, ws, rows.length, colCount),
+          : extractPreviewCellFormats(
+              XLSX,
+              ws,
+              rows.length,
+              colCount,
+              workbookBorders[idx] || null
+            ),
         merges: extractPreviewMerges(XLSX, ws, rows.length, colCount),
         freeze: previewWorksheetFreezeFromWorkbook(wb, ws, idx),
         images: sheetImages

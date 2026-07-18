@@ -1077,6 +1077,78 @@
   outline-offset: -2px;
 }
 
+.spreadsheetBorderMenu .spreadsheetBorderMenuRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spreadsheetBorderSubmenuTrigger {
+  justify-content: space-between;
+}
+
+.spreadsheetBorderSubmenuTriggerMain {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spreadsheetBorderSubmenuChevron {
+  flex: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.spreadsheetBorderSubmenu {
+  position: absolute;
+  z-index: 1;
+  left: calc(100% + 6px);
+  top: 0;
+  min-width: 250px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-md, 14px);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
+}
+
+.spreadsheetBorderSubmenu[hidden] {
+  display: none;
+}
+
+.spreadsheetBorderSubmenu.spreadsheetBorderSubmenuOpenLeft {
+  right: calc(100% + 6px);
+  left: auto;
+}
+
+.spreadsheetBorderSubmenu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spreadsheetBorderMenuIcon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.spreadsheetBorderMenuIconGuide {
+  opacity: 0.24;
+}
+
+.spreadsheetBorderMenuIconActive {
+  opacity: 1;
+}
+
 .spreadsheetEditorTable td[data-spreadsheet-cell-border="1"] {
   --spreadsheet-cell-border-color: var(--fg);
   position: relative;
@@ -1090,8 +1162,11 @@
   z-index: 2;
   pointer-events: none;
   box-sizing: border-box;
-  border-style: solid;
   border-color: var(--spreadsheet-cell-border-color, currentColor);
+  border-top-style: var(--spreadsheet-cell-border-top-style, solid);
+  border-right-style: var(--spreadsheet-cell-border-right-style, solid);
+  border-bottom-style: var(--spreadsheet-cell-border-bottom-style, solid);
+  border-left-style: var(--spreadsheet-cell-border-left-style, solid);
   border-top-width: var(--spreadsheet-cell-border-top-width, 0);
   border-right-width: var(--spreadsheet-cell-border-right-width, 0);
   border-bottom-width: var(--spreadsheet-cell-border-bottom-width, 0);
