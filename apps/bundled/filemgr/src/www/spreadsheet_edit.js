@@ -4569,57 +4569,120 @@ function spreadsheetFillEndRowFromViewportY(startRow, col, viewportY) {
     return bestRow;
   }
 
-  function paintFillHandlePreview(source, endRow) {
-    if (!source || !Number.isInteger(endRow)) return;
+
+  function spreadsheetFillEndColFromViewportX(startCol, row, viewportX) {
+    if (!Number.isInteger(startCol) || !Number.isInteger(row)) return startCol;
+
+    let bestCol = startCol;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let col = startCol; col < MAX_EDIT_COLS; col++) {
+      const td = spreadsheetCellElement(row, col);
+      if (!td) break;
+
+      const rect = td.getBoundingClientRect();
+      const middle = rect.left + rect.width / 2;
+
+      if (viewportX >= rect.left && viewportX <= rect.right) {
+        return col;
+      }
+
+      const distance = Math.abs(viewportX - middle);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCol = col;
+      }
+
+      if (rect.left > viewportX && col > startCol) break;
+    }
+
+    return bestCol;
+  }
+
+  function paintFillHandlePreview(source, direction, endRow, endCol) {
+    if (!source || !direction) return;
 
     state.selection = null;
-    state.activeCell = { row: source.startRow, col: source.col };
+    state.activeCell = { row: source.startRow, col: source.startCol };
 
     state.rangeSelection = {
       startRow: source.startRow,
-      startCol: source.col,
-      endRow: Math.max(source.endRow, endRow),
-      endCol: source.col
+      startCol: source.startCol,
+      endRow: direction === "down" ? Math.max(source.endRow, endRow) : source.endRow,
+      endCol: direction === "right" ? Math.max(source.endCol, endCol) : source.endCol
     };
 
     repaintSpreadsheetSelection();
   }
 
-function fillHandleSourceRangeForCell(row, col) {
+  function fillHandleSourceRangeForCell(row, col) {
     if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
 
     const range = normalizedRangeSelection(state.rangeSelection);
-    if (range && range.col1 === range.col2 && row === range.row2 && col === range.col2) {
-      return {
-        startRow: range.row1,
-        endRow: range.row2,
-        col: range.col1
-      };
+    if (range && row === range.row2 && col === range.col2) {
+      const singleColumn = range.col1 === range.col2;
+      const singleRow = range.row1 === range.row2;
+
+      if (singleColumn || singleRow) {
+        return {
+          startRow: range.row1,
+          endRow: range.row2,
+          startCol: range.col1,
+          endCol: range.col2,
+          orientation: singleRow && !singleColumn
+            ? "right"
+            : singleColumn && !singleRow
+              ? "down"
+              : ""
+        };
+      }
     }
 
     const active = state.activeCell;
     if (active && Number(active.row) === row && Number(active.col) === col) {
-      return { startRow: row, endRow: row, col };
+      return {
+        startRow: row,
+        endRow: row,
+        startCol: col,
+        endCol: col,
+        orientation: ""
+      };
     }
 
     return null;
   }
 
-  function fillHandleSourceValues(sheet, source) {
+  function fillHandleSourceValues(sheet, source, direction) {
     const values = [];
     if (!sheet || !source) return values;
 
+    if (direction === "right") {
+      const row = source.startRow;
+      for (let col = source.startCol; col <= source.endCol; col++) {
+        values.push({
+          row,
+          col,
+          raw: cellRaw(sheet, row, col),
+          format: normalizeCellFormat(getCellFormat(sheet, row, col))
+        });
+      }
+      return values;
+    }
+
+    const col = source.startCol;
     for (let row = source.startRow; row <= source.endRow; row++) {
       values.push({
-        raw: cellRaw(sheet, row, source.col),
-        format: normalizeCellFormat(getCellFormat(sheet, row, source.col))
+        row,
+        col,
+        raw: cellRaw(sheet, row, col),
+        format: normalizeCellFormat(getCellFormat(sheet, row, col))
       });
     }
 
     return values;
   }
 
-  function fillHandleNumericSeries(sourceValues) {
+function fillHandleNumericSeries(sourceValues) {
     if (!Array.isArray(sourceValues) || sourceValues.length < 2) return null;
 
     const parsed = [];
@@ -4669,11 +4732,16 @@ function fillHandleSourceRangeForCell(row, col) {
     return !ch || !/[A-Za-z0-9_]/.test(ch);
   }
 
-  function shiftSpreadsheetFormulaRefsDown(raw, rowOffset) {
+  function shiftSpreadsheetFormulaRefs(raw, rowOffset, colOffset) {
     const formula = String(raw == null ? "" : raw);
-    const offset = Number(rowOffset);
+    const rowDelta = Number(rowOffset);
+    const colDelta = Number(colOffset);
 
-    if (!isFormulaValue(formula) || !Number.isFinite(offset) || offset === 0) {
+    if (
+      !isFormulaValue(formula) ||
+      (!Number.isFinite(rowDelta) && !Number.isFinite(colDelta)) ||
+      (rowDelta === 0 && colDelta === 0)
+    ) {
       return formula;
     }
 
@@ -4685,7 +4753,7 @@ function fillHandleSourceRangeForCell(row, col) {
       const ch = formula[i];
 
       // Excel formula string literals use double quotes. Keep references inside
-      // strings untouched so values like ="A1" do not become ="A2" on fill.
+      // strings untouched so values like ="A1" do not become ="B1" on fill.
       if (ch === '"') {
         out += ch;
 
@@ -4733,47 +4801,78 @@ function fillHandleSourceRangeForCell(row, col) {
       const colText = match[2];
       const rowLock = match[3];
       const rowText = match[4];
+      const originalCol = colLettersToIndex(colText);
       const originalRow = Number.parseInt(rowText, 10);
 
-      if (!Number.isInteger(originalRow) || originalRow < 1) {
+      if (
+        originalCol < 0 ||
+        !Number.isInteger(originalRow) ||
+        originalRow < 1
+      ) {
         out += token;
         i += token.length;
         continue;
       }
 
+      const nextCol = colLock
+        ? colText
+        : columnName(Math.max(0, originalCol + (Number.isFinite(colDelta) ? colDelta : 0)));
+
       const nextRow = rowLock
         ? originalRow
-        : Math.max(1, originalRow + offset);
+        : Math.max(1, originalRow + (Number.isFinite(rowDelta) ? rowDelta : 0));
 
-      out += `${colLock}${colText}${rowLock}${nextRow}`;
+      out += `${colLock}${nextCol}${rowLock}${nextRow}`;
       i += token.length;
     }
 
     return out;
   }
 
-  function fillHandleRawValueForTargetRow(sourceValues, source, series, targetRow) {
+  function fillHandleRawValueForTargetCell(sourceValues, source, series, targetRow, targetCol, direction) {
     if (series) {
-      return fillHandleSeriesRawValue(series, targetRow - source.endRow);
+      const offset = direction === "right"
+        ? targetCol - source.endCol
+        : targetRow - source.endRow;
+
+      return fillHandleSeriesRawValue(series, offset);
     }
 
-    const patternIndex = (targetRow - source.startRow) % sourceValues.length;
+    const patternIndex = direction === "right"
+      ? (targetCol - source.startCol) % sourceValues.length
+      : (targetRow - source.startRow) % sourceValues.length;
+
     const pattern = sourceValues[patternIndex];
     if (!pattern) return "";
 
     if (isFormulaValue(pattern.raw)) {
-      const sourceRow = source.startRow + patternIndex;
-      return shiftSpreadsheetFormulaRefsDown(pattern.raw, targetRow - sourceRow);
+      return shiftSpreadsheetFormulaRefs(
+        pattern.raw,
+        targetRow - pattern.row,
+        targetCol - pattern.col
+      );
     }
 
     return pattern.raw;
   }
 
-function fillHandleBlockedByMerge(sheet, source, endRow) {
-    if (!sheet || !source || endRow <= source.endRow) return false;
+  function fillHandleBlockedByMerge(sheet, source, direction, endRow, endCol) {
+    if (!sheet || !source || !direction) return false;
+
+    if (direction === "right") {
+      if (endCol <= source.endCol) return false;
+
+      for (let c = source.endCol + 1; c <= endCol; c++) {
+        if (mergeAtCell(sheet, source.startRow, c)) return true;
+      }
+
+      return false;
+    }
+
+    if (endRow <= source.endRow) return false;
 
     for (let r = source.endRow + 1; r <= endRow; r++) {
-      if (mergeAtCell(sheet, r, source.col)) return true;
+      if (mergeAtCell(sheet, r, source.startCol)) return true;
     }
 
     return false;
@@ -4786,11 +4885,19 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
     if (!sheet) return false;
 
     const source = ctx.source;
+    const direction = ctx.direction === "right" ? "right" : "down";
     const endRow = Number(ctx.endRow);
-    if (!source || !Number.isInteger(endRow)) return false;
-    if (endRow <= source.endRow) return false;
+    const endCol = Number(ctx.endCol);
 
-    if (fillHandleBlockedByMerge(sheet, source, endRow)) {
+    if (!source || !Number.isInteger(endRow) || !Number.isInteger(endCol)) return false;
+
+    const hasTarget = direction === "right"
+      ? endCol > source.endCol
+      : endRow > source.endRow;
+
+    if (!hasTarget) return false;
+
+    if (fillHandleBlockedByMerge(sheet, source, direction, endRow, endCol)) {
       setStatus(tr(
         "filemgr.spreadsheet_editor.fill_merge_blocked",
         null,
@@ -4799,26 +4906,46 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
       return false;
     }
 
-    const sourceValues = fillHandleSourceValues(sheet, source);
+    const sourceValues = fillHandleSourceValues(sheet, source, direction);
     if (!sourceValues.length) return false;
 
     const series = fillHandleNumericSeries(sourceValues);
     let changed = false;
 
-    for (let r = source.endRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
-      const patternIndex = (r - source.startRow) % sourceValues.length;
-      const pattern = sourceValues[patternIndex];
+    if (direction === "right") {
+      const row = source.startRow;
 
-      const nextRaw = fillHandleRawValueForTargetRow(sourceValues, source, series, r);
+      for (let c = source.endCol + 1; c <= Math.min(endCol, MAX_EDIT_COLS - 1); c++) {
+        const patternIndex = (c - source.startCol) % sourceValues.length;
+        const pattern = sourceValues[patternIndex];
 
-      const nextFormat = pattern.format;
-      const nextFormatKey = cellFormatKey(nextFormat);
+        const nextRaw = fillHandleRawValueForTargetCell(sourceValues, source, series, row, c, direction);
+        const nextFormat = pattern.format;
+        const nextFormatKey = cellFormatKey(nextFormat);
 
-      if (cellRaw(sheet, r, source.col) !== nextRaw) changed = true;
-      if (cellFormatKey(getCellFormat(sheet, r, source.col)) !== nextFormatKey) changed = true;
+        if (cellRaw(sheet, row, c) !== nextRaw) changed = true;
+        if (cellFormatKey(getCellFormat(sheet, row, c)) !== nextFormatKey) changed = true;
 
-      setCellRaw(sheet, r, source.col, nextRaw);
-      setCellFormat(sheet, r, source.col, nextFormat);
+        setCellRaw(sheet, row, c, nextRaw);
+        setCellFormat(sheet, row, c, nextFormat);
+      }
+    } else {
+      const col = source.startCol;
+
+      for (let r = source.endRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
+        const patternIndex = (r - source.startRow) % sourceValues.length;
+        const pattern = sourceValues[patternIndex];
+
+        const nextRaw = fillHandleRawValueForTargetCell(sourceValues, source, series, r, col, direction);
+        const nextFormat = pattern.format;
+        const nextFormatKey = cellFormatKey(nextFormat);
+
+        if (cellRaw(sheet, r, col) !== nextRaw) changed = true;
+        if (cellFormatKey(getCellFormat(sheet, r, col)) !== nextFormatKey) changed = true;
+
+        setCellRaw(sheet, r, col, nextRaw);
+        setCellFormat(sheet, r, col, nextFormat);
+      }
     }
 
     if (!changed) return false;
@@ -4826,11 +4953,11 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
     state.selection = null;
     state.rangeSelection = {
       startRow: source.startRow,
-      startCol: source.col,
-      endRow,
-      endCol: source.col
+      startCol: source.startCol,
+      endRow: direction === "down" ? endRow : source.endRow,
+      endCol: direction === "right" ? endCol : source.endCol
     };
-    state.activeCell = { row: source.startRow, col: source.col };
+    state.activeCell = { row: source.startRow, col: source.startCol };
     formulaFocus = null;
 
     commitHistorySnapshot(ctx.before || captureHistorySnapshot());
@@ -4839,7 +4966,7 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
     return true;
   }
 
-  function finishSpreadsheetFillHandle(apply) {
+function finishSpreadsheetFillHandle(apply) {
     const ctx = fillHandleState;
     fillHandleState = null;
 
@@ -4875,29 +5002,35 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
     if (!sheet || !source) return;
 
     for (let r = source.startRow; r <= source.endRow; r++) {
-      if (mergeAtCell(sheet, r, source.col)) return;
+      for (let c = source.startCol; c <= source.endCol; c++) {
+        if (mergeAtCell(sheet, r, c)) return;
+      }
     }
 
     ev.preventDefault();
     ev.stopPropagation();
 
     state.selection = null;
-    state.rangeSelection = source.endRow > source.startRow
+    state.rangeSelection = source.endRow > source.startRow || source.endCol > source.startCol
       ? {
           startRow: source.startRow,
-          startCol: source.col,
+          startCol: source.startCol,
           endRow: source.endRow,
-          endCol: source.col
+          endCol: source.endCol
         }
       : null;
-    state.activeCell = { row: source.startRow, col: source.col };
+    state.activeCell = { row: source.startRow, col: source.startCol };
     formulaFocus = null;
     repaintSpreadsheetSelection();
 
     const ctx = {
       source,
+      direction: source.orientation || "",
       endRow: source.endRow,
+      endCol: source.endCol,
       moved: false,
+      startX: Number(ev.clientX),
+      startY: Number(ev.clientY),
       before: captureHistorySnapshot()
     };
 
@@ -4906,16 +5039,37 @@ function fillHandleBlockedByMerge(sheet, source, endRow) {
     const onMove = (moveEv) => {
       if (!fillHandleState || fillHandleState !== ctx) return;
 
+      const dx = Number(moveEv.clientX) - ctx.startX;
+      const dy = Number(moveEv.clientY) - ctx.startY;
+
+      if (!ctx.direction) {
+        ctx.direction = Math.abs(dx) > Math.abs(dy) ? "right" : "down";
+      }
+
+      if (ctx.direction === "right") {
+        const nextEndCol = Math.max(
+          source.endCol,
+          spreadsheetFillEndColFromViewportX(source.endCol, source.startRow, Number(moveEv.clientX))
+        );
+
+        if (nextEndCol === ctx.endCol) return;
+
+        ctx.endCol = nextEndCol;
+        ctx.moved = ctx.endCol > source.endCol;
+        paintFillHandlePreview(source, ctx.direction, ctx.endRow, ctx.endCol);
+        return;
+      }
+
       const nextEndRow = Math.max(
         source.endRow,
-        spreadsheetFillEndRowFromViewportY(source.endRow, source.col, Number(moveEv.clientY))
+        spreadsheetFillEndRowFromViewportY(source.endRow, source.startCol, Number(moveEv.clientY))
       );
 
       if (nextEndRow === ctx.endRow) return;
 
       ctx.endRow = nextEndRow;
       ctx.moved = ctx.endRow > source.endRow;
-      paintFillHandlePreview(source, ctx.endRow);
+      paintFillHandlePreview(source, ctx.direction, ctx.endRow, ctx.endCol);
     };
 
     const cleanup = () => {
@@ -5156,7 +5310,7 @@ function markAxisHeader(el) {
     let row = null;
     let col = null;
 
-    if (range && range.col1 === range.col2) {
+    if (range && (range.col1 === range.col2 || range.row1 === range.row2)) {
       row = range.row2;
       col = range.col2;
     } else if (!state.selection && state.activeCell) {
@@ -5170,7 +5324,7 @@ function markAxisHeader(el) {
     if (cell) cell.classList.add("spreadsheetFillHandleAnchorCell");
   }
 
-  function repaintSpreadsheetSelection() {
+function repaintSpreadsheetSelection() {
     paintAxisSelection();
     paintRangeSelection();
     paintActiveCellSelection();
