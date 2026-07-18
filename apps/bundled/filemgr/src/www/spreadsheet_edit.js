@@ -100,6 +100,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let historyKeyboardAttached = false;
   let pendingCellEditHistory = null;
   let preserveSelectionForContextMenu = null;
+  let fillHandleState = null;
 
   const state = {
     rel: "",
@@ -514,7 +515,60 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return n.toFixed(places);
   }
 
-  function isValidCurrencyKey(value) {
+
+  function spreadsheetDateSerialFromParts(year, month, day) {
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+    if (y < 1900 || y > 9999 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+
+    const ms = Date.UTC(y, m - 1, d);
+    const date = new Date(ms);
+
+    if (
+      date.getUTCFullYear() !== y ||
+      date.getUTCMonth() !== m - 1 ||
+      date.getUTCDate() !== d
+    ) {
+      return null;
+    }
+
+    return Math.floor(ms / 86400000);
+  }
+
+  function spreadsheetDateSerialFromText(value) {
+    const text = String(value == null ? "" : value).trim();
+    if (!text) return null;
+
+    let m = text.match(/^([0-9]{1,2})\.([0-9]{1,2})\.([0-9]{4})$/);
+    if (m) return spreadsheetDateSerialFromParts(Number(m[3]), Number(m[2]), Number(m[1]));
+
+    m = text.match(/^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$/);
+    if (m) return spreadsheetDateSerialFromParts(Number(m[1]), Number(m[2]), Number(m[3]));
+
+    return null;
+  }
+
+  function formatSpreadsheetDateSerial(serial) {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return "";
+
+    const date = new Date(Math.round(n) * 86400000);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${d}.${m}.${y}`;
+  }
+
+  function formatSpreadsheetDateDisplayValue(value) {
+    const serial = spreadsheetDateSerialFromText(value);
+    return serial == null ? "" : formatSpreadsheetDateSerial(serial);
+  }
+
+function isValidCurrencyKey(value) {
     return Object.prototype.hasOwnProperty.call(CURRENCY_FORMATS, String(value || ""));
   }
 
@@ -526,6 +580,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function normalizeNumberFormat(value, currency) {
     const key = String(value || "").trim().toLowerCase();
     if (key === "percent") return "percent";
+    if (key === "date") return "date";
     return key === "currency" && normalizeCurrencyKey(currency) ? "currency" : "";
   }
 
@@ -535,6 +590,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!Number.isFinite(n)) {
       return String(value == null ? "" : value);
+    }
+
+    if (f.numberFormat === "date") {
+      return formatSpreadsheetDateSerial(n) || String(value == null ? "" : value);
     }
 
     if (f.numberFormat === "percent") {
@@ -549,8 +608,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return currency ? `${currency.prefix}${base}${currency.suffix}` : base;
   }
 
-  function inferCellDecimalPlaces(sheet, row, col, cache = null) {
+function inferCellDecimalPlaces(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
+
+    if (isForcedTextValue(raw)) {
+      return 0;
+    }
 
     if (isFormulaValue(raw)) {
       const effectiveCache = cache || computeSheetCache(sheet);
@@ -690,7 +753,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
-  function normalizeMergeRange(merge, rowCount = null, colCount = null) {
+
+
+  function cellFormatKey(fmt) {
+    return JSON.stringify(normalizeCellFormat(fmt));
+  }
+function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     const src = merge && typeof merge === "object" ? merge : {};
     const start = src.s && typeof src.s === "object" ? src.s : {};
     const end = src.e && typeof src.e === "object" ? src.e : {};
@@ -1186,7 +1254,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         const rawValue = String(value || "");
         const currencyMatch = rawValue.match(/^currency:([a-z0-9]+)$/i);
         const currency = currencyMatch ? normalizeCurrencyKey(currencyMatch[1]) : "";
-        const wasFormattedNumber = fmt.numberFormat === "currency" || fmt.numberFormat === "percent";
+        const wasFormattedNumber = fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date";
 
         if (currency) {
           fmt.numberFormat = "currency";
@@ -1199,6 +1267,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         } else if (rawValue === "percent") {
           fmt.numberFormat = "percent";
           fmt.currency = "";
+        } else if (rawValue === "date") {
+          fmt.numberFormat = "date";
+          fmt.currency = "";
+          fmt.decimals = null;
 
           // Percent uses Excel-style display: raw 0.12 becomes 12.00%.
           // Default to two decimals when converting from plain/number cells.
@@ -1339,7 +1411,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (numberFormatSelect) {
       numberFormatSelect.value = fmt.numberFormat === "currency" && fmt.currency
         ? `currency:${fmt.currency}`
-        : fmt.numberFormat === "percent" ? "percent" : "";
+        : fmt.numberFormat === "percent"
+          ? "percent"
+          : fmt.numberFormat === "date"
+            ? "date"
+            : "";
     }
     setToolbarIconButtonValue(alignSelect, "align", fmt.align || "left");
     setToolbarIconButtonValue(valignSelect, "valign", fmt.valign || "middle");
@@ -2157,6 +2233,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           } else {
             cells.push(`<c r="${ref}"${styleAttr}>${fxml}</c>`);
           }
+          continue;
+        }
+
+        if (isForcedTextValue(raw)) {
+          const text = forcedTextDisplayValue(raw);
+          if (text === "" && !styleIndex) continue;
+          cells.push(`<c r="${ref}"${styleAttr} t="inlineStr">${xlsxInlineStringXml(text)}</c>`);
           continue;
         }
 
@@ -3073,8 +3156,31 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
+  function isForcedTextValue(value) {
+    return String(value == null ? "" : value).startsWith("'");
+  }
+
+  function forcedTextDisplayValue(value) {
+    const raw = String(value == null ? "" : value);
+    return isForcedTextValue(raw) ? raw.slice(1) : raw;
+  }
+
+  function normalizeSpreadsheetUserInput(value, previousRaw = "") {
+    const text = String(value == null ? "" : value);
+
+    if (!text) return "";
+    if (text.startsWith("'")) return text;
+
+    // Excel-style text prefix: once a cell was explicitly forced to text,
+    // direct edits keep it as text so "=..." does not silently become a formula.
+    if (isForcedTextValue(previousRaw)) return "'" + text;
+
+    return text;
+  }
+
   function isFormulaValue(value) {
-    return String(value == null ? "" : value).startsWith("=");
+    const raw = String(value == null ? "" : value);
+    return raw.startsWith("=") && !isForcedTextValue(raw);
   }
 
   function cellRaw(sheet, row, col) {
@@ -3194,7 +3300,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (target === formulaBarInput) {
       const cell = activeFormulaBarCell();
       if (!cell) return false;
-      return String(formulaBarInput.value == null ? "" : formulaBarInput.value) !== cellRaw(cell.sheet, cell.row, cell.col);
+      const currentRaw = cellRaw(cell.sheet, cell.row, cell.col);
+      return normalizeSpreadsheetUserInput(formulaBarInput.value, currentRaw) !== currentRaw;
     }
 
     const tag = String(target.tagName || "").toUpperCase();
@@ -3580,7 +3687,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (forceValue || document.activeElement !== formulaBarInput) {
       // Security: spreadsheet cell content is assigned as input.value, never as
       // HTML, so formulas/text cannot become executable markup.
-      formulaBarInput.value = cellRaw(cell.sheet, cell.row, cell.col);
+      formulaBarInput.value = forcedTextDisplayValue(cellRaw(cell.sheet, cell.row, cell.col));
     }
   }
 
@@ -3605,9 +3712,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (!formulaBarInput || !cell) return;
 
     const raw = cellRaw(cell.sheet, cell.row, cell.col);
-    formulaBarInput.value = raw;
+    formulaBarInput.value = forcedTextDisplayValue(raw);
 
-    if (String(raw || "").startsWith("=")) {
+    if (isFormulaValue(raw)) {
       formulaFocus = {
         input: formulaBarInput,
         row: cell.row,
@@ -3628,12 +3735,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const previousRaw = cellRaw(cell.sheet, cell.row, cell.col);
     const previousFormulaFocus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
-    const nextRaw = String(formulaBarInput.value == null ? "" : formulaBarInput.value);
+    const nextRaw = normalizeSpreadsheetUserInput(formulaBarInput.value, previousRaw);
     const historyBefore = previousRaw !== nextRaw ? captureHistorySnapshot() : null;
 
     setCellRaw(cell.sheet, cell.row, cell.col, nextRaw);
 
-    if (String(nextRaw || "").startsWith("=")) {
+    if (isFormulaValue(nextRaw)) {
       formulaFocus = {
         input: formulaBarInput,
         row: cell.row,
@@ -3668,7 +3775,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     setCellRaw(cell.sheet, cell.row, cell.col, originalRaw);
     formulaFocus = null;
 
-    formulaBarInput.value = originalRaw;
+    formulaBarInput.value = forcedTextDisplayValue(originalRaw);
     setDirty(!!focus.wasDirty);
     refreshFormulaDisplays(null);
     syncVisibleInputForCell(cell.row, cell.col);
@@ -3725,7 +3832,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     // Security: clipboard export is plain text TSV only, not HTML.
     // Tabs/newlines inside a cell are flattened so copied data cannot reshape
     // the TSV in surprising ways.
-    return String(value == null ? "" : value)
+    return forcedTextDisplayValue(value)
       .replace(/\r\n/g, "\n")
       .replace(/[\r\n\t]/g, " ");
   }
@@ -4062,7 +4169,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function parseCellRef(ref) {
-    const m = String(ref || "").trim().match(/^([A-Z]+)([1-9][0-9]*)$/i);
+    const m = String(ref || "").trim().match(/^\$?([A-Z]+)\$?([1-9][0-9]*)$/i);
     if (!m) return null;
     const col = colLettersToIndex(m[1]);
     const row = Number(m[2]) - 1;
@@ -4136,24 +4243,48 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return src.slice(start, pos);
     }
 
+    function readCellRefToken() {
+      skipWs();
+
+      const start = pos;
+
+      if (src[pos] === "$") pos++;
+
+      const lettersStart = pos;
+      while (/[A-Za-z]/.test(src[pos] || "")) pos++;
+      if (pos === lettersStart) {
+        pos = start;
+        return "";
+      }
+
+      if (src[pos] === "$") pos++;
+
+      const digitsStart = pos;
+      while (/[0-9]/.test(src[pos] || "")) pos++;
+      if (pos === digitsStart) {
+        pos = start;
+        return "";
+      }
+
+      return src.slice(start, pos);
+    }
+
     function parseCellTokenAtCurrent() {
       skipWs();
+
       const save = pos;
-      const letters = readLetters();
-      if (!letters) {
+      const token = readCellRefToken();
+      if (!token) {
         pos = save;
         return null;
       }
-      const digits = readDigits();
-      if (!digits) {
-        pos = save;
-        return null;
-      }
-      const ref = parseCellRef(letters + digits);
+
+      const ref = parseCellRef(token);
       if (!ref) {
         pos = save;
         return null;
       }
+
       return ref;
     }
 
@@ -4272,17 +4403,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         return parseNumberLiteral();
       }
 
+      const cellSave = pos;
+      const cell = parseCellTokenAtCurrent();
+      if (cell) {
+        if (match(":")) throw new Error("#VALUE!");
+        return cellNumericValue(cell);
+      }
+      pos = cellSave;
+
       const save = pos;
       const letters = readLetters();
       if (letters) {
-        const digits = readDigits();
-        if (digits) {
-          const ref = parseCellRef(letters + digits);
-          if (!ref) throw new Error("#REF!");
-          if (match(":")) throw new Error("#VALUE!");
-          return cellNumericValue(ref);
-        }
-
         pos = save + letters.length;
         return parseFunctionCall(letters);
       }
@@ -4339,6 +4470,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (cache.has(key)) return cache.get(key);
 
     const raw = cellRaw(sheet, row, col);
+
+    if (isForcedTextValue(raw)) {
+      const text = forcedTextDisplayValue(raw);
+      const result = { raw: text, value: text, blank: text === "", error: "" };
+      cache.set(key, result);
+      return result;
+    }
+
     const parsed = parsePlainNumber(raw);
 
     if (!isFormulaValue(raw)) {
@@ -4391,9 +4530,18 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const raw = cellRaw(sheet, row, col);
     const fmt = getCellFormat(sheet, row, col);
 
+    if (fmt.numberFormat === "date" && !isFormulaValue(raw) && !isForcedTextValue(raw)) {
+      const dateText = formatSpreadsheetDateDisplayValue(raw);
+      if (dateText) return dateText;
+    }
+
+    if (isForcedTextValue(raw)) {
+      return forcedTextDisplayValue(raw);
+    }
+
     if (!isFormulaValue(raw)) {
       const parsed = parsePlainNumber(raw);
-      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && !parsed.blank && typeof parsed.number === "number") {
+      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && !parsed.blank && typeof parsed.number === "number") {
         return formatNumericDisplayValue(parsed.number, fmt);
       }
       return raw;
@@ -4403,7 +4551,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
     if (result.error) return result.error;
 
-    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && typeof result.value === "number") {
+    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && typeof result.value === "number") {
       return formatNumericDisplayValue(result.value, fmt);
     }
 
@@ -4456,7 +4604,623 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     }
   }
 
-  function markAxisHeader(el) {
+
+
+function spreadsheetCellElement(row, col) {
+    if (!bodyEl || !Number.isInteger(row) || !Number.isInteger(col)) return null;
+    return bodyEl.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
+  }
+
+function spreadsheetFillEndRowFromViewportY(startRow, col, viewportY) {
+    if (!Number.isInteger(startRow) || !Number.isInteger(col)) return startRow;
+
+    let bestRow = startRow;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let row = startRow; row < MAX_EDIT_ROWS; row++) {
+      const td = spreadsheetCellElement(row, col);
+      if (!td) break;
+
+      const rect = td.getBoundingClientRect();
+      const middle = rect.top + rect.height / 2;
+
+      if (viewportY >= rect.top && viewportY <= rect.bottom) {
+        return row;
+      }
+
+      const distance = Math.abs(viewportY - middle);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestRow = row;
+      }
+
+      if (rect.top > viewportY && row > startRow) break;
+    }
+
+    return bestRow;
+  }
+
+
+  function spreadsheetFillEndColFromViewportX(startCol, row, viewportX) {
+    if (!Number.isInteger(startCol) || !Number.isInteger(row)) return startCol;
+
+    let bestCol = startCol;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let col = startCol; col < MAX_EDIT_COLS; col++) {
+      const td = spreadsheetCellElement(row, col);
+      if (!td) break;
+
+      const rect = td.getBoundingClientRect();
+      const middle = rect.left + rect.width / 2;
+
+      if (viewportX >= rect.left && viewportX <= rect.right) {
+        return col;
+      }
+
+      const distance = Math.abs(viewportX - middle);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCol = col;
+      }
+
+      if (rect.left > viewportX && col > startCol) break;
+    }
+
+    return bestCol;
+  }
+
+  function paintFillHandlePreview(source, direction, endRow, endCol) {
+    if (!source || !direction) return;
+
+    state.selection = null;
+    state.activeCell = { row: source.startRow, col: source.startCol };
+
+    state.rangeSelection = {
+      startRow: source.startRow,
+      startCol: source.startCol,
+      endRow: direction === "down" ? Math.max(source.endRow, endRow) : source.endRow,
+      endCol: direction === "right" ? Math.max(source.endCol, endCol) : source.endCol
+    };
+
+    repaintSpreadsheetSelection();
+  }
+
+  function fillHandleSourceRangeForCell(row, col) {
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
+
+    const range = normalizedRangeSelection(state.rangeSelection);
+    if (range && row === range.row2 && col === range.col2) {
+      const singleColumn = range.col1 === range.col2;
+      const singleRow = range.row1 === range.row2;
+
+      if (singleColumn || singleRow) {
+        return {
+          startRow: range.row1,
+          endRow: range.row2,
+          startCol: range.col1,
+          endCol: range.col2,
+          orientation: singleRow && !singleColumn
+            ? "right"
+            : singleColumn && !singleRow
+              ? "down"
+              : ""
+        };
+      }
+    }
+
+    const active = state.activeCell;
+    if (active && Number(active.row) === row && Number(active.col) === col) {
+      return {
+        startRow: row,
+        endRow: row,
+        startCol: col,
+        endCol: col,
+        orientation: ""
+      };
+    }
+
+    return null;
+  }
+
+  function fillHandleSourceValues(sheet, source, direction) {
+    const values = [];
+    if (!sheet || !source) return values;
+
+    if (direction === "right") {
+      const row = source.startRow;
+      for (let col = source.startCol; col <= source.endCol; col++) {
+        values.push({
+          row,
+          col,
+          raw: cellRaw(sheet, row, col),
+          format: normalizeCellFormat(getCellFormat(sheet, row, col))
+        });
+      }
+      return values;
+    }
+
+    const col = source.startCol;
+    for (let row = source.startRow; row <= source.endRow; row++) {
+      values.push({
+        row,
+        col,
+        raw: cellRaw(sheet, row, col),
+        format: normalizeCellFormat(getCellFormat(sheet, row, col))
+      });
+    }
+
+    return values;
+  }
+
+function fillHandleNumericSeries(sourceValues) {
+    if (!Array.isArray(sourceValues) || sourceValues.length < 2) return null;
+
+    const parsed = [];
+
+    for (const item of sourceValues) {
+      const raw = String(item && item.raw == null ? "" : item.raw);
+      if (isFormulaValue(raw) || isForcedTextValue(raw)) return null;
+
+      const number = parsePlainNumber(raw);
+      if (number.blank || typeof number.number !== "number" || !Number.isFinite(number.number)) {
+        return null;
+      }
+
+      parsed.push({ raw, value: number.number });
+    }
+
+    const last = parsed[parsed.length - 1].value;
+    const previous = parsed[parsed.length - 2].value;
+    const step = last - previous;
+
+    if (!Number.isFinite(step)) return null;
+
+    const decimals = parsed.reduce(
+      (max, item) => Math.max(max, decimalPlacesFromText(item.raw)),
+      0
+    );
+
+    return { last, step, decimals };
+  }
+
+
+  function fillHandleDateSeries(sourceValues) {
+    if (!Array.isArray(sourceValues) || !sourceValues.length) return null;
+
+    const parsed = [];
+
+    for (const item of sourceValues) {
+      const raw = String(item && item.raw == null ? "" : item.raw);
+      if (isFormulaValue(raw) || isForcedTextValue(raw)) return null;
+
+      const serial = spreadsheetDateSerialFromText(raw);
+      if (serial == null) return null;
+
+      parsed.push(serial);
+    }
+
+    const lastSerial = parsed[parsed.length - 1];
+    const previousSerial = parsed.length >= 2
+      ? parsed[parsed.length - 2]
+      : lastSerial - 1;
+
+    const stepDays = lastSerial - previousSerial;
+
+    if (!Number.isFinite(stepDays)) return null;
+
+    return {
+      type: "date",
+      lastSerial,
+      stepDays
+    };
+  }
+
+  function fillHandleSeriesRawValue(series, offset) {
+    if (series && series.type === "date") {
+      return formatSpreadsheetDateSerial(series.lastSerial + series.stepDays * offset);
+    }
+
+    const next = series.last + series.step * offset;
+
+    if (series.decimals > 0) {
+      return formatDecimalNumber(next, series.decimals);
+    }
+
+    return String(Math.round(next));
+  }
+
+function formulaRefBoundaryBefore(ch) {
+    return !ch || !/[A-Za-z0-9_$]/.test(ch);
+  }
+
+  function formulaRefBoundaryAfter(ch) {
+    return !ch || !/[A-Za-z0-9_]/.test(ch);
+  }
+
+  function shiftSpreadsheetFormulaRefs(raw, rowOffset, colOffset) {
+    const formula = String(raw == null ? "" : raw);
+    const rowDelta = Number(rowOffset);
+    const colDelta = Number(colOffset);
+
+    if (
+      !isFormulaValue(formula) ||
+      (!Number.isFinite(rowDelta) && !Number.isFinite(colDelta)) ||
+      (rowDelta === 0 && colDelta === 0)
+    ) {
+      return formula;
+    }
+
+    let out = "";
+    let i = 0;
+    let inString = false;
+
+    while (i < formula.length) {
+      const ch = formula[i];
+
+      // Excel formula string literals use double quotes. Keep references inside
+      // strings untouched so values like ="A1" do not become ="B1" on fill.
+      if (ch === '"') {
+        out += ch;
+
+        if (inString && formula[i + 1] === '"') {
+          out += formula[i + 1];
+          i += 2;
+          continue;
+        }
+
+        inString = !inString;
+        i += 1;
+        continue;
+      }
+
+      if (inString) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const before = i > 0 ? formula[i - 1] : "";
+      if (!formulaRefBoundaryBefore(before)) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const match = /^(\$?)([A-Za-z]{1,3})(\$?)([0-9]{1,7})/.exec(formula.slice(i));
+      if (!match) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const token = match[0];
+      const after = formula[i + token.length] || "";
+
+      if (!formulaRefBoundaryAfter(after)) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const colLock = match[1];
+      const colText = match[2];
+      const rowLock = match[3];
+      const rowText = match[4];
+      const originalCol = colLettersToIndex(colText);
+      const originalRow = Number.parseInt(rowText, 10);
+
+      if (
+        originalCol < 0 ||
+        !Number.isInteger(originalRow) ||
+        originalRow < 1
+      ) {
+        out += token;
+        i += token.length;
+        continue;
+      }
+
+      const nextCol = colLock
+        ? colText
+        : columnName(Math.max(0, originalCol + (Number.isFinite(colDelta) ? colDelta : 0)));
+
+      const nextRow = rowLock
+        ? originalRow
+        : Math.max(1, originalRow + (Number.isFinite(rowDelta) ? rowDelta : 0));
+
+      out += `${colLock}${nextCol}${rowLock}${nextRow}`;
+      i += token.length;
+    }
+
+    return out;
+  }
+
+  function fillHandleRawValueForTargetCell(sourceValues, source, series, targetRow, targetCol, direction) {
+    if (series) {
+      const offset = direction === "right"
+        ? targetCol - source.endCol
+        : targetRow - source.endRow;
+
+      return fillHandleSeriesRawValue(series, offset);
+    }
+
+    const patternIndex = direction === "right"
+      ? (targetCol - source.startCol) % sourceValues.length
+      : (targetRow - source.startRow) % sourceValues.length;
+
+    const pattern = sourceValues[patternIndex];
+    if (!pattern) return "";
+
+    if (isFormulaValue(pattern.raw)) {
+      return shiftSpreadsheetFormulaRefs(
+        pattern.raw,
+        targetRow - pattern.row,
+        targetCol - pattern.col
+      );
+    }
+
+    return pattern.raw;
+  }
+
+  function fillHandleBlockedByMerge(sheet, source, direction, endRow, endCol) {
+    if (!sheet || !source || !direction) return false;
+
+    if (direction === "right") {
+      if (endCol <= source.endCol) return false;
+
+      for (let c = source.endCol + 1; c <= endCol; c++) {
+        if (mergeAtCell(sheet, source.startRow, c)) return true;
+      }
+
+      return false;
+    }
+
+    if (endRow <= source.endRow) return false;
+
+    for (let r = source.endRow + 1; r <= endRow; r++) {
+      if (mergeAtCell(sheet, r, source.startCol)) return true;
+    }
+
+    return false;
+  }
+
+  function applySpreadsheetFillDown(ctx) {
+    if (!ctx || state.readOnly || state.tooLarge) return false;
+
+    const sheet = state.sheets[state.active];
+    if (!sheet) return false;
+
+    const source = ctx.source;
+    const direction = ctx.direction === "right" ? "right" : "down";
+    const endRow = Number(ctx.endRow);
+    const endCol = Number(ctx.endCol);
+
+    if (!source || !Number.isInteger(endRow) || !Number.isInteger(endCol)) return false;
+
+    const hasTarget = direction === "right"
+      ? endCol > source.endCol
+      : endRow > source.endRow;
+
+    if (!hasTarget) return false;
+
+    if (fillHandleBlockedByMerge(sheet, source, direction, endRow, endCol)) {
+      setStatus(tr(
+        "filemgr.spreadsheet_editor.fill_merge_blocked",
+        null,
+        "Cannot fill over merged cells."
+      ), "warn");
+      return false;
+    }
+
+    const sourceValues = fillHandleSourceValues(sheet, source, direction);
+    if (!sourceValues.length) return false;
+
+    const series = fillHandleDateSeries(sourceValues) || fillHandleNumericSeries(sourceValues);
+    let changed = false;
+
+    if (direction === "right") {
+      const row = source.startRow;
+
+      for (let c = source.endCol + 1; c <= Math.min(endCol, MAX_EDIT_COLS - 1); c++) {
+        const patternIndex = (c - source.startCol) % sourceValues.length;
+        const pattern = sourceValues[patternIndex];
+
+        const nextRaw = fillHandleRawValueForTargetCell(sourceValues, source, series, row, c, direction);
+        const nextFormat = pattern.format;
+        const nextFormatKey = cellFormatKey(nextFormat);
+
+        if (cellRaw(sheet, row, c) !== nextRaw) changed = true;
+        if (cellFormatKey(getCellFormat(sheet, row, c)) !== nextFormatKey) changed = true;
+
+        setCellRaw(sheet, row, c, nextRaw);
+        setCellFormat(sheet, row, c, nextFormat);
+      }
+    } else {
+      const col = source.startCol;
+
+      for (let r = source.endRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
+        const patternIndex = (r - source.startRow) % sourceValues.length;
+        const pattern = sourceValues[patternIndex];
+
+        const nextRaw = fillHandleRawValueForTargetCell(sourceValues, source, series, r, col, direction);
+        const nextFormat = pattern.format;
+        const nextFormatKey = cellFormatKey(nextFormat);
+
+        if (cellRaw(sheet, r, col) !== nextRaw) changed = true;
+        if (cellFormatKey(getCellFormat(sheet, r, col)) !== nextFormatKey) changed = true;
+
+        setCellRaw(sheet, r, col, nextRaw);
+        setCellFormat(sheet, r, col, nextFormat);
+      }
+    }
+
+    if (!changed) return false;
+
+    state.selection = null;
+    state.rangeSelection = {
+      startRow: source.startRow,
+      startCol: source.startCol,
+      endRow: direction === "down" ? endRow : source.endRow,
+      endCol: direction === "right" ? endCol : source.endCol
+    };
+    state.activeCell = { row: source.startRow, col: source.startCol };
+    formulaFocus = null;
+
+    commitHistorySnapshot(ctx.before || captureHistorySnapshot());
+    render();
+
+    return true;
+  }
+
+function finishSpreadsheetFillHandle(apply) {
+    const ctx = fillHandleState;
+    fillHandleState = null;
+
+    if (!ctx) return false;
+
+    state.selection = null;
+    state.rangeSelection = ctx.source
+      ? {
+          startRow: ctx.source.startRow,
+          startCol: ctx.source.col,
+          endRow: ctx.source.endRow,
+          endCol: ctx.source.col
+        }
+      : null;
+    state.activeCell = ctx.source
+      ? { row: ctx.source.startRow, col: ctx.source.col }
+      : null;
+
+    if (!ctx.moved || !apply) {
+      repaintSpreadsheetSelection();
+      return false;
+    }
+
+    return applySpreadsheetFillDown(ctx);
+  }
+
+  function startSpreadsheetFillHandle(ev, row, col) {
+    if (state.readOnly || state.tooLarge) return;
+    if (!ev || ev.button !== 0) return;
+
+    const sheet = state.sheets[state.active];
+    const source = fillHandleSourceRangeForCell(row, col);
+    if (!sheet || !source) return;
+
+    for (let r = source.startRow; r <= source.endRow; r++) {
+      for (let c = source.startCol; c <= source.endCol; c++) {
+        if (mergeAtCell(sheet, r, c)) return;
+      }
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    state.selection = null;
+    state.rangeSelection = source.endRow > source.startRow || source.endCol > source.startCol
+      ? {
+          startRow: source.startRow,
+          startCol: source.startCol,
+          endRow: source.endRow,
+          endCol: source.endCol
+        }
+      : null;
+    state.activeCell = { row: source.startRow, col: source.startCol };
+    formulaFocus = null;
+    repaintSpreadsheetSelection();
+
+    const ctx = {
+      source,
+      direction: source.orientation || "",
+      endRow: source.endRow,
+      endCol: source.endCol,
+      moved: false,
+      startX: Number(ev.clientX),
+      startY: Number(ev.clientY),
+      before: captureHistorySnapshot()
+    };
+
+    fillHandleState = ctx;
+
+    const onMove = (moveEv) => {
+      if (!fillHandleState || fillHandleState !== ctx) return;
+
+      const dx = Number(moveEv.clientX) - ctx.startX;
+      const dy = Number(moveEv.clientY) - ctx.startY;
+
+      if (!ctx.direction) {
+        ctx.direction = Math.abs(dx) > Math.abs(dy) ? "right" : "down";
+      }
+
+      if (ctx.direction === "right") {
+        const nextEndCol = Math.max(
+          source.endCol,
+          spreadsheetFillEndColFromViewportX(source.endCol, source.startRow, Number(moveEv.clientX))
+        );
+
+        if (nextEndCol === ctx.endCol) return;
+
+        ctx.endCol = nextEndCol;
+        ctx.moved = ctx.endCol > source.endCol;
+        paintFillHandlePreview(source, ctx.direction, ctx.endRow, ctx.endCol);
+        return;
+      }
+
+      const nextEndRow = Math.max(
+        source.endRow,
+        spreadsheetFillEndRowFromViewportY(source.endRow, source.startCol, Number(moveEv.clientY))
+      );
+
+      if (nextEndRow === ctx.endRow) return;
+
+      ctx.endRow = nextEndRow;
+      ctx.moved = ctx.endRow > source.endRow;
+      paintFillHandlePreview(source, ctx.direction, ctx.endRow, ctx.endCol);
+    };
+
+    const cleanup = () => {
+      document.removeEventListener("pointermove", onMove, true);
+      document.removeEventListener("pointerup", onUp, true);
+      document.removeEventListener("pointercancel", onCancel, true);
+    };
+
+    const onUp = (upEv) => {
+      upEv.preventDefault();
+      upEv.stopPropagation();
+      cleanup();
+      finishSpreadsheetFillHandle(true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      finishSpreadsheetFillHandle(false);
+    };
+
+    document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointerup", onUp, true);
+    document.addEventListener("pointercancel", onCancel, true);
+  }
+
+function createSpreadsheetFillHandle(row, col) {
+    const handle = document.createElement("span");
+    handle.className = "spreadsheetFillHandle";
+    handle.dataset.row = String(row);
+    handle.dataset.col = String(col);
+    handle.tabIndex = -1;
+    handle.setAttribute("role", "button");
+    handle.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.fill_down", null, "Drag to fill down")
+    );
+    handle.title = tr("filemgr.spreadsheet_editor.fill_down", null, "Drag to fill down");
+    handle.addEventListener("pointerdown", (ev) => startSpreadsheetFillHandle(ev, row, col));
+    handle.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    return handle;
+  }
+function markAxisHeader(el) {
     if (!el) return;
     el.dataset.spreadsheetAxisStyle = "1";
     el.style.setProperty("background", "Highlight");
@@ -4557,13 +5321,67 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     updateFormatToolbar();
   }
 
-  function beginCellRangePointer(ev, row, col) {
+
+  function selectAllSpreadsheetCells() {
+    if (state.tooLarge) return false;
+
+    hideAxisMenu();
+    hideTextColorMenu();
+    hideFillMenu();
+    hideBorderMenu();
+
+    state.selectedImageId = "";
+    state.selection = null;
+    state.activeCell = null;
+    state.rangeSelection = {
+      startRow: 0,
+      startCol: 0,
+      endRow: MAX_EDIT_ROWS - 1,
+      endCol: MAX_EDIT_COLS - 1
+    };
+    formulaFocus = null;
+
+    repaintSpreadsheetSelection();
+    updateFormulaBar(true);
+    updateFormatToolbar();
+
+    return true;
+  }
+
+  function configureSpreadsheetSelectAllCorner(corner) {
+    if (!corner || corner.dataset.spreadsheetSelectAllCorner === "1") return;
+
+    corner.dataset.spreadsheetSelectAllCorner = "1";
+    corner.classList.add("spreadsheetSelectAllCorner");
+    corner.tabIndex = 0;
+    corner.setAttribute("role", "button");
+    corner.setAttribute(
+      "aria-label",
+      tr("filemgr.spreadsheet_editor.select_all_cells", null, "Select all cells")
+    );
+    corner.title = tr("filemgr.spreadsheet_editor.select_all_cells", null, "Select all cells");
+
+    const activate = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      selectAllSpreadsheetCells();
+    };
+
+    corner.addEventListener("pointerdown", activate);
+    corner.addEventListener("click", activate);
+    corner.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      activate(ev);
+    });
+  }
+
+function beginCellRangePointer(ev, row, col) {
     if (state.readOnly || state.tooLarge) return;
     if (!ev || ev.button !== 0) return;
     if (!Number.isInteger(row) || !Number.isInteger(col)) return;
 
     const activeFormula = formulaFocus && formulaFocus.input;
-    if (activeFormula && activeFormula !== ev.currentTarget && String(activeFormula.value || "").startsWith("=")) {
+    if (activeFormula && activeFormula !== ev.currentTarget && isFormulaValue(activeFormula.value)) {
       return;
     }
 
@@ -4635,13 +5453,45 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     input.setAttribute("aria-current", "true");
   }
 
-  function repaintSpreadsheetSelection() {
+  function clearSpreadsheetFillHandleAnchor() {
+    if (!bodyEl) return;
+
+    for (const el of bodyEl.querySelectorAll(".spreadsheetFillHandleAnchorCell")) {
+      el.classList.remove("spreadsheetFillHandleAnchorCell");
+    }
+  }
+
+  function paintSpreadsheetFillHandleAnchor() {
+    clearSpreadsheetFillHandleAnchor();
+
+    if (!bodyEl || state.readOnly || state.tooLarge) return;
+
+    const range = normalizedRangeSelection(state.rangeSelection);
+    let row = null;
+    let col = null;
+
+    if (range && (range.col1 === range.col2 || range.row1 === range.row2)) {
+      row = range.row2;
+      col = range.col2;
+    } else if (!state.selection && state.activeCell) {
+      row = Number(state.activeCell.row);
+      col = Number(state.activeCell.col);
+    }
+
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+
+    const cell = spreadsheetCellElement(row, col);
+    if (cell) cell.classList.add("spreadsheetFillHandleAnchorCell");
+  }
+
+function repaintSpreadsheetSelection() {
     paintAxisSelection();
     paintRangeSelection();
     paintActiveCellSelection();
+    paintSpreadsheetFillHandleAnchor();
   }
 
-  function axisApi() {
+function axisApi() {
     return FM && FM.spreadsheetAxis ? FM.spreadsheetAxis : null;
   }
 
@@ -5161,6 +6011,24 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
+  function isXlsxStringCell(cell) {
+    const type = String(cell && cell.t || "");
+    return type === "s" || type === "str" || type === "inlineStr";
+  }
+
+  function importSpreadsheetCellText(cell, value) {
+    const text = String(value == null ? "" : value);
+
+    // XLSX string cells can legally contain text beginning with "=". Keep such
+    // values as explicit text so reopening our own saved file does not turn them
+    // into formulas.
+    if (isXlsxStringCell(cell) && (text.startsWith("=") || text.startsWith("'"))) {
+      return "'" + text;
+    }
+
+    return text;
+  }
+
   function worksheetToEditableRows(XLSX, ws, defaults = {}) {
     const defaultColWidth = normalizeColumnGeometry(
       defaults.colWidth,
@@ -5214,9 +6082,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         } else if (cell.f) {
           row.push("=" + String(cell.f));
         } else if (cell.w != null) {
-          row.push(String(cell.w));
+          row.push(importSpreadsheetCellText(cell, cell.w));
         } else if (cell.v != null) {
-          row.push(String(cell.v));
+          row.push(importSpreadsheetCellText(cell, cell.v));
         } else {
           row.push("");
         }
@@ -6001,6 +6869,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             <select id="spreadsheetEditorNumberFormat" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}" title="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}">
               <option value="">${tr("filemgr.spreadsheet_editor.number_format_plain", null, "Plain")}</option>
               <option value="percent">% Percent</option>
+              <option value="date">${tr("filemgr.spreadsheet_editor.number_format_date", null, "Date")}</option>
               <option value="currency:eur">€ Euro</option>
               <option value="currency:usd">$ Dollar</option>
               <option value="currency:gbp">£ Pound</option>
@@ -7328,7 +8197,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         input.addEventListener("pointerdown", (ev) => {
           if (!formulaFocus || formulaFocus.input === input) return;
           const active = formulaFocus.input;
-          if (!active || !String(active.value || "").startsWith("=")) return;
+          if (!active || !isFormulaValue(active.value)) return;
           ev.preventDefault();
           insertFormulaReference(active, rIdx, c);
         });
@@ -7385,7 +8254,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           // values remain available in the formula bar.
           input.value = isFormulaValue(raw) ? raw : displayCellValue(sheet, r, col);
 
-          if (String(raw || "").startsWith("=")) {
+          if (isFormulaValue(raw)) {
             formulaFocus = {
               input,
               row: r,
@@ -7418,7 +8287,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             const raw = Number.isInteger(r) && Number.isInteger(col) ? cellRaw(sheet, r, col) : "";
             const editingFormula =
               (formulaFocus && formulaFocus.input === input) ||
-              String(input.value || "").startsWith("=") ||
+              isFormulaValue(normalizeSpreadsheetUserInput(input.value, raw)) ||
               isFormulaValue(raw);
 
             if (editingFormula) {
@@ -7496,13 +8365,15 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
           const previousRaw = cellRaw(state.sheets[state.active], r, col);
           const previousFormulaFocus = formulaFocus && formulaFocus.input === input ? formulaFocus : null;
 
-          if (previousRaw !== String(input.value == null ? "" : input.value)) {
+          const nextRaw = normalizeSpreadsheetUserInput(input.value, previousRaw);
+
+          if (previousRaw !== nextRaw) {
             beginPendingCellEditHistory(input, r, col, previousRaw);
           }
 
-          setCellRaw(state.sheets[state.active], r, col, input.value);
+          setCellRaw(state.sheets[state.active], r, col, nextRaw);
 
-          if (String(input.value || "").startsWith("=")) {
+          if (isFormulaValue(nextRaw)) {
             formulaFocus = {
               input,
               row: r,
@@ -7530,6 +8401,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         td.appendChild(input);
         applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
         renderEditorCellTextOverflow(td, input, sheet, rows, rIdx, c, colWidths, colCount, cache);
+        td.appendChild(createSpreadsheetFillHandle(rIdx, c));
 
         trEl.appendChild(td);
       }
@@ -7538,6 +8410,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     });
 
     table.appendChild(tbody);
+
+    const selectAllCorner = table.querySelector("thead tr:first-child th:first-child");
+    configureSpreadsheetSelectAllCorner(selectAllCorner);
 
     const surface = document.createElement("div");
     surface.className = "spreadsheetSheetSurface";
