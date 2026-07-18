@@ -515,7 +515,60 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return n.toFixed(places);
   }
 
-  function isValidCurrencyKey(value) {
+
+  function spreadsheetDateSerialFromParts(year, month, day) {
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+    if (y < 1900 || y > 9999 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+
+    const ms = Date.UTC(y, m - 1, d);
+    const date = new Date(ms);
+
+    if (
+      date.getUTCFullYear() !== y ||
+      date.getUTCMonth() !== m - 1 ||
+      date.getUTCDate() !== d
+    ) {
+      return null;
+    }
+
+    return Math.floor(ms / 86400000);
+  }
+
+  function spreadsheetDateSerialFromText(value) {
+    const text = String(value == null ? "" : value).trim();
+    if (!text) return null;
+
+    let m = text.match(/^([0-9]{1,2})\.([0-9]{1,2})\.([0-9]{4})$/);
+    if (m) return spreadsheetDateSerialFromParts(Number(m[3]), Number(m[2]), Number(m[1]));
+
+    m = text.match(/^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$/);
+    if (m) return spreadsheetDateSerialFromParts(Number(m[1]), Number(m[2]), Number(m[3]));
+
+    return null;
+  }
+
+  function formatSpreadsheetDateSerial(serial) {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return "";
+
+    const date = new Date(Math.round(n) * 86400000);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${d}.${m}.${y}`;
+  }
+
+  function formatSpreadsheetDateDisplayValue(value) {
+    const serial = spreadsheetDateSerialFromText(value);
+    return serial == null ? "" : formatSpreadsheetDateSerial(serial);
+  }
+
+function isValidCurrencyKey(value) {
     return Object.prototype.hasOwnProperty.call(CURRENCY_FORMATS, String(value || ""));
   }
 
@@ -527,6 +580,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function normalizeNumberFormat(value, currency) {
     const key = String(value || "").trim().toLowerCase();
     if (key === "percent") return "percent";
+    if (key === "date") return "date";
     return key === "currency" && normalizeCurrencyKey(currency) ? "currency" : "";
   }
 
@@ -536,6 +590,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     if (!Number.isFinite(n)) {
       return String(value == null ? "" : value);
+    }
+
+    if (f.numberFormat === "date") {
+      return formatSpreadsheetDateSerial(n) || String(value == null ? "" : value);
     }
 
     if (f.numberFormat === "percent") {
@@ -550,7 +608,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return currency ? `${currency.prefix}${base}${currency.suffix}` : base;
   }
 
-  function inferCellDecimalPlaces(sheet, row, col, cache = null) {
+function inferCellDecimalPlaces(sheet, row, col, cache = null) {
     const raw = cellRaw(sheet, row, col);
 
     if (isForcedTextValue(raw)) {
@@ -1196,7 +1254,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         const rawValue = String(value || "");
         const currencyMatch = rawValue.match(/^currency:([a-z0-9]+)$/i);
         const currency = currencyMatch ? normalizeCurrencyKey(currencyMatch[1]) : "";
-        const wasFormattedNumber = fmt.numberFormat === "currency" || fmt.numberFormat === "percent";
+        const wasFormattedNumber = fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date";
 
         if (currency) {
           fmt.numberFormat = "currency";
@@ -1209,6 +1267,10 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         } else if (rawValue === "percent") {
           fmt.numberFormat = "percent";
           fmt.currency = "";
+        } else if (rawValue === "date") {
+          fmt.numberFormat = "date";
+          fmt.currency = "";
+          fmt.decimals = null;
 
           // Percent uses Excel-style display: raw 0.12 becomes 12.00%.
           // Default to two decimals when converting from plain/number cells.
@@ -1349,7 +1411,11 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     if (numberFormatSelect) {
       numberFormatSelect.value = fmt.numberFormat === "currency" && fmt.currency
         ? `currency:${fmt.currency}`
-        : fmt.numberFormat === "percent" ? "percent" : "";
+        : fmt.numberFormat === "percent"
+          ? "percent"
+          : fmt.numberFormat === "date"
+            ? "date"
+            : "";
     }
     setToolbarIconButtonValue(alignSelect, "align", fmt.align || "left");
     setToolbarIconButtonValue(valignSelect, "valign", fmt.valign || "middle");
@@ -4464,13 +4530,18 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     const raw = cellRaw(sheet, row, col);
     const fmt = getCellFormat(sheet, row, col);
 
+    if (fmt.numberFormat === "date" && !isFormulaValue(raw) && !isForcedTextValue(raw)) {
+      const dateText = formatSpreadsheetDateDisplayValue(raw);
+      if (dateText) return dateText;
+    }
+
     if (isForcedTextValue(raw)) {
       return forcedTextDisplayValue(raw);
     }
 
     if (!isFormulaValue(raw)) {
       const parsed = parsePlainNumber(raw);
-      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && !parsed.blank && typeof parsed.number === "number") {
+      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && !parsed.blank && typeof parsed.number === "number") {
         return formatNumericDisplayValue(parsed.number, fmt);
       }
       return raw;
@@ -4480,7 +4551,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
     if (result.error) return result.error;
 
-    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent") && typeof result.value === "number") {
+    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && typeof result.value === "number") {
       return formatNumericDisplayValue(result.value, fmt);
     }
 
@@ -4713,7 +4784,43 @@ function fillHandleNumericSeries(sourceValues) {
     return { last, step, decimals };
   }
 
+
+  function fillHandleDateSeries(sourceValues) {
+    if (!Array.isArray(sourceValues) || !sourceValues.length) return null;
+
+    const parsed = [];
+
+    for (const item of sourceValues) {
+      const raw = String(item && item.raw == null ? "" : item.raw);
+      if (isFormulaValue(raw) || isForcedTextValue(raw)) return null;
+
+      const serial = spreadsheetDateSerialFromText(raw);
+      if (serial == null) return null;
+
+      parsed.push(serial);
+    }
+
+    const lastSerial = parsed[parsed.length - 1];
+    const previousSerial = parsed.length >= 2
+      ? parsed[parsed.length - 2]
+      : lastSerial - 1;
+
+    const stepDays = lastSerial - previousSerial;
+
+    if (!Number.isFinite(stepDays)) return null;
+
+    return {
+      type: "date",
+      lastSerial,
+      stepDays
+    };
+  }
+
   function fillHandleSeriesRawValue(series, offset) {
+    if (series && series.type === "date") {
+      return formatSpreadsheetDateSerial(series.lastSerial + series.stepDays * offset);
+    }
+
     const next = series.last + series.step * offset;
 
     if (series.decimals > 0) {
@@ -4723,8 +4830,7 @@ function fillHandleNumericSeries(sourceValues) {
     return String(Math.round(next));
   }
 
-
-  function formulaRefBoundaryBefore(ch) {
+function formulaRefBoundaryBefore(ch) {
     return !ch || !/[A-Za-z0-9_$]/.test(ch);
   }
 
@@ -4909,7 +5015,7 @@ function fillHandleNumericSeries(sourceValues) {
     const sourceValues = fillHandleSourceValues(sheet, source, direction);
     if (!sourceValues.length) return false;
 
-    const series = fillHandleNumericSeries(sourceValues);
+    const series = fillHandleDateSeries(sourceValues) || fillHandleNumericSeries(sourceValues);
     let changed = false;
 
     if (direction === "right") {
@@ -6709,6 +6815,7 @@ function axisApi() {
             <select id="spreadsheetEditorNumberFormat" class="spreadsheetFontSizeSelect" aria-label="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}" title="${tr("filemgr.spreadsheet_editor.number_format", null, "Number format")}">
               <option value="">${tr("filemgr.spreadsheet_editor.number_format_plain", null, "Plain")}</option>
               <option value="percent">% Percent</option>
+              <option value="date">${tr("filemgr.spreadsheet_editor.number_format_date", null, "Date")}</option>
               <option value="currency:eur">€ Euro</option>
               <option value="currency:usd">$ Dollar</option>
               <option value="currency:gbp">£ Pound</option>
