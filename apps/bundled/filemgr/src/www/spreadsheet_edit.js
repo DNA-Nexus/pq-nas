@@ -42,7 +42,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   });
 
   const FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
-  const BORDER_STYLE_KEYS = Object.freeze(["thin", "thick"]);
+  const BORDER_STYLE_KEYS = Object.freeze(["thin", "medium", "double"]);
   const BORDER_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
   const BORDER_XLSX_COLOR = "FF000000";
   const MIN_DECIMAL_PLACES = 0;
@@ -330,7 +330,14 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function normalizeBorderSide(value) {
-    const key = String(value || "").trim();
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.normalizeSide === "function") {
+      return api.normalizeSide(value);
+    }
+
+    const key = String(value || "").trim().toLowerCase();
+    if (key === "thick") return "medium";
     return BORDER_STYLE_KEYS.includes(key) ? key : "";
   }
 
@@ -386,6 +393,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function normalizeBorderFormat(border) {
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.normalizeBorder === "function") {
+      return api.normalizeBorder(border);
+    }
+
     const src = border && typeof border === "object" ? border : {};
     return {
       top: normalizeBorderSide(src.top),
@@ -396,24 +409,47 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function isEmptyBorderFormat(border) {
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.isEmptyBorder === "function") {
+      return api.isEmptyBorder(border);
+    }
+
     const b = normalizeBorderFormat(border);
     return !b.top && !b.right && !b.bottom && !b.left;
   }
 
   function borderCssWidth(style) {
-    return style === "thick" ? "3px" : style === "thin" ? "1px" : "";
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.cssWidth === "function") {
+      return api.cssWidth(style);
+    }
+
+    const normalized = normalizeBorderSide(style);
+    if (normalized === "double") return "3px";
+    if (normalized === "medium") return "2px";
+    return normalized === "thin" ? "1px" : "";
   }
 
   function borderXlsxStyle(style) {
-    if (style === "thick") return "medium";
-    if (style === "thin") return "thin";
-    return "";
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.toXlsxStyle === "function") {
+      return api.toXlsxStyle(style);
+    }
+
+    return normalizeBorderSide(style);
   }
 
   function cellBorderSideFromXlsx(side) {
-    const style = String(side && side.style || "").toLowerCase();
-    if (!style || style === "none") return "";
-    return style === "medium" || style === "thick" ? "thick" : "thin";
+    const api = FM && FM.spreadsheetXlsxBorders;
+
+    if (api && typeof api.fromXlsxSide === "function") {
+      return api.fromXlsxSide(side);
+    }
+
+    return normalizeBorderSide(side && side.style);
   }
 
   function cellBorderFromXlsxStyle(border) {
@@ -438,6 +474,12 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const width = borderCssWidth(b[side]);
       const prop = `border${cssSide}`;
       const varName = `--spreadsheet-cell-border-${side}-width`;
+      const styleVarName = `--spreadsheet-cell-border-${side}-style`;
+      const borderApi = FM && FM.spreadsheetXlsxBorders;
+      const lineStyle =
+        borderApi && typeof borderApi.cssLineStyle === "function"
+          ? borderApi.cssLineStyle(b[side])
+          : (b[side] === "double" ? "double" : "solid");
 
       // Custom spreadsheet borders are painted by a td::after overlay. This
       // avoids theme-level table border overrides, especially Win Classic's
@@ -448,8 +490,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       if (width) {
         hasBorder = true;
         cell.style.setProperty(varName, width);
+        cell.style.setProperty(styleVarName, lineStyle);
       } else {
         cell.style.removeProperty(varName);
+        cell.style.removeProperty(styleVarName);
       }
     }
 
@@ -459,6 +503,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       cell.removeAttribute("data-spreadsheet-cell-border");
       for (const side of BORDER_SIDES) {
         cell.style.removeProperty(`--spreadsheet-cell-border-${side}-width`);
+        cell.style.removeProperty(`--spreadsheet-cell-border-${side}-style`);
       }
     }
   }
@@ -1174,6 +1219,12 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         if (row === row2) border.bottom = borderStyle;
         if (col === col1) border.left = borderStyle;
         if (col === col2) border.right = borderStyle;
+      } else if (action === "top") {
+        border.top = borderStyle;
+      } else if (action === "left") {
+        border.left = borderStyle;
+      } else if (action === "right") {
+        border.right = borderStyle;
       } else if (action === "bottom") {
         border.bottom = borderStyle;
       }
@@ -5742,7 +5793,20 @@ function axisApi() {
   }
 
   function hideBorderMenu() {
-    if (!borderMenu || borderMenu.hidden) return false;
+    if (!borderMenu) return false;
+
+    const submenuApi =
+      FM && FM.spreadsheetBorderMenu;
+
+    if (
+      submenuApi &&
+      typeof submenuApi.close === "function"
+    ) {
+      submenuApi.close(borderMenu);
+    }
+
+    if (borderMenu.hidden) return false;
+
     borderMenu.hidden = true;
     borderMenu.replaceChildren();
     return true;
@@ -5753,9 +5817,34 @@ function axisApi() {
     if (action === "all" && style === "thin") return tr("filemgr.spreadsheet_editor.border_all_thin", null, "All thin borders");
     if (action === "outside" && style === "thin") return tr("filemgr.spreadsheet_editor.border_outside_thin", null, "Outside thin border");
     if (action === "outside" && style === "thick") return tr("filemgr.spreadsheet_editor.border_outside_thick", null, "Outside thick border");
+    if (action === "top" && style === "thin") return tr("filemgr.spreadsheet_editor.border_top_thin", null, "Top border");
+    if (action === "left" && style === "thin") return tr("filemgr.spreadsheet_editor.border_left_thin", null, "Left border");
+    if (action === "right" && style === "thin") return tr("filemgr.spreadsheet_editor.border_right_thin", null, "Right border");
     if (action === "bottom" && style === "thin") return tr("filemgr.spreadsheet_editor.border_bottom_thin", null, "Bottom thin border");
+    if (action === "bottom" && style === "double") return tr("filemgr.spreadsheet_editor.border_bottom_double", null, "Double bottom border");
     if (action === "bottom" && style === "thick") return tr("filemgr.spreadsheet_editor.border_bottom_thick", null, "Bottom thick border");
     return tr("filemgr.spreadsheet_editor.borders", null, "Borders");
+  }
+
+  function borderMenuItems() {
+    return [
+      { action: "clear", style: "" },
+      { action: "all", style: "thin" },
+      { action: "outside", style: "thin" },
+      { action: "outside", style: "thick" },
+      { action: "top", style: "thin" },
+      { action: "bottom", style: "thin" },
+      { action: "bottom", style: "double" },
+      { action: "bottom", style: "thick" },
+      { action: "left", style: "thin" },
+      { action: "right", style: "thin" }
+    ].map((item) => ({
+      ...item,
+      label: borderMenuLabel(
+        item.action,
+        item.style
+      )
+    }));
   }
 
   function ensureBorderMenu() {
@@ -5826,17 +5915,44 @@ function axisApi() {
       }
     }
 
-    const title = document.createElement("div");
-    title.className = "spreadsheetBorderMenuTitle";
-    title.textContent = tr("filemgr.spreadsheet_editor.borders", null, "Borders");
-    menu.appendChild(title);
+    const submenuApi =
+      FM && FM.spreadsheetBorderMenu;
 
-    menu.appendChild(makeBorderMenuButton("clear"));
-    menu.appendChild(makeBorderMenuButton("all", "thin"));
-    menu.appendChild(makeBorderMenuButton("outside", "thin"));
-    menu.appendChild(makeBorderMenuButton("outside", "thick"));
-    menu.appendChild(makeBorderMenuButton("bottom", "thin"));
-    menu.appendChild(makeBorderMenuButton("bottom", "thick"));
+    if (
+      submenuApi &&
+      typeof submenuApi.appendSubmenu === "function"
+    ) {
+      submenuApi.appendSubmenu(menu, {
+        label: tr(
+          "filemgr.spreadsheet_editor.borders",
+          null,
+          "Borders"
+        ),
+        items: borderMenuItems(),
+        onAction: (action, style) => {
+          applyBorderCommand(action, style);
+        },
+        onClose: hideBorderMenu
+      });
+    } else {
+      const title = document.createElement("div");
+      title.className = "spreadsheetBorderMenuTitle";
+      title.textContent = tr(
+        "filemgr.spreadsheet_editor.borders",
+        null,
+        "Borders"
+      );
+      menu.appendChild(title);
+
+      for (const item of borderMenuItems()) {
+        menu.appendChild(
+          makeBorderMenuButton(
+            item.action,
+            item.style
+          )
+        );
+      }
+    }
 
     menu.hidden = false;
     menu.style.left = `${Math.max(8, Number(x) || 8)}px`;
@@ -5972,18 +6088,17 @@ function axisApi() {
   function worksheetMergeRanges(XLSX, ws, rowCount, colCount) {
     if (!ws || !ws["!ref"] || !Array.isArray(ws["!merges"]) || !XLSX || !XLSX.utils) return [];
 
-    const range = XLSX.utils.decode_range(ws["!ref"]);
     const out = [];
 
     for (const raw of ws["!merges"]) {
       const merge = normalizeMergeRange({
         s: {
-          r: Number(raw && raw.s && raw.s.r) - range.s.r,
-          c: Number(raw && raw.s && raw.s.c) - range.s.c
+          r: Number(raw && raw.s && raw.s.r),
+          c: Number(raw && raw.s && raw.s.c)
         },
         e: {
-          r: Number(raw && raw.e && raw.e.r) - range.s.r,
-          c: Number(raw && raw.e && raw.e.c) - range.s.c
+          r: Number(raw && raw.e && raw.e.r),
+          c: Number(raw && raw.e && raw.e.c)
         }
       }, rowCount, colCount);
 
@@ -6050,8 +6165,13 @@ function axisApi() {
     }
 
     const range = XLSX.utils.decode_range(ws["!ref"]);
-    const sourceRows = Math.max(0, range.e.r - range.s.r + 1);
-    const sourceCols = Math.max(0, range.e.c - range.s.c + 1);
+    /*
+     * Correctness: retain the workbook's absolute A1 coordinate grid. Empty
+     * leading rows and columns are meaningful because styles, merges and image
+     * anchors use original Excel coordinates.
+     */
+    const sourceRows = Math.max(0, range.e.r + 1);
+    const sourceCols = Math.max(0, range.e.c + 1);
     const tooLarge = sourceRows > MAX_EDIT_ROWS || sourceCols > MAX_EDIT_COLS;
 
     const rowCount = Math.max(Math.min(sourceRows, MAX_EDIT_ROWS), DEFAULT_ROWS);
@@ -6074,7 +6194,7 @@ function axisApi() {
     for (let r = 0; r < rowCount; r++) {
       const row = [];
       for (let c = 0; c < colCount; c++) {
-        const addr = XLSX.utils.encode_cell({ r: range.s.r + r, c: range.s.c + c });
+        const addr = XLSX.utils.encode_cell({ r, c });
         const cell = ws[addr];
 
         if (!cell) {
@@ -6145,8 +6265,14 @@ function axisApi() {
 
     for (let r = 0; r < rowCount; r++) {
       for (let c = 0; c < colCount; c++) {
-        const addr = XLSX.utils.encode_cell({ r: range.s.r + r, c: range.s.c + c });
+        const addr = XLSX.utils.encode_cell({ r, c });
         const style = ws[addr] && ws[addr].s;
+        const rawXlsxBorder =
+          defaults.xlsxBorders &&
+          defaults.xlsxBorders[addr]
+            ? defaults.xlsxBorders[addr]
+            : null;
+
         const fmt = normalizeCellFormat({
           bold: !!(style && style.font && style.font.bold),
           italic: !!(style && style.font && style.font.italic),
@@ -6159,7 +6285,8 @@ function axisApi() {
           valign: normalizeVerticalAlign(style && style.alignment && style.alignment.vertical),
           bg: cellFillKeyFromRgb(style && style.fill && style.fill.fgColor && style.fill.fgColor.rgb),
           fg: cellTextColorKeyFromRgb(style && style.font && style.font.color && style.font.color.rgb),
-          border: cellBorderFromXlsxStyle(style && style.border)
+          border: rawXlsxBorder ||
+            cellBorderFromXlsxStyle(style && style.border)
         });
         cellFormats[r][c] = isEmptyCellFormat(fmt) ? null : fmt;
       }
@@ -6215,6 +6342,14 @@ function axisApi() {
     const names = Array.isArray(wb.SheetNames)
       ? wb.SheetNames.filter((name) => name !== STYLE_SHEET_NAME)
       : [];
+
+    const borderApi = FM && FM.spreadsheetXlsxBorders;
+    const workbookBorders =
+      borderApi &&
+      typeof borderApi.bordersBySheet === "function"
+        ? borderApi.bordersBySheet(wb, names)
+        : [];
+
     const workbookImages =
       imageApi &&
       typeof imageApi.imagesFromWorkbookFiles ===
@@ -6268,6 +6403,7 @@ function axisApi() {
           ...defaults,
           workbook: wb,
           sheetIndex: idx,
+          xlsxBorders: workbookBorders[idx] || null,
           minimumCols: imageBounds.cols
         }
       );
