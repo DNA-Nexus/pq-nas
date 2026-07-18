@@ -4103,7 +4103,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
   }
 
   function parseCellRef(ref) {
-    const m = String(ref || "").trim().match(/^([A-Z]+)([1-9][0-9]*)$/i);
+    const m = String(ref || "").trim().match(/^\$?([A-Z]+)\$?([1-9][0-9]*)$/i);
     if (!m) return null;
     const col = colLettersToIndex(m[1]);
     const row = Number(m[2]) - 1;
@@ -4177,24 +4177,48 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       return src.slice(start, pos);
     }
 
+    function readCellRefToken() {
+      skipWs();
+
+      const start = pos;
+
+      if (src[pos] === "$") pos++;
+
+      const lettersStart = pos;
+      while (/[A-Za-z]/.test(src[pos] || "")) pos++;
+      if (pos === lettersStart) {
+        pos = start;
+        return "";
+      }
+
+      if (src[pos] === "$") pos++;
+
+      const digitsStart = pos;
+      while (/[0-9]/.test(src[pos] || "")) pos++;
+      if (pos === digitsStart) {
+        pos = start;
+        return "";
+      }
+
+      return src.slice(start, pos);
+    }
+
     function parseCellTokenAtCurrent() {
       skipWs();
+
       const save = pos;
-      const letters = readLetters();
-      if (!letters) {
+      const token = readCellRefToken();
+      if (!token) {
         pos = save;
         return null;
       }
-      const digits = readDigits();
-      if (!digits) {
-        pos = save;
-        return null;
-      }
-      const ref = parseCellRef(letters + digits);
+
+      const ref = parseCellRef(token);
       if (!ref) {
         pos = save;
         return null;
       }
+
       return ref;
     }
 
@@ -4313,17 +4337,17 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         return parseNumberLiteral();
       }
 
+      const cellSave = pos;
+      const cell = parseCellTokenAtCurrent();
+      if (cell) {
+        if (match(":")) throw new Error("#VALUE!");
+        return cellNumericValue(cell);
+      }
+      pos = cellSave;
+
       const save = pos;
       const letters = readLetters();
       if (letters) {
-        const digits = readDigits();
-        if (digits) {
-          const ref = parseCellRef(letters + digits);
-          if (!ref) throw new Error("#REF!");
-          if (match(":")) throw new Error("#VALUE!");
-          return cellNumericValue(ref);
-        }
-
         pos = save + letters.length;
         return parseFunctionCall(letters);
       }
@@ -4636,7 +4660,116 @@ function fillHandleSourceRangeForCell(row, col) {
     return String(Math.round(next));
   }
 
-  function fillHandleBlockedByMerge(sheet, source, endRow) {
+
+  function formulaRefBoundaryBefore(ch) {
+    return !ch || !/[A-Za-z0-9_$]/.test(ch);
+  }
+
+  function formulaRefBoundaryAfter(ch) {
+    return !ch || !/[A-Za-z0-9_]/.test(ch);
+  }
+
+  function shiftSpreadsheetFormulaRefsDown(raw, rowOffset) {
+    const formula = String(raw == null ? "" : raw);
+    const offset = Number(rowOffset);
+
+    if (!isFormulaValue(formula) || !Number.isFinite(offset) || offset === 0) {
+      return formula;
+    }
+
+    let out = "";
+    let i = 0;
+    let inString = false;
+
+    while (i < formula.length) {
+      const ch = formula[i];
+
+      // Excel formula string literals use double quotes. Keep references inside
+      // strings untouched so values like ="A1" do not become ="A2" on fill.
+      if (ch === '"') {
+        out += ch;
+
+        if (inString && formula[i + 1] === '"') {
+          out += formula[i + 1];
+          i += 2;
+          continue;
+        }
+
+        inString = !inString;
+        i += 1;
+        continue;
+      }
+
+      if (inString) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const before = i > 0 ? formula[i - 1] : "";
+      if (!formulaRefBoundaryBefore(before)) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const match = /^(\$?)([A-Za-z]{1,3})(\$?)([0-9]{1,7})/.exec(formula.slice(i));
+      if (!match) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const token = match[0];
+      const after = formula[i + token.length] || "";
+
+      if (!formulaRefBoundaryAfter(after)) {
+        out += ch;
+        i += 1;
+        continue;
+      }
+
+      const colLock = match[1];
+      const colText = match[2];
+      const rowLock = match[3];
+      const rowText = match[4];
+      const originalRow = Number.parseInt(rowText, 10);
+
+      if (!Number.isInteger(originalRow) || originalRow < 1) {
+        out += token;
+        i += token.length;
+        continue;
+      }
+
+      const nextRow = rowLock
+        ? originalRow
+        : Math.max(1, originalRow + offset);
+
+      out += `${colLock}${colText}${rowLock}${nextRow}`;
+      i += token.length;
+    }
+
+    return out;
+  }
+
+  function fillHandleRawValueForTargetRow(sourceValues, source, series, targetRow) {
+    if (series) {
+      return fillHandleSeriesRawValue(series, targetRow - source.endRow);
+    }
+
+    const patternIndex = (targetRow - source.startRow) % sourceValues.length;
+    const pattern = sourceValues[patternIndex];
+    if (!pattern) return "";
+
+    if (isFormulaValue(pattern.raw)) {
+      const sourceRow = source.startRow + patternIndex;
+      return shiftSpreadsheetFormulaRefsDown(pattern.raw, targetRow - sourceRow);
+    }
+
+    return pattern.raw;
+  }
+
+function fillHandleBlockedByMerge(sheet, source, endRow) {
     if (!sheet || !source || endRow <= source.endRow) return false;
 
     for (let r = source.endRow + 1; r <= endRow; r++) {
@@ -4673,13 +4806,10 @@ function fillHandleSourceRangeForCell(row, col) {
     let changed = false;
 
     for (let r = source.endRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
-      const offset = r - source.endRow;
       const patternIndex = (r - source.startRow) % sourceValues.length;
       const pattern = sourceValues[patternIndex];
 
-      const nextRaw = series
-        ? fillHandleSeriesRawValue(series, offset)
-        : pattern.raw;
+      const nextRaw = fillHandleRawValueForTargetRow(sourceValues, source, series, r);
 
       const nextFormat = pattern.format;
       const nextFormatKey = cellFormatKey(nextFormat);
