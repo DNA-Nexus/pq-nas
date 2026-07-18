@@ -1254,6 +1254,7 @@
   touch-action: none;
 }
 
-.spreadsheetEditorTable td.spreadsheetActiveCell > .spreadsheetFillHandle {
+.spreadsheetEditorTable td.spreadsheetActiveCell > .spreadsheetFillHandle,
+.spreadsheetEditorTable td.spreadsheetFillHandleAnchorCell > .spreadsheetFillHandle {
   display: block;
 }

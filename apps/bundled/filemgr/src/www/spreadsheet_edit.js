@@ -4545,36 +4545,102 @@ function spreadsheetFillEndRowFromViewportY(startRow, col, viewportY) {
     return bestRow;
   }
 
-  function paintFillHandlePreview(startRow, col, endRow) {
-    if (!Number.isInteger(startRow) || !Number.isInteger(col) || !Number.isInteger(endRow)) return;
+  function paintFillHandlePreview(source, endRow) {
+    if (!source || !Number.isInteger(endRow)) return;
 
     state.selection = null;
-    state.activeCell = { row: startRow, col };
+    state.activeCell = { row: source.startRow, col: source.col };
 
-    if (endRow <= startRow) {
-      state.rangeSelection = null;
-      repaintSpreadsheetSelection();
-      return;
-    }
-
-    // Reuse the editor's normal range-selection painter while dragging the fill
-    // handle. This keeps the preview visually consistent with regular cell
-    // selection instead of relying on a separate overlay above input elements.
     state.rangeSelection = {
-      startRow,
-      startCol: col,
-      endRow,
-      endCol: col
+      startRow: source.startRow,
+      startCol: source.col,
+      endRow: Math.max(source.endRow, endRow),
+      endCol: source.col
     };
 
     repaintSpreadsheetSelection();
   }
 
-function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
-    if (!sheet || endRow <= startRow) return false;
+function fillHandleSourceRangeForCell(row, col) {
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
 
-    for (let r = startRow + 1; r <= endRow; r++) {
-      if (mergeAtCell(sheet, r, col)) return true;
+    const range = normalizedRangeSelection(state.rangeSelection);
+    if (range && range.col1 === range.col2 && row === range.row2 && col === range.col2) {
+      return {
+        startRow: range.row1,
+        endRow: range.row2,
+        col: range.col1
+      };
+    }
+
+    const active = state.activeCell;
+    if (active && Number(active.row) === row && Number(active.col) === col) {
+      return { startRow: row, endRow: row, col };
+    }
+
+    return null;
+  }
+
+  function fillHandleSourceValues(sheet, source) {
+    const values = [];
+    if (!sheet || !source) return values;
+
+    for (let row = source.startRow; row <= source.endRow; row++) {
+      values.push({
+        raw: cellRaw(sheet, row, source.col),
+        format: normalizeCellFormat(getCellFormat(sheet, row, source.col))
+      });
+    }
+
+    return values;
+  }
+
+  function fillHandleNumericSeries(sourceValues) {
+    if (!Array.isArray(sourceValues) || sourceValues.length < 2) return null;
+
+    const parsed = [];
+
+    for (const item of sourceValues) {
+      const raw = String(item && item.raw == null ? "" : item.raw);
+      if (isFormulaValue(raw) || isForcedTextValue(raw)) return null;
+
+      const number = parsePlainNumber(raw);
+      if (number.blank || typeof number.number !== "number" || !Number.isFinite(number.number)) {
+        return null;
+      }
+
+      parsed.push({ raw, value: number.number });
+    }
+
+    const last = parsed[parsed.length - 1].value;
+    const previous = parsed[parsed.length - 2].value;
+    const step = last - previous;
+
+    if (!Number.isFinite(step)) return null;
+
+    const decimals = parsed.reduce(
+      (max, item) => Math.max(max, decimalPlacesFromText(item.raw)),
+      0
+    );
+
+    return { last, step, decimals };
+  }
+
+  function fillHandleSeriesRawValue(series, offset) {
+    const next = series.last + series.step * offset;
+
+    if (series.decimals > 0) {
+      return formatDecimalNumber(next, series.decimals);
+    }
+
+    return String(Math.round(next));
+  }
+
+  function fillHandleBlockedByMerge(sheet, source, endRow) {
+    if (!sheet || !source || endRow <= source.endRow) return false;
+
+    for (let r = source.endRow + 1; r <= endRow; r++) {
+      if (mergeAtCell(sheet, r, source.col)) return true;
     }
 
     return false;
@@ -4586,13 +4652,12 @@ function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
     const sheet = state.sheets[state.active];
     if (!sheet) return false;
 
-    const startRow = Number(ctx.row);
-    const col = Number(ctx.col);
+    const source = ctx.source;
     const endRow = Number(ctx.endRow);
-    if (!Number.isInteger(startRow) || !Number.isInteger(col) || !Number.isInteger(endRow)) return false;
-    if (endRow <= startRow) return false;
+    if (!source || !Number.isInteger(endRow)) return false;
+    if (endRow <= source.endRow) return false;
 
-    if (fillHandleBlockedByMerge(sheet, startRow, col, endRow)) {
+    if (fillHandleBlockedByMerge(sheet, source, endRow)) {
       setStatus(tr(
         "filemgr.spreadsheet_editor.fill_merge_blocked",
         null,
@@ -4601,32 +4666,45 @@ function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
       return false;
     }
 
-    const sourceRaw = cellRaw(sheet, startRow, col);
-    const sourceFormat = normalizeCellFormat(getCellFormat(sheet, startRow, col));
-    const sourceFormatKey = cellFormatKey(sourceFormat);
+    const sourceValues = fillHandleSourceValues(sheet, source);
+    if (!sourceValues.length) return false;
+
+    const series = fillHandleNumericSeries(sourceValues);
     let changed = false;
 
-    for (let r = startRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
-      if (cellRaw(sheet, r, col) !== sourceRaw) changed = true;
-      if (cellFormatKey(getCellFormat(sheet, r, col)) !== sourceFormatKey) changed = true;
+    for (let r = source.endRow + 1; r <= Math.min(endRow, MAX_EDIT_ROWS - 1); r++) {
+      const offset = r - source.endRow;
+      const patternIndex = (r - source.startRow) % sourceValues.length;
+      const pattern = sourceValues[patternIndex];
 
-      setCellRaw(sheet, r, col, sourceRaw);
-      setCellFormat(sheet, r, col, sourceFormat);
+      const nextRaw = series
+        ? fillHandleSeriesRawValue(series, offset)
+        : pattern.raw;
+
+      const nextFormat = pattern.format;
+      const nextFormatKey = cellFormatKey(nextFormat);
+
+      if (cellRaw(sheet, r, source.col) !== nextRaw) changed = true;
+      if (cellFormatKey(getCellFormat(sheet, r, source.col)) !== nextFormatKey) changed = true;
+
+      setCellRaw(sheet, r, source.col, nextRaw);
+      setCellFormat(sheet, r, source.col, nextFormat);
     }
 
     if (!changed) return false;
 
     state.selection = null;
-    state.rangeSelection = null;
-    state.activeCell = { row: startRow, col };
+    state.rangeSelection = {
+      startRow: source.startRow,
+      startCol: source.col,
+      endRow,
+      endCol: source.col
+    };
+    state.activeCell = { row: source.startRow, col: source.col };
     formulaFocus = null;
 
     commitHistorySnapshot(ctx.before || captureHistorySnapshot());
     render();
-
-    window.requestAnimationFrame(() => {
-      focusSpreadsheetCell(startRow, col, { select: true });
-    });
 
     return true;
   }
@@ -4638,8 +4716,17 @@ function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
     if (!ctx) return false;
 
     state.selection = null;
-    state.rangeSelection = null;
-    state.activeCell = { row: ctx.row, col: ctx.col };
+    state.rangeSelection = ctx.source
+      ? {
+          startRow: ctx.source.startRow,
+          startCol: ctx.source.col,
+          endRow: ctx.source.endRow,
+          endCol: ctx.source.col
+        }
+      : null;
+    state.activeCell = ctx.source
+      ? { row: ctx.source.startRow, col: ctx.source.col }
+      : null;
 
     if (!ctx.moved || !apply) {
       repaintSpreadsheetSelection();
@@ -4649,26 +4736,37 @@ function fillHandleBlockedByMerge(sheet, startRow, col, endRow) {
     return applySpreadsheetFillDown(ctx);
   }
 
-function startSpreadsheetFillHandle(ev, row, col) {
+  function startSpreadsheetFillHandle(ev, row, col) {
     if (state.readOnly || state.tooLarge) return;
     if (!ev || ev.button !== 0) return;
 
     const sheet = state.sheets[state.active];
-    if (!sheet || mergeAtCell(sheet, row, col)) return;
+    const source = fillHandleSourceRangeForCell(row, col);
+    if (!sheet || !source) return;
+
+    for (let r = source.startRow; r <= source.endRow; r++) {
+      if (mergeAtCell(sheet, r, source.col)) return;
+    }
 
     ev.preventDefault();
     ev.stopPropagation();
 
     state.selection = null;
-    state.rangeSelection = null;
-    state.activeCell = { row, col };
+    state.rangeSelection = source.endRow > source.startRow
+      ? {
+          startRow: source.startRow,
+          startCol: source.col,
+          endRow: source.endRow,
+          endCol: source.col
+        }
+      : null;
+    state.activeCell = { row: source.startRow, col: source.col };
     formulaFocus = null;
     repaintSpreadsheetSelection();
 
     const ctx = {
-      row,
-      col,
-      endRow: row,
+      source,
+      endRow: source.endRow,
       moved: false,
       before: captureHistorySnapshot()
     };
@@ -4678,13 +4776,16 @@ function startSpreadsheetFillHandle(ev, row, col) {
     const onMove = (moveEv) => {
       if (!fillHandleState || fillHandleState !== ctx) return;
 
-      const nextEndRow = Math.max(row, spreadsheetFillEndRowFromViewportY(row, col, Number(moveEv.clientY)));
+      const nextEndRow = Math.max(
+        source.endRow,
+        spreadsheetFillEndRowFromViewportY(source.endRow, source.col, Number(moveEv.clientY))
+      );
 
       if (nextEndRow === ctx.endRow) return;
 
       ctx.endRow = nextEndRow;
-      ctx.moved = ctx.endRow > row;
-      paintFillHandlePreview(row, col, ctx.endRow);
+      ctx.moved = ctx.endRow > source.endRow;
+      paintFillHandlePreview(source, ctx.endRow);
     };
 
     const cleanup = () => {
@@ -4710,7 +4811,7 @@ function startSpreadsheetFillHandle(ev, row, col) {
     document.addEventListener("pointercancel", onCancel, true);
   }
 
-  function createSpreadsheetFillHandle(row, col) {
+function createSpreadsheetFillHandle(row, col) {
     const handle = document.createElement("span");
     handle.className = "spreadsheetFillHandle";
     handle.dataset.row = String(row);
@@ -4908,13 +5009,45 @@ function markAxisHeader(el) {
     input.setAttribute("aria-current", "true");
   }
 
+  function clearSpreadsheetFillHandleAnchor() {
+    if (!bodyEl) return;
+
+    for (const el of bodyEl.querySelectorAll(".spreadsheetFillHandleAnchorCell")) {
+      el.classList.remove("spreadsheetFillHandleAnchorCell");
+    }
+  }
+
+  function paintSpreadsheetFillHandleAnchor() {
+    clearSpreadsheetFillHandleAnchor();
+
+    if (!bodyEl || state.readOnly || state.tooLarge) return;
+
+    const range = normalizedRangeSelection(state.rangeSelection);
+    let row = null;
+    let col = null;
+
+    if (range && range.col1 === range.col2) {
+      row = range.row2;
+      col = range.col2;
+    } else if (!state.selection && state.activeCell) {
+      row = Number(state.activeCell.row);
+      col = Number(state.activeCell.col);
+    }
+
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+
+    const cell = spreadsheetCellElement(row, col);
+    if (cell) cell.classList.add("spreadsheetFillHandleAnchorCell");
+  }
+
   function repaintSpreadsheetSelection() {
     paintAxisSelection();
     paintRangeSelection();
     paintActiveCellSelection();
+    paintSpreadsheetFillHandleAnchor();
   }
 
-  function axisApi() {
+function axisApi() {
     return FM && FM.spreadsheetAxis ? FM.spreadsheetAxis : null;
   }
 
