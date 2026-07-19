@@ -5732,5 +5732,14 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_ascending": "Ordina A–Z / dal più piccolo al più grande",
+  "filemgr.spreadsheet_editor.sort_descending": "Ordina Z–A / dal più grande al più piccolo",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "L’ordinamento non è disponibile mentre il foglio contiene celle unite.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "L’ordinamento non è disponibile mentre il foglio contiene immagini.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Questa prima versione non supporta ancora l’ordinamento dei fogli contenenti formule.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "Sono necessarie almeno due righe di dati sotto l’intestazione.",
+  "filemgr.spreadsheet_editor.sort_no_change": "La colonna {column} è già in questo ordine.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "Colonna {column} ordinata in modo crescente.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "Colonna {column} ordinata in modo decrescente."
 }

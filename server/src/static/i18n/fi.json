@@ -5732,5 +5732,14 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "Kuvan mitat ovat liian suuret.",
   "filemgr.spreadsheet_editor.image_count_limit": "Taulukon kuvamäärän raja on saavutettu.",
   "filemgr.spreadsheet_editor.image_add_failed": "Kuvan lisääminen epäonnistui.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Kuvien lisäämistä välilehdelle, jolla on jo tuotuja piirrosobjekteja, ei vielä tueta."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Kuvien lisäämistä välilehdelle, jolla on jo tuotuja piirrosobjekteja, ei vielä tueta.",
+  "filemgr.spreadsheet_editor.sort_ascending": "Lajittele A–Ö / pienimmästä suurimpaan",
+  "filemgr.spreadsheet_editor.sort_descending": "Lajittele Ö–A / suurimmasta pienimpään",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "Lajittelu ei ole käytettävissä, kun taulukossa on yhdistettyjä soluja.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "Lajittelu ei ole käytettävissä, kun taulukossa on kuvia.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Kaavoja sisältävän taulukon lajittelua ei vielä tueta tässä ensimmäisessä versiossa.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "Otsikkorivin alla tarvitaan vähintään kaksi tietoriviä.",
+  "filemgr.spreadsheet_editor.sort_no_change": "Sarake {column} on jo tässä järjestyksessä.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "Sarake {column} lajiteltu nousevasti.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "Sarake {column} lajiteltu laskevasti."
 }

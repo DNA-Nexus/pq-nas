@@ -5719,6 +5719,28 @@ function axisApi() {
   }
 
   function axisOperationLabel(action, type) {
+    if (
+      type === "column" &&
+      action === "sort_asc"
+    ) {
+      return tr(
+        "filemgr.spreadsheet_editor.sort_ascending",
+        null,
+        "Sort A–Z / smallest to largest"
+      );
+    }
+
+    if (
+      type === "column" &&
+      action === "sort_desc"
+    ) {
+      return tr(
+        "filemgr.spreadsheet_editor.sort_descending",
+        null,
+        "Sort Z–A / largest to smallest"
+      );
+    }
+
     const api = axisApi();
     if (!api || typeof api.operationLabel !== "function") return "";
     return api.operationLabel(action, type, axisSelectionCount(type));
@@ -6123,6 +6145,300 @@ function axisApi() {
     menu.style.top = `${Math.min(Math.max(8, Number(y) || 8), maxTop)}px`;
   }
 
+
+  function spreadsheetSortApi() {
+    return (
+      FM &&
+      FM.spreadsheetSort
+        ? FM.spreadsheetSort
+        : null
+    );
+  }
+
+  function sheetHasSpreadsheetFormulas(sheet) {
+    if (!sheet || !Array.isArray(sheet.rows)) {
+      return false;
+    }
+
+    /*
+     * Correctness: formulas are blocked until sorting
+     * can safely update all affected cell references.
+     * Moving formula rows without doing that could
+     * silently change workbook meaning.
+     */
+    for (const row of sheet.rows) {
+      if (!Array.isArray(row)) continue;
+
+      for (const value of row) {
+        if (isFormulaValue(value)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function validSpreadsheetSortOrder(order, rowCount) {
+    if (
+      !Array.isArray(order) ||
+      order.length !== rowCount
+    ) {
+      return false;
+    }
+
+    const seen = new Set();
+
+    for (const value of order) {
+      const index = Number(value);
+
+      if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= rowCount ||
+        seen.has(index)
+      ) {
+        return false;
+      }
+
+      seen.add(index);
+    }
+
+    return seen.size === rowCount;
+  }
+
+  function applySpreadsheetColumnSort(index, direction) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      !Number.isInteger(index) ||
+      index < 0
+    ) {
+      return false;
+    }
+
+    const sheet = state.sheets[state.active];
+    const api = spreadsheetSortApi();
+
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !api ||
+      typeof api.sortRows !== "function"
+    ) {
+      return false;
+    }
+
+    const nonEmptyRows = sheet.rows
+      .slice(1)
+      .filter((row) => {
+        if (!Array.isArray(row)) return false;
+
+        return String(
+          row[index] == null
+            ? ""
+            : row[index]
+        ).trim() !== "";
+      });
+
+    if (nonEmptyRows.length < 2) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_not_enough_data",
+          null,
+          "At least two data rows are required below the header."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (
+      Array.isArray(sheet.merges) &&
+      sheet.merges.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_merges",
+          null,
+          "Sorting is unavailable while the sheet contains merged cells."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (
+      Array.isArray(sheet.images) &&
+      sheet.images.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_images",
+          null,
+          "Sorting is unavailable while the sheet contains images."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (sheetHasSpreadsheetFormulas(sheet)) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_formulas",
+          null,
+          "Sorting sheets containing formulas is not supported in this first version."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    const normalizedDirection =
+      direction === "desc"
+        ? "desc"
+        : "asc";
+
+    /*
+     * The column-header command keeps row 1 as the
+     * header. A selectable header mode belongs to the
+     * later toolbar Sort & Filter dialog.
+     */
+    const result = api.sortRows(
+      sheet.rows,
+      {
+        keyCol: index,
+        direction: normalizedDirection,
+        header: "yes"
+      }
+    );
+
+    if (
+      !result ||
+      result.ok !== true ||
+      !validSpreadsheetSortOrder(
+        result.order,
+        sheet.rows.length
+      )
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.failed",
+          null,
+          "Spreadsheet operation failed."
+        ),
+        "err"
+      );
+      return false;
+    }
+
+    const unchanged = result.order.every(
+      (sourceIndex, targetIndex) =>
+        sourceIndex === targetIndex
+    );
+
+    const column = columnName(index);
+
+    if (unchanged) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_no_change",
+          { column },
+          `Column ${column} is already in that order.`
+        ),
+        ""
+      );
+      return false;
+    }
+
+    const historyBefore = captureHistorySnapshot();
+
+    const oldRows = sheet.rows;
+    const oldCellFormats = Array.isArray(
+      sheet.cellFormats
+    )
+      ? sheet.cellFormats
+      : [];
+
+    const oldRowHeights = Array.isArray(
+      sheet.rowHeights
+    )
+      ? sheet.rowHeights
+      : [];
+
+    const defaultRowHeight =
+      sheetDefaultRowHeight(sheet);
+
+    sheet.rows = result.rows;
+
+    sheet.cellFormats = result.order.map(
+      (sourceIndex) => {
+        const source =
+          oldCellFormats[sourceIndex];
+
+        if (Array.isArray(source)) {
+          return source;
+        }
+
+        const oldRow = oldRows[sourceIndex];
+
+        return Array.from(
+          {
+            length: Array.isArray(oldRow)
+              ? oldRow.length
+              : 0
+          },
+          () => null
+        );
+      }
+    );
+
+    sheet.rowHeights = result.order.map(
+      (sourceIndex) =>
+        normalizeRowGeometry(
+          oldRowHeights[sourceIndex],
+          defaultRowHeight
+        )
+    );
+
+    state.selection = makeAxisSelection(
+      "column",
+      index,
+      {}
+    );
+
+    state.activeCell = null;
+    state.rangeSelection = null;
+    state.selectedImageId = "";
+    formulaFocus = null;
+
+    commitHistorySnapshot(historyBefore);
+    render();
+
+    const statusKey =
+      normalizedDirection === "desc"
+        ? "filemgr.spreadsheet_editor.sort_done_desc"
+        : "filemgr.spreadsheet_editor.sort_done_asc";
+
+    const fallback =
+      normalizedDirection === "desc"
+        ? `Sorted column ${column} descending.`
+        : `Sorted column ${column} ascending.`;
+
+    setStatus(
+      tr(
+        statusKey,
+        { column },
+        fallback
+      ),
+      "ok"
+    );
+
+    return true;
+  }
+
   function hideAxisMenu() {
     const api = FM && FM.spreadsheetAxis;
     if (api && typeof api.hideContextMenu === "function") {
@@ -6147,7 +6463,13 @@ function axisApi() {
         if (axisType === "column") addColumn();
         else addRow();
       },
-      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex)
+      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex),
+      sort: (axisIndex, direction) => {
+        applySpreadsheetColumnSort(
+          axisIndex,
+          direction
+        );
+      }
     });
   }
 

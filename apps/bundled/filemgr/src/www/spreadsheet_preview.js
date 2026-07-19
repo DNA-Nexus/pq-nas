@@ -172,8 +172,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     spreadsheetEditLoadPromise = Promise.all([
       loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-selection-outline-4", "data-pqnas-spreadsheet-edit-css"),
-      loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-axis-js"),
+      loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
+      loadScriptOnce("./spreadsheet_sort.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-sort-js"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_borders.js?v=spreadsheet-xlsx-borders-1", "data-pqnas-spreadsheet-xlsx-borders-js"),
@@ -181,7 +182,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-selection-outline-4", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");

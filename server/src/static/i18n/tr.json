@@ -5732,5 +5732,14 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_ascending": "A–Z / küçükten büyüğe sırala",
+  "filemgr.spreadsheet_editor.sort_descending": "Z–A / büyükten küçüğe sırala",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "Sayfada birleştirilmiş hücreler varken sıralama kullanılamaz.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "Sayfada resimler varken sıralama kullanılamaz.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Bu ilk sürüm, formül içeren sayfaların sıralanmasını henüz desteklemiyor.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "Başlık satırının altında en az iki veri satırı gereklidir.",
+  "filemgr.spreadsheet_editor.sort_no_change": "{column} sütunu zaten bu sırada.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "{column} sütunu artan şekilde sıralandı.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "{column} sütunu azalan şekilde sıralandı."
 }
