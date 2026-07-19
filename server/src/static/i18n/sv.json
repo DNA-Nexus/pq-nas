@@ -5732,5 +5732,16 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "Sortera",
+  "filemgr.spreadsheet_editor.sort_ascending": "Sortera A–Ö / minsta till största",
+  "filemgr.spreadsheet_editor.sort_descending": "Sortera Ö–A / största till minsta",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "Sortering är inte tillgänglig när bladet innehåller sammanfogade celler.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "Sortering är inte tillgänglig när bladet innehåller bilder.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Den första versionen stöder ännu inte sortering av blad som innehåller formler.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "Minst två datarader krävs under rubrikraden.",
+  "filemgr.spreadsheet_editor.sort_no_change": "Kolumn {column} är redan i den ordningen.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "Kolumn {column} sorterades stigande.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "Kolumn {column} sorterades fallande.",
+  "filemgr.spreadsheet_editor.sort_select_target": "Välj en cell, kolumn eller ett cellområde att sortera."
 }

@@ -81,8 +81,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let numberFormatSelect = null;
   let alignSelect = null;
   let valignSelect = null;
+  let sortSelect = null;
   let alignMenu = null;
   let valignMenu = null;
+  let sortMenu = null;
   let freezeTopRowBtn = null;
   let freezeFirstColumnBtn = null;
   let textColorBtn = null;
@@ -208,7 +210,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function closeToolbarIconMenus(exceptMenu = null) {
-    for (const [button, menu] of [[alignSelect, alignMenu], [valignSelect, valignMenu]]) {
+    for (const [button, menu] of [
+      [alignSelect, alignMenu],
+      [valignSelect, valignMenu],
+      [sortSelect, sortMenu]
+    ]) {
       if (!menu || menu === exceptMenu) continue;
       menu.hidden = true;
       if (button) button.setAttribute("aria-expanded", "false");
@@ -1321,14 +1327,20 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         } else if (rawValue === "date") {
           fmt.numberFormat = "date";
           fmt.currency = "";
-          fmt.decimals = null;
 
-          // Percent uses Excel-style display: raw 0.12 becomes 12.00%.
-          // Default to two decimals when converting from plain/number cells.
-          if (!wasFormattedNumber || fmt.decimals == null) fmt.decimals = 2;
+          // Date display does not use numeric decimal places.
+          fmt.decimals = null;
         } else {
           fmt.numberFormat = "";
           fmt.currency = "";
+
+          /*
+           * Correctness: General/plain format must reveal
+           * the underlying raw value instead of retaining
+           * decimal places inherited from currency or
+           * percent formatting.
+           */
+          fmt.decimals = null;
         }
       } else if (kind === "bg") {
         fmt.bg = normalizeFillColorKey(value);
@@ -5719,6 +5731,28 @@ function axisApi() {
   }
 
   function axisOperationLabel(action, type) {
+    if (
+      type === "column" &&
+      action === "sort_asc"
+    ) {
+      return tr(
+        "filemgr.spreadsheet_editor.sort_ascending",
+        null,
+        "Sort A–Z / smallest to largest"
+      );
+    }
+
+    if (
+      type === "column" &&
+      action === "sort_desc"
+    ) {
+      return tr(
+        "filemgr.spreadsheet_editor.sort_descending",
+        null,
+        "Sort Z–A / largest to smallest"
+      );
+    }
+
     const api = axisApi();
     if (!api || typeof api.operationLabel !== "function") return "";
     return api.operationLabel(action, type, axisSelectionCount(type));
@@ -6123,6 +6157,709 @@ function axisApi() {
     menu.style.top = `${Math.min(Math.max(8, Number(y) || 8), maxTop)}px`;
   }
 
+
+  function spreadsheetSortApi() {
+    return (
+      FM &&
+      FM.spreadsheetSort
+        ? FM.spreadsheetSort
+        : null
+    );
+  }
+
+  function sheetHasSpreadsheetFormulas(sheet) {
+    if (!sheet || !Array.isArray(sheet.rows)) {
+      return false;
+    }
+
+    /*
+     * Correctness: formulas are blocked until sorting
+     * can safely update all affected cell references.
+     * Moving formula rows without doing that could
+     * silently change workbook meaning.
+     */
+    for (const row of sheet.rows) {
+      if (!Array.isArray(row)) continue;
+
+      for (const value of row) {
+        if (isFormulaValue(value)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function validSpreadsheetSortOrder(order, rowCount) {
+    if (
+      !Array.isArray(order) ||
+      order.length !== rowCount
+    ) {
+      return false;
+    }
+
+    const seen = new Set();
+
+    for (const value of order) {
+      const index = Number(value);
+
+      if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= rowCount ||
+        seen.has(index)
+      ) {
+        return false;
+      }
+
+      seen.add(index);
+    }
+
+    return seen.size === rowCount;
+  }
+
+  function applySpreadsheetColumnSort(index, direction) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      !Number.isInteger(index) ||
+      index < 0
+    ) {
+      return false;
+    }
+
+    const sheet = state.sheets[state.active];
+    const api = spreadsheetSortApi();
+
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !api ||
+      typeof api.sortRows !== "function"
+    ) {
+      return false;
+    }
+
+    const nonEmptyRows = sheet.rows
+      .slice(1)
+      .filter((row) => {
+        if (!Array.isArray(row)) return false;
+
+        return String(
+          row[index] == null
+            ? ""
+            : row[index]
+        ).trim() !== "";
+      });
+
+    if (nonEmptyRows.length < 2) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_not_enough_data",
+          null,
+          "At least two data rows are required below the header."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (
+      Array.isArray(sheet.merges) &&
+      sheet.merges.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_merges",
+          null,
+          "Sorting is unavailable while the sheet contains merged cells."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (
+      Array.isArray(sheet.images) &&
+      sheet.images.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_images",
+          null,
+          "Sorting is unavailable while the sheet contains images."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (sheetHasSpreadsheetFormulas(sheet)) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_formulas",
+          null,
+          "Sorting sheets containing formulas is not supported in this first version."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    const normalizedDirection =
+      direction === "desc"
+        ? "desc"
+        : "asc";
+
+    /*
+     * The column-header command keeps row 1 as the
+     * header. A selectable header mode belongs to the
+     * later toolbar Sort & Filter dialog.
+     */
+    const result = api.sortRows(
+      sheet.rows,
+      {
+        keyCol: index,
+        direction: normalizedDirection,
+        header: "yes"
+      }
+    );
+
+    if (
+      !result ||
+      result.ok !== true ||
+      !validSpreadsheetSortOrder(
+        result.order,
+        sheet.rows.length
+      )
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.failed",
+          null,
+          "Spreadsheet operation failed."
+        ),
+        "err"
+      );
+      return false;
+    }
+
+    const unchanged = result.order.every(
+      (sourceIndex, targetIndex) =>
+        sourceIndex === targetIndex
+    );
+
+    const column = columnName(index);
+
+    if (unchanged) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_no_change",
+          { column },
+          `Column ${column} is already in that order.`
+        ),
+        ""
+      );
+      return false;
+    }
+
+    const historyBefore = captureHistorySnapshot();
+
+    const oldRows = sheet.rows;
+    const oldCellFormats = Array.isArray(
+      sheet.cellFormats
+    )
+      ? sheet.cellFormats
+      : [];
+
+    const oldRowHeights = Array.isArray(
+      sheet.rowHeights
+    )
+      ? sheet.rowHeights
+      : [];
+
+    const defaultRowHeight =
+      sheetDefaultRowHeight(sheet);
+
+    sheet.rows = result.rows;
+
+    sheet.cellFormats = result.order.map(
+      (sourceIndex) => {
+        const source =
+          oldCellFormats[sourceIndex];
+
+        if (Array.isArray(source)) {
+          return source;
+        }
+
+        const oldRow = oldRows[sourceIndex];
+
+        return Array.from(
+          {
+            length: Array.isArray(oldRow)
+              ? oldRow.length
+              : 0
+          },
+          () => null
+        );
+      }
+    );
+
+    sheet.rowHeights = result.order.map(
+      (sourceIndex) =>
+        normalizeRowGeometry(
+          oldRowHeights[sourceIndex],
+          defaultRowHeight
+        )
+    );
+
+    state.selection = makeAxisSelection(
+      "column",
+      index,
+      {}
+    );
+
+    state.activeCell = null;
+    state.rangeSelection = null;
+    state.selectedImageId = "";
+    formulaFocus = null;
+
+    commitHistorySnapshot(historyBefore);
+    render();
+
+    const statusKey =
+      normalizedDirection === "desc"
+        ? "filemgr.spreadsheet_editor.sort_done_desc"
+        : "filemgr.spreadsheet_editor.sort_done_asc";
+
+    const fallback =
+      normalizedDirection === "desc"
+        ? `Sorted column ${column} descending.`
+        : `Sorted column ${column} ascending.`;
+
+    setStatus(
+      tr(
+        statusKey,
+        { column },
+        fallback
+      ),
+      "ok"
+    );
+
+    return true;
+  }
+
+
+  function validSpreadsheetRangeSortOrder(
+    order,
+    range
+  ) {
+    if (
+      !range ||
+      !Array.isArray(order)
+    ) {
+      return false;
+    }
+
+    const rowCount =
+      range.row2 -
+      range.row1 +
+      1;
+
+    if (order.length !== rowCount) {
+      return false;
+    }
+
+    const seen = new Set();
+
+    for (const value of order) {
+      const index = Number(value);
+
+      if (
+        !Number.isInteger(index) ||
+        index < range.row1 ||
+        index > range.row2 ||
+        seen.has(index)
+      ) {
+        return false;
+      }
+
+      seen.add(index);
+    }
+
+    return seen.size === rowCount;
+  }
+
+  function spreadsheetFormatAt(
+    formats,
+    row,
+    col
+  ) {
+    if (
+      !Array.isArray(formats) ||
+      !Array.isArray(formats[row])
+    ) {
+      return null;
+    }
+
+    return formats[row][col] || null;
+  }
+
+  function applySpreadsheetRangeSort(
+    range,
+    keyCol,
+    direction
+  ) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving ||
+      !range ||
+      !Number.isInteger(keyCol)
+    ) {
+      return false;
+    }
+
+    const sheet =
+      state.sheets[state.active];
+
+    const api = spreadsheetSortApi();
+
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !api ||
+      typeof api.sortRange !== "function"
+    ) {
+      return false;
+    }
+
+    /*
+     * Correctness: partial sorting remains blocked for
+     * objects whose positions or references require a
+     * separate coordinate transformation.
+     */
+    if (
+      Array.isArray(sheet.merges) &&
+      sheet.merges.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_merges",
+          null,
+          "Sorting is unavailable while the sheet contains merged cells."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (
+      Array.isArray(sheet.images) &&
+      sheet.images.length
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_images",
+          null,
+          "Sorting is unavailable while the sheet contains images."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    if (sheetHasSpreadsheetFormulas(sheet)) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_blocked_formulas",
+          null,
+          "Sorting sheets containing formulas is not supported in this first version."
+        ),
+        "warn"
+      );
+      return false;
+    }
+
+    const normalizedDirection =
+      direction === "desc"
+        ? "desc"
+        : "asc";
+
+    const result = api.sortRange(
+      sheet.rows,
+      range,
+      {
+        keyCol,
+        direction: normalizedDirection,
+        header: "auto"
+      }
+    );
+
+    if (
+      !result ||
+      result.ok !== true ||
+      !validSpreadsheetRangeSortOrder(
+        result.order,
+        range
+      )
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.failed",
+          null,
+          "Spreadsheet operation failed."
+        ),
+        "err"
+      );
+      return false;
+    }
+
+    const unchanged =
+      result.order.every(
+        (sourceRow, offset) =>
+          sourceRow ===
+            range.row1 +
+            offset
+      );
+
+    const column =
+      columnName(keyCol);
+
+    if (unchanged) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.sort_no_change",
+          { column },
+          `Column ${column} is already in that order.`
+        ),
+        ""
+      );
+      return false;
+    }
+
+    const historyBefore =
+      captureHistorySnapshot();
+
+    const oldFormats =
+      Array.isArray(sheet.cellFormats)
+        ? sheet.cellFormats
+        : [];
+
+    /*
+     * Clone row arrays before changing the selected
+     * rectangle. Formatting outside the range must stay
+     * attached to its original worksheet coordinates.
+     */
+    const nextFormats =
+      result.rows.map(
+        (row, rowIndex) => {
+          const source =
+            Array.isArray(
+              oldFormats[rowIndex]
+            )
+              ? oldFormats[rowIndex]
+              : [];
+
+          const width =
+            Math.max(
+              Array.isArray(row)
+                ? row.length
+                : 0,
+              source.length
+            );
+
+          return Array.from(
+            { length: width },
+            (_value, col) =>
+              source[col] || null
+          );
+        }
+      );
+
+    for (
+      let offset = 0;
+      offset < result.order.length;
+      offset++
+    ) {
+      const targetRow =
+        range.row1 +
+        offset;
+
+      const sourceRow =
+        result.order[offset];
+
+      while (
+        nextFormats[targetRow].length <=
+        range.col2
+      ) {
+        nextFormats[targetRow].push(null);
+      }
+
+      for (
+        let col = range.col1;
+        col <= range.col2;
+        col++
+      ) {
+        nextFormats[targetRow][col] =
+          spreadsheetFormatAt(
+            oldFormats,
+            sourceRow,
+            col
+          );
+      }
+    }
+
+    sheet.rows = result.rows;
+    sheet.cellFormats = nextFormats;
+
+    state.selection = null;
+    state.rangeSelection = {
+      startRow: range.row1,
+      startCol: range.col1,
+      endRow: range.row2,
+      endCol: range.col2
+    };
+
+    state.activeCell = {
+      row: range.row1,
+      col: keyCol
+    };
+
+    state.selectedImageId = "";
+    formulaFocus = null;
+
+    commitHistorySnapshot(
+      historyBefore
+    );
+
+    render();
+
+    const statusKey =
+      normalizedDirection === "desc"
+        ? "filemgr.spreadsheet_editor.sort_done_desc"
+        : "filemgr.spreadsheet_editor.sort_done_asc";
+
+    const fallback =
+      normalizedDirection === "desc"
+        ? `Sorted column ${column} descending.`
+        : `Sorted column ${column} ascending.`;
+
+    setStatus(
+      tr(
+        statusKey,
+        { column },
+        fallback
+      ),
+      "ok"
+    );
+
+    return true;
+  }
+
+  function applySpreadsheetToolbarSort(
+    direction
+  ) {
+    const range =
+      normalizedRangeSelection();
+
+    if (range) {
+      let keyCol =
+        state.activeCell &&
+        Number.isInteger(
+          Number(state.activeCell.col)
+        )
+          ? Number(state.activeCell.col)
+          : range.col1;
+
+      if (
+        keyCol < range.col1 ||
+        keyCol > range.col2
+      ) {
+        keyCol = range.col1;
+      }
+
+      return applySpreadsheetRangeSort(
+        range,
+        keyCol,
+        direction
+      );
+    }
+
+    const selectedAxis =
+      axisSelectionRange();
+
+    if (
+      selectedAxis &&
+      selectedAxis.type === "column" &&
+      Number.isInteger(
+        Number(selectedAxis.start)
+      )
+    ) {
+      return applySpreadsheetColumnSort(
+        Number(selectedAxis.start),
+        direction
+      );
+    }
+
+    if (
+      state.activeCell &&
+      Number.isInteger(
+        Number(state.activeCell.col)
+      )
+    ) {
+      return applySpreadsheetColumnSort(
+        Number(state.activeCell.col),
+        direction
+      );
+    }
+
+    setStatus(
+      tr(
+        "filemgr.spreadsheet_editor.sort_select_target",
+        null,
+        "Select a cell, column or cell range to sort."
+      ),
+      "warn"
+    );
+
+    return false;
+  }
+
+  function bindSpreadsheetSortToolbarMenu() {
+    if (!sortMenu) return;
+
+    for (
+      const button of
+      sortMenu.querySelectorAll(
+        "[data-spreadsheet-sort-action]"
+      )
+    ) {
+      button.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const direction =
+            button.dataset
+              .spreadsheetSortAction ===
+              "desc"
+              ? "desc"
+              : "asc";
+
+          closeToolbarIconMenus();
+
+          applySpreadsheetToolbarSort(
+            direction
+          );
+        }
+      );
+    }
+  }
+
   function hideAxisMenu() {
     const api = FM && FM.spreadsheetAxis;
     if (api && typeof api.hideContextMenu === "function") {
@@ -6147,7 +6884,13 @@ function axisApi() {
         if (axisType === "column") addColumn();
         else addRow();
       },
-      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex)
+      delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex),
+      sort: (axisIndex, direction) => {
+        applySpreadsheetColumnSort(
+          axisIndex,
+          direction
+        );
+      }
     });
   }
 
@@ -6358,10 +7101,36 @@ function axisApi() {
           row.push("");
         } else if (cell.f) {
           row.push("=" + String(cell.f));
+        } else if (
+          defaults.preferRawValues &&
+          cell.v != null
+        ) {
+          /*
+           * Correctness: PQ-NAS metadata already preserves
+           * the number format separately. Import the raw
+           * value so currency/percent text is not baked into
+           * the editable cell value a second time.
+           */
+          row.push(
+            importSpreadsheetCellText(
+              cell,
+              cell.v
+            )
+          );
         } else if (cell.w != null) {
-          row.push(importSpreadsheetCellText(cell, cell.w));
+          row.push(
+            importSpreadsheetCellText(
+              cell,
+              cell.w
+            )
+          );
         } else if (cell.v != null) {
-          row.push(importSpreadsheetCellText(cell, cell.v));
+          row.push(
+            importSpreadsheetCellText(
+              cell,
+              cell.v
+            )
+          );
         } else {
           row.push("");
         }
@@ -6537,6 +7306,14 @@ function axisApi() {
       const defaults =
         worksheetDimensionDefaults(wb, idx);
 
+      const safeName =
+        safeSheetName(name, idx);
+
+      const storedFormats =
+        storedCellFormats[safeName] ||
+        storedCellFormats[name] ||
+        null;
+
       const sheetImages = workbookImages.filter(
         (image) => image.sheetIndex === idx
       );
@@ -6561,20 +7338,20 @@ function axisApi() {
           workbook: wb,
           sheetIndex: idx,
           xlsxBorders: workbookBorders[idx] || null,
-          minimumCols: imageBounds.cols
+          minimumCols: imageBounds.cols,
+
+          /*
+           * Stored PQ-NAS metadata keeps formatting
+           * separate from values, so import cell.v rather
+           * than SheetJS's formatted cell.w text.
+           */
+          preferRawValues:
+            Array.isArray(storedFormats)
         }
       );
 
       anyTooLarge =
         anyTooLarge || converted.tooLarge;
-
-      const safeName =
-        safeSheetName(name, idx);
-
-      const storedFormats =
-        storedCellFormats[safeName] ||
-        storedCellFormats[name] ||
-        null;
 
       const sheet = {
         name: safeName,
@@ -6663,6 +7440,7 @@ function axisApi() {
 
     if (addRowBtn) addRowBtn.disabled = disabled;
     if (addColBtn) addColBtn.disabled = disabled;
+    if (sortSelect) sortSelect.disabled = disabled;
     updateFormatToolbar();
   }
 
@@ -7181,6 +7959,25 @@ function axisApi() {
               <button type="button" role="menuitemradio" aria-checked="true" data-spreadsheet-toolbar-value="middle">${toolbarIconSvg("valign", "middle")}<span>${tr("filemgr.spreadsheet_editor.valign_middle", null, "Middle")}</span></button>
               <button type="button" role="menuitemradio" aria-checked="false" data-spreadsheet-toolbar-value="bottom">${toolbarIconSvg("valign", "bottom")}<span>${tr("filemgr.spreadsheet_editor.valign_bottom", null, "Bottom")}</span></button>
             </div>
+            <button id="spreadsheetEditorSort" class="spreadsheetToolBtn spreadsheetIconMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${tr("filemgr.spreadsheet_editor.sort_toolbar", null, "Sort")}" title="${tr("filemgr.spreadsheet_editor.sort_toolbar", null, "Sort")}">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 5v14"></path>
+                <path d="m4 8 3-3 3 3"></path>
+                <path d="M13 7h7"></path>
+                <path d="M13 12h5"></path>
+                <path d="M13 17h3"></path>
+              </svg>
+            </button>
+            <div id="spreadsheetEditorSortMenu" class="spreadsheetIconMenu" role="menu" hidden aria-label="${tr("filemgr.spreadsheet_editor.sort_toolbar", null, "Sort")}">
+              <button type="button" role="menuitem" data-spreadsheet-sort-action="asc">
+                <span aria-hidden="true">↑</span>
+                <span>${tr("filemgr.spreadsheet_editor.sort_ascending", null, "Sort A–Z / smallest to largest")}</span>
+              </button>
+              <button type="button" role="menuitem" data-spreadsheet-sort-action="desc">
+                <span aria-hidden="true">↓</span>
+                <span>${tr("filemgr.spreadsheet_editor.sort_descending", null, "Sort Z–A / largest to smallest")}</span>
+              </button>
+            </div>
             <button id="spreadsheetEditorTextColor" type="button" class="btn secondary spreadsheetToolBtn spreadsheetTextToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}" title="${tr("filemgr.spreadsheet_editor.text_color", null, "Text color")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 6 20"></path><path d="M12 4 18 20"></path><path d="M8 14h8"></path><path d="M5 22h14"></path></svg>
             </button>
@@ -7240,8 +8037,10 @@ function axisApi() {
     numberFormatSelect = modal.querySelector("#spreadsheetEditorNumberFormat");
     alignSelect = modal.querySelector("#spreadsheetEditorAlign");
     valignSelect = modal.querySelector("#spreadsheetEditorValign");
+    sortSelect = modal.querySelector("#spreadsheetEditorSort");
     alignMenu = modal.querySelector("#spreadsheetEditorAlignMenu");
     valignMenu = modal.querySelector("#spreadsheetEditorValignMenu");
+    sortMenu = modal.querySelector("#spreadsheetEditorSortMenu");
     freezeTopRowBtn = modal.querySelector("#spreadsheetEditorFreezeTopRow");
     freezeFirstColumnBtn = modal.querySelector("#spreadsheetEditorFreezeFirstColumn");
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
@@ -7260,8 +8059,10 @@ function axisApi() {
     numberFormatSelect?.addEventListener("change", () => applyFormatCommand("numberFormat", numberFormatSelect.value));
     alignSelect?.addEventListener("click", () => toggleToolbarIconMenu(alignSelect, alignMenu));
     valignSelect?.addEventListener("click", () => toggleToolbarIconMenu(valignSelect, valignMenu));
+    sortSelect?.addEventListener("click", () => toggleToolbarIconMenu(sortSelect, sortMenu));
     bindToolbarIconMenu(alignMenu, "align", alignSelect);
     bindToolbarIconMenu(valignMenu, "valign", valignSelect);
+    bindSpreadsheetSortToolbarMenu();
 
     freezeTopRowBtn?.addEventListener("click", () => {
       const freeze = currentEditorFreeze();

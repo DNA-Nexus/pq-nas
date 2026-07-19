@@ -5732,5 +5732,16 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "Sort",
+  "filemgr.spreadsheet_editor.sort_ascending": "Sort A–Z / smallest to largest",
+  "filemgr.spreadsheet_editor.sort_descending": "Sort Z–A / largest to smallest",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "Sorting is unavailable while the sheet contains merged cells.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "Sorting is unavailable while the sheet contains images.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Sorting sheets containing formulas is not supported in this first version.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "At least two data rows are required below the header.",
+  "filemgr.spreadsheet_editor.sort_no_change": "Column {column} is already in that order.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "Sorted column {column} ascending.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "Sorted column {column} descending.",
+  "filemgr.spreadsheet_editor.sort_select_target": "Select a cell, column or cell range to sort."
 }

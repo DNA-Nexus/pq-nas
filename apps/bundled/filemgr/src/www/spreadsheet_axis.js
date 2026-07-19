@@ -340,6 +340,25 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     const menu = ensureContextMenu();
     menu.replaceChildren();
 
+    if (
+      type === "column" &&
+      typeof options.sort === "function"
+    ) {
+      menu.appendChild(
+        makeContextMenuButton(
+          labelFor("sort_asc"),
+          () => options.sort(i, "asc")
+        )
+      );
+
+      menu.appendChild(
+        makeContextMenuButton(
+          labelFor("sort_desc"),
+          () => options.sort(i, "desc")
+        )
+      );
+    }
+
     menu.appendChild(makeContextMenuButton(labelFor("insert"), () => {
       if (typeof options.insert === "function") options.insert(type, i);
     }));

@@ -5732,5 +5732,16 @@
   "filemgr.spreadsheet_editor.image_dimensions_too_large": "The image dimensions are too large.",
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
-  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet."
+  "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "Sordi",
+  "filemgr.spreadsheet_editor.sort_ascending": "Sordi A–Ü / väiksemast suuremani",
+  "filemgr.spreadsheet_editor.sort_descending": "Sordi Ü–A / suuremast väiksemani",
+  "filemgr.spreadsheet_editor.sort_blocked_merges": "Sortimine pole saadaval, kui lehel on ühendatud lahtreid.",
+  "filemgr.spreadsheet_editor.sort_blocked_images": "Sortimine pole saadaval, kui lehel on pilte.",
+  "filemgr.spreadsheet_editor.sort_blocked_formulas": "Valemeid sisaldavate lehtede sortimist see esimene versioon veel ei toeta.",
+  "filemgr.spreadsheet_editor.sort_not_enough_data": "Päiserea all peab olema vähemalt kaks andmerida.",
+  "filemgr.spreadsheet_editor.sort_no_change": "Veerg {column} on juba selles järjekorras.",
+  "filemgr.spreadsheet_editor.sort_done_asc": "Veerg {column} sorditi kasvavalt.",
+  "filemgr.spreadsheet_editor.sort_done_desc": "Veerg {column} sorditi kahanevalt.",
+  "filemgr.spreadsheet_editor.sort_select_target": "Sortimiseks vali lahter, veerg või lahtrivahemik."
 }
