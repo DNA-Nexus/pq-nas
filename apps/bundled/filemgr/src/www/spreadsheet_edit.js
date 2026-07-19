@@ -3788,6 +3788,8 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     } else if (formulaFocus && formulaFocus.input === formulaBarInput) {
       formulaFocus = null;
     }
+
+    paintSpreadsheetFormulaReferences();
   }
 
   function updateActiveCellFromFormulaBar() {
@@ -4621,6 +4623,45 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     return formatFormulaNumber(result.value);
   }
 
+  function spreadsheetFormulaReferenceApi() {
+    return (
+      FM &&
+      FM.spreadsheetFormulaReferences
+    ) || null;
+  }
+
+  function paintSpreadsheetFormulaReferences() {
+    const api =
+      spreadsheetFormulaReferenceApi();
+
+    if (
+      !api ||
+      typeof api.paint !== "function" ||
+      !bodyEl
+    ) {
+      return;
+    }
+
+    const input =
+      formulaFocus &&
+      formulaFocus.input;
+
+    const formula =
+      input &&
+      isFormulaValue(input.value)
+        ? String(input.value)
+        : "";
+
+    api.paint(
+      bodyEl,
+      formula,
+      {
+        maxRows: MAX_EDIT_ROWS,
+        maxCols: MAX_EDIT_COLS
+      }
+    );
+  }
+
   function refreshFormulaDisplays(skipInput = null) {
     const sheet = state.sheets[state.active];
     if (!sheet || !bodyEl) return;
@@ -4633,6 +4674,8 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       if (!Number.isInteger(r) || !Number.isInteger(c)) continue;
       input.value = displayCellValue(sheet, r, c, cache);
     }
+
+    paintSpreadsheetFormulaReferences();
   }
 
   function clearSelectionClasses() {
@@ -5709,6 +5752,7 @@ function repaintSpreadsheetSelection() {
     paintRangeSelection();
     paintActiveCellSelection();
     paintSpreadsheetFillHandleAnchor();
+    paintSpreadsheetFormulaReferences();
   }
 
 function axisApi() {
@@ -6905,6 +6949,98 @@ function axisApi() {
       select: (type, index, ev) => selectSpreadsheetAxis(type, index, ev),
       contextMenu: (type, index, ev) => openAxisMenu(type, index, ev.clientX, ev.clientY)
     });
+  }
+
+  function spreadsheetFormulaCellIsEditing(input) {
+    return !!(
+      input &&
+      input.dataset &&
+      input.dataset.spreadsheetFormulaEditing === "1"
+    );
+  }
+
+  function beginSpreadsheetFormulaCellEdit(
+    input,
+    options = {}
+  ) {
+    if (
+      !input ||
+      state.readOnly ||
+      state.tooLarge
+    ) {
+      return false;
+    }
+
+    const row = Number(
+      input.dataset && input.dataset.row
+    );
+    const col = Number(
+      input.dataset && input.dataset.col
+    );
+    const sheet = state.sheets[state.active];
+
+    if (
+      !sheet ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col)
+    ) {
+      return false;
+    }
+
+    const raw = cellRaw(
+      sheet,
+      row,
+      col
+    );
+
+    if (!isFormulaValue(raw)) {
+      return false;
+    }
+
+    /*
+     * UX correctness: selecting a formula cell and editing
+     * it are separate modes. Only explicit editing exposes
+     * the raw formula and enables reference insertion.
+     */
+    input.readOnly = false;
+    input.dataset.spreadsheetFormulaEditing = "1";
+    input.value = String(raw);
+
+    formulaFocus = {
+      input,
+      row,
+      col,
+      originalRaw: raw,
+      wasDirty: state.dirty
+    };
+
+    paintSpreadsheetFormulaReferences();
+
+    try {
+      input.focus({
+        preventScroll: true
+      });
+    } catch (_) {
+      input.focus();
+    }
+
+    window.requestAnimationFrame(() => {
+      const length =
+        String(input.value || "").length;
+
+      try {
+        if (options.selectAll) {
+          input.select();
+        } else {
+          input.setSelectionRange(
+            length,
+            length
+          );
+        }
+      } catch (_) {}
+    });
+
+    return true;
   }
 
   function insertFormulaReference(input, row, col) {
@@ -8134,6 +8270,7 @@ function axisApi() {
 
     formulaBarInput?.addEventListener("blur", () => {
       if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
+      paintSpreadsheetFormulaReferences();
       updateFormulaBar(true);
     });
 
@@ -9288,6 +9425,15 @@ function axisApi() {
         input.title = isFormulaValue(cellRaw(sheet, rIdx, c)) ? cellRaw(sheet, rIdx, c) : "";
         input.disabled = state.readOnly || state.tooLarge;
 
+        /*
+         * Formula cells initially behave as selectable
+         * result cells. Explicit double-click, F2 or the
+         * formula bar enables raw formula editing.
+         */
+        input.readOnly = isFormulaValue(
+          cellRaw(sheet, rIdx, c)
+        );
+
         input.addEventListener("pointerdown", (ev) => {
           if (!formulaFocus || formulaFocus.input === input) return;
           const active = formulaFocus.input;
@@ -9343,46 +9489,135 @@ function axisApi() {
             recorded: false
           };
 
-          // Keep formatted numeric cells visually formatted when merely selected.
-          // Raw formulas are still shown for direct formula editing; raw numeric
-          // values remain available in the formula bar.
-          input.value = isFormulaValue(raw) ? raw : displayCellValue(sheet, r, col);
+          /*
+           * UX correctness: a single click selects the cell
+           * and keeps its calculated result visible. The raw
+           * value remains available in the formula bar.
+           */
+          input.removeAttribute(
+            "data-spreadsheet-formula-editing"
+          );
+          input.readOnly =
+            isFormulaValue(raw);
+          input.value =
+            displayCellValue(
+              sheet,
+              r,
+              col
+            );
 
-          if (isFormulaValue(raw)) {
-            formulaFocus = {
-              input,
-              row: r,
-              col,
-              originalRaw: raw,
-              wasDirty: state.dirty
-            };
-          } else if (formulaFocus && formulaFocus.input === input) {
+          if (
+            formulaFocus &&
+            formulaFocus.input === input
+          ) {
             formulaFocus = null;
           }
+        });
+
+        input.addEventListener("dblclick", (ev) => {
+          const r = Number(
+            input.dataset.row
+          );
+          const col = Number(
+            input.dataset.col
+          );
+
+          if (
+            !Number.isInteger(r) ||
+            !Number.isInteger(col) ||
+            !isFormulaValue(
+              cellRaw(sheet, r, col)
+            )
+          ) {
+            return;
+          }
+
+          ev.preventDefault();
+          ev.stopPropagation();
+
+          beginSpreadsheetFormulaCellEdit(
+            input
+          );
         });
 
         input.addEventListener("blur", () => {
           const r = Number(input.dataset.row);
           const col = Number(input.dataset.col);
           if (!Number.isInteger(r) || !Number.isInteger(col)) return;
-          if (formulaFocus && formulaFocus.input === input) formulaFocus = null;
-          commitPendingCellEditHistory(input, r, col);
+          if (
+            formulaFocus &&
+            formulaFocus.input === input
+          ) {
+            formulaFocus = null;
+          }
+
+          input.removeAttribute(
+            "data-spreadsheet-formula-editing"
+          );
+
+          commitPendingCellEditHistory(
+            input,
+            r,
+            col
+          );
           refreshFormulaDisplays(null);
-          input.value = displayCellValue(sheet, r, col);
-          input.title = isFormulaValue(cellRaw(sheet, r, col)) ? cellRaw(sheet, r, col) : "";
+
+          const raw = cellRaw(
+            sheet,
+            r,
+            col
+          );
+
+          input.readOnly =
+            isFormulaValue(raw);
+          input.value =
+            displayCellValue(
+              sheet,
+              r,
+              col
+            );
+          input.title =
+            isFormulaValue(raw)
+              ? raw
+              : "";
           refreshVisibleEditorTextOverflows();
           updateFormulaBar();
         });
 
         input.addEventListener("keydown", (ev) => {
+          if (ev.key === "F2") {
+            const started =
+              beginSpreadsheetFormulaCellEdit(
+                input
+              );
+
+            if (started) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+          }
+
           if (ev.key === "Escape") {
             const r = Number(input.dataset.row);
             const col = Number(input.dataset.col);
             const raw = Number.isInteger(r) && Number.isInteger(col) ? cellRaw(sheet, r, col) : "";
             const editingFormula =
-              (formulaFocus && formulaFocus.input === input) ||
-              isFormulaValue(normalizeSpreadsheetUserInput(input.value, raw)) ||
-              isFormulaValue(raw);
+              spreadsheetFormulaCellIsEditing(
+                input
+              ) &&
+              (
+                (
+                  formulaFocus &&
+                  formulaFocus.input === input
+                ) ||
+                isFormulaValue(
+                  normalizeSpreadsheetUserInput(
+                    input.value,
+                    raw
+                  )
+                )
+              );
 
             if (editingFormula) {
               ev.preventDefault();

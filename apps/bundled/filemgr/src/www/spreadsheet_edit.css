@@ -1409,3 +1409,71 @@
 .spreadsheetSelectAllCorner {
   cursor: pointer;
 }
+
+/* Spreadsheet formula-reference overlays. */
+.spreadsheetEditorModal {
+  --spreadsheet-formula-reference-1:
+    var(--accent, Highlight);
+  --spreadsheet-formula-reference-2:
+    var(--ok, var(--accent, Highlight));
+  --spreadsheet-formula-reference-3:
+    var(--warn, var(--accent, Highlight));
+  --spreadsheet-formula-reference-4:
+    var(--danger, var(--accent, Highlight));
+}
+
+.spreadsheetEditorTable
+td.spreadsheetFormulaReferenceHost {
+  position: relative;
+}
+
+.spreadsheetFormulaReferenceOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 0;
+  border-color:
+    var(
+      --spreadsheet-formula-reference-color,
+      var(--accent, Highlight)
+    );
+  pointer-events: none;
+}
+
+.spreadsheetFormulaReferenceColor0 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-1);
+}
+
+.spreadsheetFormulaReferenceColor1 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-2);
+}
+
+.spreadsheetFormulaReferenceColor2 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-3);
+}
+
+.spreadsheetFormulaReferenceColor3 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-4);
+}
+
+.spreadsheetFormulaReferenceEdgeTop {
+  border-top-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeRight {
+  border-right-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeBottom {
+  border-bottom-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeLeft {
+  border-left-width: 3px;
+}
