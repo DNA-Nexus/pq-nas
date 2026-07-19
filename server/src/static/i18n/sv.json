@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Kolumn {column} är redan i den ordningen.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Kolumn {column} sorterades stigande.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Kolumn {column} sorterades fallande.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Sorteringsområde",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Cellerna bredvid det markerade området innehåller också data. Vill du utöka området till {expanded} eller bara sortera det markerade området {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Tips: placera cellmarkören i en lista och välj Sortera. Det sammanhängande dataområdet identifieras och sorteras automatiskt.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Utöka markeringen",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Aktuell markering",
   "filemgr.spreadsheet_editor.sort_select_target": "Välj en cell, kolumn eller ett cellområde att sortera."
 }

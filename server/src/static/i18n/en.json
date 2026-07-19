@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Column {column} is already in that order.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Sorted column {column} ascending.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Sorted column {column} descending.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Sort range",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Cells next to the selected range also contain data. Do you want to extend the sort range to {expanded}, or sort only the selected range {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Tip: Place the cell cursor inside a list and choose Sort. The connected data range will be detected and sorted automatically.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Extend selection",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Current selection",
   "filemgr.spreadsheet_editor.sort_select_target": "Select a cell, column or cell range to sort."
 }

@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "La colonna {column} è già in questo ordine.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Colonna {column} ordinata in modo crescente.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Colonna {column} ordinata in modo decrescente.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Intervallo di ordinamento",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Anche le celle adiacenti all'intervallo selezionato contengono dati. Vuoi estendere l'intervallo a {expanded} oppure ordinare solo l'intervallo selezionato {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Suggerimento: posiziona il cursore dentro un elenco e scegli Ordina. L'intervallo contiguo verrà rilevato e ordinato automaticamente.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Estendi selezione",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Selezione corrente",
   "filemgr.spreadsheet_editor.sort_select_target": "Seleziona una cella, una colonna o un intervallo di celle da ordinare."
 }

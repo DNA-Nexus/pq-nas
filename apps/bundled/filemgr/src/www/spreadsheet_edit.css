@@ -1412,14 +1412,31 @@
 
 /* Spreadsheet formula-reference overlays. */
 .spreadsheetEditorModal {
+  /*
+   * Formula-reference colors intentionally remain identical
+   * in every theme. They identify workbook references rather
+   * than normal application UI states.
+   */
   --spreadsheet-formula-reference-1:
-    var(--accent, Highlight);
+    rgb(37, 99, 235);
   --spreadsheet-formula-reference-2:
-    var(--ok, var(--accent, Highlight));
+    rgb(217, 70, 239);
   --spreadsheet-formula-reference-3:
-    var(--warn, var(--accent, Highlight));
+    rgb(22, 163, 74);
   --spreadsheet-formula-reference-4:
-    var(--danger, var(--accent, Highlight));
+    rgb(239, 68, 68);
+  --spreadsheet-formula-reference-5:
+    rgb(6, 182, 212);
+  --spreadsheet-formula-reference-6:
+    rgb(249, 115, 22);
+  --spreadsheet-formula-reference-7:
+    rgb(124, 58, 237);
+  --spreadsheet-formula-reference-8:
+    rgb(101, 163, 13);
+  --spreadsheet-formula-reference-9:
+    rgb(13, 148, 136);
+  --spreadsheet-formula-reference-10:
+    rgb(225, 29, 72);
 }
 
 .spreadsheetEditorTable
@@ -1462,6 +1479,36 @@ td.spreadsheetFormulaReferenceHost {
     var(--spreadsheet-formula-reference-4);
 }
 
+.spreadsheetFormulaReferenceColor4 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-5);
+}
+
+.spreadsheetFormulaReferenceColor5 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-6);
+}
+
+.spreadsheetFormulaReferenceColor6 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-7);
+}
+
+.spreadsheetFormulaReferenceColor7 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-8);
+}
+
+.spreadsheetFormulaReferenceColor8 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-9);
+}
+
+.spreadsheetFormulaReferenceColor9 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-10);
+}
+
 .spreadsheetFormulaReferenceEdgeTop {
   border-top-width: 3px;
 }
@@ -1476,4 +1523,15 @@ td.spreadsheetFormulaReferenceHost {
 
 .spreadsheetFormulaReferenceEdgeLeft {
   border-left-width: 3px;
+}
+
+/* Spreadsheet sort-range confirmation dialog. */
+.spreadsheetEditorConfirmBox.spreadsheetEditorSortRangeBox {
+  width: min(580px, calc(100vw - 32px));
+}
+
+.spreadsheetEditorSortRangeTip {
+  margin: -4px 0 16px;
+  color: var(--muted);
+  line-height: 1.45;
 }

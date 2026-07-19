@@ -481,6 +481,150 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
 
+  function detectConnectedDataRange(
+    rows,
+    startRow,
+    startCol,
+    options = {}
+  ) {
+    if (
+      !Array.isArray(rows) ||
+      !Number.isInteger(startRow) ||
+      !Number.isInteger(startCol) ||
+      startRow < 0 ||
+      startCol < 0 ||
+      startRow >= rows.length
+    ) {
+      return null;
+    }
+
+    const maxCellsValue =
+      Number(options.maxCells);
+
+    const maxCells =
+      Number.isInteger(maxCellsValue) &&
+      maxCellsValue > 0
+        ? maxCellsValue
+        : 200000;
+
+    const valueAt = (row, col) => {
+      const sourceRow =
+        Array.isArray(rows[row])
+          ? rows[row]
+          : [];
+
+      return sourceRow[col] == null
+        ? ""
+        : String(sourceRow[col]);
+    };
+
+    const hasValue = (row, col) =>
+      row >= 0 &&
+      row < rows.length &&
+      col >= 0 &&
+      valueAt(row, col).trim() !== "";
+
+    if (!hasValue(startRow, startCol)) {
+      return null;
+    }
+
+    const queue = [
+      {
+        row: startRow,
+        col: startCol
+      }
+    ];
+
+    const visited = new Set([
+      `${startRow}:${startCol}`
+    ]);
+
+    let head = 0;
+    let row1 = startRow;
+    let row2 = startRow;
+    let col1 = startCol;
+    let col2 = startCol;
+
+    while (head < queue.length) {
+      const current = queue[head];
+      head += 1;
+
+      row1 = Math.min(
+        row1,
+        current.row
+      );
+      row2 = Math.max(
+        row2,
+        current.row
+      );
+      col1 = Math.min(
+        col1,
+        current.col
+      );
+      col2 = Math.max(
+        col2,
+        current.col
+      );
+
+      const neighbours = [
+        {
+          row: current.row - 1,
+          col: current.col
+        },
+        {
+          row: current.row + 1,
+          col: current.col
+        },
+        {
+          row: current.row,
+          col: current.col - 1
+        },
+        {
+          row: current.row,
+          col: current.col + 1
+        }
+      ];
+
+      for (const neighbour of neighbours) {
+        if (
+          !hasValue(
+            neighbour.row,
+            neighbour.col
+          )
+        ) {
+          continue;
+        }
+
+        const key =
+          `${neighbour.row}:${neighbour.col}`;
+
+        if (visited.has(key)) {
+          continue;
+        }
+
+        /*
+         * Safety: never return a partially detected table
+         * when an unexpectedly large connected component
+         * exceeds the bounded traversal limit.
+         */
+        if (visited.size >= maxCells) {
+          return null;
+        }
+
+        visited.add(key);
+        queue.push(neighbour);
+      }
+    }
+
+    return {
+      row1,
+      row2,
+      col1,
+      col2
+    };
+  }
+
+
   function normalizeSortRange(range, rowCount) {
     if (
       !range ||
@@ -712,6 +856,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   FM.spreadsheetSort = {
+    detectConnectedDataRange,
     parseNumberValue,
     parseDateValue,
     valueType,

@@ -196,6 +196,31 @@ assert.deepStrictEqual(
   ["B2"]
 );
 
+assert.strictEqual(
+  references.referenceColorIndex(0),
+  0
+);
+
+assert.strictEqual(
+  references.referenceColorIndex(9),
+  9
+);
+
+assert.strictEqual(
+  references.referenceColorIndex(10),
+  0
+);
+
+assert.strictEqual(
+  references.referenceColorIndex(19),
+  9
+);
+
+assert.strictEqual(
+  references.referenceColorIndex(-1),
+  0
+);
+
 console.log(
   "ok: spreadsheet formula reference tests passed"
 );

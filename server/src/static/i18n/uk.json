@@ -5735,5 +5735,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Стовпець {column} уже має такий порядок.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Стовпець {column} відсортовано за зростанням.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Стовпець {column} відсортовано за спаданням.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Діапазон сортування",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Комірки поруч із вибраним діапазоном також містять дані. Розширити діапазон до {expanded} чи сортувати лише вибраний діапазон {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Порада: установіть курсор усередині списку та виберіть Сортувати. Суміжний діапазон буде виявлено й відсортовано автоматично.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Розширити вибір",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Поточний вибір",
   "filemgr.spreadsheet_editor.sort_select_target": "Виберіть клітинку, стовпець або діапазон клітинок для сортування."
 }

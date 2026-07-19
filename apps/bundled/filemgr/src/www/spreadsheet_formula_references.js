@@ -2,6 +2,7 @@
   "use strict";
 
   const MAX_REFERENCES = 256;
+  const REFERENCE_COLOR_COUNT = 10;
   const DEFAULT_MAX_ROWS = 1048576;
   const DEFAULT_MAX_COLS = 16384;
 
@@ -11,6 +12,19 @@
     return Number.isInteger(number) && number > 0
       ? number
       : fallback;
+  }
+
+  function referenceColorIndex(value) {
+    const index = Number(value);
+
+    if (
+      !Number.isInteger(index) ||
+      index < 0
+    ) {
+      return 0;
+    }
+
+    return index % REFERENCE_COLOR_COUNT;
   }
 
   function columnIndexFromName(name) {
@@ -377,7 +391,9 @@
             documentRef.createElement("span");
 
           const colorIndex =
-            reference.referenceIndex % 4;
+            referenceColorIndex(
+              reference.referenceIndex
+            );
 
           overlay.className =
             "spreadsheetFormulaReferenceOverlay " +
@@ -431,6 +447,7 @@
 
   const api = {
     columnIndexFromName,
+    referenceColorIndex,
     parseCellReference,
     parseFormulaReferences,
     clear,

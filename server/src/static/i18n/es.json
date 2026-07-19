@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "La columna {column} ya está en ese orden.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Columna {column} ordenada de forma ascendente.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Columna {column} ordenada de forma descendente.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Rango de ordenación",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Las celdas junto al rango seleccionado también contienen datos. ¿Quieres ampliar el rango a {expanded} o ordenar únicamente el rango seleccionado {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Consejo: coloca el cursor dentro de una lista y elige Ordenar. El rango de datos contiguo se detectará y ordenará automáticamente.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Ampliar selección",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Selección actual",
   "filemgr.spreadsheet_editor.sort_select_target": "Selecciona una celda, columna o rango de celdas para ordenar."
 }

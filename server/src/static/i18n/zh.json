@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "{column} 列已经按此顺序排列。",
   "filemgr.spreadsheet_editor.sort_done_asc": "{column} 列已按升序排列。",
   "filemgr.spreadsheet_editor.sort_done_desc": "{column} 列已按降序排列。",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "排序范围",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "所选区域旁边的单元格也包含数据。要将排序范围扩展到 {expanded}，还是仅排序当前选择的区域 {selected}？",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "提示：将单元格光标放在列表内并选择“排序”，系统会自动检测并排序相邻的连续数据区域。",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "扩展选择",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "当前选择",
   "filemgr.spreadsheet_editor.sort_select_target": "请选择要排序的单元格、列或单元格区域。"
 }
