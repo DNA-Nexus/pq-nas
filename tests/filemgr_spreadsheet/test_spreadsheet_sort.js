@@ -294,6 +294,346 @@ for (
   );
 }
 
+
+{
+  const input = [
+    [
+      "fixed-0",
+      "Name",
+      "Score",
+      "tail-0"
+    ],
+    [
+      "fixed-1",
+      "Charlie",
+      "30",
+      "tail-1"
+    ],
+    [
+      "fixed-2",
+      "Alice",
+      "10",
+      "tail-2"
+    ],
+    [
+      "fixed-3",
+      "Bob",
+      "20",
+      "tail-3"
+    ]
+  ];
+
+  const snapshot =
+    JSON.parse(
+      JSON.stringify(input)
+    );
+
+  const result = api.sortRange(
+    input,
+    {
+      row1: 0,
+      row2: 3,
+      col1: 1,
+      col2: 2
+    },
+    {
+      keyCol: 1,
+      direction: "asc",
+      header: "yes"
+    }
+  );
+
+  assert.equal(
+    result.ok,
+    true
+  );
+
+  assert.deepEqual(
+    result.order,
+    [
+      0,
+      2,
+      3,
+      1
+    ]
+  );
+
+  /*
+   * Only the selected rectangle moves. Cells outside
+   * that rectangle remain attached to their original
+   * worksheet rows.
+   */
+  assert.deepEqual(
+    result.rows,
+    [
+      [
+        "fixed-0",
+        "Name",
+        "Score",
+        "tail-0"
+      ],
+      [
+        "fixed-1",
+        "Alice",
+        "10",
+        "tail-1"
+      ],
+      [
+        "fixed-2",
+        "Bob",
+        "20",
+        "tail-2"
+      ],
+      [
+        "fixed-3",
+        "Charlie",
+        "30",
+        "tail-3"
+      ]
+    ]
+  );
+
+  assert.deepEqual(
+    input,
+    snapshot
+  );
+}
+
+{
+  const result = api.sortRange(
+    [
+      ["outside-a", "x", "2"],
+      ["outside-b", "y", ""],
+      ["outside-c", "z", "10"],
+      ["outside-d", "w", "1"]
+    ],
+    {
+      row1: 1,
+      row2: 3,
+      col1: 1,
+      col2: 2
+    },
+    {
+      keyCol: 2,
+      direction: "desc",
+      header: "no"
+    }
+  );
+
+  assert.equal(
+    result.ok,
+    true
+  );
+
+  assert.deepEqual(
+    result.order,
+    [
+      2,
+      3,
+      1
+    ]
+  );
+
+  assert.deepEqual(
+    result.rows.map(
+      (row) => row[2]
+    ),
+    [
+      "2",
+      "10",
+      "1",
+      ""
+    ]
+  );
+
+  assert.deepEqual(
+    result.rows.map(
+      (row) => row[0]
+    ),
+    [
+      "outside-a",
+      "outside-b",
+      "outside-c",
+      "outside-d"
+    ]
+  );
+}
+
+{
+  const input = [
+    ["A", "B"],
+    ["C", "D"]
+  ];
+
+  const result = api.sortRange(
+    input,
+    {
+      row1: 0,
+      row2: 99,
+      col1: 0,
+      col2: 1
+    },
+    {
+      keyCol: 0
+    }
+  );
+
+  assert.equal(
+    result.ok,
+    false
+  );
+
+  assert.equal(
+    result.error,
+    "invalid_range"
+  );
+
+  assert.deepEqual(
+    result.rows,
+    input
+  );
+}
+
+{
+  const result = api.sortRange(
+    [
+      ["A", "B"],
+      ["C", "D"]
+    ],
+    {
+      row1: 0,
+      row2: 1,
+      col1: 1,
+      col2: 1
+    },
+    {
+      keyCol: 0
+    }
+  );
+
+  assert.equal(
+    result.ok,
+    false
+  );
+
+  assert.equal(
+    result.error,
+    "invalid_key_column"
+  );
+}
+
+
+{
+  const numberCases = [
+    ["100.00 €", 100],
+    ["€ 100.00", 100],
+    ["$100.00", 100],
+    ["£ 1200,50", 1200.5],
+    ["76000 kr", 76000],
+    ["kr 95000", 95000],
+    ["¥40000", 40000],
+    ["-100.00 €", -100],
+    ["€ -100.00", -100]
+  ];
+
+  for (
+    const [input, expected]
+    of numberCases
+  ) {
+    assert.equal(
+      api.parseNumberValue(input),
+      expected,
+      `currency number parsing failed for ${input}`
+    );
+  }
+
+  const rejectedValues = [
+    "100 euroa",
+    "EUR 100",
+    "100 USD",
+    "€100$",
+    "kr100€",
+    "100 € extra"
+  ];
+
+  for (const input of rejectedValues) {
+    assert.equal(
+      api.parseNumberValue(input),
+      null,
+      `unexpected numeric parsing for ${input}`
+    );
+  }
+}
+
+{
+  const result = api.sortRows(
+    [
+      ["KPL", "NIMI", "NET WORTH"],
+      ["22", "Timo", "100000.00 €"],
+      ["14", "Leo", "50000.00 €"],
+      ["122", "Ying", "40000.00 €"],
+      ["6", "Saku", "95000.00 €"],
+      ["100", "Niina", "76000.00 €"],
+      ["99", "Fanny", "120000.00 €"],
+      ["1", "Ellen", "16000.00 €"],
+      ["2", "Päivi", "55000.00 €"],
+      ["24", "Tuomas", "1200.00 €"],
+      ["212", "Pauliina", "100.00 €"]
+    ],
+    {
+      keyCol: 2,
+      direction: "desc",
+      header: "yes"
+    }
+  );
+
+  assert.equal(
+    result.ok,
+    true
+  );
+
+  assert.equal(
+    result.type,
+    "number"
+  );
+
+  assert.deepEqual(
+    result.rows
+      .slice(1)
+      .map((row) => row[1]),
+    [
+      "Fanny",
+      "Timo",
+      "Saku",
+      "Niina",
+      "Päivi",
+      "Leo",
+      "Ying",
+      "Ellen",
+      "Tuomas",
+      "Pauliina"
+    ]
+  );
+
+  assert.deepEqual(
+    result.rows
+      .slice(1)
+      .map((row) => row[2]),
+    [
+      "120000.00 €",
+      "100000.00 €",
+      "95000.00 €",
+      "76000.00 €",
+      "55000.00 €",
+      "50000.00 €",
+      "40000.00 €",
+      "16000.00 €",
+      "1200.00 €",
+      "100.00 €"
+    ]
+  );
+}
+
 console.log(
   "ok: spreadsheet sort regression tests passed"
 );

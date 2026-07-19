@@ -5733,6 +5733,7 @@
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
   "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "Ordenar",
   "filemgr.spreadsheet_editor.sort_ascending": "Ordenar A–Z / de menor a mayor",
   "filemgr.spreadsheet_editor.sort_descending": "Ordenar Z–A / de mayor a menor",
   "filemgr.spreadsheet_editor.sort_blocked_merges": "No se puede ordenar mientras la hoja contenga celdas combinadas.",
@@ -5741,5 +5742,6 @@
   "filemgr.spreadsheet_editor.sort_not_enough_data": "Se necesitan al menos dos filas de datos debajo del encabezado.",
   "filemgr.spreadsheet_editor.sort_no_change": "La columna {column} ya está en ese orden.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Columna {column} ordenada de forma ascendente.",
-  "filemgr.spreadsheet_editor.sort_done_desc": "Columna {column} ordenada de forma descendente."
+  "filemgr.spreadsheet_editor.sort_done_desc": "Columna {column} ordenada de forma descendente.",
+  "filemgr.spreadsheet_editor.sort_select_target": "Selecciona una celda, columna o rango de celdas para ordenar."
 }

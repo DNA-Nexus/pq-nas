@@ -32,13 +32,57 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       return Number.isFinite(value) ? value : null;
     }
 
-    const text = cellText(value).replace(/[\u00a0\u202f ]/g, "");
-    if (!/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(text)) {
+    let text = cellText(value).replace(
+      /[\u00a0\u202f ]/g,
+      ""
+    );
+
+    /*
+     * Correctness: accept only a fixed whitelist of
+     * supported currency tokens at one edge of the
+     * value. Do not remove arbitrary letters, because
+     * text such as "100 euros" must remain text.
+     */
+    const currencyPrefix =
+      text.match(/^(?:€|\$|£|¥|kr)/i);
+
+    const currencySuffix =
+      text.match(/(?:€|\$|£|¥|kr)$/i);
+
+    /*
+     * Reject ambiguous values containing currency
+     * markers at both ends, such as "€100$".
+     */
+    if (currencyPrefix && currencySuffix) {
       return null;
     }
 
-    const parsed = Number(text.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : null;
+    if (currencyPrefix) {
+      text = text.slice(
+        currencyPrefix[0].length
+      );
+    } else if (currencySuffix) {
+      text = text.slice(
+        0,
+        -currencySuffix[0].length
+      );
+    }
+
+    if (
+      !/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(
+        text
+      )
+    ) {
+      return null;
+    }
+
+    const parsed = Number(
+      text.replace(",", ".")
+    );
+
+    return Number.isFinite(parsed)
+      ? parsed
+      : null;
   }
 
   function dateValueFromParts(year, month, day) {
@@ -436,12 +480,244 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     };
   }
 
+
+  function normalizeSortRange(range, rowCount) {
+    if (
+      !range ||
+      typeof range !== "object"
+    ) {
+      return null;
+    }
+
+    const row1 = Number(range.row1);
+    const row2 = Number(range.row2);
+    const col1 = Number(range.col1);
+    const col2 = Number(range.col2);
+
+    if (
+      ![
+        row1,
+        row2,
+        col1,
+        col2
+      ].every(Number.isInteger)
+    ) {
+      return null;
+    }
+
+    if (
+      row1 < 0 ||
+      row2 < row1 ||
+      row2 >= rowCount ||
+      col1 < 0 ||
+      col2 < col1
+    ) {
+      return null;
+    }
+
+    return {
+      row1,
+      row2,
+      col1,
+      col2
+    };
+  }
+
+  function sortRange(
+    rows,
+    range,
+    options = {}
+  ) {
+    if (!Array.isArray(rows)) {
+      return {
+        ok: false,
+        error: "invalid_rows",
+        rows: []
+      };
+    }
+
+    const normalized =
+      normalizeSortRange(
+        range,
+        rows.length
+      );
+
+    if (!normalized) {
+      return {
+        ok: false,
+        error: "invalid_range",
+        rows: rows.map((row) =>
+          Array.isArray(row)
+            ? row.slice()
+            : []
+        )
+      };
+    }
+
+    const keyCol = Number(
+      options.keyCol
+    );
+
+    if (
+      !Number.isInteger(keyCol) ||
+      keyCol < normalized.col1 ||
+      keyCol > normalized.col2
+    ) {
+      return {
+        ok: false,
+        error: "invalid_key_column",
+        rows: rows.map((row) =>
+          Array.isArray(row)
+            ? row.slice()
+            : []
+        )
+      };
+    }
+
+    /*
+     * Correctness: clone the complete matrix before
+     * sorting. Invalid input or a failed sort must not
+     * partially modify the workbook's live row arrays.
+     */
+    const clonedRows = rows.map(
+      (row) =>
+        Array.isArray(row)
+          ? row.slice()
+          : []
+    );
+
+    const width =
+      normalized.col2 -
+      normalized.col1 +
+      1;
+
+    const blockRows = [];
+
+    for (
+      let row = normalized.row1;
+      row <= normalized.row2;
+      row++
+    ) {
+      const source = clonedRows[row];
+      const block = [];
+
+      for (
+        let offset = 0;
+        offset < width;
+        offset++
+      ) {
+        const value =
+          source[
+            normalized.col1 +
+            offset
+          ];
+
+        block.push(
+          value == null
+            ? ""
+            : value
+        );
+      }
+
+      blockRows.push(block);
+    }
+
+    const result = sortRows(
+      blockRows,
+      {
+        keyCol:
+          keyCol -
+          normalized.col1,
+        direction:
+          options.direction,
+        header:
+          options.header,
+        type:
+          options.type
+      }
+    );
+
+    if (
+      !result ||
+      result.ok !== true ||
+      !Array.isArray(result.rows) ||
+      !Array.isArray(result.order) ||
+      result.rows.length !==
+        blockRows.length ||
+      result.order.length !==
+        blockRows.length
+    ) {
+      return {
+        ok: false,
+        error: "sort_failed",
+        rows: clonedRows
+      };
+    }
+
+    for (
+      let offset = 0;
+      offset < result.rows.length;
+      offset++
+    ) {
+      const targetRow =
+        normalized.row1 +
+        offset;
+
+      const target =
+        clonedRows[targetRow];
+
+      while (
+        target.length <=
+        normalized.col2
+      ) {
+        target.push("");
+      }
+
+      for (
+        let colOffset = 0;
+        colOffset < width;
+        colOffset++
+      ) {
+        target[
+          normalized.col1 +
+          colOffset
+        ] =
+          result.rows[offset][
+            colOffset
+          ];
+      }
+    }
+
+    return {
+      ok: true,
+      rows: clonedRows,
+
+      /*
+       * Absolute source row indexes let the editor move
+       * matching formatting slices without guessing how
+       * the selected block was reordered.
+       */
+      order: result.order.map(
+        (sourceOffset) =>
+          normalized.row1 +
+          sourceOffset
+      ),
+
+      range: normalized,
+      keyCol,
+      direction: result.direction,
+      type: result.type,
+      hasHeader: result.hasHeader
+    };
+  }
+
   FM.spreadsheetSort = {
     parseNumberValue,
     parseDateValue,
     valueType,
     inferSortType,
     autoHeaderDetected,
-    sortRows
+    sortRows,
+    sortRange
   };
 })();

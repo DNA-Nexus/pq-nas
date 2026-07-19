@@ -5733,6 +5733,7 @@
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
   "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "Sortieren",
   "filemgr.spreadsheet_editor.sort_ascending": "A–Z / vom kleinsten zum größten sortieren",
   "filemgr.spreadsheet_editor.sort_descending": "Z–A / vom größten zum kleinsten sortieren",
   "filemgr.spreadsheet_editor.sort_blocked_merges": "Sortieren ist nicht verfügbar, solange das Blatt verbundene Zellen enthält.",
@@ -5741,5 +5742,6 @@
   "filemgr.spreadsheet_editor.sort_not_enough_data": "Unter der Kopfzeile sind mindestens zwei Datenzeilen erforderlich.",
   "filemgr.spreadsheet_editor.sort_no_change": "Spalte {column} ist bereits so sortiert.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Spalte {column} wurde aufsteigend sortiert.",
-  "filemgr.spreadsheet_editor.sort_done_desc": "Spalte {column} wurde absteigend sortiert."
+  "filemgr.spreadsheet_editor.sort_done_desc": "Spalte {column} wurde absteigend sortiert.",
+  "filemgr.spreadsheet_editor.sort_select_target": "Wählen Sie eine Zelle, Spalte oder einen Zellbereich zum Sortieren aus."
 }

@@ -5733,6 +5733,7 @@
   "filemgr.spreadsheet_editor.image_count_limit": "The spreadsheet image limit has been reached.",
   "filemgr.spreadsheet_editor.image_add_failed": "The image could not be added.",
   "filemgr.spreadsheet_editor.image_existing_drawing_unsupported": "Adding images to a sheet that already contains imported drawing objects is not supported yet.",
+  "filemgr.spreadsheet_editor.sort_toolbar": "排序",
   "filemgr.spreadsheet_editor.sort_ascending": "按 A–Z / 从小到大排序",
   "filemgr.spreadsheet_editor.sort_descending": "按 Z–A / 从大到小排序",
   "filemgr.spreadsheet_editor.sort_blocked_merges": "工作表包含合并单元格时无法排序。",
@@ -5741,5 +5742,6 @@
   "filemgr.spreadsheet_editor.sort_not_enough_data": "标题行下方至少需要两行数据。",
   "filemgr.spreadsheet_editor.sort_no_change": "{column} 列已经按此顺序排列。",
   "filemgr.spreadsheet_editor.sort_done_asc": "{column} 列已按升序排列。",
-  "filemgr.spreadsheet_editor.sort_done_desc": "{column} 列已按降序排列。"
+  "filemgr.spreadsheet_editor.sort_done_desc": "{column} 列已按降序排列。",
+  "filemgr.spreadsheet_editor.sort_select_target": "请选择要排序的单元格、列或单元格区域。"
 }
