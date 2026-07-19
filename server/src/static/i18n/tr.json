@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "{column} sütunu zaten bu sırada.",
   "filemgr.spreadsheet_editor.sort_done_asc": "{column} sütunu artan şekilde sıralandı.",
   "filemgr.spreadsheet_editor.sort_done_desc": "{column} sütunu azalan şekilde sıralandı.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Sıralama aralığı",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Seçilen aralığın yanındaki hücrelerde de veri bulunuyor. Aralığı {expanded} olarak genişletmek mi, yoksa yalnızca {selected} aralığını sıralamak mı istiyorsunuz?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "İpucu: Hücre imlecini bir listenin içine yerleştirip Sırala'yı seçin. Bitişik veri aralığı otomatik olarak algılanıp sıralanır.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Seçimi genişlet",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Geçerli seçim",
   "filemgr.spreadsheet_editor.sort_select_target": "Sıralamak için bir hücre, sütun veya hücre aralığı seçin."
 }

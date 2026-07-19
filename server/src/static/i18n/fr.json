@@ -5735,5 +5735,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "La colonne {column} est déjà dans cet ordre.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Colonne {column} triée par ordre croissant.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Colonne {column} triée par ordre décroissant.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Plage de tri",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Les cellules voisines de la plage sélectionnée contiennent aussi des données. Voulez-vous étendre la plage à {expanded} ou trier uniquement la plage sélectionnée {selected} ?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Conseil : placez le curseur dans une liste et choisissez Trier. La plage de données contiguë sera détectée et triée automatiquement.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Étendre la sélection",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Sélection actuelle",
   "filemgr.spreadsheet_editor.sort_select_target": "Sélectionnez une cellule, une colonne ou une plage de cellules à trier."
 }

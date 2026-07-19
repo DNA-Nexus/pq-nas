@@ -634,6 +634,191 @@ for (
   );
 }
 
+const currentRegionRows = [
+  [
+    "KPL",
+    "NIMI",
+    "NET WORTH",
+    "",
+    ""
+  ],
+  [
+    "22",
+    "Timo",
+    "100000",
+    "",
+    ""
+  ],
+  [
+    "14",
+    "Leo",
+    "50000",
+    "",
+    ""
+  ],
+  [
+    "122",
+    "Ying",
+    "40000",
+    "",
+    ""
+  ],
+  [
+    "6",
+    "Saku",
+    "95000",
+    "",
+    "=C5*2"
+  ],
+  [
+    "100",
+    "Niina",
+    "76000",
+    "",
+    ""
+  ],
+  [
+    "99",
+    "Fanny",
+    "12000",
+    "",
+    ""
+  ],
+  [
+    "1",
+    "Ellen",
+    "16000",
+    "",
+    ""
+  ],
+  [
+    "2",
+    "Päivi",
+    "55000",
+    "",
+    ""
+  ],
+  [
+    "24",
+    "Tuomas",
+    "1200",
+    "",
+    ""
+  ],
+  [
+    "212",
+    "Pauliina",
+    "100",
+    "",
+    ""
+  ],
+  [
+    "102",
+    "30",
+    "",
+    "=A12+B12",
+    ""
+  ],
+  [
+    "20",
+    "10",
+    "",
+    "",
+    ""
+  ]
+];
+
+const detectedCurrentRegion =
+  api.detectConnectedDataRange(
+    currentRegionRows,
+    1,
+    2
+  );
+
+assert.deepEqual(
+  detectedCurrentRegion,
+  {
+    row1: 0,
+    row2: 12,
+    col1: 0,
+    col2: 2
+  }
+);
+
+assert.deepEqual(
+  api.detectConnectedDataRange(
+    currentRegionRows,
+    11,
+    3
+  ),
+  {
+    row1: 11,
+    row2: 11,
+    col1: 3,
+    col2: 3
+  }
+);
+
+assert.equal(
+  api.detectConnectedDataRange(
+    currentRegionRows,
+    0,
+    4
+  ),
+  null
+);
+
+const currentRegionSorted =
+  api.sortRange(
+    currentRegionRows,
+    detectedCurrentRegion,
+    {
+      keyCol: 2,
+      direction: "asc",
+      header: "auto"
+    }
+  );
+
+assert.equal(
+  currentRegionSorted.ok,
+  true
+);
+
+assert.deepEqual(
+  currentRegionSorted.rows
+    .slice(1)
+    .map((row) => row[2]),
+  [
+    "100",
+    "1200",
+    "12000",
+    "16000",
+    "40000",
+    "50000",
+    "55000",
+    "76000",
+    "95000",
+    "100000",
+    "",
+    ""
+  ]
+);
+
+/*
+ * Formulas outside the detected A:C table must remain
+ * in their original worksheet cells.
+ */
+assert.equal(
+  currentRegionSorted.rows[4][4],
+  "=C5*2"
+);
+
+assert.equal(
+  currentRegionSorted.rows[11][3],
+  "=A12+B12"
+);
+
+
 console.log(
   "ok: spreadsheet sort regression tests passed"
 );

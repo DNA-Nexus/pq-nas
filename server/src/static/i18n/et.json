@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Veerg {column} on juba selles järjekorras.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Veerg {column} sorditi kasvavalt.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Veerg {column} sorditi kahanevalt.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Sortimisvahemik",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Valitud vahemiku kõrval olevad lahtrid sisaldavad samuti andmeid. Kas laiendada sortimisvahemikuks {expanded} või sortida ainult valitud vahemik {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Vihje: aseta lahtrikursor loendi sisse ja vali Sordi. Sidus andmevahemik tuvastatakse ja sorditakse automaatselt.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Laienda valikut",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Praegune valik",
   "filemgr.spreadsheet_editor.sort_select_target": "Sortimiseks vali lahter, veerg või lahtrivahemik."
 }

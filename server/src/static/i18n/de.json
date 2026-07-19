@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Spalte {column} ist bereits so sortiert.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Spalte {column} wurde aufsteigend sortiert.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Spalte {column} wurde absteigend sortiert.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Sortierbereich",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Neben dem ausgewählten Bereich befinden sich weitere Daten. Möchten Sie den Sortierbereich auf {expanded} erweitern oder nur den ausgewählten Bereich {selected} sortieren?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Tipp: Setzen Sie den Zellcursor in eine Liste und wählen Sie Sortieren. Der zusammenhängende Datenbereich wird automatisch erkannt und sortiert.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Auswahl erweitern",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Aktuelle Auswahl",
   "filemgr.spreadsheet_editor.sort_select_target": "Wählen Sie eine Zelle, Spalte oder einen Zellbereich zum Sortieren aus."
 }

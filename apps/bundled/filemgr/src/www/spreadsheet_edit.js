@@ -3788,6 +3788,8 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     } else if (formulaFocus && formulaFocus.input === formulaBarInput) {
       formulaFocus = null;
     }
+
+    paintSpreadsheetFormulaReferences();
   }
 
   function updateActiveCellFromFormulaBar() {
@@ -4621,6 +4623,45 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     return formatFormulaNumber(result.value);
   }
 
+  function spreadsheetFormulaReferenceApi() {
+    return (
+      FM &&
+      FM.spreadsheetFormulaReferences
+    ) || null;
+  }
+
+  function paintSpreadsheetFormulaReferences() {
+    const api =
+      spreadsheetFormulaReferenceApi();
+
+    if (
+      !api ||
+      typeof api.paint !== "function" ||
+      !bodyEl
+    ) {
+      return;
+    }
+
+    const input =
+      formulaFocus &&
+      formulaFocus.input;
+
+    const formula =
+      input &&
+      isFormulaValue(input.value)
+        ? String(input.value)
+        : "";
+
+    api.paint(
+      bodyEl,
+      formula,
+      {
+        maxRows: MAX_EDIT_ROWS,
+        maxCols: MAX_EDIT_COLS
+      }
+    );
+  }
+
   function refreshFormulaDisplays(skipInput = null) {
     const sheet = state.sheets[state.active];
     if (!sheet || !bodyEl) return;
@@ -4633,6 +4674,8 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       if (!Number.isInteger(r) || !Number.isInteger(c)) continue;
       input.value = displayCellValue(sheet, r, c, cache);
     }
+
+    paintSpreadsheetFormulaReferences();
   }
 
   function clearSelectionClasses() {
@@ -5709,6 +5752,7 @@ function repaintSpreadsheetSelection() {
     paintRangeSelection();
     paintActiveCellSelection();
     paintSpreadsheetFillHandleAnchor();
+    paintSpreadsheetFormulaReferences();
   }
 
 function axisApi() {
@@ -6191,6 +6235,71 @@ function axisApi() {
     return false;
   }
 
+  function spreadsheetRangeHasFormulas(
+    sheet,
+    range
+  ) {
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !range
+    ) {
+      return false;
+    }
+
+    const row1 = Number(range.row1);
+    const row2 = Number(range.row2);
+    const col1 = Number(range.col1);
+    const col2 = Number(range.col2);
+
+    if (
+      ![
+        row1,
+        row2,
+        col1,
+        col2
+      ].every(Number.isInteger) ||
+      row1 < 0 ||
+      row2 < row1 ||
+      col1 < 0 ||
+      col2 < col1
+    ) {
+      return false;
+    }
+
+    /*
+     * Correctness: only formulas inside the cells that
+     * will actually move block a range sort. Formulas in
+     * disconnected areas remain in their original cells.
+     */
+    for (
+      let row = row1;
+      row <= row2;
+      row += 1
+    ) {
+      for (
+        let col = col1;
+        col <= col2;
+        col += 1
+      ) {
+        if (
+          isFormulaValue(
+            cellRaw(
+              sheet,
+              row,
+              col
+            )
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+
   function validSpreadsheetSortOrder(order, rowCount) {
     if (
       !Array.isArray(order) ||
@@ -6571,7 +6680,12 @@ function axisApi() {
       return false;
     }
 
-    if (sheetHasSpreadsheetFormulas(sheet)) {
+    if (
+      spreadsheetRangeHasFormulas(
+        sheet,
+        range
+      )
+    ) {
       setStatus(
         tr(
           "filemgr.spreadsheet_editor.sort_blocked_formulas",
@@ -6759,9 +6873,543 @@ function axisApi() {
     return true;
   }
 
-  function applySpreadsheetToolbarSort(
+  function spreadsheetSortRangeLabel(range) {
+    if (!range) return "";
+
+    const row1 = Number(range.row1);
+    const row2 = Number(range.row2);
+    const col1 = Number(range.col1);
+    const col2 = Number(range.col2);
+
+    if (
+      ![
+        row1,
+        row2,
+        col1,
+        col2
+      ].every(Number.isInteger)
+    ) {
+      return "";
+    }
+
+    const first =
+      `${columnName(col1)}${row1 + 1}`;
+
+    const last =
+      `${columnName(col2)}${row2 + 1}`;
+
+    return first === last
+      ? first
+      : `${first}:${last}`;
+  }
+
+  function spreadsheetSortRangesEqual(
+    first,
+    second
+  ) {
+    return !!(
+      first &&
+      second &&
+      first.row1 === second.row1 &&
+      first.row2 === second.row2 &&
+      first.col1 === second.col1 &&
+      first.col2 === second.col2
+    );
+  }
+
+  function spreadsheetSortRangeContains(
+    outer,
+    inner
+  ) {
+    return !!(
+      outer &&
+      inner &&
+      outer.row1 <= inner.row1 &&
+      outer.row2 >= inner.row2 &&
+      outer.col1 <= inner.col1 &&
+      outer.col2 >= inner.col2
+    );
+  }
+
+  function spreadsheetUsedRangeForColumns(
+    sheet,
+    col1,
+    col2
+  ) {
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !Number.isInteger(col1) ||
+      !Number.isInteger(col2)
+    ) {
+      return null;
+    }
+
+    const firstCol =
+      Math.min(col1, col2);
+
+    const lastCol =
+      Math.max(col1, col2);
+
+    let firstRow = null;
+    let lastRow = null;
+
+    for (
+      let row = 0;
+      row < sheet.rows.length;
+      row += 1
+    ) {
+      let hasValue = false;
+
+      for (
+        let col = firstCol;
+        col <= lastCol;
+        col += 1
+      ) {
+        if (
+          String(
+            cellRaw(sheet, row, col)
+          ).trim() !== ""
+        ) {
+          hasValue = true;
+          break;
+        }
+      }
+
+      if (!hasValue) continue;
+
+      if (firstRow == null) {
+        firstRow = row;
+      }
+
+      lastRow = row;
+    }
+
+    if (
+      firstRow == null ||
+      lastRow == null
+    ) {
+      return null;
+    }
+
+    return {
+      row1: firstRow,
+      row2: lastRow,
+      col1: firstCol,
+      col2: lastCol
+    };
+  }
+
+  function spreadsheetExpandedSortRange(
+    sheet,
+    selectedRange,
+    keyCol
+  ) {
+    const api =
+      spreadsheetSortApi();
+
+    if (
+      !sheet ||
+      !Array.isArray(sheet.rows) ||
+      !selectedRange ||
+      !api ||
+      typeof api.detectConnectedDataRange !==
+        "function"
+    ) {
+      return null;
+    }
+
+    const preferredCol =
+      Number.isInteger(keyCol) &&
+      keyCol >= selectedRange.col1 &&
+      keyCol <= selectedRange.col2
+        ? keyCol
+        : selectedRange.col1;
+
+    let seed = null;
+
+    for (
+      let row = selectedRange.row1;
+      row <= selectedRange.row2;
+      row += 1
+    ) {
+      if (
+        String(
+          cellRaw(
+            sheet,
+            row,
+            preferredCol
+          )
+        ).trim() !== ""
+      ) {
+        seed = {
+          row,
+          col: preferredCol
+        };
+        break;
+      }
+    }
+
+    if (!seed) {
+      for (
+        let row = selectedRange.row1;
+        row <= selectedRange.row2 &&
+        !seed;
+        row += 1
+      ) {
+        for (
+          let col = selectedRange.col1;
+          col <= selectedRange.col2;
+          col += 1
+        ) {
+          if (
+            String(
+              cellRaw(sheet, row, col)
+            ).trim() !== ""
+          ) {
+            seed = {
+              row,
+              col
+            };
+            break;
+          }
+        }
+      }
+    }
+
+    if (!seed) return null;
+
+    const expanded =
+      api.detectConnectedDataRange(
+        sheet.rows,
+        seed.row,
+        seed.col
+      );
+
+    if (
+      !expanded ||
+      !spreadsheetSortRangeContains(
+        expanded,
+        selectedRange
+      )
+    ) {
+      return null;
+    }
+
+    return expanded;
+  }
+
+  function chooseSpreadsheetSortRange(
+    selectedRange,
+    expandedRange
+  ) {
+    if (
+      !selectedRange ||
+      !expandedRange ||
+      spreadsheetSortRangesEqual(
+        selectedRange,
+        expandedRange
+      )
+    ) {
+      return Promise.resolve("current");
+    }
+
+    if (confirmModal) {
+      confirmModal.remove();
+      confirmModal = null;
+    }
+
+    return new Promise((resolve) => {
+      let done = false;
+
+      const finish = (choice) => {
+        if (done) return;
+        done = true;
+
+        document.removeEventListener(
+          "keydown",
+          onKeyDown
+        );
+
+        if (confirmModal) {
+          confirmModal.remove();
+          confirmModal = null;
+        }
+
+        resolve(choice);
+      };
+
+      const onKeyDown = (event) => {
+        if (event.key !== "Escape") {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        finish("cancel");
+      };
+
+      const selected =
+        spreadsheetSortRangeLabel(
+          selectedRange
+        );
+
+      const expanded =
+        spreadsheetSortRangeLabel(
+          expandedRange
+        );
+
+      confirmModal =
+        document.createElement("div");
+
+      confirmModal.className =
+        "spreadsheetEditorConfirmModal";
+
+      confirmModal.setAttribute(
+        "role",
+        "presentation"
+      );
+
+      const box =
+        document.createElement("div");
+
+      box.className =
+        "spreadsheetEditorConfirmBox " +
+        "spreadsheetEditorSortRangeBox";
+
+      box.setAttribute(
+        "role",
+        "dialog"
+      );
+
+      box.setAttribute(
+        "aria-modal",
+        "true"
+      );
+
+      box.setAttribute(
+        "aria-labelledby",
+        "spreadsheetEditorSortRangeTitle"
+      );
+
+      box.setAttribute(
+        "aria-describedby",
+        "spreadsheetEditorSortRangeText " +
+        "spreadsheetEditorSortRangeTip"
+      );
+
+      const title =
+        document.createElement("div");
+
+      title.id =
+        "spreadsheetEditorSortRangeTitle";
+
+      title.className =
+        "spreadsheetEditorConfirmTitle";
+
+      title.textContent = tr(
+        "filemgr.spreadsheet_editor.sort_range_dialog_title",
+        null,
+        "Sort range"
+      );
+
+      const message =
+        document.createElement("div");
+
+      message.id =
+        "spreadsheetEditorSortRangeText";
+
+      message.className =
+        "spreadsheetEditorConfirmText";
+
+      /*
+       * Security: translations and cell references use
+       * textContent, so workbook data cannot become HTML.
+       */
+      message.textContent = tr(
+        "filemgr.spreadsheet_editor.sort_range_dialog_message",
+        {
+          selected,
+          expanded
+        },
+        (
+          "Cells next to the selected range also contain " +
+          `data. Extend the sort range to ${expanded}, ` +
+          `or sort only ${selected}?`
+        )
+      );
+
+      const tip =
+        document.createElement("div");
+
+      tip.id =
+        "spreadsheetEditorSortRangeTip";
+
+      tip.className =
+        "spreadsheetEditorSortRangeTip";
+
+      tip.textContent = tr(
+        "filemgr.spreadsheet_editor.sort_range_dialog_tip",
+        null,
+        (
+          "Tip: Place the cell cursor inside a list and " +
+          "choose Sort to detect the connected data range."
+        )
+      );
+
+      const actions =
+        document.createElement("div");
+
+      actions.className =
+        "spreadsheetEditorConfirmActions";
+
+      const expandButton =
+        document.createElement("button");
+
+      expandButton.type = "button";
+      expandButton.className = "btn";
+
+      expandButton.textContent = tr(
+        "filemgr.spreadsheet_editor.sort_range_dialog_expand",
+        null,
+        "Extend selection"
+      );
+
+      const currentButton =
+        document.createElement("button");
+
+      currentButton.type = "button";
+      currentButton.className =
+        "btn secondary";
+
+      currentButton.textContent = tr(
+        "filemgr.spreadsheet_editor.sort_range_dialog_current",
+        null,
+        "Current selection"
+      );
+
+      const cancelButton =
+        document.createElement("button");
+
+      cancelButton.type = "button";
+      cancelButton.className =
+        "btn secondary";
+
+      cancelButton.textContent = tr(
+        "common.cancel",
+        null,
+        "Cancel"
+      );
+
+      actions.appendChild(
+        expandButton
+      );
+
+      actions.appendChild(
+        currentButton
+      );
+
+      actions.appendChild(
+        cancelButton
+      );
+
+      box.appendChild(title);
+      box.appendChild(message);
+      box.appendChild(tip);
+      box.appendChild(actions);
+      confirmModal.appendChild(box);
+
+      confirmModal.addEventListener(
+        "click",
+        (event) => {
+          if (event.target === confirmModal) {
+            finish("cancel");
+          }
+        }
+      );
+
+      expandButton.addEventListener(
+        "click",
+        () => finish("expand")
+      );
+
+      currentButton.addEventListener(
+        "click",
+        () => finish("current")
+      );
+
+      cancelButton.addEventListener(
+        "click",
+        () => finish("cancel")
+      );
+
+      document.addEventListener(
+        "keydown",
+        onKeyDown
+      );
+
+      document.body.appendChild(
+        confirmModal
+      );
+
+      window.setTimeout(
+        () => expandButton.focus(),
+        0
+      );
+    });
+  }
+
+  async function applySpreadsheetToolbarSort(
     direction
   ) {
+    const sheet =
+      state.sheets[state.active];
+
+    const sortExplicitRange =
+      async (
+        selectedRange,
+        keyCol
+      ) => {
+        const expandedRange =
+          spreadsheetExpandedSortRange(
+            sheet,
+            selectedRange,
+            keyCol
+          );
+
+        let targetRange =
+          selectedRange;
+
+        if (
+          expandedRange &&
+          !spreadsheetSortRangesEqual(
+            selectedRange,
+            expandedRange
+          )
+        ) {
+          const choice =
+            await chooseSpreadsheetSortRange(
+              selectedRange,
+              expandedRange
+            );
+
+          if (choice === "cancel") {
+            return false;
+          }
+
+          if (choice === "expand") {
+            targetRange =
+              expandedRange;
+          }
+        }
+
+        return applySpreadsheetRangeSort(
+          targetRange,
+          keyCol,
+          direction
+        );
+      };
+
     const range =
       normalizedRangeSelection();
 
@@ -6781,10 +7429,9 @@ function axisApi() {
         keyCol = range.col1;
       }
 
-      return applySpreadsheetRangeSort(
+      return sortExplicitRange(
         range,
-        keyCol,
-        direction
+        keyCol
       );
     }
 
@@ -6798,8 +7445,32 @@ function axisApi() {
         Number(selectedAxis.start)
       )
     ) {
+      const firstCol =
+        Number(selectedAxis.start);
+
+      const lastCol =
+        Number.isInteger(
+          Number(selectedAxis.end)
+        )
+          ? Number(selectedAxis.end)
+          : firstCol;
+
+      const selectedRange =
+        spreadsheetUsedRangeForColumns(
+          sheet,
+          firstCol,
+          lastCol
+        );
+
+      if (selectedRange) {
+        return sortExplicitRange(
+          selectedRange,
+          firstCol
+        );
+      }
+
       return applySpreadsheetColumnSort(
-        Number(selectedAxis.start),
+        firstCol,
         direction
       );
     }
@@ -6807,11 +7478,52 @@ function axisApi() {
     if (
       state.activeCell &&
       Number.isInteger(
+        Number(state.activeCell.row)
+      ) &&
+      Number.isInteger(
         Number(state.activeCell.col)
       )
     ) {
+      const row =
+        Number(state.activeCell.row);
+
+      const col =
+        Number(state.activeCell.col);
+
+      const api =
+        spreadsheetSortApi();
+
+      const detectedRange =
+        sheet &&
+        Array.isArray(sheet.rows) &&
+        api &&
+        typeof api.detectConnectedDataRange ===
+          "function"
+          ? api.detectConnectedDataRange(
+              sheet.rows,
+              row,
+              col
+            )
+          : null;
+
+      /*
+       * A lone active cell sorts its connected table
+       * automatically without opening the expansion dialog.
+       */
+      if (
+        detectedRange &&
+        detectedRange.row2 >
+          detectedRange.row1
+      ) {
+        return applySpreadsheetRangeSort(
+          detectedRange,
+          col,
+          direction
+        );
+      }
+
       return applySpreadsheetColumnSort(
-        Number(state.activeCell.col),
+        col,
         direction
       );
     }
@@ -6852,7 +7564,7 @@ function axisApi() {
 
           closeToolbarIconMenus();
 
-          applySpreadsheetToolbarSort(
+          void applySpreadsheetToolbarSort(
             direction
           );
         }
@@ -6886,8 +7598,28 @@ function axisApi() {
       },
       delete: (axisType, axisIndex) => deleteSelectedAxis(axisType, axisIndex),
       sort: (axisIndex, direction) => {
-        applySpreadsheetColumnSort(
-          axisIndex,
+        /*
+         * UX correctness: column-header context-menu sorting
+         * must use the same current-region detection and
+         * range-expansion dialog as toolbar sorting.
+         *
+         * Preserve an existing multi-column selection when the
+         * clicked column is already inside it. Otherwise select
+         * the clicked column before starting the shared flow.
+         */
+        if (
+          !axisSelectionContains(
+            "column",
+            axisIndex
+          )
+        ) {
+          setSpreadsheetAxisSelection(
+            "column",
+            axisIndex
+          );
+        }
+
+        void applySpreadsheetToolbarSort(
           direction
         );
       }
@@ -6905,6 +7637,98 @@ function axisApi() {
       select: (type, index, ev) => selectSpreadsheetAxis(type, index, ev),
       contextMenu: (type, index, ev) => openAxisMenu(type, index, ev.clientX, ev.clientY)
     });
+  }
+
+  function spreadsheetFormulaCellIsEditing(input) {
+    return !!(
+      input &&
+      input.dataset &&
+      input.dataset.spreadsheetFormulaEditing === "1"
+    );
+  }
+
+  function beginSpreadsheetFormulaCellEdit(
+    input,
+    options = {}
+  ) {
+    if (
+      !input ||
+      state.readOnly ||
+      state.tooLarge
+    ) {
+      return false;
+    }
+
+    const row = Number(
+      input.dataset && input.dataset.row
+    );
+    const col = Number(
+      input.dataset && input.dataset.col
+    );
+    const sheet = state.sheets[state.active];
+
+    if (
+      !sheet ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col)
+    ) {
+      return false;
+    }
+
+    const raw = cellRaw(
+      sheet,
+      row,
+      col
+    );
+
+    if (!isFormulaValue(raw)) {
+      return false;
+    }
+
+    /*
+     * UX correctness: selecting a formula cell and editing
+     * it are separate modes. Only explicit editing exposes
+     * the raw formula and enables reference insertion.
+     */
+    input.readOnly = false;
+    input.dataset.spreadsheetFormulaEditing = "1";
+    input.value = String(raw);
+
+    formulaFocus = {
+      input,
+      row,
+      col,
+      originalRaw: raw,
+      wasDirty: state.dirty
+    };
+
+    paintSpreadsheetFormulaReferences();
+
+    try {
+      input.focus({
+        preventScroll: true
+      });
+    } catch (_) {
+      input.focus();
+    }
+
+    window.requestAnimationFrame(() => {
+      const length =
+        String(input.value || "").length;
+
+      try {
+        if (options.selectAll) {
+          input.select();
+        } else {
+          input.setSelectionRange(
+            length,
+            length
+          );
+        }
+      } catch (_) {}
+    });
+
+    return true;
   }
 
   function insertFormulaReference(input, row, col) {
@@ -8134,6 +8958,7 @@ function axisApi() {
 
     formulaBarInput?.addEventListener("blur", () => {
       if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
+      paintSpreadsheetFormulaReferences();
       updateFormulaBar(true);
     });
 
@@ -9288,6 +10113,15 @@ function axisApi() {
         input.title = isFormulaValue(cellRaw(sheet, rIdx, c)) ? cellRaw(sheet, rIdx, c) : "";
         input.disabled = state.readOnly || state.tooLarge;
 
+        /*
+         * Formula cells initially behave as selectable
+         * result cells. Explicit double-click, F2 or the
+         * formula bar enables raw formula editing.
+         */
+        input.readOnly = isFormulaValue(
+          cellRaw(sheet, rIdx, c)
+        );
+
         input.addEventListener("pointerdown", (ev) => {
           if (!formulaFocus || formulaFocus.input === input) return;
           const active = formulaFocus.input;
@@ -9343,46 +10177,135 @@ function axisApi() {
             recorded: false
           };
 
-          // Keep formatted numeric cells visually formatted when merely selected.
-          // Raw formulas are still shown for direct formula editing; raw numeric
-          // values remain available in the formula bar.
-          input.value = isFormulaValue(raw) ? raw : displayCellValue(sheet, r, col);
+          /*
+           * UX correctness: a single click selects the cell
+           * and keeps its calculated result visible. The raw
+           * value remains available in the formula bar.
+           */
+          input.removeAttribute(
+            "data-spreadsheet-formula-editing"
+          );
+          input.readOnly =
+            isFormulaValue(raw);
+          input.value =
+            displayCellValue(
+              sheet,
+              r,
+              col
+            );
 
-          if (isFormulaValue(raw)) {
-            formulaFocus = {
-              input,
-              row: r,
-              col,
-              originalRaw: raw,
-              wasDirty: state.dirty
-            };
-          } else if (formulaFocus && formulaFocus.input === input) {
+          if (
+            formulaFocus &&
+            formulaFocus.input === input
+          ) {
             formulaFocus = null;
           }
+        });
+
+        input.addEventListener("dblclick", (ev) => {
+          const r = Number(
+            input.dataset.row
+          );
+          const col = Number(
+            input.dataset.col
+          );
+
+          if (
+            !Number.isInteger(r) ||
+            !Number.isInteger(col) ||
+            !isFormulaValue(
+              cellRaw(sheet, r, col)
+            )
+          ) {
+            return;
+          }
+
+          ev.preventDefault();
+          ev.stopPropagation();
+
+          beginSpreadsheetFormulaCellEdit(
+            input
+          );
         });
 
         input.addEventListener("blur", () => {
           const r = Number(input.dataset.row);
           const col = Number(input.dataset.col);
           if (!Number.isInteger(r) || !Number.isInteger(col)) return;
-          if (formulaFocus && formulaFocus.input === input) formulaFocus = null;
-          commitPendingCellEditHistory(input, r, col);
+          if (
+            formulaFocus &&
+            formulaFocus.input === input
+          ) {
+            formulaFocus = null;
+          }
+
+          input.removeAttribute(
+            "data-spreadsheet-formula-editing"
+          );
+
+          commitPendingCellEditHistory(
+            input,
+            r,
+            col
+          );
           refreshFormulaDisplays(null);
-          input.value = displayCellValue(sheet, r, col);
-          input.title = isFormulaValue(cellRaw(sheet, r, col)) ? cellRaw(sheet, r, col) : "";
+
+          const raw = cellRaw(
+            sheet,
+            r,
+            col
+          );
+
+          input.readOnly =
+            isFormulaValue(raw);
+          input.value =
+            displayCellValue(
+              sheet,
+              r,
+              col
+            );
+          input.title =
+            isFormulaValue(raw)
+              ? raw
+              : "";
           refreshVisibleEditorTextOverflows();
           updateFormulaBar();
         });
 
         input.addEventListener("keydown", (ev) => {
+          if (ev.key === "F2") {
+            const started =
+              beginSpreadsheetFormulaCellEdit(
+                input
+              );
+
+            if (started) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+          }
+
           if (ev.key === "Escape") {
             const r = Number(input.dataset.row);
             const col = Number(input.dataset.col);
             const raw = Number.isInteger(r) && Number.isInteger(col) ? cellRaw(sheet, r, col) : "";
             const editingFormula =
-              (formulaFocus && formulaFocus.input === input) ||
-              isFormulaValue(normalizeSpreadsheetUserInput(input.value, raw)) ||
-              isFormulaValue(raw);
+              spreadsheetFormulaCellIsEditing(
+                input
+              ) &&
+              (
+                (
+                  formulaFocus &&
+                  formulaFocus.input === input
+                ) ||
+                isFormulaValue(
+                  normalizeSpreadsheetUserInput(
+                    input.value,
+                    raw
+                  )
+                )
+              );
 
             if (editingFormula) {
               ev.preventDefault();

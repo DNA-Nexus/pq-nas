@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Kolumna {column} jest już w tej kolejności.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Kolumna {column} została posortowana rosnąco.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Kolumna {column} została posortowana malejąco.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Zakres sortowania",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Komórki obok zaznaczonego zakresu również zawierają dane. Czy rozszerzyć zakres do {expanded}, czy posortować tylko zaznaczony zakres {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Wskazówka: umieść kursor wewnątrz listy i wybierz Sortuj. Spójny zakres danych zostanie wykryty i posortowany automatycznie.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Rozszerz zaznaczenie",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Bieżące zaznaczenie",
   "filemgr.spreadsheet_editor.sort_select_target": "Wybierz komórkę, kolumnę lub zakres komórek do sortowania."
 }

@@ -1409,3 +1409,129 @@
 .spreadsheetSelectAllCorner {
   cursor: pointer;
 }
+
+/* Spreadsheet formula-reference overlays. */
+.spreadsheetEditorModal {
+  /*
+   * Formula-reference colors intentionally remain identical
+   * in every theme. They identify workbook references rather
+   * than normal application UI states.
+   */
+  --spreadsheet-formula-reference-1:
+    rgb(37, 99, 235);
+  --spreadsheet-formula-reference-2:
+    rgb(217, 70, 239);
+  --spreadsheet-formula-reference-3:
+    rgb(22, 163, 74);
+  --spreadsheet-formula-reference-4:
+    rgb(239, 68, 68);
+  --spreadsheet-formula-reference-5:
+    rgb(6, 182, 212);
+  --spreadsheet-formula-reference-6:
+    rgb(249, 115, 22);
+  --spreadsheet-formula-reference-7:
+    rgb(124, 58, 237);
+  --spreadsheet-formula-reference-8:
+    rgb(101, 163, 13);
+  --spreadsheet-formula-reference-9:
+    rgb(13, 148, 136);
+  --spreadsheet-formula-reference-10:
+    rgb(225, 29, 72);
+}
+
+.spreadsheetEditorTable
+td.spreadsheetFormulaReferenceHost {
+  position: relative;
+}
+
+.spreadsheetFormulaReferenceOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 0;
+  border-color:
+    var(
+      --spreadsheet-formula-reference-color,
+      var(--accent, Highlight)
+    );
+  pointer-events: none;
+}
+
+.spreadsheetFormulaReferenceColor0 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-1);
+}
+
+.spreadsheetFormulaReferenceColor1 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-2);
+}
+
+.spreadsheetFormulaReferenceColor2 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-3);
+}
+
+.spreadsheetFormulaReferenceColor3 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-4);
+}
+
+.spreadsheetFormulaReferenceColor4 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-5);
+}
+
+.spreadsheetFormulaReferenceColor5 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-6);
+}
+
+.spreadsheetFormulaReferenceColor6 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-7);
+}
+
+.spreadsheetFormulaReferenceColor7 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-8);
+}
+
+.spreadsheetFormulaReferenceColor8 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-9);
+}
+
+.spreadsheetFormulaReferenceColor9 {
+  --spreadsheet-formula-reference-color:
+    var(--spreadsheet-formula-reference-10);
+}
+
+.spreadsheetFormulaReferenceEdgeTop {
+  border-top-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeRight {
+  border-right-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeBottom {
+  border-bottom-width: 3px;
+}
+
+.spreadsheetFormulaReferenceEdgeLeft {
+  border-left-width: 3px;
+}
+
+/* Spreadsheet sort-range confirmation dialog. */
+.spreadsheetEditorConfirmBox.spreadsheetEditorSortRangeBox {
+  width: min(580px, calc(100vw - 32px));
+}
+
+.spreadsheetEditorSortRangeTip {
+  margin: -4px 0 16px;
+  color: var(--muted);
+  line-height: 1.45;
+}

@@ -5743,5 +5743,10 @@
   "filemgr.spreadsheet_editor.sort_no_change": "Sarake {column} on jo tässä järjestyksessä.",
   "filemgr.spreadsheet_editor.sort_done_asc": "Sarake {column} lajiteltu nousevasti.",
   "filemgr.spreadsheet_editor.sort_done_desc": "Sarake {column} lajiteltu laskevasti.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_title": "Lajittelualue",
+  "filemgr.spreadsheet_editor.sort_range_dialog_message": "Valitun alueen vieressä on myös tietoja. Haluatko laajentaa lajittelualueeksi {expanded} vai lajitella vain valitun alueen {selected}?",
+  "filemgr.spreadsheet_editor.sort_range_dialog_tip": "Vihje: Aseta solukohdistin luettelon sisään ja valitse Lajittele. Yhtenäinen tietoalue tunnistetaan ja lajitellaan automaattisesti.",
+  "filemgr.spreadsheet_editor.sort_range_dialog_expand": "Laajenna valintaa",
+  "filemgr.spreadsheet_editor.sort_range_dialog_current": "Nykyinen valinta",
   "filemgr.spreadsheet_editor.sort_select_target": "Valitse lajiteltava sarakkeen solu, sarake tai solualue."
 }
