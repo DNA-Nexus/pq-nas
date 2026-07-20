@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "剪切失败。",
   "filemgr.spreadsheet_editor.paste_failed": "粘贴失败。",
   "filemgr.spreadsheet_editor.redo_status": "已重做。",
+  "filemgr.spreadsheet_editor.undo": "撤销",
+  "filemgr.spreadsheet_editor.redo": "重做",
   "filemgr.spreadsheet_editor.resize_column": "拖动以调整列宽",
   "filemgr.spreadsheet_editor.resize_row": "拖动以调整行高",
   "filemgr.spreadsheet_editor.select_cell_first": "请先选择一个单元格、行或列。",

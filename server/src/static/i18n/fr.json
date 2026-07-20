@@ -5704,6 +5704,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Impossible de couper.",
   "filemgr.spreadsheet_editor.paste_failed": "Impossible de coller.",
   "filemgr.spreadsheet_editor.redo_status": "Rétabli.",
+  "filemgr.spreadsheet_editor.undo": "Annuler",
+  "filemgr.spreadsheet_editor.redo": "Rétablir",
   "filemgr.spreadsheet_editor.resize_column": "Faites glisser pour redimensionner la colonne",
   "filemgr.spreadsheet_editor.resize_row": "Faites glisser pour redimensionner la ligne",
   "filemgr.spreadsheet_editor.select_cell_first": "Sélectionnez d’abord une cellule, une ligne ou une colonne.",

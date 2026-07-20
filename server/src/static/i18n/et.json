@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Lõikamine ebaõnnestus.",
   "filemgr.spreadsheet_editor.paste_failed": "Kleepimine ebaõnnestus.",
   "filemgr.spreadsheet_editor.redo_status": "Uuesti tehtud.",
+  "filemgr.spreadsheet_editor.undo": "Võta tagasi",
+  "filemgr.spreadsheet_editor.redo": "Tee uuesti",
   "filemgr.spreadsheet_editor.resize_column": "Veeru laiuse muutmiseks lohista",
   "filemgr.spreadsheet_editor.resize_row": "Rea kõrguse muutmiseks lohista",
   "filemgr.spreadsheet_editor.select_cell_first": "Vali esmalt lahter, rida või veerg.",

@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Urklippningen misslyckades.",
   "filemgr.spreadsheet_editor.paste_failed": "Inklistringen misslyckades.",
   "filemgr.spreadsheet_editor.redo_status": "Gjort om.",
+  "filemgr.spreadsheet_editor.undo": "Ångra",
+  "filemgr.spreadsheet_editor.redo": "Gör om",
   "filemgr.spreadsheet_editor.resize_column": "Dra för att ändra kolumnbredd",
   "filemgr.spreadsheet_editor.resize_row": "Dra för att ändra radhöjd",
   "filemgr.spreadsheet_editor.select_cell_first": "Välj först en cell, rad eller kolumn.",

@@ -119,6 +119,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let tabsEl = null;
   let bodyEl = null;
   let saveBtn = null;
+  let undoBtn = null;
+  let redoBtn = null;
+  let cutBtn = null;
+  let copyBtn = null;
+  let pasteBtn = null;
   let addRowBtn = null;
   let addColBtn = null;
   let insertImageBtn = null;
@@ -8848,8 +8853,71 @@ function axisApi() {
     }
   }
 
+  function updateCommandToolbar() {
+    const editDisabled =
+      state.saving ||
+      state.readOnly ||
+      state.tooLarge;
+
+    const hasTarget =
+      !!spreadsheetTargetRange(null);
+
+    const canUndo =
+      !!(
+        spreadsheetHistory &&
+        typeof spreadsheetHistory.canUndo ===
+          "function" &&
+        spreadsheetHistory.canUndo()
+      );
+
+    const canRedo =
+      !!(
+        spreadsheetHistory &&
+        typeof spreadsheetHistory.canRedo ===
+          "function" &&
+        spreadsheetHistory.canRedo()
+      );
+
+    if (undoBtn) {
+      undoBtn.disabled =
+        editDisabled ||
+        !canUndo;
+    }
+
+    if (redoBtn) {
+      redoBtn.disabled =
+        editDisabled ||
+        !canRedo;
+    }
+
+    if (cutBtn) {
+      cutBtn.disabled =
+        editDisabled ||
+        !hasTarget;
+    }
+
+    /*
+     * Copy remains available in read-only workbooks.
+     * Oversized workbooks do not expose editable cell targets.
+     */
+    if (copyBtn) {
+      copyBtn.disabled =
+        state.tooLarge ||
+        !hasTarget;
+    }
+
+    if (pasteBtn) {
+      pasteBtn.disabled =
+        editDisabled ||
+        !hasTarget ||
+        !spreadsheetClipboardReadAvailable();
+    }
+  }
+
   function updateButtons() {
     const disabled = state.saving || state.readOnly || state.tooLarge;
+
+    updateCommandToolbar();
 
     if (saveBtn) {
       saveBtn.disabled = disabled || !state.dirty;
@@ -9341,6 +9409,41 @@ function axisApi() {
             <div id="spreadsheetEditorPath" class="spreadsheetEditorPath mono"></div>
           </div>
           <div class="spreadsheetEditorActions">
+            <button id="spreadsheetEditorUndo" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("filemgr.spreadsheet_editor.undo", null, "Undo")}" title="${tr("filemgr.spreadsheet_editor.undo", null, "Undo")} (Ctrl+Z)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 7-5 5 5 5"></path>
+                <path d="M5 12h8a6 6 0 0 1 6 6"></path>
+              </svg>
+            </button>
+            <button id="spreadsheetEditorRedo" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("filemgr.spreadsheet_editor.redo", null, "Redo")}" title="${tr("filemgr.spreadsheet_editor.redo", null, "Redo")} (Ctrl+Y)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 7 5 5-5 5"></path>
+                <path d="M19 12h-8a6 6 0 0 0-6 6"></path>
+              </svg>
+            </button>
+            <span class="spreadsheetToolSep" aria-hidden="true"></span>
+            <button id="spreadsheetEditorCut" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("filemgr.spreadsheet_editor.context_cut", null, "Cut")}" title="${tr("filemgr.spreadsheet_editor.context_cut", null, "Cut")} (Ctrl+X)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="6" cy="6" r="2.5"></circle>
+                <circle cx="6" cy="18" r="2.5"></circle>
+                <path d="m8 8 11 11"></path>
+                <path d="m8 16 11-11"></path>
+              </svg>
+            </button>
+            <button id="spreadsheetEditorCopy" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("common.copy", null, "Copy")}" title="${tr("common.copy", null, "Copy")} (Ctrl+C)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+              </svg>
+            </button>
+            <button id="spreadsheetEditorPaste" type="button" class="btn secondary spreadsheetToolBtn" aria-label="${tr("filemgr.spreadsheet_editor.context_paste", null, "Paste")}" title="${tr("filemgr.spreadsheet_editor.context_paste", null, "Paste")} (Ctrl+V)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 5h6"></path>
+                <path d="M9 3h6a2 2 0 0 1 2 2v2H7V5a2 2 0 0 1 2-2z"></path>
+                <rect x="5" y="6" width="14" height="15" rx="2"></rect>
+              </svg>
+            </button>
+            <span class="spreadsheetToolSep" aria-hidden="true"></span>
             <button id="spreadsheetEditorBold" type="button" class="btn secondary spreadsheetToolBtn" aria-pressed="false" aria-label="${tr("filemgr.spreadsheet_editor.bold", null, "Bold")}" title="${tr("filemgr.spreadsheet_editor.bold", null, "Bold")}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h5a3.5 3.5 0 0 1 0 7H8z"></path><path d="M8 12h6a3.5 3.5 0 0 1 0 7H8z"></path></svg>
             </button>
@@ -9443,6 +9546,11 @@ function axisApi() {
     tabsEl = modal.querySelector("#spreadsheetEditorTabs");
     bodyEl = modal.querySelector("#spreadsheetEditorBody");
     saveBtn = modal.querySelector("#spreadsheetEditorSave");
+    undoBtn = modal.querySelector("#spreadsheetEditorUndo");
+    redoBtn = modal.querySelector("#spreadsheetEditorRedo");
+    cutBtn = modal.querySelector("#spreadsheetEditorCut");
+    copyBtn = modal.querySelector("#spreadsheetEditorCopy");
+    pasteBtn = modal.querySelector("#spreadsheetEditorPaste");
     addRowBtn = modal.querySelector("#spreadsheetEditorAddRow");
     addColBtn = modal.querySelector("#spreadsheetEditorAddCol");
     insertImageBtn = modal.querySelector("#spreadsheetEditorInsertImage");
@@ -9466,6 +9574,30 @@ function axisApi() {
     textColorBtn = modal.querySelector("#spreadsheetEditorTextColor");
     fillBtn = modal.querySelector("#spreadsheetEditorFill");
     closeBtn = modal.querySelector("#spreadsheetEditorClose");
+
+    undoBtn?.addEventListener("click", () => {
+      if (undoSpreadsheetHistory()) {
+        updateButtons();
+      }
+    });
+
+    redoBtn?.addEventListener("click", () => {
+      if (redoSpreadsheetHistory()) {
+        updateButtons();
+      }
+    });
+
+    cutBtn?.addEventListener("click", () => {
+      void cutSpreadsheetTargets(null);
+    });
+
+    copyBtn?.addEventListener("click", () => {
+      void copySpreadsheetTargets(null);
+    });
+
+    pasteBtn?.addEventListener("click", () => {
+      void pasteSpreadsheetTargets(null);
+    });
 
     boldBtn?.addEventListener("click", () => applyFormatCommand("bold"));
     italicBtn?.addEventListener("click", () => applyFormatCommand("italic"));

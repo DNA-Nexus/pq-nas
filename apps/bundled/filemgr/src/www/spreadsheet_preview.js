@@ -185,7 +185,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-popup-exclusivity-12", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-toolbar-clipboard-history-13", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");

@@ -5704,6 +5704,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Не вдалося вирізати.",
   "filemgr.spreadsheet_editor.paste_failed": "Не вдалося вставити.",
   "filemgr.spreadsheet_editor.redo_status": "Повторено.",
+  "filemgr.spreadsheet_editor.undo": "Скасувати",
+  "filemgr.spreadsheet_editor.redo": "Повторити",
   "filemgr.spreadsheet_editor.resize_column": "Перетягніть, щоб змінити ширину стовпця",
   "filemgr.spreadsheet_editor.resize_row": "Перетягніть, щоб змінити висоту рядка",
   "filemgr.spreadsheet_editor.select_cell_first": "Спочатку виберіть клітинку, рядок або стовпець.",

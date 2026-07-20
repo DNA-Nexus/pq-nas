@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Wycinanie nie powiodło się.",
   "filemgr.spreadsheet_editor.paste_failed": "Wklejanie nie powiodło się.",
   "filemgr.spreadsheet_editor.redo_status": "Ponowiono.",
+  "filemgr.spreadsheet_editor.undo": "Cofnij",
+  "filemgr.spreadsheet_editor.redo": "Ponów",
   "filemgr.spreadsheet_editor.resize_column": "Przeciągnij, aby zmienić szerokość kolumny",
   "filemgr.spreadsheet_editor.resize_row": "Przeciągnij, aby zmienić wysokość wiersza",
   "filemgr.spreadsheet_editor.select_cell_first": "Najpierw wybierz komórkę, wiersz lub kolumnę.",

@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Kesme başarısız.",
   "filemgr.spreadsheet_editor.paste_failed": "Yapıştırma başarısız.",
   "filemgr.spreadsheet_editor.redo_status": "Yinelendi.",
+  "filemgr.spreadsheet_editor.undo": "Geri al",
+  "filemgr.spreadsheet_editor.redo": "Yinele",
   "filemgr.spreadsheet_editor.resize_column": "Sütun genişliğini değiştirmek için sürükleyin",
   "filemgr.spreadsheet_editor.resize_row": "Satır yüksekliğini değiştirmek için sürükleyin",
   "filemgr.spreadsheet_editor.select_cell_first": "Önce bir hücre, satır veya sütun seçin.",

@@ -5717,6 +5717,8 @@
   "filemgr.spreadsheet_editor.unmerge_done": "Solujen yhdistys purettu.",
   "filemgr.spreadsheet_editor.undo_status": "Kumottu.",
   "filemgr.spreadsheet_editor.redo_status": "Tehty uudelleen.",
+  "filemgr.spreadsheet_editor.undo": "Kumoa",
+  "filemgr.spreadsheet_editor.redo": "Tee uudelleen",
   "filemgr.spreadsheet_editor.paste_over_merge_blocked": "Liittäminen yhdistettyjen solujen päälle estettiin.",
   "filemgr.spreadsheet_editor.context_cut": "Leikkaa",
   "filemgr.spreadsheet_editor.context_paste": "Liitä",

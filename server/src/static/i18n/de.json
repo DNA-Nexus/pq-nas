@@ -5712,6 +5712,8 @@
   "filemgr.spreadsheet_editor.cut_failed": "Ausschneiden fehlgeschlagen.",
   "filemgr.spreadsheet_editor.paste_failed": "Einfügen fehlgeschlagen.",
   "filemgr.spreadsheet_editor.redo_status": "Wiederholt.",
+  "filemgr.spreadsheet_editor.undo": "Rückgängig",
+  "filemgr.spreadsheet_editor.redo": "Wiederholen",
   "filemgr.spreadsheet_editor.resize_column": "Ziehen, um die Spaltenbreite zu ändern",
   "filemgr.spreadsheet_editor.resize_row": "Ziehen, um die Zeilenhöhe zu ändern",
   "filemgr.spreadsheet_editor.select_cell_first": "Wählen Sie zuerst eine Zelle, Zeile oder Spalte aus.",
