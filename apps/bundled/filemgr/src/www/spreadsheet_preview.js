@@ -171,7 +171,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-theme-popup-surfaces-11", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-cell-context-menu-layout-13", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_color_palettes.js?v=spreadsheet-color-palettes-2", "data-pqnas-spreadsheet-color-palettes-js"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
@@ -181,10 +181,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
       loadScriptOnce("./spreadsheet_xlsx_borders.js?v=spreadsheet-xlsx-borders-1", "data-pqnas-spreadsheet-xlsx-borders-js"),
       loadScriptOnce("./spreadsheet_border_menu.js?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-border-menu-js"),
+      loadScriptOnce("./spreadsheet_cell_context_menu.js?v=spreadsheet-cell-context-menu-1", "data-pqnas-spreadsheet-cell-context-menu-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-color-palettes-10", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-popup-exclusivity-12", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -297,7 +298,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-theme-popup-surfaces-11", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-cell-context-menu-layout-13", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
 
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),

@@ -1115,12 +1115,25 @@
 .spreadsheetBorderMenu {
   position: fixed;
   z-index: 3900;
-  min-width: 220px;
+  min-width: 250px;
   padding: 6px;
   border: 1px solid var(--border, var(--panel-border));
   border-radius: var(--radius-md, 14px);
-  background: var(--panel);
-  color: var(--fg);
+
+  /* Keep the expanded cell menu opaque in translucent themes. */
+  color-scheme: var(--field-color-scheme, normal);
+  background-color: Canvas;
+  background-image: linear-gradient(
+    var(
+      --field-menu-bg,
+      var(--spreadsheet-editor-surface-2, var(--panel))
+    ),
+    var(
+      --field-menu-bg,
+      var(--spreadsheet-editor-surface-2, var(--panel))
+    )
+  );
+  color: var(--field-menu-fg, var(--fg, CanvasText));
   box-shadow: var(--shadow-lg, 0 18px 50px color-mix(in srgb, var(--fg) 28%, transparent));
 }
 
@@ -1153,6 +1166,42 @@
   background: var(--button-active-bg, var(--accent-soft, var(--button-bg)));
   outline: 2px solid var(--accent, var(--link));
   outline-offset: -2px;
+}
+
+.spreadsheetBorderMenu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * The parent button selector is intentionally included:
+ * .spreadsheetBorderMenu button has greater specificity
+ * than a standalone command class.
+ */
+.spreadsheetBorderMenu
+  button.spreadsheetCellContextCommand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.spreadsheetCellContextLabel {
+  min-width: 0;
+}
+
+.spreadsheetCellContextShortcut {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.84em;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.spreadsheetCellContextSeparator {
+  height: 1px;
+  margin: 5px 7px;
+  background: var(--border, var(--panel-border));
 }
 
 .spreadsheetBorderMenu .spreadsheetBorderMenuRow {

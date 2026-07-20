@@ -1349,8 +1349,14 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     hideTextColorMenu();
     hideFillMenu();
-    hideAxisMenu();
-    openBorderMenu(ev.clientX, ev.clientY, row, col);
+    hideSpreadsheetContextMenus();
+    openBorderMenu(
+      ev.clientX,
+      ev.clientY,
+      row,
+      col,
+      input
+    );
   }
 
   function applyFormatCommand(kind, value = null) {
@@ -4118,6 +4124,55 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     return true;
   }
 
+  function handleSpreadsheetCut(ev, input) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      !ev ||
+      !ev.clipboardData ||
+      typeof ev.clipboardData.setData !==
+        "function"
+    ) {
+      return false;
+    }
+
+    if (
+      !state.rangeSelection &&
+      !state.selection &&
+      spreadsheetInputHasPartialTextSelection(
+        input
+      )
+    ) {
+      return false;
+    }
+
+    const text =
+      buildSpreadsheetClipboardText(
+        input
+      );
+
+    if (text == null) return false;
+
+    /*
+     * Security: cut exports text/plain only. Source cells
+     * are cleared only after the clipboard accepted the data.
+     */
+    try {
+      ev.clipboardData.setData(
+        "text/plain",
+        text
+      );
+    } catch (_) {
+      return false;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    clearSpreadsheetTargets(input);
+    return true;
+  }
+
   function parseSpreadsheetClipboardText(text) {
     const normalized = String(text == null ? "" : text)
       .replace(/\r\n/g, "\n")
@@ -4256,6 +4311,230 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     ev.preventDefault();
     ev.stopPropagation();
     return true;
+  }
+
+  function spreadsheetClipboardReadAvailable() {
+    return !!(
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.readText ===
+        "function"
+    );
+  }
+
+  function fallbackWriteSpreadsheetClipboardText(
+    text
+  ) {
+    const textarea =
+      document.createElement("textarea");
+
+    textarea.value =
+      String(text == null ? "" : text);
+
+    textarea.setAttribute(
+      "readonly",
+      ""
+    );
+
+    textarea.style.position = "fixed";
+    textarea.style.left = "-10000px";
+    textarea.style.top = "0";
+
+    document.body.appendChild(
+      textarea
+    );
+
+    textarea.select();
+
+    let copied = false;
+
+    try {
+      copied =
+        document.execCommand("copy");
+    } catch (_) {
+      copied = false;
+    }
+
+    textarea.remove();
+    return copied;
+  }
+
+  async function writeSpreadsheetClipboardText(
+    text
+  ) {
+    const value =
+      String(text == null ? "" : text);
+
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText ===
+        "function"
+    ) {
+      try {
+        await navigator.clipboard.writeText(
+          value
+        );
+
+        return true;
+      } catch (_) {
+        // Fall back to the legacy user-gesture copy path.
+      }
+    }
+
+    return fallbackWriteSpreadsheetClipboardText(
+      value
+    );
+  }
+
+  async function copySpreadsheetTargets(
+    input
+  ) {
+    const text =
+      buildSpreadsheetClipboardText(
+        input
+      );
+
+    if (
+      text == null ||
+      !await writeSpreadsheetClipboardText(text)
+    ) {
+      setStatus(
+        tr(
+          "common.copy_failed",
+          null,
+          "Copy failed."
+        ),
+        "err"
+      );
+
+      return false;
+    }
+
+    setStatus(
+      tr(
+        "common.copied",
+        null,
+        "Copied."
+      )
+    );
+
+    return true;
+  }
+
+  async function cutSpreadsheetTargets(
+    input
+  ) {
+    if (
+      state.readOnly ||
+      state.tooLarge
+    ) {
+      return false;
+    }
+
+    const text =
+      buildSpreadsheetClipboardText(
+        input
+      );
+
+    if (
+      text == null ||
+      !await writeSpreadsheetClipboardText(text)
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.cut_failed",
+          null,
+          "Cut failed."
+        ),
+        "err"
+      );
+
+      return false;
+    }
+
+    clearSpreadsheetTargets(input);
+    return true;
+  }
+
+  async function pasteSpreadsheetTargets(
+    input
+  ) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      !spreadsheetClipboardReadAvailable()
+    ) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.paste_failed",
+          null,
+          "Paste failed."
+        ),
+        "err"
+      );
+
+      return false;
+    }
+
+    try {
+      /*
+       * Security: browser clipboard access reads text/plain
+       * only. Clipboard HTML is never requested or inserted.
+       */
+      const text =
+        await navigator.clipboard.readText();
+
+      if (
+        !text ||
+        !pasteSpreadsheetClipboardText(
+          input,
+          text
+        )
+      ) {
+        throw new Error(
+          "spreadsheet paste was not applied"
+        );
+      }
+
+      return true;
+    } catch (_) {
+      setStatus(
+        tr(
+          "filemgr.spreadsheet_editor.paste_failed",
+          null,
+          "Paste failed."
+        ),
+        "err"
+      );
+
+      return false;
+    }
+  }
+
+  function runSpreadsheetContextCommand(
+    command,
+    input
+  ) {
+    if (command === "copy") {
+      return copySpreadsheetTargets(input);
+    }
+
+    if (command === "cut") {
+      return cutSpreadsheetTargets(input);
+    }
+
+    if (command === "paste") {
+      return pasteSpreadsheetTargets(input);
+    }
+
+    if (command === "clear") {
+      return Promise.resolve(
+        clearSpreadsheetTargets(input)
+      );
+    }
+
+    return Promise.resolve(false);
   }
 
   function shouldSpreadsheetClearKey(input, ev) {
@@ -6328,13 +6607,105 @@ function axisApi() {
     return makeCellContextMenuButton(borderMenuLabel(action, style), () => applyBorderCommand(action, style));
   }
 
-  function openBorderMenu(x, y, row = null, col = null) {
+  function openBorderMenu(
+    x,
+    y,
+    row = null,
+    col = null,
+    input = null
+  ) {
     const menu = ensureBorderMenu();
     menu.replaceChildren();
 
     const sheet = state.sheets[state.active];
     const clickedMerge = Number.isInteger(row) && Number.isInteger(col) ? mergeAtCell(sheet, row, col) : null;
     const mergeSelection = selectedMergeRange();
+
+    const contextMenuApi =
+      FM && FM.spreadsheetCellContextMenu;
+
+    if (
+      contextMenuApi &&
+      typeof contextMenuApi.appendCommandGroups ===
+        "function"
+    ) {
+      const editingDisabled =
+        state.readOnly ||
+        state.tooLarge;
+
+      const hasTarget =
+        !!spreadsheetTargetRange(input);
+
+      contextMenuApi.appendCommandGroups(
+        menu,
+        [
+          [
+            {
+              id: "cut",
+              label: tr(
+                "filemgr.spreadsheet_editor.context_cut",
+                null,
+                "Cut"
+              ),
+              shortcut: "Ctrl+X",
+              disabled:
+                editingDisabled ||
+                !hasTarget
+            },
+            {
+              id: "copy",
+              label: tr(
+                "common.copy",
+                null,
+                "Copy"
+              ),
+              shortcut: "Ctrl+C",
+              disabled: !hasTarget
+            },
+            {
+              id: "paste",
+              label: tr(
+                "filemgr.spreadsheet_editor.context_paste",
+                null,
+                "Paste"
+              ),
+              shortcut: "Ctrl+V",
+              disabled:
+                editingDisabled ||
+                !spreadsheetClipboardReadAvailable()
+            }
+          ],
+          [
+            {
+              id: "clear",
+              label: tr(
+                "filemgr.spreadsheet_editor.clear_contents",
+                null,
+                "Clear contents"
+              ),
+              shortcut: "Delete",
+              disabled:
+                editingDisabled ||
+                !hasTarget
+            }
+          ]
+        ],
+        {
+          onCommand(command) {
+            hideBorderMenu();
+
+            void runSpreadsheetContextCommand(
+              command,
+              input
+            );
+          }
+        }
+      );
+
+      contextMenuApi.appendSeparator(
+        menu
+      );
+    }
 
     if (clickedMerge || mergeSelection) {
       const cellTitle = document.createElement("div");
@@ -7785,9 +8156,29 @@ function axisApi() {
     return false;
   }
 
+  function hideSpreadsheetContextMenus() {
+    /*
+     * UX correctness: the cell and row/column context
+     * menus are mutually exclusive. Call both functions;
+     * do not short-circuit if the first one closes a menu.
+     */
+    const axisClosed =
+      hideAxisMenu();
+
+    const cellClosed =
+      hideBorderMenu();
+
+    return axisClosed || cellClosed;
+  }
+
   function openAxisMenu(type, index, x, y) {
     if ((type !== "row" && type !== "column") || !Number.isInteger(index) || index < 0) return;
     if (state.readOnly || state.tooLarge) return;
+
+    hideTextColorMenu();
+    hideFillMenu();
+    hideSpreadsheetContextMenus();
+    closeToolbarIconMenus();
 
     const api = FM && FM.spreadsheetAxis;
     if (!api || typeof api.openContextMenu !== "function") return;
@@ -9112,6 +9503,32 @@ function axisApi() {
     });
     window.addEventListener("resize", () => closeToolbarIconMenus());
     window.addEventListener("scroll", () => closeToolbarIconMenus(), true);
+
+    /*
+     * A contextmenu event does not emit the ordinary click
+     * event used by our popup closers. Close existing custom
+     * menus during capture. Cell/header handlers may then
+     * open exactly one replacement menu, while a right-click
+     * elsewhere leaves only the browser's native menu open.
+     */
+    document.addEventListener(
+      "contextmenu",
+      () => {
+        if (
+          !modal ||
+          !modal.classList.contains("show")
+        ) {
+          return;
+        }
+
+        hideTextColorMenu();
+        hideFillMenu();
+        hideSpreadsheetContextMenus();
+        closeToolbarIconMenus();
+      },
+      true
+    );
+
     textColorBtn?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -10572,6 +10989,10 @@ function axisApi() {
 
         input.addEventListener("copy", (ev) => {
           handleSpreadsheetCopy(ev, input);
+        });
+
+        input.addEventListener("cut", (ev) => {
+          handleSpreadsheetCut(ev, input);
         });
 
         input.addEventListener("paste", (ev) => {
