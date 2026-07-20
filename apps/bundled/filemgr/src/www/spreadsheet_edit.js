@@ -2341,7 +2341,12 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     return worksheetFreezeFromXml(worksheetXmlTextFromWorkbook(wb, sheetIndex));
   }
 
-  function buildWorksheetXml(sheet, styleCatalog, drawingRelId = "") {
+  function buildWorksheetXml(
+    sheet,
+    styleCatalog,
+    drawingRelId = "",
+    legacyDrawingRelId = ""
+  ) {
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
     const rowCount = rows.length;
     const colCount = rows.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0);
@@ -2349,6 +2354,9 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     const rowHeights = ensureSheetRowHeights(sheet, rowCount);
     const mergeCellsXml = xlsxMergeCellsXml(sheet, rowCount, colCount);
     const drawingXml = drawingRelId ? `<drawing r:id="${xlsxAttrEscape(drawingRelId)}"/>` : "";
+    const legacyDrawingXml = legacyDrawingRelId
+      ? `<legacyDrawing r:id="${xlsxAttrEscape(legacyDrawingRelId)}"/>`
+      : "";
     const cache = computeSheetCache(sheet);
 
     const defaultColWidthPx = sheetDefaultColumnWidth(sheet);
@@ -2433,8 +2441,9 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       colsXml,
       `<sheetData>${rowXml.join("")}</sheetData>`,
       mergeCellsXml,
-      drawingXml,
       '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>',
+      drawingXml,
+      legacyDrawingXml,
       '</worksheet>'
     ].join("");
   }
@@ -2505,7 +2514,11 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     ].join("");
   }
 
-  function buildContentTypesXml(sheetCount, imageExport = null) {
+  function buildContentTypesXml(
+    sheetCount,
+    imageExport = null,
+    commentExport = null
+  ) {
     const sheetOverrides = Array.from({ length: sheetCount }, (_v, i) =>
       `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
     ).join("");
@@ -2518,15 +2531,25 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       ? imageApi.contentTypeOverridesXml(imageExport)
       : "";
 
+    const commentsApi = spreadsheetCommentsApi();
+    const commentDefaults = commentsApi && typeof commentsApi.contentTypeDefaultsXml === "function"
+      ? commentsApi.contentTypeDefaultsXml(commentExport)
+      : "";
+    const commentOverrides = commentsApi && typeof commentsApi.contentTypeOverridesXml === "function"
+      ? commentsApi.contentTypeOverridesXml(commentExport)
+      : "";
+
     return [
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
       '<Default Extension="xml" ContentType="application/xml"/>',
       imageDefaults,
+      commentDefaults,
       '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
       sheetOverrides,
       imageOverrides,
+      commentOverrides,
       '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
       '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
       '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
@@ -2722,6 +2745,14 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
           visibleSheets.map((item) => item.sheet)
         )
       : null;
+
+    const commentsApi = spreadsheetCommentsApi();
+    const commentExport = commentsApi && typeof commentsApi.prepareExport === "function"
+      ? commentsApi.prepareExport(
+          visibleSheets.map((item) => item.sheet)
+        )
+      : null;
+
     const entries = [];
 
     for (let i = 0; i < visibleSheets.length; i++) {
@@ -2730,9 +2761,18 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         ? imageApi.worksheetDrawingRelId(imageExport, i)
         : "";
 
+      const legacyDrawingRelId = commentsApi && typeof commentsApi.worksheetLegacyDrawingRelId === "function"
+        ? commentsApi.worksheetLegacyDrawingRelId(commentExport, i)
+        : "";
+
       entries.push({
         name: `xl/worksheets/sheet${i + 1}.xml`,
-        data: buildWorksheetXml(item.sheet, styleCatalog, drawingRelId)
+        data: buildWorksheetXml(
+          item.sheet,
+          styleCatalog,
+          drawingRelId,
+          legacyDrawingRelId
+        )
       });
     }
 
@@ -2741,7 +2781,14 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       data: buildStyleMetadataWorksheetXml(stylePayload)
     });
 
-    entries.push({ name: "[Content_Types].xml", data: buildContentTypesXml(allSheetNames.length, imageExport) });
+    entries.push({
+      name: "[Content_Types].xml",
+      data: buildContentTypesXml(
+        allSheetNames.length,
+        imageExport,
+        commentExport
+      )
+    });
     entries.push({ name: "_rels/.rels", data: buildRootRelsXml() });
     entries.push({ name: "docProps/core.xml", data: buildCorePropsXml() });
     entries.push({ name: "docProps/app.xml", data: buildAppPropsXml(allSheetNames) });
@@ -2751,6 +2798,10 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     if (imageApi && typeof imageApi.appendExportEntries === "function") {
       imageApi.appendExportEntries(entries, imageExport);
+    }
+
+    if (commentsApi && typeof commentsApi.appendExportEntries === "function") {
+      commentsApi.appendExportEntries(entries, commentExport);
     }
 
     return buildZipStore(entries);
@@ -4517,6 +4568,161 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     }
   }
 
+  function spreadsheetCommentTarget(input) {
+    const row = Number(
+      input && input.dataset && input.dataset.row
+    );
+
+    const col = Number(
+      input && input.dataset && input.dataset.col
+    );
+
+    const sheet = state.sheets[state.active];
+    const api = spreadsheetCommentsApi();
+
+    if (
+      !sheet ||
+      !api ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col)
+    ) {
+      return null;
+    }
+
+    return {
+      api,
+      sheet,
+      row,
+      col,
+      comment:
+        typeof api.getComment === "function"
+          ? api.getComment(sheet, row, col)
+          : null
+    };
+  }
+
+  async function editSpreadsheetCellComment(input) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving
+    ) {
+      return false;
+    }
+
+    const target = spreadsheetCommentTarget(input);
+
+    if (
+      !target ||
+      typeof target.api.openEditor !== "function" ||
+      typeof target.api.setComment !== "function"
+    ) {
+      return false;
+    }
+
+    const author =
+      typeof target.api.currentAuthor === "function"
+        ? await target.api.currentAuthor()
+        : "DNA-Nexus user";
+
+    const result = await target.api.openEditor({
+      author,
+      comment: target.comment,
+      tr
+    });
+
+    if (!result) return false;
+
+    const historyBefore = captureHistorySnapshot();
+    const changed = target.api.setComment(
+      target.sheet,
+      target.row,
+      target.col,
+      result
+    );
+
+    if (!changed) return false;
+
+    commitHistorySnapshot(historyBefore);
+    render();
+
+    setStatus(
+      result.text && String(result.text).trim()
+        ? tr(
+            "filemgr.spreadsheet_editor.comment_saved",
+            null,
+            "Comment saved."
+          )
+        : tr(
+            "filemgr.spreadsheet_editor.comment_deleted",
+            null,
+            "Comment deleted."
+          ),
+      "ok"
+    );
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(
+        target.row,
+        target.col,
+        { end: true }
+      );
+    });
+
+    return true;
+  }
+
+  function deleteSpreadsheetCellComment(input) {
+    if (
+      state.readOnly ||
+      state.tooLarge ||
+      state.saving
+    ) {
+      return false;
+    }
+
+    const target = spreadsheetCommentTarget(input);
+
+    if (
+      !target ||
+      !target.comment ||
+      typeof target.api.removeComment !== "function"
+    ) {
+      return false;
+    }
+
+    const historyBefore = captureHistorySnapshot();
+    const changed = target.api.removeComment(
+      target.sheet,
+      target.row,
+      target.col
+    );
+
+    if (!changed) return false;
+
+    commitHistorySnapshot(historyBefore);
+    render();
+
+    setStatus(
+      tr(
+        "filemgr.spreadsheet_editor.comment_deleted",
+        null,
+        "Comment deleted."
+      ),
+      "ok"
+    );
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(
+        target.row,
+        target.col,
+        { end: true }
+      );
+    });
+
+    return true;
+  }
+
   function runSpreadsheetContextCommand(
     command,
     input
@@ -4536,6 +4742,19 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     if (command === "clear") {
       return Promise.resolve(
         clearSpreadsheetTargets(input)
+      );
+    }
+
+    if (
+      command === "comment-add" ||
+      command === "comment-edit"
+    ) {
+      return editSpreadsheetCellComment(input);
+    }
+
+    if (command === "comment-delete") {
+      return Promise.resolve(
+        deleteSpreadsheetCellComment(input)
       );
     }
 
@@ -4989,6 +5208,13 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     }
 
     return formatFormulaNumber(result.value);
+  }
+
+  function spreadsheetCommentsApi() {
+    return (
+      FM &&
+      FM.spreadsheetComments
+    ) || null;
   }
 
   function spreadsheetFormulaReferenceApi() {
@@ -6641,6 +6867,17 @@ function axisApi() {
       const hasTarget =
         !!spreadsheetTargetRange(input);
 
+      const commentTarget =
+        spreadsheetCommentTarget(input);
+
+      const hasCellComment =
+        !!(commentTarget && commentTarget.comment);
+
+      const canEditCellComment =
+        !!commentTarget &&
+        typeof commentTarget.api.openEditor ===
+          "function";
+
       contextMenuApi.appendCommandGroups(
         menu,
         [
@@ -6692,6 +6929,38 @@ function axisApi() {
               disabled:
                 editingDisabled ||
                 !hasTarget
+            }
+          ],
+          [
+            {
+              id: hasCellComment
+                ? "comment-edit"
+                : "comment-add",
+              label: hasCellComment
+                ? tr(
+                    "filemgr.spreadsheet_editor.comment_edit",
+                    null,
+                    "Edit comment"
+                  )
+                : tr(
+                    "filemgr.spreadsheet_editor.comment_add",
+                    null,
+                    "Add comment"
+                  ),
+              disabled:
+                editingDisabled ||
+                !canEditCellComment
+            },
+            {
+              id: "comment-delete",
+              label: tr(
+                "filemgr.spreadsheet_editor.comment_delete",
+                null,
+                "Delete comment"
+              ),
+              disabled:
+                editingDisabled ||
+                !hasCellComment
             }
           ]
         ],
@@ -7105,6 +7374,20 @@ function axisApi() {
         )
     );
 
+    const commentsApi = spreadsheetCommentsApi();
+
+    if (
+      commentsApi &&
+      typeof commentsApi.reorderRows ===
+        "function"
+    ) {
+      commentsApi.reorderRows(
+        sheet,
+        0,
+        result.order
+      );
+    }
+
     state.selection = makeAxisSelection(
       "column",
       index,
@@ -7409,6 +7692,20 @@ function axisApi() {
 
     sheet.rows = result.rows;
     sheet.cellFormats = nextFormats;
+
+    const commentsApi = spreadsheetCommentsApi();
+
+    if (
+      commentsApi &&
+      typeof commentsApi.reorderRange ===
+        "function"
+    ) {
+      commentsApi.reorderRange(
+        sheet,
+        range,
+        result.order
+      );
+    }
 
     state.selection = null;
     state.rangeSelection = {
@@ -8499,7 +8796,21 @@ function axisApi() {
     const sourceCols = Math.max(0, range.e.c + 1);
     const tooLarge = sourceRows > MAX_EDIT_ROWS || sourceCols > MAX_EDIT_COLS;
 
-    const rowCount = Math.max(Math.min(sourceRows, MAX_EDIT_ROWS), DEFAULT_ROWS);
+    const minimumRows = Math.min(
+      MAX_EDIT_ROWS,
+      Math.max(
+        DEFAULT_ROWS,
+        Math.floor(
+          Number(defaults.minimumRows) || 0
+        )
+      )
+    );
+
+    const rowCount = Math.max(
+      Math.min(sourceRows, MAX_EDIT_ROWS),
+      minimumRows
+    );
+
     const minimumCols = Math.min(
       MAX_EDIT_COLS,
       Math.max(
@@ -8663,6 +8974,7 @@ function axisApi() {
     const buf = await r.arrayBuffer();
 
     const imageApi = FM && FM.spreadsheetXlsxImages;
+    const commentsApi = spreadsheetCommentsApi();
     state.workbookImageWarning = "";
     state.workbookImageInfo = imageApi && typeof imageApi.inspectArrayBuffer === "function"
       ? imageApi.inspectArrayBuffer(buf)
@@ -8722,7 +9034,8 @@ function axisApi() {
         rowHeights: Array.from({ length: DEFAULT_ROWS }, () => DEFAULT_ROW_HEIGHT),
         cellFormats: Array.from({ length: DEFAULT_ROWS }, () => Array.from({ length: DEFAULT_COLS }, () => null)),
         merges: [],
-        freeze: { topRows: 0, leftCols: 0 }
+        freeze: { topRows: 0, leftCols: 0 },
+        comments: {}
       }];
     }
 
@@ -8755,6 +9068,28 @@ function axisApi() {
               cols: 0
             };
 
+      const sheetComments =
+        commentsApi &&
+        typeof commentsApi.commentsFromWorksheet ===
+          "function"
+          ? commentsApi.commentsFromWorksheet(
+              wb.Sheets[name],
+              {
+                maxRows: MAX_EDIT_ROWS,
+                maxCols: MAX_EDIT_COLS
+              }
+            )
+          : {};
+
+      const commentBounds =
+        commentsApi &&
+        typeof commentsApi.commentBounds ===
+          "function"
+          ? commentsApi.commentBounds(
+              sheetComments
+            )
+          : { rows: 0, cols: 0 };
+
       const converted = worksheetToEditableRows(
         XLSX,
         wb.Sheets[name],
@@ -8763,7 +9098,11 @@ function axisApi() {
           workbook: wb,
           sheetIndex: idx,
           xlsxBorders: workbookBorders[idx] || null,
-          minimumCols: imageBounds.cols,
+          minimumRows: commentBounds.rows,
+          minimumCols: Math.max(
+            imageBounds.cols,
+            commentBounds.cols
+          ),
 
           /*
            * Stored PQ-NAS metadata keeps formatting
@@ -8788,7 +9127,8 @@ function axisApi() {
         cellFormats: Array.isArray(storedFormats) ? storedFormats : converted.cellFormats,
         merges: converted.merges,
         freeze: worksheetFreezeFromWorkbook(XLSX, wb, wb.Sheets[name], idx),
-        images: sheetImages
+        images: sheetImages,
+        comments: sheetComments
       };
 
       if (imageApi && typeof imageApi.expandSheetForImages === "function") {
@@ -11176,6 +11516,23 @@ function axisApi() {
         td.appendChild(input);
         applyCellFormatToInput(input, getCellFormat(sheet, rIdx, c));
         renderEditorCellTextOverflow(td, input, sheet, rows, rIdx, c, colWidths, colCount, cache);
+
+        const commentsApi =
+          spreadsheetCommentsApi();
+
+        if (
+          commentsApi &&
+          typeof commentsApi.renderMarker ===
+            "function"
+        ) {
+          commentsApi.renderMarker(
+            td,
+            sheet,
+            rIdx,
+            c
+          );
+        }
+
         td.appendChild(createSpreadsheetFillHandle(rIdx, c));
 
         trEl.appendChild(td);
@@ -11561,6 +11918,11 @@ function axisApi() {
     }
     adjustSheetMergesForAxisChange(sheet, "row", insertAt, count, "insert");
 
+    const commentsApi = spreadsheetCommentsApi();
+    if (commentsApi && typeof commentsApi.adjustAxis === "function") {
+      commentsApi.adjustAxis(sheet, "row", insertAt, count, "insert");
+    }
+
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
     ensureSheetRowHeights(sheet, sheet.rows.length);
 
@@ -11605,6 +11967,11 @@ function axisApi() {
       adjustSheetFormulasForAxisChange(sheet, "column", insertAt, 1);
     }
     adjustSheetMergesForAxisChange(sheet, "column", insertAt, count, "insert");
+
+    const commentsApi = spreadsheetCommentsApi();
+    if (commentsApi && typeof commentsApi.adjustAxis === "function") {
+      commentsApi.adjustAxis(sheet, "column", insertAt, count, "insert");
+    }
 
     ensureSheetColWidths(sheet, cols);
     ensureSheetCellFormats(sheet, sheet.rows.length, cols);
@@ -11655,6 +12022,11 @@ function axisApi() {
       ensureSheetRowHeights(sheet, sheet.rows.length);
       adjustSheetMergesForAxisChange(sheet, "row", deleteAt, count, "delete");
 
+      const commentsApi = spreadsheetCommentsApi();
+      if (commentsApi && typeof commentsApi.adjustAxis === "function") {
+        commentsApi.adjustAxis(sheet, "row", deleteAt, count, "delete");
+      }
+
       for (let i = 0; i < count && sheet.rows.length; i++) {
         adjustSheetFormulasForAxisChange(sheet, "row", deleteAt, -1);
         sheet.cellFormats.splice(deleteAt, 1);
@@ -11699,6 +12071,11 @@ function axisApi() {
         adjustSheetFormulasForAxisChange(sheet, "column", deleteAt, -1);
       }
       adjustSheetMergesForAxisChange(sheet, "column", deleteAt, count, "delete");
+
+      const commentsApi = spreadsheetCommentsApi();
+      if (commentsApi && typeof commentsApi.adjustAxis === "function") {
+        commentsApi.adjustAxis(sheet, "column", deleteAt, count, "delete");
+      }
 
       if (colCount <= count) {
         sheet.colWidths = [DEFAULT_COL_WIDTH];

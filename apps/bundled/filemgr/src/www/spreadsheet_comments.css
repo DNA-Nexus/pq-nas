@@ -1,0 +1,116 @@
+.spreadsheetCommentCell {
+  position: relative;
+  overflow: visible;
+}
+
+.spreadsheetEditorTable td.spreadsheetCommentCell > .spreadsheetCommentMarker,
+.spreadsheetPreviewTable td.spreadsheetCommentCell > .spreadsheetCommentMarker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 24;
+  display: block;
+  width: 10px;
+  height: 10px;
+  overflow: visible;
+  line-height: 0;
+
+  /*
+   * Spreadsheet notes conventionally use a red corner indicator.
+   * Prefer semantic theme tokens; the fixed fallback also covers
+   * legacy themes that expose neither danger token.
+   */
+  color: var(
+    --danger,
+    var(--bad, #d93025)
+  );
+  pointer-events: none;
+}
+
+.spreadsheetEditorTable td.spreadsheetCommentCell > .spreadsheetCommentMarker > svg,
+.spreadsheetPreviewTable td.spreadsheetCommentCell > .spreadsheetCommentMarker > svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.spreadsheetPreviewTable td.spreadsheetCommentCell::after {
+  /*
+   * Preview comments use a body-level floating tooltip so table-cell
+   * painting and clipping cannot hide the comment box.
+   */
+  content: none;
+}
+
+.spreadsheetCommentCell:hover::after {
+  content: attr(data-spreadsheet-comment);
+  position: absolute;
+  top: 12px;
+  left: calc(100% - 8px);
+  z-index: 30;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 9px 11px;
+  border: 1px solid var(--field-border, var(--border));
+  border-radius: var(--radius-sm, 10px);
+  color: var(--field-menu-fg, var(--fg));
+  background: var(
+    --field-menu-bg,
+    var(--spreadsheet-editor-surface-2, var(--panel))
+  );
+  box-shadow: var(--shadow-lg);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.spreadsheetCommentDialog {
+  z-index: 4200;
+}
+
+.spreadsheetCommentDialogCard {
+  width: min(560px, calc(100vw - 24px));
+}
+
+.spreadsheetCommentDialogBody {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.spreadsheetCommentAuthorLine {
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.spreadsheetCommentTextarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--field-border, var(--border));
+  border-radius: var(--radius-md, 12px);
+  color: var(--field-fg, var(--fg));
+  background: var(
+    --field-bg,
+    var(--spreadsheet-editor-surface-2, var(--panel))
+  );
+  font: inherit;
+  line-height: 1.45;
+}
+
+.spreadsheetCommentTextarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.spreadsheetCommentDialogSpacer {
+  flex: 1 1 auto;
+}
