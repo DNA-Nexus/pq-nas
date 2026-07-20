@@ -172,6 +172,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     spreadsheetEditLoadPromise = Promise.all([
       loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-cell-context-menu-layout-13", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_comments.css?v=spreadsheet-preview-comment-marker-only-1", "data-pqnas-spreadsheet-comments-css"),
       loadScriptOnce("./spreadsheet_color_palettes.js?v=spreadsheet-color-palettes-2", "data-pqnas-spreadsheet-color-palettes-js"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
@@ -182,10 +183,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_xlsx_borders.js?v=spreadsheet-xlsx-borders-1", "data-pqnas-spreadsheet-xlsx-borders-js"),
       loadScriptOnce("./spreadsheet_border_menu.js?v=spreadsheet-border-submenu-1", "data-pqnas-spreadsheet-border-menu-js"),
       loadScriptOnce("./spreadsheet_cell_context_menu.js?v=spreadsheet-cell-context-menu-1", "data-pqnas-spreadsheet-cell-context-menu-js"),
+      loadScriptOnce("./spreadsheet_comments.js?v=spreadsheet-preview-comment-marker-only-1", "data-pqnas-spreadsheet-comments-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-toolbar-clipboard-history-13", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-comments-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -970,11 +972,21 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.style.textAlign = f.align || "";
     td.style.verticalAlign = previewVerticalAlignCss(f.valign);
 
-    td.style.background =
+    const background =
       previewColorCss(
         f.bg,
         PREVIEW_FILL_COLORS
       );
+
+    td.style.background = background;
+
+    if (background) {
+      td.dataset.spreadsheetCellBg = "1";
+    } else {
+      td.removeAttribute(
+        "data-spreadsheet-cell-bg"
+      );
+    }
 
     td.style.color =
       previewColorCss(
@@ -1371,6 +1383,18 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
     const XLSX = await ensureXlsxLibrary();
     await ensureSpreadsheetImageModules();
+
+    await Promise.all([
+      loadStyleOnce(
+        "./spreadsheet_comments.css?v=spreadsheet-preview-comment-marker-only-1",
+        "data-pqnas-spreadsheet-comments-css"
+      ),
+      loadScriptOnce(
+        "./spreadsheet_comments.js?v=spreadsheet-preview-comment-marker-only-1",
+        "data-pqnas-spreadsheet-comments-js"
+      )
+    ]);
+
     const buf = await r.arrayBuffer();
 
     // Security: parse the workbook as data only; do not execute macros, formulas,
@@ -1455,6 +1479,53 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         rawRows
       );
 
+      const commentsApi =
+        FM && FM.spreadsheetComments;
+
+      const sheetComments =
+        commentsApi &&
+        typeof commentsApi.commentsFromWorksheet ===
+          "function"
+          ? commentsApi.commentsFromWorksheet(
+              ws,
+              {
+                maxRows: MAX_RENDER_ROWS,
+                maxCols: MAX_RENDER_COLS
+              }
+            )
+          : {};
+
+      let commentRows = 0;
+      let commentCols = 0;
+
+      if (
+        commentsApi &&
+        typeof commentsApi.parseCellRef ===
+          "function"
+      ) {
+        for (
+          const reference of
+          Object.keys(sheetComments)
+        ) {
+          const position =
+            commentsApi.parseCellRef(
+              reference
+            );
+
+          if (!position) continue;
+
+          commentRows = Math.max(
+            commentRows,
+            position.row + 1
+          );
+
+          commentCols = Math.max(
+            commentCols,
+            position.col + 1
+          );
+        }
+      }
+
       const sheetImages = workbookImages.filter(
         (image) => image.sheetIndex === idx
       );
@@ -1479,6 +1550,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
        */
       const rowCount = Math.max(
         bounds.rows,
+        commentRows,
         Math.max(
           0,
           Math.floor(
@@ -1489,6 +1561,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
       const colCount = Math.max(
         bounds.cols,
+        commentCols,
         Math.max(
           0,
           Math.floor(
@@ -1529,6 +1602,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
             ),
         merges: extractPreviewMerges(XLSX, ws, rows.length, colCount),
         freeze: previewWorksheetFreezeFromWorkbook(wb, ws, idx),
+        comments: sheetComments,
         images: sheetImages
       };
 
@@ -1734,6 +1808,9 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     table.className = "spreadsheetPreviewTable";
     applyPreviewFreezeMode(table, sheet, normalized.rows.length, normalized.cols);
 
+    const commentsApi =
+      FM && FM.spreadsheetComments;
+
     const colWidths = Array.isArray(sheet.colWidths) ? sheet.colWidths : [];
     const rowHeights = Array.isArray(sheet.rowHeights) ? sheet.rowHeights : [];
     const colgroup = document.createElement("colgroup");
@@ -1800,6 +1877,20 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
         applyPreviewCellFormat(td, fmt);
         // Security: always render cell values as text, never HTML.
         renderPreviewCellText(td, sheet, normalized.rows, rIdx, c, colWidths, normalized.cols, row[c], fmt);
+
+        if (
+          commentsApi &&
+          typeof commentsApi.renderMarker ===
+            "function"
+        ) {
+          commentsApi.renderMarker(
+            td,
+            sheet,
+            rIdx,
+            c
+          );
+        }
+
         trEl.appendChild(td);
       }
 

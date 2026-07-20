@@ -164,6 +164,15 @@
   color: var(--table-cell-text, var(--text));
 }
 
+.spreadsheetPreviewTable td[data-spreadsheet-cell-bg="1"] {
+  /*
+   * Excel and LibreOffice hide ordinary worksheet gridlines under
+   * filled cells. Explicit XLSX borders remain visible because they
+   * are applied as higher-priority inline border declarations.
+   */
+  border-color: transparent;
+}
+
 /* XLSX row heights describe the complete row box. Vertical cell padding must
    not make imported rows taller than the geometry used by image anchors. */
 .spreadsheetPreviewTable tbody tr,
