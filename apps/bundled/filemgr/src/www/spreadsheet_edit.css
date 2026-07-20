@@ -799,6 +799,13 @@
 }
 .spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] {
   background: var(--spreadsheet-cell-bg);
+
+  /*
+   * Spreadsheet parity: Excel and LibreOffice hide ordinary
+   * worksheet gridlines beneath cells that have a fill color.
+   * Explicit workbook borders remain visible through td::after.
+   */
+  border-color: transparent;
 }
 
 .spreadsheetEditorTable td[data-spreadsheet-cell-bg="1"] > input {
@@ -1534,4 +1541,115 @@ td.spreadsheetFormulaReferenceHost {
   margin: -4px 0 16px;
   color: var(--muted);
   line-height: 1.45;
+}
+
+/* Spreadsheet document color palette menus. */
+.spreadsheetColorPaletteMenu {
+  width: min(278px, calc(100vw - 16px));
+  max-height: min(520px, calc(100vh - 16px));
+  overflow: auto;
+  padding: 8px;
+}
+
+.spreadsheetColorPaletteTitle {
+  padding: 5px 6px 8px;
+  font-weight: 700;
+}
+
+.spreadsheetColorPaletteSelect {
+  width: 100%;
+  margin: 6px 0 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--input-bg, var(--panel));
+  color: var(--fg);
+  font: inherit;
+}
+
+.spreadsheetColorPaletteAction {
+  width: 100%;
+}
+
+.spreadsheetColorGrid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  margin: 0 0 8px;
+}
+
+.spreadsheetColorGrid
+  .spreadsheetColorSwatchButton {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1;
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border, var(--panel-border));
+  border-radius: 2px;
+  background: var(--spreadsheet-document-color);
+  cursor: pointer;
+}
+
+.spreadsheetColorGrid
+  .spreadsheetColorSwatchButton:hover,
+.spreadsheetColorGrid
+  .spreadsheetColorSwatchButton:focus-visible {
+  background: var(--spreadsheet-document-color);
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: 1px;
+}
+
+.spreadsheetColorGrid
+  .spreadsheetColorSwatchButton[aria-pressed="true"] {
+  outline: 3px solid var(--accent, var(--link));
+  outline-offset: 1px;
+}
+
+.spreadsheetColorSectionTitle {
+  padding: 5px 2px 4px;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.spreadsheetColorRecentGrid {
+  grid-template-columns: repeat(10, 1fr);
+}
+
+.spreadsheetColorCustomControl {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 10px);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.spreadsheetColorCustomControl:hover,
+.spreadsheetColorCustomControl:focus-within {
+  background: var(
+    --button-active-bg,
+    var(--accent-soft, var(--button-bg))
+  );
+  outline: 2px solid var(--accent, var(--link));
+  outline-offset: -2px;
+}
+
+.spreadsheetColorCustomInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
 }

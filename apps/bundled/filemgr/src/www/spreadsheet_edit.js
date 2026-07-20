@@ -4,6 +4,19 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   "use strict";
 
   const FM = window.PQNAS_FILEMGR;
+  const COLOR_PALETTES =
+    FM && FM.spreadsheetColorPalettes;
+
+  if (
+    !COLOR_PALETTES ||
+    typeof COLOR_PALETTES.createColorMap !==
+      "function"
+  ) {
+    throw new Error(
+      "spreadsheet color palette module did not register"
+    );
+  }
+
   const XLSX_VENDOR_URL = "./vendor/xlsx.full.min.js";
   const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -23,23 +36,62 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
 
   // Document content colors: these are spreadsheet cell fill values, not
   // DNA-Nexus UI theme colors. Fixed values are intentional for XLSX output.
-  const CELL_FILL_COLORS = Object.freeze({
-    yellow: { css: "rgb(255, 242, 204)", rgb: "FFFFF2CC" },
-    green: { css: "rgb(217, 234, 211)", rgb: "FFD9EAD3" },
-    blue: { css: "rgb(207, 226, 243)", rgb: "FFCFE2F3" },
-    red: { css: "rgb(244, 204, 204)", rgb: "FFF4CCCC" },
-    gray: { css: "rgb(217, 217, 217)", rgb: "FFD9D9D9" }
-  });
+  const CELL_FILL_COLORS =
+    COLOR_PALETTES.createColorMap(
+      Object.freeze({
+        yellow: {
+          css: "rgb(255, 242, 204)",
+          rgb: "FFFFF2CC"
+        },
+        green: {
+          css: "rgb(217, 234, 211)",
+          rgb: "FFD9EAD3"
+        },
+        blue: {
+          css: "rgb(207, 226, 243)",
+          rgb: "FFCFE2F3"
+        },
+        red: {
+          css: "rgb(244, 204, 204)",
+          rgb: "FFF4CCCC"
+        },
+        gray: {
+          css: "rgb(217, 217, 217)",
+          rgb: "FFD9D9D9"
+        }
+      })
+    );
 
   // Document content colors for spreadsheet text/font color.
-  const TEXT_COLOR_COLORS = Object.freeze({
-    black: { css: "rgb(0, 0, 0)", rgb: "FF000000" },
-    red: { css: "rgb(204, 0, 0)", rgb: "FFCC0000" },
-    green: { css: "rgb(56, 118, 29)", rgb: "FF38761D" },
-    blue: { css: "rgb(17, 85, 204)", rgb: "FF1155CC" },
-    gray: { css: "rgb(102, 102, 102)", rgb: "FF666666" },
-    white: { css: "rgb(255, 255, 255)", rgb: "FFFFFFFF" }
-  });
+  const TEXT_COLOR_COLORS =
+    COLOR_PALETTES.createColorMap(
+      Object.freeze({
+        black: {
+          css: "rgb(0, 0, 0)",
+          rgb: "FF000000"
+        },
+        red: {
+          css: "rgb(204, 0, 0)",
+          rgb: "FFCC0000"
+        },
+        green: {
+          css: "rgb(56, 118, 29)",
+          rgb: "FF38761D"
+        },
+        blue: {
+          css: "rgb(17, 85, 204)",
+          rgb: "FF1155CC"
+        },
+        gray: {
+          css: "rgb(102, 102, 102)",
+          rgb: "FF666666"
+        },
+        white: {
+          css: "rgb(255, 255, 255)",
+          rgb: "FFFFFFFF"
+        }
+      })
+    );
 
   const FONT_SIZE_OPTIONS = Object.freeze([10, 12, 14, 16, 18, 24, 32]);
   const BORDER_STYLE_KEYS = Object.freeze(["thin", "medium", "double"]);
@@ -289,43 +341,75 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function isValidTextColorKey(value) {
-    return Object.prototype.hasOwnProperty.call(TEXT_COLOR_COLORS, String(value || ""));
+    return !!TEXT_COLOR_COLORS[
+      String(value || "")
+    ];
   }
 
   function normalizeTextColorKey(value) {
-    const key = String(value || "").trim();
-    return isValidTextColorKey(key) ? key : "";
+    const key =
+      String(value || "").trim();
+
+    return isValidTextColorKey(key)
+      ? key
+      : "";
   }
 
   function cellTextColorKeyFromRgb(value) {
-    const raw = String(value || "").replace(/^#/, "").toUpperCase();
-    const normalized = raw.length === 6 ? "FF" + raw : raw;
+    const normalized =
+      COLOR_PALETTES.normalizeArgb(value);
 
-    for (const [key, def] of Object.entries(TEXT_COLOR_COLORS)) {
-      if (String(def.rgb || "").toUpperCase() === normalized) return key;
+    for (
+      const [key, def] of
+      Object.entries(TEXT_COLOR_COLORS)
+    ) {
+      if (
+        String(def.rgb || "")
+          .toUpperCase() === normalized
+      ) {
+        return key;
+      }
     }
 
-    return "";
+    return normalizeTextColorKey(
+      normalized
+    );
   }
 
   function isValidFillColorKey(value) {
-    return Object.prototype.hasOwnProperty.call(CELL_FILL_COLORS, String(value || ""));
+    return !!CELL_FILL_COLORS[
+      String(value || "")
+    ];
   }
 
   function normalizeFillColorKey(value) {
-    const key = String(value || "").trim();
-    return isValidFillColorKey(key) ? key : "";
+    const key =
+      String(value || "").trim();
+
+    return isValidFillColorKey(key)
+      ? key
+      : "";
   }
 
   function cellFillKeyFromRgb(value) {
-    const raw = String(value || "").replace(/^#/, "").toUpperCase();
-    const normalized = raw.length === 6 ? "FF" + raw : raw;
+    const normalized =
+      COLOR_PALETTES.normalizeArgb(value);
 
-    for (const [key, def] of Object.entries(CELL_FILL_COLORS)) {
-      if (String(def.rgb || "").toUpperCase() === normalized) return key;
+    for (
+      const [key, def] of
+      Object.entries(CELL_FILL_COLORS)
+    ) {
+      if (
+        String(def.rgb || "")
+          .toUpperCase() === normalized
+      ) {
+        return key;
+      }
     }
 
-    return "";
+    return normalizeFillColorKey(
+      normalized
+    );
   }
 
   function normalizeFontSize(value) {
@@ -5861,170 +5945,291 @@ function axisApi() {
   }
 
   function hideTextColorMenu() {
-    if (!textColorMenu || textColorMenu.hidden) return false;
+    if (
+      !textColorMenu ||
+      textColorMenu.hidden
+    ) {
+      return false;
+    }
+
     textColorMenu.hidden = true;
     textColorMenu.replaceChildren();
     return true;
   }
 
-  function textColorLabel(key) {
-    switch (key) {
-      case "black": return tr("filemgr.spreadsheet_editor.text_black", null, "Black");
-      case "red": return tr("filemgr.spreadsheet_editor.text_red", null, "Red");
-      case "green": return tr("filemgr.spreadsheet_editor.text_green", null, "Green");
-      case "blue": return tr("filemgr.spreadsheet_editor.text_blue", null, "Blue");
-      case "gray": return tr("filemgr.spreadsheet_editor.text_gray", null, "Gray");
-      case "white": return tr("filemgr.spreadsheet_editor.text_white", null, "White");
-      default: return tr("filemgr.spreadsheet_editor.text_none", null, "Default text");
+  function colorPaletteLabel(id) {
+    switch (id) {
+      case "pastel":
+        return tr(
+          "filemgr.spreadsheet_editor.color_palette_pastel",
+          null,
+          "Pastel"
+        );
+
+      case "material":
+        return tr(
+          "filemgr.spreadsheet_editor.color_palette_material",
+          null,
+          "Material"
+        );
+
+      case "grayscale":
+        return tr(
+          "filemgr.spreadsheet_editor.color_palette_grayscale",
+          null,
+          "Grayscale"
+        );
+
+      case "libreoffice":
+        return tr(
+          "filemgr.spreadsheet_editor.color_palette_libreoffice",
+          null,
+          "LibreOffice"
+        );
+
+      default:
+        return tr(
+          "filemgr.spreadsheet_editor.color_palette_standard",
+          null,
+          "Standard"
+        );
     }
+  }
+
+  function positionSpreadsheetColorMenu(
+    menu,
+    button
+  ) {
+    const rect =
+      button.getBoundingClientRect();
+
+    menu.hidden = false;
+
+    const left = Math.max(
+      8,
+      Math.min(
+        rect.left,
+        window.innerWidth -
+          menu.offsetWidth -
+          8
+      )
+    );
+
+    const top = Math.max(
+      8,
+      Math.min(
+        rect.bottom + 6,
+        window.innerHeight -
+          menu.offsetHeight -
+          8
+      )
+    );
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
   }
 
   function ensureTextColorMenu() {
-    if (textColorMenu) return textColorMenu;
-
-    textColorMenu = document.createElement("div");
-    textColorMenu.className = "spreadsheetTextColorMenu";
-    textColorMenu.hidden = true;
-    textColorMenu.setAttribute("role", "menu");
-
-    textColorMenu.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-    });
-
-    document.body.appendChild(textColorMenu);
-    return textColorMenu;
-  }
-
-  function makeTextColorMenuButton(key) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.setAttribute("role", "menuitem");
-    btn.dataset.fg = key || "";
-
-    const swatch = document.createElement("span");
-    swatch.className = "spreadsheetTextColorSwatch";
-    if (key && TEXT_COLOR_COLORS[key]) {
-      swatch.style.setProperty("--spreadsheet-text-preview", TEXT_COLOR_COLORS[key].css);
+    if (textColorMenu) {
+      return textColorMenu;
     }
 
-    const label = document.createElement("span");
-    label.textContent = textColorLabel(key);
+    textColorMenu =
+      document.createElement("div");
 
-    btn.appendChild(swatch);
-    btn.appendChild(label);
+    textColorMenu.className =
+      "spreadsheetTextColorMenu " +
+      "spreadsheetColorPaletteMenu";
 
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      hideTextColorMenu();
-      applyFormatCommand("fg", key || "");
-    });
+    textColorMenu.hidden = true;
+    textColorMenu.setAttribute(
+      "role",
+      "dialog"
+    );
 
-    return btn;
+    textColorMenu.addEventListener(
+      "click",
+      (event) => {
+        event.stopPropagation();
+      }
+    );
+
+    document.body.appendChild(
+      textColorMenu
+    );
+
+    return textColorMenu;
   }
 
   function openTextColorMenu() {
     if (!textColorBtn) return;
 
-    const menu = ensureTextColorMenu();
-    menu.replaceChildren();
+    const menu =
+      ensureTextColorMenu();
 
-    menu.appendChild(makeTextColorMenuButton(""));
-    for (const key of Object.keys(TEXT_COLOR_COLORS)) {
-      menu.appendChild(makeTextColorMenuButton(key));
-    }
+    const current =
+      TEXT_COLOR_COLORS[
+        textColorBtn.dataset.fg || ""
+      ];
 
-    const rect = textColorBtn.getBoundingClientRect();
-    menu.hidden = false;
+    COLOR_PALETTES.renderMenu(
+      menu,
+      {
+        titleLabel: tr(
+          "filemgr.spreadsheet_editor.text_color",
+          null,
+          "Text color"
+        ),
+        clearLabel: tr(
+          "filemgr.spreadsheet_editor.text_none",
+          null,
+          "Default text"
+        ),
+        paletteTitle: tr(
+          "filemgr.spreadsheet_editor.color_palette",
+          null,
+          "Color palette"
+        ),
+        paletteLabel:
+          colorPaletteLabel,
+        recentLabel: tr(
+          "filemgr.spreadsheet_editor.color_recent",
+          null,
+          "Recent"
+        ),
+        customLabel: tr(
+          "filemgr.spreadsheet_editor.color_custom",
+          null,
+          "Custom color…"
+        ),
+        selectedColor:
+          current ? current.rgb : "",
+        paletteStorageKey:
+          "pqnas.spreadsheet.text.palette",
+        recentStorageKey:
+          "pqnas.spreadsheet.text.recent",
+        onSelect(value) {
+          hideTextColorMenu();
+          applyFormatCommand(
+            "fg",
+            value
+          );
+        }
+      }
+    );
 
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8));
-    const top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8));
-
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
+    positionSpreadsheetColorMenu(
+      menu,
+      textColorBtn
+    );
   }
 
   function hideFillMenu() {
-    if (!fillMenu || fillMenu.hidden) return false;
+    if (
+      !fillMenu ||
+      fillMenu.hidden
+    ) {
+      return false;
+    }
+
     fillMenu.hidden = true;
     fillMenu.replaceChildren();
     return true;
   }
 
-  function fillColorLabel(key) {
-    switch (key) {
-      case "yellow": return tr("filemgr.spreadsheet_editor.fill_yellow", null, "Yellow");
-      case "green": return tr("filemgr.spreadsheet_editor.fill_green", null, "Green");
-      case "blue": return tr("filemgr.spreadsheet_editor.fill_blue", null, "Blue");
-      case "red": return tr("filemgr.spreadsheet_editor.fill_red", null, "Red");
-      case "gray": return tr("filemgr.spreadsheet_editor.fill_gray", null, "Gray");
-      default: return tr("filemgr.spreadsheet_editor.fill_none", null, "No fill");
-    }
-  }
-
   function ensureFillMenu() {
-    if (fillMenu) return fillMenu;
-
-    fillMenu = document.createElement("div");
-    fillMenu.className = "spreadsheetFillMenu";
-    fillMenu.hidden = true;
-    fillMenu.setAttribute("role", "menu");
-
-    fillMenu.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-    });
-
-    document.body.appendChild(fillMenu);
-    return fillMenu;
-  }
-
-  function makeFillMenuButton(key) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.setAttribute("role", "menuitem");
-    btn.dataset.fill = key || "";
-
-    const swatch = document.createElement("span");
-    swatch.className = "spreadsheetFillSwatch";
-    if (key && CELL_FILL_COLORS[key]) {
-      swatch.style.setProperty("--spreadsheet-fill-preview", CELL_FILL_COLORS[key].css);
+    if (fillMenu) {
+      return fillMenu;
     }
 
-    const label = document.createElement("span");
-    label.textContent = fillColorLabel(key);
+    fillMenu =
+      document.createElement("div");
 
-    btn.appendChild(swatch);
-    btn.appendChild(label);
+    fillMenu.className =
+      "spreadsheetFillMenu " +
+      "spreadsheetColorPaletteMenu";
 
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      hideFillMenu();
-      applyFormatCommand("bg", key || "");
-    });
+    fillMenu.hidden = true;
+    fillMenu.setAttribute(
+      "role",
+      "dialog"
+    );
 
-    return btn;
+    fillMenu.addEventListener(
+      "click",
+      (event) => {
+        event.stopPropagation();
+      }
+    );
+
+    document.body.appendChild(
+      fillMenu
+    );
+
+    return fillMenu;
   }
 
   function openFillMenu() {
     if (!fillBtn) return;
 
-    const menu = ensureFillMenu();
-    menu.replaceChildren();
+    const menu =
+      ensureFillMenu();
 
-    menu.appendChild(makeFillMenuButton(""));
-    for (const key of Object.keys(CELL_FILL_COLORS)) {
-      menu.appendChild(makeFillMenuButton(key));
-    }
+    const current =
+      CELL_FILL_COLORS[
+        fillBtn.dataset.fill || ""
+      ];
 
-    const rect = fillBtn.getBoundingClientRect();
-    menu.hidden = false;
+    COLOR_PALETTES.renderMenu(
+      menu,
+      {
+        titleLabel: tr(
+          "filemgr.spreadsheet_editor.fill_color",
+          null,
+          "Fill color"
+        ),
+        clearLabel: tr(
+          "filemgr.spreadsheet_editor.fill_none",
+          null,
+          "No fill"
+        ),
+        paletteTitle: tr(
+          "filemgr.spreadsheet_editor.color_palette",
+          null,
+          "Color palette"
+        ),
+        paletteLabel:
+          colorPaletteLabel,
+        recentLabel: tr(
+          "filemgr.spreadsheet_editor.color_recent",
+          null,
+          "Recent"
+        ),
+        customLabel: tr(
+          "filemgr.spreadsheet_editor.color_custom",
+          null,
+          "Custom color…"
+        ),
+        selectedColor:
+          current ? current.rgb : "",
+        paletteStorageKey:
+          "pqnas.spreadsheet.fill.palette",
+        recentStorageKey:
+          "pqnas.spreadsheet.fill.recent",
+        onSelect(value) {
+          hideFillMenu();
+          applyFormatCommand(
+            "bg",
+            value
+          );
+        }
+      }
+    );
 
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8));
-    const top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8));
-
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
+    positionSpreadsheetColorMenu(
+      menu,
+      fillBtn
+    );
   }
 
   function hideBorderMenu() {
