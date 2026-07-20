@@ -171,7 +171,8 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-formula-reference-palette-7", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-filled-gridlines-10", "data-pqnas-spreadsheet-edit-css"),
+      loadScriptOnce("./spreadsheet_color_palettes.js?v=spreadsheet-color-palettes-2", "data-pqnas-spreadsheet-color-palettes-js"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
       loadScriptOnce("./spreadsheet_sort.js?v=spreadsheet-sort-current-region-4", "data-pqnas-spreadsheet-sort-js"),
@@ -183,7 +184,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
       loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-sort-context-menu-9", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-color-palettes-10", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
@@ -296,7 +297,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-formula-reference-palette-7", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-filled-gridlines-10", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
 
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
@@ -356,14 +357,82 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   }
 
   function previewColorKeyFromRgb(value, palette) {
-    const raw = String(value || "").replace(/^#/, "").toUpperCase();
-    const normalized = raw.length === 6 ? `FF${raw}` : raw;
+    const raw =
+      String(value || "")
+        .trim()
+        .replace(/^#/, "")
+        .toUpperCase();
 
-    for (const [key, cssValue] of Object.entries(palette || {})) {
-      if (previewCssRgbToArgb(cssValue) === normalized) return key;
+    const normalized =
+      raw.length === 6
+        ? `FF${raw}`
+        : raw.length === 8
+          ? `FF${raw.slice(-6)}`
+          : "";
+
+    if (!/^[0-9A-F]{8}$/.test(normalized)) {
+      return "";
     }
 
-    return "";
+    for (
+      const [key, cssValue] of
+      Object.entries(palette || {})
+    ) {
+      if (
+        previewCssRgbToArgb(cssValue) ===
+        normalized
+      ) {
+        return key;
+      }
+    }
+
+    return normalized;
+  }
+
+  function normalizePreviewColorValue(
+    value,
+    palette
+  ) {
+    const key =
+      String(value || "").trim();
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        palette || {},
+        key
+      )
+    ) {
+      return key;
+    }
+
+    return previewColorKeyFromRgb(
+      key,
+      null
+    );
+  }
+
+  function previewColorCss(
+    value,
+    palette
+  ) {
+    const key =
+      normalizePreviewColorValue(
+        value,
+        palette
+      );
+
+    if (!key) return "";
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        palette || {},
+        key
+      )
+    ) {
+      return palette[key];
+    }
+
+    return `#${key.slice(-6)}`;
   }
 
   function previewFillKeyFromRgb(value) {
@@ -590,8 +659,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function normalizePreviewCellFormat(fmt) {
     const src = fmt && typeof fmt === "object" ? fmt : {};
     const align = src.align === "center" || src.align === "right" || src.align === "left" ? src.align : "";
-    const bg = Object.prototype.hasOwnProperty.call(PREVIEW_FILL_COLORS, String(src.bg || "")) ? String(src.bg) : "";
-    const fg = Object.prototype.hasOwnProperty.call(PREVIEW_TEXT_COLORS, String(src.fg || "")) ? String(src.fg) : "";
+    const bg =
+      normalizePreviewColorValue(
+        src.bg,
+        PREVIEW_FILL_COLORS
+      );
+
+    const fg =
+      normalizePreviewColorValue(
+        src.fg,
+        PREVIEW_TEXT_COLORS
+      );
     const rawCurrency = normalizePreviewCurrencyKey(src.currency);
     const numberFormat = normalizePreviewNumberFormat(src.numberFormat, rawCurrency);
     const currency = numberFormat === "currency" ? rawCurrency : "";
@@ -891,13 +969,17 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     td.style.textAlign = f.align || "";
     td.style.verticalAlign = previewVerticalAlignCss(f.valign);
 
-    if (f.bg && PREVIEW_FILL_COLORS[f.bg]) {
-      td.style.background = PREVIEW_FILL_COLORS[f.bg];
-    }
+    td.style.background =
+      previewColorCss(
+        f.bg,
+        PREVIEW_FILL_COLORS
+      );
 
-    if (f.fg && PREVIEW_TEXT_COLORS[f.fg]) {
-      td.style.color = PREVIEW_TEXT_COLORS[f.fg];
-    }
+    td.style.color =
+      previewColorCss(
+        f.fg,
+        PREVIEW_TEXT_COLORS
+      );
 
     applyPreviewBorderFormat(td, f.border);
   }
