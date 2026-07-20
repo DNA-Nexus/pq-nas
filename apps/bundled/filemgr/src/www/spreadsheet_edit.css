@@ -1549,6 +1549,28 @@ td.spreadsheetFormulaReferenceHost {
   max-height: min(520px, calc(100vh - 16px));
   overflow: auto;
   padding: 8px;
+
+  /*
+   * Theme isolation: Canvas supplies an opaque native base.
+   * The theme popup color is layered above it, so translucent
+   * theme surfaces cannot reveal spreadsheet content beneath.
+   */
+  color-scheme: var(--field-color-scheme, normal);
+  background-color: Canvas;
+  background-image: linear-gradient(
+    var(
+      --field-menu-bg,
+      var(--spreadsheet-editor-surface-2, var(--panel))
+    ),
+    var(
+      --field-menu-bg,
+      var(--spreadsheet-editor-surface-2, var(--panel))
+    )
+  );
+  color: var(
+    --field-menu-fg,
+    var(--fg, CanvasText)
+  );
 }
 
 .spreadsheetColorPaletteTitle {
@@ -1560,11 +1582,33 @@ td.spreadsheetFormulaReferenceHost {
   width: 100%;
   margin: 6px 0 8px;
   padding: 7px 9px;
-  border: 1px solid var(--border, var(--panel-border));
+  border: 1px solid var(
+    --field-border,
+    var(--border, var(--panel-border))
+  );
   border-radius: var(--radius-sm, 10px);
-  background: var(--input-bg, var(--panel));
-  color: var(--fg);
+
+  /*
+   * Native select menus use color-scheme when deciding
+   * whether their browser-provided popup should be dark
+   * or light.
+   */
+  color-scheme: var(--field-color-scheme, normal);
+  background-color: Canvas;
+  background-image: linear-gradient(
+    var(--field-bg, var(--spreadsheet-editor-surface-2)),
+    var(--field-bg, var(--spreadsheet-editor-surface-2))
+  );
+  color: var(--field-fg, var(--fg));
   font: inherit;
+}
+
+.spreadsheetColorPaletteSelect option {
+  background: var(
+    --field-menu-bg,
+    var(--spreadsheet-editor-surface-2, var(--panel))
+  );
+  color: var(--field-menu-fg, var(--fg));
 }
 
 .spreadsheetColorPaletteAction {

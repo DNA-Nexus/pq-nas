@@ -171,7 +171,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetEditLoadPromise) return spreadsheetEditLoadPromise;
 
     spreadsheetEditLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-filled-gridlines-10", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-theme-popup-surfaces-11", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_color_palettes.js?v=spreadsheet-color-palettes-2", "data-pqnas-spreadsheet-color-palettes-js"),
       loadScriptOnce("./spreadsheet_axis.js?v=spreadsheet-sort-1", "data-pqnas-spreadsheet-axis-js"),
       loadScriptOnce("./spreadsheet_history.js?v=spreadsheet-decimal-format-1", "data-pqnas-spreadsheet-history-js"),
@@ -297,7 +297,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     if (spreadsheetImageLoadPromise) return spreadsheetImageLoadPromise;
 
     spreadsheetImageLoadPromise = Promise.all([
-      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-filled-gridlines-10", "data-pqnas-spreadsheet-edit-css"),
+      loadStyleOnce("./spreadsheet_edit.css?v=spreadsheet-theme-popup-surfaces-11", "data-pqnas-spreadsheet-edit-css"),
       loadScriptOnce("./spreadsheet_fonts.js?v=spreadsheet-font-family-1", "data-pqnas-spreadsheet-fonts-js"),
 
       loadScriptOnce("./spreadsheet_xlsx_dimensions.js?v=spreadsheet-column-layout-1", "data-pqnas-spreadsheet-xlsx-dimensions-js"),
