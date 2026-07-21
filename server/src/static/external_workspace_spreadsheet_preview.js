@@ -5,6 +5,13 @@
     window.__pqnasExternalSpreadsheetPreviewV1 = true;
 
     const SPREADSHEET_EXTS = new Set(["csv", "tsv", "xls", "xlsx", "ods"]);
+    const STYLE_SHEET_NAME = "_pqnas_styles";
+
+    // Authorization context: include the workspace selected by the external page
+    // so the backend can validate the external session against that workspace.
+    const pageParams = new URLSearchParams(window.location.search);
+    const workspaceId = String(pageParams.get("workspace_id") || "").trim();
+
     const MAX_RENDER_ROWS = 1000;
     const MAX_RENDER_COLS = 80;
     const XLSX_VENDOR_URL = "/static/vendor/xlsx.full.min.js";
@@ -69,6 +76,7 @@
 
     function downloadUrl(relPath) {
         const qs = new URLSearchParams();
+        qs.set("workspace_id", workspaceId);
         qs.set("path", normalizeRelPath(relPath));
         return `/api/v4/workspaces/files/get?${qs.toString()}`;
     }
@@ -199,15 +207,25 @@
             cellStyles: false
         });
 
-        const names = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
+        const names = (
+            Array.isArray(wb.SheetNames)
+                ? wb.SheetNames
+                : []
+        ).filter((name) => name !== STYLE_SHEET_NAME);
+
         return names.map((name) => {
             const ws = wb.Sheets[name];
+
             const rows = XLSX.utils.sheet_to_json(ws, {
                 header: 1,
                 raw: false,
                 defval: "",
-                blankrows: false
+
+                // Preserve empty rows inside the worksheet range so cell
+                // coordinates and visible row numbers remain unchanged.
+                blankrows: true
             });
+
             return { name, rows };
         });
     }
@@ -219,12 +237,17 @@
         style.id = "externalSpreadsheetPreviewStyles";
         style.textContent = `
 .externalSpreadsheetPreviewOverlay{
-    --spreadsheet-overlay:var(--overlay-bg,var(--modal-backdrop));
-    --spreadsheet-surface:var(--modal-bg,var(--elevated-bg,var(--card,var(--panel))));
-    --spreadsheet-surface-2:var(--panel-head-bg,var(--elevated-bg,var(--card2,var(--panel2,var(--spreadsheet-surface)))));
-    --spreadsheet-header-bg:var(--sheet-header-bg,var(--table-header-bg,var(--spreadsheet-surface-2)));
-    --spreadsheet-cell-bg:var(--sheet-cell-bg,var(--table-cell-bg,var(--spreadsheet-surface)));
-    --spreadsheet-muted-text:var(--muted-text,var(--fg-dim,var(--text)));
+    /*
+     * Theme safety: prefer shared theme surfaces over External Workspace's
+     * legacy dark modal tokens. This keeps Win Classic and light themes readable.
+     */
+    --spreadsheet-overlay:var(--overlay-bg,var(--backdrop,var(--modal-backdrop)));
+    --spreadsheet-surface:var(--panel,var(--elevated-bg,var(--modal-bg,var(--card))));
+    --spreadsheet-surface-2:var(--panel2,var(--elevated-bg,var(--panel-head-bg,var(--card2,var(--spreadsheet-surface)))));
+    --spreadsheet-header-bg:var(--sheet-header-bg,var(--panel2,var(--table-header-bg,var(--spreadsheet-surface-2))));
+    --spreadsheet-cell-bg:var(--sheet-cell-bg,var(--panel,var(--table-cell-bg,var(--spreadsheet-surface))));
+    --spreadsheet-text:var(--text,var(--fg));
+    --spreadsheet-muted-text:var(--muted-text,var(--fg-dim,var(--muted,var(--spreadsheet-text))));
 
     position:fixed; inset:0; display:none; z-index:9999;
     background:var(--spreadsheet-overlay);
@@ -233,7 +256,7 @@
 .externalSpreadsheetPreviewOverlay.show{display:flex; align-items:center; justify-content:center;}
 .externalSpreadsheetPreviewCard{
     width:min(1320px,96vw); height:min(860px,92vh); display:flex; flex-direction:column;
-    overflow:hidden; background:var(--spreadsheet-surface); color:var(--text);
+    overflow:hidden; background:var(--spreadsheet-surface); color:var(--spreadsheet-text);
     border:1px solid var(--border); border-radius:18px;
     box-shadow:var(--modal-shadow,var(--shadow-lg,var(--shadow)));
     resize:none; min-width:min(720px,96vw); min-height:min(420px,92vh);
@@ -249,8 +272,8 @@
 .externalSpreadsheetPreviewActions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .externalSpreadsheetPreviewInfo{padding:8px 14px; border-bottom:1px solid var(--border); font-size:12px; color:var(--spreadsheet-muted-text); background:var(--spreadsheet-surface);}
 .externalSpreadsheetPreviewTabs{display:flex; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border); overflow-x:auto; background:var(--spreadsheet-surface);}
-.externalSpreadsheetPreviewTab{border:1px solid var(--border); background:var(--button-bg,var(--spreadsheet-surface-2)); color:var(--button-text,var(--text)); border-radius:999px; padding:6px 10px; font:inherit; font-size:12px; cursor:pointer;}
-.externalSpreadsheetPreviewTab.active{background:var(--accent-bg,var(--button-active-bg,var(--button-bg,var(--spreadsheet-surface-2)))); color:var(--accent-text,var(--button-text,var(--text))); border-color:var(--accent,var(--border));}
+.externalSpreadsheetPreviewTab{border:1px solid var(--border); background:var(--button-bg,var(--spreadsheet-surface-2)); color:var(--button-text,var(--spreadsheet-text)); border-radius:999px; padding:6px 10px; font:inherit; font-size:12px; cursor:pointer;}
+.externalSpreadsheetPreviewTab.active{background:var(--accent-bg,var(--button-active-bg,var(--button-bg,var(--spreadsheet-surface-2)))); color:var(--accent-text,var(--button-text,var(--spreadsheet-text))); border-color:var(--accent,var(--border));}
 .externalSpreadsheetPreviewBody{flex:1 1 auto; min-height:0; overflow:auto; background:var(--spreadsheet-surface);}
 .externalSpreadsheetPreviewTable{border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:13px;}
 .externalSpreadsheetPreviewTable th,.externalSpreadsheetPreviewTable td{
@@ -259,8 +282,8 @@
     white-space:pre; overflow:hidden; text-overflow:ellipsis;
 }
 .externalSpreadsheetPreviewTable thead th,
-.externalSpreadsheetPreviewTable .rowHead{background:var(--spreadsheet-header-bg); color:var(--table-header-text,var(--text)); font-weight:900;}
-.externalSpreadsheetPreviewTable td{background:var(--spreadsheet-cell-bg); color:var(--table-cell-text,var(--text));}
+.externalSpreadsheetPreviewTable .rowHead{background:var(--spreadsheet-header-bg); color:var(--table-header-text,var(--spreadsheet-text)); font-weight:900;}
+.externalSpreadsheetPreviewTable td{background:var(--spreadsheet-cell-bg); color:var(--table-cell-text,var(--spreadsheet-text));}
 .externalSpreadsheetPreviewTable thead th{position:sticky; top:0; z-index:3; text-align:center;}
 .externalSpreadsheetPreviewTable .rowHead{position:sticky; left:0; z-index:2; min-width:54px; width:54px; text-align:right; font-weight:800;}
 .externalSpreadsheetPreviewTable thead .corner{left:0; z-index:4;}
@@ -271,7 +294,7 @@
 .externalSpreadsheetPreviewResizeRight{top:0; right:0; bottom:0; width:8px; cursor:ew-resize;}
 .externalSpreadsheetPreviewResizeBottom{left:0; right:0; bottom:0; height:8px; cursor:ns-resize;}
 .externalSpreadsheetPreviewEmpty,.externalSpreadsheetPreviewError{padding:22px;}
-.externalSpreadsheetPreviewError{color:var(--danger,var(--text));}
+.externalSpreadsheetPreviewError{color:var(--danger,var(--spreadsheet-text));}
 @media(max-width:720px){
     .externalSpreadsheetPreviewOverlay{padding:8px;}
     .externalSpreadsheetPreviewCard{width:100%; height:96vh; border-radius:12px; resize:none; min-width:0; min-height:0;}
