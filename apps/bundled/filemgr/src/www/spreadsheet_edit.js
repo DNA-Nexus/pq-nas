@@ -171,6 +171,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     dirty: false,
     saving: false,
     readOnly: false,
+    leaseActive: false,
     tooLarge: false,
     selection: null,
     activeCell: null,
@@ -187,6 +188,58 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       }
     } catch (_) {}
     return fallback || key;
+  }
+
+  function isWorkspaceScope() {
+    return !!(
+      FM &&
+      typeof FM.isWorkspaceScope === "function" &&
+      FM.isWorkspaceScope()
+    );
+  }
+
+  function workspaceLeaseApi() {
+    return FM && FM.spreadsheetWorkspaceLease
+      ? FM.spreadsheetWorkspaceLease
+      : null;
+  }
+
+  function workspaceLeaseErrorText(error) {
+    const leaseApi = workspaceLeaseApi();
+
+    if (
+      leaseApi &&
+      typeof leaseApi.describeError === "function"
+    ) {
+      return leaseApi.describeError(error, tr);
+    }
+
+    return tr(
+      "filemgr.textedit.readonly_generic",
+      null,
+      "This file can only be opened in read-only mode right now."
+    );
+  }
+
+  function handleWorkspaceLeaseLost(error) {
+    state.leaseActive = false;
+    state.readOnly = true;
+
+    if (!modal || !modal.classList.contains("show")) return;
+
+    // Concurrency protection: keep local edits visible, but immediately disable
+    // further mutation and saving when this session no longer owns the lease.
+    render();
+
+    const reason = workspaceLeaseErrorText(error);
+    setStatus(
+      tr(
+        "filemgr.textedit.reload_try_editing",
+        { reason },
+        `${reason} Reload to try editing again.`
+      ),
+      "warn"
+    );
   }
 
   const TOOLBAR_ICON_OPTIONS = Object.freeze({
@@ -10223,6 +10276,8 @@ function axisApi() {
     const discard = await confirmDiscardChanges();
     if (!discard) return;
 
+    const relToRelease = state.rel;
+
     modal.classList.remove("show");
     modal.setAttribute("aria-hidden", "true");
 
@@ -10236,6 +10291,13 @@ function axisApi() {
     ) {
       imageApi.releaseInsertedImageAssets();
     }
+
+    const leaseApi = workspaceLeaseApi();
+    if (leaseApi && typeof leaseApi.release === "function") {
+      await leaseApi.release(relToRelease);
+    }
+
+    state.leaseActive = false;
   }
 
   function sheetNameKey(value) {
@@ -12117,6 +12179,30 @@ function axisApi() {
       return;
     }
 
+    const leaseApi = workspaceLeaseApi();
+
+    if (isWorkspaceScope()) {
+      if (
+        !leaseApi ||
+        !state.leaseActive ||
+        typeof leaseApi.refresh !== "function"
+      ) {
+        handleWorkspaceLeaseLost({
+          details: { error: "edit_lock_missing" }
+        });
+        return;
+      }
+
+      try {
+        // Refresh immediately before save so an expired or stolen lease cannot
+        // authorize a stale workbook overwrite.
+        await leaseApi.refresh(state.rel);
+      } catch (error) {
+        handleWorkspaceLeaseLost(error);
+        return;
+      }
+    }
+
     state.saving = true;
     updateButtons();
     setStatus(tr("filemgr.spreadsheet_editor.saving", null, "Saving…"), "warn");
@@ -12124,11 +12210,24 @@ function axisApi() {
     try {
       const XLSX = await ensureXlsxLibrary();
       const file = makeOutputFile(XLSX);
-      await FM.saveGeneratedFileOverwrite(file, state.rel);
+
+      const saveOptions =
+        isWorkspaceScope() &&
+        leaseApi &&
+        typeof leaseApi.saveOptions === "function"
+          ? leaseApi.saveOptions()
+          : {};
+
+      await FM.saveGeneratedFileOverwrite(
+        file,
+        state.rel,
+        saveOptions
+      );
 
       if (spreadsheetHistory && typeof spreadsheetHistory.markClean === "function") {
         spreadsheetHistory.markClean();
       }
+
       state.dirty = false;
       setStatus(tr("filemgr.spreadsheet_editor.saved", null, "Saved."), "ok");
 
@@ -12137,8 +12236,21 @@ function axisApi() {
         globalStatus.textContent = tr("filemgr.spreadsheet_editor.saved_file", { path: state.rel }, `Saved spreadsheet: ${state.rel}`);
       }
     } catch (e) {
-      const msg = String(e && e.message ? e.message : e);
-      setStatus(tr("filemgr.spreadsheet_editor.save_failed", { error: msg }, `Save failed: ${msg}`), "err");
+      const errorCode = String(
+        (e && e.details && e.details.error) ||
+        (e && e.code) ||
+        ""
+      );
+
+      if (
+        errorCode === "edit_locked" ||
+        errorCode === "edit_lock_missing"
+      ) {
+        handleWorkspaceLeaseLost(e);
+      } else {
+        const msg = String(e && e.message ? e.message : e);
+        setStatus(tr("filemgr.spreadsheet_editor.save_failed", { error: msg }, `Save failed: ${msg}`), "err");
+      }
     } finally {
       state.saving = false;
       updateButtons();
@@ -12148,9 +12260,26 @@ function axisApi() {
   async function open(ctx) {
     ensureModal();
 
+    const previousLeaseApi = workspaceLeaseApi();
+    if (
+      previousLeaseApi &&
+      typeof previousLeaseApi.release === "function" &&
+      state.rel
+    ) {
+      await previousLeaseApi.release(state.rel);
+    }
+
     const rel = String(ctx && ctx.rel ? ctx.rel : "");
     const name = String(ctx && ctx.name ? ctx.name : rel.split("/").pop() || "spreadsheet.xlsx");
     const url = String(ctx && ctx.url ? ctx.url : "");
+
+    const workspaceScope = isWorkspaceScope();
+    const canWrite = !(
+      FM &&
+      typeof FM.canWriteCurrentScope === "function" &&
+      !FM.canWriteCurrentScope()
+    );
+    const leaseApi = workspaceLeaseApi();
 
     state.rel = rel;
     state.name = name;
@@ -12160,7 +12289,11 @@ function axisApi() {
     state.active = 0;
     state.dirty = false;
     state.saving = false;
-    state.readOnly = !!(FM && typeof FM.canWriteCurrentScope === "function" && !FM.canWriteCurrentScope());
+
+    // Fail closed in workspace scope until this browser session has acquired
+    // the edit lease. Personal files retain the existing editor behavior.
+    state.readOnly = !canWrite || workspaceScope;
+    state.leaseActive = false;
     state.tooLarge = false;
     state.selection = null;
     state.activeCell = null;
@@ -12181,16 +12314,68 @@ function axisApi() {
     setStatus(tr("filemgr.spreadsheet_editor.loading", null, "Loading spreadsheet editor…"), "warn");
     updateButtons();
 
+    let pinnedStatus = null;
+
     try {
+      if (workspaceScope) {
+        if (!canWrite) {
+          pinnedStatus = tr(
+            "filemgr.textedit.readonly_role",
+            null,
+            "This file can only be opened in read-only mode because your workspace role does not allow editing."
+          );
+        } else if (
+          !leaseApi ||
+          typeof leaseApi.acquire !== "function"
+        ) {
+          pinnedStatus = tr(
+            "filemgr.textedit.readonly_generic",
+            null,
+            "This file can only be opened in read-only mode right now."
+          );
+        } else {
+          try {
+            // Acquire before downloading the workbook. This prevents loading a
+            // stale editable copy while another writer commits a newer version.
+            await leaseApi.acquire(rel);
+
+            state.leaseActive = true;
+            state.readOnly = false;
+
+            leaseApi.start(
+              rel,
+              handleWorkspaceLeaseLost
+            );
+          } catch (error) {
+            state.leaseActive = false;
+            state.readOnly = true;
+            pinnedStatus = workspaceLeaseErrorText(error);
+          }
+        }
+      }
+
       state.sheets = await readWorkbook({ rel, name, url });
       resetSpreadsheetHistory();
       render();
 
-      if (state.workbookImageWarning) {
+      if (pinnedStatus) {
+        setStatus(pinnedStatus, "warn");
+      } else if (state.workbookImageWarning) {
         // Restore workbook image warning after render's normal ready status.
         setStatus(state.workbookImageWarning, "warn");
       }
     } catch (e) {
+      if (
+        state.leaseActive &&
+        leaseApi &&
+        typeof leaseApi.release === "function"
+      ) {
+        await leaseApi.release(rel);
+      }
+
+      state.leaseActive = false;
+      state.readOnly = true;
+
       const msg = String(e && e.message ? e.message : e);
       if (bodyEl) {
         bodyEl.replaceChildren();

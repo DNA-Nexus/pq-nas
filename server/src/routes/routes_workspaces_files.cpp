@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <random>
 #include <system_error>
 #include <array>
@@ -1169,6 +1170,148 @@ json workspace_edit_lease_public_json_local(const WorkspaceEditLeaseRec& rec) {
         {"expires_at", rec.expires_at}
     };
 }
+
+// Serializes edit-lease state transitions with file replacement commits.
+// This prevents two simultaneous editor opens from both acquiring the same
+// lease and closes the check-to-rename race during spreadsheet saves.
+static std::mutex workspace_edit_lease_mutex_local;
+
+static bool require_workspace_edit_lease_for_binary_write_while_locked_local(
+    const WorkspaceFileRouteDeps& deps,
+    httplib::Response& res,
+    const std::filesystem::path& ws_root,
+    const std::string& workspace_id,
+    const std::string& rel_norm,
+    const std::string& actor_fp,
+    const std::string& session_id,
+    const std::string& action_label) {
+
+    auto reply = [&](int status, json body) {
+        if (deps.reply_json) {
+            deps.reply_json(
+                res,
+                status,
+                body.dump()
+            );
+        } else {
+            res.status = status;
+            res.set_content(
+                body.dump(),
+                "application/json; charset=utf-8"
+            );
+        }
+    };
+
+    std::string lerr;
+
+    const auto lock_abs =
+        workspace_edit_lock_path_local(
+            ws_root,
+            rel_norm,
+            &lerr
+        );
+
+    if (lock_abs.empty()) {
+        reply(500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "failed to build edit lock path"},
+            {"detail", lerr}
+        });
+        return false;
+    }
+
+    WorkspaceEditLeaseRec lease;
+    bool found = false;
+
+    if (!load_workspace_edit_lease_local(
+            lock_abs,
+            &lease,
+            &found,
+            &lerr)) {
+        reply(500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "failed to load edit lease"},
+            {"detail", lerr}
+        });
+        return false;
+    }
+
+    const std::uint64_t now_epoch =
+        deps.now_epoch_sec
+            ? static_cast<std::uint64_t>(
+                deps.now_epoch_sec()
+            )
+            : 0;
+
+    // Security: reject corrupted or mismatched lease metadata instead of
+    // authorizing a write against a lock belonging to another target.
+    if (
+        found &&
+        (
+            lease.workspace_id != workspace_id ||
+            lease.path != rel_norm
+        )
+    ) {
+        reply(500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "edit lease metadata mismatch"}
+        });
+        return false;
+    }
+
+    const bool active =
+        found &&
+        workspace_edit_lease_is_active_local(
+            lease,
+            now_epoch
+        );
+
+    if (!active) {
+        // A request carrying an editor session explicitly claims to be an
+        // editor save, so fail closed unless its lease is still active.
+        if (!session_id.empty()) {
+            reply(409, json{
+                {"ok", false},
+                {"error", "edit_lock_missing"},
+                {"message", "active edit lease required"}
+            });
+            return false;
+        }
+
+        return true;
+    }
+
+    if (
+        !session_id.empty() &&
+        workspace_edit_lease_owned_by_local(
+            lease,
+            actor_fp,
+            session_id
+        )
+    ) {
+        return true;
+    }
+
+    reply(409, json{
+        {"ok", false},
+        {"error", "edit_locked"},
+        {"message",
+            action_label.empty()
+                ? "file is currently being edited"
+                : action_label +
+                  " blocked because the file is being edited"},
+        {"lease",
+            workspace_edit_lease_public_json_local(
+                lease
+            )}
+    });
+
+    return false;
+}
+
 std::string trim_copy_safe(const std::string& s) {
     std::size_t a = 0;
     while (a < s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
@@ -5712,6 +5855,13 @@ srv.Post("/api/v4/workspaces/files/write_text",
             }.dump());
             return;
         }
+
+        // Keep lease ownership stable until the text mutation has completed.
+        // This serializes text and spreadsheet commits against lease changes.
+        std::lock_guard<std::mutex> edit_lease_guard(
+            workspace_edit_lease_mutex_local
+        );
+
                  {
              std::string lerr;
              const auto lock_abs = workspace_edit_lock_path_local(ws_root, rel_norm, &lerr);
@@ -5958,6 +6108,10 @@ srv.Post("/api/v4/workspaces/files/write_text",
         const std::uint64_t now_epoch =
             deps.now_epoch_sec ? static_cast<std::uint64_t>(deps.now_epoch_sec()) : 0;
 
+        std::lock_guard<std::mutex> lease_guard(
+            workspace_edit_lease_mutex_local
+        );
+
         WorkspaceEditLeaseRec cur;
         bool found = false;
         if (!load_workspace_edit_lease_local(lock_abs, &cur, &found, &lerr)) {
@@ -6109,6 +6263,10 @@ srv.Post("/api/v4/workspaces/files/write_text",
         const std::uint64_t now_epoch =
             deps.now_epoch_sec ? static_cast<std::uint64_t>(deps.now_epoch_sec()) : 0;
 
+        std::lock_guard<std::mutex> lease_guard(
+            workspace_edit_lease_mutex_local
+        );
+
         WorkspaceEditLeaseRec cur;
         bool found = false;
         if (!load_workspace_edit_lease_local(lock_abs, &cur, &found, &lerr)) {
@@ -6236,6 +6394,10 @@ srv.Post("/api/v4/workspaces/files/write_text",
             }.dump());
             return;
         }
+
+        std::lock_guard<std::mutex> lease_guard(
+            workspace_edit_lease_mutex_local
+        );
 
         WorkspaceEditLeaseRec cur;
         bool found = false;
@@ -7491,6 +7653,10 @@ srv.Post("/api/v4/workspaces/files/write_text",
 
         const std::string workspace_id = body.value("workspace_id", "");
         const std::string rel_path = body.value("path", "");
+        const std::string session_id =
+            trim_copy_safe(
+                body.value("session_id", "")
+            );
         const bool overwrite =
             body.contains("overwrite") && body["overwrite"].is_boolean()
                 ? body["overwrite"].get<bool>()
@@ -7533,6 +7699,24 @@ srv.Post("/api/v4/workspaces/files/write_text",
             return;
         }
 
+        if (overwrite) {
+            std::lock_guard<std::mutex> lease_guard(
+                workspace_edit_lease_mutex_local
+            );
+
+            if (!require_workspace_edit_lease_for_binary_write_while_locked_local(
+                    deps,
+                    res,
+                    ws_root,
+                    workspace_id,
+                    rel_norm,
+                    actor_fp,
+                    session_id,
+                    "upload")) {
+                return;
+            }
+        }
+
         const std::uint64_t chunks_total =
             size_bytes == 0
                 ? 1
@@ -7550,6 +7734,7 @@ srv.Post("/api/v4/workspaces/files/write_text",
             {"chunks_total", chunks_total},
             {"overwrite", overwrite},
             {"actor_fp", actor_fp},
+            {"session_id", session_id},
             {"actor_role", actor_role},
             {"actor_is_external", actor_is_external},
             {"created_epoch", deps.now_epoch_sec ? deps.now_epoch_sec() : static_cast<std::int64_t>(std::time(nullptr))}
@@ -7965,6 +8150,10 @@ srv.Post("/api/v4/workspaces/files/write_text",
 
         const std::string workspace_id = body.value("workspace_id", "");
         const std::string upload_id = body.value("upload_id", "");
+        const std::string session_id =
+            trim_copy_safe(
+                body.value("session_id", "")
+            );
 
         if (workspace_id.empty() || !ws_upload_id_ok(upload_id)) {
             deps.reply_json(res, 400, json{
@@ -7993,6 +8182,19 @@ srv.Post("/api/v4/workspaces/files/write_text",
                 {"ok", false},
                 {"error", "bad_request"},
                 {"message", "upload session workspace mismatch"}
+            }.dump());
+            return;
+        }
+
+        if (
+            trim_copy_safe(
+                meta.value("session_id", "")
+            ) != session_id
+        ) {
+            deps.reply_json(res, 409, json{
+                {"ok", false},
+                {"error", "upload_session_mismatch"},
+                {"message", "upload session editor mismatch"}
             }.dump());
             return;
         }
@@ -8132,6 +8334,44 @@ srv.Post("/api/v4/workspaces/files/write_text",
 
             if (assembled_bytes != size_bytes) {
                 throw std::runtime_error("assembled size mismatch");
+            }
+
+            // Hold the lease mutex from the final ownership check through
+            // version preservation and atomic rename.
+            std::lock_guard<std::mutex> edit_lease_guard(
+                workspace_edit_lease_mutex_local
+            );
+
+            if (!require_workspace_edit_lease_for_binary_write_while_locked_local(
+                    deps,
+                    res,
+                    ws_root,
+                    workspace_id,
+                    rel_norm,
+                    actor_fp,
+                    session_id,
+                    "upload")) {
+                std::error_code rm_ec;
+                std::filesystem::remove(
+                    tmp,
+                    rm_ec
+                );
+                return;
+            }
+
+            if (!require_workspace_no_live_lock_for_write_local(
+                    deps,
+                    res,
+                    workspace_id,
+                    rel_norm,
+                    actor_fp,
+                    "upload")) {
+                std::error_code rm_ec;
+                std::filesystem::remove(
+                    tmp,
+                    rm_ec
+                );
+                return;
             }
 
             if (!deps.file_versions) {
@@ -8444,6 +8684,13 @@ srv.Post("/api/v4/workspaces/files/write_text",
             overwrite = (ov == "1" || ov == "true" || ov == "yes");
         }
 
+        const std::string session_id =
+            req.has_param("session_id")
+                ? trim_copy_safe(
+                    req.get_param_value("session_id")
+                )
+                : "";
+
         std::uint64_t cl = 0;
         if (!header_u64("Content-Length", &cl)) {
             audit_fail(workspace_id, "missing_content_length", 411);
@@ -8733,8 +8980,41 @@ srv.Post("/api/v4/workspaces/files/write_text",
                 }.dump());
                 return;
             }
+            // Serialize the final lease check with version preservation
+            // and atomic replacement. Only the owning session may commit.
+            std::lock_guard<std::mutex> edit_lease_guard(
+                workspace_edit_lease_mutex_local
+            );
+
+            if (!require_workspace_edit_lease_for_binary_write_while_locked_local(
+                    deps,
+                    res,
+                    ws_root,
+                    workspace_id,
+                    rel_norm,
+                    actor_fp,
+                    session_id,
+                    "upload")) {
+                std::error_code rm_ec;
+                std::filesystem::remove(
+                    tmp,
+                    rm_ec
+                );
+                return;
+            }
+
             if (!require_workspace_no_live_lock_for_write_local(
-                    deps, res, workspace_id, rel_norm, actor_fp, "upload")) {
+                    deps,
+                    res,
+                    workspace_id,
+                    rel_norm,
+                    actor_fp,
+                    "upload")) {
+                std::error_code rm_ec;
+                std::filesystem::remove(
+                    tmp,
+                    rm_ec
+                );
                 return;
             }
 
