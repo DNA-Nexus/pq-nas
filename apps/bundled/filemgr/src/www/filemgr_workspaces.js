@@ -342,7 +342,7 @@
         return `/api/v4/workspaces/files/mkdir?${qs.toString()}`;
     }
 
-    function putUrl(path, overwrite) {
+    function putUrl(path, overwrite, options = {}) {
         if (!isWorkspaceScope()) {
             const qs = new URLSearchParams();
             qs.set("path", path);
@@ -354,6 +354,17 @@
         qs.set("workspace_id", FM.scope.workspaceId);
         qs.set("path", path);
         if (overwrite) qs.set("overwrite", "1");
+
+        const sessionId = String(
+            options && options.workspaceEditSessionId
+                ? options.workspaceEditSessionId
+                : ""
+        ).trim();
+
+        // Concurrency protection: bind editor overwrites to the browser session
+        // that owns the active workspace edit lease.
+        if (sessionId) qs.set("session_id", sessionId);
+
         return `/api/v4/workspaces/files/put?${qs.toString()}`;
     }
     function zipUrl(path, maxBytes) {

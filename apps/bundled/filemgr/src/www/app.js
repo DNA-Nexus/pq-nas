@@ -1053,9 +1053,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return `/api/v4/workspaces/files/links/${action}`;
   }
 
-  function apiPutUrl(path, overwrite) {
+  function apiPutUrl(path, overwrite, options = {}) {
     const api = fmApi();
-    if (api && typeof api.putUrl === "function") return api.putUrl(path || "", !!overwrite);
+    if (api && typeof api.putUrl === "function") {
+      return api.putUrl(path || "", !!overwrite, options || {});
+    }
 
     const qs = new URLSearchParams();
     qs.set("path", path || "");
@@ -3042,7 +3044,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
                   workspace_id: workspaceId,
                   path: full,
                   size_bytes: size,
-                  overwrite: !!(opts && opts.overwrite)
+                  overwrite: !!(opts && opts.overwrite),
+                  session_id: String(
+                    (opts && opts.workspaceEditSessionId) || ""
+                  )
                 }
               : {
                   path: full,
@@ -3103,7 +3108,13 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       const finish = await postUploadJson(
           inWorkspace ? "/api/v4/workspaces/uploads/finish" : "/api/v4/uploads/finish",
           inWorkspace
-              ? { workspace_id: workspaceId, upload_id: uploadId }
+              ? {
+                  workspace_id: workspaceId,
+                  upload_id: uploadId,
+                  session_id: String(
+                    (opts && opts.workspaceEditSessionId) || ""
+                  )
+                }
               : { upload_id: uploadId }
       );
 
@@ -3128,7 +3139,11 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   function xhrPutFileTo(relPath, file, onProgress, opts = {}) {
     return new Promise((resolve, reject) => {
       const full = curPath ? `${curPath}/${relPath}` : relPath;
-      const url = apiPutUrl(full, !!(opts && opts.overwrite));
+      const url = apiPutUrl(
+        full,
+        !!(opts && opts.overwrite),
+        opts || {}
+      );
 
       const xhr = new XMLHttpRequest();
       activeUploadXhr = xhr;
@@ -7948,7 +7963,7 @@ function describeMoveItems(items) {
     }
     await uploadRelFiles([{ rel: name, file, source: "generated" }]);
   };
-  FM.saveGeneratedFileOverwrite = async (file, relPath) => {
+  FM.saveGeneratedFileOverwrite = async (file, relPath, options = {}) => {
     const rel = normalizeRelPath(relPath || (file && file.name) || "");
     const cur = normalizeRelPath(curPath || "");
     if (!file || !rel || !validateRelPath(rel)) {
@@ -7969,7 +7984,12 @@ function describeMoveItems(items) {
       throw new Error("invalid generated overwrite file name");
     }
 
-    await uploadFileSmartTo(leaf, file, null, { overwrite: true });
+    await uploadFileSmartTo(
+      leaf,
+      file,
+      null,
+      Object.assign({}, options || {}, { overwrite: true })
+    );
     await refreshQuotaInfoIfNeeded(true).then(applyQuotaUi).catch(() => {});
     clearFileListCache();
     await load(true);

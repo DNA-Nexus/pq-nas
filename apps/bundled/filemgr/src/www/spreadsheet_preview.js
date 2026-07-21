@@ -185,9 +185,10 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
       loadScriptOnce("./spreadsheet_cell_context_menu.js?v=spreadsheet-cell-context-menu-1", "data-pqnas-spreadsheet-cell-context-menu-js"),
       loadScriptOnce("./spreadsheet_comments.js?v=spreadsheet-preview-comment-marker-only-1", "data-pqnas-spreadsheet-comments-js"),
       loadScriptOnce("./spreadsheet_xlsx_images.js?v=spreadsheet-image-delete-1", "data-pqnas-spreadsheet-xlsx-images-js"),
-      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js")
+      loadScriptOnce("./spreadsheet_image_overlay.js?v=spreadsheet-image-resize-1", "data-pqnas-spreadsheet-image-overlay-js"),
+      loadScriptOnce("./spreadsheet_workspace_lease.js?v=spreadsheet-workspace-edit-lock-1", "data-pqnas-spreadsheet-workspace-lease-js")
     ]).then(() => {
-      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-comments-1", "data-pqnas-spreadsheet-edit-js");
+      return loadScriptOnce("./spreadsheet_edit.js?v=spreadsheet-workspace-edit-lock-1", "data-pqnas-spreadsheet-edit-js");
     }).then(() => {
       if (FM && FM.spreadsheetEdit && typeof FM.spreadsheetEdit.open === "function") return FM.spreadsheetEdit;
       throw new Error("spreadsheet editor did not register");
