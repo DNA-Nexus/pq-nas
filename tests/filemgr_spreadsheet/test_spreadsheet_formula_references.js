@@ -18,6 +18,19 @@ function compact(items) {
   }));
 }
 
+function compactWithSheet(items) {
+  return items.map((item) => ({
+    sheetName: item.sheetName,
+    row1: item.row1,
+    col1: item.col1,
+    row2: item.row2,
+    col2: item.col2,
+    referenceIndex:
+      item.referenceIndex,
+    text: item.text
+  }));
+}
+
 assert.strictEqual(
   references.columnIndexFromName("A"),
   0
@@ -194,6 +207,205 @@ assert.deepStrictEqual(
     }
   ).map((item) => item.text),
   ["B2"]
+);
+
+assert.deepStrictEqual(
+  compactWithSheet(
+    references.parseFormulaReferences(
+      "=Sheet2!B2+C3",
+      {
+        includeCrossSheet: true
+      }
+    )
+  ),
+  [
+    {
+      sheetName: "Sheet2",
+      row1: 1,
+      col1: 1,
+      row2: 1,
+      col2: 1,
+      referenceIndex: 0,
+      text: "Sheet2!B2"
+    },
+    {
+      sheetName: "",
+      row1: 2,
+      col1: 2,
+      row2: 2,
+      col2: 2,
+      referenceIndex: 1,
+      text: "C3"
+    }
+  ]
+);
+
+assert.deepStrictEqual(
+  compactWithSheet(
+    references.parseFormulaReferences(
+      "=SUM(Sheet2!B2:B10)",
+      {
+        includeCrossSheet: true
+      }
+    )
+  ),
+  [
+    {
+      sheetName: "Sheet2",
+      row1: 1,
+      col1: 1,
+      row2: 9,
+      col2: 1,
+      referenceIndex: 0,
+      text: "Sheet2!B2:B10"
+    }
+  ]
+);
+
+assert.deepStrictEqual(
+  compactWithSheet(
+    references.parseFormulaReferences(
+      "='Myynti 2026'!$B$2+'O''Brien'!A1",
+      {
+        includeCrossSheet: true
+      }
+    )
+  ),
+  [
+    {
+      sheetName: "Myynti 2026",
+      row1: 1,
+      col1: 1,
+      row2: 1,
+      col2: 1,
+      referenceIndex: 0,
+      text: "'Myynti 2026'!$B$2"
+    },
+    {
+      sheetName: "O'Brien",
+      row1: 0,
+      col1: 0,
+      row2: 0,
+      col2: 0,
+      referenceIndex: 1,
+      text: "'O''Brien'!A1"
+    }
+  ]
+);
+
+assert.deepStrictEqual(
+  compactWithSheet(
+    references.parseFormulaReferences(
+      '="Sheet2!A1"&Sheet2!B2',
+      {
+        includeCrossSheet: true
+      }
+    )
+  ),
+  [
+    {
+      sheetName: "Sheet2",
+      row1: 1,
+      col1: 1,
+      row2: 1,
+      col2: 1,
+      referenceIndex: 0,
+      text: "Sheet2!B2"
+    }
+  ]
+);
+
+assert.deepStrictEqual(
+  references.parseFormulaReferences(
+    "=[Book.xlsx]Sheet1!A1",
+    {
+      includeCrossSheet: true
+    }
+  ),
+  []
+);
+
+assert.strictEqual(
+  references.formatFormulaSheetName(
+    "Sheet2"
+  ),
+  "Sheet2"
+);
+
+assert.strictEqual(
+  references.formatFormulaSheetName(
+    "Myynti 2026"
+  ),
+  "'Myynti 2026'"
+);
+
+assert.strictEqual(
+  references.formatFormulaSheetName(
+    "O'Brien"
+  ),
+  "'O''Brien'"
+);
+
+assert.strictEqual(
+  references.formatFormulaSheetName(
+    "A1"
+  ),
+  "'A1'"
+);
+
+assert.strictEqual(
+  references.formatFormulaReference(
+    "Myynti 2026",
+    1,
+    1,
+    9,
+    1
+  ),
+  "'Myynti 2026'!B2:B10"
+);
+
+assert.strictEqual(
+  references.referenceTargetsSheet(
+    {
+      sheetName: "Sheet2"
+    },
+    "Sheet2",
+    "Sheet1"
+  ),
+  true
+);
+
+assert.strictEqual(
+  references.referenceTargetsSheet(
+    {
+      sheetName: "Sheet2"
+    },
+    "Sheet1",
+    "Sheet1"
+  ),
+  false
+);
+
+assert.strictEqual(
+  references.referenceTargetsSheet(
+    {
+      sheetName: ""
+    },
+    "Sheet1",
+    "Sheet1"
+  ),
+  true
+);
+
+assert.strictEqual(
+  references.referenceTargetsSheet(
+    {
+      sheetName: ""
+    },
+    "Sheet2",
+    "Sheet1"
+  ),
+  false
 );
 
 assert.strictEqual(

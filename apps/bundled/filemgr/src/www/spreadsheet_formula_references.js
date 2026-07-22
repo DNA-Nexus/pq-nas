@@ -126,6 +126,134 @@
     return characters.join("");
   }
 
+  function columnNameFromIndex(index) {
+    const value = Number(index);
+
+    if (
+      !Number.isInteger(value) ||
+      value < 0 ||
+      value >= DEFAULT_MAX_COLS
+    ) {
+      return "";
+    }
+
+    let number = value + 1;
+    let out = "";
+
+    while (number > 0) {
+      const remainder =
+        (number - 1) % 26;
+
+      out =
+        String.fromCharCode(
+          65 + remainder
+        ) + out;
+
+      number =
+        Math.floor(
+          (number - 1) / 26
+        );
+    }
+
+    return out;
+  }
+
+  function cellReferenceText(row, col) {
+    const rowIndex = Number(row);
+    const colIndex = Number(col);
+    const column =
+      columnNameFromIndex(colIndex);
+
+    if (
+      !column ||
+      !Number.isInteger(rowIndex) ||
+      rowIndex < 0 ||
+      rowIndex >= DEFAULT_MAX_ROWS
+    ) {
+      return "";
+    }
+
+    return `${column}${rowIndex + 1}`;
+  }
+
+  function parseFormulaSheetName(value) {
+    const token = String(value || "");
+
+    if (!token.endsWith("!")) {
+      return "";
+    }
+
+    const source =
+      token.slice(0, -1);
+
+    if (
+      source.length >= 2 &&
+      source.startsWith("'") &&
+      source.endsWith("'")
+    ) {
+      return source
+        .slice(1, -1)
+        .replace(/''/g, "'");
+    }
+
+    return source;
+  }
+
+  function formatFormulaSheetName(value) {
+    const name = String(value || "");
+
+    if (!name) return "";
+
+    /*
+     * Correctness: cell-like worksheet names must be quoted
+     * so Excel does not interpret the name itself as A1 data.
+     */
+    const canStayBare =
+      /^[A-Za-z0-9_.]+$/.test(name) &&
+      !parseCellReference(name);
+
+    if (canStayBare) {
+      return name;
+    }
+
+    return (
+      "'" +
+      name.replace(/'/g, "''") +
+      "'"
+    );
+  }
+
+  function formatFormulaReference(
+    sheetName,
+    row1,
+    col1,
+    row2 = row1,
+    col2 = col1
+  ) {
+    const first =
+      cellReferenceText(row1, col1);
+
+    const second =
+      cellReferenceText(row2, col2);
+
+    if (!first || !second) {
+      return "";
+    }
+
+    const prefix = sheetName
+      ? `${formatFormulaSheetName(sheetName)}!`
+      : "";
+
+    return (
+      prefix +
+      (
+        first === second
+          ? first
+          : `${first}:${second}`
+      )
+    );
+  }
+
   function parseFormulaReferences(
     formula,
     options = {}
@@ -136,14 +264,24 @@
 
     const references = [];
     const seen = new Set();
+    const includeCrossSheet =
+      options.includeCrossSheet === true;
 
     /*
      * Security and performance: parse only bounded A1-style
      * references. Formula text is never evaluated and the
      * number of generated highlights is strictly limited.
+     *
+     * Supported worksheet qualifiers:
+     *   Sheet2!A1
+     *   Sheet2!A1:B5
+     *   'Myynti 2026'!$B$2
+     *   'O''Brien'!A1
+     *
+     * External workbook references are intentionally excluded.
      */
     const expression =
-      /(^|[^A-Za-z0-9_.])(\$?[A-Za-z]{1,3}\$?[1-9][0-9]*)(?:\s*:\s*(\$?[A-Za-z]{1,3}\$?[1-9][0-9]*))?(?![A-Za-z0-9_.])/g;
+      /(^|[^A-Za-z0-9_.\]'#])((?:'(?:[^']|'')+'|[A-Za-z0-9_.]+)!)?(\$?[A-Za-z]{1,3}\$?[1-9][0-9]*)(?:\s*:\s*(\$?[A-Za-z]{1,3}\$?[1-9][0-9]*))?(?![A-Za-z0-9_.])/g;
 
     let match = null;
 
@@ -151,32 +289,53 @@
       references.length < MAX_REFERENCES &&
       (match = expression.exec(masked))
     ) {
-      const prefix = match[1] || "";
-      const firstText = match[2];
-      const secondText = match[3] || "";
-      const followingCharacter =
-        masked.charAt(expression.lastIndex);
+      const prefix =
+        match[1] || "";
+
+      const qualifier =
+        match[2] || "";
+
+      const sheetName =
+        parseFormulaSheetName(
+          qualifier
+        );
+
+      const firstText = match[3];
+      const secondText = match[4] || "";
 
       /*
-       * References connected to a sheet-name separator are
-       * cross-sheet references. Painting another sheet is
-       * intentionally deferred.
+       * Correctness and security: if an unsupported qualifier
+       * ends immediately before "!A1", do not reinterpret the
+       * trailing A1 token as a same-sheet reference. This keeps
+       * external workbook references such as
+       * [Book.xlsx]Sheet1!A1 outside the supported grammar.
        */
       if (
-        prefix === "!" ||
-        followingCharacter === "!"
+        !qualifier &&
+        prefix === "!"
+      ) {
+        continue;
+      }
+
+      if (
+        sheetName &&
+        !includeCrossSheet
       ) {
         continue;
       }
 
       /*
        * Avoid treating function names such as LOG10(...)
-       * as cell references.
+       * as cell references. A qualified LOG10!A1 remains a
+       * valid worksheet reference.
        */
       if (
+        !sheetName &&
         !secondText &&
         /^\s*\(/.test(
-          masked.slice(expression.lastIndex)
+          masked.slice(
+            expression.lastIndex
+          )
         )
       ) {
         continue;
@@ -202,21 +361,27 @@
         first.row,
         second.row
       );
+
       const row2 = Math.max(
         first.row,
         second.row
       );
+
       const col1 = Math.min(
         first.col,
         second.col
       );
+
       const col2 = Math.max(
         first.col,
         second.col
       );
 
+      const sheetKey =
+        sheetName.toLowerCase();
+
       const key =
-        `${row1}:${col1}:${row2}:${col2}`;
+        `${sheetKey}:${row1}:${col1}:${row2}:${col2}`;
 
       if (seen.has(key)) {
         continue;
@@ -225,19 +390,55 @@
       seen.add(key);
 
       references.push({
+        sheetName,
         row1,
         col1,
         row2,
         col2,
         referenceIndex:
           references.length,
-        text: secondText
-          ? `${firstText}:${secondText}`
-          : firstText
+        text:
+          qualifier +
+          (
+            secondText
+              ? `${firstText}:${secondText}`
+              : firstText
+          )
       });
     }
 
     return references;
+  }
+
+  function normalizedSheetKey(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function referenceTargetsSheet(
+    reference,
+    activeSheetName,
+    formulaSheetName
+  ) {
+    const activeKey =
+      normalizedSheetKey(activeSheetName);
+
+    if (!activeKey) {
+      return true;
+    }
+
+    const referenceSheet =
+      reference &&
+      reference.sheetName
+        ? reference.sheetName
+        : formulaSheetName;
+
+    return (
+      normalizedSheetKey(
+        referenceSheet
+      ) === activeKey
+    );
   }
 
   function clear(root) {
@@ -283,11 +484,23 @@
       return [];
     }
 
-    const references =
+    const parsedReferences =
       parseFormulaReferences(
         formula,
         options
       );
+
+    const references =
+      options.activeSheetName
+        ? parsedReferences.filter(
+            (reference) =>
+              referenceTargetsSheet(
+                reference,
+                options.activeSheetName,
+                options.formulaSheetName
+              )
+          )
+        : parsedReferences;
 
     if (!references.length) {
       return references;
@@ -447,9 +660,15 @@
 
   const api = {
     columnIndexFromName,
+    columnNameFromIndex,
     referenceColorIndex,
     parseCellReference,
+    cellReferenceText,
+    parseFormulaSheetName,
+    formatFormulaSheetName,
+    formatFormulaReference,
     parseFormulaReferences,
+    referenceTargetsSheet,
     clear,
     paint
   };
