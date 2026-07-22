@@ -155,6 +155,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let borderMenu = null;
   let xlsxLoadPromise = null;
   let formulaFocus = null;
+  let formulaReferencePick = null;
   let spreadsheetHistory = null;
   let historyKeyboardAttached = false;
   let pendingCellEditHistory = null;
@@ -3528,6 +3529,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     state.dirty = historyDirtyState();
 
     formulaFocus = null;
+    formulaReferencePick = null;
     pendingCellEditHistory = null;
 
     render();
@@ -3912,7 +3914,348 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     setDirty(historyDirtyState());
   }
 
+  function formulaReferencePickContext() {
+    const pick = formulaReferencePick;
+
+    if (!pick) return null;
+
+    const sheetIndex =
+      Number(pick.sheetIndex);
+
+    const row = Number(pick.row);
+    const col = Number(pick.col);
+
+    const sheet =
+      Number.isInteger(sheetIndex)
+        ? state.sheets[sheetIndex]
+        : null;
+
+    if (
+      !sheet ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col) ||
+      row < 0 ||
+      col < 0
+    ) {
+      return null;
+    }
+
+    return {
+      pick,
+      sheet,
+      sheetIndex,
+      row,
+      col
+    };
+  }
+
+  function rememberFormulaReferencePickSelection(
+    input
+  ) {
+    const context =
+      formulaReferencePickContext();
+
+    if (!context || !input) return;
+
+    const value =
+      String(input.value || "");
+
+    const start =
+      Number.isInteger(input.selectionStart)
+        ? input.selectionStart
+        : value.length;
+
+    const end =
+      Number.isInteger(input.selectionEnd)
+        ? input.selectionEnd
+        : start;
+
+    context.pick.value = value;
+    context.pick.selectionStart =
+      Math.max(
+        0,
+        Math.min(start, value.length)
+      );
+
+    context.pick.selectionEnd =
+      Math.max(
+        context.pick.selectionStart,
+        Math.min(end, value.length)
+      );
+  }
+
+  function restoreFormulaReferencePickEditor() {
+    const context =
+      formulaReferencePickContext();
+
+    if (
+      !context ||
+      !formulaBarInput ||
+      !formulaBarNameEl
+    ) {
+      return false;
+    }
+
+    const value =
+      String(context.pick.value || "");
+
+    formulaBarInput.disabled = false;
+    formulaBarNameEl.textContent =
+      `${String(context.sheet.name || "")}!` +
+      coordToRef(
+        context.row,
+        context.col
+      );
+
+    formulaBarInput.dataset.row =
+      String(context.row);
+
+    formulaBarInput.dataset.col =
+      String(context.col);
+
+    formulaBarInput.dataset.sheetIndex =
+      String(context.sheetIndex);
+
+    formulaBarInput.value = value;
+
+    formulaFocus = {
+      input: formulaBarInput,
+      row: context.row,
+      col: context.col,
+      sheetIndex: context.sheetIndex,
+      originalRaw:
+        context.pick.originalRaw,
+      wasDirty:
+        context.pick.wasDirty,
+      crossSheetPick: true
+    };
+
+    window.requestAnimationFrame(() => {
+      if (
+        !formulaReferencePick ||
+        !formulaBarInput
+      ) {
+        return;
+      }
+
+      try {
+        formulaBarInput.focus({
+          preventScroll: true
+        });
+      } catch (_) {
+        formulaBarInput.focus();
+      }
+
+      const start =
+        Number.isInteger(
+          context.pick.selectionStart
+        )
+          ? context.pick.selectionStart
+          : value.length;
+
+      const end =
+        Number.isInteger(
+          context.pick.selectionEnd
+        )
+          ? context.pick.selectionEnd
+          : start;
+
+      try {
+        formulaBarInput.setSelectionRange(
+          Math.min(start, value.length),
+          Math.min(end, value.length)
+        );
+      } catch (_) {}
+    });
+
+    return true;
+  }
+
+  function beginFormulaReferencePick(
+    targetSheetIndex
+  ) {
+    if (
+      !Number.isInteger(targetSheetIndex) ||
+      targetSheetIndex < 0 ||
+      targetSheetIndex >= state.sheets.length
+    ) {
+      return false;
+    }
+
+    const existing =
+      formulaReferencePickContext();
+
+    if (existing) {
+      rememberFormulaReferencePickSelection(
+        formulaBarInput
+      );
+
+      state.active = targetSheetIndex;
+      state.selection = null;
+      state.rangeSelection = null;
+      state.activeCell = null;
+      state.selectedImageId = "";
+
+      render();
+      return true;
+    }
+
+    const focus = formulaFocus;
+    const input = focus && focus.input;
+
+    if (
+      !focus ||
+      !input ||
+      !isFormulaValue(input.value)
+    ) {
+      return false;
+    }
+
+    const sourceSheetIndex =
+      Number.isInteger(focus.sheetIndex)
+        ? focus.sheetIndex
+        : state.active;
+
+    const sourceSheet =
+      state.sheets[sourceSheetIndex];
+
+    const row = Number(focus.row);
+    const col = Number(focus.col);
+
+    if (
+      !sourceSheet ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col)
+    ) {
+      return false;
+    }
+
+    const value =
+      String(input.value || "");
+
+    const selectionStart =
+      Number.isInteger(input.selectionStart)
+        ? input.selectionStart
+        : value.length;
+
+    const selectionEnd =
+      Number.isInteger(input.selectionEnd)
+        ? input.selectionEnd
+        : selectionStart;
+
+    formulaReferencePick = {
+      sheetIndex: sourceSheetIndex,
+      row,
+      col,
+      originalRaw:
+        Object.prototype.hasOwnProperty.call(
+          focus,
+          "originalRaw"
+        )
+          ? String(
+              focus.originalRaw == null
+                ? ""
+                : focus.originalRaw
+            )
+          : cellRaw(
+              sourceSheet,
+              row,
+              col
+            ),
+      wasDirty: !!focus.wasDirty,
+      value,
+      selectionStart,
+      selectionEnd,
+      historyRecorded: false
+    };
+
+    /*
+     * UX correctness: worksheet rendering replaces cell DOM
+     * nodes. Move the live formula editor to the persistent
+     * formula bar before switching to another worksheet.
+     */
+    formulaFocus = null;
+    state.active = targetSheetIndex;
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = null;
+    state.selectedImageId = "";
+
+    render();
+    return true;
+  }
+
+  function finishFormulaReferencePick(
+    cancel = false
+  ) {
+    const context =
+      formulaReferencePickContext();
+
+    if (!context) return false;
+
+    if (cancel) {
+      setCellRaw(
+        context.sheet,
+        context.row,
+        context.col,
+        String(
+          context.pick.originalRaw == null
+            ? ""
+            : context.pick.originalRaw
+        )
+      );
+
+      setDirty(
+        !!context.pick.wasDirty
+      );
+    }
+
+    const sheetIndex =
+      context.sheetIndex;
+
+    const row = context.row;
+    const col = context.col;
+
+    formulaReferencePick = null;
+    formulaFocus = null;
+
+    state.active = sheetIndex;
+    state.selection = null;
+    state.rangeSelection = null;
+    state.activeCell = {
+      row,
+      col
+    };
+    state.selectedImageId = "";
+
+    render();
+
+    window.requestAnimationFrame(() => {
+      focusSpreadsheetCell(
+        row,
+        col,
+        {
+          end: true
+        }
+      );
+    });
+
+    return true;
+  }
+
   function activeFormulaBarCell() {
+    const picked =
+      formulaReferencePickContext();
+
+    if (picked) {
+      return {
+        sheet: picked.sheet,
+        sheetIndex: picked.sheetIndex,
+        row: picked.row,
+        col: picked.col
+      };
+    }
+
     const sheet = state.sheets[state.active];
     const row = Number(state.activeCell && state.activeCell.row);
     const col = Number(state.activeCell && state.activeCell.col);
@@ -3921,11 +4264,19 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       return null;
     }
 
-    return { sheet, row, col };
+    return {
+      sheet,
+      sheetIndex: state.active,
+      row,
+      col
+    };
   }
 
   function updateFormulaBar(forceValue = false) {
     if (!formulaBarNameEl || !formulaBarInput) return;
+
+    const picked =
+      formulaReferencePickContext();
 
     const cell = activeFormulaBarCell();
     const disabled = state.saving || state.readOnly || state.tooLarge || !cell;
@@ -3936,15 +4287,31 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       formulaBarNameEl.textContent = "";
       formulaBarInput.removeAttribute("data-row");
       formulaBarInput.removeAttribute("data-col");
+      formulaBarInput.removeAttribute("data-sheet-index");
       if (forceValue || document.activeElement !== formulaBarInput) {
         formulaBarInput.value = "";
       }
       return;
     }
 
-    formulaBarNameEl.textContent = coordToRef(cell.row, cell.col);
+    formulaBarNameEl.textContent =
+      picked
+        ? `${String(cell.sheet.name || "")}!${coordToRef(cell.row, cell.col)}`
+        : coordToRef(cell.row, cell.col);
+
     formulaBarInput.dataset.row = String(cell.row);
     formulaBarInput.dataset.col = String(cell.col);
+    formulaBarInput.dataset.sheetIndex = String(cell.sheetIndex);
+
+    if (picked) {
+      /*
+       * Security: workbook and worksheet names are rendered
+       * through textContent/input.value only, never as HTML.
+       */
+      formulaBarInput.value =
+        String(picked.pick.value || "");
+      return;
+    }
 
     if (forceValue || document.activeElement !== formulaBarInput) {
       // Security: spreadsheet cell content is assigned as input.value, never as
@@ -3970,6 +4337,26 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
   }
 
   function beginFormulaBarEdit() {
+    const picked =
+      formulaReferencePickContext();
+
+    if (picked) {
+      formulaFocus = {
+        input: formulaBarInput,
+        row: picked.row,
+        col: picked.col,
+        sheetIndex: picked.sheetIndex,
+        originalRaw:
+          picked.pick.originalRaw,
+        wasDirty:
+          picked.pick.wasDirty,
+        crossSheetPick: true
+      };
+
+      paintSpreadsheetFormulaReferences();
+      return;
+    }
+
     const cell = activeFormulaBarCell();
     if (!formulaBarInput || !cell) return;
 
@@ -3981,6 +4368,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
         input: formulaBarInput,
         row: cell.row,
         col: cell.col,
+        sheetIndex: cell.sheetIndex,
         originalRaw: raw,
         wasDirty: state.dirty
       };
@@ -3994,6 +4382,9 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
   function updateActiveCellFromFormulaBar() {
     if (state.readOnly || state.tooLarge || !formulaBarInput) return false;
 
+    const picked =
+      formulaReferencePickContext();
+
     const cell = activeFormulaBarCell();
     if (!cell) return false;
 
@@ -4004,13 +4395,22 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     setCellRaw(cell.sheet, cell.row, cell.col, nextRaw);
 
+    if (picked) {
+      picked.pick.value = nextRaw;
+      rememberFormulaReferencePickSelection(
+        formulaBarInput
+      );
+    }
+
     if (isFormulaValue(nextRaw)) {
       formulaFocus = {
         input: formulaBarInput,
         row: cell.row,
         col: cell.col,
+        sheetIndex: cell.sheetIndex,
         originalRaw: previousFormulaFocus ? previousFormulaFocus.originalRaw : previousRaw,
-        wasDirty: previousFormulaFocus ? previousFormulaFocus.wasDirty : state.dirty
+        wasDirty: previousFormulaFocus ? previousFormulaFocus.wasDirty : state.dirty,
+        crossSheetPick: !!picked
       };
     } else if (formulaFocus && formulaFocus.input === formulaBarInput) {
       formulaFocus = null;
@@ -4021,12 +4421,24 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     }
 
     refreshFormulaDisplays(null);
-    syncVisibleInputForCell(cell.row, cell.col);
+
+    if (!picked) {
+      syncVisibleInputForCell(cell.row, cell.col);
+    }
+
     updateFormatToolbar();
     return true;
   }
 
   function cancelFormulaBarEdit() {
+    if (
+      formulaReferencePickContext()
+    ) {
+      return finishFormulaReferencePick(
+        true
+      );
+    }
+
     const focus = formulaFocus && formulaFocus.input === formulaBarInput ? formulaFocus : null;
     const cell = activeFormulaBarCell();
 
@@ -4902,6 +5314,53 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     return String(Object.is(rounded, -0) ? 0 : rounded);
   }
 
+  function formulaWorkbookSheets() {
+    return Array.isArray(state.sheets)
+      ? state.sheets
+      : [];
+  }
+
+  function normalizedFormulaSheetName(name) {
+    return String(name == null ? "" : name)
+      .trim()
+      .toLowerCase();
+  }
+
+  function formulaSheetIndex(sheet) {
+    return formulaWorkbookSheets().indexOf(sheet);
+  }
+
+  function formulaSheetCacheKey(sheet, row, col) {
+    const sheetIndex = formulaSheetIndex(sheet);
+
+    if (sheetIndex >= 0) {
+      return `${sheetIndex}:${row}:${col}`;
+    }
+
+    const sheetName =
+      normalizedFormulaSheetName(
+        sheet && sheet.name
+      );
+
+    return `name:${sheetName}:${row}:${col}`;
+  }
+
+  function formulaSheetByName(name) {
+    const wanted =
+      normalizedFormulaSheetName(name);
+
+    if (!wanted) return null;
+
+    return (
+      formulaWorkbookSheets().find(
+        (candidate) =>
+          normalizedFormulaSheetName(
+            candidate && candidate.name
+          ) === wanted
+      ) || null
+    );
+  }
+
   function makeFormulaParser(source, sheet, cache, visiting) {
     const src = String(source || "");
     let pos = 0;
@@ -4974,65 +5433,257 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       return src.slice(start, pos);
     }
 
-    function parseCellTokenAtCurrent() {
+    function readSheetQualifier() {
+      skipWs();
+
+      const start = pos;
+      let sheetName = "";
+
+      if (src[pos] === "'") {
+        pos += 1;
+
+        let closed = false;
+
+        while (pos < src.length) {
+          const ch = src[pos];
+
+          if (ch !== "'") {
+            sheetName += ch;
+            pos += 1;
+            continue;
+          }
+
+          if (src[pos + 1] === "'") {
+            sheetName += "'";
+            pos += 2;
+            continue;
+          }
+
+          pos += 1;
+          closed = true;
+          break;
+        }
+
+        if (!closed) {
+          pos = start;
+          return null;
+        }
+
+        skipWs();
+
+        if (src[pos] !== "!") {
+          pos = start;
+          return null;
+        }
+
+        pos += 1;
+      } else {
+        let end = pos;
+
+        while (end < src.length) {
+          const ch = src[end];
+
+          if (ch === "!") break;
+
+          if (
+            /\s/.test(ch) ||
+            /[+\-*/(),:]/.test(ch)
+          ) {
+            pos = start;
+            return null;
+          }
+
+          end += 1;
+        }
+
+        if (
+          end === start ||
+          src[end] !== "!"
+        ) {
+          pos = start;
+          return null;
+        }
+
+        sheetName = src.slice(start, end);
+        pos = end + 1;
+      }
+
+      /*
+       * Security: external workbook references are intentionally unsupported.
+       * The lightweight evaluator may only resolve sheets already loaded in
+       * the current workbook; it never follows file paths or URLs from formulas.
+       */
+      if (
+        !sheetName ||
+        sheetName.includes("[") ||
+        sheetName.includes("]")
+      ) {
+        throw new Error("#REF!");
+      }
+
+      return sheetName;
+    }
+
+    function parseCellTokenAtCurrent(
+      defaultSheet = sheet
+    ) {
       skipWs();
 
       const save = pos;
+      const qualifier =
+        readSheetQualifier();
+
+      let targetSheet =
+        defaultSheet || sheet;
+
+      if (qualifier != null) {
+        targetSheet =
+          formulaSheetByName(qualifier);
+
+        if (!targetSheet) {
+          throw new Error("#REF!");
+        }
+      }
+
       const token = readCellRefToken();
+
       if (!token) {
         pos = save;
+
+        if (qualifier != null) {
+          throw new Error("#REF!");
+        }
+
         return null;
       }
 
       const ref = parseCellRef(token);
+
       if (!ref) {
         pos = save;
+
+        if (qualifier != null) {
+          throw new Error("#REF!");
+        }
+
         return null;
       }
 
-      return ref;
+      return {
+        sheet: targetSheet,
+        row: ref.row,
+        col: ref.col
+      };
     }
 
     function cellNumericValue(ref) {
-      const result = evaluateCell(sheet, ref.row, ref.col, cache, visiting);
+      const result = evaluateCell(
+        ref.sheet,
+        ref.row,
+        ref.col,
+        cache,
+        visiting
+      );
+
       if (result.error) throw new Error(result.error);
       if (result.blank) return 0;
-      if (typeof result.value === "number" && Number.isFinite(result.value)) return result.value;
+
+      if (
+        typeof result.value === "number" &&
+        Number.isFinite(result.value)
+      ) {
+        return result.value;
+      }
 
       const parsed = parsePlainNumber(result.raw);
+
       if (parsed.blank) return 0;
-      if (typeof parsed.number === "number") return parsed.number;
+      if (typeof parsed.number === "number") {
+        return parsed.number;
+      }
+
       throw new Error("#VALUE!");
     }
 
     function rangeValues(start, end) {
+      if (
+        !start ||
+        !end ||
+        start.sheet !== end.sheet
+      ) {
+        throw new Error("#REF!");
+      }
+
       const r1 = Math.min(start.row, end.row);
       const r2 = Math.max(start.row, end.row);
       const c1 = Math.min(start.col, end.col);
       const c2 = Math.max(start.col, end.col);
       const out = [];
 
-      if ((r2 - r1 + 1) * (c2 - c1 + 1) > MAX_EDIT_ROWS * MAX_EDIT_COLS) {
+      if (
+        (r2 - r1 + 1) *
+          (c2 - c1 + 1) >
+        MAX_EDIT_ROWS *
+          MAX_EDIT_COLS
+      ) {
         throw new Error("#REF!");
       }
 
       for (let r = r1; r <= r2; r++) {
         for (let c = c1; c <= c2; c++) {
-          const result = evaluateCell(sheet, r, c, cache, visiting);
-          if (result.error) throw new Error(result.error);
-          if (result.blank) {
-            out.push({ blank: true, value: 0 });
-            continue;
+          const result = evaluateCell(
+            start.sheet,
+            r,
+            c,
+            cache,
+            visiting
+          );
+
+          if (result.error) {
+            throw new Error(result.error);
           }
-          if (typeof result.value === "number" && Number.isFinite(result.value)) {
-            out.push({ blank: false, value: result.value });
+
+          if (result.blank) {
+            out.push({
+              blank: true,
+              value: 0
+            });
             continue;
           }
 
-          const parsed = parsePlainNumber(result.raw);
-          if (parsed.blank) out.push({ blank: true, value: 0 });
-          else if (typeof parsed.number === "number") out.push({ blank: false, value: parsed.number });
-          else out.push({ blank: false, text: parsed.text, value: 0 });
+          if (
+            typeof result.value === "number" &&
+            Number.isFinite(result.value)
+          ) {
+            out.push({
+              blank: false,
+              value: result.value
+            });
+            continue;
+          }
+
+          const parsed =
+            parsePlainNumber(result.raw);
+
+          if (parsed.blank) {
+            out.push({
+              blank: true,
+              value: 0
+            });
+          } else if (
+            typeof parsed.number === "number"
+          ) {
+            out.push({
+              blank: false,
+              value: parsed.number
+            });
+          } else {
+            out.push({
+              blank: false,
+              text: parsed.text,
+              value: 0
+            });
+          }
         }
       }
 
@@ -5041,55 +5692,116 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     function parseFunctionArg() {
       skipWs();
+
       const save = pos;
-      const firstCell = parseCellTokenAtCurrent();
+      const firstCell =
+        parseCellTokenAtCurrent();
+
       if (firstCell && match(":")) {
-        const secondCell = parseCellTokenAtCurrent();
-        if (!secondCell) throw new Error("#REF!");
-        return { type: "range", values: rangeValues(firstCell, secondCell) };
+        const secondCell =
+          parseCellTokenAtCurrent(
+            firstCell.sheet
+          );
+
+        if (!secondCell) {
+          throw new Error("#REF!");
+        }
+
+        return {
+          type: "range",
+          values: rangeValues(
+            firstCell,
+            secondCell
+          )
+        };
       }
+
       pos = save;
-      return { type: "number", value: parseExpression() };
+
+      return {
+        type: "number",
+        value: parseExpression()
+      };
     }
 
     function parseFunctionCall(name) {
-      if (!match("(")) throw new Error("#VALUE!");
+      if (!match("(")) {
+        throw new Error("#VALUE!");
+      }
 
       const args = [];
+
       if (!match(")")) {
         while (true) {
           args.push(parseFunctionArg());
+
           if (match(")")) break;
-          if (!match(",")) throw new Error("#VALUE!");
+
+          if (!match(",")) {
+            throw new Error("#VALUE!");
+          }
         }
       }
 
       const values = [];
+
       for (const arg of args) {
-        if (arg.type === "range") values.push(...arg.values);
-        else values.push({ blank: false, value: arg.value });
+        if (arg.type === "range") {
+          values.push(...arg.values);
+        } else {
+          values.push({
+            blank: false,
+            value: arg.value
+          });
+        }
       }
 
       const nums = values
         .filter((v) => !v.text)
-        .filter((v) => !v.blank || name.toUpperCase() !== "COUNT")
+        .filter(
+          (v) =>
+            !v.blank ||
+            name.toUpperCase() !== "COUNT"
+        )
         .map((v) => Number(v.value))
         .filter((v) => Number.isFinite(v));
 
       switch (name.toUpperCase()) {
         case "SUM":
-          return nums.reduce((a, b) => a + b, 0);
+          return nums.reduce(
+            (a, b) => a + b,
+            0
+          );
+
         case "AVERAGE":
-          if (!nums.length) throw new Error("#DIV/0!");
-          return nums.reduce((a, b) => a + b, 0) / nums.length;
+          if (!nums.length) {
+            throw new Error("#DIV/0!");
+          }
+
+          return (
+            nums.reduce(
+              (a, b) => a + b,
+              0
+            ) / nums.length
+          );
+
         case "MIN":
-          if (!nums.length) throw new Error("#VALUE!");
+          if (!nums.length) {
+            throw new Error("#VALUE!");
+          }
+
           return Math.min(...nums);
+
         case "MAX":
-          if (!nums.length) throw new Error("#VALUE!");
+          if (!nums.length) {
+            throw new Error("#VALUE!");
+          }
+
           return Math.max(...nums);
+
         case "COUNT":
           return nums.length;
+
         default:
           throw new Error("#NAME?");
       }
@@ -5100,7 +5812,11 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
       if (match("(")) {
         const v = parseExpression();
-        if (!match(")")) throw new Error("#VALUE!");
+
+        if (!match(")")) {
+          throw new Error("#VALUE!");
+        }
+
         return v;
       }
 
@@ -5109,15 +5825,22 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       }
 
       const cellSave = pos;
-      const cell = parseCellTokenAtCurrent();
+      const cell =
+        parseCellTokenAtCurrent();
+
       if (cell) {
-        if (match(":")) throw new Error("#VALUE!");
+        if (match(":")) {
+          throw new Error("#VALUE!");
+        }
+
         return cellNumericValue(cell);
       }
+
       pos = cellSave;
 
       const save = pos;
       const letters = readLetters();
+
       if (letters) {
         pos = save + letters.length;
         return parseFunctionCall(letters);
@@ -5134,12 +5857,17 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     function parseTerm() {
       let v = parseUnary();
+
       while (true) {
         if (match("*")) {
           v *= parseUnary();
         } else if (match("/")) {
           const d = parseUnary();
-          if (d === 0) throw new Error("#DIV/0!");
+
+          if (d === 0) {
+            throw new Error("#DIV/0!");
+          }
+
           v /= d;
         } else {
           return v;
@@ -5149,6 +5877,7 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     function parseExpression() {
       let v = parseTerm();
+
       while (true) {
         if (match("+")) {
           v += parseTerm();
@@ -5163,38 +5892,87 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     function parseAll() {
       const v = parseExpression();
       skipWs();
-      if (pos !== src.length) throw new Error("#VALUE!");
+
+      if (pos !== src.length) {
+        throw new Error("#VALUE!");
+      }
+
       return v;
     }
 
     return { parseAll };
   }
 
-  function evaluateCell(sheet, row, col, cache, visiting) {
-    const key = `${row}:${col}`;
-    if (cache.has(key)) return cache.get(key);
+  function evaluateCell(
+    sheet,
+    row,
+    col,
+    cache,
+    visiting
+  ) {
+    const key =
+      formulaSheetCacheKey(
+        sheet,
+        row,
+        col
+      );
 
-    const raw = cellRaw(sheet, row, col);
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+
+    const raw = cellRaw(
+      sheet,
+      row,
+      col
+    );
 
     if (isForcedTextValue(raw)) {
-      const text = forcedTextDisplayValue(raw);
-      const result = { raw: text, value: text, blank: text === "", error: "" };
+      const text =
+        forcedTextDisplayValue(raw);
+
+      const result = {
+        raw: text,
+        value: text,
+        blank: text === "",
+        error: ""
+      };
+
       cache.set(key, result);
       return result;
     }
 
-    const parsed = parsePlainNumber(raw);
+    const parsed =
+      parsePlainNumber(raw);
 
     if (!isFormulaValue(raw)) {
-      const result = typeof parsed.number === "number"
-        ? { raw, value: parsed.number, blank: parsed.blank, error: "" }
-        : { raw, value: parsed.text || "", blank: parsed.blank, error: "" };
+      const result =
+        typeof parsed.number === "number"
+          ? {
+              raw,
+              value: parsed.number,
+              blank: parsed.blank,
+              error: ""
+            }
+          : {
+              raw,
+              value: parsed.text || "",
+              blank: parsed.blank,
+              error: ""
+            };
+
       cache.set(key, result);
       return result;
     }
 
     if (visiting.has(key)) {
-      const cycle = { raw, value: "", blank: false, error: "#CYCLE!" };
+      const cycle = {
+        raw,
+        value: "",
+        blank: false,
+        error: "#CYCLE!"
+      };
+
       cache.set(key, cycle);
       return cycle;
     }
@@ -5203,14 +5981,41 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
 
     try {
       const body = raw.slice(1);
-      if (body.includes("#REF!")) throw new Error("#REF!");
-      const parser = makeFormulaParser(body, sheet, cache, visiting);
+
+      if (body.includes("#REF!")) {
+        throw new Error("#REF!");
+      }
+
+      const parser = makeFormulaParser(
+        body,
+        sheet,
+        cache,
+        visiting
+      );
+
       const value = parser.parseAll();
-      const result = { raw, value, blank: false, error: "" };
+
+      const result = {
+        raw,
+        value,
+        blank: false,
+        error: ""
+      };
+
       cache.set(key, result);
       return result;
     } catch (e) {
-      const result = { raw, value: "", blank: false, error: String(e && e.message ? e.message : e || "#VALUE!") };
+      const result = {
+        raw,
+        value: "",
+        blank: false,
+        error: String(
+          e && e.message
+            ? e.message
+            : e || "#VALUE!"
+        )
+      };
+
       cache.set(key, result);
       return result;
     } finally {
@@ -5221,22 +6026,57 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
   function computeSheetCache(sheet) {
     const cache = new Map();
     const visiting = new Set();
-    const rows = sheet && Array.isArray(sheet.rows) ? sheet.rows : [];
+    const rows =
+      sheet && Array.isArray(sheet.rows)
+        ? sheet.rows
+        : [];
+
     for (let r = 0; r < rows.length; r++) {
-      const row = Array.isArray(rows[r]) ? rows[r] : [];
+      const row =
+        Array.isArray(rows[r])
+          ? rows[r]
+          : [];
+
       for (let c = 0; c < row.length; c++) {
-        evaluateCell(sheet, r, c, cache, visiting);
+        evaluateCell(
+          sheet,
+          r,
+          c,
+          cache,
+          visiting
+        );
       }
     }
+
     return cache;
   }
 
-  function displayCellValue(sheet, row, col, cache = null) {
-    const raw = cellRaw(sheet, row, col);
-    const fmt = getCellFormat(sheet, row, col);
+  function displayCellValue(
+    sheet,
+    row,
+    col,
+    cache = null
+  ) {
+    const raw = cellRaw(
+      sheet,
+      row,
+      col
+    );
 
-    if (fmt.numberFormat === "date" && !isFormulaValue(raw) && !isForcedTextValue(raw)) {
-      const dateText = formatSpreadsheetDateDisplayValue(raw);
+    const fmt = getCellFormat(
+      sheet,
+      row,
+      col
+    );
+
+    if (
+      fmt.numberFormat === "date" &&
+      !isFormulaValue(raw) &&
+      !isForcedTextValue(raw)
+    ) {
+      const dateText =
+        formatSpreadsheetDateDisplayValue(raw);
+
       if (dateText) return dateText;
     }
 
@@ -5245,22 +6085,62 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
     }
 
     if (!isFormulaValue(raw)) {
-      const parsed = parsePlainNumber(raw);
-      if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && !parsed.blank && typeof parsed.number === "number") {
-        return formatNumericDisplayValue(parsed.number, fmt);
+      const parsed =
+        parsePlainNumber(raw);
+
+      if (
+        (
+          fmt.decimals != null ||
+          fmt.numberFormat === "currency" ||
+          fmt.numberFormat === "percent" ||
+          fmt.numberFormat === "date"
+        ) &&
+        !parsed.blank &&
+        typeof parsed.number === "number"
+      ) {
+        return formatNumericDisplayValue(
+          parsed.number,
+          fmt
+        );
       }
+
       return raw;
     }
 
-    const effectiveCache = cache || computeSheetCache(sheet);
-    const result = evaluateCell(sheet, row, col, effectiveCache, new Set());
-    if (result.error) return result.error;
+    const effectiveCache =
+      cache ||
+      computeSheetCache(sheet);
 
-    if ((fmt.decimals != null || fmt.numberFormat === "currency" || fmt.numberFormat === "percent" || fmt.numberFormat === "date") && typeof result.value === "number") {
-      return formatNumericDisplayValue(result.value, fmt);
+    const result = evaluateCell(
+      sheet,
+      row,
+      col,
+      effectiveCache,
+      new Set()
+    );
+
+    if (result.error) {
+      return result.error;
     }
 
-    return formatFormulaNumber(result.value);
+    if (
+      (
+        fmt.decimals != null ||
+        fmt.numberFormat === "currency" ||
+        fmt.numberFormat === "percent" ||
+        fmt.numberFormat === "date"
+      ) &&
+      typeof result.value === "number"
+    ) {
+      return formatNumericDisplayValue(
+        result.value,
+        fmt
+      );
+    }
+
+    return formatFormulaNumber(
+      result.value
+    );
   }
 
   function spreadsheetCommentsApi() {
@@ -5289,22 +6169,43 @@ function normalizeMergeRange(merge, rowCount = null, colCount = null) {
       return;
     }
 
+    const picked =
+      formulaReferencePickContext();
+
     const input =
       formulaFocus &&
       formulaFocus.input;
 
     const formula =
-      input &&
-      isFormulaValue(input.value)
-        ? String(input.value)
-        : "";
+      picked
+        ? String(
+            picked.pick.value || ""
+          )
+        : (
+            input &&
+            isFormulaValue(input.value)
+              ? String(input.value)
+              : ""
+          );
+
+    const activeSheet =
+      state.sheets[state.active];
 
     api.paint(
       bodyEl,
       formula,
       {
         maxRows: MAX_EDIT_ROWS,
-        maxCols: MAX_EDIT_COLS
+        maxCols: MAX_EDIT_COLS,
+        includeCrossSheet: !!picked,
+        activeSheetName:
+          picked && activeSheet
+            ? String(activeSheet.name || "")
+            : "",
+        formulaSheetName:
+          picked
+            ? String(picked.sheet.name || "")
+            : ""
       }
     );
   }
@@ -8649,6 +9550,7 @@ function axisApi() {
       input,
       row,
       col,
+      sheetIndex: state.active,
       originalRaw: raw,
       wasDirty: state.dirty
     };
@@ -8682,8 +9584,412 @@ function axisApi() {
     return true;
   }
 
+  function spreadsheetFormulaReferencePickerApi() {
+    return (
+      FM &&
+      FM.spreadsheetFormulaReferencePicker
+    ) || null;
+  }
+
+  function applyFormulaReferencePickRange(
+    input,
+    startRow,
+    startCol,
+    endRow,
+    endCol,
+    baseEdit = null
+  ) {
+    const picked =
+      formulaReferencePickContext();
+
+    const referenceApi =
+      spreadsheetFormulaReferenceApi();
+
+    const pickerApi =
+      spreadsheetFormulaReferencePickerApi();
+
+    const targetSheet =
+      state.sheets[state.active];
+
+    if (
+      !picked ||
+      !input ||
+      !referenceApi ||
+      typeof referenceApi.formatFormulaReference !==
+        "function" ||
+      !pickerApi ||
+      typeof pickerApi.normalizeRange !==
+        "function" ||
+      typeof pickerApi.replaceSelection !==
+        "function" ||
+      !targetSheet
+    ) {
+      return null;
+    }
+
+    const range =
+      pickerApi.normalizeRange(
+        startRow,
+        startCol,
+        endRow,
+        endCol,
+        {
+          maxRows: MAX_EDIT_ROWS,
+          maxCols: MAX_EDIT_COLS
+        }
+      );
+
+    if (!range) return null;
+
+    const sheetName =
+      state.active === picked.sheetIndex
+        ? ""
+        : String(targetSheet.name || "");
+
+    const reference =
+      referenceApi.formatFormulaReference(
+        sheetName,
+        range.row1,
+        range.col1,
+        range.row2,
+        range.col2
+      );
+
+    if (!reference) return null;
+
+    const currentValue =
+      String(
+        picked.pick.value ||
+        input.value ||
+        ""
+      );
+
+    const sourceValue =
+      baseEdit
+        ? String(baseEdit.value || "")
+        : currentValue;
+
+    const selectionStart =
+      baseEdit &&
+      Number.isInteger(
+        baseEdit.selectionStart
+      )
+        ? baseEdit.selectionStart
+        : (
+            Number.isInteger(
+              picked.pick.selectionStart
+            )
+              ? picked.pick.selectionStart
+              : sourceValue.length
+          );
+
+    const selectionEnd =
+      baseEdit &&
+      Number.isInteger(
+        baseEdit.selectionEnd
+      )
+        ? baseEdit.selectionEnd
+        : (
+            Number.isInteger(
+              picked.pick.selectionEnd
+            )
+              ? picked.pick.selectionEnd
+              : selectionStart
+          );
+
+    const edit =
+      pickerApi.replaceSelection(
+        sourceValue,
+        selectionStart,
+        selectionEnd,
+        reference
+      );
+
+    if (!edit) return null;
+
+    const historyBefore =
+      picked.pick.historyRecorded
+        ? null
+        : captureHistorySnapshot();
+
+    input.value = edit.value;
+    input.selectionStart =
+      edit.selectionStart;
+    input.selectionEnd =
+      edit.selectionEnd;
+
+    picked.pick.value = edit.value;
+    picked.pick.selectionStart =
+      edit.selectionStart;
+    picked.pick.selectionEnd =
+      edit.selectionEnd;
+
+    setCellRaw(
+      picked.sheet,
+      picked.row,
+      picked.col,
+      edit.value
+    );
+
+    if (!picked.pick.historyRecorded) {
+      commitHistorySnapshot(
+        historyBefore
+      );
+
+      picked.pick.historyRecorded = true;
+    }
+
+    setDirty(true);
+    updateFormulaBar(true);
+    refreshFormulaDisplays(null);
+    paintSpreadsheetFormulaReferences();
+
+    return {
+      value: edit.value,
+      selectionStart:
+        edit.selectionStart,
+      selectionEnd:
+        edit.selectionEnd,
+      referenceStart:
+        edit.referenceStart,
+      referenceEnd:
+        edit.referenceEnd,
+      range
+    };
+  }
+
+  function beginFormulaReferenceRangePointer(
+    ev,
+    input,
+    row,
+    col
+  ) {
+    const picked =
+      formulaReferencePickContext();
+
+    const pickerApi =
+      spreadsheetFormulaReferencePickerApi();
+
+    if (
+      !picked ||
+      !pickerApi ||
+      typeof pickerApi.cellAtPoint !==
+        "function" ||
+      !ev ||
+      ev.button !== 0 ||
+      !input ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col)
+    ) {
+      return false;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (
+      typeof ev.stopImmediatePropagation ===
+        "function"
+    ) {
+      ev.stopImmediatePropagation();
+    }
+
+    const value =
+      String(
+        picked.pick.value ||
+        input.value ||
+        ""
+      );
+
+    const selectionStart =
+      Number.isInteger(
+        picked.pick.selectionStart
+      )
+        ? picked.pick.selectionStart
+        : value.length;
+
+    const selectionEnd =
+      Number.isInteger(
+        picked.pick.selectionEnd
+      )
+        ? picked.pick.selectionEnd
+        : selectionStart;
+
+    /*
+     * UX correctness: every drag preview is rebuilt from
+     * the formula and caret state that existed at pointer
+     * down. Moving across cells therefore replaces one
+     * reference instead of appending many references.
+     */
+    const baseEdit = {
+      value,
+      selectionStart,
+      selectionEnd
+    };
+
+    let endRow = row;
+    let endCol = col;
+
+    const apply = () =>
+      applyFormulaReferencePickRange(
+        input,
+        row,
+        col,
+        endRow,
+        endCol,
+        baseEdit
+      );
+
+    if (!apply()) return false;
+
+    state.selection = null;
+    state.activeCell = null;
+    state.rangeSelection = {
+      startRow: row,
+      startCol: col,
+      endRow,
+      endCol
+    };
+
+    repaintSpreadsheetSelection();
+
+    const onMove = (moveEv) => {
+      const target =
+        pickerApi.cellAtPoint(
+          document,
+          moveEv.clientX,
+          moveEv.clientY
+        );
+
+      if (!target) return;
+
+      if (
+        target.row === endRow &&
+        target.col === endCol
+      ) {
+        return;
+      }
+
+      moveEv.preventDefault();
+
+      endRow = target.row;
+      endCol = target.col;
+
+      apply();
+
+      state.selection = null;
+      state.activeCell = null;
+      state.rangeSelection = {
+        startRow: row,
+        startCol: col,
+        endRow,
+        endCol
+      };
+
+      document.body.classList.add(
+        "spreadsheetRangeSelecting"
+      );
+
+      repaintSpreadsheetSelection();
+    };
+
+    const cleanup = () => {
+      document.removeEventListener(
+        "pointermove",
+        onMove,
+        true
+      );
+
+      document.removeEventListener(
+        "pointerup",
+        onUp,
+        true
+      );
+
+      document.removeEventListener(
+        "pointercancel",
+        onCancel,
+        true
+      );
+
+      document.body.classList.remove(
+        "spreadsheetRangeSelecting"
+      );
+    };
+
+    const finish = () => {
+      state.selection = null;
+      state.rangeSelection = null;
+      state.activeCell = null;
+
+      repaintSpreadsheetSelection();
+
+      window.requestAnimationFrame(() => {
+        if (
+          formulaReferencePickContext() &&
+          formulaBarInput
+        ) {
+          try {
+            formulaBarInput.focus({
+              preventScroll: true
+            });
+          } catch (_) {
+            formulaBarInput.focus();
+          }
+        }
+      });
+    };
+
+    const onUp = (upEv) => {
+      upEv.preventDefault();
+      upEv.stopPropagation();
+      cleanup();
+      finish();
+    };
+
+    const onCancel = () => {
+      cleanup();
+      finish();
+    };
+
+    document.addEventListener(
+      "pointermove",
+      onMove,
+      true
+    );
+
+    document.addEventListener(
+      "pointerup",
+      onUp,
+      true
+    );
+
+    document.addEventListener(
+      "pointercancel",
+      onCancel,
+      true
+    );
+
+    return true;
+  }
+
   function insertFormulaReference(input, row, col) {
     if (!input || !formulaFocus || formulaFocus.input !== input) return;
+
+    const picked =
+      formulaReferencePickContext();
+
+    if (picked) {
+      applyFormulaReferencePickRange(
+        input,
+        row,
+        col,
+        row,
+        col
+      );
+
+      return;
+    }
 
     const ref = coordToRef(row, col);
     const start = Number.isInteger(input.selectionStart) ? input.selectionStart : String(input.value || "").length;
@@ -10104,6 +11410,18 @@ function axisApi() {
     });
 
     formulaBarInput?.addEventListener("blur", () => {
+      if (
+        formulaReferencePickContext()
+      ) {
+        rememberFormulaReferencePickSelection(
+          formulaBarInput
+        );
+
+        paintSpreadsheetFormulaReferences();
+        updateFormulaBar(true);
+        return;
+      }
+
       if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
       paintSpreadsheetFormulaReferences();
       updateFormulaBar(true);
@@ -10113,6 +11431,15 @@ function axisApi() {
       if (ev.key === "Enter") {
         ev.preventDefault();
         ev.stopPropagation();
+
+        if (
+          finishFormulaReferencePick(
+            false
+          )
+        ) {
+          return;
+        }
+
         if (formulaFocus && formulaFocus.input === formulaBarInput) formulaFocus = null;
         refreshFormulaDisplays(null);
         focusActiveCellFromFormulaBar();
@@ -10122,8 +11449,16 @@ function axisApi() {
       if (ev.key === "Escape") {
         ev.preventDefault();
         ev.stopPropagation();
+
+        const wasCrossSheetPick =
+          !!formulaReferencePickContext();
+
         cancelFormulaBarEdit();
-        formulaBarInput.blur();
+
+        if (!wasCrossSheetPick) {
+          formulaBarInput.blur();
+        }
+
         return;
       }
 
@@ -11008,8 +12343,43 @@ function axisApi() {
         "Rename sheet"
       );
 
+      btn.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (state.active === idx) return;
+
+          const activeInput =
+            formulaFocus &&
+            formulaFocus.input;
+
+          if (
+            formulaReferencePick ||
+            (
+              activeInput &&
+              isFormulaValue(
+                activeInput.value
+              )
+            )
+          ) {
+            /*
+             * Keep the live formula input focused until its
+             * value and caret have been captured for the
+             * worksheet switch.
+             */
+            ev.preventDefault();
+          }
+        }
+      );
+
       btn.addEventListener("click", () => {
         if (state.active === idx) return;
+
+        if (
+          beginFormulaReferencePick(idx)
+        ) {
+          return;
+        }
+
         state.active = idx;
         render();
       });
@@ -11282,6 +12652,19 @@ function axisApi() {
           if (!formulaFocus || formulaFocus.input === input) return;
           const active = formulaFocus.input;
           if (!active || !isFormulaValue(active.value)) return;
+
+          if (
+            formulaReferencePickContext() &&
+            beginFormulaReferenceRangePointer(
+              ev,
+              active,
+              rIdx,
+              c
+            )
+          ) {
+            return;
+          }
+
           ev.preventDefault();
           insertFormulaReference(active, rIdx, c);
         });
@@ -11555,6 +12938,7 @@ function axisApi() {
               input,
               row: r,
               col,
+              sheetIndex: state.active,
               originalRaw: previousFormulaFocus ? previousFormulaFocus.originalRaw : previousRaw,
               wasDirty: previousFormulaFocus ? previousFormulaFocus.wasDirty : state.dirty
             };
@@ -11715,6 +13099,13 @@ function axisApi() {
     repaintSpreadsheetSelection();
     updateButtons();
     updateFormatToolbar();
+
+    if (
+      formulaReferencePickContext()
+    ) {
+      restoreFormulaReferencePickEditor();
+      paintSpreadsheetFormulaReferences();
+    }
 
     if (state.tooLarge) {
       setStatus(tr(
@@ -12286,6 +13677,7 @@ function axisApi() {
     state.url = url;
     state.ext = fileExtLower(name || rel);
     state.sheets = [];
+    formulaReferencePick = null;
     state.active = 0;
     state.dirty = false;
     state.saving = false;
