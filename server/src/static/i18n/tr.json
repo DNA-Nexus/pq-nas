@@ -4468,6 +4468,7 @@
   "photogallery.nothing_selected": "Hiçbir şey seçilmedi.",
   "photogallery.options": "Seçenekler",
   "photogallery.photo": "Fotoğraf",
+  "photogallery.raw_jpeg_pair_tooltip": "RAW + JPEG çifti. RAW dosyasını indirmek için “{action}” seçeneğini kullanın.",
   "photogallery.photo_statistics": "Fotoğraf istatistikleri",
   "photogallery.rating": "Puan",
   "photogallery.replace_with_new": "Yenisiyle değiştir",
