@@ -6,6 +6,17 @@
 
 .pgBurstExpanded{
     grid-column: 1 / -1;
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(var(--pg-tile-min), 1fr));
+    gap:14px;
+}
+
+/*
+ * Keep the expanded burst on its own row while allowing the cover and
+ * the remaining burst members to occupy normal gallery-sized grid cells.
+ */
+.pgBurstExpanded > .pgBurstItems{
+    display:contents;
 }
 
 .pgBurstCoverTile{

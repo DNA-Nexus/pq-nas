@@ -1141,6 +1141,7 @@ auto collect_fast_gallery_tree =
         const std::string& rel_root,
         bool include_items,
         bool refresh_stale_exif,
+        std::size_t max_returned_items,
         json* items_out,
         std::uint64_t* dirs_out,
         std::uint64_t* files_out,
@@ -1156,8 +1157,6 @@ auto collect_fast_gallery_tree =
     if (truncated_out) *truncated_out = false;
     if (err_code) err_code->clear();
     if (err_msg) err_msg->clear();
-
-    constexpr std::size_t kMaxReturnedItems = 25000;
 
     std::map<std::string, FastGalleryItem> merged;
 
@@ -1464,7 +1463,7 @@ item.exif_ok = row.exif_ok;
 
         if (!include_items || !items_out) continue;
 
-        if (returned >= kMaxReturnedItems) {
+        if (max_returned_items > 0 && returned >= max_returned_items) {
             if (truncated_out) *truncated_out = true;
             continue;
         }
@@ -1610,6 +1609,7 @@ srv.Get("/api/v4/gallery/tree_stats", [&](const httplib::Request& req, httplib::
                                    rel_root,
                                    false,
                                    false,
+                                   0,
                                    &unused_items,
                                    &dirs,
                                    &files,
@@ -1729,6 +1729,7 @@ srv.Get("/api/v4/gallery/search", [&](const httplib::Request& req, httplib::Resp
                                    rel_root,
                                    true,
                                    force,
+                                   25000,
                                    &items,
                                    &dirs,
                                    &files,
@@ -5011,7 +5012,7 @@ srv.Get("/api/v4/photogallery/stats", [&](const httplib::Request& req, httplib::
     }
 
     const auto& user = *uopt;
-    if (user.storage_state != "allocated" || user.root_rel.empty()) {
+    if (user.storage_state != "allocated") {
         reply_json(res, 200, json{
             {"ok", true},
             {"stats", {
@@ -5050,65 +5051,53 @@ srv.Get("/api/v4/photogallery/stats", [&](const httplib::Request& req, httplib::
         return;
     }
 
-    const std::filesystem::path user_root =
-        std::filesystem::path(pqnas::data_root_dir()) / user.root_rel;
+    // Use the same metadata-aware tree as Photo Gallery search/listing.
+    // This includes files whose logical path no longer maps to user.root_rel.
+    const std::filesystem::path user_dir = user_dir_for_fp(users, actor_fp);
 
-    const std::filesystem::path scan_root =
-        rel_sub.empty() ? user_root : (user_root / rel_sub);
+    json items = json::array();
+    std::uint64_t dirs = 0;
+    std::uint64_t files = 0;
+    std::uint64_t bytes = 0;
+    bool truncated = false;
+    std::string collect_err_code;
+    std::string collect_err_msg;
 
-    std::error_code ec;
-    if (!std::filesystem::exists(scan_root, ec) || !std::filesystem::is_directory(scan_root, ec)) {
-        reply_json(res, 200, json{
-            {"ok", true},
-            {"stats", {
-                {"total_photos", 0},
-                {"total_bytes", 0},
-                {"total_megabytes", 0.0},
-                {"photos_with_exif", 0},
-                {"unique_cameras", 0},
-                {"unique_lenses", 0},
-                {"first_taken_at", ""},
-                {"last_taken_at", ""},
-                {"top_cameras", json::array()},
-                {"top_lenses", json::array()},
-                {"iso_buckets", json::array()},
-                {"aperture_buckets", json::array()},
-                {"shutter_buckets", json::array()},
-                {"focal_length_buckets", json::array()},
-                {"by_month", json::array()}
-            }}
-        }.dump());
-        return;
-    }
+    if (!collect_fast_gallery_tree(actor_fp,
+                                   user_dir,
+                                   rel_sub,
+                                   true,
+                                   true,
+                                   0,
+                                   &items,
+                                   &dirs,
+                                   &files,
+                                   &bytes,
+                                   &truncated,
+                                   &collect_err_code,
+                                   &collect_err_msg)) {
+        const int http =
+            collect_err_code == "not_found" ? 404 :
+            collect_err_code == "bad_request" ? 400 :
+            500;
 
-    sqlite3* db = nullptr;
-    const std::filesystem::path db_path =
-        std::filesystem::path(pqnas::data_root_dir()) / "photogallery_stats.sqlite3";
-
-    if (sqlite3_open(db_path.string().c_str(), &db) != SQLITE_OK) {
-        const std::string err = db ? sqlite3_errmsg(db) : "sqlite open failed";
-        if (db) sqlite3_close(db);
-        reply_json(res, 500, json{
+        reply_json(res, http, json{
             {"ok", false},
-            {"error", "sqlite_open_failed"},
-            {"message", err}
+            {"error", collect_err_code.empty()
+                ? "server_error"
+                : collect_err_code},
+            {"message", collect_err_msg.empty()
+                ? "photo statistics collection failed"
+                : collect_err_msg}
         }.dump());
         return;
     }
 
-    std::string schema_err;
-    if (!ensure_photo_stats_schema(db, &schema_err)) {
-        sqlite3_close(db);
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "sqlite_schema_failed"},
-            {"message", schema_err}
-        }.dump());
-        return;
-    }
+    (void)dirs;
+    (void)truncated;
 
-    std::uint64_t total_photos = 0;
-    std::uint64_t total_bytes = 0;
+    std::uint64_t total_photos = files;
+    std::uint64_t total_bytes = bytes;
     std::uint64_t photos_with_exif = 0;
 
     std::set<std::string> unique_cameras;
@@ -5125,45 +5114,89 @@ srv.Get("/api/v4/photogallery/stats", [&](const httplib::Request& req, httplib::
     std::string first_taken_at;
     std::string last_taken_at;
 
-    const std::int64_t indexed_now = static_cast<std::int64_t>(std::time(nullptr));
+    auto json_string_or_empty = [](const json& obj,
+                                   const char* key) -> std::string {
+        const auto it = obj.find(key);
+        if (it == obj.end() || !it->is_string()) return "";
+        return it->get<std::string>();
+    };
 
-    sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION", nullptr, nullptr, nullptr);
+    auto json_i64_or_zero = [](const json& obj,
+                               const char* key) -> std::int64_t {
+        const auto it = obj.find(key);
+        if (it == obj.end() || it->is_null()) return 0;
 
-    for (std::filesystem::recursive_directory_iterator it(scan_root, ec), end;
-         it != end && !ec;
-         it.increment(ec)) {
-        if (ec) break;
-
-        std::error_code ec2;
-        if (!it->is_regular_file(ec2) || ec2) continue;
-
-        const std::filesystem::path abs = it->path();
-        if (!is_supported_photo_ext(abs)) continue;
-
-        const std::string rel =
-            std::filesystem::relative(abs, user_root, ec2).generic_string();
-        if (ec2 || rel.empty()) continue;
-
-        const std::uint64_t size_bytes = file_size_u64_safe_local(abs);
-        const std::int64_t mtime_epoch = file_mtime_epoch_safe_local(abs);
-
-        ++total_photos;
-        total_bytes += size_bytes;
-
-        PhotoStatsRow row;
-        const bool have_cached = load_cached_photo_stats_row(db, rel, &row);
-        const bool cache_match =
-            have_cached &&
-            row.size_bytes == size_bytes &&
-            row.mtime_epoch == mtime_epoch;
-
-        if (!cache_match) {
-            row = exif_row_from_file(rel, abs, size_bytes, mtime_epoch);
-            std::string upsert_err;
-            (void)upsert_photo_stats_row(db, row, indexed_now, &upsert_err);
+        try {
+            if (it->is_number_integer()) {
+                return it->get<std::int64_t>();
+            }
+            if (it->is_number_unsigned()) {
+                return static_cast<std::int64_t>(
+                    it->get<std::uint64_t>()
+                );
+            }
+            if (it->is_number_float()) {
+                return static_cast<std::int64_t>(
+                    it->get<double>()
+                );
+            }
+        } catch (...) {
         }
 
-        if (row.exif_ok) ++photos_with_exif;
+        return 0;
+    };
+
+    auto json_double_or_zero = [](const json& obj,
+                                  const char* key) -> double {
+        const auto it = obj.find(key);
+        if (it == obj.end() || it->is_null() || !it->is_number()) {
+            return 0.0;
+        }
+
+        try {
+            return it->get<double>();
+        } catch (...) {
+            return 0.0;
+        }
+    };
+
+    for (const auto& item : items) {
+        if (!item.is_object() ||
+            item.value("type", std::string()) != "file") {
+            continue;
+        }
+
+        PhotoStatsRow row;
+        row.taken_at = item.value("capture_time_text", std::string());
+
+        if (row.taken_at.size() >= 7) {
+            if (row.taken_at[4] == '-') {
+                row.taken_month = row.taken_at.substr(0, 7);
+            } else if (row.taken_at[4] == ':') {
+                row.taken_month = row.taken_at.substr(0, 7);
+                row.taken_month[4] = '-';
+            }
+        }
+
+        const auto exif_it = item.find("exif");
+        if (exif_it != item.end() && exif_it->is_object()) {
+            const json& exif = *exif_it;
+
+            row.exif_ok = exif.value("ok", false);
+            row.make = json_string_or_empty(exif, "make");
+            row.model = json_string_or_empty(exif, "model");
+            row.lens_model = json_string_or_empty(exif, "lens_model");
+            row.iso = json_i64_or_zero(exif, "iso");
+            row.f_number = json_double_or_zero(exif, "f_number");
+            row.exposure_time =
+                json_double_or_zero(exif, "exposure_time");
+            row.focal_length =
+                json_double_or_zero(exif, "focal_length");
+        }
+
+        if (row.exif_ok) {
+            ++photos_with_exif;
+        }
 
         const std::string camera = camera_label_from_row(row);
         const std::string lens = lens_label_from_row(row);
@@ -5180,13 +5213,17 @@ srv.Get("/api/v4/photogallery/stats", [&](const httplib::Request& req, httplib::
         bump_bucket(by_month, row.taken_month);
 
         if (!row.taken_at.empty()) {
-            if (first_taken_at.empty() || row.taken_at < first_taken_at) first_taken_at = row.taken_at;
-            if (last_taken_at.empty() || row.taken_at > last_taken_at) last_taken_at = row.taken_at;
+            if (first_taken_at.empty() ||
+                row.taken_at < first_taken_at) {
+                first_taken_at = row.taken_at;
+            }
+
+            if (last_taken_at.empty() ||
+                row.taken_at > last_taken_at) {
+                last_taken_at = row.taken_at;
+            }
         }
     }
-
-    sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
-    sqlite3_close(db);
 
     json stats;
     stats["total_photos"] = total_photos;
