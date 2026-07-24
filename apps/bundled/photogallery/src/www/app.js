@@ -4232,6 +4232,33 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         }
     }
 
+    function rawJpegPairTooltip() {
+        const exportAction = pgT(
+            "photogallery.menu.export_metadata",
+            null,
+            "Export with metadata…"
+        );
+
+        return pgT(
+            "photogallery.raw_jpeg_pair_tooltip",
+            { action: exportAction },
+            `RAW + JPEG pair. Download the RAW file by choosing “${exportAction}”.`
+        );
+    }
+
+    function refreshRawJpegPairTooltips() {
+        const tooltip = rawJpegPairTooltip();
+
+        for (const badge of gridEl?.querySelectorAll(".pgPairBadge") || []) {
+            badge.title = tooltip;
+        }
+    }
+
+    window.addEventListener(
+        "pqnas-language-changed",
+        refreshRawJpegPairTooltips
+    );
+
     function makeTile(item) {
         const tile = document.createElement("div");
         tile.className = "tile";
@@ -4281,7 +4308,8 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             if (capture && capture.pair_kind === "raw+jpeg") {
                 const pairBadge = document.createElement("div");
                 pairBadge.className = "pgPairBadge";
-                pairBadge.textContent = "RAW+JPG";
+                pairBadge.textContent = "R+J";
+                pairBadge.title = rawJpegPairTooltip();
                 thumbWrap.appendChild(pairBadge);
             }
         }
@@ -4436,48 +4464,55 @@ html[data-theme="orange"] .pgTopModeBtnActive{
                 Array.isArray(burst.captures) &&
                 burst.captures.some((cap) => cap && cap.pair_kind === "raw+jpeg");
 
-            const compactExpandedCover =
-                burst.expanded &&
-                Number(state.thumbSize || 160) <= 120 &&
-                hasRawPair;
-
-            if (!compactExpandedCover) {
-                const badge = document.createElement("div");
-                badge.className = "pgBurstBadge";
-                badge.innerHTML = `
-            <span class="pgBurstBadgeLong">Burst ${burstCount}</span>
-            <span class="pgBurstBadgeShort" style="display:none;">${hasRawPair ? `RAW B${burstCount}` : `B${burstCount}`}</span>
-        `;
-                thumbWrap.appendChild(badge);
-            }
+            // makeTile() may already have added a pair marker for the cover.
+            // Remove it first so the burst cover never gets duplicate markers.
+            thumbWrap
+                .querySelectorAll(".pgPairBadge")
+                .forEach((node) => node.remove());
 
             if (hasRawPair) {
                 const pairBadge = document.createElement("div");
                 pairBadge.className = "pgPairBadge";
-                pairBadge.innerHTML = `
-            <span class="pgPairBadgeLong">RAW+JPG</span>
-            <span class="pgPairBadgeShort" style="display:none;">RAW</span>
-        `;
+                pairBadge.textContent = "R+J";
+                pairBadge.title = rawJpegPairTooltip();
                 thumbWrap.appendChild(pairBadge);
             }
 
-            const toggleBtn = document.createElement("button");
-            toggleBtn.type = "button";
-            toggleBtn.className = "pgBurstToggle";
-            toggleBtn.title = burst.expanded ? "Hide burst" : "Show burst";
-            toggleBtn.setAttribute("aria-label", burst.expanded ? "Hide burst" : "Show burst");
-            toggleBtn.innerHTML = `
-        <span class="pgBurstToggleText">${burst.expanded ? "Hide" : "Show"}</span>
-        <span class="pgBurstToggleIcon" aria-hidden="true" style="display:none;">${burst.expanded ? "−" : "+"}</span>
-    `;
-            toggleBtn.addEventListener("click", (e) => {
+            const burstBtn = document.createElement("button");
+            burstBtn.type = "button";
+            burstBtn.className = "pgBurstBadge";
+            burstBtn.title = burst.expanded ? "Hide burst" : "Show burst";
+            burstBtn.setAttribute(
+                "aria-label",
+                `${burst.expanded ? "Hide" : "Show"} burst ${burstCount}`
+            );
+            burstBtn.setAttribute(
+                "aria-expanded",
+                burst.expanded ? "true" : "false"
+            );
+            burstBtn.innerHTML = `
+                <span>Burst ${burstCount}</span>
+                <span class="pgBurstBadgeIcon" aria-hidden="true">
+                    ${burst.expanded ? "−" : "+"}
+                </span>
+            `;
+
+            burstBtn.addEventListener("click", (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                window.PQNAS_PHOTOGALLERY?.bursts?.toggleExpanded(burst.key);
+
+                window.PQNAS_PHOTOGALLERY
+                    ?.bursts
+                    ?.toggleExpanded(burst.key);
+
                 renderGrid();
-                window.dispatchEvent(new CustomEvent("photogallery:view-updated"));
+
+                window.dispatchEvent(
+                    new CustomEvent("photogallery:view-updated")
+                );
             });
-            thumbWrap.appendChild(toggleBtn);
+
+            thumbWrap.appendChild(burstBtn);
         }
 
         wrap.appendChild(coverTile);

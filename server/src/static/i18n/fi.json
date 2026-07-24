@@ -4468,6 +4468,7 @@
   "photogallery.nothing_selected": "Mitään ei ole valittu.",
   "photogallery.options": "Asetukset",
   "photogallery.photo": "Kuva",
+  "photogallery.raw_jpeg_pair_tooltip": "RAW- ja JPEG-pari. Lataa RAW-tiedosto valitsemalla ”{action}”.",
   "photogallery.photo_statistics": "Kuvatilastot",
   "photogallery.rating": "Arvio",
   "photogallery.replace_with_new": "Korvaa uudella",

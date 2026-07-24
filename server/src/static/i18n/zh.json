@@ -4468,6 +4468,7 @@
   "photogallery.nothing_selected": "未选择任何项目。",
   "photogallery.options": "选项",
   "photogallery.photo": "照片",
+  "photogallery.raw_jpeg_pair_tooltip": "RAW + JPEG 对。选择“{action}”可下载 RAW 文件。",
   "photogallery.photo_statistics": "照片统计",
   "photogallery.rating": "评分",
   "photogallery.replace_with_new": "用新文件替换",

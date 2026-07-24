@@ -4468,6 +4468,7 @@
   "photogallery.nothing_selected": "Nada seleccionado.",
   "photogallery.options": "Opciones",
   "photogallery.photo": "Foto",
+  "photogallery.raw_jpeg_pair_tooltip": "Par RAW + JPEG. Descarga el archivo RAW seleccionando «{action}».",
   "photogallery.photo_statistics": "Estadísticas de fotos",
   "photogallery.rating": "Valoración",
   "photogallery.replace_with_new": "Reemplazar por el nuevo",

@@ -4460,6 +4460,7 @@
   "photogallery.nothing_selected": "Нічого не вибрано.",
   "photogallery.options": "Параметри",
   "photogallery.photo": "Фото",
+  "photogallery.raw_jpeg_pair_tooltip": "Пара RAW + JPEG. Щоб завантажити файл RAW, виберіть «{action}».",
   "photogallery.photo_statistics": "Статистика фото",
   "photogallery.rating": "Рейтинг",
   "photogallery.replace_with_new": "Замінити новим",

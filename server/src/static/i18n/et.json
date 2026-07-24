@@ -4468,6 +4468,7 @@
   "photogallery.nothing_selected": "Midagi pole valitud.",
   "photogallery.options": "Valikud",
   "photogallery.photo": "Foto",
+  "photogallery.raw_jpeg_pair_tooltip": "RAW + JPEG paar. RAW-faili allalaadimiseks vali „{action}“.",
   "photogallery.photo_statistics": "Fotostatistika",
   "photogallery.rating": "Hinnang",
   "photogallery.replace_with_new": "Asenda uuega",
