@@ -4498,6 +4498,12 @@ html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccord
         }
 
         const p = userProfile || {};
+        const profileFingerprint = String(
+            meFpHex ||
+            p.fingerprint_hex ||
+            p.fingerprint ||
+            ""
+        ).trim();
 
         const passwordLoginHint = (() => {
             try { return localStorage.getItem("pqnas_password_login") || ""; } catch { return ""; }
@@ -4613,6 +4619,49 @@ html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccord
                         style="width:100%; box-sizing:border-box;"
                     >
                 </label>
+
+                <div>
+                    <div class="mini" style="margin-bottom:4px;">
+                        ${escapeHtml(tr("settings.profile.fingerprint", null, "Fingerprint identifier"))}
+                    </div>
+
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <input
+                            id="userProfileFingerprint"
+                            type="text"
+                            readonly
+                            spellcheck="false"
+                            aria-readonly="true"
+                            value="${escapeHtml(profileFingerprint)}"
+                            style="
+                                flex:1 1 360px;
+                                min-width:0;
+                                box-sizing:border-box;
+                                font-family:var(--mono);
+                                background:var(--panel2);
+                                color:var(--fg);
+                                border-color:var(--border2);
+                            "
+                        >
+
+                        <button
+                            class="btn secondary"
+                            id="userProfileCopyFingerprintBtn"
+                            type="button"
+                            ${profileFingerprint ? "" : "disabled"}
+                        >
+                            ${escapeHtml(tr("settings.profile.copy_fingerprint", null, "Copy fingerprint"))}
+                        </button>
+                    </div>
+
+                    <div class="mini" style="line-height:1.45; margin-top:6px;">
+                        ${escapeHtml(tr(
+                            "settings.profile.fingerprint_help",
+                            null,
+                            "Share this fingerprint identifier with someone who wants to invite you to a workspace. It is not a password and cannot be edited."
+                        ))}
+                    </div>
+                </div>
 
                 <input
                     id="userProfileAvatarUrl"
@@ -5016,6 +5065,54 @@ html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccord
             });
         }
 
+        const profileCopyFingerprintBtn =
+            (homeContent || homeBlurb).querySelector("#userProfileCopyFingerprintBtn");
+        const profileFingerprintInput =
+            (homeContent || homeBlurb).querySelector("#userProfileFingerprint");
+
+        if (profileCopyFingerprintBtn && profileFingerprintInput) {
+            profileCopyFingerprintBtn.addEventListener("click", async () => {
+                const fingerprint = String(profileFingerprintInput.value || "").trim();
+                if (!fingerprint) return;
+
+                const oldText = profileCopyFingerprintBtn.textContent;
+                profileCopyFingerprintBtn.disabled = true;
+
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(fingerprint);
+                    } else {
+                        profileFingerprintInput.focus();
+                        profileFingerprintInput.select();
+
+                        if (!document.execCommand("copy")) {
+                            throw new Error("copy_failed");
+                        }
+                    }
+
+                    profileCopyFingerprintBtn.textContent = tr(
+                        "settings.profile.fingerprint_copied",
+                        null,
+                        "Fingerprint copied."
+                    );
+                } catch (_) {
+                    // Keep the immutable identifier selected so the user can
+                    // still copy it manually when clipboard permission is denied.
+                    profileFingerprintInput.focus();
+                    profileFingerprintInput.select();
+                    profileCopyFingerprintBtn.textContent = tr(
+                        "settings.profile.fingerprint_copy_failed",
+                        null,
+                        "Could not copy the fingerprint."
+                    );
+                } finally {
+                    window.setTimeout(() => {
+                        profileCopyFingerprintBtn.textContent = oldText;
+                        profileCopyFingerprintBtn.disabled = false;
+                    }, 1500);
+                }
+            });
+        }
 
         const passwordChangeBtn = (homeContent || homeBlurb).querySelector("#settingsPasswordChangeBtn");
         if (passwordChangeBtn) {

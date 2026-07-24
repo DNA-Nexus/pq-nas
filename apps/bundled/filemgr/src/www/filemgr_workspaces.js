@@ -2305,7 +2305,7 @@
                 <button id="sharedSpaceInviteBtn" class="btn" type="button">${tr("filemgr.ws.send_invite", null, "Send invite")}</button>
             </div>
             <div class="mono" style="opacity:.7; font-size:12px; margin-top:8px;">
-                ${tr("filemgr.ws.invite_member_help", null, "The invited user will see a pending workspace invitation in File Manager and can accept or decline it.")}
+                ${tr("filemgr.ws.invite_member_help", null, "The invited user will see a pending workspace invitation in File Manager and can accept or decline it. The user can find their own fingerprint identifier under Settings → Profile.")}
             </div>
         `;
 
