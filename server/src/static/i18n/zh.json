@@ -2991,7 +2991,7 @@
   "filemgr.favorites": "收藏",
   "filemgr.favorites.all": "全部",
   "filemgr.fit": "适应窗口",
-  "filemgr.footer": "File Manager 内置应用 • filemgr 1.2.0",
+  "filemgr.footer": "File Manager 内置应用 • filemgr {version}",
   "filemgr.image.alt": "图片",
   "filemgr.image.failed": "预览加载失败",
   "filemgr.image.loading": "正在加载…",

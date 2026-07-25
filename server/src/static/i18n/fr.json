@@ -2991,7 +2991,7 @@
   "filemgr.favorites": "Favoris",
   "filemgr.favorites.all": "Tout",
   "filemgr.fit": "Adapter",
-  "filemgr.footer": "Application File Manager intégrée • filemgr 1.2.0",
+  "filemgr.footer": "Application File Manager intégrée • filemgr {version}",
   "filemgr.image.alt": "image",
   "filemgr.image.failed": "Échec du chargement de l’aperçu",
   "filemgr.image.loading": "Chargement…",

@@ -45,6 +45,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   const badge = document.getElementById("badge");
   const status = document.getElementById("status");
   const quotaLine = document.getElementById("quotaLine");
+  const footerAppVersion = document.getElementById("footerAppVersion");
   const refreshBtn = document.getElementById("refreshBtn");
   const upBtn = document.getElementById("upBtn");
   const titleLine = document.getElementById("titleLine");
@@ -7994,6 +7995,54 @@ function describeMoveItems(items) {
     clearFileListCache();
     await load(true);
   };
+  async function getFileManagerVersion() {
+    // Use the installed manifest as the version source of truth.
+    // The URL version remains a safe fallback when the manifest is unavailable.
+    for (const url of ["../manifest.json", "./manifest.json"]) {
+      try {
+        const response = await fetch(url, {
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Accept": "application/json" },
+        });
+
+        if (!response.ok) continue;
+
+        const manifest = await response.json();
+        const version =
+          manifest && typeof manifest.version === "string"
+            ? manifest.version.trim()
+            : "";
+
+        if (version) return version;
+      } catch (_) {}
+    }
+
+    const match = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
+    return match && match[2] ? decodeURIComponent(match[2]) : "";
+  }
+
+  function setFileManagerFooterVersion(version) {
+    if (!footerAppVersion) return;
+
+    const normalizedVersion = String(version || "").trim();
+
+    footerAppVersion.textContent = normalizedVersion
+      ? tr(
+          "filemgr.footer",
+          { version: normalizedVersion },
+          `File Manager bundled app • filemgr ${normalizedVersion}`
+        )
+      : "File Manager bundled app • filemgr";
+  }
+
+  async function initFileManagerVersion() {
+    const version = await getFileManagerVersion();
+    setFileManagerFooterVersion(version);
+  }
+
+  initFileManagerVersion();
+
   load().catch((e) => {
     console.warn("Initial load failed:", e);
   });

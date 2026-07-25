@@ -2991,7 +2991,7 @@
   "filemgr.favorites": "Favoriler",
   "filemgr.favorites.all": "Tümü",
   "filemgr.fit": "Sığdır",
-  "filemgr.footer": "File Manager yerleşik uygulaması • filemgr 1.2.0",
+  "filemgr.footer": "File Manager yerleşik uygulaması • filemgr {version}",
   "filemgr.image.alt": "görsel",
   "filemgr.image.failed": "Önizleme yüklenemedi",
   "filemgr.image.loading": "Yükleniyor…",
