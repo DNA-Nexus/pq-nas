@@ -310,6 +310,7 @@
         previewMode: "fit",
         previewZoom: 1,
         activeTilePath: "",
+        mapFocusRelPath: "",
         searchItems: [],
         searchBasePath: "",
         searchLoaded: false,
@@ -2158,8 +2159,14 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             "Share link…";
 
         ctxMenu.innerHTML = "";
-        ctxMenu.innerHTML = "";
         ctxMenu.appendChild(menuItem(pgT("photogallery.menu.open_preview", null, "Open preview"), () => openPreviewFor(item)));
+
+        if (hasUsableGps(item)) {
+            ctxMenu.appendChild(menuItem(
+                pgT("photogallery.menu.show_on_map", null, "Show on map"),
+                () => showItemOnMap(item)
+            ));
+        }
 
         ctxMenu.appendChild(menuItem(pgT("photogallery.menu.add_to_album", null, "Add to album…"), () => {
             const rel = currentRelPathFor(item);
@@ -4531,14 +4538,43 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         return wrap;
     }
-    function mapItems() {
-        return filteredItems().filter((it) =>
-            it &&
-            it.type === "file" &&
-            it.has_gps &&
-            it.gps_latitude != null &&
-            it.gps_longitude != null
+    function hasUsableGps(item) {
+        if (!item || item.type !== "file" || !item.has_gps) return false;
+
+        const rawLat = item.gps_latitude;
+        const rawLon = item.gps_longitude;
+
+        if (
+            rawLat == null ||
+            rawLon == null ||
+            rawLat === "" ||
+            rawLon === ""
+        ) {
+            return false;
+        }
+
+        const lat = Number(rawLat);
+        const lon = Number(rawLon);
+
+        return (
+            Number.isFinite(lat) &&
+            Number.isFinite(lon) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lon >= -180 &&
+            lon <= 180
         );
+    }
+
+    function showItemOnMap(item) {
+        if (!hasUsableGps(item)) return;
+
+        state.mapFocusRelPath = currentRelPathFor(item);
+        setViewMode("map");
+    }
+
+    function mapItems() {
+        return filteredItems().filter(hasUsableGps);
     }
 
     function applyViewModeUi() {
@@ -4557,6 +4593,10 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         gridBtn?.classList.toggle("active", gridOn);
         mapBtn?.classList.toggle("active", mapOn);
         albumsBtn?.classList.toggle("active", albumsOn);
+
+        // Keep the prominent top-bar indicator synchronized also when
+        // the view changes programmatically, such as "Show on map".
+        setTopModeButtonActive(state.viewMode);
     }
 
     function setViewMode(mode) {
@@ -4569,6 +4609,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         }
 
         if (state.viewMode !== "map") {
+            state.mapFocusRelPath = "";
             window.PQNAS_PHOTOGALLERY?.map?.destroyMap?.();
         }
 
@@ -4608,7 +4649,13 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             fmtTime,
             openPreviewFor,
             refreshFooterStats,
-            galleryThumbUrl
+            galleryThumbUrl,
+            focusRelPath: state.mapFocusRelPath,
+            onFocusApplied(relPath) {
+                if (state.mapFocusRelPath === relPath) {
+                    state.mapFocusRelPath = "";
+                }
+            }
         });
     }
 
@@ -4953,6 +5000,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
     mapBtn?.addEventListener("click", () => {
         window.PQNAS_PHOTOGALLERY?.albumsView?.resetToList?.();
+        state.mapFocusRelPath = "";
         setViewMode("map");
     });
 
