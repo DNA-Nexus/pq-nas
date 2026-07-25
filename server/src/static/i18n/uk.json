@@ -2991,7 +2991,7 @@
   "filemgr.favorites": "Обране",
   "filemgr.favorites.all": "Усі",
   "filemgr.fit": "Вписати",
-  "filemgr.footer": "Вбудований застосунок File Manager • filemgr 1.2.0",
+  "filemgr.footer": "Вбудований застосунок File Manager • filemgr {version}",
   "filemgr.image.alt": "зображення",
   "filemgr.image.failed": "Не вдалося завантажити попередній перегляд",
   "filemgr.image.loading": "Завантаження…",

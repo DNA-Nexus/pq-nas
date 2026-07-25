@@ -207,6 +207,13 @@ PYCOMPARE
       ;;
 
     new|changed)
+      # mktemp creates archives with mode 0600. Normalize the completed ZIP
+      # before publishing so the normal build/service group can read it.
+      chmod 0664 "$tmp_zip" || {
+        echo "[ERROR] $appname: failed to set ZIP permissions: $tmp_zip" >&2
+        return 6
+      }
+
       mv -f "$tmp_zip" "$out_abs"
       trap - EXIT
 

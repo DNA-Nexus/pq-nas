@@ -2991,7 +2991,7 @@
   "filemgr.favorites": "Lemmikud",
   "filemgr.favorites.all": "Kõik",
   "filemgr.fit": "Mahuta",
-  "filemgr.footer": "File Manager rakendus • filemgr 1.2.0",
+  "filemgr.footer": "File Manager rakendus • filemgr {version}",
   "filemgr.image.alt": "pilt",
   "filemgr.image.failed": "Eelvaate laadimine nurjus",
   "filemgr.image.loading": "Laadimine…",

@@ -30,6 +30,7 @@
     const badge = el("badge");
     const statusEl = el("status");
     const footerStats = el("footerStats");
+    const footerAppVersion = el("footerAppVersion");
     const filterInput = el("filterInput");
     const ratingFilter = el("ratingFilter");
     const thumbSizeSelect = el("thumbSizeSelect");
@@ -5470,9 +5471,8 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     };
 
     async function getAppVersion() {
-        const m = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
-        if (m && m[2]) return decodeURIComponent(m[2]);
-
+        // Use the installed package manifest as the version source of truth.
+        // The URL version remains a safe fallback if the manifest is unavailable.
         for (const url of ["../manifest.json", "./manifest.json"]) {
             try {
                 const r = await fetch(url, {
@@ -5480,16 +5480,29 @@ html[data-theme="orange"] .pgTopModeBtnActive{
                     headers: { "Accept": "application/json" }
                 });
                 if (!r.ok) continue;
+
                 const j = await r.json();
-                const ver = j && typeof j.version === "string" ? j.version.trim() : "";
+                const ver = j && typeof j.version === "string"
+                    ? j.version.trim()
+                    : "";
+
                 if (ver) return ver;
             } catch (_) {}
         }
 
-        return "";
+        const m = location.pathname.match(/^\/apps\/([^/]+)\/([^/]+)\//);
+        return m && m[2] ? decodeURIComponent(m[2]) : "";
     }
 
     function setPhotoGalleryTitle(version) {
+        const normalizedVersion = String(version || "").trim();
+
+        if (footerAppVersion) {
+            footerAppVersion.textContent = normalizedVersion
+                ? `Photo Gallery bundled app • photogallery ${normalizedVersion}`
+                : "Photo Gallery bundled app • photogallery";
+        }
+
         if (!titleLine) return;
 
         titleLine.replaceChildren();
@@ -5498,13 +5511,13 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         name.textContent = "Photo Gallery";
         titleLine.appendChild(name);
 
-        if (!version) return;
+        if (!normalizedVersion) return;
 
         const versionEl = document.createElement("span");
         versionEl.id = "appVersion";
         versionEl.className = "appVersion";
-        versionEl.textContent = `v${version}`;
-        versionEl.title = `Photo Gallery ${version}`;
+        versionEl.textContent = `v${normalizedVersion}`;
+        versionEl.title = `Photo Gallery ${normalizedVersion}`;
         titleLine.appendChild(versionEl);
     }
 
