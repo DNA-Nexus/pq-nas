@@ -2218,7 +2218,11 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         const count = selectedRelPaths.size;
 
         if (selCount) {
-            selCount.textContent = `${count} selected`;
+            selCount.textContent = pgT(
+                "photogallery.selected_item_count",
+                { count },
+                "{count} selected item(s)"
+            );
             selCount.style.display = count > 0 ? "" : "none";
         }
 
@@ -2233,23 +2237,57 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         if (!gridEl) return;
         for (const el of gridEl.querySelectorAll(".tile")) {
             el.classList.remove("sel");
+            el.setAttribute("aria-selected", "false");
         }
+    }
+
+    function normalizeSelectionRelPaths(relPaths) {
+        const values = Array.isArray(relPaths) ? relPaths : [relPaths];
+        return Array.from(
+            new Set(values.map((rel) => String(rel || "")).filter(Boolean))
+        );
+    }
+
+    function tileSelectionRelPaths(tile) {
+        if (!tile) return [];
+
+        const explicit = Array.isArray(tile._pgSelectionRelPaths)
+            ? tile._pgSelectionRelPaths
+            : [];
+        const fallback = String(tile.dataset?.relPath || "");
+
+        return normalizeSelectionRelPaths([...explicit, fallback]);
+    }
+
+    function selectionGroupFullySelected(relPaths) {
+        const group = normalizeSelectionRelPaths(relPaths);
+        return group.length > 0 && group.every((rel) => selectedRelPaths.has(rel));
     }
 
     function applySelectionToDom() {
         if (!gridEl) return;
-        for (const el of gridEl.querySelectorAll(".tile")) {
-            const rel = String(el.dataset.relPath || "");
-            el.classList.toggle("sel", selectedRelPaths.has(rel));
+
+        for (const tile of gridEl.querySelectorAll(".tile")) {
+            const selected = selectionGroupFullySelected(
+                tileSelectionRelPaths(tile)
+            );
+
+            tile.classList.toggle("sel", selected);
+            tile.setAttribute("aria-selected", selected ? "true" : "false");
         }
+
         updateSelectionUi();
     }
 
-    function visibleRelPathsInOrder() {
+    function visibleSelectionGroupsInOrder() {
         if (!gridEl) return [];
+
         return Array.from(gridEl.querySelectorAll(".tile"))
-            .map((el) => String(el.dataset.relPath || ""))
-            .filter(Boolean);
+            .map((tile) => ({
+                anchorRelPath: String(tile.dataset.relPath || ""),
+                relPaths: tileSelectionRelPaths(tile)
+            }))
+            .filter((group) => group.anchorRelPath && group.relPaths.length);
     }
 
     function clearSelection() {
@@ -2261,27 +2299,55 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         updateSelectionUi();
     }
 
-    function setSingleSelection(relPath, opts = {}) {
-        if (!relPath) return;
-        selectedRelPaths = new Set([relPath]);
-        selectionAnchorRelPath = relPath;
+    function setSingleSelectionGroup(relPaths, opts = {}) {
+        const group = normalizeSelectionRelPaths(relPaths);
+        if (!group.length) return;
+
+        const activeRelPath = String(opts.activeRelPath || group[0] || "");
+
+        selectedRelPaths = new Set(group);
+        selectionAnchorRelPath = activeRelPath;
         applySelectionToDom();
-        setActiveTileRelPath(relPath, {
+
+        setActiveTileRelPath(activeRelPath, {
             scroll: opts.scroll === true,
             focus: opts.focus === true
         });
     }
 
-    function toggleSelection(relPath) {
-        if (!relPath) return;
-        if (selectedRelPaths.has(relPath)) selectedRelPaths.delete(relPath);
-        else selectedRelPaths.add(relPath);
+    function setSingleSelection(relPath, opts = {}) {
+        setSingleSelectionGroup([relPath], {
+            ...opts,
+            activeRelPath: relPath
+        });
+    }
+
+    function toggleSelectionGroup(relPaths, opts = {}) {
+        const group = normalizeSelectionRelPaths(relPaths);
+        if (!group.length) return;
+
+        const shouldSelect = !selectionGroupFullySelected(group);
+
+        for (const rel of group) {
+            if (shouldSelect) selectedRelPaths.add(rel);
+            else selectedRelPaths.delete(rel);
+        }
+
+        const activeRelPath = String(opts.activeRelPath || group[0] || "");
+
         applySelectionToDom();
-        setActiveTileRelPath(relPath, {
+        setActiveTileRelPath(activeRelPath, {
             scroll: false,
             focus: false
         });
     }
+
+    function toggleSelection(relPath) {
+        toggleSelectionGroup([relPath], {
+            activeRelPath: relPath
+        });
+    }
+
     function ensureSelected(relPath) {
         if (!relPath) return;
         if (!selectedRelPaths.has(relPath)) {
@@ -2290,27 +2356,55 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function selectRange(fromRelPath, toRelPath, additive) {
-        const keys = visibleRelPathsInOrder();
-        const a = keys.indexOf(String(fromRelPath || ""));
-        const b = keys.indexOf(String(toRelPath || ""));
+        const groups = visibleSelectionGroupsInOrder();
+
+        const a = groups.findIndex(
+            (group) => group.anchorRelPath === String(fromRelPath || "")
+        );
+
+        const b = groups.findIndex(
+            (group) => group.anchorRelPath === String(toRelPath || "")
+        );
 
         if (a < 0 || b < 0) {
-            setSingleSelection(String(toRelPath || fromRelPath || ""));
-            selectionAnchorRelPath = String(toRelPath || fromRelPath || "");
+            const target = groups.find(
+                (group) =>
+                    group.anchorRelPath ===
+                    String(toRelPath || fromRelPath || "")
+            );
+
+            if (target) {
+                setSingleSelectionGroup(target.relPaths, {
+                    activeRelPath: target.anchorRelPath
+                });
+            } else {
+                setSingleSelection(
+                    String(toRelPath || fromRelPath || "")
+                );
+            }
+
+            selectionAnchorRelPath =
+                String(toRelPath || fromRelPath || "");
             return;
         }
 
         const lo = Math.min(a, b);
         const hi = Math.max(a, b);
 
-        const next = additive ? new Set(selectedRelPaths) : new Set();
+        const next = additive
+            ? new Set(selectedRelPaths)
+            : new Set();
+
         for (let i = lo; i <= hi; i++) {
-            if (keys[i]) next.add(keys[i]);
+            for (const rel of groups[i].relPaths) {
+                next.add(rel);
+            }
         }
 
         selectedRelPaths = next;
         selectionAnchorRelPath = String(toRelPath || "");
         applySelectionToDom();
+
         setActiveTileRelPath(String(toRelPath || ""), {
             scroll: false,
             focus: false
@@ -2318,15 +2412,30 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function selectedRelPathsList() {
-        return Array.from(selectedRelPaths).sort((a, b) => String(a).localeCompare(String(b)));
-    }
-    function selectedImageRelPaths() {
-        if (!gridEl) return [];
-
-        return Array.from(gridEl.querySelectorAll(".tile[data-item-type='file']"))
-            .map((tile) => String(tile.dataset.relPath || ""))
-            .filter((rel) => rel && selectedRelPaths.has(rel))
+        return Array.from(selectedRelPaths)
             .sort((a, b) => String(a).localeCompare(String(b)));
+    }
+
+    function selectedImageRelPaths() {
+        const all = [...state.items, ...state.searchItems];
+        const seen = new Set();
+        const out = [];
+
+        for (const item of all) {
+            if (!item || item.type !== "file") continue;
+
+            const rel = currentRelPathFor(item);
+            if (!rel || seen.has(rel) || !selectedRelPaths.has(rel)) {
+                continue;
+            }
+
+            seen.add(rel);
+            out.push(rel);
+        }
+
+        return out.sort(
+            (a, b) => String(a).localeCompare(String(b))
+        );
     }
 
     let albumsViewLoadPromise = null;
@@ -2608,30 +2717,102 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         const parts = [];
 
-        parts.push(`Here: ${vis.items}`);
-        parts.push(`Folders: ${vis.dirs}`);
-        parts.push(`Files: ${vis.files}`);
-        parts.push(`Size: ${fmtSize(vis.fileBytes)}`);
+        parts.push(
+            pgT(
+                "photogallery.footer.here",
+                { count: vis.items },
+                "Here: {count}"
+            )
+        );
+
+        parts.push(
+            pgT(
+                "photogallery.footer.folders",
+                { count: vis.dirs },
+                "Folders: {count}"
+            )
+        );
+
+        parts.push(
+            pgT(
+                "photogallery.footer.files",
+                { count: vis.files },
+                "Files: {count}"
+            )
+        );
+
+        parts.push(
+            pgT(
+                "photogallery.footer.size",
+                { size: fmtSize(vis.fileBytes) },
+                "Size: {size}"
+            )
+        );
 
         if (tree.loading) {
-            parts.push(`Tree: loading…`);
+            parts.push(
+                pgT(
+                    "photogallery.footer.tree_loading",
+                    null,
+                    "Tree: loading…"
+                )
+            );
         } else if (tree.loaded) {
-            parts.push(`Tree folders: ${tree.dirs}`);
-            parts.push(`Tree files: ${tree.files}`);
-            parts.push(`Tree size: ${fmtSize(tree.fileBytes)}`);
+            parts.push(
+                pgT(
+                    "photogallery.footer.tree_folders",
+                    { count: tree.dirs },
+                    "Tree folders: {count}"
+                )
+            );
+
+            parts.push(
+                pgT(
+                    "photogallery.footer.tree_files",
+                    { count: tree.files },
+                    "Tree files: {count}"
+                )
+            );
+
+            parts.push(
+                pgT(
+                    "photogallery.footer.tree_size",
+                    { size: fmtSize(tree.fileBytes) },
+                    "Tree size: {size}"
+                )
+            );
         }
 
         const sel = selectedItemsSummary();
+
         let html = parts
-            .map((p) => `${p}`)
-            .join(` <span class="footerStatsDimSep">•</span> `);
+            .map((part) => `${part}`)
+            .join(
+                ` <span class="footerStatsDimSep">•</span> `
+            );
 
         if (sel.items > 0) {
-            html += ` <span class="footerStatsDimSep">•</span> <span class="footerStatsSel">Selected: ${sel.items} • ${fmtSize(sel.fileBytes)}</span>`;
+            const selectedText = pgT(
+                "photogallery.footer.selected",
+                {
+                    count: sel.items,
+                    size: fmtSize(sel.fileBytes)
+                },
+                "Selected: {count} • {size}"
+            );
+
+            html +=
+                ` <span class="footerStatsDimSep">•</span>` +
+                ` <span class="footerStatsSel">${selectedText}</span>`;
         }
 
         footerStats.innerHTML = html;
     }
+
+    window.addEventListener(
+        "pqnas-language-changed",
+        refreshFooterStats
+    );
     function refreshMetaApplySelectionUi() {
         if (!metaApplySelWrap || !metaApplySelChk || !metaApplySelText) return;
 
@@ -2878,7 +3059,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         const out = [];
         for (const tileEl of gridEl.querySelectorAll(".tile")) {
             out.push({
-                relPath: String(tileEl.dataset.relPath || ""),
+                relPaths: tileSelectionRelPaths(tileEl),
                 rect: tileEl.getBoundingClientRect()
             });
         }
@@ -2939,8 +3120,10 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         const next = marqueeBaseSelection ? new Set(marqueeBaseSelection) : new Set();
 
         for (const t of rects) {
-            if (t.relPath && rectIntersects(selRect, t.rect)) {
-                next.add(t.relPath);
+            if (!rectIntersects(selRect, t.rect)) continue;
+
+            for (const rel of t.relPaths) {
+                next.add(rel);
             }
         }
 
@@ -4267,11 +4450,18 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         refreshRawJpegPairTooltips
     );
 
-    function makeTile(item) {
+    function makeTile(item, opts = {}) {
         const tile = document.createElement("div");
+        const relPath = currentRelPathFor(item);
+
         tile.className = "tile";
-        tile.dataset.relPath = currentRelPathFor(item);
+        tile.dataset.relPath = relPath;
         tile.dataset.itemType = item.type;
+        tile._pgSelectionRelPaths = normalizeSelectionRelPaths(
+            Array.isArray(opts.selectionRelPaths)
+                ? opts.selectionRelPaths
+                : [relPath]
+        );
 
         tile.tabIndex = -1;
         tile.setAttribute("role", "button");
@@ -4398,19 +4588,28 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             const rel = tile.dataset.relPath || "";
             if (!rel) return;
 
-            setActiveTileRelPath(rel, { scroll: false, focus: false });
+            const selectionGroup = tileSelectionRelPaths(tile);
 
-            if (selectedRelPaths.size > 1) {
-                if (!selectedRelPaths.has(rel)) {
-                    setSingleSelection(rel);
-                    selectionAnchorRelPath = rel;
-                }
-            } else {
-                ensureSelected(rel);
-                selectionAnchorRelPath = rel;
+            setActiveTileRelPath(rel, {
+                scroll: false,
+                focus: false
+            });
+
+            if (
+                !selectionGroupFullySelected(selectionGroup) ||
+                selectedRelPaths.size <= 1
+            ) {
+                setSingleSelectionGroup(selectionGroup, {
+                    activeRelPath: rel
+                });
             }
 
-            if (selectedRelPaths.size > 1 && selectedRelPaths.has(rel)) {
+            selectionAnchorRelPath = rel;
+
+            if (
+                selectedRelPaths.size > 1 &&
+                selectionGroupFullySelected(selectionGroup)
+            ) {
                 openSelectionContextMenu(e.clientX, e.clientY);
             } else if (item.type === "file") {
                 openImageContextMenu(e.clientX, e.clientY, item);
@@ -4436,20 +4635,34 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             if (!rel) return;
 
             const additive = (e.ctrlKey || e.metaKey);
+            const selectionGroup = tileSelectionRelPaths(tile);
 
             if (e.shiftKey) {
                 const anchor =
                     selectionAnchorRelPath ||
-                    (selectedRelPaths.size ? Array.from(selectedRelPaths)[0] : rel);
+                    (
+                        selectedRelPaths.size
+                            ? Array.from(selectedRelPaths)[0]
+                            : rel
+                    );
+
                 selectRange(anchor, rel, additive);
                 return;
             }
 
             if (additive) {
-                toggleSelection(rel);
-                if (selectedRelPaths.has(rel)) selectionAnchorRelPath = rel;
+                toggleSelectionGroup(selectionGroup, {
+                    activeRelPath: rel
+                });
+
+                if (selectionGroupFullySelected(selectionGroup)) {
+                    selectionAnchorRelPath = rel;
+                }
             } else {
-                setSingleSelection(rel);
+                setSingleSelectionGroup(selectionGroup, {
+                    activeRelPath: rel
+                });
+
                 selectionAnchorRelPath = rel;
             }
         });
@@ -4461,7 +4674,21 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         wrap.className = burst.expanded ? "pgBurst pgBurstExpanded" : "pgBurst";
         wrap.dataset.burstKey = burst.key;
 
-        const coverTile = makeTile(burst.cover);
+        // A collapsed burst acts as one selectable group. Once expanded,
+        // every visible tile must be selectable independently.
+        const coverSelectionRelPaths = burst.expanded
+            ? [currentRelPathFor(burst.cover)].filter(Boolean)
+            : (
+                Array.isArray(burst.items)
+                    ? burst.items
+                    : []
+            )
+                .map((item) => currentRelPathFor(item))
+                .filter(Boolean);
+
+        const coverTile = makeTile(burst.cover, {
+            selectionRelPaths: coverSelectionRelPaths
+        });
         coverTile.classList.add("pgBurstCoverTile");
 
         const thumbWrap = coverTile.querySelector(".thumbWrap");

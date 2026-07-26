@@ -62,6 +62,32 @@
     --err-rgb: 255,90,90;
     --info-rgb: 100,181,255;
 
+    /*
+     * Shared semantic selection state.
+     * Components inherit each theme's own --info / --info-rgb values.
+     */
+    --selection-bg: rgba(var(--info-rgb),0.18);
+    --selection-bg-hover: rgba(var(--info-rgb),0.24);
+    --selection-border: var(--info);
+    --selection-ring: rgba(var(--info-rgb),0.42);
+    --selection-accent: var(--info);
+
+    --selection-shadow:
+        0 0 0 2px var(--selection-ring),
+        0 12px 30px rgba(var(--info-rgb),0.18),
+        inset 0 0 0 2px var(--selection-border);
+
+    --selection-shadow-compact:
+        0 0 0 1px var(--selection-ring),
+        0 8px 20px rgba(var(--info-rgb),0.14),
+        inset 0 0 0 1px var(--selection-border);
+
+    --selection-mark-bg: var(--info);
+    --selection-mark-fg: var(--bg);
+    --selection-mark-shadow:
+        0 0 0 2px var(--bg),
+        0 4px 14px rgba(var(--info-rgb),0.32);
+
     /* form fields (defaults) */
     --field-bg: rgba(255,255,255,0.10);
     --field-bg2: rgba(255,255,255,0.14);

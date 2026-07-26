@@ -29,6 +29,19 @@
             --pg_burst_btn_hover_bg: rgba(var(--fg-rgb),0.10);
             --pg_burst_btn_hover_border: rgba(var(--fg-rgb),0.42);
             --pg_burst_btn_backdrop: blur(6px);
+
+            /*
+             * Photo Gallery keeps app-local names while the actual colours
+             * and effects come from the shared theme selection tokens.
+             */
+            --pg_selection_bg: var(--selection-bg);
+            --pg_selection_border: var(--selection-border);
+            --pg_selection_ring: var(--selection-ring);
+            --pg_selection_shadow: var(--selection-shadow);
+            --pg_selection_mark_bg: var(--selection-mark-bg);
+            --pg_selection_mark_fg: var(--selection-mark-fg);
+            --pg_selection_mark_shadow:
+                var(--selection-mark-shadow);
         }
 
         html:not([data-theme]){
@@ -237,7 +250,11 @@
             border-radius:18px;
             background: var(--pg_card_bg);
             overflow:hidden;
-            transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+            transition:
+                transform 120ms ease,
+                background 120ms ease,
+                border-color 120ms ease,
+                box-shadow 120ms ease;
             cursor:pointer;
             display:flex;
             flex-direction:column;
@@ -893,9 +910,35 @@
             overflow-wrap:anywhere;
         }
         .tile.sel{
-            background: rgba(var(--fg-rgb),0.10);
-            border-color: rgba(var(--fg-rgb),0.35);
-            box-shadow: 0 0 0 2px rgba(var(--fg-rgb),0.18) inset;
+            background: var(--pg_selection_bg);
+            border-color: var(--pg_selection_border);
+            box-shadow: var(--pg_selection_shadow);
+        }
+
+        /*
+         * The check mark makes selection unambiguous even when the photo
+         * itself contains colours close to the active theme accent.
+         */
+        .tile.sel::after{
+            content:"✓";
+            position:absolute;
+            top:10px;
+            left:10px;
+            z-index:7;
+            width:30px;
+            height:30px;
+            border-radius:999px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:var(--pg_selection_mark_bg);
+            color:var(--pg_selection_mark_fg);
+            box-shadow:var(--pg_selection_mark_shadow);
+            font-family:var(--sans);
+            font-size:18px;
+            font-weight:950;
+            line-height:1;
+            pointer-events:none;
         }
         .embeddedPre{
             margin:0;
@@ -1867,7 +1910,7 @@
 <script src="./gallery_embedded_meta.js"></script>
 <script src="./bursts.js?v=4"></script>
 <script src="/static/pqnas_folder_picker.js?v=3"></script>
-<script src="./app.js?v=20260725-pg-dynamic-version-1"></script>
+<script src="./app.js?v=20260726-pg-burst-expanded-selection-2"></script>
 <script src="./gallery_exif_search.js?v=2"></script>
 <script src="./albums_picker.js?v=20260519-pg-native-dialogs-2"></script>
 <script src="./gallery_upload.js?v=1"></script>

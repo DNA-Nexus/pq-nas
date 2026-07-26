@@ -17,6 +17,15 @@
       --fm_surface2: var(--panel2);
       --fm_modal_overlay: rgba(0,0,0,0.55);
       --fav-rgb: 255,210,60;   /* universal favorite color (gold/yellow) */
+
+      /* Shared theme-driven file selection state. */
+      --fm_selection_bg: var(--selection-bg);
+      --fm_selection_bg_hover: var(--selection-bg-hover);
+      --fm_selection_border: var(--selection-border);
+      --fm_selection_accent: var(--selection-accent);
+      --fm_selection_shadow: var(--selection-shadow);
+      --fm_selection_shadow_compact:
+        var(--selection-shadow-compact);
     }
     html[data-theme="bright"]{
       --fm_modal_overlay: rgba(255,255,255,0.38);
@@ -402,18 +411,18 @@
     }
     /* ---------- List view: selected row must override .grid.list .tile ---------- */
     .grid.list .tile.sel{
-      background: rgba(var(--fg-rgb),0.12);                 /* stronger than normal row */
-      border-color: rgba(var(--fg-rgb),0.48);
-      box-shadow: 0 0 18px rgba(var(--fg-rgb),0.14);
+      background: var(--fm_selection_bg);
+      border-color: var(--fm_selection_border);
+      box-shadow: var(--fm_selection_shadow_compact);
     }
 
-    /* Make selection still distinct even while hovering it */
+    /* Keep the selected row stronger than its normal hover state. */
     .grid.list .tile.sel:hover{
-      background: rgba(var(--fg-rgb),0.16);
-      border-color: rgba(var(--fg-rgb),0.58);
+      background: var(--fm_selection_bg_hover);
+      border-color: var(--fm_selection_border);
     }
 
-    /* Optional: “left accent bar” like desktop file managers */
+    /* Compact desktop-style selection accent for list rows. */
     .grid.list .tile.sel::before{
       content:"";
       position:absolute;
@@ -421,18 +430,18 @@
       top:6px;
       bottom:6px;
       width:4px;
-      border-radius: 999px;
-      background: rgba(var(--fg-rgb),0.85);
+      border-radius:999px;
+      background:var(--fm_selection_accent);
     }
 
-    /* Optional: punch up text contrast in selected rows */
     .grid.list .tile.sel .name{
-      opacity: 1;
-      font-weight: 900;
+      opacity:1;
+      font-weight:900;
     }
+
     .grid.list .tile.sel .meta > span{
-      opacity: 0.9;
-      color: rgba(var(--fg-rgb),0.82);
+      opacity:0.9;
+      color:var(--fg);
     }
 
     /* the two spans inside meta become the last 2 columns */
@@ -458,7 +467,11 @@
       padding: 12px;
       cursor: pointer;
       user-select: none;
-      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      transition:
+        transform 120ms ease,
+        background 120ms ease,
+        border-color 120ms ease,
+        box-shadow 120ms ease;
       display:flex;
       flex-direction:column;
       gap:10px;
@@ -472,9 +485,14 @@
     }
 
     .tile.sel{
-      background: rgba(var(--fg-rgb),0.10);
-      border-color: rgba(var(--fg-rgb),0.38);
-      box-shadow: 0 0 18px rgba(var(--fg-rgb),0.12);
+      background:var(--fm_selection_bg);
+      border-color:var(--fm_selection_border);
+      box-shadow:var(--fm_selection_shadow);
+    }
+
+    .grid:not(.list) .tile.sel:hover{
+      background:var(--fm_selection_bg_hover);
+      border-color:var(--fm_selection_border);
     }
 
     .ico,
