@@ -2434,18 +2434,38 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
         if (bad) base_rel.clear();
     }
 
-    // max_bytes cap (controls RAM usage too)
-    std::uint64_t max_bytes = 50ull * 1024 * 1024; // 50 MiB default
+    /*
+     * ZIP output is written to a service-owned temporary file and streamed
+     * to the client. The cap protects temporary-disk use and CPU work rather
+     * than requiring an equally large in-memory response buffer.
+     */
+    std::uint64_t max_bytes =
+        1ull * 1024 * 1024 * 1024; // 1 GiB default
+
     if (body.contains("max_bytes")) {
         try {
             long long v = 0;
-            if (body["max_bytes"].is_number_integer()) v = body["max_bytes"].get<long long>();
-            else if (body["max_bytes"].is_string()) v = std::stoll(body["max_bytes"].get<std::string>());
-            if (v > 0) max_bytes = (std::uint64_t)v;
+
+            if (body["max_bytes"].is_number_integer()) {
+                v = body["max_bytes"].get<long long>();
+            } else if (body["max_bytes"].is_string()) {
+                v = std::stoll(
+                    body["max_bytes"].get<std::string>()
+                );
+            }
+
+            if (v > 0) {
+                max_bytes = static_cast<std::uint64_t>(v);
+            }
         } catch (...) {}
     }
-    const std::uint64_t MINB = 1ull * 1024 * 1024;       // 1 MiB
-    const std::uint64_t MAXB = 250ull * 1024 * 1024;     // 250 MiB hard clamp
+
+    const std::uint64_t MINB =
+        1ull * 1024 * 1024; // 1 MiB
+
+    const std::uint64_t MAXB =
+        2ull * 1024 * 1024 * 1024; // 2 GiB hard clamp
+
     if (max_bytes < MINB) max_bytes = MINB;
     if (max_bytes > MAXB) max_bytes = MAXB;
 
@@ -2735,7 +2755,21 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
     };
 
     std::filesystem::path stage_root;
+    std::filesystem::path archive_path;
+    int archive_fd = -1;
+
     auto cleanup_stage = [&]() {
+        if (archive_fd >= 0) {
+            ::close(archive_fd);
+            archive_fd = -1;
+        }
+
+        if (!archive_path.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(archive_path, ec);
+            archive_path.clear();
+        }
+
         if (!stage_root.empty()) {
             std::error_code ec;
             std::filesystem::remove_all(stage_root, ec);
@@ -2779,6 +2813,46 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
             return;
         }
         stage_root = made;
+
+        /*
+         * Security: create the archive atomically with mode 0600. Writing ZIP
+         * output through this open descriptor prevents symlink/path races.
+         */
+        std::string archive_tmpl =
+            (
+                tmp_root_path /
+                "dna_gallery_export_zip_XXXXXX"
+            ).string();
+
+        std::vector<char> archive_buf(
+            archive_tmpl.begin(),
+            archive_tmpl.end()
+        );
+        archive_buf.push_back('\0');
+
+        archive_fd = ::mkstemp(archive_buf.data());
+
+        if (archive_fd < 0) {
+            cleanup_stage();
+
+            audit_fail(
+                "mkstemp_failed",
+                500,
+                "mkstemp()",
+                max_bytes,
+                static_cast<std::uint64_t>(paths_rel.size())
+            );
+
+            reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "export staging failed"}
+            }.dump());
+
+            return;
+        }
+
+        archive_path = archive_buf.data();
     }
 
     auto stage_one_file = [&](const std::filesystem::path& src_abs,
@@ -2995,39 +3069,42 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
         return;
     }
 
-    int out_pipe[2] = {-1, -1};
-    if (::pipe(out_pipe) != 0) {
-        cleanup_stage();
-        audit_fail("pipe_failed", 500, "pipe()", max_bytes, (std::uint64_t)paths_rel.size());
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "zip failed"}
-        }.dump());
-        return;
-    }
-
     pid_t pid = ::fork();
+
     if (pid < 0) {
-        ::close(out_pipe[0]);
-        ::close(out_pipe[1]);
         cleanup_stage();
-        audit_fail("fork_failed", 500, "fork()", max_bytes, (std::uint64_t)paths_rel.size());
+
+        audit_fail(
+            "fork_failed",
+            500,
+            "fork()",
+            max_bytes,
+            static_cast<std::uint64_t>(paths_rel.size())
+        );
+
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
             {"message", "zip failed"}
         }.dump());
+
         return;
     }
 
     if (pid == 0) {
-        ::dup2(out_pipe[1], STDOUT_FILENO);
+        /*
+         * Resource protection: write ZIP output directly to the temporary
+         * file instead of accumulating it in the server process memory.
+         */
+        if (::dup2(archive_fd, STDOUT_FILENO) < 0) {
+            _exit(127);
+        }
 
-        ::close(out_pipe[0]);
-        ::close(out_pipe[1]);
+        ::close(archive_fd);
 
-        if (::chdir(stage_root.c_str()) != 0) _exit(127);
+        if (::chdir(stage_root.c_str()) != 0) {
+            _exit(127);
+        }
 
         const char* argv[] = {
             "zip",
@@ -3037,77 +3114,234 @@ srv.Get("/api/v4/shares/list", [&](const httplib::Request& req, httplib::Respons
             ".",
             nullptr
         };
+
         ::execvp("zip", (char* const*)argv);
         _exit(127);
     }
 
-    ::close(out_pipe[1]);
+    ::close(archive_fd);
+    archive_fd = -1;
 
-    std::string zip_data;
-    zip_data.reserve((size_t)std::min<std::uint64_t>(max_bytes, 4ull * 1024 * 1024));
+    int zip_status = 0;
 
-    const std::uint64_t zip_limit = max_bytes + 8ull * 1024 * 1024;
-    std::array<char, 64 * 1024> buf{};
+    if (::waitpid(pid, &zip_status, 0) < 0) {
+        cleanup_stage();
 
-    while (true) {
-        ssize_t n = ::read(out_pipe[0], buf.data(), (ssize_t)buf.size());
-        if (n == 0) break;
-        if (n < 0) {
-            ::close(out_pipe[0]);
-            ::kill(pid, SIGKILL);
-            cleanup_stage();
-            audit_fail("read_failed", 500, "read(zip)", max_bytes, (std::uint64_t)paths_rel.size());
-            reply_json(res, 500, json{
-                {"ok", false},
-                {"error", "server_error"},
-                {"message", "zip failed"}
-            }.dump());
-            return;
-        }
+        audit_fail(
+            "waitpid_failed",
+            500,
+            "waitpid()",
+            max_bytes,
+            static_cast<std::uint64_t>(paths_rel.size())
+        );
 
-        if (zip_data.size() + (size_t)n > (size_t)zip_limit) {
-            ::close(out_pipe[0]);
-            ::kill(pid, SIGKILL);
-            cleanup_stage();
-            audit_fail("zip_too_large", 413, "zip output exceeds limit", max_bytes, (std::uint64_t)paths_rel.size());
-            reply_json(res, 413, json{
-                {"ok", false},
-                {"error", "too_large"},
-                {"message", "zip output too large"}
-            }.dump());
-            return;
-        }
-
-        zip_data.append(buf.data(), (size_t)n);
-    }
-
-    ::close(out_pipe[0]);
-
-    int st = 0;
-    ::waitpid(pid, &st, 0);
-
-    cleanup_stage();
-
-    if (!(WIFEXITED(st) && WEXITSTATUS(st) == 0)) {
-        audit_fail("zip_failed", 500, "zip exit nonzero", max_bytes, (std::uint64_t)paths_rel.size());
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
             {"message", "zip failed"}
         }.dump());
+
         return;
     }
 
+    if (!(
+        WIFEXITED(zip_status) &&
+        WEXITSTATUS(zip_status) == 0
+    )) {
+        cleanup_stage();
+
+        audit_fail(
+            "zip_failed",
+            500,
+            "zip exit nonzero",
+            max_bytes,
+            static_cast<std::uint64_t>(paths_rel.size())
+        );
+
+        reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "zip failed"}
+        }.dump());
+
+        return;
+    }
+
+    const std::uint64_t zip_bytes =
+        pqnas::file_size_u64_safe(archive_path);
+
+    /*
+     * Allow bounded ZIP structure overhead while preventing uncontrolled
+     * temporary-file growth.
+     */
+    const std::uint64_t zip_limit =
+        max_bytes + 64ull * 1024 * 1024;
+
+    if (zip_bytes == 0 || zip_bytes > zip_limit) {
+        cleanup_stage();
+
+        audit_fail(
+            "zip_too_large",
+            413,
+            zip_bytes == 0
+                ? "empty zip output"
+                : "zip output exceeds limit",
+            max_bytes,
+            static_cast<std::uint64_t>(paths_rel.size())
+        );
+
+        reply_json(res, 413, json{
+            {"ok", false},
+            {"error", "too_large"},
+            {"message", "zip output too large"}
+        }.dump());
+
+        return;
+    }
+
+    /*
+     * The ZIP process has finished reading staged content. Remove staging
+     * now and retain only the completed archive for response streaming.
+     */
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(stage_root, ec);
+        stage_root.clear();
+    }
+
+    auto archive_stream = std::make_shared<std::ifstream>(
+        archive_path,
+        std::ios::binary
+    );
+
+    if (!archive_stream->good()) {
+        cleanup_stage();
+
+        audit_fail(
+            "open_zip_failed",
+            500,
+            "failed to open generated archive",
+            max_bytes,
+            static_cast<std::uint64_t>(paths_rel.size())
+        );
+
+        reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "server_error"},
+            {"message", "zip failed"}
+        }.dump());
+
+        return;
+    }
+
+    const std::filesystem::path streamed_archive_path =
+        archive_path;
+
     const std::string fname = "gallery-export.zip";
 
-    audit_ok(max_bytes, input_bytes, (std::uint64_t)zip_data.size(), files, dirs,
-             (std::uint64_t)paths_rel.size(), base_rel);
+    audit_ok(
+        max_bytes,
+        input_bytes,
+        zip_bytes,
+        files,
+        dirs,
+        static_cast<std::uint64_t>(paths_rel.size()),
+        base_rel
+    );
 
     res.status = 200;
     res.set_header("Cache-Control", "no-store");
-    res.set_header("Content-Type", "application/zip");
-        res.set_header("Content-Disposition", build_content_disposition("attachment", fname));
-    res.body = std::move(zip_data);
+    res.set_header(
+        "Content-Disposition",
+        build_content_disposition("attachment", fname)
+    );
+
+    res.set_content_provider(
+        static_cast<size_t>(zip_bytes),
+        "application/zip",
+        [archive_stream](
+            size_t offset,
+            size_t length,
+            httplib::DataSink& sink
+        ) mutable {
+            if (
+                !archive_stream ||
+                !archive_stream->is_open()
+            ) {
+                return false;
+            }
+
+            archive_stream->clear();
+            archive_stream->seekg(
+                static_cast<std::streamoff>(offset),
+                std::ios::beg
+            );
+
+            if (!archive_stream->good()) {
+                return false;
+            }
+
+            constexpr size_t kChunk = 64 * 1024;
+            std::array<char, kChunk> buffer{};
+            size_t remaining = length;
+
+            while (remaining > 0) {
+                const size_t wanted =
+                    std::min(buffer.size(), remaining);
+
+                archive_stream->read(
+                    buffer.data(),
+                    static_cast<std::streamsize>(wanted)
+                );
+
+                const std::streamsize received =
+                    archive_stream->gcount();
+
+                if (received <= 0) {
+                    break;
+                }
+
+                if (!sink.write(
+                    buffer.data(),
+                    static_cast<size_t>(received)
+                )) {
+                    return false;
+                }
+
+                remaining -=
+                    static_cast<size_t>(received);
+
+                if (
+                    static_cast<size_t>(received) <
+                    wanted
+                ) {
+                    break;
+                }
+            }
+
+            return remaining == 0;
+        },
+        [archive_stream, streamed_archive_path](
+            bool /*success*/
+        ) mutable {
+            if (
+                archive_stream &&
+                archive_stream->is_open()
+            ) {
+                archive_stream->close();
+            }
+
+            /*
+             * Security/privacy: remove the temporary user export after both
+             * successful downloads and interrupted client connections.
+             */
+            std::error_code ec;
+            std::filesystem::remove(
+                streamed_archive_path,
+                ec
+            );
+        }
+    );
 });
 
 
