@@ -383,6 +383,72 @@
         return out;
     }
 
+    function expandRawJpegPairRelPaths(items, relPaths) {
+        const requested = Array.isArray(relPaths) ? relPaths : [];
+        const uniqueItemsByRel = new Map();
+
+        /*
+         * state.items and state.searchItems may contain the same file.
+         * Deduplicate before rebuilding captures so a physical pair is not
+         * accidentally detected more than once.
+         */
+        for (const item of Array.isArray(items) ? items : []) {
+            const rel = currentRelPathFor(item);
+            if (!rel || uniqueItemsByRel.has(rel)) continue;
+            uniqueItemsByRel.set(rel, item);
+        }
+
+        const pairMembersByRel = new Map();
+        const captures = buildCaptureItems(
+            Array.from(uniqueItemsByRel.values())
+        );
+
+        for (const capture of captures) {
+            if (!capture || capture.pair_kind !== "raw+jpeg") continue;
+
+            const memberPaths = Array.from(
+                new Set(
+                    (Array.isArray(capture.items) ? capture.items : [])
+                        .map((item) => currentRelPathFor(item))
+                        .filter(Boolean)
+                )
+            );
+
+            if (memberPaths.length < 2) continue;
+
+            for (const rel of memberPaths) {
+                pairMembersByRel.set(rel, memberPaths);
+            }
+        }
+
+        const seen = new Set();
+        const expanded = [];
+
+        const add = (rel) => {
+            rel = String(rel || "");
+            if (!rel || seen.has(rel)) return;
+            seen.add(rel);
+            expanded.push(rel);
+        };
+
+        for (const requestedRel of requested) {
+            const rel = String(requestedRel || "");
+            if (!rel) continue;
+
+            const pairMembers = pairMembersByRel.get(rel);
+
+            if (pairMembers) {
+                for (const memberRel of pairMembers) add(memberRel);
+            } else {
+                add(rel);
+            }
+        }
+
+        return expanded.sort(
+            (a, b) => String(a).localeCompare(String(b))
+        );
+    }
+
     function toggleExpanded(key) {
         key = str(key);
         if (!key) return false;
@@ -415,6 +481,7 @@
     PG.bursts = {
         buildDisplayItems,
         buildCaptureItems,
+        expandRawJpegPairRelPaths,
         toggleExpanded,
         collapseAll,
         setEnabled,

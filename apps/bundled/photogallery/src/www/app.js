@@ -2906,27 +2906,95 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             setStatus(doneText);
         } catch (e) {
             setBadge("err", "error");
-            setStatus(`Download failed: ${String(e && e.message ? e.message : e)}`);
+            setStatus(pgT(
+                "photogallery.download.failed",
+                {
+                    error: String(
+                        e && e.message ? e.message : e
+                    )
+                },
+                "Download failed: {error}"
+            ));
         }
     }
+
+    function exportPathsWithRawJpegPairs(paths) {
+        const requested = normalizeSelectionRelPaths(paths);
+        const expand =
+            window.PQNAS_PHOTOGALLERY
+                ?.bursts
+                ?.expandRawJpegPairRelPaths;
+
+        if (typeof expand !== "function") {
+            return requested.sort(
+                (a, b) => String(a).localeCompare(String(b))
+            );
+        }
+
+        try {
+            return normalizeSelectionRelPaths(
+                expand(
+                    [...state.items, ...state.searchItems],
+                    requested
+                )
+            ).sort(
+                (a, b) => String(a).localeCompare(String(b))
+            );
+        } catch (error) {
+            /*
+             * Pair expansion is best-effort. Preserve ordinary metadata
+             * export if the optional burst module cannot expand the pair.
+             */
+            console.warn(
+                "[photogallery] RAW+JPEG export expansion failed",
+                error
+            );
+
+            return requested.sort(
+                (a, b) => String(a).localeCompare(String(b))
+            );
+        }
+    }
+
+    /*
+     * Metadata exports are staged and streamed by the server. Keep a
+     * practical client-side cap because fetch() still assembles the final
+     * browser Blob before handing it to the download manager.
+     */
+    const GALLERY_EXPORT_MAX_BYTES =
+        1024 * 1024 * 1024;
 
     function selectedBasePath() {
         return state.curPath || "";
     }
 
     async function exportSelectionZip() {
-        const paths = selectedRelPathsList();
-        if (!paths.length) {
+        const selectedPaths = selectedRelPathsList();
+        if (!selectedPaths.length) {
             setStatus(pgT("photogallery.nothing_selected", null, "Nothing selected."));
             return;
         }
 
+        const paths = exportPathsWithRawJpegPairs(selectedPaths);
+
         await fetchSelectionArchive(
             "/api/v4/gallery/export_sel_zip",
-            { paths, base: selectedBasePath() },
+            {
+                paths,
+                base: selectedBasePath(),
+                max_bytes: GALLERY_EXPORT_MAX_BYTES
+            },
             "gallery-export.zip",
-            `Preparing export (${paths.length} item${paths.length === 1 ? "" : "s"})…`,
-            `Export ready (${paths.length} item${paths.length === 1 ? "" : "s"}).`
+            pgT(
+                "photogallery.export.preparing_selected",
+                { count: selectedPaths.length },
+                "Preparing export ({count} items)…"
+            ),
+            pgT(
+                "photogallery.export.ready_selected",
+                { count: selectedPaths.length },
+                "Export ready ({count} items)."
+            )
         );
     }
 
@@ -2950,12 +3018,26 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
     async function exportSingleItemZip(item) {
         const rel = currentRelPathFor(item);
+        const paths = exportPathsWithRawJpegPairs([rel]);
+
         await fetchSelectionArchive(
             "/api/v4/gallery/export_sel_zip",
-            { paths: [rel], base: parentPath(rel) || "" },
+            {
+                paths,
+                base: parentPath(rel) || "",
+                max_bytes: GALLERY_EXPORT_MAX_BYTES
+            },
             "gallery-export.zip",
-            `Preparing export for ${item.name || rel}…`,
-            `Export ready: ${item.name || rel}`
+            pgT(
+                "photogallery.export.preparing_item",
+                { name: item.name || rel },
+                "Preparing export for {name}…"
+            ),
+            pgT(
+                "photogallery.export.ready_item",
+                { name: item.name || rel },
+                "Export ready: {name}"
+            )
         );
     }
     async function downloadSelectionZip() {
