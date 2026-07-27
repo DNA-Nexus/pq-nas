@@ -8,6 +8,15 @@
   let uploadCancelRequested = false;
   let uploadActiveXhr = null;
 
+  const REELSTACK_BACKGROUND_TASK_MESSAGE_TYPE =
+    "pqnas-app-background-task";
+  const REELSTACK_BACKGROUND_TASK_MESSAGE_VERSION = 1;
+  const REELSTACK_UPLOAD_BACKGROUND_TASK_REASON =
+    "file-upload";
+
+  let reelStackUploadBatchActive = false;
+  let reelStackUploadBackgroundTaskHeld = false;
+
   function reelT(key, params, fallback) {
     try {
       const i18n = window.PQNAS_I18N;
@@ -117,6 +126,77 @@
     const status = document.getElementById("statusText");
     if (status) status.textContent = text || "";
   }
+
+  function setReelStackUploadBackgroundTaskHeld(active) {
+    const on = !!active;
+
+    if (window.parent === window) {
+      reelStackUploadBackgroundTaskHeld = false;
+      return;
+    }
+
+    if (reelStackUploadBackgroundTaskHeld === on) {
+      return;
+    }
+
+    try {
+      // Security: shell-control messages are sent only to the exact
+      // same-origin parent. A wildcard target origin is never used.
+      window.parent.postMessage({
+        type: REELSTACK_BACKGROUND_TASK_MESSAGE_TYPE,
+        version: REELSTACK_BACKGROUND_TASK_MESSAGE_VERSION,
+        action: on ? "acquire" : "release",
+        reason: REELSTACK_UPLOAD_BACKGROUND_TASK_REASON
+      }, window.location.origin);
+
+      reelStackUploadBackgroundTaskHeld = on;
+    } catch (_) {
+      // Fail safely: uploading still works without shell keepalive,
+      // but do not claim that the iframe lock was acquired.
+      reelStackUploadBackgroundTaskHeld = false;
+    }
+  }
+
+  function setReelStackUploadBatchActive(active) {
+    const on = !!active;
+
+    if (reelStackUploadBatchActive === on) {
+      return;
+    }
+
+    reelStackUploadBatchActive = on;
+    setReelStackUploadBackgroundTaskHeld(on);
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // Browser-held File objects and the remaining upload queue cannot
+    // be reconstructed after this document is unloaded.
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // Release the shell-side lock when the document is discarded or
+    // enters the browser back-forward cache.
+    setReelStackUploadBackgroundTaskHeld(false);
+  });
+
+  window.addEventListener("pageshow", () => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // A restored page still owns its in-memory File objects and queue.
+    setReelStackUploadBackgroundTaskHeld(true);
+  });
 
   async function postJson(url, body) {
     const r = await fetch(url, {
@@ -1156,9 +1236,9 @@
     });
   }
 
-  async function uploadVideosFromEmptyAreaMenu() {
-    const files = await chooseVideoFiles();
-    if (!files.length) {
+  async function uploadVideoFilesImpl(files) {
+    const folder = await chooseUploadDestinationFolderWithBrowser(files);
+    if (folder === null) {
       setStatus(reelT(
         "reelstack.upload.cancelled",
         null,
@@ -1167,12 +1247,11 @@
       return;
     }
 
-    const folder = await chooseUploadDestinationFolderWithBrowser(files);
-    if (folder === null) {
+    if (!uploadDestinationIsSafe(folder)) {
       setStatus(reelT(
-        "reelstack.upload.cancelled",
+        "reelstack.upload.invalid_destination",
         null,
-        "Upload cancelled."
+        "The destination folder is not allowed."
       ));
       return;
     }
@@ -1304,6 +1383,198 @@
       uploadActiveXhr = null;
       uploadCancelRequested = false;
     }
+  }
+
+  const REELSTACK_VIDEO_UPLOAD_EXTENSIONS = new Set([
+    "mp4",
+    "m4v",
+    "mov",
+    "webm",
+    "mkv",
+    "avi",
+    "wmv",
+    "flv",
+    "mpeg",
+    "mpg",
+    "3gp"
+  ]);
+
+  function safeUploadFileName(file) {
+    const name = String(file && file.name || "");
+
+    if (
+      !name ||
+      name === "." ||
+      name === ".." ||
+      name.length > 255 ||
+      /[\\/\u0000-\u001f\u007f]/.test(name)
+    ) {
+      return "";
+    }
+
+    return name;
+  }
+
+  function isSupportedVideoFile(file) {
+    if (!file) {
+      return false;
+    }
+
+    if (
+      typeof File !== "undefined" &&
+      !(file instanceof File)
+    ) {
+      return false;
+    }
+
+    const name = safeUploadFileName(file);
+
+    if (!name) {
+      return false;
+    }
+
+    const mime = String(file.type || "").toLowerCase();
+
+    if (mime.startsWith("video/")) {
+      return true;
+    }
+
+    const dot = name.lastIndexOf(".");
+    const extension = dot >= 0
+      ? name.slice(dot + 1).toLowerCase()
+      : "";
+
+    return REELSTACK_VIDEO_UPLOAD_EXTENSIONS.has(extension);
+  }
+
+  function normalizeVideoUploadFiles(candidateFiles) {
+    const output = [];
+    const seen = new Set();
+
+    for (const file of Array.from(candidateFiles || [])) {
+      if (!isSupportedVideoFile(file)) {
+        continue;
+      }
+
+      const key = [
+        safeUploadFileName(file),
+        String(Number(file.size) || 0),
+        String(Number(file.lastModified) || 0)
+      ].join("\x1f");
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      output.push(file);
+    }
+
+    return output;
+  }
+
+  function uploadDestinationIsSafe(path) {
+    const rawPath = String(path || "");
+
+    // Security: destination paths must be relative to the user's
+    // server-enforced file root. Reject absolute Unix, UNC and
+    // Windows drive paths instead of silently normalizing them.
+    if (
+      /^[\\/]/.test(rawPath) ||
+      /^[a-zA-Z]:[\\/]/.test(rawPath)
+    ) {
+      return false;
+    }
+
+    const normalized = cleanRelPath(rawPath);
+
+    if (!normalized) {
+      return true;
+    }
+
+    if (
+      normalized.length > 4096 ||
+      uploadBrowserPathIsHidden(normalized)
+    ) {
+      return false;
+    }
+
+    return normalized.split("/").every(part => (
+      !!part &&
+      part !== "." &&
+      part !== ".." &&
+      part.length <= 255 &&
+      !/[\u0000-\u001f\u007f]/.test(part)
+    ));
+  }
+
+  async function startUploadFiles(candidateFiles) {
+    if (reelStackUploadBatchActive) {
+      setStatus(reelT(
+        "reelstack.upload.already_active",
+        null,
+        "A video upload is already in progress."
+      ));
+
+      return false;
+    }
+
+    const files = normalizeVideoUploadFiles(candidateFiles);
+
+    if (!files.length) {
+      setStatus(reelT(
+        "reelstack.upload.no_supported_videos",
+        null,
+        "No supported video files were found."
+      ));
+
+      return false;
+    }
+
+    // The complete batch owns one shell keepalive lock. This includes
+    // destination selection because the browser already holds File objects.
+    setReelStackUploadBatchActive(true);
+
+    try {
+      await uploadVideoFilesImpl(files);
+      return true;
+    } catch (_) {
+      // The implementation has already displayed a localized failure.
+      return false;
+    } finally {
+      uploadActiveXhr = null;
+      uploadCancelRequested = false;
+
+      // Always release after success, cancellation, network failure,
+      // index refresh failure or an unexpected JavaScript exception.
+      setReelStackUploadBatchActive(false);
+    }
+  }
+
+  async function uploadVideosFromEmptyAreaMenu() {
+    if (reelStackUploadBatchActive) {
+      setStatus(reelT(
+        "reelstack.upload.already_active",
+        null,
+        "A video upload is already in progress."
+      ));
+
+      return;
+    }
+
+    const files = await chooseVideoFiles();
+
+    if (!files.length) {
+      setStatus(reelT(
+        "reelstack.upload.cancelled",
+        null,
+        "Upload cancelled."
+      ));
+
+      return;
+    }
+
+    await startUploadFiles(files);
   }
 
   function ensureMenu() {
@@ -1668,6 +1939,21 @@
     window.addEventListener("scroll", hideMenu, true);
     window.addEventListener("resize", hideMenu);
   }
+
+  const reelStackUploadApi = Object.freeze({
+    startFiles: startUploadFiles,
+    isActive() {
+      return reelStackUploadBatchActive;
+    },
+    isSupportedVideoFile
+  });
+
+  window.PQNAS_REELSTACK_UPLOAD = reelStackUploadApi;
+
+  window.dispatchEvent(new CustomEvent(
+    "pqnas-reelstack-upload-ready",
+    { detail: reelStackUploadApi }
+  ));
 
   window.PQNAS_REELSTACK_CONTEXT_MENU = { install };
 
