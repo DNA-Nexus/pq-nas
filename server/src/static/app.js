@@ -399,11 +399,40 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
     let activityHasMore = false;
 
     const APP_FRAME_CACHE_MAX = 3;
-    const appFrameCache = new Map(); // key: "appId@ver" -> { frameWrap, frame, lastUsed }
+
+    // The protocol implementation stays in its own module. app.js only owns
+    // the iframe-cache integration because the cache itself is private here.
+    const appFrameCache = new Map();
+
+    const appFrameBackgroundTasks = (() => {
+        const fallback = Object.freeze({
+            isPinned: () => false,
+            clear: () => {},
+            pruneNow: () => {}
+        });
+
+        const api = window.PQNAS_APP_BACKGROUND_TASKS;
+
+        if (!api || typeof api.createController !== "function") {
+            console.error(
+                "App background-task module unavailable; embedded background " +
+                "tasks cannot be protected from iframe cache eviction."
+            );
+            return fallback;
+        }
+
+        return api.createController({
+            cache: appFrameCache,
+            prune: pruneCachedAppFrames,
+            maxReasonsPerFrame: 8,
+            maxPinnedFrames: 8
+        }) || fallback;
+    })();
 
     function appFrameKey(app) {
         return `${app.id}@${app.ver}`;
     }
+
 
     function getAppFrameDock() {
         if (!homeBlurb) return null;
@@ -622,7 +651,10 @@ html[data-theme="win_classic"] .shellDialogBackdrop{ background:rgba(0,0,0,0.38)
 
     function pruneCachedAppFrames(activeKey) {
         const entries = Array.from(appFrameCache.entries())
-            .filter(([key]) => key !== activeKey)
+            .filter(([key, rec]) => (
+                key !== activeKey &&
+                !appFrameBackgroundTasks.isPinned(rec)
+            ))
             .sort((a, b) => Number(a[1].lastUsed || 0) - Number(b[1].lastUsed || 0));
 
         while (appFrameCache.size > APP_FRAME_CACHE_MAX && entries.length) {
@@ -5623,8 +5655,18 @@ html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccord
 
             frame.addEventListener("load", function() {
                 frame.dataset.appLoaded = "1";
+
+                const loadedRec = appFrameCache.get(key);
+
+                if (loadedRec && loadedRec.frame === frame) {
+                    // Resource safety: navigation destroys the JavaScript task
+                    // that acquired a lock, so stale locks must not survive it.
+                    appFrameBackgroundTasks.clear(loadedRec);
+                }
+
                 window.clearTimeout(appOpeningSlowTimer);
                 hideAppOpeningOverlay(key);
+                appFrameBackgroundTasks.pruneNow();
             });
 
             frame.src = appUrl(app, "embedded");
@@ -5640,7 +5682,8 @@ html[data-theme="win_classic"] .userSettingsAccordion.open > .userSettingsAccord
             rec = {
                 frameWrap,
                 frame,
-                lastUsed: now
+                lastUsed: now,
+                backgroundTasks: new Set()
             };
 
             appFrameCache.set(key, rec);

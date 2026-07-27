@@ -14,6 +14,7 @@ struct CoreUiShellRoutesContext {
     std::string static_audit_html;
     std::string static_admin_html;
     std::string static_app_js;
+    std::string static_app_frame_background_tasks_js;
     std::string static_admin_js;
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*)> require_admin;
