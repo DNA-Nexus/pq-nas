@@ -1187,6 +1187,34 @@
     return api.videoByPath(path);
   }
 
+  function selectedVideosForContextPath(path) {
+    const selectionApi = window.PQNAS_REELSTACK_SELECTION;
+
+    if (
+      !selectionApi ||
+      typeof selectionApi.getSelectedPaths !== "function"
+    ) {
+      return [];
+    }
+
+    const contextPath = String(path || "");
+    const selectedPaths = selectionApi
+      .getSelectedPaths()
+      .map(value => String(value || ""))
+      .filter(Boolean);
+
+    if (
+      selectedPaths.length <= 1 ||
+      !selectedPaths.includes(contextPath)
+    ) {
+      return [];
+    }
+
+    return selectedPaths
+      .map(videoForPath)
+      .filter(video => video && video.path);
+  }
+
   function renderMenu(path) {
     const m = ensureMenu();
     m.innerHTML = "";
@@ -1258,8 +1286,27 @@
       "",
       true,
       async (p) => {
+      const selectedVideos =
+        selectedVideosForContextPath(p);
+
+      if (
+        selectedVideos.length > 1 &&
+        api &&
+        typeof api.deleteVideos === "function"
+      ) {
+        await api.deleteVideos(selectedVideos);
+        return;
+      }
+
       const v = videoForPath(p);
-      if (v && api.deleteVideo) await api.deleteVideo(v);
+
+      if (
+        v &&
+        api &&
+        typeof api.deleteVideo === "function"
+      ) {
+        await api.deleteVideo(v);
+      }
     }));
   }
 

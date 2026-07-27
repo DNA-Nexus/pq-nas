@@ -404,6 +404,10 @@
       return Array.from(selectedPaths);
     },
 
+    setSelectedPaths(paths) {
+      replaceSelection(paths);
+    },
+
     refresh
   });
 
