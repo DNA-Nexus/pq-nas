@@ -1,0 +1,32 @@
+.rsCard.rsMultiSelected{
+  border-color:var(--selection-border, var(--rs-border));
+  background:var(--selection-bg, var(--rs-card-bg));
+  box-shadow:var(--selection-shadow, var(--rs-card-shadow));
+}
+
+.rsCard.rsMultiSelected:hover{
+  background:
+    var(
+      --selection-bg-hover,
+      var(--selection-bg, var(--rs-card-bg))
+    );
+}
+
+.rsMarqueeBox{
+  position:fixed;
+  z-index:9999;
+  pointer-events:none;
+  box-sizing:border-box;
+  border:1px solid var(--selection-border, var(--rs-border));
+  border-radius:var(--radius, 8px);
+  background:var(--selection-bg, var(--rs-card-bg));
+  box-shadow:
+    var(
+      --selection-shadow-compact,
+      var(--selection-shadow, var(--rs-card-shadow))
+    );
+}
+
+body.rsMarqueeActive{
+  user-select:none;
+}

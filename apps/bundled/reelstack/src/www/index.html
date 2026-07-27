@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
 
   <link rel="stylesheet" href="/static/theme.css">
-  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="app.css?v=20260727-reelstack-footer-1">
+  <link rel="stylesheet" href="reelstack_selection.css?v=20260727-reelstack-selection-1">
     <link rel="stylesheet" href="reelstack_search.css?v=20260519-reelstack-search-light-clarity-1">
 <script src="/static/theme.js"></script>
 <script src="/static/i18n.js?v=20260519-reelstack-i18n-1"></script>
@@ -19,7 +20,7 @@
         <img src="icon.svg" alt="">
         <div>
           <h1 data-i18n="reelstack.title">Reel Stack</h1>
-          <p><span data-i18n="reelstack.subtitle">Videogalleria palvelimelle</span> <span id="rsManifestVersion" class="rsVersionBadge" aria-label="Sovelluksen versio" data-i18n-aria-label="reelstack.app_version"></span></p>
+          <p><span data-i18n="reelstack.subtitle">Videogalleria</span></p>
         </div>
       </div>
 
@@ -44,16 +45,34 @@
 
     <section class="rsStatus">
       <span id="statusText" data-i18n="common.ready_dot">Valmis.</span>
-      <span id="countText">0 videota</span>
     </section>
 
-    <section id="grid" class="rsGrid"></section>
+    <section id="grid" class="rsGrid" role="listbox" aria-multiselectable="true"></section>
 
     <div id="emptyState" class="rsEmpty">
       <h2 data-i18n="reelstack.empty_title">Videoita ei ole vielä ladattu</h2>
       <p><span data-i18n="reelstack.empty_help_before">Napsauta</span> <b data-i18n="reelstack.refresh_index">Päivitä indeksi</b> <span data-i18n="reelstack.empty_help_after">etsiäksesi tiedostoistasi elokuvia ja videoleikkeitä.</span></p>
     </div>
   </main>
+
+  <footer class="rsFooter">
+    <div
+      id="rsLibrarySummary"
+      class="rsFooterSummary"
+      aria-live="polite"
+    >0 videota · yhteensä 0 B</div>
+
+    <div class="rsFooterVersion">
+      <span>Reel Stack</span>
+      <span aria-hidden="true">•</span>
+      <span
+        id="rsManifestVersion"
+        class="rsVersionBadge"
+        aria-label="Sovelluksen versio"
+        data-i18n-aria-label="reelstack.app_version"
+      ></span>
+    </div>
+  </footer>
 
   <div id="playerModal" class="rsModal" hidden>
     <div class="rsModalCard">
@@ -66,11 +85,13 @@
       </div>
       <video id="player" controls playsinline></video>
     </div>
-  </div>  <script src="reelstack_search.js?v=20260519-reelstack-dialogs-i18n-2"></script>  <script src="reelstack_manifest.js?v=20260519-reelstack-i18n-1"></script>
+  </div>
 
-
-
-  <script src="app.js?v=20260519-reelstack-dialogs-i18n-2"></script>
-  <script src="reelstack_context_menu.js?v=20260519-reelstack-i18n-1"></script>
+  <script src="reelstack_search.js?v=20260519-reelstack-dialogs-i18n-2"></script>
+  <script src="reelstack_footer.js?v=20260727-reelstack-selection-1"></script>
+  <script src="reelstack_selection.js?v=20260727-reelstack-selection-1"></script>
+  <script src="reelstack_manifest.js?v=20260519-reelstack-i18n-1"></script>
+  <script src="app.js?v=20260727-reelstack-selection-1"></script>
+  <script src="reelstack_context_menu.js?v=20260727-reelstack-context-i18n-1"></script>
 </body>
 </html>

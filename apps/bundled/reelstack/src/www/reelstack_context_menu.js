@@ -8,6 +8,47 @@
   let uploadCancelRequested = false;
   let uploadActiveXhr = null;
 
+  function reelT(key, params, fallback) {
+    try {
+      const i18n = window.PQNAS_I18N;
+
+      if (i18n && typeof i18n.t === "function") {
+        return i18n.t(key, params || null, fallback);
+      }
+    } catch (_) {}
+
+    let output = String(fallback || key || "");
+    const values = params || {};
+
+    for (const name of Object.keys(values)) {
+      output = output
+        .split(`{${name}}`)
+        .join(String(values[name]));
+    }
+
+    return output;
+  }
+
+  function contextViewLabel(modeKey, fallback) {
+    const view = reelT(
+      "reelstack.view",
+      null,
+      "View"
+    );
+
+    const mode = reelT(
+      modeKey,
+      null,
+      fallback
+    );
+
+    return reelT(
+      "reelstack.context.view_mode",
+      { view, mode },
+      "{view}: {mode}"
+    );
+  }
+
   function basename(path) {
     const parts = String(path || "").split("/").filter(Boolean);
     return parts.length ? parts[parts.length - 1] : String(path || "");
@@ -1153,30 +1194,56 @@
 
     const title = document.createElement("div");
     title.className = "rsContextMenuTitle";
-    title.textContent = basename(path || "Video");
+    title.textContent = basename(
+      path || reelT("reelstack.video", null, "Video")
+    );
     m.appendChild(title);
 
-    m.appendChild(makeButton("Play", "Enter", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.play", null, "Play"),
+      "Enter",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.openPlayer) api.openPlayer(v);
     }));
 
-    m.appendChild(makeButton("Edit metadata", "Space", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.context.edit_metadata",
+        null,
+        "Edit metadata"
+      ),
+      "Space",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.editMetadata) await api.editMetadata(v);
     }));
 
-    m.appendChild(makeButton("Rename", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.rename", null, "Rename"),
+      "",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.renameVideo) await api.renameVideo(v);
     }));
 
-    m.appendChild(makeButton("Share link", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.share_link", null, "Share link"),
+      "",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.shareVideo) await api.shareVideo(v);
     }));
 
-    m.appendChild(makeButton("Download", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("common.download", null, "Download"),
+      "",
+      false,
+      async (p) => {
       if (!api.downloadUrl) return;
       const a = document.createElement("a");
       a.href = api.downloadUrl(p);
@@ -1186,7 +1253,11 @@
       a.remove();
     }));
 
-    m.appendChild(makeButton("Delete", "", true, async (p) => {
+    m.appendChild(makeButton(
+      reelT("common.delete", null, "Delete"),
+      "",
+      true,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.deleteVideo) await api.deleteVideo(v);
     }));
@@ -1208,23 +1279,74 @@
     title.textContent = "Reel Stack";
     m.appendChild(title);
 
-    m.appendChild(makeButton("Upload video", "", false, async () => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.context.upload_video",
+        null,
+        "Upload video"
+      ),
+      "",
+      false,
+      async () => {
       await uploadVideosFromEmptyAreaMenu();
     }));
 
-    m.appendChild(makeButton("Refresh index", "", false, async () => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.refresh_index",
+        null,
+        "Refresh index"
+      ),
+      "",
+      false,
+      async () => {
       await refreshIndexFromMenu();
     }));
 
     appendSep(m);
 
-    m.appendChild(makeButton("View: All videos", "", false, async () => setViewModeFromMenu("all")));
-    m.appendChild(makeButton("View: By folder", "", false, async () => setViewModeFromMenu("folders")));
-    m.appendChild(makeButton("View: Recently added", "", false, async () => setViewModeFromMenu("recent_added")));
-    m.appendChild(makeButton("View: Recently watched", "", false, async () => setViewModeFromMenu("recent_watched")));
-    m.appendChild(makeButton("View: Favorites", "", false, async () => setViewModeFromMenu("favorites")));
-    m.appendChild(makeButton("View: Unrated", "", false, async () => setViewModeFromMenu("unrated")));
-    m.appendChild(makeButton("View: Missing thumbnails", "", false, async () => setViewModeFromMenu("missing_thumbnails")));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.all", "All videos"),
+      "",
+      false,
+      async () => setViewModeFromMenu("all")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.folders", "By folder"),
+      "",
+      false,
+      async () => setViewModeFromMenu("folders")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.recent_added", "Recently added"),
+      "",
+      false,
+      async () => setViewModeFromMenu("recent_added")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.recent_watched", "Recently watched"),
+      "",
+      false,
+      async () => setViewModeFromMenu("recent_watched")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.favorites", "Favorites"),
+      "",
+      false,
+      async () => setViewModeFromMenu("favorites")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.unrated", "Unrated"),
+      "",
+      false,
+      async () => setViewModeFromMenu("unrated")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.missing_thumbnails", "Missing thumbnails"),
+      "",
+      false,
+      async () => setViewModeFromMenu("missing_thumbnails")
+    ));
   }
 
   function isEmptyAreaContextTarget(target) {

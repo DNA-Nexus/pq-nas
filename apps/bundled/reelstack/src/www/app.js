@@ -44,7 +44,6 @@
   const grid = el("grid");
   const emptyState = el("emptyState");
   const statusText = el("statusText");
-  const countText = el("countText");
   const filterInput = el("filterInput");
   const viewModeSelect = el("viewModeSelect");
   const scanBtn = el("scanBtn");
@@ -86,7 +85,6 @@
     for (const node of reelCardNodes()) {
       const on = node.dataset.rsPath === selectedPath;
       node.classList.toggle("rsSelected", on);
-      node.setAttribute("aria-selected", on ? "true" : "false");
     }
   }
 
@@ -1341,12 +1339,18 @@
 
   function render() {
     ensureShareBadgesLoaded();
+
+    // Keep footer totals based on the complete recursive index, not the
+    // currently filtered or grouped view.
+    if (
+      window.PQNAS_REELSTACK_FOOTER &&
+      typeof window.PQNAS_REELSTACK_FOOTER.update === "function"
+    ) {
+      window.PQNAS_REELSTACK_FOOTER.update(allVideos);
+    }
+
     const videos = filteredVideos();
     ensureSelectionForVideos(videos);
-
-    if (countText) {
-      countText.textContent = reelVideoCount(videos.length);
-    }
 
     if (!grid) return;
     grid.innerHTML = "";
@@ -1383,7 +1387,7 @@ if (emptyState) {
       card.tabIndex = 0;
       card.dataset.rsPath = v.path || "";
       card.setAttribute("role", "option");
-      card.setAttribute("aria-selected", (v.path === selectedPath) ? "true" : "false");
+      card.setAttribute("aria-selected", "false");
       if (v.path === selectedPath) card.classList.add("rsSelected");
       card.addEventListener("click", () => setSelectedPath(v.path));
       card.addEventListener("focusin", () => setSelectedPath(v.path));
