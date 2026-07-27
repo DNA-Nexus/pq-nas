@@ -1,0 +1,52 @@
+.rsUploadDropOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 5vw, 64px);
+  pointer-events: none;
+  background: var(
+    --modal-backdrop,
+    var(--overlay-bg, transparent)
+  );
+  backdrop-filter: blur(6px);
+}
+
+.rsUploadDropOverlay[hidden] {
+  display: none;
+}
+
+.rsUploadDropCard {
+  width: min(680px, 100%);
+  min-height: min(320px, 55vh);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: clamp(32px, 7vw, 80px);
+  text-align: center;
+  border: 2px dashed var(--accent);
+  border-radius: 28px;
+  background: var(
+    --panel-bg,
+    var(--surface, var(--bg))
+  );
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, none);
+}
+
+.rsUploadDropTitle {
+  font-size: clamp(22px, 4vw, 34px);
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.rsUploadDropSubtitle {
+  color: var(--muted);
+  font-size: clamp(14px, 2vw, 17px);
+  font-weight: 650;
+  line-height: 1.4;
+}

@@ -44,7 +44,6 @@
   const grid = el("grid");
   const emptyState = el("emptyState");
   const statusText = el("statusText");
-  const countText = el("countText");
   const filterInput = el("filterInput");
   const viewModeSelect = el("viewModeSelect");
   const scanBtn = el("scanBtn");
@@ -86,7 +85,6 @@
     for (const node of reelCardNodes()) {
       const on = node.dataset.rsPath === selectedPath;
       node.classList.toggle("rsSelected", on);
-      node.setAttribute("aria-selected", on ? "true" : "false");
     }
   }
 
@@ -1341,12 +1339,18 @@
 
   function render() {
     ensureShareBadgesLoaded();
+
+    // Keep footer totals based on the complete recursive index, not the
+    // currently filtered or grouped view.
+    if (
+      window.PQNAS_REELSTACK_FOOTER &&
+      typeof window.PQNAS_REELSTACK_FOOTER.update === "function"
+    ) {
+      window.PQNAS_REELSTACK_FOOTER.update(allVideos);
+    }
+
     const videos = filteredVideos();
     ensureSelectionForVideos(videos);
-
-    if (countText) {
-      countText.textContent = reelVideoCount(videos.length);
-    }
 
     if (!grid) return;
     grid.innerHTML = "";
@@ -1383,7 +1387,7 @@ if (emptyState) {
       card.tabIndex = 0;
       card.dataset.rsPath = v.path || "";
       card.setAttribute("role", "option");
-      card.setAttribute("aria-selected", (v.path === selectedPath) ? "true" : "false");
+      card.setAttribute("aria-selected", "false");
       if (v.path === selectedPath) card.classList.add("rsSelected");
       card.addEventListener("click", () => setSelectedPath(v.path));
       card.addEventListener("focusin", () => setSelectedPath(v.path));
@@ -2286,6 +2290,156 @@ if (emptyState) {
     }
   }
 
+  function uniqueVideosByPath(videos) {
+    const result = [];
+    const seen = new Set();
+
+    for (const candidate of Array.isArray(videos) ? videos : []) {
+      const path = String(candidate && candidate.path || "");
+
+      if (!path || seen.has(path)) {
+        continue;
+      }
+
+      const current = videoByPath(path) || candidate;
+
+      if (!current || !current.path) {
+        continue;
+      }
+
+      seen.add(path);
+      result.push(current);
+    }
+
+    return result;
+  }
+
+  async function deleteVideos(videos) {
+    const targets = uniqueVideosByPath(videos);
+
+    if (!targets.length) {
+      return;
+    }
+
+    if (targets.length === 1) {
+      await deleteVideo(targets[0]);
+      return;
+    }
+
+    const count = targets.length;
+
+    const deleteOk = await reelConfirmModal({
+      title: reelT(
+        "reelstack.delete_selected_title",
+        null,
+        "Move selected videos to trash?"
+      ),
+      message: reelT(
+        "reelstack.confirm.move_selected_to_trash",
+        { count },
+        "Move {count} selected videos to trash?"
+      ),
+      warning: reelT(
+        "reelstack.delete_selected_warning",
+        null,
+        "You can restore them later from Trash."
+      ),
+      confirmText: reelT(
+        "reelstack.move_to_trash",
+        null,
+        "Move to trash"
+      )
+    });
+
+    if (!deleteOk) {
+      return;
+    }
+
+    const deletedPaths = new Set();
+    const failures = [];
+
+    setStatus(reelT(
+      "reelstack.status.deleting_selected",
+      { count },
+      "Moving {count} videos to trash…"
+    ));
+
+    for (const video of targets) {
+      try {
+        await apiJson(
+          fileDeleteUrl(video.path),
+          { method: "POST" }
+        );
+
+        deletedPaths.add(video.path);
+      } catch (error) {
+        failures.push({
+          video,
+          error: error && error.message
+            ? error.message
+            : String(error)
+        });
+      }
+    }
+
+    if (deletedPaths.size) {
+      allVideos = allVideos.filter(
+        video => !deletedPaths.has(video.path)
+      );
+    }
+
+    render();
+
+    const selectionApi = window.PQNAS_REELSTACK_SELECTION;
+    const failedPaths = failures.map(
+      item => item.video.path
+    );
+
+    if (
+      selectionApi &&
+      typeof selectionApi.setSelectedPaths === "function"
+    ) {
+      selectionApi.setSelectedPaths(failedPaths);
+    } else if (
+      !failures.length &&
+      selectionApi &&
+      typeof selectionApi.clear === "function"
+    ) {
+      selectionApi.clear();
+    }
+
+    if (!failures.length) {
+      setStatus(reelT(
+        "reelstack.status.moved_selected_to_trash",
+        { count },
+        "Moved {count} videos to trash."
+      ));
+
+      return;
+    }
+
+    if (deletedPaths.size) {
+      setStatus(reelT(
+        "reelstack.status.delete_selected_partial",
+        {
+          done: deletedPaths.size,
+          count,
+          failed: failures.length,
+          error: failures[0].error
+        },
+        "Moved {done} of {count} videos; " +
+          "{failed} failed. Last error: {error}"
+      ));
+
+      return;
+    }
+
+    setStatus(reelT(
+      "reelstack.status.delete_failed",
+      { error: failures[0].error },
+      "Delete failed: {error}"
+    ));
+  }
 
   function videoByPath(path) {
     path = String(path || "");
@@ -2302,6 +2456,7 @@ if (emptyState) {
     renameVideo,
     shareVideo,
     deleteVideo,
+    deleteVideos,
     downloadUrl: fileDownloadUrl,
     refreshIndex: scanVideos
   };

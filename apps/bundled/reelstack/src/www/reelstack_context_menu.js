@@ -8,6 +8,56 @@
   let uploadCancelRequested = false;
   let uploadActiveXhr = null;
 
+  const REELSTACK_BACKGROUND_TASK_MESSAGE_TYPE =
+    "pqnas-app-background-task";
+  const REELSTACK_BACKGROUND_TASK_MESSAGE_VERSION = 1;
+  const REELSTACK_UPLOAD_BACKGROUND_TASK_REASON =
+    "file-upload";
+
+  let reelStackUploadBatchActive = false;
+  let reelStackUploadBackgroundTaskHeld = false;
+
+  function reelT(key, params, fallback) {
+    try {
+      const i18n = window.PQNAS_I18N;
+
+      if (i18n && typeof i18n.t === "function") {
+        return i18n.t(key, params || null, fallback);
+      }
+    } catch (_) {}
+
+    let output = String(fallback || key || "");
+    const values = params || {};
+
+    for (const name of Object.keys(values)) {
+      output = output
+        .split(`{${name}}`)
+        .join(String(values[name]));
+    }
+
+    return output;
+  }
+
+  function contextViewLabel(modeKey, fallback) {
+    const view = reelT(
+      "reelstack.view",
+      null,
+      "View"
+    );
+
+    const mode = reelT(
+      modeKey,
+      null,
+      fallback
+    );
+
+    return reelT(
+      "reelstack.context.view_mode",
+      { view, mode },
+      "{view}: {mode}"
+    );
+  }
+
   function basename(path) {
     const parts = String(path || "").split("/").filter(Boolean);
     return parts.length ? parts[parts.length - 1] : String(path || "");
@@ -44,6 +94,29 @@
     return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
   }
 
+  function uploadSelectedSummary(fileCount, totalBytes) {
+    const countLabel = reelT(
+      "reelstack.video_count",
+      { count: fileCount },
+      "{count} video(s)"
+    );
+
+    return reelT(
+      "reelstack.upload.selected_summary",
+      {
+        count: countLabel,
+        size: fmtBytes(totalBytes)
+      },
+      "Selected: {count} · {size} total"
+    );
+  }
+
+  function uploadBrowserPathIsHidden(path) {
+    return cleanRelPath(path)
+      .split("/")
+      .some(part => part.toLowerCase() === ".pqnas_activity");
+  }
+
   function setStatus(text) {
     if (api && typeof api.setStatus === "function") {
       api.setStatus(text);
@@ -53,6 +126,77 @@
     const status = document.getElementById("statusText");
     if (status) status.textContent = text || "";
   }
+
+  function setReelStackUploadBackgroundTaskHeld(active) {
+    const on = !!active;
+
+    if (window.parent === window) {
+      reelStackUploadBackgroundTaskHeld = false;
+      return;
+    }
+
+    if (reelStackUploadBackgroundTaskHeld === on) {
+      return;
+    }
+
+    try {
+      // Security: shell-control messages are sent only to the exact
+      // same-origin parent. A wildcard target origin is never used.
+      window.parent.postMessage({
+        type: REELSTACK_BACKGROUND_TASK_MESSAGE_TYPE,
+        version: REELSTACK_BACKGROUND_TASK_MESSAGE_VERSION,
+        action: on ? "acquire" : "release",
+        reason: REELSTACK_UPLOAD_BACKGROUND_TASK_REASON
+      }, window.location.origin);
+
+      reelStackUploadBackgroundTaskHeld = on;
+    } catch (_) {
+      // Fail safely: uploading still works without shell keepalive,
+      // but do not claim that the iframe lock was acquired.
+      reelStackUploadBackgroundTaskHeld = false;
+    }
+  }
+
+  function setReelStackUploadBatchActive(active) {
+    const on = !!active;
+
+    if (reelStackUploadBatchActive === on) {
+      return;
+    }
+
+    reelStackUploadBatchActive = on;
+    setReelStackUploadBackgroundTaskHeld(on);
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // Browser-held File objects and the remaining upload queue cannot
+    // be reconstructed after this document is unloaded.
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // Release the shell-side lock when the document is discarded or
+    // enters the browser back-forward cache.
+    setReelStackUploadBackgroundTaskHeld(false);
+  });
+
+  window.addEventListener("pageshow", () => {
+    if (!reelStackUploadBatchActive) {
+      return;
+    }
+
+    // A restored page still owns its in-memory File objects and queue.
+    setReelStackUploadBackgroundTaskHeld(true);
+  });
 
   async function postJson(url, body) {
     const r = await fetch(url, {
@@ -87,15 +231,15 @@
       <div class="rsUploadProgressCard" role="dialog" aria-modal="true" aria-labelledby="rsUploadProgressTitle">
         <div class="rsUploadProgressHead">
           <div>
-            <div class="rsUploadDestKicker">Reel Stack upload</div>
-            <h2 id="rsUploadProgressTitle">Uploading videos</h2>
-            <p id="rsUploadProgressSub">Preparing upload…</p>
+            <div class="rsUploadDestKicker">${reelT("reelstack.upload.kicker", null, "Reel Stack upload")}</div>
+            <h2 id="rsUploadProgressTitle">${reelT("reelstack.upload.progress_title", null, "Uploading videos")}</h2>
+            <p id="rsUploadProgressSub">${reelT("reelstack.upload.preparing", null, "Preparing upload…")}</p>
           </div>
-          <button id="rsUploadProgressCancelTop" class="rsUploadDestClose" type="button">Cancel</button>
+          <button id="rsUploadProgressCancelTop" class="rsUploadDestClose" type="button">${reelT("common.cancel", null, "Cancel")}</button>
         </div>
 
         <div class="rsUploadProgressBody">
-          <div class="rsUploadProgressFile" id="rsUploadProgressFile">Waiting…</div>
+          <div class="rsUploadProgressFile" id="rsUploadProgressFile">${reelT("reelstack.upload.waiting", null, "Waiting…")}</div>
 
           <div class="rsUploadProgressRow">
             <div id="rsUploadProgressText" class="rsUploadProgressText">0 B / 0 B</div>
@@ -106,12 +250,12 @@
             <div id="rsUploadProgressFill" class="rsUploadProgressFill"></div>
           </div>
 
-          <div id="rsUploadProgressMeta" class="rsUploadProgressMeta">Chunk 0/0</div>
+          <div id="rsUploadProgressMeta" class="rsUploadProgressMeta"></div>
         </div>
 
         <div class="rsUploadProgressFoot">
-          <button id="rsUploadProgressCancel" class="rsUploadDestBtn secondary" type="button">Cancel upload</button>
-          <button id="rsUploadProgressClose" class="rsUploadDestBtn primary" type="button" hidden>Close</button>
+          <button id="rsUploadProgressCancel" class="rsUploadDestBtn secondary" type="button">${reelT("reelstack.upload.cancel_upload", null, "Cancel upload")}</button>
+          <button id="rsUploadProgressClose" class="rsUploadDestBtn primary" type="button" hidden>${reelT("common.close", null, "Close")}</button>
         </div>
       </div>
     `;
@@ -137,19 +281,27 @@
     const cancelTop = backdrop.querySelector("#rsUploadProgressCancelTop");
 
     if (sub) {
-      sub.textContent = `${fileCount} video${fileCount === 1 ? "" : "s"} · ${fmtBytes(totalBytes)} total`;
+      sub.textContent = uploadSelectedSummary(fileCount, totalBytes);
     }
 
     if (close) close.hidden = true;
     if (cancel) {
       cancel.hidden = false;
       cancel.disabled = false;
-      cancel.textContent = "Cancel upload";
+      cancel.textContent = reelT(
+        "reelstack.upload.cancel_upload",
+        null,
+        "Cancel upload"
+      );
     }
     if (cancelTop) {
       cancelTop.hidden = false;
       cancelTop.disabled = false;
-      cancelTop.textContent = "Cancel";
+      cancelTop.textContent = reelT(
+        "common.cancel",
+        null,
+        "Cancel"
+      );
     }
 
     backdrop.hidden = false;
@@ -168,7 +320,15 @@
     const total = Math.max(0, Number(data && data.total || 0));
     const pct = total > 0 ? Math.max(0, Math.min(100, (loaded / total) * 100)) : 0;
 
-    if (fileEl) fileEl.textContent = data && data.file ? data.file : "Uploading…";
+    if (fileEl) {
+      fileEl.textContent = data && data.file
+        ? data.file
+        : reelT(
+            "reelstack.upload.uploading",
+            null,
+            "Uploading…"
+          );
+    }
     if (textEl) textEl.textContent = `${fmtBytes(loaded)} / ${fmtBytes(total)}`;
     if (pctEl) pctEl.textContent = `${Math.round(pct)}%`;
     if (fillEl) fillEl.style.width = `${pct.toFixed(1)}%`;
@@ -180,8 +340,17 @@
       const chunksTotal = Number(data && data.chunksTotal || 0);
       const speed = data && data.speedBps ? ` · ${fmtBytes(data.speedBps)}/s` : "";
 
-      metaEl.textContent =
-        `File ${fileIndex}/${fileCount} · chunk ${chunkIndex}/${chunksTotal}${speed}`;
+      metaEl.textContent = reelT(
+        "reelstack.upload.progress_meta",
+        {
+          fileIndex,
+          fileCount,
+          chunkIndex,
+          chunksTotal,
+          speed
+        },
+        "File {fileIndex}/{fileCount} · chunk {chunkIndex}/{chunksTotal}{speed}"
+      );
     }
   }
 
@@ -197,7 +366,19 @@
     const cancelTop = backdrop.querySelector("#rsUploadProgressCancelTop");
 
     if (fileEl) {
-      fileEl.textContent = message || (ok ? "Upload complete." : "Upload stopped.");
+      fileEl.textContent = message || (
+        ok
+          ? reelT(
+              "reelstack.upload.complete",
+              null,
+              "Upload complete."
+            )
+          : reelT(
+              "reelstack.upload.cancelled_or_failed",
+              null,
+              "Cancelled or failed."
+            )
+      );
       fileEl.classList.toggle("rsUploadProgressOk", !!ok);
       fileEl.classList.toggle("rsUploadProgressFail", !ok);
     }
@@ -207,7 +388,15 @@
       if (pctEl) pctEl.textContent = "100%";
     }
 
-    if (metaEl) metaEl.textContent = ok ? "Ready." : "Cancelled or failed.";
+    if (metaEl) {
+      metaEl.textContent = ok
+        ? reelT("common.ready_dot", null, "Ready.")
+        : reelT(
+            "reelstack.upload.cancelled_or_failed",
+            null,
+            "Cancelled or failed."
+          );
+    }
 
     if (cancel) cancel.hidden = true;
     if (cancelTop) cancelTop.hidden = true;
@@ -216,7 +405,11 @@
 
   function requestUploadCancel() {
     uploadCancelRequested = true;
-    setStatus("Cancelling upload…");
+    setStatus(reelT(
+      "reelstack.upload.cancelling",
+      null,
+      "Cancelling upload…"
+    ));
 
     const backdrop = ensureUploadProgressModal();
     const cancel = backdrop.querySelector("#rsUploadProgressCancel");
@@ -224,12 +417,20 @@
 
     if (cancel) {
       cancel.disabled = true;
-      cancel.textContent = "Cancelling…";
+      cancel.textContent = reelT(
+        "reelstack.upload.cancelling",
+        null,
+        "Cancelling upload…"
+      );
     }
 
     if (cancelTop) {
       cancelTop.disabled = true;
-      cancelTop.textContent = "Cancelling…";
+      cancelTop.textContent = reelT(
+        "reelstack.upload.cancelling",
+        null,
+        "Cancelling upload…"
+      );
     }
 
     try {
@@ -419,14 +620,28 @@
     for (const card of document.querySelectorAll(".rsCard[data-rs-path]")) {
       const path = cleanRelPath(card.dataset.rsPath || "");
       const i = path.lastIndexOf("/");
-      if (i > 0) folders.add(path.slice(0, i));
+
+      if (i > 0) {
+        const folder = path.slice(0, i);
+
+        if (!uploadBrowserPathIsHidden(folder)) {
+          folders.add(folder);
+        }
+      }
     }
 
-    return Array.from(folders).sort((a, b) => {
-      if (a === "Videos") return -1;
-      if (b === "Videos") return 1;
-      return a.localeCompare(b, undefined, { sensitivity: "base" });
-    });
+    return Array.from(folders)
+      .filter(folder => !uploadBrowserPathIsHidden(folder))
+      .sort((a, b) => {
+        if (a === "Videos") return -1;
+        if (b === "Videos") return 1;
+
+        return a.localeCompare(
+          b,
+          undefined,
+          { sensitivity: "base" }
+        );
+      });
   }
 
   function ensureUploadDestModal() {
@@ -442,30 +657,32 @@
       <div class="rsUploadDestCard" role="dialog" aria-modal="true" aria-labelledby="rsUploadDestTitle">
         <div class="rsUploadDestHead">
           <div>
-            <div class="rsUploadDestKicker">Reel Stack upload</div>
-            <h2 id="rsUploadDestTitle">Upload selected videos</h2>
-            <p id="rsUploadDestSub">Choose destination folder.</p>
+            <div class="rsUploadDestKicker">${reelT("reelstack.upload.kicker", null, "Reel Stack upload")}</div>
+            <h2 id="rsUploadDestTitle">${reelT("reelstack.upload.title", null, "Upload selected videos")}</h2>
+            <p id="rsUploadDestSub">${reelT("reelstack.upload.choose_destination", null, "Choose destination folder.")}</p>
           </div>
-          <button id="rsUploadDestClose" class="rsUploadDestClose" type="button">Close</button>
+          <button id="rsUploadDestClose" class="rsUploadDestClose" type="button">${reelT("common.close", null, "Close")}</button>
         </div>
 
         <div class="rsUploadDestBody">
           <label class="rsUploadDestField">
-            <span>Destination folder</span>
+            <span>${reelT("reelstack.upload.destination_folder", null, "Destination folder")}</span>
             <input id="rsUploadDestInput" type="text" value="Videos" autocomplete="off" spellcheck="false">
           </label>
 
-          <div class="rsUploadDestHint">
-            Use a relative folder path, for example <b>Videos</b> or <b>Movies/Family</b>.
-          </div>
+          <div class="rsUploadDestHint">${reelT(
+            "reelstack.upload.destination_hint",
+            null,
+            "Select an existing folder below, or type a relative folder path such as Videos or Movies/Family."
+          )}</div>
 
-          <div class="rsUploadDestQuickTitle">Quick folders</div>
+          <div class="rsUploadDestQuickTitle">${reelT("reelstack.upload.quick_folders", null, "Quick folders from Reel Stack")}</div>
           <div id="rsUploadDestQuick" class="rsUploadDestQuick"></div>
         </div>
 
         <div class="rsUploadDestFoot">
-          <button id="rsUploadDestCancel" class="rsUploadDestBtn secondary" type="button">Cancel</button>
-          <button id="rsUploadDestOk" class="rsUploadDestBtn primary" type="button">Upload here</button>
+          <button id="rsUploadDestCancel" class="rsUploadDestBtn secondary" type="button">${reelT("common.cancel", null, "Cancel")}</button>
+          <button id="rsUploadDestOk" class="rsUploadDestBtn primary" type="button">${reelT("reelstack.upload.upload_here", null, "Upload here")}</button>
         </div>
       </div>
     `;
@@ -491,7 +708,7 @@
 
       if (sub) {
         sub.textContent =
-          `${count} video${count === 1 ? "" : "s"} selected · ${fmtBytes(total)} total`;
+          uploadSelectedSummary(count, total);
       }
 
       if (quick) {
@@ -683,7 +900,13 @@
       if (!uploadBrowserIsFolderItem(item)) continue;
 
       const folder = uploadBrowserFolderFromItem(item, path);
-      if (!folder) continue;
+
+      if (
+        !folder ||
+        uploadBrowserPathIsHidden(folder.path)
+      ) {
+        continue;
+      }
 
       folders.push(folder);
     }
@@ -712,48 +935,52 @@
       <div class="rsUploadDestCard rsUploadDestBrowserCard" role="dialog" aria-modal="true" aria-labelledby="rsUploadBrowserTitle">
         <div class="rsUploadDestHead">
           <div>
-            <div class="rsUploadDestKicker">Reel Stack upload</div>
-            <h2 id="rsUploadBrowserTitle">Upload selected videos</h2>
-            <p id="rsUploadBrowserSub">Choose destination folder.</p>
+            <div class="rsUploadDestKicker">${reelT("reelstack.upload.kicker", null, "Reel Stack upload")}</div>
+            <h2 id="rsUploadBrowserTitle">${reelT("reelstack.upload.title", null, "Upload selected videos")}</h2>
+            <p id="rsUploadBrowserSub">${reelT("reelstack.upload.choose_destination", null, "Choose destination folder.")}</p>
           </div>
-          <button id="rsUploadBrowserClose" class="rsUploadDestClose" type="button">Close</button>
+          <button id="rsUploadBrowserClose" class="rsUploadDestClose" type="button">${reelT("common.close", null, "Close")}</button>
         </div>
 
         <div class="rsUploadDestBody">
           <label class="rsUploadDestField">
-            <span>Destination folder</span>
+            <span>${reelT("reelstack.upload.destination_folder", null, "Destination folder")}</span>
             <input id="rsUploadBrowserInput" type="text" value="Videos" autocomplete="off" spellcheck="false">
           </label>
 
-          <div class="rsUploadDestHint">
-            Select an existing folder below, or type a relative folder path such as <b>Videos</b> or <b>Movies/Family</b>.
-          </div>
+          <div class="rsUploadDestHint">${reelT(
+            "reelstack.upload.destination_hint",
+            null,
+            "Select an existing folder below, or type a relative folder path such as Videos or Movies/Family."
+          )}</div>
 
-          <div class="rsUploadDestQuickTitle">Quick folders from Reel Stack</div>
+          <div class="rsUploadDestQuickTitle">${reelT("reelstack.upload.quick_folders", null, "Quick folders from Reel Stack")}</div>
           <div id="rsUploadBrowserQuick" class="rsUploadDestQuick"></div>
 
           <div class="rsUploadBrowserBox">
             <div class="rsUploadBrowserTop">
               <div>
-                <div class="rsUploadBrowserLabel">Browse your files</div>
+                <div class="rsUploadBrowserLabel">${reelT("reelstack.upload.browse_files", null, "Browse your files")}</div>
                 <div id="rsUploadBrowserCrumb" class="rsUploadBrowserCrumb">/</div>
               </div>
               <div class="rsUploadBrowserActions">
-                <button id="rsUploadBrowserUseCurrent" type="button">Use current</button>
-                <button id="rsUploadBrowserUp" type="button">Up</button>
-                <button id="rsUploadBrowserRefresh" type="button">Refresh</button>
+                <button id="rsUploadBrowserUseCurrent" type="button">${reelT("reelstack.upload.use_current", null, "Use current")}</button>
+                <button id="rsUploadBrowserUp" type="button">${reelT("common.up", null, "Up")}</button>
+                <button id="rsUploadBrowserRefresh" type="button">${reelT("common.refresh", null, "Refresh")}</button>
               </div>
             </div>
 
-            <div id="rsUploadBrowserList" class="rsUploadBrowserList">
-              Loading folders…
-            </div>
+            <div id="rsUploadBrowserList" class="rsUploadBrowserList">${reelT(
+              "reelstack.upload.loading_folders",
+              null,
+              "Loading folders…"
+            )}</div>
           </div>
         </div>
 
         <div class="rsUploadDestFoot">
-          <button id="rsUploadBrowserCancel" class="rsUploadDestBtn secondary" type="button">Cancel</button>
-          <button id="rsUploadBrowserOk" class="rsUploadDestBtn primary" type="button">Upload here</button>
+          <button id="rsUploadBrowserCancel" class="rsUploadDestBtn secondary" type="button">${reelT("common.cancel", null, "Cancel")}</button>
+          <button id="rsUploadBrowserOk" class="rsUploadDestBtn primary" type="button">${reelT("reelstack.upload.upload_here", null, "Upload here")}</button>
         </div>
       </div>
     `;
@@ -787,7 +1014,7 @@
       let done = false;
 
       if (sub) {
-        sub.textContent = `${count} video${count === 1 ? "" : "s"} selected · ${fmtBytes(total)} total`;
+        sub.textContent = uploadSelectedSummary(count, total);
       }
 
       if (input && !cleanRelPath(input.value)) {
@@ -807,7 +1034,11 @@
         if (!folders.length) {
           const empty = document.createElement("div");
           empty.className = "rsUploadBrowserEmpty";
-          empty.textContent = "No subfolders here.";
+          empty.textContent = reelT(
+            "reelstack.upload.no_subfolders",
+            null,
+            "No subfolders here."
+          );
           listEl.appendChild(empty);
           return;
         }
@@ -853,7 +1084,11 @@
 
         const error = document.createElement("div");
         error.className = "rsUploadBrowserEmpty";
-        error.textContent = message || "Could not load folders.";
+        error.textContent = message || reelT(
+          "reelstack.upload.could_not_load_folders",
+          null,
+          "Could not load folders."
+        );
         listEl.appendChild(error);
       };
 
@@ -863,11 +1098,30 @@
         if (crumb) crumb.textContent = currentPath ? "/" + currentPath : "/";
         if (up) up.disabled = !currentPath;
         if (useCurrent) {
-          useCurrent.textContent = currentPath ? "Use current" : "Use root";
+          useCurrent.textContent = currentPath
+            ? reelT(
+                "reelstack.upload.use_current",
+                null,
+                "Use current"
+              )
+            : reelT(
+                "reelstack.upload.use_root",
+                null,
+                "Use root"
+              );
         }
 
         if (listEl) {
-          listEl.innerHTML = '<div class="rsUploadBrowserEmpty">Loading folders…</div>';
+          listEl.innerHTML = "";
+
+          const loading = document.createElement("div");
+          loading.className = "rsUploadBrowserEmpty";
+          loading.textContent = reelT(
+            "reelstack.upload.loading_folders",
+            null,
+            "Loading folders…"
+          );
+          listEl.appendChild(loading);
         }
 
         try {
@@ -982,16 +1236,23 @@
     });
   }
 
-  async function uploadVideosFromEmptyAreaMenu() {
-    const files = await chooseVideoFiles();
-    if (!files.length) {
-      setStatus("Upload cancelled.");
+  async function uploadVideoFilesImpl(files) {
+    const folder = await chooseUploadDestinationFolderWithBrowser(files);
+    if (folder === null) {
+      setStatus(reelT(
+        "reelstack.upload.cancelled",
+        null,
+        "Upload cancelled."
+      ));
       return;
     }
 
-    const folder = await chooseUploadDestinationFolderWithBrowser(files);
-    if (folder === null) {
-      setStatus("Upload cancelled.");
+    if (!uploadDestinationIsSafe(folder)) {
+      setStatus(reelT(
+        "reelstack.upload.invalid_destination",
+        null,
+        "The destination folder is not allowed."
+      ));
       return;
     }
 
@@ -1014,7 +1275,14 @@
         const relPath = joinPath(folder, file.name || "video.bin");
         const fileBaseCommitted = uploadedBytesCommitted;
 
-        setStatus(`Uploading ${file.name} to /${relPath}…`);
+        setStatus(reelT(
+          "reelstack.upload.status_uploading",
+          {
+            name: file.name || relPath,
+            path: relPath
+          },
+          "Uploading {name} to /{path}…"
+        ));
 
         await uploadFileChunked(relPath, file, (loadedForFile, fileTotal, chunkIndex, chunksTotal) => {
           const overallLoaded = fileBaseCommitted + Math.max(0, Number(loadedForFile || 0));
@@ -1033,16 +1301,23 @@
           });
 
           const pct = totalBytes > 0 ? Math.max(0, Math.min(100, (overallLoaded / totalBytes) * 100)) : 0;
-          setStatus(
-            `Uploading ${file.name}: ${Math.round(pct)}% · ${fmtBytes(overallLoaded)} / ${fmtBytes(totalBytes)}`
-          );
+          setStatus(reelT(
+            "reelstack.upload.status_progress",
+            {
+              name: file.name || relPath,
+              percent: Math.round(pct),
+              loaded: fmtBytes(overallLoaded),
+              total: fmtBytes(totalBytes)
+            },
+            "{name}: {percent}% · {loaded} / {total}"
+          ));
         });
 
         uploadedBytesCommitted += Number(file.size || 0);
         done++;
 
         setUploadProgressModal({
-          file: `${file.name || relPath} uploaded`,
+          file: file.name || relPath,
           loaded: uploadedBytesCommitted,
           total: totalBytes,
           fileIndex: done,
@@ -1052,17 +1327,53 @@
           speedBps: uploadedBytesCommitted / Math.max(0.001, (performance.now() - uploadStartedAt) / 1000)
         });
 
-        setStatus(`Uploaded ${file.name} (${done}/${files.length}).`);
+        setStatus(`${done}/${files.length} · ${file.name || relPath}`);
       }
 
-      finishUploadProgressModal(`Uploaded ${done} video${done === 1 ? "" : "s"} to /${folder}.`, true);
-      setStatus(`Uploaded ${done} video${done === 1 ? "" : "s"} to /${folder}. Refreshing index…`);
+      const completedCountLabel = reelT(
+        "reelstack.video_count",
+        { count: done },
+        "{count} video(s)"
+      );
+
+      finishUploadProgressModal(reelT(
+        "reelstack.upload.status_completed",
+        {
+          count: completedCountLabel,
+          folder
+        },
+        "Uploaded {count} to /{folder}."
+      ), true);
+
+      setStatus(reelT(
+        "reelstack.upload.status_completed_refreshing",
+        {
+          count: completedCountLabel,
+          folder
+        },
+        "Uploaded {count} to /{folder}. Refreshing index…"
+      ));
       await refreshIndexFromMenu();
     } catch (e) {
       const cancelled = uploadCancelRequested || (e && e.kind === "cancelled");
       const msg = cancelled
-        ? `Upload cancelled after ${done} of ${files.length} video${files.length === 1 ? "" : "s"}.`
-        : `Upload failed: ${e && e.message ? e.message : String(e)}`;
+        ? reelT(
+            "reelstack.upload.status_cancelled_after",
+            {
+              done,
+              count: files.length
+            },
+            "Upload cancelled after {done}/{count}."
+          )
+        : reelT(
+            "reelstack.upload.failed",
+            {
+              error: e && e.message
+                ? e.message
+                : String(e)
+            },
+            "Upload failed: {error}"
+          );
 
       finishUploadProgressModal(msg, false);
       setStatus(msg);
@@ -1072,6 +1383,198 @@
       uploadActiveXhr = null;
       uploadCancelRequested = false;
     }
+  }
+
+  const REELSTACK_VIDEO_UPLOAD_EXTENSIONS = new Set([
+    "mp4",
+    "m4v",
+    "mov",
+    "webm",
+    "mkv",
+    "avi",
+    "wmv",
+    "flv",
+    "mpeg",
+    "mpg",
+    "3gp"
+  ]);
+
+  function safeUploadFileName(file) {
+    const name = String(file && file.name || "");
+
+    if (
+      !name ||
+      name === "." ||
+      name === ".." ||
+      name.length > 255 ||
+      /[\\/\u0000-\u001f\u007f]/.test(name)
+    ) {
+      return "";
+    }
+
+    return name;
+  }
+
+  function isSupportedVideoFile(file) {
+    if (!file) {
+      return false;
+    }
+
+    if (
+      typeof File !== "undefined" &&
+      !(file instanceof File)
+    ) {
+      return false;
+    }
+
+    const name = safeUploadFileName(file);
+
+    if (!name) {
+      return false;
+    }
+
+    const mime = String(file.type || "").toLowerCase();
+
+    if (mime.startsWith("video/")) {
+      return true;
+    }
+
+    const dot = name.lastIndexOf(".");
+    const extension = dot >= 0
+      ? name.slice(dot + 1).toLowerCase()
+      : "";
+
+    return REELSTACK_VIDEO_UPLOAD_EXTENSIONS.has(extension);
+  }
+
+  function normalizeVideoUploadFiles(candidateFiles) {
+    const output = [];
+    const seen = new Set();
+
+    for (const file of Array.from(candidateFiles || [])) {
+      if (!isSupportedVideoFile(file)) {
+        continue;
+      }
+
+      const key = [
+        safeUploadFileName(file),
+        String(Number(file.size) || 0),
+        String(Number(file.lastModified) || 0)
+      ].join("\x1f");
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      output.push(file);
+    }
+
+    return output;
+  }
+
+  function uploadDestinationIsSafe(path) {
+    const rawPath = String(path || "");
+
+    // Security: destination paths must be relative to the user's
+    // server-enforced file root. Reject absolute Unix, UNC and
+    // Windows drive paths instead of silently normalizing them.
+    if (
+      /^[\\/]/.test(rawPath) ||
+      /^[a-zA-Z]:[\\/]/.test(rawPath)
+    ) {
+      return false;
+    }
+
+    const normalized = cleanRelPath(rawPath);
+
+    if (!normalized) {
+      return true;
+    }
+
+    if (
+      normalized.length > 4096 ||
+      uploadBrowserPathIsHidden(normalized)
+    ) {
+      return false;
+    }
+
+    return normalized.split("/").every(part => (
+      !!part &&
+      part !== "." &&
+      part !== ".." &&
+      part.length <= 255 &&
+      !/[\u0000-\u001f\u007f]/.test(part)
+    ));
+  }
+
+  async function startUploadFiles(candidateFiles) {
+    if (reelStackUploadBatchActive) {
+      setStatus(reelT(
+        "reelstack.upload.already_active",
+        null,
+        "A video upload is already in progress."
+      ));
+
+      return false;
+    }
+
+    const files = normalizeVideoUploadFiles(candidateFiles);
+
+    if (!files.length) {
+      setStatus(reelT(
+        "reelstack.upload.no_supported_videos",
+        null,
+        "No supported video files were found."
+      ));
+
+      return false;
+    }
+
+    // The complete batch owns one shell keepalive lock. This includes
+    // destination selection because the browser already holds File objects.
+    setReelStackUploadBatchActive(true);
+
+    try {
+      await uploadVideoFilesImpl(files);
+      return true;
+    } catch (_) {
+      // The implementation has already displayed a localized failure.
+      return false;
+    } finally {
+      uploadActiveXhr = null;
+      uploadCancelRequested = false;
+
+      // Always release after success, cancellation, network failure,
+      // index refresh failure or an unexpected JavaScript exception.
+      setReelStackUploadBatchActive(false);
+    }
+  }
+
+  async function uploadVideosFromEmptyAreaMenu() {
+    if (reelStackUploadBatchActive) {
+      setStatus(reelT(
+        "reelstack.upload.already_active",
+        null,
+        "A video upload is already in progress."
+      ));
+
+      return;
+    }
+
+    const files = await chooseVideoFiles();
+
+    if (!files.length) {
+      setStatus(reelT(
+        "reelstack.upload.cancelled",
+        null,
+        "Upload cancelled."
+      ));
+
+      return;
+    }
+
+    await startUploadFiles(files);
   }
 
   function ensureMenu() {
@@ -1146,6 +1649,34 @@
     return api.videoByPath(path);
   }
 
+  function selectedVideosForContextPath(path) {
+    const selectionApi = window.PQNAS_REELSTACK_SELECTION;
+
+    if (
+      !selectionApi ||
+      typeof selectionApi.getSelectedPaths !== "function"
+    ) {
+      return [];
+    }
+
+    const contextPath = String(path || "");
+    const selectedPaths = selectionApi
+      .getSelectedPaths()
+      .map(value => String(value || ""))
+      .filter(Boolean);
+
+    if (
+      selectedPaths.length <= 1 ||
+      !selectedPaths.includes(contextPath)
+    ) {
+      return [];
+    }
+
+    return selectedPaths
+      .map(videoForPath)
+      .filter(video => video && video.path);
+  }
+
   function renderMenu(path) {
     const m = ensureMenu();
     m.innerHTML = "";
@@ -1153,30 +1684,56 @@
 
     const title = document.createElement("div");
     title.className = "rsContextMenuTitle";
-    title.textContent = basename(path || "Video");
+    title.textContent = basename(
+      path || reelT("reelstack.video", null, "Video")
+    );
     m.appendChild(title);
 
-    m.appendChild(makeButton("Play", "Enter", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.play", null, "Play"),
+      "Enter",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.openPlayer) api.openPlayer(v);
     }));
 
-    m.appendChild(makeButton("Edit metadata", "Space", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.context.edit_metadata",
+        null,
+        "Edit metadata"
+      ),
+      "Space",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.editMetadata) await api.editMetadata(v);
     }));
 
-    m.appendChild(makeButton("Rename", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.rename", null, "Rename"),
+      "",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.renameVideo) await api.renameVideo(v);
     }));
 
-    m.appendChild(makeButton("Share link", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("reelstack.share_link", null, "Share link"),
+      "",
+      false,
+      async (p) => {
       const v = videoForPath(p);
       if (v && api.shareVideo) await api.shareVideo(v);
     }));
 
-    m.appendChild(makeButton("Download", "", false, async (p) => {
+    m.appendChild(makeButton(
+      reelT("common.download", null, "Download"),
+      "",
+      false,
+      async (p) => {
       if (!api.downloadUrl) return;
       const a = document.createElement("a");
       a.href = api.downloadUrl(p);
@@ -1186,9 +1743,32 @@
       a.remove();
     }));
 
-    m.appendChild(makeButton("Delete", "", true, async (p) => {
+    m.appendChild(makeButton(
+      reelT("common.delete", null, "Delete"),
+      "",
+      true,
+      async (p) => {
+      const selectedVideos =
+        selectedVideosForContextPath(p);
+
+      if (
+        selectedVideos.length > 1 &&
+        api &&
+        typeof api.deleteVideos === "function"
+      ) {
+        await api.deleteVideos(selectedVideos);
+        return;
+      }
+
       const v = videoForPath(p);
-      if (v && api.deleteVideo) await api.deleteVideo(v);
+
+      if (
+        v &&
+        api &&
+        typeof api.deleteVideo === "function"
+      ) {
+        await api.deleteVideo(v);
+      }
     }));
   }
 
@@ -1208,23 +1788,74 @@
     title.textContent = "Reel Stack";
     m.appendChild(title);
 
-    m.appendChild(makeButton("Upload video", "", false, async () => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.context.upload_video",
+        null,
+        "Upload video"
+      ),
+      "",
+      false,
+      async () => {
       await uploadVideosFromEmptyAreaMenu();
     }));
 
-    m.appendChild(makeButton("Refresh index", "", false, async () => {
+    m.appendChild(makeButton(
+      reelT(
+        "reelstack.refresh_index",
+        null,
+        "Refresh index"
+      ),
+      "",
+      false,
+      async () => {
       await refreshIndexFromMenu();
     }));
 
     appendSep(m);
 
-    m.appendChild(makeButton("View: All videos", "", false, async () => setViewModeFromMenu("all")));
-    m.appendChild(makeButton("View: By folder", "", false, async () => setViewModeFromMenu("folders")));
-    m.appendChild(makeButton("View: Recently added", "", false, async () => setViewModeFromMenu("recent_added")));
-    m.appendChild(makeButton("View: Recently watched", "", false, async () => setViewModeFromMenu("recent_watched")));
-    m.appendChild(makeButton("View: Favorites", "", false, async () => setViewModeFromMenu("favorites")));
-    m.appendChild(makeButton("View: Unrated", "", false, async () => setViewModeFromMenu("unrated")));
-    m.appendChild(makeButton("View: Missing thumbnails", "", false, async () => setViewModeFromMenu("missing_thumbnails")));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.all", "All videos"),
+      "",
+      false,
+      async () => setViewModeFromMenu("all")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.folders", "By folder"),
+      "",
+      false,
+      async () => setViewModeFromMenu("folders")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.recent_added", "Recently added"),
+      "",
+      false,
+      async () => setViewModeFromMenu("recent_added")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.recent_watched", "Recently watched"),
+      "",
+      false,
+      async () => setViewModeFromMenu("recent_watched")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.favorites", "Favorites"),
+      "",
+      false,
+      async () => setViewModeFromMenu("favorites")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.unrated", "Unrated"),
+      "",
+      false,
+      async () => setViewModeFromMenu("unrated")
+    ));
+    m.appendChild(makeButton(
+      contextViewLabel("reelstack.view.missing_thumbnails", "Missing thumbnails"),
+      "",
+      false,
+      async () => setViewModeFromMenu("missing_thumbnails")
+    ));
   }
 
   function isEmptyAreaContextTarget(target) {
@@ -1308,6 +1939,21 @@
     window.addEventListener("scroll", hideMenu, true);
     window.addEventListener("resize", hideMenu);
   }
+
+  const reelStackUploadApi = Object.freeze({
+    startFiles: startUploadFiles,
+    isActive() {
+      return reelStackUploadBatchActive;
+    },
+    isSupportedVideoFile
+  });
+
+  window.PQNAS_REELSTACK_UPLOAD = reelStackUploadApi;
+
+  window.dispatchEvent(new CustomEvent(
+    "pqnas-reelstack-upload-ready",
+    { detail: reelStackUploadApi }
+  ));
 
   window.PQNAS_REELSTACK_CONTEXT_MENU = { install };
 
