@@ -117,6 +117,38 @@
         setStatus(tr(key, vars || null, fallback));
     }
 
+    let opaqueSlowTimer = null;
+
+    function clearOpaqueSlowTimer() {
+        if (opaqueSlowTimer !== null) {
+            window.clearTimeout(opaqueSlowTimer);
+            opaqueSlowTimer = null;
+        }
+
+        const slowStatus = el("statusSlow");
+        if (slowStatus) slowStatus.hidden = true;
+    }
+
+    function setOpaqueStatusKey(key, fallback, options = {}) {
+        const status = el("status");
+        const statusText = el("statusText");
+        if (!status || !statusText) return;
+
+        statusText.textContent = tr(key, null, fallback);
+        status.hidden = false;
+        status.classList.toggle("is-busy", options.busy === true);
+        status.classList.toggle("is-error", options.error === true);
+
+        clearOpaqueSlowTimer();
+
+        if (options.busy === true) {
+            opaqueSlowTimer = window.setTimeout(() => {
+                const slowStatus = el("statusSlow");
+                if (slowStatus) slowStatus.hidden = false;
+            }, 10000);
+        }
+    }
+
     function injectPasswordCss() {
         if (document.getElementById("passwordLoginStyle")) return;
 
@@ -390,11 +422,7 @@
                 <div class="pq-badge loginMarkBadge" data-brand-text="product_short_name">Server</div>
             </div>
 
-            <h1 data-i18n="auth.opaque.title">Zero-knowledge sign in</h1>
-
-            <div class="hint" data-i18n="auth.opaque.signin_hint">
-                Sign in with OPAQUE. Your password is processed locally in this browser and is not sent to the server.
-            </div>
+            <h1 data-i18n="auth.login.title">Sign in</h1>
 
             <div class="presentationLinkWrap" data-brand-hide-if-presentation-disabled>
                 <a class="presentationLink"
@@ -433,7 +461,21 @@
 
                 <button id="opaqueLoginButton" type="submit" data-i18n="auth.login.sign_in_button">Sign in</button>
             </form>
-            <div id="status" class="status" data-i18n="auth.opaque.ready">OPAQUE login ready.</div>
+            <div id="status"
+                 class="status authStatus"
+                 role="status"
+                 aria-live="polite"
+                 aria-atomic="true"
+                 hidden>
+                <span class="authStatusSpinner" aria-hidden="true"></span>
+                <span id="statusText" class="authStatusText"></span>
+                <span id="statusSlow"
+                      class="authStatusSlow"
+                      data-i18n="auth.opaque.slow_connection"
+                      hidden>
+                    This is taking longer than usual. Check your network connection.
+                </span>
+            </div>
 
             <div class="footer" data-i18n="auth.login.footer" data-brand-text="copyright">© Server 2026</div>
         `;
@@ -442,6 +484,12 @@
         const loginInput = el("opaqueLoginName");
         const passwordInput = el("opaqueLoginPassword");
         const button = el("opaqueLoginButton");
+
+        const setFormDisabled = (disabled) => {
+            for (const control of [loginInput, passwordInput, button]) {
+                if (control) control.disabled = !!disabled;
+            }
+        };
 
         applyStaticI18n();
         applyLoginBranding();
@@ -467,18 +515,30 @@
             let password = String(passwordInput.value || "");
 
             if (!login || !password) {
-                setStatusKey("auth.login.enter_login_password", "Enter username/email and password.");
+                setOpaqueStatusKey(
+                    "auth.login.enter_login_password",
+                    "Enter username/email and password.",
+                    { error: true }
+                );
                 return;
             }
 
             setBusy(true);
-            if (button) button.disabled = true;
-            setStatusKey("auth.opaque.loading_client", "Loading OPAQUE client…");
+            setFormDisabled(true);
+            setOpaqueStatusKey(
+                "auth.opaque.loading_client",
+                "Loading secure sign-in…",
+                { busy: true }
+            );
 
             try {
                 const client = await loadOpaqueBrowserClient();
 
-                setStatusKey("auth.opaque.creating_request", "Creating OPAQUE login request…");
+                setOpaqueStatusKey(
+                    "auth.opaque.creating_request",
+                    "Preparing sign-in request…",
+                    { busy: true }
+                );
                 const startResult = opaqueObjectResult(await client.opaqueLoginStart(password));
 
                 const client_state =
@@ -500,7 +560,11 @@
                     throw new Error("OPAQUE login start did not produce required client values.");
                 }
 
-                setStatusKey("auth.opaque.contacting_server", "Contacting server…");
+                setOpaqueStatusKey(
+                    "auth.opaque.contacting_server",
+                    "Contacting server…",
+                    { busy: true }
+                );
                 const startHttp = await postOpaqueJson("/api/auth/opaque/login/start", {
                     login,
                     credential_request_b64
@@ -517,7 +581,11 @@
                     throw new Error("OPAQUE server response was incomplete.");
                 }
 
-                setStatusKey("auth.opaque.finalizing", "Finalizing OPAQUE login…");
+                setOpaqueStatusKey(
+                    "auth.opaque.finalizing",
+                    "Confirming sign-in…",
+                    { busy: true }
+                );
                 const finishResult = opaqueObjectResult(
                     await client.opaqueLoginFinish(password, client_state, credential_response_b64)
                 );
@@ -553,7 +621,11 @@
                     localStorage.setItem("pqnas_opaque_login", login);
                 } catch {}
 
-                setStatusKey("auth.opaque.verifying_cookie", "Verifying session cookie…");
+                setOpaqueStatusKey(
+                    "auth.opaque.verifying_cookie",
+                    "Finalizing session…",
+                    { busy: true }
+                );
                 const ping = await fetch("/api/v4/me", {
                     cache: "no-store",
                     credentials: "include"
@@ -566,10 +638,16 @@
                 window.location.href = await externalWorkspacePostLoginTarget();
             } catch (e) {
                 console.error(e);
-                setStatusKey("auth.login.invalid_login_password", "Invalid login or password.");
+                setOpaqueStatusKey(
+                    "auth.login.invalid_login_password",
+                    "Invalid login or password.",
+                    { error: true }
+                );
                 setBusy(false);
-                if (button) button.disabled = false;
+                setFormDisabled(false);
+                if (passwordInput) passwordInput.focus();
             } finally {
+                clearOpaqueSlowTimer();
                 password = "";
                 if (passwordInput) passwordInput.value = "";
             }
