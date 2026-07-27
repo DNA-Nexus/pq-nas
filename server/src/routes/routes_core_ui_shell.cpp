@@ -11,6 +11,7 @@ bool context_ok(const CoreUiShellRoutesContext& c) {
            !c.static_audit_html.empty() &&
            !c.static_admin_html.empty() &&
            !c.static_app_js.empty() &&
+           !c.static_app_frame_background_tasks_js.empty() &&
            !c.static_admin_js.empty() &&
            c.require_admin &&
            c.read_file_to_string &&
@@ -89,6 +90,39 @@ void register_core_ui_shell_routes(
 
             res.set_header("Cache-Control", "no-store");
             res.set_content(body, "text/html; charset=utf-8");
+        }
+    );
+
+    srv.Get("/static/app_frame_background_tasks.js",
+        [c](const httplib::Request&, httplib::Response& res) {
+            if (!context_ok(c)) {
+                reply_context_error(res);
+                return;
+            }
+
+            std::string body;
+
+            // Security: serve only the fixed server-owned path from the route
+            // context. Request data never selects a filesystem path.
+            if (!c.read_file_to_string(
+                    c.static_app_frame_background_tasks_js,
+                    body
+                ) || body.empty()) {
+                res.status = 404;
+                res.set_header("Cache-Control", "no-store");
+                res.set_content(
+                    "missing app_frame_background_tasks.js",
+                    "text/plain; charset=utf-8"
+                );
+                return;
+            }
+
+            res.status = 200;
+            res.set_header("Cache-Control", "no-store");
+            res.set_content(
+                body,
+                "application/javascript; charset=utf-8"
+            );
         }
     );
 

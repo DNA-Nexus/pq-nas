@@ -2631,6 +2631,74 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
   let uploadCancelRequested = false;
   let activeUploadConflictCancel = null;
 
+  const FILEMGR_BACKGROUND_TASK_MESSAGE_TYPE = "pqnas-app-background-task";
+  const FILEMGR_BACKGROUND_TASK_MESSAGE_VERSION = 1;
+  const FILEMGR_UPLOAD_BACKGROUND_TASK_REASON = "file-upload";
+
+  let fileMgrUploadBatchActive = false;
+  let fileMgrUploadBackgroundTaskHeld = false;
+
+  function setFileMgrUploadBackgroundTaskHeld(active) {
+    const on = !!active;
+
+    if (window.parent === window) {
+      fileMgrUploadBackgroundTaskHeld = false;
+      return;
+    }
+
+    if (fileMgrUploadBackgroundTaskHeld === on) return;
+
+    try {
+      // Security: use an exact same-origin target. Never broadcast shell-control
+      // messages with a wildcard target origin.
+      window.parent.postMessage({
+        type: FILEMGR_BACKGROUND_TASK_MESSAGE_TYPE,
+        version: FILEMGR_BACKGROUND_TASK_MESSAGE_VERSION,
+        action: on ? "acquire" : "release",
+        reason: FILEMGR_UPLOAD_BACKGROUND_TASK_REASON
+      }, window.location.origin);
+
+      fileMgrUploadBackgroundTaskHeld = on;
+    } catch (_) {
+      // Fail safely: upload remains usable even when shell keepalive is not
+      // available, but do not claim that a lock was acquired.
+      fileMgrUploadBackgroundTaskHeld = false;
+    }
+  }
+
+  function setFileMgrUploadBatchActive(active) {
+    const on = !!active;
+
+    if (fileMgrUploadBatchActive === on) return;
+
+    fileMgrUploadBatchActive = on;
+    setFileMgrUploadBackgroundTaskHeld(on);
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!fileMgrUploadBatchActive) return;
+
+    // The upload queue contains browser-held File objects that cannot be
+    // reconstructed after refresh, navigation or tab closure.
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (!fileMgrUploadBatchActive) return;
+
+    // Do not leave a stale shell lock behind when this document is discarded
+    // or moved into the browser back-forward cache.
+    setFileMgrUploadBackgroundTaskHeld(false);
+  });
+
+  window.addEventListener("pageshow", () => {
+    if (!fileMgrUploadBatchActive) return;
+
+    // A page restored from the back-forward cache still owns its upload state.
+    setFileMgrUploadBackgroundTaskHeld(true);
+  });
+
   function extractHttpStatusFromMsg(msg) {
     const m = String(msg || "").match(/\bHTTP\s+(\d{3})\b/i);
     return m ? Number(m[1]) : 0;
@@ -3345,7 +3413,7 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     return s.slice(0, Math.max(0, n - 1)) + "…";
   }
 
-  async function uploadRelFiles(relFiles) {
+  async function uploadRelFilesImpl(relFiles) {
     if (!relFiles.length) return;
 
     const created = new Set();
@@ -3617,6 +3685,30 @@ window.PQNAS_FILEMGR = window.PQNAS_FILEMGR || {};
     await refreshQuotaInfoIfNeeded(true).then(applyQuotaUi).catch(() => {});
     clearFileListCache();
     await load(true);
+  }
+
+  async function uploadRelFiles(relFiles) {
+    if (!Array.isArray(relFiles) || relFiles.length === 0) return;
+
+    // The upload implementation uses shared cancellation and XHR state.
+    // Refuse overlapping batches so one upload cannot release or overwrite
+    // another upload's keepalive and cancellation state.
+    if (fileMgrUploadBatchActive) return;
+
+    setFileMgrUploadBatchActive(true);
+
+    try {
+      await uploadRelFilesImpl(relFiles);
+    } finally {
+      setUploadCancelable(false);
+      activeUploadConflictCancel = null;
+      activeUploadXhr = null;
+      uploadCancelRequested = false;
+
+      // Always release the shell keepalive after success, cancellation,
+      // network failure, quota failure or an unexpected JavaScript exception.
+      setFileMgrUploadBatchActive(false);
+    }
   }
 
   function pickFiles() {

@@ -685,6 +685,8 @@ const std::string STATIC_ADMIN_UPDATES_HTML  = static_path("admin_updates.html")
 const std::string STATIC_ADMIN_APPS_JS       = static_path("admin_apps.js");
 const std::string STATIC_APP_HTML            = static_path("app.html");
 const std::string STATIC_APP_JS              = static_path("app.js");
+const std::string STATIC_APP_FRAME_BACKGROUND_TASKS_JS =
+    static_path("app_frame_background_tasks.js");
 const std::string STATIC_USERS_HTML          = static_path("admin_users.html");
 const std::string STATIC_ADMIN_STATS_HTML      = static_path("admin_stats.html");
 const std::string STATIC_ADMIN_STATS_JS        = static_path("admin_stats.js");
@@ -11203,6 +11205,8 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
         core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
         core_ui_shell_ctx.static_app_js = STATIC_APP_JS;
+        core_ui_shell_ctx.static_app_frame_background_tasks_js =
+            STATIC_APP_FRAME_BACKGROUND_TASKS_JS;
         core_ui_shell_ctx.static_admin_js = STATIC_ADMIN_JS;
 
         core_ui_shell_ctx.require_admin =
