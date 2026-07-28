@@ -130,11 +130,13 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_registry.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
+#include "cluster/user_placement_policy_assignment_service.h"
 #include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_cluster_user_placement.h"
+#include "routes/routes_admin_cluster_user_policy.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -10630,6 +10632,103 @@ v5.app_pair_build_qr_uri =
                     user_placement_service_config
                 )
             );
+
+        pqnas::cluster::
+            UserPlacementPolicyAssignmentServiceConfig
+                user_policy_assignment_service_config;
+
+        user_policy_assignment_service_config.users =
+            &users;
+
+        user_policy_assignment_service_config.policies =
+            &director_placement_policy_registry;
+
+        user_policy_assignment_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        user_policy_assignment_service_config.users_path =
+            users_path;
+
+        user_policy_assignment_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_policy_assignment_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPolicyAssignmentService
+            >(
+                std::move(
+                    user_policy_assignment_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPolicyRoutesContext
+                user_policy_route_context;
+
+        user_policy_route_context.service =
+            user_policy_assignment_service;
+
+        user_policy_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_policy_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_policy_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_policy_routes(
+                srv,
+                user_policy_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user policy route registered"
+            << std::endl;
 
         pqnas::cluster::
             AdminClusterUserPlacementRoutesContext
