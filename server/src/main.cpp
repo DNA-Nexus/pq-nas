@@ -124,6 +124,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "session_cookie.h"
 #include "runtime_paths.h"
 #include "cluster/server_role.h"
+#include "cluster/internal_auth.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -9156,8 +9157,30 @@ int main()
     if (!pqnas::cluster::load_server_role_config_from_env(
             &cluster_config,
             &cluster_config_err)) {
-        std::cerr << "[cluster] FATAL: " << cluster_config_err << std::endl;
+        std::cerr
+            << "[cluster] FATAL: "
+            << cluster_config_err
+            << std::endl;
         return 2;
+    }
+
+    pqnas::cluster::InternalAuthCredential cluster_credential;
+
+    if (!cluster_config.is_standalone()) {
+        std::string credential_err;
+
+        if (!pqnas::cluster::load_internal_auth_credential_file(
+                cluster_config.cluster_credential_file,
+                &cluster_credential,
+                &credential_err)) {
+            // Security: report only the failure category. Never log the
+            // credential contents or its configured filesystem path.
+            std::cerr
+                << "[cluster] FATAL: internal credential setup failed: "
+                << credential_err
+                << std::endl;
+            return 2;
+        }
     }
 
     std::cerr
@@ -9165,9 +9188,12 @@ int main()
         << pqnas::cluster::server_role_name(cluster_config.role);
 
     if (cluster_config.is_node()) {
-        std::cerr
-            << " node_id=" << cluster_config.node_id
-            << " director_url=" << cluster_config.director_url;
+        std::cerr << " node_id=" << cluster_config.node_id;
+    }
+
+    if (!cluster_config.is_standalone()) {
+        // Security: log configuration state only, never secret values.
+        std::cerr << " internal_auth=configured";
     }
 
     std::cerr << std::endl;

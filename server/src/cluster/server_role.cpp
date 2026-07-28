@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 
 namespace pqnas::cluster {
 namespace {
@@ -109,6 +110,83 @@ bool normalize_director_url(
     return true;
 }
 
+bool normalize_cluster_credential_file(
+    const std::string& raw,
+    std::string* normalized,
+    std::string* err
+) {
+    if (!normalized) {
+        if (err) *err = "missing credential path output";
+        return false;
+    }
+
+    const std::string value = trim_ascii(raw);
+
+    if (value.empty()) {
+        if (err) {
+            *err =
+                "director and node roles require "
+                "PQNAS_CLUSTER_CREDENTIAL_FILE";
+        }
+        return false;
+    }
+
+    if (value.size() > 4096) {
+        if (err) {
+            *err = "PQNAS_CLUSTER_CREDENTIAL_FILE is too long";
+        }
+        return false;
+    }
+
+    if (value.find('\0') != std::string::npos) {
+        if (err) {
+            *err =
+                "PQNAS_CLUSTER_CREDENTIAL_FILE contains invalid characters";
+        }
+        return false;
+    }
+
+    const std::filesystem::path path(value);
+
+    // Security: relative and traversal paths could make credential loading
+    // depend on the service working directory or an attacker-controlled path.
+    if (!path.is_absolute() || !path.has_root_path()) {
+        if (err) {
+            *err =
+                "PQNAS_CLUSTER_CREDENTIAL_FILE must be an absolute path";
+        }
+        return false;
+    }
+
+    for (const auto& component : path) {
+        const std::string part = component.string();
+
+        if (part == "." || part == "..") {
+            if (err) {
+                *err =
+                    "PQNAS_CLUSTER_CREDENTIAL_FILE must not contain "
+                    "dot or traversal components";
+            }
+            return false;
+        }
+    }
+
+    const std::filesystem::path clean = path.lexically_normal();
+
+    if (clean.empty() ||
+        clean == clean.root_path() ||
+        clean.filename().empty()) {
+        if (err) {
+            *err =
+                "PQNAS_CLUSTER_CREDENTIAL_FILE must name a file";
+        }
+        return false;
+    }
+
+    *normalized = clean.string();
+    return true;
+}
+
 } // namespace
 
 const char* server_role_name(ServerRole role) {
@@ -128,6 +206,7 @@ bool parse_server_role_config(
     const std::string& raw_role,
     const std::string& raw_node_id,
     const std::string& raw_director_url,
+    const std::string& raw_cluster_credential_file,
     ServerRoleConfig* out,
     std::string* err
 ) {
@@ -143,21 +222,46 @@ bool parse_server_role_config(
     std::string role = lower_ascii(trim_ascii(raw_role));
     const std::string node_id = trim_ascii(raw_node_id);
     const std::string director_url = trim_ascii(raw_director_url);
+    const std::string credential_file =
+        trim_ascii(raw_cluster_credential_file);
 
     if (role.empty()) role = "standalone";
 
+    if (role != "standalone" &&
+        role != "director" &&
+        role != "node") {
+        if (err) {
+            *err =
+                "invalid PQNAS_SERVER_ROLE; expected "
+                "standalone, director, or node";
+        }
+        return false;
+    }
+
     if (role == "standalone") {
-        if (!node_id.empty() || !director_url.empty()) {
+        if (!node_id.empty() ||
+            !director_url.empty() ||
+            !credential_file.empty()) {
             if (err) {
                 *err =
-                    "standalone role must not define "
-                    "PQNAS_NODE_ID or PQNAS_DIRECTOR_URL";
+                    "standalone role must not define PQNAS_NODE_ID, "
+                    "PQNAS_DIRECTOR_URL, or "
+                    "PQNAS_CLUSTER_CREDENTIAL_FILE";
             }
             return false;
         }
 
         out->role = ServerRole::Standalone;
         return true;
+    }
+
+    std::string normalized_credential_file;
+
+    if (!normalize_cluster_credential_file(
+            credential_file,
+            &normalized_credential_file,
+            err)) {
+        return false;
     }
 
     if (role == "director") {
@@ -171,20 +275,13 @@ bool parse_server_role_config(
         }
 
         out->role = ServerRole::Director;
+        out->cluster_credential_file =
+            normalized_credential_file;
         return true;
     }
 
-    if (role != "node") {
-        if (err) {
-            *err =
-                "invalid PQNAS_SERVER_ROLE; expected "
-                "standalone, director, or node";
-        }
-        return false;
-    }
-
-    // Security: node IDs are constrained before they can later be used in
-    // registry keys, audit fields, URLs, logs, or filesystem-related metadata.
+    // Security: constrain node IDs before using them in registry keys,
+    // audit fields, URLs, logs, or filesystem-related metadata.
     if (!valid_node_id(node_id)) {
         if (err) {
             *err =
@@ -201,13 +298,19 @@ bool parse_server_role_config(
     }
 
     std::string normalized_url;
-    if (!normalize_director_url(director_url, &normalized_url, err)) {
+
+    if (!normalize_director_url(
+            director_url,
+            &normalized_url,
+            err)) {
         return false;
     }
 
     out->role = ServerRole::Node;
     out->node_id = node_id;
     out->director_url = normalized_url;
+    out->cluster_credential_file =
+        normalized_credential_file;
     return true;
 }
 
@@ -219,6 +322,7 @@ bool load_server_role_config_from_env(
         env_value("PQNAS_SERVER_ROLE"),
         env_value("PQNAS_NODE_ID"),
         env_value("PQNAS_DIRECTOR_URL"),
+        env_value("PQNAS_CLUSTER_CREDENTIAL_FILE"),
         out,
         err
     );

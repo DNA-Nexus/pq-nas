@@ -16,15 +16,22 @@ void expect_ok(
     const std::string& role,
     const std::string& node_id,
     const std::string& director_url,
+    const std::string& credential_file,
     pqnas::cluster::ServerRole expected_role,
     const std::string& expected_node_id = "",
-    const std::string& expected_director_url = ""
+    const std::string& expected_director_url = "",
+    const std::string& expected_credential_file = ""
 ) {
     pqnas::cluster::ServerRoleConfig cfg;
     std::string err;
 
     if (!pqnas::cluster::parse_server_role_config(
-            role, node_id, director_url, &cfg, &err)) {
+            role,
+            node_id,
+            director_url,
+            credential_file,
+            &cfg,
+            &err)) {
         fail("expected valid config for role '" + role + "': " + err);
         return;
     }
@@ -40,18 +47,28 @@ void expect_ok(
     if (cfg.director_url != expected_director_url) {
         fail("unexpected Director URL for role '" + role + "'");
     }
+
+    if (cfg.cluster_credential_file != expected_credential_file) {
+        fail("unexpected credential path for role '" + role + "'");
+    }
 }
 
 void expect_error(
     const std::string& role,
     const std::string& node_id,
-    const std::string& director_url
+    const std::string& director_url,
+    const std::string& credential_file
 ) {
     pqnas::cluster::ServerRoleConfig cfg;
     std::string err;
 
     if (pqnas::cluster::parse_server_role_config(
-            role, node_id, director_url, &cfg, &err)) {
+            role,
+            node_id,
+            director_url,
+            credential_file,
+            &cfg,
+            &err)) {
         fail("expected invalid config for role '" + role + "'");
         return;
     }
@@ -66,39 +83,158 @@ void expect_error(
 int main() {
     using pqnas::cluster::ServerRole;
 
-    expect_ok("", "", "", ServerRole::Standalone);
-    expect_ok("standalone", "", "", ServerRole::Standalone);
-    expect_ok(" DIRECTOR ", "", "", ServerRole::Director);
+    const std::string credential =
+        "/etc/pqnas/cluster-credential";
+
+    expect_ok("", "", "", "", ServerRole::Standalone);
+    expect_ok("standalone", "", "", "", ServerRole::Standalone);
+
+    expect_ok(
+        " DIRECTOR ",
+        "",
+        "",
+        credential,
+        ServerRole::Director,
+        "",
+        "",
+        credential
+    );
 
     expect_ok(
         "node",
         "node-01",
         "https://director.local/",
+        credential,
         ServerRole::Node,
         "node-01",
-        "https://director.local"
+        "https://director.local",
+        credential
     );
 
     expect_ok(
         "NODE",
         "dell2.example",
         "https://192.168.1.100:8443",
+        "/srv/pqnas/config/cluster-token",
         ServerRole::Node,
         "dell2.example",
-        "https://192.168.1.100:8443"
+        "https://192.168.1.100:8443",
+        "/srv/pqnas/config/cluster-token"
     );
 
-    expect_error("unknown", "", "");
-    expect_error("standalone", "node-01", "");
-    expect_error("director", "node-01", "");
-    expect_error("director", "", "https://director.local");
-    expect_error("node", "", "https://director.local");
-    expect_error("node", "../node-01", "https://director.local");
-    expect_error("node", "-node-01", "https://director.local");
-    expect_error("node", "node-01", "");
-    expect_error("node", "node-01", "http://director.local");
-    expect_error("node", "node-01", "https://user@director.local");
-    expect_error("node", "node-01", "https://director.local/api");
+    expect_error("unknown", "", "", credential);
+
+    expect_error(
+        "standalone",
+        "",
+        "",
+        credential
+    );
+
+    expect_error(
+        "director",
+        "",
+        "",
+        ""
+    );
+
+    expect_error(
+        "director",
+        "node-01",
+        "",
+        credential
+    );
+
+    expect_error(
+        "director",
+        "",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "director",
+        "",
+        "",
+        "relative/cluster-token"
+    );
+
+    expect_error(
+        "node",
+        "",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "../node-01",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "-node-01",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "http://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://user@director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local/api",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local",
+        ""
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local",
+        "relative/cluster-token"
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local",
+        "/etc/pqnas/../cluster-token"
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local",
+        "/etc/pqnas/"
+    );
 
     if (failures != 0) {
         std::cerr << failures << " server role test(s) failed\n";
