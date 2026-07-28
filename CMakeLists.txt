@@ -722,6 +722,7 @@ add_custom_target(run_test_opaque_runtime_paths
 
 target_sources(pqnas_server PRIVATE
         server/src/cluster/user_placement_service.cpp
+        server/src/cluster/user_placement_selector.cpp
         server/src/routes/routes_admin_cluster_user_placement.cpp
 )
 
@@ -782,6 +783,29 @@ add_custom_target(run_test_admin_cluster_user_placement_route
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_placement_route"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_admin_cluster_user_placement_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_selector
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_selector
+        tests/cluster/test_user_placement_selector.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_selector PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_user_placement_selector PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_selector
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_selector"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_selector
 )
 
 
