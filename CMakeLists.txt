@@ -188,6 +188,10 @@ add_executable(pqnas_server
         server/src/cluster/node_status.h
         server/src/cluster/node_registry.cpp
         server/src/cluster/node_registry.h
+        server/src/cluster/node_heartbeat_worker.cpp
+        server/src/cluster/node_heartbeat_worker.h
+        server/src/cluster/node_heartbeat_https.cpp
+        server/src/cluster/node_heartbeat_https.h
         server/src/routes/routes_internal_node_status.cpp
         server/src/routes/routes_internal_node_status.h
         server/src/routes/routes_admin_cluster_nodes.cpp
@@ -713,6 +717,46 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_heartbeat_worker
+# -----------------------------------------------------------------------------
+add_executable(test_node_heartbeat_worker
+        tests/cluster/test_node_heartbeat_worker.cpp
+        server/src/cluster/node_heartbeat_worker.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/node_status.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/storage_info.cc
+)
+
+target_include_directories(test_node_heartbeat_worker PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_node_heartbeat_worker PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_node_heartbeat_worker PRIVATE
+        pqnas_verify_v4
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_node_heartbeat_worker PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_heartbeat_worker
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_heartbeat_worker
 )
 
 

@@ -127,6 +127,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_heartbeat_worker.h"
+#include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "policy.h"
@@ -9232,6 +9234,46 @@ int main()
             << std::endl;
     }
 
+    pqnas::cluster::NodeHeartbeatWorkerConfig
+        director_heartbeat_config;
+
+    director_heartbeat_config.registry =
+        &director_node_registry;
+
+    director_heartbeat_config.credential =
+        &cluster_credential;
+
+    director_heartbeat_config.fetch =
+        pqnas::cluster::
+            make_https_node_heartbeat_fetch();
+
+    director_heartbeat_config.now_iso_utc =
+        []() {
+            return pqnas::now_iso_utc();
+        };
+
+    pqnas::cluster::NodeHeartbeatWorker
+        director_node_heartbeat_worker(
+            std::move(director_heartbeat_config)
+        );
+
+    if (cluster_config.is_director()) {
+        std::string heartbeat_start_error;
+
+        if (!director_node_heartbeat_worker.start(
+                &heartbeat_start_error)) {
+            std::cerr
+                << "[cluster] FATAL: Director heartbeat worker failed to start: "
+                << heartbeat_start_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director heartbeat worker started interval_s=30"
+            << std::endl;
+    }
+
     if (!load_env_key("PQNAS_SERVER_PK_B64URL", SERVER_PK, 32) ||
         !load_env_key("PQNAS_SERVER_SK_B64URL", SERVER_SK, 64) ||
         !load_env_key("PQNAS_COOKIE_KEY_B64URL", COOKIE_KEY, 32)) {
@@ -13865,6 +13907,10 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 	srv.listen(listen_host, LISTEN_PORT);
 
 	// ---- Shutdown sequence ----
+
+	// Stop Director heartbeat first so no more registry writes occur while
+	// the remaining background services are being shut down.
+	director_node_heartbeat_worker.stop_and_join();
 
 	// Stop background drive health monitor
 	pqnas::drive_health_monitor_stop();
