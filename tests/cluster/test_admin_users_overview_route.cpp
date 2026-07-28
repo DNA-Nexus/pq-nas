@@ -58,7 +58,8 @@ fs::path make_test_directory() {
 
 pqnas::UserRec make_user(
     const std::string& fingerprint,
-    const std::string& home_node
+    const std::string& home_node,
+    const std::string& placement_policy_id
 ) {
     pqnas::UserRec user;
     user.fingerprint = fingerprint;
@@ -68,6 +69,8 @@ pqnas::UserRec make_user(
     user.storage_state = "unallocated";
     user.app_prefs_json = "{}";
     user.home_node = home_node;
+    user.placement_policy_id =
+        placement_policy_id;
 
     return user;
 }
@@ -129,6 +132,7 @@ int main() {
         users.upsert(
             make_user(
                 "local-user",
+                "",
                 ""
             )
         ),
@@ -139,7 +143,8 @@ int main() {
         users.upsert(
             make_user(
                 "node-user",
-                "node-01"
+                "node-01",
+                "business-backup"
             )
         ),
         "create node-assigned user"
@@ -285,15 +290,21 @@ int main() {
             local_user->contains(
                 "home_node"
             ) &&
-            (*local_user)["home_node"] == "",
-            "standalone user should expose an empty home_node"
+            (*local_user)["home_node"] == "" &&
+            local_user->contains(
+                "placement_policy_id"
+            ) &&
+            (*local_user)["placement_policy_id"] == "",
+            "standalone user should expose empty placement metadata"
         );
 
         expect(
             node_user &&
             (*node_user)["home_node"] ==
-                "node-01",
-            "assigned user should expose its stable node ID"
+                "node-01" &&
+            (*node_user)["placement_policy_id"] ==
+                "business-backup",
+            "assigned user should expose node and policy IDs separately"
         );
     }
 

@@ -138,8 +138,12 @@ void handle_admin_users_overview(
 
             {"storage_used_bytes", used_bytes},
 
-            // Empty means the existing local/standalone placement.
-            {"home_node", user.home_node}
+            // Placement intent is separate from realized placement.
+            {"home_node", user.home_node},
+            {
+                "placement_policy_id",
+                user.placement_policy_id
+            }
         });
     }
 

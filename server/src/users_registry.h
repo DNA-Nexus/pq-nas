@@ -15,6 +15,12 @@ bool valid_user_home_node_id(
     const std::string& value
 );
 
+// Empty means no placement-policy override. Non-empty values are stable
+// Director-managed policy IDs, never paths, URLs or display labels.
+bool valid_user_placement_policy_id(
+    const std::string& value
+);
+
 struct UserRec {
     std::string fingerprint;   // hex (identity)
 
@@ -58,6 +64,12 @@ struct UserRec {
     // ""        = local/standalone user
     // "node-01" = stable Director-managed node ID
     std::string home_node;
+
+    // Placement intent is separate from the currently realized placement.
+    //
+    // ""                = no policy override
+    // "business-backup" = stable Director-managed policy ID
+    std::string placement_policy_id;
 };
 
 class UsersRegistry {
@@ -93,6 +105,16 @@ public:
     bool set_home_node_persisted(
         const std::string& fp_hex,
         const std::string& home_node,
+        const std::string& path,
+        bool* changed,
+        std::string* error
+    );
+
+    // Atomically persists a policy-reference change before committing it to
+    // memory. Empty policy ID deliberately clears the override.
+    bool set_placement_policy_id_persisted(
+        const std::string& fp_hex,
+        const std::string& placement_policy_id,
         const std::string& path,
         bool* changed,
         std::string* error

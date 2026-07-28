@@ -141,6 +141,39 @@ int main() {
         "paths, URLs, whitespace and oversized IDs must be rejected"
     );
 
+    expect(
+        pqnas::valid_user_placement_policy_id("") &&
+        pqnas::valid_user_placement_policy_id(
+            "business-backup"
+        ) &&
+        pqnas::valid_user_placement_policy_id(
+            "Business_02.eu"
+        ),
+        "empty and stable placement policy IDs should be accepted"
+    );
+
+    expect(
+        !pqnas::valid_user_placement_policy_id(
+            "-business"
+        ) &&
+        !pqnas::valid_user_placement_policy_id(
+            "../business"
+        ) &&
+        !pqnas::valid_user_placement_policy_id(
+            "business/backup"
+        ) &&
+        !pqnas::valid_user_placement_policy_id(
+            "https://policy.internal"
+        ) &&
+        !pqnas::valid_user_placement_policy_id(
+            "business backup"
+        ) &&
+        !pqnas::valid_user_placement_policy_id(
+            std::string(65, 'p')
+        ),
+        "unsafe placement policy IDs must be rejected"
+    );
+
     const fs::path directory =
         make_test_directory();
 
@@ -188,8 +221,9 @@ int main() {
 
     expect(
         legacy_user.has_value() &&
-        legacy_user->home_node.empty(),
-        "missing home_node should migrate to local placement"
+        legacy_user->home_node.empty() &&
+        legacy_user->placement_policy_id.empty(),
+        "missing placement fields should preserve legacy local behavior"
     );
 
     expect(
@@ -223,6 +257,8 @@ int main() {
 
     valid_upsert.fingerprint = "fp-valid";
     valid_upsert.home_node = "node-02";
+    valid_upsert.placement_policy_id =
+        "business-backup";
 
     expect(
         registry.upsert(valid_upsert),
@@ -239,6 +275,28 @@ int main() {
         !registry.upsert(invalid_upsert) &&
         !registry.exists("fp-invalid"),
         "generic upsert must reject invalid placement"
+    );
+
+    pqnas::UserRec invalid_policy_upsert =
+        valid_upsert;
+
+    invalid_policy_upsert.fingerprint =
+        "fp-invalid-policy";
+
+    invalid_policy_upsert.home_node =
+        "node-03";
+
+    invalid_policy_upsert.placement_policy_id =
+        "../business";
+
+    expect(
+        !registry.upsert(
+            invalid_policy_upsert
+        ) &&
+        !registry.exists(
+            "fp-invalid-policy"
+        ),
+        "generic upsert must reject invalid policy references"
     );
 
     const fs::path saved_path =
@@ -269,8 +327,12 @@ int main() {
         saved_legacy->value(
             "home_node",
             ""
-        ) == "node-01",
-        "saved legacy user should contain node-01"
+        ) == "node-01" &&
+        saved_legacy->value(
+            "placement_policy_id",
+            "missing"
+        ).empty(),
+        "saved legacy user should contain local policy intent"
     );
 
     expect(
@@ -278,8 +340,12 @@ int main() {
         saved_valid->value(
             "home_node",
             ""
-        ) == "node-02",
-        "saved upserted user should contain node-02"
+        ) == "node-02" &&
+        saved_valid->value(
+            "placement_policy_id",
+            ""
+        ) == "business-backup",
+        "saved user should contain node and policy IDs"
     );
 
     pqnas::UsersRegistry reloaded;
@@ -292,11 +358,184 @@ int main() {
     const auto reloaded_user =
         reloaded.get("fp-legacy");
 
+    const auto reloaded_valid =
+        reloaded.get("fp-valid");
+
     expect(
         reloaded_user.has_value() &&
         reloaded_user->home_node ==
-            "node-01",
-        "home_node should survive save and reload"
+            "node-01" &&
+        reloaded_user->placement_policy_id.empty(),
+        "legacy placement metadata should survive save and reload"
+    );
+
+    expect(
+        reloaded_valid.has_value() &&
+        reloaded_valid->home_node ==
+            "node-02" &&
+        reloaded_valid->placement_policy_id ==
+            "business-backup",
+        "policy reference should survive save and reload"
+    );
+
+    bool policy_changed = false;
+    std::string policy_error;
+
+    expect(
+        reloaded.set_placement_policy_id_persisted(
+            "fp-legacy",
+            "business-backup",
+            saved_path.string(),
+            &policy_changed,
+            &policy_error
+        ) &&
+        policy_changed,
+        "persist policy assignment: " +
+            policy_error
+    );
+
+    policy_changed = true;
+    policy_error.clear();
+
+    expect(
+        reloaded.set_placement_policy_id_persisted(
+            "fp-legacy",
+            "business-backup",
+            saved_path.string(),
+            &policy_changed,
+            &policy_error
+        ) &&
+        !policy_changed,
+        "unchanged policy assignment should be idempotent"
+    );
+
+    const json policy_saved_json =
+        read_json(saved_path);
+
+    const json* policy_saved_user =
+        find_user(
+            policy_saved_json,
+            "fp-legacy"
+        );
+
+    expect(
+        policy_saved_user &&
+        policy_saved_user->value(
+            "placement_policy_id",
+            ""
+        ) == "business-backup",
+        "persisted policy assignment should reach users.json"
+    );
+
+    policy_changed = false;
+    policy_error.clear();
+
+    expect(
+        reloaded.set_placement_policy_id_persisted(
+            "fp-legacy",
+            "",
+            saved_path.string(),
+            &policy_changed,
+            &policy_error
+        ) &&
+        policy_changed,
+        "empty policy ID should clear the override"
+    );
+
+    const auto cleared_policy_user =
+        reloaded.get("fp-legacy");
+
+    expect(
+        cleared_policy_user.has_value() &&
+        cleared_policy_user->
+            placement_policy_id.empty(),
+        "cleared policy override should update memory"
+    );
+
+    const fs::path rollback_directory =
+        directory / "policy-rollback";
+
+    const fs::path rollback_path =
+        rollback_directory / "users.json";
+
+    expect(
+        reloaded.save(
+            rollback_path.string()
+        ),
+        "create policy rollback fixture"
+    );
+
+    policy_changed = false;
+    policy_error.clear();
+
+    expect(
+        reloaded.set_placement_policy_id_persisted(
+            "fp-legacy",
+            "before-failure",
+            rollback_path.string(),
+            &policy_changed,
+            &policy_error
+        ) &&
+        policy_changed,
+        "establish rollback baseline"
+    );
+
+    std::error_code rollback_error;
+
+    expect(
+        fs::remove(
+            rollback_path,
+            rollback_error
+        ) &&
+        !rollback_error,
+        "remove rollback registry file"
+    );
+
+    rollback_error.clear();
+
+    expect(
+        fs::remove(
+            rollback_directory,
+            rollback_error
+        ) &&
+        !rollback_error,
+        "remove rollback registry directory"
+    );
+
+    expect(
+        write_json(
+            rollback_directory,
+            json{
+                {"blocker", true}
+            }
+        ),
+        "replace rollback directory with a regular file"
+    );
+
+    policy_changed = false;
+    policy_error.clear();
+
+    expect(
+        !reloaded.set_placement_policy_id_persisted(
+            "fp-legacy",
+            "after-failure",
+            rollback_path.string(),
+            &policy_changed,
+            &policy_error
+        ) &&
+        !policy_changed,
+        "failed persistence must reject policy mutation"
+    );
+
+    const auto after_failed_policy_write =
+        reloaded.get("fp-legacy");
+
+    expect(
+        after_failed_policy_write.has_value() &&
+        after_failed_policy_write->
+            placement_policy_id ==
+                "before-failure",
+        "failed persistence must restore previous policy reference"
     );
 
     const fs::path invalid_string_path =
@@ -361,6 +600,75 @@ int main() {
             invalid_type_path.string()
         ),
         "non-string persisted home_node must fail loading"
+    );
+
+    const fs::path invalid_policy_string_path =
+        directory / "invalid_policy_string.json";
+
+    const json invalid_policy_string_json{
+        {
+            "users",
+            json::array({
+                json{
+                    {"fingerprint", "fp-bad-policy"},
+                    {
+                        "placement_policy_id",
+                        "../business"
+                    }
+                }
+            })
+        }
+    };
+
+    expect(
+        write_json(
+            invalid_policy_string_path,
+            invalid_policy_string_json
+        ),
+        "write invalid policy ID fixture"
+    );
+
+    pqnas::UsersRegistry
+        invalid_policy_string_registry;
+
+    expect(
+        !invalid_policy_string_registry.load(
+            invalid_policy_string_path.string()
+        ),
+        "unsafe persisted policy ID must fail loading"
+    );
+
+    const fs::path invalid_policy_type_path =
+        directory / "invalid_policy_type.json";
+
+    const json invalid_policy_type_json{
+        {
+            "users",
+            json::array({
+                json{
+                    {"fingerprint", "fp-bad-policy-type"},
+                    {"placement_policy_id", 123}
+                }
+            })
+        }
+    };
+
+    expect(
+        write_json(
+            invalid_policy_type_path,
+            invalid_policy_type_json
+        ),
+        "write invalid policy type fixture"
+    );
+
+    pqnas::UsersRegistry
+        invalid_policy_type_registry;
+
+    expect(
+        !invalid_policy_type_registry.load(
+            invalid_policy_type_path.string()
+        ),
+        "non-string persisted policy ID must fail loading"
     );
 
     cleanup();

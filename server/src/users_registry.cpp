@@ -124,6 +124,46 @@ bool valid_user_home_node_id(
   return true;
 }
 
+/*
+valid_user_placement_policy_id()
+  - Empty means no policy override.
+  - Non-empty values use the stable control-plane identifier shape.
+  - Paths, URLs, whitespace and traversal-like values are rejected.
+*/
+bool valid_user_placement_policy_id(
+    const std::string& value
+) {
+  if (value.empty()) return true;
+  if (value.size() > 64) return false;
+
+  for (std::size_t index = 0;
+       index < value.size();
+       ++index) {
+    const unsigned char ch =
+        static_cast<unsigned char>(value[index]);
+
+    const bool alphanumeric =
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9');
+
+    if (index == 0) {
+      if (!alphanumeric) return false;
+      continue;
+    }
+
+    if (!alphanumeric &&
+        ch != '-' &&
+        ch != '_' &&
+        ch != '.') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
 
 //------------------------------------------------------------------------------
 // Normalization helpers (schema firewall)
@@ -317,6 +357,22 @@ bool UsersRegistry::load(const std::string& path) {
       u.home_node = "";
     }
 
+    // Missing policy ID preserves backward compatibility. Malformed explicit
+    // values fail closed instead of silently dropping an intended override.
+    if (it.contains("placement_policy_id")) {
+      if (!it["placement_policy_id"].is_string()) return false;
+
+      u.placement_policy_id =
+          it["placement_policy_id"].get<std::string>();
+
+      if (!valid_user_placement_policy_id(
+              u.placement_policy_id)) {
+        return false;
+      }
+    } else {
+      u.placement_policy_id = "";
+    }
+
     by_fp_[u.fingerprint] = u;
   }
 
@@ -408,7 +464,9 @@ bool UsersRegistry::save_locked(
     // Security: never serialize path-, URL- or traversal-like placement data.
     // Invalid in-memory state must fail closed instead of being normalized into
     // an unintended local placement.
-    if (!valid_user_home_node_id(u.home_node)) {
+    if (!valid_user_home_node_id(u.home_node) ||
+        !valid_user_placement_policy_id(
+            u.placement_policy_id)) {
       return false;
     }
 
@@ -449,9 +507,10 @@ bool UsersRegistry::save_locked(
         {"label", u.vault_master_recovery_label}
       }},
 
-      // Cluster placement metadata. Empty remains the explicit
-      // local/standalone representation.
+      // Cluster placement metadata. The policy is intent; home_node is
+      // the currently realized placement.
       {"home_node", u.home_node},
+      {"placement_policy_id", u.placement_policy_id},
 
       // New: storage metadata
       {"storage_state", norm_storage_state(u.storage_state)},
@@ -590,6 +649,7 @@ bool UsersRegistry::ensure_present_disabled_user(const std::string& fp_hex, cons
 
   // Existing standalone behavior remains unchanged.
   u.home_node = "";
+  u.placement_policy_id = "";
 
   by_fp_[fp_hex] = u;
   return true; // created
@@ -603,7 +663,11 @@ upsert()
 */
 bool UsersRegistry::upsert(const UserRec& in) {
   // Security: generic profile updates must not bypass placement validation.
-  if (!valid_user_home_node_id(in.home_node)) return false;
+  if (!valid_user_home_node_id(in.home_node) ||
+      !valid_user_placement_policy_id(
+          in.placement_policy_id)) {
+    return false;
+  }
 
   std::lock_guard<std::mutex> lk(mu_);
   if (in.fingerprint.empty()) return false;
@@ -748,6 +812,79 @@ bool UsersRegistry::set_home_node_persisted(
 
   return true;
 }
+
+bool UsersRegistry::set_placement_policy_id_persisted(
+    const std::string& fp_hex,
+    const std::string& placement_policy_id,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Empty is valid and explicitly clears the user's policy override.
+  if (!valid_user_placement_policy_id(
+          placement_policy_id)) {
+    if (error) *error = "invalid placement policy ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  if (iterator->second.placement_policy_id ==
+      placement_policy_id) {
+    return true;
+  }
+
+  const std::string previous_policy_id =
+      iterator->second.placement_policy_id;
+
+  iterator->second.placement_policy_id =
+      placement_policy_id;
+
+  // Security: persist while holding the registry mutation lock. A failed
+  // atomic replacement restores the previous in-memory policy reference.
+  if (!save_locked(path)) {
+    iterator->second.placement_policy_id =
+        previous_policy_id;
+
+    if (error) {
+      *error = "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
 
 /*
 touch_last_seen()
