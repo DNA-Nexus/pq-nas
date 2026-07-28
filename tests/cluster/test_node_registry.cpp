@@ -529,14 +529,22 @@ int main() {
 
         error.clear();
 
+        bool transitioned_online = false;
+
         expect(
             offline_registry.apply_status(
                 online_status,
                 "2026-07-28T07:11:01Z",
-                &error
+                &error,
+                &transitioned_online
             ),
             "apply online status before offline transition: " +
                 error
+        );
+
+        expect(
+            transitioned_online,
+            "unknown node should report transition to online"
         );
 
         const auto online_record =
@@ -550,12 +558,20 @@ int main() {
 
         error.clear();
 
+        bool transitioned_offline = false;
+
         expect(
             offline_registry.mark_offline(
                 "node-offline",
-                &error
+                &error,
+                &transitioned_offline
             ),
             "mark heartbeat failure offline: " + error
+        );
+
+        expect(
+            transitioned_offline,
+            "online node should report transition to offline"
         );
 
         const auto offline_record =
@@ -580,13 +596,20 @@ int main() {
         );
 
         error.clear();
+        transitioned_offline = true;
 
         expect(
             offline_registry.mark_offline(
                 "node-offline",
-                &error
+                &error,
+                &transitioned_offline
             ),
             "repeated offline transition should be idempotent"
+        );
+
+        expect(
+            !transitioned_offline,
+            "already-offline node must not report another transition"
         );
 
         pqnas::cluster::NodeRegistry

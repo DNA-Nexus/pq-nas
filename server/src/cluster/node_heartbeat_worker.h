@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -25,11 +26,19 @@ using NodeHeartbeatFetch =
         std::string* error
     )>;
 
+using NodeHeartbeatAuditEmit =
+    std::function<void(
+        const std::string& event,
+        const std::string& outcome,
+        const std::map<std::string, std::string>& fields
+    )>;
+
 struct NodeHeartbeatWorkerConfig {
     NodeRegistry* registry = nullptr;
     const InternalAuthCredential* credential = nullptr;
 
     NodeHeartbeatFetch fetch;
+    NodeHeartbeatAuditEmit audit_emit;
 
     std::function<std::string()>
         now_iso_utc;
@@ -44,6 +53,9 @@ struct NodeHeartbeatPollResult {
     std::size_t succeeded = 0;
     std::size_t failed = 0;
     std::size_t skipped_disabled = 0;
+
+    std::size_t online_transitions = 0;
+    std::size_t offline_transitions = 0;
 };
 
 class NodeHeartbeatWorker {

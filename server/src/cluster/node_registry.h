@@ -79,7 +79,8 @@ public:
     // Existing last-seen and status data are preserved for diagnostics.
     bool mark_offline(
         const std::string& node_id,
-        std::string* err
+        std::string* err,
+        bool* transitioned_offline = nullptr
     );
 
     // Status can update only a preconfigured, enabled node. A heartbeat must
@@ -87,7 +88,8 @@ public:
     bool apply_status(
         const NodeStatusSnapshot& status,
         const std::string& received_at,
-        std::string* err
+        std::string* err,
+        bool* transitioned_online = nullptr
     );
 
 private:

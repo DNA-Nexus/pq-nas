@@ -1436,10 +1436,15 @@ bool NodeRegistry::erase(
 
 bool NodeRegistry::mark_offline(
     const std::string& node_id,
-    std::string* err
+    std::string* err,
+    bool* transitioned_offline
 ) {
     if (err) {
         err->clear();
+    }
+
+    if (transitioned_offline) {
+        *transitioned_offline = false;
     }
 
     if (!valid_node_id(node_id)) {
@@ -1479,16 +1484,26 @@ bool NodeRegistry::mark_offline(
     }
 
     nodes_ = std::move(candidate);
+
+    if (transitioned_offline) {
+        *transitioned_offline = true;
+    }
+
     return true;
 }
 
 bool NodeRegistry::apply_status(
     const NodeStatusSnapshot& status,
     const std::string& received_at,
-    std::string* err
+    std::string* err,
+    bool* transitioned_online
 ) {
     if (err) {
         err->clear();
+    }
+
+    if (transitioned_online) {
+        *transitioned_online = false;
     }
 
     if (!valid_iso_utc_seconds(received_at) ||
@@ -1525,6 +1540,9 @@ bool NodeRegistry::apply_status(
         return false;
     }
 
+    const bool became_online =
+        record.health != "online";
+
     record.health = "online";
     record.last_seen_at = received_at;
     record.node_reported_at = status.timestamp;
@@ -1553,6 +1571,11 @@ bool NodeRegistry::apply_status(
     }
 
     nodes_ = std::move(candidate);
+
+    if (transitioned_online) {
+        *transitioned_online = became_online;
+    }
+
     return true;
 }
 

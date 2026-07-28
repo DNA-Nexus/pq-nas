@@ -22,6 +22,12 @@ namespace fs = std::filesystem;
 
 int failures = 0;
 
+struct AuditRecord {
+    std::string event;
+    std::string outcome;
+    std::map<std::string, std::string> fields;
+};
+
 void expect(
     bool condition,
     const std::string& message
@@ -242,6 +248,7 @@ int main() {
     add_node("node-05", true);
 
     std::map<std::string, int> fetch_calls;
+    std::vector<AuditRecord> audits;
     bool authorization_valid = true;
 
     pqnas::cluster::NodeHeartbeatWorkerConfig
@@ -254,6 +261,19 @@ int main() {
         []() {
             return std::string(
                 "2026-07-28T08:00:01Z"
+            );
+        };
+
+    config.audit_emit =
+        [&](const std::string& event,
+            const std::string& outcome,
+            const std::map<std::string, std::string>& fields) {
+            audits.push_back(
+                AuditRecord{
+                    event,
+                    outcome,
+                    fields
+                }
             );
         };
 
@@ -359,6 +379,91 @@ int main() {
     );
 
     expect(
+        poll_result.online_transitions == 1,
+        "first valid heartbeat should create one online transition"
+    );
+
+    expect(
+        poll_result.offline_transitions == 3,
+        "first failures should create three offline transitions"
+    );
+
+    expect(
+        audits.size() == 4,
+        "only real health transitions should be audited"
+    );
+
+    std::size_t online_audits = 0;
+    std::size_t offline_audits = 0;
+
+    const std::map<std::string, std::string>
+        expected_offline_reasons{
+            {"node-03", "transport_error"},
+            {"node-04", "node_id_mismatch"},
+            {"node-05", "response_too_large"}
+        };
+
+    for (const AuditRecord& audit : audits) {
+        expect(
+            audit.outcome == "ok",
+            "health transition audit outcome"
+        );
+
+        expect(
+            audit.fields.size() == 3 &&
+            audit.fields.count("node_id") == 1 &&
+            audit.fields.count("state") == 1 &&
+            audit.fields.count("reason_code") == 1,
+            "health audit should contain only bounded fields"
+        );
+
+        if (audit.event == "cluster.node_online") {
+            ++online_audits;
+
+            expect(
+                audit.fields.at("node_id") == "node-01" &&
+                audit.fields.at("state") == "online" &&
+                audit.fields.at("reason_code") ==
+                    "heartbeat_ok",
+                "online audit fields"
+            );
+        } else if (
+            audit.event == "cluster.node_offline"
+        ) {
+            ++offline_audits;
+
+            const std::string node_id =
+                audit.fields.at("node_id");
+
+            const auto expected =
+                expected_offline_reasons.find(node_id);
+
+            expect(
+                expected !=
+                    expected_offline_reasons.end() &&
+                audit.fields.at("state") ==
+                    "offline" &&
+                expected !=
+                    expected_offline_reasons.end() &&
+                audit.fields.at("reason_code") ==
+                    expected->second,
+                "offline audit fields and reason category"
+            );
+        } else {
+            expect(
+                false,
+                "unexpected heartbeat audit event"
+            );
+        }
+    }
+
+    expect(
+        online_audits == 1 &&
+        offline_audits == 3,
+        "expected online and offline audit counts"
+    );
+
+    expect(
         authorization_valid,
         "every fetch should receive the correct bearer value"
     );
@@ -404,6 +509,24 @@ int main() {
                 " should be marked offline"
         );
     }
+
+    const std::size_t audits_before_repeat =
+        audits.size();
+
+    const pqnas::cluster::NodeHeartbeatPollResult
+        repeated_poll =
+            worker.poll_once();
+
+    expect(
+        repeated_poll.online_transitions == 0 &&
+        repeated_poll.offline_transitions == 0,
+        "unchanged health states must not create transitions"
+    );
+
+    expect(
+        audits.size() == audits_before_repeat,
+        "repeated heartbeat results must not duplicate audit events"
+    );
 
     error.clear();
 

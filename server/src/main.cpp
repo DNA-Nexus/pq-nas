@@ -9252,6 +9252,21 @@ int main()
             return pqnas::now_iso_utc();
         };
 
+    director_heartbeat_config.audit_emit =
+        [](const std::string& event,
+           const std::string& outcome,
+           const std::map<std::string, std::string>& fields) {
+            pqnas::AuditEvent audit;
+            audit.event = event;
+            audit.outcome = outcome;
+
+            for (const auto& field : fields) {
+                audit.f[field.first] = field.second;
+            }
+
+            audit_append(audit);
+        };
+
     pqnas::cluster::NodeHeartbeatWorker
         director_node_heartbeat_worker(
             std::move(director_heartbeat_config)

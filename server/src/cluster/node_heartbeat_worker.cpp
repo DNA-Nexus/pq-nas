@@ -57,19 +57,65 @@ void set_error(
     }
 }
 
-void mark_offline_best_effort(
-    NodeRegistry* registry,
-    const std::string& node_id
+void emit_transition_best_effort(
+    const NodeHeartbeatWorkerConfig& config,
+    const std::string& event,
+    const std::string& node_id,
+    const std::string& state,
+    const std::string& reason_code
 ) {
-    if (!registry) {
+    if (!config.audit_emit) {
         return;
     }
 
+    // Security: audit only stable identifiers and bounded reason categories.
+    // Never include bearer values, response bodies, URLs or raw errors.
+    const std::map<std::string, std::string> fields{
+        {"node_id", node_id},
+        {"state", state},
+        {"reason_code", reason_code}
+    };
+
+    try {
+        config.audit_emit(
+            event,
+            "ok",
+            fields
+        );
+    } catch (...) {
+        // Health tracking must remain functional even if audit output fails.
+    }
+}
+
+bool mark_offline_transition_best_effort(
+    const NodeHeartbeatWorkerConfig& config,
+    const std::string& node_id,
+    const std::string& reason_code
+) {
+    if (!config.registry) {
+        return false;
+    }
+
+    bool transitioned_offline = false;
     std::string ignored_error;
-    (void)registry->mark_offline(
+
+    if (!config.registry->mark_offline(
+            node_id,
+            &ignored_error,
+            &transitioned_offline) ||
+        !transitioned_offline) {
+        return false;
+    }
+
+    emit_transition_best_effort(
+        config,
+        "cluster.node_offline",
         node_id,
-        &ignored_error
+        "offline",
+        reason_code
     );
+
+    return true;
 }
 
 } // namespace
@@ -107,6 +153,14 @@ bool NodeHeartbeatWorker::config_valid(
         set_error(
             error,
             "heartbeat fetch callback is missing"
+        );
+        return false;
+    }
+
+    if (!config_.audit_emit) {
+        set_error(
+            error,
+            "heartbeat audit callback is missing"
         );
         return false;
     }
@@ -228,6 +282,17 @@ NodeHeartbeatWorker::poll_once() {
     const std::vector<NodeRegistryRecord> nodes =
         config_.registry->snapshot();
 
+    const auto record_offline =
+        [&](const std::string& node_id,
+            const std::string& reason_code) {
+            if (mark_offline_transition_best_effort(
+                    config_,
+                    node_id,
+                    reason_code)) {
+                ++result.offline_transitions;
+            }
+        };
+
     std::string authorization;
     SensitiveStringWiper authorization_wiper(
         authorization
@@ -245,9 +310,9 @@ NodeHeartbeatWorker::poll_once() {
             ++result.checked;
             ++result.failed;
 
-            mark_offline_best_effort(
-                config_.registry,
-                node.node_id
+            record_offline(
+                node.node_id,
+                "credential_unavailable"
             );
         }
 
@@ -282,15 +347,35 @@ NodeHeartbeatWorker::poll_once() {
             fetched = false;
         }
 
-        if (!fetched ||
-            response_body.empty() ||
-            response_body.size() >
-                kNodeHeartbeatMaxResponseBytes) {
+        if (!fetched) {
             ++result.failed;
 
-            mark_offline_best_effort(
-                config_.registry,
-                node.node_id
+            record_offline(
+                node.node_id,
+                "transport_error"
+            );
+
+            continue;
+        }
+
+        if (response_body.empty()) {
+            ++result.failed;
+
+            record_offline(
+                node.node_id,
+                "empty_response"
+            );
+
+            continue;
+        }
+
+        if (response_body.size() >
+            kNodeHeartbeatMaxResponseBytes) {
+            ++result.failed;
+
+            record_offline(
+                node.node_id,
+                "response_too_large"
             );
 
             continue;
@@ -320,15 +405,25 @@ NodeHeartbeatWorker::poll_once() {
             parsed = false;
         }
 
-        // Security: bind the authenticated response to the exact configured
-        // node. A valid response from one node must never update another.
-        if (!parsed ||
-            status.node_id != node.node_id) {
+        if (!parsed) {
             ++result.failed;
 
-            mark_offline_best_effort(
-                config_.registry,
-                node.node_id
+            record_offline(
+                node.node_id,
+                "invalid_response"
+            );
+
+            continue;
+        }
+
+        // Security: bind the authenticated response to the exact configured
+        // node. A valid response from one node must never update another.
+        if (status.node_id != node.node_id) {
+            ++result.failed;
+
+            record_offline(
+                node.node_id,
+                "node_id_mismatch"
             );
 
             continue;
@@ -343,24 +438,48 @@ NodeHeartbeatWorker::poll_once() {
             received_at.clear();
         }
 
-        std::string registry_error;
-
-        if (received_at.empty() ||
-            !config_.registry->apply_status(
-                status,
-                received_at,
-                &registry_error)) {
+        if (received_at.empty()) {
             ++result.failed;
 
-            mark_offline_best_effort(
-                config_.registry,
-                node.node_id
+            record_offline(
+                node.node_id,
+                "clock_error"
+            );
+
+            continue;
+        }
+
+        bool transitioned_online = false;
+        std::string registry_error;
+
+        if (!config_.registry->apply_status(
+                status,
+                received_at,
+                &registry_error,
+                &transitioned_online)) {
+            ++result.failed;
+
+            record_offline(
+                node.node_id,
+                "registry_update_failed"
             );
 
             continue;
         }
 
         ++result.succeeded;
+
+        if (transitioned_online) {
+            ++result.online_transitions;
+
+            emit_transition_best_effort(
+                config_,
+                "cluster.node_online",
+                node.node_id,
+                "online",
+                "heartbeat_ok"
+            );
+        }
     }
 
     return result;
