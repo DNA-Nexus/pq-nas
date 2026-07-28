@@ -726,6 +726,35 @@ target_sources(pqnas_server PRIVATE
 )
 
 # -----------------------------------------------------------------------------
+# Test: test_admin_users_overview_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_users_overview_route
+        tests/cluster/test_admin_users_overview_route.cpp
+        server/src/routes/routes_admin_users_overview.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_users_overview_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_users_overview_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_users_overview_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_users_overview_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_users_overview_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_users_overview_route
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_admin_cluster_user_placement_route
 # -----------------------------------------------------------------------------
 add_executable(test_admin_cluster_user_placement_route

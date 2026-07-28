@@ -474,14 +474,52 @@ void handle_admin_cluster_nodes_list(
         return;
     }
 
+    std::unordered_map<
+        std::string,
+        std::size_t
+    > assigned_user_counts;
+
+    if (!load_assigned_user_counts(
+            context,
+            &assigned_user_counts)) {
+        reply_json_local(
+            context,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {
+                    "message",
+                    "failed to count assigned users"
+                }
+            }
+        );
+        return;
+    }
+
     const std::vector<NodeRegistryRecord> nodes =
         context.registry->snapshot();
 
     json output_nodes = json::array();
 
     for (const NodeRegistryRecord& node : nodes) {
+        json output_node =
+            node_record_to_json(node);
+
+        const auto assigned_iterator =
+            assigned_user_counts.find(
+                node.node_id
+            );
+
+        output_node["assigned_users"] =
+            assigned_iterator ==
+                assigned_user_counts.end()
+                    ? 0
+                    : assigned_iterator->second;
+
         output_nodes.push_back(
-            node_record_to_json(node)
+            std::move(output_node)
         );
     }
 

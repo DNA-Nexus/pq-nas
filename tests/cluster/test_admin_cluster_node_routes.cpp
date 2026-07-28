@@ -512,6 +512,8 @@ int main() {
         );
     }
 
+    assigned_user_counts["node-01"] = 2;
+
     {
         httplib::Request request;
         request.remote_addr = "192.0.2.10";
@@ -539,9 +541,12 @@ int main() {
                 "disabled",
             "list should expose Director health state"
         );
-    }
 
-    assigned_user_counts["node-01"] = 2;
+        expect(
+            body["nodes"][0]["assigned_users"] == 2,
+            "list should expose aggregate assigned user count"
+        );
+    }
 
     {
         httplib::Request request =
