@@ -1,0 +1,59 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+#include <nlohmann/json.hpp>
+
+namespace pqnas {
+
+class UsersRegistry;
+
+namespace cluster {
+
+inline constexpr int kNodeStatusProtocolVersion = 1;
+
+struct NodeStorageStatus {
+    std::uint64_t total_bytes = 0;
+    std::uint64_t used_bytes = 0;
+    std::uint64_t free_bytes = 0;
+    std::string fstype;
+};
+
+struct NodeUserStatus {
+    std::uint64_t total = 0;
+    std::uint64_t enabled = 0;
+};
+
+struct NodeStatusSnapshot {
+    std::string node_id;
+    std::string hostname;
+    std::string server_version;
+    std::uint64_t uptime_s = 0;
+    NodeStorageStatus storage;
+    NodeUserStatus users;
+    std::string timestamp;
+};
+
+// Collects only the narrow operational data needed by the Director.
+//
+// Security:
+// - does not return device paths, mountpoints, process paths, IP addresses,
+//   user fingerprints, usernames, or storage-root paths
+// - uses the centralized trusted data root supplied by the caller
+// - performs read-only host and filesystem inspection
+bool collect_node_status_snapshot(
+    const std::string& node_id,
+    const std::string& server_version,
+    const std::string& data_root,
+    const UsersRegistry& users,
+    NodeStatusSnapshot* out,
+    std::string* err
+);
+
+nlohmann::json node_status_to_json(
+    const NodeStatusSnapshot& status
+);
+
+} // namespace cluster
+} // namespace pqnas

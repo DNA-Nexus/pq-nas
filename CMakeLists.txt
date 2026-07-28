@@ -184,6 +184,8 @@ add_executable(pqnas_server
         server/src/cluster/server_role.h
         server/src/cluster/internal_auth.cpp
         server/src/cluster/internal_auth.h
+        server/src/cluster/node_status.cpp
+        server/src/cluster/node_status.h
         server/src/routes/routes_storage_raid.cpp
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
@@ -705,6 +707,36 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_status
+# -----------------------------------------------------------------------------
+add_executable(test_node_status
+        tests/cluster/test_node_status.cpp
+        server/src/cluster/node_status.cpp
+        server/src/storage_info.cc
+)
+
+target_include_directories(test_node_status PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_node_status PRIVATE
+        pqnas_verify_v4
+)
+
+set_target_properties(test_node_status PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_status
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_status"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_status
 )
 
 
