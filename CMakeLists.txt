@@ -722,11 +722,13 @@ add_custom_target(run_test_opaque_runtime_paths
 
 target_sources(pqnas_server PRIVATE
         server/src/cluster/user_placement_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
         server/src/cluster/user_placement_policy_assignment_service.cpp
         server/src/cluster/user_placement_selector.cpp
         server/src/cluster/user_placement_policy.cpp
         server/src/cluster/user_placement_policy_registry.cpp
         server/src/routes/routes_admin_cluster_user_placement.cpp
+        server/src/routes/routes_admin_cluster_user_placement_preview.cpp
         server/src/routes/routes_admin_cluster_user_policy.cpp
 )
 
@@ -852,6 +854,66 @@ add_custom_target(run_test_admin_cluster_user_policy_route
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_policy_route"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_admin_cluster_user_policy_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_preview_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_preview_service
+        tests/cluster/test_user_placement_preview_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_preview_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_link_libraries(test_user_placement_preview_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_preview_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_preview_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_preview_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_preview_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_user_placement_preview_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_user_placement_preview_route
+        tests/cluster/test_admin_cluster_user_placement_preview_route.cpp
+        server/src/routes/routes_admin_cluster_user_placement_preview.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_admin_cluster_user_placement_preview_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_user_placement_preview_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_user_placement_preview_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_user_placement_preview_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_placement_preview_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_user_placement_preview_route
 )
 
 

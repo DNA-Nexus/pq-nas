@@ -130,12 +130,14 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_registry.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
+#include "cluster/user_placement_preview_service.h"
 #include "cluster/user_placement_policy_assignment_service.h"
 #include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_cluster_user_placement.h"
+#include "routes/routes_admin_cluster_user_placement_preview.h"
 #include "routes/routes_admin_cluster_user_policy.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
@@ -10632,6 +10634,126 @@ v5.app_pair_build_qr_uri =
                     user_placement_service_config
                 )
             );
+
+        pqnas::cluster::
+            UserPlacementPreviewServiceConfig
+                user_placement_preview_service_config;
+
+        user_placement_preview_service_config.get_user =
+            [&users](const std::string& fingerprint)
+                -> std::optional<
+                    pqnas::cluster::
+                        UserPlacementPreviewUserSnapshot
+                > {
+                const auto user =
+                    users.get(
+                        fingerprint
+                    );
+
+                if (!user.has_value()) {
+                    return std::nullopt;
+                }
+
+                pqnas::cluster::
+                    UserPlacementPreviewUserSnapshot
+                        snapshot;
+
+                snapshot.home_node =
+                    user->home_node;
+
+                snapshot.placement_policy_id =
+                    user->placement_policy_id;
+
+                return snapshot;
+            };
+
+        user_placement_preview_service_config.node_snapshot =
+            [&director_node_registry]() {
+                return
+                    director_node_registry.snapshot();
+            };
+
+        user_placement_preview_service_config.get_policy =
+            [&director_placement_policy_registry](
+                const std::string& policy_id
+            ) {
+                return
+                    director_placement_policy_registry.get(
+                        policy_id
+                    );
+            };
+
+        user_placement_preview_service_config
+            .assigned_user_counts =
+                [&users]() {
+                    return
+                        users.home_node_assignment_counts();
+                };
+
+        user_placement_preview_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        auto user_placement_preview_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPreviewService
+            >(
+                std::move(
+                    user_placement_preview_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementPreviewRoutesContext
+                user_placement_preview_route_context;
+
+        user_placement_preview_route_context.service =
+            user_placement_preview_service;
+
+        user_placement_preview_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_preview_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_preview_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_preview_routes(
+                srv,
+                user_placement_preview_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement preview route registered"
+            << std::endl;
 
         pqnas::cluster::
             UserPlacementPolicyAssignmentServiceConfig
