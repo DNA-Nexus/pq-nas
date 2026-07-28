@@ -180,6 +180,8 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
         server/src/main.cpp
+        server/src/cluster/server_role.cpp
+        server/src/cluster/server_role.h
         server/src/routes/routes_storage_raid.cpp
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
@@ -701,6 +703,29 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_server_role_config
+# -----------------------------------------------------------------------------
+add_executable(test_server_role_config
+        tests/cluster/test_server_role_config.cpp
+        server/src/cluster/server_role.cpp
+)
+
+target_include_directories(test_server_role_config PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_server_role_config PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_server_role_config
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_server_role_config"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_server_role_config
 )
 
 

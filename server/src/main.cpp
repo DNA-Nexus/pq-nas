@@ -123,6 +123,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "authz.h"
 #include "session_cookie.h"
 #include "runtime_paths.h"
+#include "cluster/server_role.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -9148,6 +9149,28 @@ int main()
         std::cerr << "sodium_init failed" << std::endl;
         return 1;
     }
+
+    pqnas::cluster::ServerRoleConfig cluster_config;
+    std::string cluster_config_err;
+
+    if (!pqnas::cluster::load_server_role_config_from_env(
+            &cluster_config,
+            &cluster_config_err)) {
+        std::cerr << "[cluster] FATAL: " << cluster_config_err << std::endl;
+        return 2;
+    }
+
+    std::cerr
+        << "[cluster] role="
+        << pqnas::cluster::server_role_name(cluster_config.role);
+
+    if (cluster_config.is_node()) {
+        std::cerr
+            << " node_id=" << cluster_config.node_id
+            << " director_url=" << cluster_config.director_url;
+    }
+
+    std::cerr << std::endl;
 
     if (!load_env_key("PQNAS_SERVER_PK_B64URL", SERVER_PK, 32) ||
         !load_env_key("PQNAS_SERVER_SK_B64URL", SERVER_SK, 64) ||
