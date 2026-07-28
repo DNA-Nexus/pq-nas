@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace httplib {
 class Server;
@@ -23,6 +26,17 @@ inline constexpr std::size_t
 
 struct AdminClusterNodeRoutesContext {
     NodeRegistry* registry = nullptr;
+
+    // Shared with UserPlacementService to prevent placement from racing node
+    // disable or deletion.
+    std::shared_ptr<std::mutex>
+        placement_mutex;
+
+    // Aggregate assignment information only.
+    std::function<std::unordered_map<
+        std::string,
+        std::size_t
+    >()> assigned_user_counts;
 
     std::function<bool(
         const httplib::Request&,

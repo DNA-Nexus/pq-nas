@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -102,6 +103,13 @@ public:
 
     // Snapshot for API
     std::unordered_map<std::string, UserRec> snapshot() const;
+
+    // Aggregate-only cluster reference information. This does not expose
+    // fingerprints or complete user records to node administration.
+    std::unordered_map<
+        std::string,
+        std::size_t
+    > home_node_assignment_counts() const;
 
 private:
     // Caller must hold mu_.

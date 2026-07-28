@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -175,6 +176,8 @@ int main() {
 
     service_config.users = &users;
     service_config.nodes = &nodes;
+    service_config.placement_mutex =
+        std::make_shared<std::mutex>();
     service_config.users_path =
         users_path.string();
 

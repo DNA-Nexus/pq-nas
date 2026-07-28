@@ -782,4 +782,28 @@ std::unordered_map<std::string, UserRec> UsersRegistry::snapshot() const {
   return by_fp_;
 }
 
+std::unordered_map<
+    std::string,
+    std::size_t
+> UsersRegistry::home_node_assignment_counts() const {
+  std::lock_guard<std::mutex> lk(mu_);
+
+  std::unordered_map<
+      std::string,
+      std::size_t
+  > counts;
+
+  for (const auto& entry : by_fp_) {
+    const std::string& home_node =
+        entry.second.home_node;
+
+    if (!home_node.empty()) {
+      ++counts[home_node];
+    }
+  }
+
+  return counts;
+}
+
+
 } // namespace pqnas

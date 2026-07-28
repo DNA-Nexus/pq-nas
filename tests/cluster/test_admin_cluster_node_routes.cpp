@@ -8,8 +8,11 @@
 
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -125,10 +128,23 @@ int main() {
 
     std::vector<pqnas::AuditEvent> audits;
 
+    std::unordered_map<
+        std::string,
+        std::size_t
+    > assigned_user_counts;
+
     pqnas::cluster::AdminClusterNodeRoutesContext
         context;
 
     context.registry = &registry;
+
+    context.placement_mutex =
+        std::make_shared<std::mutex>();
+
+    context.assigned_user_counts =
+        [&]() {
+            return assigned_user_counts;
+        };
 
     context.require_admin_auth =
         [&](
@@ -524,6 +540,40 @@ int main() {
             "list should expose Director health state"
         );
     }
+
+    assigned_user_counts["node-01"] = 2;
+
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_delete(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        expect(
+            response.status == 409 &&
+            body["assigned_users"] == 2,
+            "assigned node delete should return 409"
+        );
+
+        expect(
+            registry.get("node-01").has_value(),
+            "assigned node must remain registered"
+        );
+    }
+
+    assigned_user_counts.erase("node-01");
 
     {
         httplib::Request request =

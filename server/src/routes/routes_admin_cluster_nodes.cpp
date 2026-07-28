@@ -10,6 +10,7 @@
 #include <initializer_list>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pqnas::cluster {
@@ -24,6 +25,8 @@ bool context_ok(
 ) {
     return
         context.registry &&
+        context.placement_mutex &&
+        static_cast<bool>(context.assigned_user_counts) &&
         static_cast<bool>(context.require_admin_auth) &&
         static_cast<bool>(context.require_same_origin) &&
         static_cast<bool>(context.reply_json) &&
@@ -352,6 +355,31 @@ std::string audit_ip(
     }
 
     return req.remote_addr.substr(0, 128);
+}
+
+bool load_assigned_user_counts(
+    const AdminClusterNodeRoutesContext& context,
+    std::unordered_map<
+        std::string,
+        std::size_t
+    >* counts
+) {
+    if (!counts ||
+        !context.assigned_user_counts) {
+        return false;
+    }
+
+    counts->clear();
+
+    try {
+        *counts =
+            context.assigned_user_counts();
+    } catch (...) {
+        counts->clear();
+        return false;
+    }
+
+    return true;
 }
 
 void audit_mutation(
@@ -948,7 +976,8 @@ void handle_admin_cluster_nodes_update(
             enabled_iterator->get<bool>();
     }
 
-    std::lock_guard<std::mutex> lock(
+    std::scoped_lock lock(
+        *context.placement_mutex,
         g_cluster_node_mutation_mutex
     );
 
@@ -1152,7 +1181,8 @@ void handle_admin_cluster_nodes_delete(
     const std::string node_id =
         node_id_iterator->get<std::string>();
 
-    std::lock_guard<std::mutex> lock(
+    std::scoped_lock lock(
+        *context.placement_mutex,
         g_cluster_node_mutation_mutex
     );
 
@@ -1174,6 +1204,77 @@ void handle_admin_cluster_nodes_delete(
                 {"ok", false},
                 {"error", "not_found"},
                 {"message", "node not found"}
+            }
+        );
+        return;
+    }
+
+    std::unordered_map<
+        std::string,
+        std::size_t
+    > assigned_user_counts;
+
+    if (!load_assigned_user_counts(
+            context,
+            &assigned_user_counts)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.delete",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {
+                    "message",
+                    "failed to count assigned users"
+                }
+            }
+        );
+        return;
+    }
+
+    const auto assigned_iterator =
+        assigned_user_counts.find(node_id);
+
+    const std::size_t assigned_users =
+        assigned_iterator ==
+            assigned_user_counts.end()
+                ? 0
+                : assigned_iterator->second;
+
+    if (assigned_users > 0) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.delete",
+            node_id,
+            "fail"
+        );
+
+        // Security: return only the aggregate count, never user fingerprints.
+        reply_json_local(
+            context,
+            res,
+            409,
+            json{
+                {"ok", false},
+                {"error", "conflict"},
+                {
+                    "message",
+                    "node still has assigned users"
+                },
+                {"node_id", node_id},
+                {"assigned_users", assigned_users}
             }
         );
         return;

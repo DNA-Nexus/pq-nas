@@ -10481,11 +10481,23 @@ v5.app_pair_build_qr_uri =
     }
 
     if (cluster_config.is_director()) {
+        auto cluster_placement_mutex =
+            std::make_shared<std::mutex>();
+
         pqnas::cluster::AdminClusterNodeRoutesContext
             admin_cluster_node_context;
 
         admin_cluster_node_context.registry =
             &director_node_registry;
+
+        admin_cluster_node_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_cluster_node_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.home_node_assignment_counts();
+            };
 
         admin_cluster_node_context.require_admin_auth =
             [&](const httplib::Request& req,
@@ -10546,6 +10558,9 @@ v5.app_pair_build_qr_uri =
 
         user_placement_service_config.nodes =
             &director_node_registry;
+
+        user_placement_service_config.placement_mutex =
+            cluster_placement_mutex;
 
         user_placement_service_config.users_path =
             users_path;

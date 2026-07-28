@@ -33,6 +33,7 @@ bool UserPlacementService::config_valid() const {
     return
         config_.users &&
         config_.nodes &&
+        config_.placement_mutex &&
         !config_.users_path.empty() &&
         static_cast<bool>(config_.audit_emit);
 }
@@ -126,6 +127,12 @@ UserPlacementResult UserPlacementService::assign(
             "invalid_node_id"
         );
     }
+
+    // Integrity: node eligibility and users.json persistence are
+    // serialized with node disable and delete operations.
+    std::lock_guard<std::mutex> placement_lock(
+        *config_.placement_mutex
+    );
 
     const auto user =
         config_.users->get(fingerprint);

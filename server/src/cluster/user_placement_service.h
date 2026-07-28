@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 
 namespace pqnas {
@@ -25,6 +27,11 @@ using UserPlacementAuditEmit =
 struct UserPlacementServiceConfig {
     UsersRegistry* users = nullptr;
     NodeRegistry* nodes = nullptr;
+
+    // Shared with node administration so placement cannot race node
+    // disable or deletion.
+    std::shared_ptr<std::mutex>
+        placement_mutex;
 
     std::string users_path;
     UserPlacementAuditEmit audit_emit;

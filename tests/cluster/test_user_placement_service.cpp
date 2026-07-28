@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -170,6 +172,8 @@ int main() {
 
     config.users = &users;
     config.nodes = &nodes;
+    config.placement_mutex =
+        std::make_shared<std::mutex>();
     config.users_path =
         users_path.string();
 
@@ -252,6 +256,15 @@ int main() {
         offline_node.home_node ==
             "node-03",
         "enabled but offline node should remain a valid target"
+    );
+
+    const auto assignment_counts =
+        users.home_node_assignment_counts();
+
+    expect(
+        assignment_counts.size() == 1 &&
+        assignment_counts.at("node-03") == 1,
+        "assignment counts should expose only aggregate node references"
     );
 
     const auto disabled_node =
