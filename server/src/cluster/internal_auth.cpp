@@ -364,4 +364,66 @@ bool verify_internal_bearer_authorization(
     ) == 0;
 }
 
+bool make_internal_bearer_authorization(
+    const InternalAuthCredential& credential,
+    std::string* out
+) {
+    if (!out) {
+        return false;
+    }
+
+    out->clear();
+
+    if (!credential.configured_) {
+        return false;
+    }
+
+    std::array<
+        char,
+        sodium_base64_ENCODED_LEN(
+            kInternalAuthSecretBytes,
+            sodium_base64_VARIANT_URLSAFE_NO_PADDING
+        )
+    > encoded{};
+
+    const char* result = sodium_bin2base64(
+        encoded.data(),
+        encoded.size(),
+        credential.secret_.data(),
+        credential.secret_.size(),
+        sodium_base64_VARIANT_URLSAFE_NO_PADDING
+    );
+
+    const bool valid =
+        result != nullptr &&
+        std::strlen(encoded.data()) ==
+            kInternalAuthTokenChars;
+
+    if (valid) {
+        out->reserve(
+            sizeof("Bearer ") - 1 +
+            kInternalAuthTokenChars
+        );
+
+        out->assign("Bearer ");
+        out->append(
+            encoded.data(),
+            kInternalAuthTokenChars
+        );
+    }
+
+    // Security: remove the temporary encoded credential regardless of whether
+    // encoding or output construction succeeded.
+    sodium_memzero(
+        encoded.data(),
+        encoded.size()
+    );
+
+    if (!valid) {
+        out->clear();
+    }
+
+    return valid;
+}
+
 } // namespace pqnas::cluster

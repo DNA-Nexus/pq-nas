@@ -480,6 +480,138 @@ int main() {
         );
     }
 
+    {
+        const fs::path offline_path =
+            test_directory /
+            "offline_registry.json";
+
+        pqnas::cluster::NodeRegistry
+            offline_registry;
+
+        error.clear();
+
+        expect(
+            offline_registry.load(
+                offline_path.string(),
+                &error
+            ),
+            "load offline test registry: " + error
+        );
+
+        error.clear();
+
+        expect(
+            offline_registry.upsert_configured_node(
+                "node-offline",
+                "https://node-offline.internal",
+                true,
+                "2026-07-28T07:10:00Z",
+                &error
+            ),
+            "create offline test node: " + error
+        );
+
+        pqnas::cluster::NodeStatusSnapshot
+            online_status;
+
+        online_status.node_id = "node-offline";
+        online_status.hostname = "cellnode-offline";
+        online_status.server_version = "1.2.6";
+        online_status.uptime_s = 500;
+        online_status.storage.total_bytes = 1000;
+        online_status.storage.used_bytes = 400;
+        online_status.storage.free_bytes = 600;
+        online_status.storage.fstype = "ext4";
+        online_status.users.total = 4;
+        online_status.users.enabled = 3;
+        online_status.timestamp =
+            "2026-07-28T07:11:00Z";
+
+        error.clear();
+
+        expect(
+            offline_registry.apply_status(
+                online_status,
+                "2026-07-28T07:11:01Z",
+                &error
+            ),
+            "apply online status before offline transition: " +
+                error
+        );
+
+        const auto online_record =
+            offline_registry.get("node-offline");
+
+        expect(
+            online_record.has_value() &&
+            online_record->health == "online",
+            "heartbeat should first mark node online"
+        );
+
+        error.clear();
+
+        expect(
+            offline_registry.mark_offline(
+                "node-offline",
+                &error
+            ),
+            "mark heartbeat failure offline: " + error
+        );
+
+        const auto offline_record =
+            offline_registry.get("node-offline");
+
+        expect(
+            offline_record.has_value() &&
+            offline_record->health == "offline",
+            "failed heartbeat should mark node offline"
+        );
+
+        expect(
+            offline_record.has_value() &&
+            online_record.has_value() &&
+            offline_record->last_seen_at ==
+                online_record->last_seen_at &&
+            offline_record->hostname ==
+                online_record->hostname &&
+            offline_record->storage_total_bytes ==
+                online_record->storage_total_bytes,
+            "offline transition should preserve last successful status"
+        );
+
+        error.clear();
+
+        expect(
+            offline_registry.mark_offline(
+                "node-offline",
+                &error
+            ),
+            "repeated offline transition should be idempotent"
+        );
+
+        pqnas::cluster::NodeRegistry
+            offline_reloaded;
+
+        error.clear();
+
+        expect(
+            offline_reloaded.load(
+                offline_path.string(),
+                &error
+            ),
+            "reload persisted offline registry: " + error
+        );
+
+        const auto persisted_offline =
+            offline_reloaded.get("node-offline");
+
+        expect(
+            persisted_offline.has_value() &&
+            persisted_offline->health == "offline",
+            "offline state should persist"
+        );
+    }
+
     const auto before_failed_load =
         reloaded.snapshot();
 

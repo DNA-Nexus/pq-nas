@@ -75,6 +75,13 @@ public:
         std::string* err
     );
 
+    // Marks an enabled, preconfigured node offline after a failed heartbeat.
+    // Existing last-seen and status data are preserved for diagnostics.
+    bool mark_offline(
+        const std::string& node_id,
+        std::string* err
+    );
+
     // Status can update only a preconfigured, enabled node. A heartbeat must
     // never create a new trusted node implicitly.
     bool apply_status(

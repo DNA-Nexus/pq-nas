@@ -266,7 +266,32 @@ int main() {
         "malformed credential must be rejected"
     );
 
+    std::string outbound_authorization;
+
+    expect(
+        pqnas::cluster::make_internal_bearer_authorization(
+            credential,
+            &outbound_authorization
+        ),
+        "configured credential should build outbound bearer authorization"
+    );
+
+    expect(
+        outbound_authorization == "Bearer " + token,
+        "outbound bearer authorization should match loaded token"
+    );
+
+    outbound_authorization.clear();
     credential.clear();
+
+    expect(
+        !pqnas::cluster::make_internal_bearer_authorization(
+            credential,
+            &outbound_authorization
+        ) &&
+        outbound_authorization.empty(),
+        "cleared credential must not build outbound authorization"
+    );
 
     expect(
         !pqnas::cluster::verify_internal_bearer_authorization(

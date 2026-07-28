@@ -366,4 +366,411 @@ nlohmann::json node_status_to_json(
     };
 }
 
+
+namespace {
+
+void heartbeat_parse_error(
+    std::string* err,
+    const std::string& message
+) {
+    if (err) {
+        *err = message;
+    }
+}
+
+bool heartbeat_has_only_keys(
+    const nlohmann::json& value,
+    std::initializer_list<const char*> allowed
+) {
+    if (!value.is_object()) {
+        return false;
+    }
+
+    for (auto iterator = value.begin();
+         iterator != value.end();
+         ++iterator) {
+        bool found = false;
+
+        for (const char* allowed_key : allowed) {
+            if (iterator.key() == allowed_key) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool heartbeat_json_string(
+    const nlohmann::json& value,
+    const char* key,
+    std::string* out
+) {
+    if (!out) {
+        return false;
+    }
+
+    const auto iterator = value.find(key);
+
+    if (iterator == value.end() ||
+        !iterator->is_string()) {
+        return false;
+    }
+
+    *out = iterator->get<std::string>();
+    return true;
+}
+
+bool heartbeat_json_u64(
+    const nlohmann::json& value,
+    const char* key,
+    std::uint64_t* out
+) {
+    if (!out) {
+        return false;
+    }
+
+    const auto iterator = value.find(key);
+
+    if (iterator == value.end()) {
+        return false;
+    }
+
+    try {
+        if (iterator->is_number_unsigned()) {
+            *out = iterator->get<std::uint64_t>();
+            return true;
+        }
+
+        if (iterator->is_number_integer()) {
+            const std::int64_t signed_value =
+                iterator->get<std::int64_t>();
+
+            if (signed_value < 0) {
+                return false;
+            }
+
+            *out = static_cast<std::uint64_t>(
+                signed_value
+            );
+
+            return true;
+        }
+    } catch (...) {
+        return false;
+    }
+
+    return false;
+}
+
+bool heartbeat_valid_node_id(
+    const std::string& value
+) {
+    if (value.empty() || value.size() > 64) {
+        return false;
+    }
+
+    for (std::size_t index = 0;
+         index < value.size();
+         ++index) {
+        const unsigned char ch =
+            static_cast<unsigned char>(value[index]);
+
+        const bool alphanumeric =
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9');
+
+        if (index == 0) {
+            if (!alphanumeric) {
+                return false;
+            }
+
+            continue;
+        }
+
+        if (!alphanumeric &&
+            ch != '-' &&
+            ch != '_' &&
+            ch != '.') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool heartbeat_safe_text(
+    const std::string& value,
+    std::size_t maximum_size,
+    bool allow_empty
+) {
+    if ((!allow_empty && value.empty()) ||
+        value.size() > maximum_size) {
+        return false;
+    }
+
+    for (unsigned char ch : value) {
+        if (ch < 0x20 || ch > 0x7e) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool heartbeat_safe_fstype(
+    const std::string& value
+) {
+    if (value.empty() || value.size() > 64) {
+        return false;
+    }
+
+    for (unsigned char ch : value) {
+        const bool alphanumeric =
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9');
+
+        if (!alphanumeric &&
+            ch != '-' &&
+            ch != '_' &&
+            ch != '.' &&
+            ch != '+') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool heartbeat_valid_iso_utc_seconds(
+    const std::string& value
+) {
+    if (value.size() != 20 ||
+        value[4] != '-' ||
+        value[7] != '-' ||
+        value[10] != 'T' ||
+        value[13] != ':' ||
+        value[16] != ':' ||
+        value[19] != 'Z') {
+        return false;
+    }
+
+    constexpr std::size_t digit_positions[] = {
+        0, 1, 2, 3,
+        5, 6,
+        8, 9,
+        11, 12,
+        14, 15,
+        17, 18
+    };
+
+    for (std::size_t position : digit_positions) {
+        const char ch = value[position];
+
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+    }
+
+    const auto two_digits =
+        [&](std::size_t position) {
+            return
+                (value[position] - '0') * 10 +
+                (value[position + 1] - '0');
+        };
+
+    const int month = two_digits(5);
+    const int day = two_digits(8);
+    const int hour = two_digits(11);
+    const int minute = two_digits(14);
+    const int second = two_digits(17);
+
+    return
+        month >= 1 && month <= 12 &&
+        day >= 1 && day <= 31 &&
+        hour >= 0 && hour <= 23 &&
+        minute >= 0 && minute <= 59 &&
+        second >= 0 && second <= 59;
+}
+
+} // namespace
+
+bool parse_node_status_json(
+    const nlohmann::json& value,
+    NodeStatusSnapshot* out,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!out) {
+        heartbeat_parse_error(
+            err,
+            "missing node status output"
+        );
+        return false;
+    }
+
+    if (!heartbeat_has_only_keys(
+            value,
+            {
+                "ok",
+                "protocol_version",
+                "node_id",
+                "role",
+                "hostname",
+                "server_version",
+                "uptime_s",
+                "storage",
+                "users",
+                "timestamp"
+            })) {
+        heartbeat_parse_error(
+            err,
+            "invalid node status object"
+        );
+        return false;
+    }
+
+    const auto ok_iterator = value.find("ok");
+    const auto protocol_iterator =
+        value.find("protocol_version");
+    const auto role_iterator = value.find("role");
+    const auto storage_iterator =
+        value.find("storage");
+    const auto users_iterator =
+        value.find("users");
+
+    if (ok_iterator == value.end() ||
+        !ok_iterator->is_boolean() ||
+        !ok_iterator->get<bool>() ||
+        protocol_iterator == value.end() ||
+        !protocol_iterator->is_number_integer() ||
+        protocol_iterator->get<int>() !=
+            kNodeStatusProtocolVersion ||
+        role_iterator == value.end() ||
+        !role_iterator->is_string() ||
+        role_iterator->get<std::string>() != "node" ||
+        storage_iterator == value.end() ||
+        !heartbeat_has_only_keys(
+            *storage_iterator,
+            {
+                "total_bytes",
+                "used_bytes",
+                "free_bytes",
+                "fstype"
+            }) ||
+        users_iterator == value.end() ||
+        !heartbeat_has_only_keys(
+            *users_iterator,
+            {
+                "total",
+                "enabled"
+            })) {
+        heartbeat_parse_error(
+            err,
+            "invalid node status protocol"
+        );
+        return false;
+    }
+
+    NodeStatusSnapshot candidate;
+
+    if (!heartbeat_json_string(
+            value,
+            "node_id",
+            &candidate.node_id) ||
+        !heartbeat_valid_node_id(
+            candidate.node_id) ||
+        !heartbeat_json_string(
+            value,
+            "hostname",
+            &candidate.hostname) ||
+        !heartbeat_safe_text(
+            candidate.hostname,
+            253,
+            false) ||
+        !heartbeat_json_string(
+            value,
+            "server_version",
+            &candidate.server_version) ||
+        !heartbeat_safe_text(
+            candidate.server_version,
+            128,
+            false) ||
+        !heartbeat_json_u64(
+            value,
+            "uptime_s",
+            &candidate.uptime_s) ||
+        !heartbeat_json_string(
+            value,
+            "timestamp",
+            &candidate.timestamp) ||
+        !heartbeat_valid_iso_utc_seconds(
+            candidate.timestamp)) {
+        heartbeat_parse_error(
+            err,
+            "invalid node status metadata"
+        );
+        return false;
+    }
+
+    if (!heartbeat_json_u64(
+            *storage_iterator,
+            "total_bytes",
+            &candidate.storage.total_bytes) ||
+        !heartbeat_json_u64(
+            *storage_iterator,
+            "used_bytes",
+            &candidate.storage.used_bytes) ||
+        !heartbeat_json_u64(
+            *storage_iterator,
+            "free_bytes",
+            &candidate.storage.free_bytes) ||
+        !heartbeat_json_string(
+            *storage_iterator,
+            "fstype",
+            &candidate.storage.fstype) ||
+        !heartbeat_safe_fstype(
+            candidate.storage.fstype) ||
+        candidate.storage.used_bytes >
+            candidate.storage.total_bytes ||
+        candidate.storage.free_bytes >
+            candidate.storage.total_bytes) {
+        heartbeat_parse_error(
+            err,
+            "invalid node storage status"
+        );
+        return false;
+    }
+
+    if (!heartbeat_json_u64(
+            *users_iterator,
+            "total",
+            &candidate.users.total) ||
+        !heartbeat_json_u64(
+            *users_iterator,
+            "enabled",
+            &candidate.users.enabled) ||
+        candidate.users.enabled >
+            candidate.users.total) {
+        heartbeat_parse_error(
+            err,
+            "invalid node user status"
+        );
+        return false;
+    }
+
+    *out = std::move(candidate);
+    return true;
+}
+
 } // namespace pqnas::cluster

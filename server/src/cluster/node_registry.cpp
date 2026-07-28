@@ -1434,6 +1434,54 @@ bool NodeRegistry::erase(
     return true;
 }
 
+bool NodeRegistry::mark_offline(
+    const std::string& node_id,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!valid_node_id(node_id)) {
+        set_error(err, "invalid node ID");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto candidate = nodes_;
+    auto iterator = candidate.find(node_id);
+
+    if (iterator == candidate.end()) {
+        set_error(err, "node not found");
+        return false;
+    }
+
+    NodeRegistryRecord& record =
+        iterator->second;
+
+    if (!record.enabled) {
+        set_error(
+            err,
+            "disabled node cannot be marked offline"
+        );
+        return false;
+    }
+
+    if (record.health == "offline") {
+        return true;
+    }
+
+    record.health = "offline";
+
+    if (!persist_candidate_locked(candidate, err)) {
+        return false;
+    }
+
+    nodes_ = std::move(candidate);
+    return true;
+}
+
 bool NodeRegistry::apply_status(
     const NodeStatusSnapshot& status,
     const std::string& received_at,

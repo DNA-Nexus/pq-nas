@@ -55,5 +55,13 @@ nlohmann::json node_status_to_json(
     const NodeStatusSnapshot& status
 );
 
+// Strictly parses a node heartbeat response. Unknown fields, wrong protocol
+// versions, wrong roles, invalid counters and unsafe text are rejected.
+bool parse_node_status_json(
+    const nlohmann::json& value,
+    NodeStatusSnapshot* out,
+    std::string* err
+);
+
 } // namespace cluster
 } // namespace pqnas

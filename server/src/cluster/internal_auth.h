@@ -35,6 +35,11 @@ private:
         const InternalAuthCredential&
     );
 
+    friend bool make_internal_bearer_authorization(
+        const InternalAuthCredential&,
+        std::string*
+    );
+
     std::array<unsigned char, kInternalAuthSecretBytes> secret_{};
     bool configured_ = false;
 };
@@ -59,6 +64,17 @@ bool load_internal_auth_credential_file(
 bool verify_internal_bearer_authorization(
     const std::string& authorization_header,
     const InternalAuthCredential& credential
+);
+
+// Builds the exact Authorization value used for Director-to-node requests.
+//
+// Security:
+// - returns false for an unconfigured credential
+// - exposes the token only through this narrow protocol helper
+// - callers must keep the returned string short-lived and must never log it
+bool make_internal_bearer_authorization(
+    const InternalAuthCredential& credential,
+    std::string* out
 );
 
 } // namespace pqnas::cluster
