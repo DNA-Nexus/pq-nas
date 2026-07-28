@@ -202,6 +202,22 @@ const char* server_role_name(ServerRole role) {
     return "unknown";
 }
 
+const char* default_listen_host_for_role(ServerRole role) {
+    switch (role) {
+        case ServerRole::Standalone:
+            return "0.0.0.0";
+
+        case ServerRole::Director:
+        case ServerRole::Node:
+            // Security: cluster credentials and internal APIs must not be
+            // exposed directly through the application's plaintext listener.
+            return "127.0.0.1";
+    }
+
+    // Security: unknown future values fail closed.
+    return "127.0.0.1";
+}
+
 bool parse_server_role_config(
     const std::string& raw_role,
     const std::string& raw_node_id,

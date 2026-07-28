@@ -23,6 +23,10 @@ struct ServerRoleConfig {
 
 const char* server_role_name(ServerRole role);
 
+// Standalone retains the historical public listener. Cluster roles bind
+// only to loopback so a local TLS reverse proxy controls network exposure.
+const char* default_listen_host_for_role(ServerRole role);
+
 // Parse explicit values separately from getenv() so validation can be tested
 // without mutating process-wide environment state.
 bool parse_server_role_config(

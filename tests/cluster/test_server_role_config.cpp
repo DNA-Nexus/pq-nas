@@ -12,6 +12,12 @@ void fail(const std::string& message) {
     std::cerr << "FAIL: " << message << '\n';
 }
 
+void expect(bool condition, const std::string& message) {
+    if (!condition) {
+        fail(message);
+    }
+}
+
 void expect_ok(
     const std::string& role,
     const std::string& node_id,
@@ -85,6 +91,33 @@ int main() {
 
     const std::string credential =
         "/etc/pqnas/cluster-credential";
+
+    expect(
+        std::string(
+            pqnas::cluster::default_listen_host_for_role(
+                ServerRole::Standalone
+            )
+        ) == "0.0.0.0",
+        "standalone listener should remain public by default"
+    );
+
+    expect(
+        std::string(
+            pqnas::cluster::default_listen_host_for_role(
+                ServerRole::Director
+            )
+        ) == "127.0.0.1",
+        "Director listener should default to loopback"
+    );
+
+    expect(
+        std::string(
+            pqnas::cluster::default_listen_host_for_role(
+                ServerRole::Node
+            )
+        ) == "127.0.0.1",
+        "node listener should default to loopback"
+    );
 
     expect_ok("", "", "", "", ServerRole::Standalone);
     expect_ok("standalone", "", "", "", ServerRole::Standalone);

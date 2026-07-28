@@ -13700,8 +13700,19 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
         }
         std::cerr << std::endl;
     }
-	std::cerr << "PQ-NAS server listening on 0.0.0.0:" << LISTEN_PORT << std::endl;
-	srv.listen("0.0.0.0", LISTEN_PORT);
+	const char* listen_host =
+	    pqnas::cluster::default_listen_host_for_role(
+	        cluster_config.role
+	    );
+
+	std::cerr
+	    << "PQ-NAS server listening on "
+	    << listen_host
+	    << ":"
+	    << LISTEN_PORT
+	    << std::endl;
+
+	srv.listen(listen_host, LISTEN_PORT);
 
 	// ---- Shutdown sequence ----
 
