@@ -371,6 +371,115 @@ int main() {
         "disabled node must reject heartbeat updates"
     );
 
+    {
+        const fs::path rollback_directory =
+            test_directory / "rollback";
+
+        const fs::path rollback_registry_path =
+            rollback_directory / "node_registry.json";
+
+        pqnas::cluster::NodeRegistry
+            rollback_registry;
+
+        error.clear();
+
+        expect(
+            rollback_registry.load(
+                rollback_registry_path.string(),
+                &error
+            ),
+            "load empty rollback registry: " + error
+        );
+
+        error.clear();
+
+        expect(
+            rollback_registry.upsert_configured_node(
+                "node-rollback",
+                "https://node-rollback.internal",
+                true,
+                "2026-07-28T06:08:00Z",
+                &error
+            ),
+            "create rollback test node: " + error
+        );
+
+        const auto before_failed_write =
+            rollback_registry.snapshot();
+
+        std::error_code rollback_error;
+
+        const bool removed_registry =
+            fs::remove(
+                rollback_registry_path,
+                rollback_error
+            );
+
+        expect(
+            removed_registry && !rollback_error,
+            "remove rollback registry file"
+        );
+
+        rollback_error.clear();
+
+        const bool removed_directory =
+            fs::remove(
+                rollback_directory,
+                rollback_error
+            );
+
+        expect(
+            removed_directory && !rollback_error,
+            "remove rollback registry directory"
+        );
+
+        // Replace the expected directory with a regular file so the next
+        // persistence operation fails deterministically without relying on
+        // filesystem permissions or the test process UID.
+        expect(
+            write_text(
+                rollback_directory,
+                "not a directory\n"
+            ),
+            "create deterministic persistence blocker"
+        );
+
+        error.clear();
+
+        expect(
+            !rollback_registry.set_enabled(
+                "node-rollback",
+                false,
+                "2026-07-28T06:09:00Z",
+                &error
+            ),
+            "failed persistence must reject mutation"
+        );
+
+        const auto after_failed_write =
+            rollback_registry.snapshot();
+
+        expect(
+            after_failed_write.size() ==
+                before_failed_write.size(),
+            "failed persistence must preserve registry size"
+        );
+
+        expect(
+            after_failed_write.size() == 1 &&
+            before_failed_write.size() == 1 &&
+            after_failed_write[0].node_id ==
+                before_failed_write[0].node_id &&
+            after_failed_write[0].enabled ==
+                before_failed_write[0].enabled &&
+            after_failed_write[0].health ==
+                before_failed_write[0].health &&
+            after_failed_write[0].updated_at ==
+                before_failed_write[0].updated_at,
+            "failed persistence must preserve in-memory record"
+        );
+    }
+
     const auto before_failed_load =
         reloaded.snapshot();
 
