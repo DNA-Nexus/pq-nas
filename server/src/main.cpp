@@ -130,6 +130,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_registry.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
+#include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
@@ -9209,6 +9210,9 @@ int main()
 
     pqnas::cluster::NodeRegistry director_node_registry;
 
+    pqnas::cluster::UserPlacementPolicyRegistry
+        director_placement_policy_registry;
+
     if (cluster_config.is_director()) {
         // Security: the Director registry is trusted control-plane state.
         // Derive its fixed filename from the validated config root instead of
@@ -9234,6 +9238,40 @@ int main()
         std::cerr
             << "[cluster] Director node registry loaded nodes="
             << director_node_registry.snapshot().size()
+            << std::endl;
+
+        // Security: placement policies are trusted control-plane state.
+        // Use a fixed filename below the validated configuration root rather
+        // than accepting an independent environment-controlled file path.
+        const std::filesystem::path
+            placement_policy_registry_path =
+                pqnas::config_root_path() /
+                "placement_policies.json";
+
+        std::string placement_policy_registry_error;
+
+        if (!director_placement_policy_registry.load(
+                placement_policy_registry_path.string(),
+                &placement_policy_registry_error)) {
+            // Security: fail closed. Starting with an incomplete or
+            // attacker-controlled policy view could place protected customer
+            // groups outside their required backup or isolation node set.
+            std::cerr
+                << "[cluster] FATAL: Director placement policy "
+                   "registry load failed: "
+                << placement_policy_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        // Security: log only aggregate configuration state, never policy
+        // contents, node membership or the registry filesystem path.
+        std::cerr
+            << "[cluster] Director placement policy registry "
+               "loaded policies="
+            << director_placement_policy_registry
+                   .snapshot()
+                   .size()
             << std::endl;
     }
 
