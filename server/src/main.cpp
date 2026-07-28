@@ -128,6 +128,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_status.h"
 #include "cluster/node_registry.h"
 #include "routes/routes_internal_node_status.h"
+#include "routes/routes_admin_cluster_nodes.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -10416,6 +10417,65 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] internal node status route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_director()) {
+        pqnas::cluster::AdminClusterNodeRoutesContext
+            admin_cluster_node_context;
+
+        admin_cluster_node_context.registry =
+            &director_node_registry;
+
+        admin_cluster_node_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_cluster_node_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_cluster_node_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        admin_cluster_node_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_cluster_node_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_node_routes(
+                srv,
+                admin_cluster_node_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin node routes registered"
             << std::endl;
     }
 

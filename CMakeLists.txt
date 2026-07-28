@@ -190,6 +190,8 @@ add_executable(pqnas_server
         server/src/cluster/node_registry.h
         server/src/routes/routes_internal_node_status.cpp
         server/src/routes/routes_internal_node_status.h
+        server/src/routes/routes_admin_cluster_nodes.cpp
+        server/src/routes/routes_admin_cluster_nodes.h
         server/src/routes/routes_storage_raid.cpp
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
@@ -711,6 +713,32 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_node_routes
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_node_routes
+        tests/cluster/test_admin_cluster_node_routes.cpp
+        server/src/routes/routes_admin_cluster_nodes.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(test_admin_cluster_node_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_admin_cluster_node_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_node_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_node_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_node_routes
 )
 
 
