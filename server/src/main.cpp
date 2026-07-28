@@ -126,6 +126,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/server_role.h"
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
+#include "cluster/node_registry.h"
 #include "routes/routes_internal_node_status.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
@@ -9199,6 +9200,36 @@ int main()
     }
 
     std::cerr << std::endl;
+
+    pqnas::cluster::NodeRegistry director_node_registry;
+
+    if (cluster_config.is_director()) {
+        // Security: the Director registry is trusted control-plane state.
+        // Derive its fixed filename from the validated config root instead of
+        // accepting a separate per-file environment override.
+        const std::filesystem::path node_registry_path =
+            pqnas::config_root_path() / "node_registry.json";
+
+        std::string node_registry_error;
+
+        if (!director_node_registry.load(
+                node_registry_path.string(),
+                &node_registry_error)) {
+            // Security: fail closed. A malformed, symlinked, incorrectly owned,
+            // or otherwise unsafe registry must not start a Director with an
+            // incomplete or attacker-controlled node view.
+            std::cerr
+                << "[cluster] FATAL: Director node registry load failed: "
+                << node_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director node registry loaded nodes="
+            << director_node_registry.snapshot().size()
+            << std::endl;
+    }
 
     if (!load_env_key("PQNAS_SERVER_PK_B64URL", SERVER_PK, 32) ||
         !load_env_key("PQNAS_SERVER_SK_B64URL", SERVER_SK, 64) ||
