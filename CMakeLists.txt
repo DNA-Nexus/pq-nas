@@ -724,6 +724,7 @@ target_sources(pqnas_server PRIVATE
         server/src/cluster/user_placement_service.cpp
         server/src/cluster/user_placement_selector.cpp
         server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
         server/src/routes/routes_admin_cluster_user_placement.cpp
 )
 
@@ -831,6 +832,32 @@ add_custom_target(run_test_user_placement_policy
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_policy"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_user_placement_policy
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_policy_registry
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_policy_registry
+        tests/cluster/test_user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_policy_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_user_placement_policy_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_policy_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_policy_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_policy_registry
 )
 
 
