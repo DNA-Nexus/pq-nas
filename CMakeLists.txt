@@ -720,6 +720,40 @@ add_custom_target(run_test_opaque_runtime_paths
 )
 
 
+target_sources(pqnas_server PRIVATE
+        server/src/cluster/user_placement_service.cpp
+)
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_service
+        tests/cluster/test_user_placement_service.cpp
+        server/src/cluster/user_placement_service.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_placement_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_placement_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_service
+)
+
+
 # -----------------------------------------------------------------------------
 # Test: test_user_home_node
 # -----------------------------------------------------------------------------

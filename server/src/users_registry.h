@@ -87,6 +87,16 @@ public:
         const std::string& home_node
     );
 
+    // Atomically persists a placement change before committing it to memory.
+    // A failed save preserves the previous in-memory placement.
+    bool set_home_node_persisted(
+        const std::string& fp_hex,
+        const std::string& home_node,
+        const std::string& path,
+        bool* changed,
+        std::string* error
+    );
+
     bool touch_last_seen(const std::string& fp_hex, const std::string& now_iso);
     bool erase(const std::string& fp_hex);
 
@@ -94,6 +104,11 @@ public:
     std::unordered_map<std::string, UserRec> snapshot() const;
 
 private:
+    // Caller must hold mu_.
+    bool save_locked(
+        const std::string& path
+    ) const;
+
     mutable std::mutex mu_;
     std::unordered_map<std::string, UserRec> by_fp_;
 };

@@ -357,9 +357,16 @@ static std::size_t users_registry_existing_user_count_for_guard(const std::files
   return 0;
 }
 
-bool UsersRegistry::save(const std::string& path) const {
+bool UsersRegistry::save(
+    const std::string& path
+) const {
   std::lock_guard<std::mutex> lk(mu_);
+  return save_locked(path);
+}
 
+bool UsersRegistry::save_locked(
+    const std::string& path
+) const {
   /*
    * Safety guard:
    *
@@ -650,9 +657,9 @@ bool UsersRegistry::set_name_notes(const std::string& fp_hex, const std::string&
 }
 
 /*
-touch_last_seen()
-  - Updates last_seen timestamp for activity tracking / UI.
-  - Caller should pass an ISO8601 string consistent with the rest of PQ-NAS.
+set_home_node()
+  - Updates cluster placement metadata in memory.
+  - The caller remains responsible for persistence and NodeRegistry policy.
 */
 bool UsersRegistry::set_home_node(
     const std::string& fp_hex,
@@ -673,7 +680,80 @@ bool UsersRegistry::set_home_node(
   return true;
 }
 
+bool UsersRegistry::set_home_node_persisted(
+    const std::string& fp_hex,
+    const std::string& home_node,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
 
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  if (home_node.empty() ||
+      !valid_user_home_node_id(home_node)) {
+    if (error) *error = "invalid home node ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  if (iterator->second.home_node == home_node) {
+    return true;
+  }
+
+  const std::string previous_home_node =
+      iterator->second.home_node;
+
+  iterator->second.home_node = home_node;
+
+  // Security: persist while holding the registry mutation lock. If the
+  // atomic file replacement fails, restore the previous in-memory value.
+  if (!save_locked(path)) {
+    iterator->second.home_node =
+        previous_home_node;
+
+    if (error) {
+      *error = "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
+/*
+touch_last_seen()
+  - Updates last_seen timestamp for activity tracking / UI.
+  - Caller should pass an ISO8601 string consistent with the rest of PQ-NAS.
+*/
 bool UsersRegistry::touch_last_seen(const std::string& fp_hex, const std::string& now_iso) {
   std::lock_guard<std::mutex> lk(mu_);
   auto it = by_fp_.find(fp_hex);
