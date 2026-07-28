@@ -125,6 +125,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "runtime_paths.h"
 #include "cluster/server_role.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_status.h"
+#include "routes/routes_internal_node_status.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -10328,6 +10330,63 @@ v5.app_pair_build_qr_uri =
 	// (leave v5.sign_token_v4_ed25519 unset for now; we’ll wire once v5 verify uses it)
 
     register_routes_v5(srv, v5);
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::InternalNodeStatusRoutesContext
+            internal_node_status_context;
+
+        internal_node_status_context.credential =
+            &cluster_credential;
+
+        internal_node_status_context.build_status_json =
+            [&](nlohmann::json* out,
+                std::string* error) -> bool {
+                if (!out) {
+                    if (error) {
+                        *error =
+                            "missing status output";
+                    }
+                    return false;
+                }
+
+                pqnas::cluster::NodeStatusSnapshot snapshot;
+
+                if (!pqnas::cluster::
+                        collect_node_status_snapshot(
+                            cluster_config.node_id,
+                            PQNAS_VERSION,
+                            pqnas::data_root_dir(),
+                            users,
+                            &snapshot,
+                            error
+                        )) {
+                    return false;
+                }
+
+                *out =
+                    pqnas::cluster::
+                        node_status_to_json(snapshot);
+
+                return true;
+            };
+
+        internal_node_status_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(response, status, body);
+            };
+
+        pqnas::cluster::
+            register_internal_node_status_routes(
+                srv,
+                internal_node_status_context
+            );
+
+        std::cerr
+            << "[cluster] internal node status route registered"
+            << std::endl;
+    }
 
     pqnas::ActivityRoutesDeps activity_deps;
     activity_deps.users = &users;

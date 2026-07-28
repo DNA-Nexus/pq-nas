@@ -186,6 +186,8 @@ add_executable(pqnas_server
         server/src/cluster/internal_auth.h
         server/src/cluster/node_status.cpp
         server/src/cluster/node_status.h
+        server/src/routes/routes_internal_node_status.cpp
+        server/src/routes/routes_internal_node_status.h
         server/src/routes/routes_storage_raid.cpp
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
@@ -707,6 +709,40 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_internal_node_status_route
+# -----------------------------------------------------------------------------
+add_executable(test_internal_node_status_route
+        tests/cluster/test_internal_node_status_route.cpp
+        server/src/routes/routes_internal_node_status.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_internal_node_status_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_internal_node_status_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_internal_node_status_route PRIVATE
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_internal_node_status_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_internal_node_status_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_node_status_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_node_status_route
 )
 
 
