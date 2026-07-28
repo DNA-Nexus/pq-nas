@@ -721,6 +721,34 @@ add_custom_target(run_test_opaque_runtime_paths
 
 
 # -----------------------------------------------------------------------------
+# Test: test_user_home_node
+# -----------------------------------------------------------------------------
+add_executable(test_user_home_node
+        tests/cluster/test_user_home_node.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_home_node PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_home_node PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_home_node PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_home_node
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_home_node"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_home_node
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_heartbeat_worker
 # -----------------------------------------------------------------------------
 add_executable(test_node_heartbeat_worker

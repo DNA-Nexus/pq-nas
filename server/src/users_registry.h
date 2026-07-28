@@ -8,6 +8,12 @@
 
 namespace pqnas {
 
+// Empty means local/standalone placement. Non-empty values are stable cluster
+// node IDs, never hostnames, URLs, filesystem paths or display labels.
+bool valid_user_home_node_id(
+    const std::string& value
+);
+
 struct UserRec {
     std::string fingerprint;   // hex (identity)
 
@@ -45,6 +51,12 @@ struct UserRec {
     std::string storage_set_at; // ISO-8601 UTC
     std::string storage_set_by; // actor fingerprint (hex)
     std::string storage_pool_id; // "" = default pool
+
+    // Cluster placement metadata.
+    //
+    // ""        = local/standalone user
+    // "node-01" = stable Director-managed node ID
+    std::string home_node;
 };
 
 class UsersRegistry {
@@ -67,6 +79,14 @@ public:
     bool set_status(const std::string& fp_hex, const std::string& status);
     bool set_role(const std::string& fp_hex, const std::string& role);
     bool set_name_notes(const std::string& fp_hex, const std::string& name, const std::string& notes);
+
+    // Updates placement metadata in memory. The caller remains responsible for
+    // validating the node against NodeRegistry and persisting users.json.
+    bool set_home_node(
+        const std::string& fp_hex,
+        const std::string& home_node
+    );
+
     bool touch_last_seen(const std::string& fp_hex, const std::string& now_iso);
     bool erase(const std::string& fp_hex);
 

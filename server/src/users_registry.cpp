@@ -85,6 +85,46 @@ Potential issues to be aware of
 */
 
 
+/*
+valid_user_home_node_id()
+  - Empty means local/standalone placement.
+  - Non-empty values use the same narrow shape as stable cluster node IDs.
+  - Paths, URLs, whitespace and traversal-like values are rejected.
+*/
+bool valid_user_home_node_id(
+    const std::string& value
+) {
+  if (value.empty()) return true;
+  if (value.size() > 64) return false;
+
+  for (std::size_t index = 0;
+       index < value.size();
+       ++index) {
+    const unsigned char ch =
+        static_cast<unsigned char>(value[index]);
+
+    const bool alphanumeric =
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9');
+
+    if (index == 0) {
+      if (!alphanumeric) return false;
+      continue;
+    }
+
+    if (!alphanumeric &&
+        ch != '-' &&
+        ch != '_' &&
+        ch != '.') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
 //------------------------------------------------------------------------------
 // Normalization helpers (schema firewall)
 //------------------------------------------------------------------------------
@@ -261,6 +301,22 @@ bool UsersRegistry::load(const std::string& path) {
     u.storage_set_at = it.value("storage_set_at", "");
     u.storage_set_by = it.value("storage_set_by", "");
 
+    // Missing home_node is the backward-compatible standalone representation.
+    // Security: malformed non-empty placement metadata fails registry loading
+    // rather than silently becoming a local user on a Director.
+    if (it.contains("home_node")) {
+      if (!it["home_node"].is_string()) return false;
+
+      u.home_node =
+          it["home_node"].get<std::string>();
+
+      if (!valid_user_home_node_id(u.home_node)) {
+        return false;
+      }
+    } else {
+      u.home_node = "";
+    }
+
     by_fp_[u.fingerprint] = u;
   }
 
@@ -342,6 +398,13 @@ bool UsersRegistry::save(const std::string& path) const {
   for (const auto& k : keys) {
     const auto& u = by_fp_.at(k);
 
+    // Security: never serialize path-, URL- or traversal-like placement data.
+    // Invalid in-memory state must fail closed instead of being normalized into
+    // an unintended local placement.
+    if (!valid_user_home_node_id(u.home_node)) {
+      return false;
+    }
+
     json app_prefs = json::object();
     try {
       if (!u.app_prefs_json.empty()) {
@@ -378,6 +441,10 @@ bool UsersRegistry::save(const std::string& path) const {
         {"created_at", u.vault_master_recovery_created_at < 0 ? 0 : u.vault_master_recovery_created_at},
         {"label", u.vault_master_recovery_label}
       }},
+
+      // Cluster placement metadata. Empty remains the explicit
+      // local/standalone representation.
+      {"home_node", u.home_node},
 
       // New: storage metadata
       {"storage_state", norm_storage_state(u.storage_state)},
@@ -514,6 +581,9 @@ bool UsersRegistry::ensure_present_disabled_user(const std::string& fp_hex, cons
   u.storage_set_at = "";
   u.storage_set_by = "";
 
+  // Existing standalone behavior remains unchanged.
+  u.home_node = "";
+
   by_fp_[fp_hex] = u;
   return true; // created
 }
@@ -525,6 +595,9 @@ upsert()
   - Caller must provide fingerprint.
 */
 bool UsersRegistry::upsert(const UserRec& in) {
+  // Security: generic profile updates must not bypass placement validation.
+  if (!valid_user_home_node_id(in.home_node)) return false;
+
   std::lock_guard<std::mutex> lk(mu_);
   if (in.fingerprint.empty()) return false;
 
@@ -581,6 +654,26 @@ touch_last_seen()
   - Updates last_seen timestamp for activity tracking / UI.
   - Caller should pass an ISO8601 string consistent with the rest of PQ-NAS.
 */
+bool UsersRegistry::set_home_node(
+    const std::string& fp_hex,
+    const std::string& home_node
+) {
+  if (!valid_user_home_node_id(home_node)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+  if (iterator == by_fp_.end()) {
+    return false;
+  }
+
+  iterator->second.home_node = home_node;
+  return true;
+}
+
+
 bool UsersRegistry::touch_last_seen(const std::string& fp_hex, const std::string& now_iso) {
   std::lock_guard<std::mutex> lk(mu_);
   auto it = by_fp_.find(fp_hex);
