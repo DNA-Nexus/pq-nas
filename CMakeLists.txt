@@ -186,6 +186,8 @@ add_executable(pqnas_server
         server/src/cluster/internal_auth.h
         server/src/cluster/node_status.cpp
         server/src/cluster/node_status.h
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/node_registry.h
         server/src/routes/routes_internal_node_status.cpp
         server/src/routes/routes_internal_node_status.h
         server/src/routes/routes_storage_raid.cpp
@@ -709,6 +711,29 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_registry
+# -----------------------------------------------------------------------------
+add_executable(test_node_registry
+        tests/cluster/test_node_registry.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(test_node_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_node_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_registry
 )
 
 
