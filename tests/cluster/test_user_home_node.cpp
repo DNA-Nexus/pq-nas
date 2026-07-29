@@ -378,6 +378,21 @@ int main() {
         "policy reference should survive save and reload"
     );
 
+    const auto initial_policy_counts =
+        reloaded.placement_policy_assignment_counts();
+
+    expect(
+        initial_policy_counts.size() == 1 &&
+        initial_policy_counts.count(
+            "business-backup"
+        ) == 1 &&
+        initial_policy_counts.at(
+            "business-backup"
+        ) == 1 &&
+        initial_policy_counts.count("") == 0,
+        "policy counts should omit empty overrides and count explicit IDs"
+    );
+
     bool policy_changed = false;
     std::string policy_error;
 
@@ -427,6 +442,17 @@ int main() {
         "persisted policy assignment should reach users.json"
     );
 
+    const auto assigned_policy_counts =
+        reloaded.placement_policy_assignment_counts();
+
+    expect(
+        assigned_policy_counts.size() == 1 &&
+        assigned_policy_counts.at(
+            "business-backup"
+        ) == 2,
+        "policy count should increase after assigning another user"
+    );
+
     policy_changed = false;
     policy_error.clear();
 
@@ -450,6 +476,18 @@ int main() {
         cleared_policy_user->
             placement_policy_id.empty(),
         "cleared policy override should update memory"
+    );
+
+    const auto cleared_policy_counts =
+        reloaded.placement_policy_assignment_counts();
+
+    expect(
+        cleared_policy_counts.size() == 1 &&
+        cleared_policy_counts.at(
+            "business-backup"
+        ) == 1 &&
+        cleared_policy_counts.count("") == 0,
+        "policy count should decrease when an override is cleared"
     );
 
     const fs::path rollback_directory =

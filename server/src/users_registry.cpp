@@ -942,5 +942,29 @@ std::unordered_map<
   return counts;
 }
 
+std::unordered_map<
+    std::string,
+    std::size_t
+> UsersRegistry::placement_policy_assignment_counts() const {
+  std::lock_guard<std::mutex> lk(mu_);
+
+  std::unordered_map<
+      std::string,
+      std::size_t
+  > counts;
+
+  for (const auto& entry : by_fp_) {
+    const std::string& policy_id =
+        entry.second.placement_policy_id;
+
+    // Security: expose only aggregate references to explicit policy IDs.
+    // Empty values mean no override and must not create a pseudo-policy.
+    if (!policy_id.empty()) {
+      ++counts[policy_id];
+    }
+  }
+
+  return counts;
+}
 
 } // namespace pqnas

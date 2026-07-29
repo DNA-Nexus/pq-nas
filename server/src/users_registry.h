@@ -133,6 +133,13 @@ public:
         std::size_t
     > home_node_assignment_counts() const;
 
+    // Aggregate-only policy reference information. Empty policy overrides are
+    // omitted, and no user fingerprints or complete records are exposed.
+    std::unordered_map<
+        std::string,
+        std::size_t
+    > placement_policy_assignment_counts() const;
+
 private:
     // Caller must hold mu_.
     bool save_locked(
