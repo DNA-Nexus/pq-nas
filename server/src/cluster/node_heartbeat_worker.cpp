@@ -57,6 +57,26 @@ void set_error(
     }
 }
 
+bool same_configured_node(
+    const NodeRegistryRecord& current,
+    const NodeRegistryRecord& expected
+) {
+    // Integrity: treat the node configuration as a compare-and-set token.
+    // A heartbeat started for an older URL or configuration must not update
+    // the replacement configuration after an admin mutation.
+    return
+        current.node_id ==
+            expected.node_id &&
+        current.api_base_url ==
+            expected.api_base_url &&
+        current.enabled ==
+            expected.enabled &&
+        current.added_at ==
+            expected.added_at &&
+        current.updated_at ==
+            expected.updated_at;
+}
+
 void emit_transition_best_effort(
     const NodeHeartbeatWorkerConfig& config,
     const std::string& event,
@@ -89,28 +109,50 @@ void emit_transition_best_effort(
 
 bool mark_offline_transition_best_effort(
     const NodeHeartbeatWorkerConfig& config,
-    const std::string& node_id,
+    const NodeRegistryRecord& expected_node,
     const std::string& reason_code
 ) {
-    if (!config.registry) {
+    if (!config.registry ||
+        !config.coordination_mutex) {
         return false;
     }
 
     bool transitioned_offline = false;
     std::string ignored_error;
 
-    if (!config.registry->mark_offline(
-            node_id,
-            &ignored_error,
-            &transitioned_offline) ||
-        !transitioned_offline) {
-        return false;
+    {
+        // TOCTOU protection: compare the current configured node and perform
+        // the mutation under the same Director coordination lock.
+        std::lock_guard<std::mutex> coordination_lock(
+            *config.coordination_mutex
+        );
+
+        const auto current =
+            config.registry->get(
+                expected_node.node_id
+            );
+
+        if (!current.has_value() ||
+            !same_configured_node(
+                *current,
+                expected_node
+            )) {
+            return false;
+        }
+
+        if (!config.registry->mark_offline(
+                expected_node.node_id,
+                &ignored_error,
+                &transitioned_offline) ||
+            !transitioned_offline) {
+            return false;
+        }
     }
 
     emit_transition_best_effort(
         config,
         "cluster.node_offline",
-        node_id,
+        expected_node.node_id,
         "offline",
         reason_code
     );
@@ -136,6 +178,14 @@ bool NodeHeartbeatWorker::config_valid(
         set_error(
             error,
             "heartbeat registry is missing"
+        );
+        return false;
+    }
+
+    if (!config_.coordination_mutex) {
+        set_error(
+            error,
+            "heartbeat coordination mutex is missing"
         );
         return false;
     }
@@ -283,11 +333,11 @@ NodeHeartbeatWorker::poll_once() {
         config_.registry->snapshot();
 
     const auto record_offline =
-        [&](const std::string& node_id,
+        [&](const NodeRegistryRecord& expected_node,
             const std::string& reason_code) {
             if (mark_offline_transition_best_effort(
                     config_,
-                    node_id,
+                    expected_node,
                     reason_code)) {
                 ++result.offline_transitions;
             }
@@ -311,7 +361,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "credential_unavailable"
             );
         }
@@ -351,7 +401,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "transport_error"
             );
 
@@ -362,7 +412,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "empty_response"
             );
 
@@ -374,7 +424,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "response_too_large"
             );
 
@@ -409,7 +459,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "invalid_response"
             );
 
@@ -422,7 +472,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "node_id_mismatch"
             );
 
@@ -442,7 +492,7 @@ NodeHeartbeatWorker::poll_once() {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "clock_error"
             );
 
@@ -450,17 +500,53 @@ NodeHeartbeatWorker::poll_once() {
         }
 
         bool transitioned_online = false;
+        bool applied = false;
+        bool configuration_stale = false;
         std::string registry_error;
 
-        if (!config_.registry->apply_status(
-                status,
-                received_at,
-                &registry_error,
-                &transitioned_online)) {
+        {
+            // TOCTOU protection: re-check the exact node configuration and
+            // apply the observation while holding the same coordination lock
+            // used by node administration and placement decisions.
+            std::lock_guard<std::mutex> coordination_lock(
+                *config_.coordination_mutex
+            );
+
+            const auto current =
+                config_.registry->get(
+                    node.node_id
+                );
+
+            if (!current.has_value() ||
+                !same_configured_node(
+                    *current,
+                    node
+                )) {
+                configuration_stale = true;
+            } else {
+                applied =
+                    config_.registry->apply_status(
+                        status,
+                        received_at,
+                        &registry_error,
+                        &transitioned_online
+                    );
+            }
+        }
+
+        if (configuration_stale) {
+            // The observation belongs to an older node configuration. Treat it
+            // as a failed poll, but never mark the replacement configuration
+            // offline and never apply the stale response.
+            ++result.failed;
+            continue;
+        }
+
+        if (!applied) {
             ++result.failed;
 
             record_offline(
-                node.node_id,
+                node,
                 "registry_update_failed"
             );
 

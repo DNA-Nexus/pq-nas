@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -36,6 +37,12 @@ using NodeHeartbeatAuditEmit =
 struct NodeHeartbeatWorkerConfig {
     NodeRegistry* registry = nullptr;
     const InternalAuthCredential* credential = nullptr;
+
+    // Shared with placement, policy and node administration. Network fetches
+    // stay outside this lock; only expected-state checks and registry
+    // mutations are serialized.
+    std::shared_ptr<std::mutex>
+        coordination_mutex;
 
     NodeHeartbeatFetch fetch;
     NodeHeartbeatAuditEmit audit_emit;

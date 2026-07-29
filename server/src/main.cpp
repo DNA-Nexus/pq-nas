@@ -9218,6 +9218,12 @@ int main()
     pqnas::cluster::UserPlacementPolicyRegistry
         director_placement_policy_registry;
 
+    // Shared for the complete Director lifetime. Heartbeat observations,
+    // node administration and placement decisions use the same coordination
+    // boundary for check-and-mutate sequences.
+    auto cluster_placement_mutex =
+        std::make_shared<std::mutex>();
+
     if (cluster_config.is_director()) {
         // Security: the Director registry is trusted control-plane state.
         // Derive its fixed filename from the validated config root instead of
@@ -9285,6 +9291,9 @@ int main()
 
     director_heartbeat_config.registry =
         &director_node_registry;
+
+    director_heartbeat_config.coordination_mutex =
+        cluster_placement_mutex;
 
     director_heartbeat_config.credential =
         &cluster_credential;
@@ -10524,9 +10533,6 @@ v5.app_pair_build_qr_uri =
     }
 
     if (cluster_config.is_director()) {
-        auto cluster_placement_mutex =
-            std::make_shared<std::mutex>();
-
         pqnas::cluster::AdminClusterNodeRoutesContext
             admin_cluster_node_context;
 

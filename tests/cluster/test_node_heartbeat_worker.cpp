@@ -11,6 +11,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -256,6 +258,9 @@ int main() {
 
     config.registry = &registry;
     config.credential = &credential;
+
+    config.coordination_mutex =
+        std::make_shared<std::mutex>();
 
     config.now_iso_utc =
         []() {
@@ -542,6 +547,213 @@ int main() {
         "heartbeat worker should stop and join"
     );
 
+
+    // Verify that a heartbeat started for an older node configuration cannot
+    // update or mark offline the replacement configuration.
+    pqnas::cluster::NodeRegistry
+        stale_registry;
+
+    error.clear();
+
+    expect(
+        stale_registry.load(
+            (
+                directory /
+                "stale_node_registry.json"
+            ).string(),
+            &error
+        ),
+        "load stale-observation registry: " +
+            error
+    );
+
+    for (const std::string& node_id : {
+             std::string("node-stale-status"),
+             std::string("node-stale-failure")
+         }) {
+        error.clear();
+
+        expect(
+            stale_registry.upsert_configured_node(
+                node_id,
+                "https://" +
+                    node_id +
+                    "-old.internal",
+                true,
+                "2026-07-28T08:00:00Z",
+                &error
+            ),
+            "add stale test node " +
+                node_id +
+                ": " +
+                error
+        );
+    }
+
+    auto stale_coordination_mutex =
+        std::make_shared<std::mutex>();
+
+    std::vector<AuditRecord>
+        stale_audits;
+
+    pqnas::cluster::NodeHeartbeatWorkerConfig
+        stale_config;
+
+    stale_config.registry =
+        &stale_registry;
+
+    stale_config.credential =
+        &credential;
+
+    stale_config.coordination_mutex =
+        stale_coordination_mutex;
+
+    stale_config.interval =
+        std::chrono::hours(1);
+
+    stale_config.now_iso_utc =
+        []() {
+            return std::string(
+                "2026-07-28T08:00:03Z"
+            );
+        };
+
+    stale_config.audit_emit =
+        [&](const std::string& event,
+            const std::string& outcome,
+            const std::map<
+                std::string,
+                std::string
+            >& fields) {
+            stale_audits.push_back(
+                AuditRecord{
+                    event,
+                    outcome,
+                    fields
+                }
+            );
+        };
+
+    stale_config.fetch =
+        [&](
+            const pqnas::cluster::
+                NodeRegistryRecord& node,
+            const std::string& authorization,
+            std::string* body,
+            std::string* fetch_error
+        ) -> bool {
+            expect(
+                pqnas::cluster::
+                    verify_internal_bearer_authorization(
+                        authorization,
+                        credential
+                    ),
+                "stale test bearer authorization"
+            );
+
+            if (body) {
+                body->clear();
+            }
+
+            if (fetch_error) {
+                fetch_error->clear();
+            }
+
+            // Simulate node administration completing while the network
+            // request is in flight. The worker must compare the fetched
+            // configuration snapshot before mutating registry state.
+            {
+                std::lock_guard<std::mutex>
+                    coordination_lock(
+                        *stale_coordination_mutex
+                    );
+
+                std::string update_error;
+
+                expect(
+                    stale_registry.upsert_configured_node(
+                        node.node_id,
+                        "https://" +
+                            node.node_id +
+                            "-new.internal",
+                        true,
+                        "2026-07-28T08:00:02Z",
+                        &update_error
+                    ),
+                    "replace stale test configuration: " +
+                        update_error
+                );
+            }
+
+            if (node.node_id ==
+                "node-stale-status") {
+                if (!body) {
+                    return false;
+                }
+
+                *body =
+                    pqnas::cluster::
+                        node_status_to_json(
+                            make_status(
+                                node.node_id
+                            )
+                        ).dump();
+
+                return true;
+            }
+
+            if (fetch_error) {
+                *fetch_error =
+                    "synthetic stale transport failure";
+            }
+
+            return false;
+        };
+
+    pqnas::cluster::NodeHeartbeatWorker
+        stale_worker(
+            stale_config
+        );
+
+    const auto stale_poll =
+        stale_worker.poll_once();
+
+    expect(
+        stale_poll.checked == 2 &&
+        stale_poll.succeeded == 0 &&
+        stale_poll.failed == 2,
+        "stale observations should be discarded"
+    );
+
+    expect(
+        stale_poll.online_transitions == 0 &&
+        stale_poll.offline_transitions == 0 &&
+        stale_audits.empty(),
+        "stale observations must not create health transitions"
+    );
+
+    for (const std::string& node_id : {
+             std::string("node-stale-status"),
+             std::string("node-stale-failure")
+         }) {
+        const auto current =
+            stale_registry.get(
+                node_id
+            );
+
+        expect(
+            current.has_value() &&
+            current->api_base_url ==
+                "https://" +
+                    node_id +
+                    "-new.internal" &&
+            current->health == "unknown" &&
+            current->last_seen_at.empty(),
+            "replacement node configuration must remain untouched: " +
+                node_id
+        );
+    }
+
     pqnas::cluster::InternalAuthCredential
         unconfigured_credential;
 
@@ -557,6 +769,26 @@ int main() {
     expect(
         !invalid_worker.start(&error),
         "worker must reject unconfigured credential"
+    );
+
+    auto missing_coordination_config =
+        config;
+
+    missing_coordination_config
+        .coordination_mutex.reset();
+
+    pqnas::cluster::NodeHeartbeatWorker
+        missing_coordination_worker(
+            missing_coordination_config
+        );
+
+    error.clear();
+
+    expect(
+        !missing_coordination_worker.start(
+            &error
+        ),
+        "worker must reject missing coordination mutex"
     );
 
     cleanup();
