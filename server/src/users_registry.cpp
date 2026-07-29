@@ -813,6 +813,118 @@ bool UsersRegistry::set_home_node_persisted(
   return true;
 }
 
+
+bool UsersRegistry::set_home_node_persisted_if_current(
+    const std::string& fp_hex,
+    const std::string& expected_home_node,
+    const std::string& expected_placement_policy_id,
+    const std::string& new_home_node,
+    const std::string& path,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Empty expected home_node is valid and represents legacy/local placement.
+  if (!valid_user_home_node_id(
+          expected_home_node)) {
+    if (error) *error = "invalid expected home node ID";
+    return false;
+  }
+
+  // Empty expected policy ID is valid and represents no policy override.
+  if (!valid_user_placement_policy_id(
+          expected_placement_policy_id)) {
+    if (error) {
+      *error =
+          "invalid expected placement policy ID";
+    }
+
+    return false;
+  }
+
+  if (new_home_node.empty() ||
+      !valid_user_home_node_id(
+          new_home_node)) {
+    if (error) *error = "invalid home node ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  // TOCTOU protection: compare both preview-relevant user fields while
+  // holding the same registry lock used for mutation and persistence.
+  if (iterator->second.home_node !=
+          expected_home_node ||
+      iterator->second.placement_policy_id !=
+          expected_placement_policy_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  if (iterator->second.home_node ==
+      new_home_node) {
+    return true;
+  }
+
+  const std::string previous_home_node =
+      iterator->second.home_node;
+
+  iterator->second.home_node =
+      new_home_node;
+
+  // Security: keep the compare, mutation, atomic replacement and rollback
+  // under one registry lock. A failed save preserves the prior placement.
+  if (!save_locked(path)) {
+    iterator->second.home_node =
+        previous_home_node;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
 bool UsersRegistry::set_placement_policy_id_persisted(
     const std::string& fp_hex,
     const std::string& placement_policy_id,

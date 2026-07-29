@@ -110,6 +110,20 @@ public:
         std::string* error
     );
 
+    // Compare-and-set placement persistence for preview/apply workflows.
+    // A stale expectation is a successful no-op: return true with
+    // expectation_matched=false and changed=false.
+    bool set_home_node_persisted_if_current(
+        const std::string& fp_hex,
+        const std::string& expected_home_node,
+        const std::string& expected_placement_policy_id,
+        const std::string& new_home_node,
+        const std::string& path,
+        bool* changed,
+        bool* expectation_matched,
+        std::string* error
+    );
+
     // Atomically persists a policy-reference change before committing it to
     // memory. Empty policy ID deliberately clears the override.
     bool set_placement_policy_id_persisted(

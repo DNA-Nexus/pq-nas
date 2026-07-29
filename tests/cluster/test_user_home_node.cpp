@@ -393,6 +393,246 @@ int main() {
         "policy counts should omit empty overrides and count explicit IDs"
     );
 
+
+    bool cas_changed = false;
+    bool cas_expectation_matched = false;
+    std::string cas_error;
+
+    expect(
+        reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "node-01",
+            "",
+            "node-03",
+            saved_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        cas_expectation_matched &&
+        cas_changed,
+        "matching placement expectation should persist: " +
+            cas_error
+    );
+
+    const auto cas_updated_user =
+        reloaded.get("fp-legacy");
+
+    expect(
+        cas_updated_user.has_value() &&
+        cas_updated_user->home_node ==
+            "node-03" &&
+        cas_updated_user->
+            placement_policy_id.empty(),
+        "successful CAS should update only home_node"
+    );
+
+    const json cas_saved_json =
+        read_json(saved_path);
+
+    const json* cas_saved_user =
+        find_user(
+            cas_saved_json,
+            "fp-legacy"
+        );
+
+    expect(
+        cas_saved_user &&
+        cas_saved_user->value(
+            "home_node",
+            ""
+        ) == "node-03" &&
+        cas_saved_user->value(
+            "placement_policy_id",
+            "missing"
+        ).empty(),
+        "successful CAS should reach users.json"
+    );
+
+    cas_changed = true;
+    cas_expectation_matched = true;
+    cas_error.clear();
+
+    expect(
+        reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "node-01",
+            "",
+            "node-04",
+            saved_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        !cas_expectation_matched &&
+        !cas_changed &&
+        cas_error.empty(),
+        "stale home_node expectation should be a clean no-op"
+    );
+
+    const auto after_stale_home =
+        reloaded.get("fp-legacy");
+
+    expect(
+        after_stale_home.has_value() &&
+        after_stale_home->home_node ==
+            "node-03",
+        "stale home_node expectation must preserve placement"
+    );
+
+    cas_changed = true;
+    cas_expectation_matched = true;
+    cas_error.clear();
+
+    expect(
+        reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "node-03",
+            "business-backup",
+            "node-04",
+            saved_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        !cas_expectation_matched &&
+        !cas_changed &&
+        cas_error.empty(),
+        "stale policy expectation should be a clean no-op"
+    );
+
+    const auto after_stale_policy =
+        reloaded.get("fp-legacy");
+
+    expect(
+        after_stale_policy.has_value() &&
+        after_stale_policy->home_node ==
+            "node-03" &&
+        after_stale_policy->
+            placement_policy_id.empty(),
+        "stale policy expectation must preserve user state"
+    );
+
+    cas_changed = true;
+    cas_expectation_matched = false;
+    cas_error.clear();
+
+    expect(
+        reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "node-03",
+            "",
+            "node-03",
+            saved_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        cas_expectation_matched &&
+        !cas_changed,
+        "matching already-applied CAS should be idempotent"
+    );
+
+    cas_changed = true;
+    cas_expectation_matched = true;
+    cas_error.clear();
+
+    expect(
+        !reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "../node",
+            "",
+            "node-04",
+            saved_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        !cas_expectation_matched &&
+        !cas_changed &&
+        !cas_error.empty(),
+        "invalid CAS expectation should fail validation"
+    );
+
+    const fs::path cas_rollback_directory =
+        directory / "cas-rollback";
+
+    const fs::path cas_rollback_path =
+        cas_rollback_directory /
+        "users.json";
+
+    expect(
+        reloaded.save(
+            cas_rollback_path.string()
+        ),
+        "create CAS rollback fixture"
+    );
+
+    std::error_code cas_rollback_error;
+
+    expect(
+        fs::remove(
+            cas_rollback_path,
+            cas_rollback_error
+        ) &&
+        !cas_rollback_error,
+        "remove CAS rollback registry file"
+    );
+
+    cas_rollback_error.clear();
+
+    expect(
+        fs::remove(
+            cas_rollback_directory,
+            cas_rollback_error
+        ) &&
+        !cas_rollback_error,
+        "remove CAS rollback registry directory"
+    );
+
+    expect(
+        write_json(
+            cas_rollback_directory,
+            json{
+                {"blocker", true}
+            }
+        ),
+        "replace CAS rollback directory with a file"
+    );
+
+    cas_changed = true;
+    cas_expectation_matched = false;
+    cas_error.clear();
+
+    expect(
+        !reloaded.set_home_node_persisted_if_current(
+            "fp-legacy",
+            "node-03",
+            "",
+            "node-04",
+            cas_rollback_path.string(),
+            &cas_changed,
+            &cas_expectation_matched,
+            &cas_error
+        ) &&
+        cas_expectation_matched &&
+        !cas_changed &&
+        !cas_error.empty(),
+        "CAS persistence failure should be reported"
+    );
+
+    const auto after_failed_cas_write =
+        reloaded.get("fp-legacy");
+
+    expect(
+        after_failed_cas_write.has_value() &&
+        after_failed_cas_write->home_node ==
+            "node-03" &&
+        after_failed_cas_write->
+            placement_policy_id.empty(),
+        "failed CAS persistence must restore prior state"
+    );
+
     bool policy_changed = false;
     std::string policy_error;
 
