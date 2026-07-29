@@ -136,6 +136,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
+#include "routes/routes_admin_cluster_placement_policies.h"
 #include "routes/routes_admin_cluster_user_placement.h"
 #include "routes/routes_admin_cluster_user_placement_preview.h"
 #include "routes/routes_admin_cluster_user_policy.h"
@@ -10590,6 +10591,77 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] Director admin node routes registered"
+            << std::endl;
+
+        pqnas::cluster::
+            AdminClusterPlacementPolicyRoutesContext
+                admin_placement_policy_context;
+
+        admin_placement_policy_context.registry =
+            &director_placement_policy_registry;
+
+        admin_placement_policy_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_placement_policy_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.placement_policy_assignment_counts();
+            };
+
+        admin_placement_policy_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_placement_policy_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_placement_policy_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        admin_placement_policy_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_placement_policy_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_placement_policy_routes(
+                srv,
+                admin_placement_policy_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin placement policy routes registered"
             << std::endl;
 
         pqnas::cluster::UserPlacementServiceConfig
