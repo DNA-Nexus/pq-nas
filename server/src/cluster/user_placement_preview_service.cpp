@@ -62,6 +62,12 @@ config_valid() const {
         config_.placement_mutex;
 }
 
+std::shared_ptr<std::mutex>
+UserPlacementPreviewService::
+coordination_mutex() const {
+    return config_.placement_mutex;
+}
+
 UserPlacementPreviewResult
 UserPlacementPreviewService::preview(
     const std::string& fingerprint
@@ -84,6 +90,29 @@ UserPlacementPreviewService::preview(
     std::lock_guard<std::mutex> placement_lock(
         *config_.placement_mutex
     );
+
+    return
+        preview_while_holding_coordination_lock(
+            fingerprint
+        );
+}
+
+UserPlacementPreviewResult
+UserPlacementPreviewService::
+preview_while_holding_coordination_lock(
+    const std::string& fingerprint
+) const {
+    if (!config_valid()) {
+        return failure_result(
+            "service_unavailable"
+        );
+    }
+
+    if (fingerprint.empty()) {
+        return failure_result(
+            "invalid_fingerprint"
+        );
+    }
 
     std::optional<
         UserPlacementPreviewUserSnapshot

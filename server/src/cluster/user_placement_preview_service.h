@@ -16,6 +16,8 @@
 
 namespace pqnas::cluster {
 
+class UserPlacementRecommendationApplyService;
+
 struct UserPlacementPreviewUserSnapshot {
     std::string home_node;
     std::string placement_policy_id;
@@ -95,7 +97,20 @@ public:
     ) const;
 
 private:
+    friend class
+        UserPlacementRecommendationApplyService;
+
     bool config_valid() const;
+
+    // Caller must already hold coordination_mutex(). This exists only so the
+    // apply service can re-evaluate and persist under one TOCTOU boundary.
+    UserPlacementPreviewResult
+    preview_while_holding_coordination_lock(
+        const std::string& fingerprint
+    ) const;
+
+    std::shared_ptr<std::mutex>
+    coordination_mutex() const;
 
     UserPlacementPreviewServiceConfig
         config_;

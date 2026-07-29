@@ -131,6 +131,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
+#include "cluster/user_placement_recommendation_apply_service.h"
 #include "cluster/user_placement_policy_assignment_service.h"
 #include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
@@ -139,6 +140,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_admin_cluster_placement_policies.h"
 #include "routes/routes_admin_cluster_user_placement.h"
 #include "routes/routes_admin_cluster_user_placement_preview.h"
+#include "routes/routes_admin_cluster_user_placement_apply.h"
 #include "routes/routes_admin_cluster_user_policy.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
@@ -10831,6 +10833,100 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] Director admin user placement preview route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            UserPlacementRecommendationApplyServiceConfig
+                user_placement_apply_service_config;
+
+        user_placement_apply_service_config.users =
+            &users;
+
+        user_placement_apply_service_config.preview_service =
+            user_placement_preview_service;
+
+        user_placement_apply_service_config.users_path =
+            users_path;
+
+        user_placement_apply_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_placement_apply_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementRecommendationApplyService
+            >(
+                std::move(
+                    user_placement_apply_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementApplyRoutesContext
+                user_placement_apply_route_context;
+
+        user_placement_apply_route_context.service =
+            user_placement_apply_service;
+
+        user_placement_apply_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_apply_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_apply_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_apply_routes(
+                srv,
+                user_placement_apply_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement apply route registered"
             << std::endl;
 
         pqnas::cluster::
