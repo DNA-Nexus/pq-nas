@@ -108,6 +108,7 @@ failures must return an error and should emit an audit event when security-relev
 #include <condition_variable>
 #include <set>
 #include <map>
+#include <memory>
 #include <csignal>
 #include <sys/wait.h>
 #include <sqlite3.h>
@@ -123,6 +124,24 @@ failures must return an error and should emit an audit event when security-relev
 #include "authz.h"
 #include "session_cookie.h"
 #include "runtime_paths.h"
+#include "cluster/server_role.h"
+#include "cluster/internal_auth.h"
+#include "cluster/node_status.h"
+#include "cluster/node_registry.h"
+#include "cluster/node_heartbeat_worker.h"
+#include "cluster/user_placement_service.h"
+#include "cluster/user_placement_preview_service.h"
+#include "cluster/user_placement_recommendation_apply_service.h"
+#include "cluster/user_placement_policy_assignment_service.h"
+#include "cluster/user_placement_policy_registry.h"
+#include "cluster/node_heartbeat_https.h"
+#include "routes/routes_internal_node_status.h"
+#include "routes/routes_admin_cluster_nodes.h"
+#include "routes/routes_admin_cluster_placement_policies.h"
+#include "routes/routes_admin_cluster_user_placement.h"
+#include "routes/routes_admin_cluster_user_placement_preview.h"
+#include "routes/routes_admin_cluster_user_placement_apply.h"
+#include "routes/routes_admin_cluster_user_policy.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -9149,6 +9168,184 @@ int main()
         return 1;
     }
 
+    pqnas::cluster::ServerRoleConfig cluster_config;
+    std::string cluster_config_err;
+
+    if (!pqnas::cluster::load_server_role_config_from_env(
+            &cluster_config,
+            &cluster_config_err)) {
+        std::cerr
+            << "[cluster] FATAL: "
+            << cluster_config_err
+            << std::endl;
+        return 2;
+    }
+
+    pqnas::cluster::InternalAuthCredential cluster_credential;
+
+    if (!cluster_config.is_standalone()) {
+        std::string credential_err;
+
+        if (!pqnas::cluster::load_internal_auth_credential_file(
+                cluster_config.cluster_credential_file,
+                &cluster_credential,
+                &credential_err)) {
+            // Security: report only the failure category. Never log the
+            // credential contents or its configured filesystem path.
+            std::cerr
+                << "[cluster] FATAL: internal credential setup failed: "
+                << credential_err
+                << std::endl;
+            return 2;
+        }
+    }
+
+    std::cerr
+        << "[cluster] role="
+        << pqnas::cluster::server_role_name(cluster_config.role);
+
+    if (cluster_config.is_node()) {
+        std::cerr << " node_id=" << cluster_config.node_id;
+    }
+
+    if (!cluster_config.is_standalone()) {
+        // Security: log configuration state only, never secret values.
+        std::cerr << " internal_auth=configured";
+    }
+
+    std::cerr << std::endl;
+
+    pqnas::cluster::NodeRegistry director_node_registry;
+
+    pqnas::cluster::UserPlacementPolicyRegistry
+        director_placement_policy_registry;
+
+    // Shared for the complete Director lifetime. Heartbeat observations,
+    // node administration and placement decisions use the same coordination
+    // boundary for check-and-mutate sequences.
+    auto cluster_placement_mutex =
+        std::make_shared<std::mutex>();
+
+    if (cluster_config.is_director()) {
+        // Security: the Director registry is trusted control-plane state.
+        // Derive its fixed filename from the validated config root instead of
+        // accepting a separate per-file environment override.
+        const std::filesystem::path node_registry_path =
+            pqnas::config_root_path() / "node_registry.json";
+
+        std::string node_registry_error;
+
+        if (!director_node_registry.load(
+                node_registry_path.string(),
+                &node_registry_error)) {
+            // Security: fail closed. A malformed, symlinked, incorrectly owned,
+            // or otherwise unsafe registry must not start a Director with an
+            // incomplete or attacker-controlled node view.
+            std::cerr
+                << "[cluster] FATAL: Director node registry load failed: "
+                << node_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director node registry loaded nodes="
+            << director_node_registry.snapshot().size()
+            << std::endl;
+
+        // Security: placement policies are trusted control-plane state.
+        // Use a fixed filename below the validated configuration root rather
+        // than accepting an independent environment-controlled file path.
+        const std::filesystem::path
+            placement_policy_registry_path =
+                pqnas::config_root_path() /
+                "placement_policies.json";
+
+        std::string placement_policy_registry_error;
+
+        if (!director_placement_policy_registry.load(
+                placement_policy_registry_path.string(),
+                &placement_policy_registry_error)) {
+            // Security: fail closed. Starting with an incomplete or
+            // attacker-controlled policy view could place protected customer
+            // groups outside their required backup or isolation node set.
+            std::cerr
+                << "[cluster] FATAL: Director placement policy "
+                   "registry load failed: "
+                << placement_policy_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        // Security: log only aggregate configuration state, never policy
+        // contents, node membership or the registry filesystem path.
+        std::cerr
+            << "[cluster] Director placement policy registry "
+               "loaded policies="
+            << director_placement_policy_registry
+                   .snapshot()
+                   .size()
+            << std::endl;
+    }
+
+    pqnas::cluster::NodeHeartbeatWorkerConfig
+        director_heartbeat_config;
+
+    director_heartbeat_config.registry =
+        &director_node_registry;
+
+    director_heartbeat_config.coordination_mutex =
+        cluster_placement_mutex;
+
+    director_heartbeat_config.credential =
+        &cluster_credential;
+
+    director_heartbeat_config.fetch =
+        pqnas::cluster::
+            make_https_node_heartbeat_fetch();
+
+    director_heartbeat_config.now_iso_utc =
+        []() {
+            return pqnas::now_iso_utc();
+        };
+
+    director_heartbeat_config.audit_emit =
+        [](const std::string& event,
+           const std::string& outcome,
+           const std::map<std::string, std::string>& fields) {
+            pqnas::AuditEvent audit;
+            audit.event = event;
+            audit.outcome = outcome;
+
+            for (const auto& field : fields) {
+                audit.f[field.first] = field.second;
+            }
+
+            audit_append(audit);
+        };
+
+    pqnas::cluster::NodeHeartbeatWorker
+        director_node_heartbeat_worker(
+            std::move(director_heartbeat_config)
+        );
+
+    if (cluster_config.is_director()) {
+        std::string heartbeat_start_error;
+
+        if (!director_node_heartbeat_worker.start(
+                &heartbeat_start_error)) {
+            std::cerr
+                << "[cluster] FATAL: Director heartbeat worker failed to start: "
+                << heartbeat_start_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director heartbeat worker started interval_s=30"
+            << std::endl;
+    }
+
     if (!load_env_key("PQNAS_SERVER_PK_B64URL", SERVER_PK, 32) ||
         !load_env_key("PQNAS_SERVER_SK_B64URL", SERVER_SK, 64) ||
         !load_env_key("PQNAS_COOKIE_KEY_B64URL", COOKIE_KEY, 32)) {
@@ -10279,6 +10476,608 @@ v5.app_pair_build_qr_uri =
 	// (leave v5.sign_token_v4_ed25519 unset for now; we’ll wire once v5 verify uses it)
 
     register_routes_v5(srv, v5);
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::InternalNodeStatusRoutesContext
+            internal_node_status_context;
+
+        internal_node_status_context.credential =
+            &cluster_credential;
+
+        internal_node_status_context.build_status_json =
+            [&](nlohmann::json* out,
+                std::string* error) -> bool {
+                if (!out) {
+                    if (error) {
+                        *error =
+                            "missing status output";
+                    }
+                    return false;
+                }
+
+                pqnas::cluster::NodeStatusSnapshot snapshot;
+
+                if (!pqnas::cluster::
+                        collect_node_status_snapshot(
+                            cluster_config.node_id,
+                            PQNAS_VERSION,
+                            pqnas::data_root_dir(),
+                            users,
+                            &snapshot,
+                            error
+                        )) {
+                    return false;
+                }
+
+                *out =
+                    pqnas::cluster::
+                        node_status_to_json(snapshot);
+
+                return true;
+            };
+
+        internal_node_status_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(response, status, body);
+            };
+
+        pqnas::cluster::
+            register_internal_node_status_routes(
+                srv,
+                internal_node_status_context
+            );
+
+        std::cerr
+            << "[cluster] internal node status route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_director()) {
+        pqnas::cluster::AdminClusterNodeRoutesContext
+            admin_cluster_node_context;
+
+        admin_cluster_node_context.registry =
+            &director_node_registry;
+
+        admin_cluster_node_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_cluster_node_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.home_node_assignment_counts();
+            };
+
+        admin_cluster_node_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_cluster_node_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_cluster_node_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        admin_cluster_node_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_cluster_node_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_node_routes(
+                srv,
+                admin_cluster_node_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin node routes registered"
+            << std::endl;
+
+        pqnas::cluster::
+            AdminClusterPlacementPolicyRoutesContext
+                admin_placement_policy_context;
+
+        admin_placement_policy_context.registry =
+            &director_placement_policy_registry;
+
+        admin_placement_policy_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_placement_policy_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.placement_policy_assignment_counts();
+            };
+
+        admin_placement_policy_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_placement_policy_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_placement_policy_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        admin_placement_policy_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_placement_policy_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_placement_policy_routes(
+                srv,
+                admin_placement_policy_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin placement policy routes registered"
+            << std::endl;
+
+        pqnas::cluster::UserPlacementServiceConfig
+            user_placement_service_config;
+
+        user_placement_service_config.users =
+            &users;
+
+        user_placement_service_config.nodes =
+            &director_node_registry;
+
+        user_placement_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        user_placement_service_config.users_path =
+            users_path;
+
+        user_placement_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_placement_service =
+            std::make_shared<
+                pqnas::cluster::UserPlacementService
+            >(
+                std::move(
+                    user_placement_service_config
+                )
+            );
+
+        pqnas::cluster::
+            UserPlacementPreviewServiceConfig
+                user_placement_preview_service_config;
+
+        user_placement_preview_service_config.get_user =
+            [&users](const std::string& fingerprint)
+                -> std::optional<
+                    pqnas::cluster::
+                        UserPlacementPreviewUserSnapshot
+                > {
+                const auto user =
+                    users.get(
+                        fingerprint
+                    );
+
+                if (!user.has_value()) {
+                    return std::nullopt;
+                }
+
+                pqnas::cluster::
+                    UserPlacementPreviewUserSnapshot
+                        snapshot;
+
+                snapshot.home_node =
+                    user->home_node;
+
+                snapshot.placement_policy_id =
+                    user->placement_policy_id;
+
+                return snapshot;
+            };
+
+        user_placement_preview_service_config.node_snapshot =
+            [&director_node_registry]() {
+                return
+                    director_node_registry.snapshot();
+            };
+
+        user_placement_preview_service_config.get_policy =
+            [&director_placement_policy_registry](
+                const std::string& policy_id
+            ) {
+                return
+                    director_placement_policy_registry.get(
+                        policy_id
+                    );
+            };
+
+        user_placement_preview_service_config
+            .assigned_user_counts =
+                [&users]() {
+                    return
+                        users.home_node_assignment_counts();
+                };
+
+        user_placement_preview_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        auto user_placement_preview_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPreviewService
+            >(
+                std::move(
+                    user_placement_preview_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementPreviewRoutesContext
+                user_placement_preview_route_context;
+
+        user_placement_preview_route_context.service =
+            user_placement_preview_service;
+
+        user_placement_preview_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_preview_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_preview_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_preview_routes(
+                srv,
+                user_placement_preview_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement preview route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            UserPlacementRecommendationApplyServiceConfig
+                user_placement_apply_service_config;
+
+        user_placement_apply_service_config.users =
+            &users;
+
+        user_placement_apply_service_config.preview_service =
+            user_placement_preview_service;
+
+        user_placement_apply_service_config.users_path =
+            users_path;
+
+        user_placement_apply_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_placement_apply_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementRecommendationApplyService
+            >(
+                std::move(
+                    user_placement_apply_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementApplyRoutesContext
+                user_placement_apply_route_context;
+
+        user_placement_apply_route_context.service =
+            user_placement_apply_service;
+
+        user_placement_apply_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_apply_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_apply_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_apply_routes(
+                srv,
+                user_placement_apply_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement apply route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            UserPlacementPolicyAssignmentServiceConfig
+                user_policy_assignment_service_config;
+
+        user_policy_assignment_service_config.users =
+            &users;
+
+        user_policy_assignment_service_config.policies =
+            &director_placement_policy_registry;
+
+        user_policy_assignment_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        user_policy_assignment_service_config.users_path =
+            users_path;
+
+        user_policy_assignment_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_policy_assignment_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPolicyAssignmentService
+            >(
+                std::move(
+                    user_policy_assignment_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPolicyRoutesContext
+                user_policy_route_context;
+
+        user_policy_route_context.service =
+            user_policy_assignment_service;
+
+        user_policy_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_policy_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_policy_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_policy_routes(
+                srv,
+                user_policy_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user policy route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            AdminClusterUserPlacementRoutesContext
+                user_placement_route_context;
+
+        user_placement_route_context.service =
+            user_placement_service;
+
+        user_placement_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_routes(
+                srv,
+                user_placement_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement route registered"
+            << std::endl;
+    }
 
     pqnas::ActivityRoutesDeps activity_deps;
     activity_deps.users = &users;
@@ -13651,10 +14450,25 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
         }
         std::cerr << std::endl;
     }
-	std::cerr << "PQ-NAS server listening on 0.0.0.0:" << LISTEN_PORT << std::endl;
-	srv.listen("0.0.0.0", LISTEN_PORT);
+	const char* listen_host =
+	    pqnas::cluster::default_listen_host_for_role(
+	        cluster_config.role
+	    );
+
+	std::cerr
+	    << "PQ-NAS server listening on "
+	    << listen_host
+	    << ":"
+	    << LISTEN_PORT
+	    << std::endl;
+
+	srv.listen(listen_host, LISTEN_PORT);
 
 	// ---- Shutdown sequence ----
+
+	// Stop Director heartbeat first so no more registry writes occur while
+	// the remaining background services are being shut down.
+	director_node_heartbeat_worker.stop_and_join();
 
 	// Stop background drive health monitor
 	pqnas::drive_health_monitor_stop();

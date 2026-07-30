@@ -36,79 +36,143 @@ void reply_json_fallback(
 
 } // namespace
 
+void handle_admin_users_overview(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminUsersOverviewRoutesContext& ctx
+) {
+    if (!context_ok(ctx)) {
+        reply_json_fallback(
+            ctx,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {
+                    "message",
+                    "admin users overview route context incomplete"
+                }
+            }
+        );
+        return;
+    }
+
+    std::string actor_fp;
+
+    if (!ctx.require_admin_auth(
+            req,
+            res,
+            &actor_fp)) {
+        return;
+    }
+
+    if (!ctx.users->load(ctx.users_path)) {
+        reply_json_fallback(
+            ctx,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "users_reload_failed"},
+                {"message", "failed to reload users"}
+            }
+        );
+        return;
+    }
+
+    res.set_header(
+        "Cache-Control",
+        "no-store"
+    );
+
+    json out;
+    out["ok"] = true;
+    out["actor_fp"] = actor_fp;
+    out["users"] = json::array();
+
+    for (auto& entry : ctx.users->snapshot()) {
+        auto& user = entry.second;
+
+        std::uint64_t used_bytes = 0;
+
+        if (user.storage_state == "allocated") {
+            const std::filesystem::path absolute_path =
+                ctx.user_dir_for_fp(
+                    user.fingerprint
+                );
+
+            used_bytes =
+                ctx.dir_size_bytes_best_effort(
+                    absolute_path
+                );
+        }
+
+        out["users"].push_back({
+            {"fingerprint", user.fingerprint},
+            {"name", user.name},
+            {"role", user.role},
+            {"status", user.status},
+            {"added_at", user.added_at},
+            {"last_seen", user.last_seen},
+            {"notes", user.notes},
+
+            {"group", user.group},
+            {"email", user.email},
+            {"address", user.address},
+            {"avatar_url", user.avatar_url},
+
+            {"storage_state", user.storage_state},
+            {"quota_bytes", user.quota_bytes},
+            {"root_rel", user.root_rel},
+            {"storage_set_at", user.storage_set_at},
+            {"storage_set_by", user.storage_set_by},
+
+            {"storage_pool_id", user.storage_pool_id},
+            {
+                "pool_id",
+                user.storage_pool_id.empty()
+                    ? "default"
+                    : user.storage_pool_id
+            },
+
+            {"storage_used_bytes", used_bytes},
+
+            // Placement intent is separate from realized placement.
+            {"home_node", user.home_node},
+            {
+                "placement_policy_id",
+                user.placement_policy_id
+            }
+        });
+    }
+
+    reply_json_fallback(
+        ctx,
+        res,
+        200,
+        out
+    );
+}
+
 void register_admin_users_overview_routes(
     httplib::Server& srv,
     const AdminUsersOverviewRoutesContext& ctx
 ) {
-    const AdminUsersOverviewRoutesContext c = ctx;
+    const AdminUsersOverviewRoutesContext captured =
+        ctx;
 
-    srv.Get("/api/v4/admin/users",
-        [c](const httplib::Request& req, httplib::Response& res) {
-            if (!context_ok(c)) {
-                reply_json_fallback(c, res, 500, json{
-                    {"ok", false},
-                    {"error", "server_error"},
-                    {"message", "admin users overview route context incomplete"}
-                });
-                return;
-            }
-
-            std::string actor_fp;
-            if (!c.require_admin_auth(req, res, &actor_fp)) return;
-
-            if (!c.users->load(c.users_path)) {
-                reply_json_fallback(c, res, 500, json{
-                    {"ok", false},
-                    {"error", "users_reload_failed"},
-                    {"message", "failed to reload users"}
-                });
-                return;
-            }
-
-            res.set_header("Cache-Control", "no-store");
-
-            json out;
-            out["ok"] = true;
-            out["actor_fp"] = actor_fp;
-            out["users"] = json::array();
-
-            for (auto& kv : c.users->snapshot()) {
-                auto& u = kv.second;
-
-                std::uint64_t used_bytes = 0;
-                if (u.storage_state == "allocated") {
-                    const std::filesystem::path abs = c.user_dir_for_fp(u.fingerprint);
-                    used_bytes = c.dir_size_bytes_best_effort(abs);
-                }
-
-                out["users"].push_back({
-                    {"fingerprint", u.fingerprint},
-                    {"name", u.name},
-                    {"role", u.role},
-                    {"status", u.status},
-                    {"added_at", u.added_at},
-                    {"last_seen", u.last_seen},
-                    {"notes", u.notes},
-
-                    {"group", u.group},
-                    {"email", u.email},
-                    {"address", u.address},
-                    {"avatar_url", u.avatar_url},
-
-                    {"storage_state", u.storage_state},
-                    {"quota_bytes", u.quota_bytes},
-                    {"root_rel", u.root_rel},
-                    {"storage_set_at", u.storage_set_at},
-                    {"storage_set_by", u.storage_set_by},
-
-                    {"storage_pool_id", u.storage_pool_id},
-                    {"pool_id", u.storage_pool_id.empty() ? "default" : u.storage_pool_id},
-
-                    {"storage_used_bytes", used_bytes}
-                });
-            }
-
-            reply_json_fallback(c, res, 200, out);
+    srv.Get(
+        "/api/v4/admin/users",
+        [captured](
+            const httplib::Request& req,
+            httplib::Response& res
+        ) {
+            handle_admin_users_overview(
+                req,
+                res,
+                captured
+            );
         }
     );
 }

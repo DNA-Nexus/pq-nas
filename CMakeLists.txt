@@ -180,6 +180,22 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
         server/src/main.cpp
+        server/src/cluster/server_role.cpp
+        server/src/cluster/server_role.h
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/internal_auth.h
+        server/src/cluster/node_status.cpp
+        server/src/cluster/node_status.h
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/node_registry.h
+        server/src/cluster/node_heartbeat_worker.cpp
+        server/src/cluster/node_heartbeat_worker.h
+        server/src/cluster/node_heartbeat_https.cpp
+        server/src/cluster/node_heartbeat_https.h
+        server/src/routes/routes_internal_node_status.cpp
+        server/src/routes/routes_internal_node_status.h
+        server/src/routes/routes_admin_cluster_nodes.cpp
+        server/src/routes/routes_admin_cluster_nodes.h
         server/src/routes/routes_storage_raid.cpp
         server/src/routes/routes_storage_raid.h
         server/src/routes/routes_admin_storage_tiering.cpp
@@ -701,6 +717,641 @@ add_custom_target(run_test_opaque_runtime_paths
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_opaque_runtime_paths"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_opaque_runtime_paths
+)
+
+
+target_sources(pqnas_server PRIVATE
+        server/src/cluster/user_placement_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_recommendation_apply_service.cpp
+        server/src/cluster/user_placement_policy_assignment_service.cpp
+        server/src/cluster/user_placement_selector.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/routes/routes_admin_cluster_placement_policies.cpp
+        server/src/routes/routes_admin_cluster_user_placement.cpp
+        server/src/routes/routes_admin_cluster_user_placement_preview.cpp
+        server/src/routes/routes_admin_cluster_user_placement_apply.cpp
+        server/src/routes/routes_admin_cluster_user_policy.cpp
+)
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_users_overview_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_users_overview_route
+        tests/cluster/test_admin_users_overview_route.cpp
+        server/src/routes/routes_admin_users_overview.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_users_overview_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_users_overview_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_users_overview_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_users_overview_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_users_overview_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_users_overview_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_placement_policy_routes
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_placement_policy_routes
+        tests/cluster/test_admin_cluster_placement_policy_routes.cpp
+        server/src/routes/routes_admin_cluster_placement_policies.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_admin_cluster_placement_policy_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_placement_policy_routes PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_placement_policy_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_placement_policy_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_placement_policy_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_placement_policy_routes
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_user_placement_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_user_placement_route
+        tests/cluster/test_admin_cluster_user_placement_route.cpp
+        server/src/routes/routes_admin_cluster_user_placement.cpp
+        server/src/cluster/user_placement_service.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_cluster_user_placement_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_user_placement_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_user_placement_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_user_placement_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_placement_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_user_placement_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_policy_assignment_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_policy_assignment_service
+        tests/cluster/test_user_placement_policy_assignment_service.cpp
+        server/src/cluster/user_placement_policy_assignment_service.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_placement_policy_assignment_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_placement_policy_assignment_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_policy_assignment_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_policy_assignment_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_policy_assignment_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_policy_assignment_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_user_policy_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_user_policy_route
+        tests/cluster/test_admin_cluster_user_policy_route.cpp
+        server/src/routes/routes_admin_cluster_user_policy.cpp
+        server/src/cluster/user_placement_policy_assignment_service.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_cluster_user_policy_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_user_policy_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_user_policy_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_user_policy_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_policy_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_user_policy_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_preview_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_preview_service
+        tests/cluster/test_user_placement_preview_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_preview_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_link_libraries(test_user_placement_preview_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_preview_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_preview_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_preview_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_preview_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_user_placement_preview_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_user_placement_preview_route
+        tests/cluster/test_admin_cluster_user_placement_preview_route.cpp
+        server/src/routes/routes_admin_cluster_user_placement_preview.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_admin_cluster_user_placement_preview_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_user_placement_preview_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_user_placement_preview_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_user_placement_preview_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_placement_preview_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_user_placement_preview_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_recommendation_apply_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_recommendation_apply_service
+        tests/cluster/test_user_placement_recommendation_apply_service.cpp
+        server/src/cluster/user_placement_recommendation_apply_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_placement_recommendation_apply_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_placement_recommendation_apply_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_recommendation_apply_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_recommendation_apply_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_recommendation_apply_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_recommendation_apply_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_user_placement_apply_route
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_user_placement_apply_route
+        tests/cluster/test_admin_cluster_user_placement_apply_route.cpp
+        server/src/routes/routes_admin_cluster_user_placement_apply.cpp
+        server/src/cluster/user_placement_recommendation_apply_service.cpp
+        server/src/cluster/user_placement_preview_service.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_cluster_user_placement_apply_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_cluster_user_placement_apply_route PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_cluster_user_placement_apply_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_user_placement_apply_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_user_placement_apply_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_user_placement_apply_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_selector
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_selector
+        tests/cluster/test_user_placement_selector.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_selector PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_user_placement_selector PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_selector
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_selector"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_selector
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_policy
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_policy
+        tests/cluster/test_user_placement_policy.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_user_placement_policy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_policy
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_policy"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_policy
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_policy_registry
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_policy_registry
+        tests/cluster/test_user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy_registry.cpp
+        server/src/cluster/user_placement_policy.cpp
+        server/src/cluster/user_placement_selector.cpp
+)
+
+target_include_directories(test_user_placement_policy_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_user_placement_policy_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_policy_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_policy_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_policy_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_placement_service
+# -----------------------------------------------------------------------------
+add_executable(test_user_placement_service
+        tests/cluster/test_user_placement_service.cpp
+        server/src/cluster/user_placement_service.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_placement_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_placement_service PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_placement_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_placement_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_placement_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_placement_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_user_home_node
+# -----------------------------------------------------------------------------
+add_executable(test_user_home_node
+        tests/cluster/test_user_home_node.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_home_node PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_user_home_node PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_home_node PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_home_node
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_home_node"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_home_node
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_heartbeat_worker
+# -----------------------------------------------------------------------------
+add_executable(test_node_heartbeat_worker
+        tests/cluster/test_node_heartbeat_worker.cpp
+        server/src/cluster/node_heartbeat_worker.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/node_status.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/storage_info.cc
+)
+
+target_include_directories(test_node_heartbeat_worker PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_node_heartbeat_worker PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_node_heartbeat_worker PRIVATE
+        pqnas_verify_v4
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_node_heartbeat_worker PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_heartbeat_worker
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_cluster_node_routes
+# -----------------------------------------------------------------------------
+add_executable(test_admin_cluster_node_routes
+        tests/cluster/test_admin_cluster_node_routes.cpp
+        server/src/routes/routes_admin_cluster_nodes.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(test_admin_cluster_node_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_admin_cluster_node_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_cluster_node_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_cluster_node_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_cluster_node_routes
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_registry
+# -----------------------------------------------------------------------------
+add_executable(test_node_registry
+        tests/cluster/test_node_registry.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(test_node_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_node_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_internal_node_status_route
+# -----------------------------------------------------------------------------
+add_executable(test_internal_node_status_route
+        tests/cluster/test_internal_node_status_route.cpp
+        server/src/routes/routes_internal_node_status.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_internal_node_status_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_internal_node_status_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_internal_node_status_route PRIVATE
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_internal_node_status_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_internal_node_status_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_node_status_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_node_status_route
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_status
+# -----------------------------------------------------------------------------
+add_executable(test_node_status
+        tests/cluster/test_node_status.cpp
+        server/src/cluster/node_status.cpp
+        server/src/storage_info.cc
+)
+
+target_include_directories(test_node_status PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_node_status PRIVATE
+        pqnas_verify_v4
+)
+
+set_target_properties(test_node_status PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_status
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_status"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_status
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_internal_auth
+# -----------------------------------------------------------------------------
+add_executable(test_internal_auth
+        tests/cluster/test_internal_auth.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_internal_auth PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_internal_auth PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_internal_auth PRIVATE
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_internal_auth PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_internal_auth
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_auth"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_auth
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_server_role_config
+# -----------------------------------------------------------------------------
+add_executable(test_server_role_config
+        tests/cluster/test_server_role_config.cpp
+        server/src/cluster/server_role.cpp
+)
+
+target_include_directories(test_server_role_config PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+set_target_properties(test_server_role_config PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_server_role_config
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_server_role_config"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_server_role_config
 )
 
 
