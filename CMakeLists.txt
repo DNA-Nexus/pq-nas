@@ -261,6 +261,31 @@ target_link_libraries(pqnas_node_enrollment_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Persistent per-node credential registry
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_credential_registry STATIC
+        server/src/cluster/node_credential_registry.cpp
+        server/src/cluster/node_credential_registry.h
+)
+
+target_include_directories(pqnas_node_credential_registry PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_credential_registry
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_credential_registry PUBLIC
+        pqnas_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
 # Node enrollment service
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_enrollment_service STATIC
@@ -1469,6 +1494,39 @@ add_custom_target(run_test_node_enrollment_registry
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_registry"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_enrollment_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_credential_registry
+# -----------------------------------------------------------------------------
+add_executable(test_node_credential_registry
+        tests/cluster/test_node_credential_registry.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_node_credential_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_node_credential_registry PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_node_credential_registry PRIVATE
+        pqnas_node_credential_registry
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_node_credential_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_credential_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_credential_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_credential_registry
 )
 
 
