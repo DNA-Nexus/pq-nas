@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cluster/node_enrollment_token.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -13,12 +15,6 @@ namespace pqnas::cluster {
 
 inline constexpr int
     kNodeEnrollmentRegistrySchemaVersion = 1;
-
-inline constexpr std::size_t
-    kNodeEnrollmentTokenHashBytes = 32;
-
-inline constexpr std::size_t
-    kNodeEnrollmentTokenHashChars = 43;
 
 enum class NodeEnrollmentState {
     Pending,

@@ -198,6 +198,36 @@ endif()
 
 
 # -----------------------------------------------------------------------------
+# Node enrollment token primitives
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_token STATIC
+        server/src/cluster/node_enrollment_token.cpp
+        server/src/cluster/node_enrollment_token.h
+)
+
+target_include_directories(pqnas_node_enrollment_token PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_enrollment_token PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_token
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_enrollment_token PUBLIC
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
 # Persistent node enrollment registry
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_enrollment_registry STATIC
@@ -225,6 +255,7 @@ endif()
 
 target_link_libraries(pqnas_node_enrollment_registry PUBLIC
         pqnas_cluster_identity_validation
+        pqnas_node_enrollment_token
         ${SODIUM_LIBRARIES}
 )
 
@@ -1258,6 +1289,28 @@ add_custom_target(run_test_node_heartbeat_worker
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_token
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_token
+        tests/cluster/test_node_enrollment_token.cpp
+)
+
+target_link_libraries(test_node_enrollment_token PRIVATE
+        pqnas_node_enrollment_token
+)
+
+set_target_properties(test_node_enrollment_token PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_token
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_token"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_token
 )
 
 

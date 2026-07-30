@@ -137,87 +137,6 @@ bool valid_enrollment_id(
     );
 }
 
-bool valid_token_hash(
-    const std::string& value
-) {
-    if (!base64url_text(
-            value,
-            kNodeEnrollmentTokenHashChars,
-            kNodeEnrollmentTokenHashChars)) {
-        return false;
-    }
-
-    std::array<
-        unsigned char,
-        kNodeEnrollmentTokenHashBytes
-    > decoded{};
-
-    std::size_t decoded_size = 0;
-    const char* decode_end = nullptr;
-
-    const int decode_result =
-        sodium_base642bin(
-            decoded.data(),
-            decoded.size(),
-            value.data(),
-            value.size(),
-            nullptr,
-            &decoded_size,
-            &decode_end,
-            sodium_base64_VARIANT_URLSAFE_NO_PADDING
-        );
-
-    std::array<
-        char,
-        sodium_base64_ENCODED_LEN(
-            kNodeEnrollmentTokenHashBytes,
-            sodium_base64_VARIANT_URLSAFE_NO_PADDING
-        )
-    > canonical{};
-
-    const char* encode_result = nullptr;
-
-    if (decode_result == 0 &&
-        decoded_size == decoded.size() &&
-        decode_end ==
-            value.data() + value.size()) {
-        encode_result =
-            sodium_bin2base64(
-                canonical.data(),
-                canonical.size(),
-                decoded.data(),
-                decoded.size(),
-                sodium_base64_VARIANT_URLSAFE_NO_PADDING
-            );
-    }
-
-    // Security: decode and re-encode before accepting the verifier. This
-    // rejects non-canonical encodings whose unused trailing base64 bits could
-    // otherwise give one 32-byte hash multiple textual representations.
-    const bool valid =
-        encode_result != nullptr &&
-        canonical[
-            kNodeEnrollmentTokenHashChars
-        ] == '\0' &&
-        sodium_memcmp(
-            canonical.data(),
-            value.data(),
-            kNodeEnrollmentTokenHashChars
-        ) == 0;
-
-    sodium_memzero(
-        decoded.data(),
-        decoded.size()
-    );
-
-    sodium_memzero(
-        canonical.data(),
-        canonical.size()
-    );
-
-    return valid;
-}
-
 bool valid_iso_utc_seconds(
     const std::string& value
 ) {
@@ -544,7 +463,7 @@ bool validate_record(
 
     switch (record.state) {
         case NodeEnrollmentState::Pending:
-            if (!valid_token_hash(
+            if (!valid_node_enrollment_token_hash(
                     record.token_hash) ||
                 !record.revoked_at.empty() ||
                 !record.consumed_at.empty()) {
@@ -1806,7 +1725,7 @@ create_or_replace_pending(
             node_id) ||
         required_protocol_version < 1 ||
         required_protocol_version > 1000 ||
-        !valid_token_hash(
+        !valid_node_enrollment_token_hash(
             token_hash) ||
         !valid_iso_utc_seconds(
             created_at) ||
@@ -2091,7 +2010,7 @@ consume_pending_if_matches(
         presented_protocol_version < 1 ||
         presented_protocol_version > 1000 ||
         expected_generation == 0 ||
-        !valid_token_hash(
+        !valid_node_enrollment_token_hash(
             presented_token_hash) ||
         !valid_iso_utc_seconds(
             consumed_at) ||
