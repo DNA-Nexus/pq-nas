@@ -28,6 +28,14 @@ inline constexpr std::uint64_t
 inline constexpr std::uint64_t
     kAdminNodeEnrollmentMaximumTtlSeconds = 60 * 60;
 
+// Adds a bounded enrollment TTL to one canonical YYYY-MM-DDTHH:MM:SSZ
+// timestamp. Invalid dates are rejected instead of being normalized.
+bool add_admin_node_enrollment_seconds_iso_utc(
+    const std::string& base,
+    std::uint64_t seconds,
+    std::string* output
+);
+
 struct AdminNodeEnrollmentRoutesContext {
     NodeEnrollmentService* service = nullptr;
 

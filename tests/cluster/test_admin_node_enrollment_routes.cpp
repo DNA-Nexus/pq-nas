@@ -146,6 +146,70 @@ int main() {
         return 1;
     }
 
+    {
+        std::string added =
+            "previous-output";
+
+        expect(
+            pqnas::cluster::
+                add_admin_node_enrollment_seconds_iso_utc(
+                    "2026-07-30T23:59:30Z",
+                    90,
+                    &added
+                ) &&
+            added ==
+                "2026-07-31T00:01:00Z",
+            "enrollment timestamp day rollover"
+        );
+
+        expect(
+            pqnas::cluster::
+                add_admin_node_enrollment_seconds_iso_utc(
+                    "2028-02-29T23:59:30Z",
+                    60,
+                    &added
+                ) &&
+            added ==
+                "2028-03-01T00:00:30Z",
+            "enrollment timestamp leap-day rollover"
+        );
+
+        added = "must-be-cleared";
+
+        expect(
+            !pqnas::cluster::
+                add_admin_node_enrollment_seconds_iso_utc(
+                    "2026-02-30T12:00:00Z",
+                    60,
+                    &added
+                ) &&
+            added.empty(),
+            "invalid calendar date must be rejected"
+        );
+
+        expect(
+            !pqnas::cluster::
+                add_admin_node_enrollment_seconds_iso_utc(
+                    "2026-07-30 12:00:00Z",
+                    60,
+                    &added
+                ),
+            "noncanonical enrollment timestamp"
+        );
+
+        expect(
+            !pqnas::cluster::
+                add_admin_node_enrollment_seconds_iso_utc(
+                    "2026-07-30T12:00:00Z",
+                    pqnas::cluster::
+                        kAdminNodeEnrollmentMaximumTtlSeconds +
+                    1,
+                    &added
+                ),
+            "oversized enrollment timestamp addition"
+        );
+    }
+
     const fs::path directory =
         make_test_directory();
 

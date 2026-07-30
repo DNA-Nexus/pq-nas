@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <ctime>
 #include <initializer_list>
 #include <limits>
 #include <string>
@@ -645,6 +647,214 @@ void reply_service_failure(
 }
 
 } // namespace
+
+bool add_admin_node_enrollment_seconds_iso_utc(
+    const std::string& base,
+    std::uint64_t seconds,
+    std::string* output
+) {
+    if (!output) {
+        return false;
+    }
+
+    output->clear();
+
+    if (seconds == 0 ||
+        seconds >
+            kAdminNodeEnrollmentMaximumTtlSeconds ||
+        base.size() != 20 ||
+        base[4] != '-' ||
+        base[7] != '-' ||
+        base[10] != 'T' ||
+        base[13] != ':' ||
+        base[16] != ':' ||
+        base[19] != 'Z') {
+        return false;
+    }
+
+    const auto parse_digits =
+        [&](std::size_t offset,
+            std::size_t count,
+            int* value) {
+            if (!value ||
+                offset + count >
+                    base.size()) {
+                return false;
+            }
+
+            int parsed = 0;
+
+            for (std::size_t index = 0;
+                 index < count;
+                 ++index) {
+                const unsigned char ch =
+                    static_cast<unsigned char>(
+                        base[offset + index]
+                    );
+
+                if (ch < '0' || ch > '9') {
+                    return false;
+                }
+
+                parsed =
+                    parsed * 10 +
+                    static_cast<int>(
+                        ch - '0'
+                    );
+            }
+
+            *value = parsed;
+            return true;
+        };
+
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+
+    if (!parse_digits(0, 4, &year) ||
+        !parse_digits(5, 2, &month) ||
+        !parse_digits(8, 2, &day) ||
+        !parse_digits(11, 2, &hour) ||
+        !parse_digits(14, 2, &minute) ||
+        !parse_digits(17, 2, &second) ||
+        year < 1970 ||
+        year > 9999 ||
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > 31 ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59 ||
+        second < 0 ||
+        second > 59) {
+        return false;
+    }
+
+    std::tm parsed_tm{};
+    parsed_tm.tm_year = year - 1900;
+    parsed_tm.tm_mon = month - 1;
+    parsed_tm.tm_mday = day;
+    parsed_tm.tm_hour = hour;
+    parsed_tm.tm_min = minute;
+    parsed_tm.tm_sec = second;
+    parsed_tm.tm_isdst = 0;
+
+    const std::time_t parsed_time =
+        ::timegm(&parsed_tm);
+
+    if constexpr (
+        std::numeric_limits<
+            std::time_t
+        >::is_signed
+    ) {
+        if (parsed_time <
+            static_cast<std::time_t>(0)) {
+            return false;
+        }
+    }
+
+    std::tm canonical_tm{};
+
+    if (::gmtime_r(
+            &parsed_time,
+            &canonical_tm) == nullptr) {
+        return false;
+    }
+
+    // Security: timegm normalizes invalid dates such as February 30.
+    // Require an exact round trip so malformed timestamps cannot silently
+    // become a different authorization expiry.
+    if (canonical_tm.tm_year !=
+            year - 1900 ||
+        canonical_tm.tm_mon !=
+            month - 1 ||
+        canonical_tm.tm_mday != day ||
+        canonical_tm.tm_hour != hour ||
+        canonical_tm.tm_min != minute ||
+        canonical_tm.tm_sec != second) {
+        return false;
+    }
+
+    const std::uintmax_t parsed_value =
+        static_cast<std::uintmax_t>(
+            parsed_time
+        );
+
+    const std::uintmax_t maximum_time =
+        static_cast<std::uintmax_t>(
+            std::numeric_limits<
+                std::time_t
+            >::max()
+        );
+
+    if (parsed_value >
+        maximum_time -
+            static_cast<std::uintmax_t>(
+                seconds
+            )) {
+        return false;
+    }
+
+    const std::time_t result_time =
+        static_cast<std::time_t>(
+            parsed_value +
+            static_cast<std::uintmax_t>(
+                seconds
+            )
+        );
+
+    std::tm result_tm{};
+
+    if (::gmtime_r(
+            &result_time,
+            &result_tm) == nullptr) {
+        return false;
+    }
+
+    const int result_year =
+        result_tm.tm_year + 1900;
+
+    if (result_year < 1970 ||
+        result_year > 9999) {
+        return false;
+    }
+
+    char buffer[21] = {};
+
+    const int written =
+        std::snprintf(
+            buffer,
+            sizeof(buffer),
+            "%04d-%02d-%02dT%02d:%02d:%02dZ",
+            result_year,
+            result_tm.tm_mon + 1,
+            result_tm.tm_mday,
+            result_tm.tm_hour,
+            result_tm.tm_min,
+            result_tm.tm_sec
+        );
+
+    if (written != 20) {
+        return false;
+    }
+
+    try {
+        output->assign(
+            buffer,
+            20
+        );
+    } catch (...) {
+        output->clear();
+        return false;
+    }
+
+    return true;
+}
 
 void handle_admin_node_enrollments_list(
     const httplib::Request& req,
