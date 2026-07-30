@@ -128,6 +128,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_enrollment_registry.h"
+#include "cluster/node_enrollment_service.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
@@ -137,6 +139,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
+#include "routes/routes_admin_node_enrollments.h"
 #include "routes/routes_admin_cluster_placement_policies.h"
 #include "routes/routes_admin_cluster_user_placement.h"
 #include "routes/routes_admin_cluster_user_placement_preview.h"
@@ -9217,6 +9220,13 @@ int main()
 
     pqnas::cluster::NodeRegistry director_node_registry;
 
+    pqnas::cluster::NodeEnrollmentRegistry
+        director_node_enrollment_registry;
+
+    std::unique_ptr<
+        pqnas::cluster::NodeEnrollmentService
+    > director_node_enrollment_service;
+
     pqnas::cluster::UserPlacementPolicyRegistry
         director_placement_policy_registry;
 
@@ -9251,6 +9261,79 @@ int main()
         std::cerr
             << "[cluster] Director node registry loaded nodes="
             << director_node_registry.snapshot().size()
+            << std::endl;
+
+        // Security: enrollment intents contain bootstrap-token verifiers and
+        // are trusted control-plane state. Use one fixed filename below the
+        // validated configuration root; never accept a per-file override.
+        const std::filesystem::path
+            node_enrollment_registry_path =
+                pqnas::config_root_path() /
+                "node_enrollments.json";
+
+        std::string
+            node_enrollment_registry_error;
+
+        if (!director_node_enrollment_registry.load(
+                node_enrollment_registry_path.string(),
+                &node_enrollment_registry_error)) {
+            // Security: fail closed and do not print the configured path,
+            // verifier material or the registry's raw filesystem diagnostic.
+            std::cerr
+                << "[cluster] FATAL: Director node enrollment "
+                   "registry load failed"
+                << std::endl;
+
+            return 3;
+        }
+
+        pqnas::cluster::
+            NodeEnrollmentServiceConfig
+                node_enrollment_service_config;
+
+        node_enrollment_service_config.registry =
+            &director_node_enrollment_registry;
+
+        node_enrollment_service_config.audit_emit =
+            [](
+                const std::string& event,
+                const std::string& outcome,
+                const std::map<
+                    std::string,
+                    std::string
+                >& fields
+            ) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field :
+                     fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        director_node_enrollment_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeEnrollmentService
+            >(
+                std::move(
+                    node_enrollment_service_config
+                )
+            );
+
+        // Security: log aggregate state only. Never log URLs, enrollment IDs,
+        // token verifiers, registry paths or individual node identifiers.
+        std::cerr
+            << "[cluster] Director node enrollment registry "
+               "loaded enrollments="
+            << director_node_enrollment_registry
+                   .snapshot()
+                   .size()
             << std::endl;
 
         // Security: placement policies are trusted control-plane state.
@@ -10535,6 +10618,79 @@ v5.app_pair_build_qr_uri =
     }
 
     if (cluster_config.is_director()) {
+        pqnas::cluster::
+            AdminNodeEnrollmentRoutesContext
+                admin_node_enrollment_context;
+
+        admin_node_enrollment_context.service =
+            director_node_enrollment_service.get();
+
+        admin_node_enrollment_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_node_enrollment_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_node_enrollment_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        admin_node_enrollment_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_node_enrollment_context.add_seconds_iso_utc =
+            [](
+                const std::string& base,
+                std::uint64_t seconds,
+                std::string* output
+            ) {
+                return
+                    pqnas::cluster::
+                        add_admin_node_enrollment_seconds_iso_utc(
+                            base,
+                            seconds,
+                            output
+                        );
+            };
+
+        pqnas::cluster::
+            register_admin_node_enrollment_routes(
+                srv,
+                admin_node_enrollment_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin node enrollment "
+               "routes registered"
+            << std::endl;
+
         pqnas::cluster::AdminClusterNodeRoutesContext
             admin_cluster_node_context;
 

@@ -176,6 +176,153 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 )
 
 # -----------------------------------------------------------------------------
+# Cluster identity validation
+# -----------------------------------------------------------------------------
+add_library(pqnas_cluster_identity_validation STATIC
+        server/src/cluster/cluster_identity_validation.cpp
+        server/src/cluster/cluster_identity_validation.h
+)
+
+target_include_directories(pqnas_cluster_identity_validation PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+# Security-sensitive canonicalization should remain warning-clean.
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_cluster_identity_validation
+        PRIVATE
+        -Werror
+    )
+endif()
+
+
+# -----------------------------------------------------------------------------
+# Node enrollment token primitives
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_token STATIC
+        server/src/cluster/node_enrollment_token.cpp
+        server/src/cluster/node_enrollment_token.h
+)
+
+target_include_directories(pqnas_node_enrollment_token PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_enrollment_token PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_token
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_enrollment_token PUBLIC
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Persistent node enrollment registry
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_registry STATIC
+        server/src/cluster/node_enrollment_registry.cpp
+        server/src/cluster/node_enrollment_registry.h
+)
+
+target_include_directories(pqnas_node_enrollment_registry PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_enrollment_registry PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_registry
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_enrollment_registry PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_node_enrollment_token
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Node enrollment service
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_service STATIC
+        server/src/cluster/node_enrollment_service.cpp
+        server/src/cluster/node_enrollment_service.h
+)
+
+target_include_directories(pqnas_node_enrollment_service PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_enrollment_service PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_enrollment_service PUBLIC
+        pqnas_node_enrollment_registry
+        pqnas_node_enrollment_token
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Admin node enrollment routes
+# -----------------------------------------------------------------------------
+add_library(pqnas_admin_node_enrollment_routes STATIC
+        server/src/routes/routes_admin_node_enrollments.cpp
+        server/src/routes/routes_admin_node_enrollments.h
+)
+
+target_include_directories(pqnas_admin_node_enrollment_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_admin_node_enrollment_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_admin_node_enrollment_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_admin_node_enrollment_routes PUBLIC
+        pqnas_node_enrollment_service
+)
+
+
+# -----------------------------------------------------------------------------
 # Server (C++ / httplib)
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
@@ -367,6 +514,16 @@ add_executable(pqnas_server
         server/src/gallery_albums.cpp
         server/src/gallery_albums_routes.cpp
 
+)
+
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_cluster_identity_validation
+)
+
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_node_enrollment_registry
+        pqnas_node_enrollment_service
+        pqnas_admin_node_enrollment_routes
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -806,6 +963,10 @@ add_executable(test_admin_cluster_user_placement_route
         server/src/users_registry.cpp
 )
 
+target_link_libraries(test_admin_cluster_user_placement_route PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_admin_cluster_user_placement_route PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/third_party
@@ -1099,6 +1260,10 @@ add_executable(test_user_placement_service
         server/src/users_registry.cpp
 )
 
+target_link_libraries(test_user_placement_service PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_user_placement_service PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/third_party
@@ -1159,6 +1324,10 @@ add_executable(test_node_heartbeat_worker
         server/src/storage_info.cc
 )
 
+target_link_libraries(test_node_heartbeat_worker PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_node_heartbeat_worker PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/include
@@ -1188,12 +1357,154 @@ add_custom_target(run_test_node_heartbeat_worker
 
 
 # -----------------------------------------------------------------------------
+# Test: test_admin_node_enrollment_routes
+# -----------------------------------------------------------------------------
+add_executable(test_admin_node_enrollment_routes
+        tests/cluster/test_admin_node_enrollment_routes.cpp
+)
+
+target_link_libraries(test_admin_node_enrollment_routes PRIVATE
+        pqnas_admin_node_enrollment_routes
+)
+
+target_include_directories(test_admin_node_enrollment_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_admin_node_enrollment_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_node_enrollment_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_node_enrollment_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_node_enrollment_routes
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_revocation_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_revocation_service
+        tests/cluster/test_node_enrollment_revocation_service.cpp
+)
+
+target_link_libraries(test_node_enrollment_revocation_service PRIVATE
+        pqnas_node_enrollment_service
+)
+
+set_target_properties(test_node_enrollment_revocation_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_revocation_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_revocation_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_revocation_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_service
+        tests/cluster/test_node_enrollment_service.cpp
+)
+
+target_link_libraries(test_node_enrollment_service PRIVATE
+        pqnas_node_enrollment_service
+)
+
+set_target_properties(test_node_enrollment_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_token
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_token
+        tests/cluster/test_node_enrollment_token.cpp
+)
+
+target_link_libraries(test_node_enrollment_token PRIVATE
+        pqnas_node_enrollment_token
+)
+
+set_target_properties(test_node_enrollment_token PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_token
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_token"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_token
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_registry
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_registry
+        tests/cluster/test_node_enrollment_registry.cpp
+)
+
+target_link_libraries(test_node_enrollment_registry PRIVATE
+        pqnas_node_enrollment_registry
+)
+
+set_target_properties(test_node_enrollment_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_cluster_identity_validation
+# -----------------------------------------------------------------------------
+add_executable(test_cluster_identity_validation
+        tests/cluster/test_cluster_identity_validation.cpp
+)
+
+target_link_libraries(test_cluster_identity_validation PRIVATE
+        pqnas_cluster_identity_validation
+)
+
+set_target_properties(test_cluster_identity_validation PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_cluster_identity_validation
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_cluster_identity_validation"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_admin_cluster_node_routes
 # -----------------------------------------------------------------------------
 add_executable(test_admin_cluster_node_routes
         tests/cluster/test_admin_cluster_node_routes.cpp
         server/src/routes/routes_admin_cluster_nodes.cpp
         server/src/cluster/node_registry.cpp
+)
+
+target_link_libraries(test_admin_cluster_node_routes PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_admin_cluster_node_routes PRIVATE
@@ -1219,6 +1530,10 @@ add_custom_target(run_test_admin_cluster_node_routes
 add_executable(test_node_registry
         tests/cluster/test_node_registry.cpp
         server/src/cluster/node_registry.cpp
+)
+
+target_link_libraries(test_node_registry PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_node_registry PRIVATE
@@ -1277,6 +1592,10 @@ add_executable(test_node_status
         tests/cluster/test_node_status.cpp
         server/src/cluster/node_status.cpp
         server/src/storage_info.cc
+)
+
+target_link_libraries(test_node_status PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_node_status PRIVATE
@@ -1338,6 +1657,10 @@ add_custom_target(run_test_internal_auth
 add_executable(test_server_role_config
         tests/cluster/test_server_role_config.cpp
         server/src/cluster/server_role.cpp
+)
+
+target_link_libraries(test_server_role_config PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_server_role_config PRIVATE

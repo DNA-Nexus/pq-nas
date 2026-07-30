@@ -155,6 +155,36 @@ int main() {
         "/srv/pqnas/config/cluster-token"
     );
 
+    // Security: canonical cluster identity values must not be silently
+    // changed before they are bound into registry or enrollment state.
+    expect_error(
+        "node",
+        " node-01",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01 ",
+        "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        " https://director.local",
+        credential
+    );
+
+    expect_error(
+        "node",
+        "node-01",
+        "https://director.local//",
+        credential
+    );
+
     expect_error("unknown", "", "", credential);
 
     expect_error(

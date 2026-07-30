@@ -1,4 +1,5 @@
 #include "routes_admin_cluster_nodes.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include "audit_log.h"
 #include "cluster/node_registry.h"
@@ -56,147 +57,6 @@ void reply_json_local(
         body.dump(),
         "application/json; charset=utf-8"
     );
-}
-
-std::string trim_ascii(
-    const std::string& value
-) {
-    std::size_t first = 0;
-
-    while (first < value.size()) {
-        const unsigned char ch =
-            static_cast<unsigned char>(
-                value[first]
-            );
-
-        if (ch != ' ' &&
-            ch != '\t' &&
-            ch != '\r' &&
-            ch != '\n') {
-            break;
-        }
-
-        ++first;
-    }
-
-    std::size_t last = value.size();
-
-    while (last > first) {
-        const unsigned char ch =
-            static_cast<unsigned char>(
-                value[last - 1]
-            );
-
-        if (ch != ' ' &&
-            ch != '\t' &&
-            ch != '\r' &&
-            ch != '\n') {
-            break;
-        }
-
-        --last;
-    }
-
-    return value.substr(first, last - first);
-}
-
-bool valid_node_id(
-    const std::string& value
-) {
-    if (value.empty() || value.size() > 64) {
-        return false;
-    }
-
-    for (std::size_t index = 0;
-         index < value.size();
-         ++index) {
-        const unsigned char ch =
-            static_cast<unsigned char>(
-                value[index]
-            );
-
-        const bool alphanumeric =
-            (ch >= 'A' && ch <= 'Z') ||
-            (ch >= 'a' && ch <= 'z') ||
-            (ch >= '0' && ch <= '9');
-
-        if (index == 0) {
-            if (!alphanumeric) {
-                return false;
-            }
-
-            continue;
-        }
-
-        if (!alphanumeric &&
-            ch != '-' &&
-            ch != '_' &&
-            ch != '.') {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool normalize_https_base_url(
-    const std::string& raw,
-    std::string* normalized
-) {
-    if (!normalized) {
-        return false;
-    }
-
-    std::string value = trim_ascii(raw);
-
-    if (value.empty() || value.size() > 2048) {
-        return false;
-    }
-
-    constexpr char prefix[] = "https://";
-    constexpr std::size_t prefix_length =
-        sizeof(prefix) - 1;
-
-    if (value.compare(
-            0,
-            prefix_length,
-            prefix) != 0) {
-        return false;
-    }
-
-    for (unsigned char ch : value) {
-        if (ch <= 0x20 ||
-            ch == 0x7f ||
-            ch == '\\') {
-            return false;
-        }
-    }
-
-    if (value.find('@', prefix_length) !=
-            std::string::npos ||
-        value.find('?', prefix_length) !=
-            std::string::npos ||
-        value.find('#', prefix_length) !=
-            std::string::npos) {
-        return false;
-    }
-
-    if (!value.empty() && value.back() == '/') {
-        value.pop_back();
-    }
-
-    const std::string authority =
-        value.substr(prefix_length);
-
-    if (authority.empty() ||
-        authority.find('/') != std::string::npos ||
-        authority.front() == ':' ||
-        authority.back() == ':') {
-        return false;
-    }
-
-    *normalized = value;
-    return true;
 }
 
 bool has_only_keys(
@@ -640,16 +500,17 @@ void handle_admin_cluster_nodes_create(
 
     std::string normalized_url;
 
-    if (!valid_node_id(node_id) ||
-        !normalize_https_base_url(
+    if (!valid_cluster_node_id(node_id) ||
+        !normalize_cluster_https_base_url(
             url_iterator->get<std::string>(),
-            &normalized_url)) {
+            &normalized_url,
+            nullptr)) {
         audit_mutation(
             context,
             req,
             actor_fp,
             "admin.cluster_node.create",
-            valid_node_id(node_id) ? node_id : "",
+            valid_cluster_node_id(node_id) ? node_id : "",
             "fail"
         );
 
@@ -896,7 +757,7 @@ void handle_admin_cluster_nodes_update(
     const std::string node_id =
         node_id_iterator->get<std::string>();
 
-    if (!valid_node_id(node_id)) {
+    if (!valid_cluster_node_id(node_id)) {
         audit_mutation(
             context,
             req,
@@ -958,9 +819,10 @@ void handle_admin_cluster_nodes_update(
 
     if (has_url) {
         if (!url_iterator->is_string() ||
-            !normalize_https_base_url(
+            !normalize_cluster_https_base_url(
                 url_iterator->get<std::string>(),
-                &normalized_url)) {
+                &normalized_url,
+                nullptr)) {
             audit_mutation(
                 context,
                 req,
@@ -1192,7 +1054,7 @@ void handle_admin_cluster_nodes_delete(
 
     if (node_id_iterator == body.end() ||
         !node_id_iterator->is_string() ||
-        !valid_node_id(
+        !valid_cluster_node_id(
             node_id_iterator->get<std::string>())) {
         audit_mutation(
             context,
