@@ -44,9 +44,9 @@ public:
     explicit SensitiveStringWiper(std::string& value) noexcept : value_(value) {}
 
     ~SensitiveStringWiper() {
-        if (!value_.empty()) {
-            sodium_memzero(value_.data(), value_.size());
-        }
+        clear_internal_auth_token_text(
+            &value_
+        );
     }
 
     SensitiveStringWiper(const SensitiveStringWiper&) = delete;
@@ -178,6 +178,193 @@ bool read_bounded_file(
 
 } // namespace
 
+void clear_internal_auth_token_text(
+    std::string* token
+) noexcept {
+    if (!token) {
+        return;
+    }
+
+    if (!token->empty()) {
+        sodium_memzero(
+            token->data(),
+            token->size()
+        );
+    }
+
+    token->clear();
+}
+
+bool valid_internal_auth_credential_token(
+    const std::string& token
+) noexcept {
+    return valid_base64url_token_text(
+        token.data(),
+        token.size()
+    );
+}
+
+bool generate_internal_auth_credential_token(
+    std::string* token,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!token) {
+        set_error(
+            err,
+            "missing generated credential token output"
+        );
+
+        return false;
+    }
+
+    clear_internal_auth_token_text(token);
+
+    if (sodium_init() < 0) {
+        set_error(
+            err,
+            "credential random generator unavailable"
+        );
+
+        return false;
+    }
+
+    std::array<
+        unsigned char,
+        kInternalAuthSecretBytes
+    > random_bytes{};
+
+    SensitiveArrayWiper<
+        kInternalAuthSecretBytes
+    > random_wiper(random_bytes);
+
+    constexpr std::size_t encoded_size =
+        sodium_base64_ENCODED_LEN(
+            kInternalAuthSecretBytes,
+            sodium_base64_VARIANT_URLSAFE_NO_PADDING
+        );
+
+    static_assert(
+        encoded_size ==
+            kInternalAuthTokenChars + 1,
+        "unexpected internal credential token size"
+    );
+
+    std::array<char, encoded_size> encoded{};
+
+    randombytes_buf(
+        random_bytes.data(),
+        random_bytes.size()
+    );
+
+    const char* result =
+        sodium_bin2base64(
+            encoded.data(),
+            encoded.size(),
+            random_bytes.data(),
+            random_bytes.size(),
+            sodium_base64_VARIANT_URLSAFE_NO_PADDING
+        );
+
+    if (!result ||
+        encoded[kInternalAuthTokenChars] != '\0' ||
+        !valid_base64url_token_text(
+            encoded.data(),
+            kInternalAuthTokenChars
+        )) {
+        sodium_memzero(
+            encoded.data(),
+            encoded.size()
+        );
+
+        set_error(
+            err,
+            "credential token encoding failed"
+        );
+
+        return false;
+    }
+
+    try {
+        token->assign(
+            encoded.data(),
+            kInternalAuthTokenChars
+        );
+    } catch (...) {
+        sodium_memzero(
+            encoded.data(),
+            encoded.size()
+        );
+
+        clear_internal_auth_token_text(token);
+
+        set_error(
+            err,
+            "credential token allocation failed"
+        );
+
+        return false;
+    }
+
+    sodium_memzero(
+        encoded.data(),
+        encoded.size()
+    );
+
+    return true;
+}
+
+bool parse_internal_auth_credential_token(
+    const std::string& token,
+    InternalAuthCredential* out,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!out) {
+        set_error(
+            err,
+            "missing credential output"
+        );
+
+        return false;
+    }
+
+    std::array<
+        unsigned char,
+        kInternalAuthSecretBytes
+    > decoded{};
+
+    SensitiveArrayWiper<
+        kInternalAuthSecretBytes
+    > decoded_wiper(decoded);
+
+    if (!decode_token(
+            token.data(),
+            token.size(),
+            &decoded)) {
+        set_error(
+            err,
+            "internal credential must be a 32-byte base64url token without padding"
+        );
+
+        return false;
+    }
+
+    // Security: preserve the previous active credential until the complete
+    // replacement token has been validated and decoded.
+    out->clear();
+    out->secret_ = decoded;
+    out->configured_ = true;
+
+    return true;
+}
+
 InternalAuthCredential::~InternalAuthCredential() {
     clear();
 }
@@ -308,23 +495,11 @@ bool load_internal_auth_credential_file(
         return false;
     }
 
-    std::array<unsigned char, kInternalAuthSecretBytes> decoded{};
-    SensitiveArrayWiper<kInternalAuthSecretBytes> decoded_wiper(decoded);
-
-    if (!decode_token(token_text.data(), token_text.size(), &decoded)) {
-        set_error(
-            err,
-            "internal credential must be a 32-byte base64url token without padding"
-        );
-        return false;
-    }
-
-    // Replace only after all validation has succeeded, preserving the previous
-    // credential if loading a replacement fails.
-    out->clear();
-    out->secret_ = decoded;
-    out->configured_ = true;
-    return true;
+    return parse_internal_auth_credential_token(
+        token_text,
+        out,
+        err
+    );
 }
 
 bool verify_internal_bearer_authorization(
