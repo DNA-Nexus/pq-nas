@@ -1326,6 +1326,28 @@ add_custom_target(run_test_node_heartbeat_worker
 
 
 # -----------------------------------------------------------------------------
+# Test: test_node_enrollment_revocation_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_revocation_service
+        tests/cluster/test_node_enrollment_revocation_service.cpp
+)
+
+target_link_libraries(test_node_enrollment_revocation_service PRIVATE
+        pqnas_node_enrollment_service
+)
+
+set_target_properties(test_node_enrollment_revocation_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_revocation_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_revocation_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_revocation_service
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_enrollment_service
 # -----------------------------------------------------------------------------
 add_executable(test_node_enrollment_service

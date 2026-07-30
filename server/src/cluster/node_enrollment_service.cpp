@@ -103,6 +103,30 @@ bool valid_generated_enrollment_id(
     return true;
 }
 
+bool valid_service_enrollment_id(
+    const std::string& value
+) noexcept {
+    if (value.size() < 16 ||
+        value.size() > 128) {
+        return false;
+    }
+
+    for (unsigned char ch : value) {
+        const bool alphanumeric =
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9');
+
+        if (!alphanumeric &&
+            ch != '-' &&
+            ch != '_') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool secure_generate_enrollment_id(
     std::string* output
 ) {
@@ -221,6 +245,65 @@ map_registry_failure(
         RegistryFailed;
 }
 
+NodeEnrollmentServiceResult
+map_revoke_registry_failure(
+    NodeEnrollmentRegistryResult result
+) {
+    switch (result) {
+        case NodeEnrollmentRegistryResult::Ok:
+            return NodeEnrollmentServiceResult::Ok;
+
+        case NodeEnrollmentRegistryResult::
+                InvalidInput:
+            return NodeEnrollmentServiceResult::
+                InvalidInput;
+
+        case NodeEnrollmentRegistryResult::
+                NotFound:
+            return NodeEnrollmentServiceResult::
+                NotFound;
+
+        case NodeEnrollmentRegistryResult::
+                GenerationMismatch:
+            return NodeEnrollmentServiceResult::
+                GenerationMismatch;
+
+        case NodeEnrollmentRegistryResult::
+                Revoked:
+            return NodeEnrollmentServiceResult::
+                Revoked;
+
+        case NodeEnrollmentRegistryResult::
+                AlreadyConsumed:
+            return NodeEnrollmentServiceResult::
+                Consumed;
+
+        case NodeEnrollmentRegistryResult::
+                PersistFailed:
+            return NodeEnrollmentServiceResult::
+                PersistFailed;
+
+        case NodeEnrollmentRegistryResult::
+                DuplicateEnrollmentId:
+        case NodeEnrollmentRegistryResult::
+                DuplicateActiveUrl:
+        case NodeEnrollmentRegistryResult::Expired:
+        case NodeEnrollmentRegistryResult::
+                NodeMismatch:
+        case NodeEnrollmentRegistryResult::
+                UrlMismatch:
+        case NodeEnrollmentRegistryResult::
+                ProtocolIncompatible:
+        case NodeEnrollmentRegistryResult::
+                TokenInvalid:
+            return NodeEnrollmentServiceResult::
+                RegistryFailed;
+    }
+
+    return NodeEnrollmentServiceResult::
+        RegistryFailed;
+}
+
 } // namespace
 
 const char* node_enrollment_service_result_code(
@@ -253,6 +336,22 @@ const char* node_enrollment_service_result_code(
         case NodeEnrollmentServiceResult::
                 UrlConflict:
             return "enrollment_url_conflict";
+
+        case NodeEnrollmentServiceResult::
+                NotFound:
+            return "enrollment_not_found";
+
+        case NodeEnrollmentServiceResult::
+                GenerationMismatch:
+            return "enrollment_generation_mismatch";
+
+        case NodeEnrollmentServiceResult::
+                Revoked:
+            return "enrollment_revoked";
+
+        case NodeEnrollmentServiceResult::
+                Consumed:
+            return "enrollment_consumed";
 
         case NodeEnrollmentServiceResult::
                 PersistFailed:
@@ -304,6 +403,14 @@ NodeEnrollmentView redact_node_enrollment_record(
         record.generation;
 
     return output;
+}
+
+const char*
+NodeEnrollmentMutationResult::error_code()
+    const noexcept {
+    return node_enrollment_service_result_code(
+        result
+    );
 }
 
 NodeEnrollmentCreateResult::
@@ -542,6 +649,57 @@ void NodeEnrollmentService::audit_best_effort(
         );
     } catch (...) {
         // Enrollment persistence must not be rolled back by audit failure.
+    }
+}
+
+void NodeEnrollmentService::
+audit_revoke_best_effort(
+    const std::string& outcome,
+    const std::string& enrollment_id,
+    std::uint64_t generation,
+    const std::string& node_id,
+    const std::string& actor_fingerprint,
+    const std::string& reason_code
+) const {
+    if (!config_.audit_emit) {
+        return;
+    }
+
+    // Security: audit only bounded identifiers and stable result categories.
+    // Never include the URL, plaintext token, verifier, raw persistence error,
+    // request body or registry path.
+    std::map<std::string, std::string> fields{
+        {"reason_code", reason_code}
+    };
+
+    if (valid_service_enrollment_id(
+            enrollment_id)) {
+        fields["enrollment_id"] =
+            enrollment_id;
+    }
+
+    if (generation != 0) {
+        fields["generation"] =
+            std::to_string(generation);
+    }
+
+    if (valid_cluster_node_id(node_id)) {
+        fields["node_id"] = node_id;
+    }
+
+    if (!actor_fingerprint.empty()) {
+        fields["actor_fp"] =
+            actor_fingerprint;
+    }
+
+    try {
+        config_.audit_emit(
+            "admin.cluster_node_enrollment.revoke",
+            outcome,
+            fields
+        );
+    } catch (...) {
+        // Audit failure must not roll back a persisted revocation.
     }
 }
 
@@ -795,6 +953,96 @@ NodeEnrollmentService::create_pending(
         NodeEnrollmentServiceResult::
             EnrollmentIdConflict
     );
+}
+
+NodeEnrollmentMutationResult
+NodeEnrollmentService::revoke_pending(
+    const std::string& enrollment_id,
+    std::uint64_t expected_generation,
+    const std::string& revoked_at,
+    const std::string& actor_fingerprint
+) {
+    NodeEnrollmentMutationResult output;
+
+    if (!config_valid()) {
+        output.result =
+            NodeEnrollmentServiceResult::
+                ServiceUnavailable;
+
+        return output;
+    }
+
+    if (!valid_service_enrollment_id(
+            enrollment_id) ||
+        expected_generation == 0 ||
+        revoked_at.empty()) {
+        output.result =
+            NodeEnrollmentServiceResult::
+                InvalidInput;
+
+        audit_revoke_best_effort(
+            "fail",
+            enrollment_id,
+            expected_generation,
+            "",
+            actor_fingerprint,
+            output.error_code()
+        );
+
+        return output;
+    }
+
+    NodeEnrollmentRecord revoked;
+    std::string registry_error;
+
+    const NodeEnrollmentRegistryResult
+        registry_result =
+            config_.registry->revoke_pending(
+                enrollment_id,
+                expected_generation,
+                revoked_at,
+                &revoked,
+                &registry_error
+            );
+
+    output.result =
+        map_revoke_registry_failure(
+            registry_result
+        );
+
+    if (registry_result !=
+        NodeEnrollmentRegistryResult::Ok) {
+        audit_revoke_best_effort(
+            "fail",
+            enrollment_id,
+            expected_generation,
+            "",
+            actor_fingerprint,
+            output.error_code()
+        );
+
+        return output;
+    }
+
+    output.ok = true;
+    output.result =
+        NodeEnrollmentServiceResult::Ok;
+
+    output.enrollment =
+        redact_node_enrollment_record(
+            revoked
+        );
+
+    audit_revoke_best_effort(
+        "ok",
+        revoked.enrollment_id,
+        revoked.generation,
+        revoked.node_id,
+        actor_fingerprint,
+        output.error_code()
+    );
+
+    return output;
 }
 
 std::vector<NodeEnrollmentView>

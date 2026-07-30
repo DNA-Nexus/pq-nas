@@ -62,6 +62,10 @@ enum class NodeEnrollmentServiceResult {
     TokenGenerationFailed,
     EnrollmentIdConflict,
     UrlConflict,
+    NotFound,
+    GenerationMismatch,
+    Revoked,
+    Consumed,
     PersistFailed,
     RegistryFailed
 };
@@ -91,6 +95,20 @@ struct NodeEnrollmentView {
 NodeEnrollmentView redact_node_enrollment_record(
     const NodeEnrollmentRecord& record
 );
+
+// Copyable result for mutations that never return authentication material.
+// The enrollment view is populated only after a successful persisted change.
+struct NodeEnrollmentMutationResult {
+    bool ok = false;
+
+    NodeEnrollmentServiceResult result =
+        NodeEnrollmentServiceResult::
+            ServiceUnavailable;
+
+    NodeEnrollmentView enrollment;
+
+    const char* error_code() const noexcept;
+};
 
 // Move-only result that owns the plaintext bootstrap token until the caller
 // transfers it exactly once. Destruction securely clears an untaken token.
@@ -172,6 +190,15 @@ public:
         const std::string& actor_fingerprint
     );
 
+    // Revokes one exact pending generation. The registry clears the verifier
+    // in the same persisted transaction that records the terminal state.
+    NodeEnrollmentMutationResult revoke_pending(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
+        const std::string& revoked_at,
+        const std::string& actor_fingerprint
+    );
+
     // Redacts every verifier before returning the snapshot.
     std::vector<NodeEnrollmentView>
     redacted_snapshot() const;
@@ -191,6 +218,15 @@ private:
         const std::string& reason_code,
         const std::string& enrollment_id,
         std::uint64_t generation
+    ) const;
+
+    void audit_revoke_best_effort(
+        const std::string& outcome,
+        const std::string& enrollment_id,
+        std::uint64_t generation,
+        const std::string& node_id,
+        const std::string& actor_fingerprint,
+        const std::string& reason_code
     ) const;
 
     NodeEnrollmentServiceConfig config_;
