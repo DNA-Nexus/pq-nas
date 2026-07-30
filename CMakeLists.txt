@@ -176,6 +176,28 @@ target_link_libraries(pqnas_dna_pqcore_mlkem PRIVATE
 )
 
 # -----------------------------------------------------------------------------
+# Cluster identity validation
+# -----------------------------------------------------------------------------
+add_library(pqnas_cluster_identity_validation STATIC
+        server/src/cluster/cluster_identity_validation.cpp
+        server/src/cluster/cluster_identity_validation.h
+)
+
+target_include_directories(pqnas_cluster_identity_validation PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+# Security-sensitive canonicalization should remain warning-clean.
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_cluster_identity_validation
+        PRIVATE
+        -Werror
+    )
+endif()
+
+
+# -----------------------------------------------------------------------------
 # Server (C++ / httplib)
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
@@ -367,6 +389,10 @@ add_executable(pqnas_server
         server/src/gallery_albums.cpp
         server/src/gallery_albums_routes.cpp
 
+)
+
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -806,6 +832,10 @@ add_executable(test_admin_cluster_user_placement_route
         server/src/users_registry.cpp
 )
 
+target_link_libraries(test_admin_cluster_user_placement_route PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_admin_cluster_user_placement_route PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/third_party
@@ -1099,6 +1129,10 @@ add_executable(test_user_placement_service
         server/src/users_registry.cpp
 )
 
+target_link_libraries(test_user_placement_service PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_user_placement_service PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/third_party
@@ -1159,6 +1193,10 @@ add_executable(test_node_heartbeat_worker
         server/src/storage_info.cc
 )
 
+target_link_libraries(test_node_heartbeat_worker PRIVATE
+        pqnas_cluster_identity_validation
+)
+
 target_include_directories(test_node_heartbeat_worker PRIVATE
         ${CMAKE_SOURCE_DIR}/server/src
         ${CMAKE_SOURCE_DIR}/server/include
@@ -1188,12 +1226,38 @@ add_custom_target(run_test_node_heartbeat_worker
 
 
 # -----------------------------------------------------------------------------
+# Test: test_cluster_identity_validation
+# -----------------------------------------------------------------------------
+add_executable(test_cluster_identity_validation
+        tests/cluster/test_cluster_identity_validation.cpp
+)
+
+target_link_libraries(test_cluster_identity_validation PRIVATE
+        pqnas_cluster_identity_validation
+)
+
+set_target_properties(test_cluster_identity_validation PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_cluster_identity_validation
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_cluster_identity_validation"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_admin_cluster_node_routes
 # -----------------------------------------------------------------------------
 add_executable(test_admin_cluster_node_routes
         tests/cluster/test_admin_cluster_node_routes.cpp
         server/src/routes/routes_admin_cluster_nodes.cpp
         server/src/cluster/node_registry.cpp
+)
+
+target_link_libraries(test_admin_cluster_node_routes PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_admin_cluster_node_routes PRIVATE
@@ -1219,6 +1283,10 @@ add_custom_target(run_test_admin_cluster_node_routes
 add_executable(test_node_registry
         tests/cluster/test_node_registry.cpp
         server/src/cluster/node_registry.cpp
+)
+
+target_link_libraries(test_node_registry PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_node_registry PRIVATE
@@ -1277,6 +1345,10 @@ add_executable(test_node_status
         tests/cluster/test_node_status.cpp
         server/src/cluster/node_status.cpp
         server/src/storage_info.cc
+)
+
+target_link_libraries(test_node_status PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_node_status PRIVATE
@@ -1338,6 +1410,10 @@ add_custom_target(run_test_internal_auth
 add_executable(test_server_role_config
         tests/cluster/test_server_role_config.cpp
         server/src/cluster/server_role.cpp
+)
+
+target_link_libraries(test_server_role_config PRIVATE
+        pqnas_cluster_identity_validation
 )
 
 target_include_directories(test_server_role_config PRIVATE

@@ -1,4 +1,5 @@
 #include "cluster/server_role.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -35,79 +36,6 @@ std::string lower_ascii(std::string value) {
 std::string env_value(const char* name) {
     const char* value = std::getenv(name);
     return value ? std::string(value) : std::string();
-}
-
-bool valid_node_id(const std::string& value) {
-    if (value.empty() || value.size() > 64) return false;
-
-    const auto valid_first = [](char ch) {
-        return std::isalnum(static_cast<unsigned char>(ch)) != 0;
-    };
-
-    const auto valid_rest = [&](char ch) {
-        return valid_first(ch) || ch == '-' || ch == '_' || ch == '.';
-    };
-
-    if (!valid_first(value.front())) return false;
-
-    for (char ch : value) {
-        if (!valid_rest(ch)) return false;
-    }
-
-    return true;
-}
-
-bool normalize_director_url(
-    const std::string& raw,
-    std::string* normalized,
-    std::string* err
-) {
-    std::string value = trim_ascii(raw);
-
-    // Security: internal control-plane traffic must use TLS. Keeping the URL
-    // to a base authority also prevents credentials, queries, and fragments
-    // from being accidentally accepted or written to startup logs.
-    constexpr const char* scheme = "https://";
-    constexpr std::size_t scheme_len = 8;
-
-    if (value.rfind(scheme, 0) != 0) {
-        if (err) *err = "PQNAS_DIRECTOR_URL must begin with https://";
-        return false;
-    }
-
-    while (value.size() > scheme_len && value.back() == '/') {
-        value.pop_back();
-    }
-
-    const std::string authority = value.substr(scheme_len);
-
-    if (authority.empty()) {
-        if (err) *err = "PQNAS_DIRECTOR_URL is missing a host";
-        return false;
-    }
-
-    for (char ch : authority) {
-        const unsigned char byte = static_cast<unsigned char>(ch);
-        if (std::isspace(byte) || byte < 0x21 || byte > 0x7e) {
-            if (err) *err = "PQNAS_DIRECTOR_URL contains invalid characters";
-            return false;
-        }
-    }
-
-    if (authority.find('/') != std::string::npos ||
-        authority.find('@') != std::string::npos ||
-        authority.find('?') != std::string::npos ||
-        authority.find('#') != std::string::npos) {
-        if (err) {
-            *err =
-                "PQNAS_DIRECTOR_URL must be a base HTTPS authority "
-                "without path, credentials, query, or fragment";
-        }
-        return false;
-    }
-
-    *normalized = value;
-    return true;
 }
 
 bool normalize_cluster_credential_file(
@@ -236,8 +164,11 @@ bool parse_server_role_config(
     *out = ServerRoleConfig{};
 
     std::string role = lower_ascii(trim_ascii(raw_role));
-    const std::string node_id = trim_ascii(raw_node_id);
-    const std::string director_url = trim_ascii(raw_director_url);
+    // Security: node identity and Director authority are canonical
+    // security-boundary values. Reject surrounding whitespace instead
+    // of silently changing what the administrator configured.
+    const std::string node_id = raw_node_id;
+    const std::string director_url = raw_director_url;
     const std::string credential_file =
         trim_ascii(raw_cluster_credential_file);
 
@@ -298,7 +229,7 @@ bool parse_server_role_config(
 
     // Security: constrain node IDs before using them in registry keys,
     // audit fields, URLs, logs, or filesystem-related metadata.
-    if (!valid_node_id(node_id)) {
+    if (!valid_cluster_node_id(node_id)) {
         if (err) {
             *err =
                 "PQNAS_NODE_ID must be 1-64 characters, begin with an "
@@ -315,7 +246,7 @@ bool parse_server_role_config(
 
     std::string normalized_url;
 
-    if (!normalize_director_url(
+    if (!normalize_cluster_https_base_url(
             director_url,
             &normalized_url,
             err)) {

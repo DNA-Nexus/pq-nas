@@ -1,4 +1,5 @@
 #include "cluster/node_status.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include "storage_info.h"
 #include "users_registry.h"
@@ -22,38 +23,6 @@ void set_error(std::string* err, const std::string& message) {
     if (err) {
         *err = message;
     }
-}
-
-bool valid_node_id(const std::string& value) {
-    if (value.empty() || value.size() > 64) {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < value.size(); ++i) {
-        const unsigned char ch =
-            static_cast<unsigned char>(value[i]);
-
-        const bool alphanumeric =
-            (ch >= 'A' && ch <= 'Z') ||
-            (ch >= 'a' && ch <= 'z') ||
-            (ch >= '0' && ch <= '9');
-
-        if (i == 0) {
-            if (!alphanumeric) {
-                return false;
-            }
-            continue;
-        }
-
-        if (!alphanumeric &&
-            ch != '-' &&
-            ch != '_' &&
-            ch != '.') {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 bool valid_version(const std::string& value) {
@@ -287,7 +256,7 @@ bool collect_node_status_snapshot(
 
     // Defense in depth: validate again at the boundary that constructs
     // remotely transmitted control-plane data.
-    if (!valid_node_id(node_id)) {
+    if (!valid_cluster_node_id(node_id)) {
         set_error(err, "invalid node identity");
         return false;
     }
@@ -466,43 +435,6 @@ bool heartbeat_json_u64(
     }
 
     return false;
-}
-
-bool heartbeat_valid_node_id(
-    const std::string& value
-) {
-    if (value.empty() || value.size() > 64) {
-        return false;
-    }
-
-    for (std::size_t index = 0;
-         index < value.size();
-         ++index) {
-        const unsigned char ch =
-            static_cast<unsigned char>(value[index]);
-
-        const bool alphanumeric =
-            (ch >= 'A' && ch <= 'Z') ||
-            (ch >= 'a' && ch <= 'z') ||
-            (ch >= '0' && ch <= '9');
-
-        if (index == 0) {
-            if (!alphanumeric) {
-                return false;
-            }
-
-            continue;
-        }
-
-        if (!alphanumeric &&
-            ch != '-' &&
-            ch != '_' &&
-            ch != '.') {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 bool heartbeat_safe_text(
@@ -688,7 +620,7 @@ bool parse_node_status_json(
             value,
             "node_id",
             &candidate.node_id) ||
-        !heartbeat_valid_node_id(
+        !valid_cluster_node_id(
             candidate.node_id) ||
         !heartbeat_json_string(
             value,

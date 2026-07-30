@@ -1,4 +1,5 @@
 #include "cluster/node_registry.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include "cluster/node_status.h"
 
@@ -29,7 +30,6 @@ using json = nlohmann::json;
 
 constexpr std::size_t kMaxRegistryBytes = 4 * 1024 * 1024;
 constexpr std::size_t kMaxNodeCount = 10000;
-constexpr std::size_t kMaxApiBaseUrlBytes = 2048;
 
 std::atomic<std::uint64_t> g_temp_counter{0};
 
@@ -85,77 +85,6 @@ void set_error(
     if (err) {
         *err = message;
     }
-}
-
-std::string trim_ascii(const std::string& value) {
-    std::size_t first = 0;
-
-    while (first < value.size()) {
-        const unsigned char ch =
-            static_cast<unsigned char>(value[first]);
-
-        if (ch != ' ' &&
-            ch != '\t' &&
-            ch != '\r' &&
-            ch != '\n') {
-            break;
-        }
-
-        ++first;
-    }
-
-    std::size_t last = value.size();
-
-    while (last > first) {
-        const unsigned char ch =
-            static_cast<unsigned char>(value[last - 1]);
-
-        if (ch != ' ' &&
-            ch != '\t' &&
-            ch != '\r' &&
-            ch != '\n') {
-            break;
-        }
-
-        --last;
-    }
-
-    return value.substr(first, last - first);
-}
-
-bool valid_node_id(const std::string& value) {
-    if (value.empty() || value.size() > 64) {
-        return false;
-    }
-
-    for (std::size_t index = 0;
-         index < value.size();
-         ++index) {
-        const unsigned char ch =
-            static_cast<unsigned char>(value[index]);
-
-        const bool alphanumeric =
-            (ch >= 'A' && ch <= 'Z') ||
-            (ch >= 'a' && ch <= 'z') ||
-            (ch >= '0' && ch <= '9');
-
-        if (index == 0) {
-            if (!alphanumeric) {
-                return false;
-            }
-
-            continue;
-        }
-
-        if (!alphanumeric &&
-            ch != '-' &&
-            ch != '_' &&
-            ch != '.') {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 bool valid_metadata_token(
@@ -290,72 +219,6 @@ bool valid_optional_timestamp(
     return
         value.empty() ||
         valid_iso_utc_seconds(value);
-}
-
-bool normalize_https_base_url(
-    const std::string& raw,
-    std::string* normalized,
-    std::string* err
-) {
-    if (!normalized) {
-        set_error(err, "missing URL output");
-        return false;
-    }
-
-    std::string value = trim_ascii(raw);
-
-    if (value.empty() ||
-        value.size() > kMaxApiBaseUrlBytes) {
-        set_error(err, "invalid node API URL");
-        return false;
-    }
-
-    constexpr char prefix[] = "https://";
-    constexpr std::size_t prefix_length =
-        sizeof(prefix) - 1;
-
-    if (value.compare(
-            0,
-            prefix_length,
-            prefix) != 0) {
-        set_error(err, "node API URL must use HTTPS");
-        return false;
-    }
-
-    for (unsigned char ch : value) {
-        if (ch <= 0x20 || ch == 0x7f || ch == '\\') {
-            set_error(err, "invalid node API URL");
-            return false;
-        }
-    }
-
-    if (value.find('@', prefix_length) !=
-            std::string::npos ||
-        value.find('?', prefix_length) !=
-            std::string::npos ||
-        value.find('#', prefix_length) !=
-            std::string::npos) {
-        set_error(err, "invalid node API URL");
-        return false;
-    }
-
-    if (!value.empty() && value.back() == '/') {
-        value.pop_back();
-    }
-
-    const std::string authority =
-        value.substr(prefix_length);
-
-    if (authority.empty() ||
-        authority.find('/') != std::string::npos ||
-        authority.front() == ':' ||
-        authority.back() == ':') {
-        set_error(err, "invalid node API URL authority");
-        return false;
-    }
-
-    *normalized = value;
-    return true;
 }
 
 bool normalize_registry_path(
@@ -585,7 +448,7 @@ bool parse_record(
     NodeRegistryRecord record;
 
     if (!json_string(value, "node_id", &record.node_id) ||
-        !valid_node_id(record.node_id)) {
+        !valid_cluster_node_id(record.node_id)) {
         set_error(err, "invalid node ID in registry");
         return false;
     }
@@ -593,7 +456,7 @@ bool parse_record(
     std::string raw_url;
 
     if (!json_string(value, "api_base_url", &raw_url) ||
-        !normalize_https_base_url(
+        !normalize_cluster_https_base_url(
             raw_url,
             &record.api_base_url,
             err)) {
@@ -1148,7 +1011,7 @@ bool validate_status_snapshot(
     const NodeStatusSnapshot& status,
     std::string* err
 ) {
-    if (!valid_node_id(status.node_id) ||
+    if (!valid_cluster_node_id(status.node_id) ||
         !valid_metadata_token(status.hostname, 253) ||
         !valid_version_string(status.server_version) ||
         !valid_metadata_token(status.storage.fstype, 32) ||
@@ -1288,7 +1151,7 @@ bool NodeRegistry::upsert_configured_node(
         err->clear();
     }
 
-    if (!valid_node_id(node_id) ||
+    if (!valid_cluster_node_id(node_id) ||
         !valid_iso_utc_seconds(now_iso)) {
         set_error(err, "invalid configured node metadata");
         return false;
@@ -1296,7 +1159,7 @@ bool NodeRegistry::upsert_configured_node(
 
     std::string normalized_url;
 
-    if (!normalize_https_base_url(
+    if (!normalize_cluster_https_base_url(
             api_base_url,
             &normalized_url,
             err)) {
@@ -1366,7 +1229,7 @@ bool NodeRegistry::set_enabled(
         err->clear();
     }
 
-    if (!valid_node_id(node_id) ||
+    if (!valid_cluster_node_id(node_id) ||
         !valid_iso_utc_seconds(now_iso)) {
         set_error(err, "invalid node update metadata");
         return false;
@@ -1412,7 +1275,7 @@ bool NodeRegistry::erase(
         err->clear();
     }
 
-    if (!valid_node_id(node_id)) {
+    if (!valid_cluster_node_id(node_id)) {
         set_error(err, "invalid node ID");
         return false;
     }
@@ -1447,7 +1310,7 @@ bool NodeRegistry::mark_offline(
         *transitioned_offline = false;
     }
 
-    if (!valid_node_id(node_id)) {
+    if (!valid_cluster_node_id(node_id)) {
         set_error(err, "invalid node ID");
         return false;
     }
