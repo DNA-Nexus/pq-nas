@@ -293,6 +293,36 @@ target_link_libraries(pqnas_node_enrollment_service PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Admin node enrollment routes
+# -----------------------------------------------------------------------------
+add_library(pqnas_admin_node_enrollment_routes STATIC
+        server/src/routes/routes_admin_node_enrollments.cpp
+        server/src/routes/routes_admin_node_enrollments.h
+)
+
+target_include_directories(pqnas_admin_node_enrollment_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_admin_node_enrollment_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_admin_node_enrollment_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_admin_node_enrollment_routes PUBLIC
+        pqnas_node_enrollment_service
+)
+
+
+# -----------------------------------------------------------------------------
 # Server (C++ / httplib)
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
@@ -493,6 +523,7 @@ target_link_libraries(pqnas_server PRIVATE
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
         pqnas_node_enrollment_service
+        pqnas_admin_node_enrollment_routes
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -1322,6 +1353,34 @@ add_custom_target(run_test_node_heartbeat_worker
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_node_enrollment_routes
+# -----------------------------------------------------------------------------
+add_executable(test_admin_node_enrollment_routes
+        tests/cluster/test_admin_node_enrollment_routes.cpp
+)
+
+target_link_libraries(test_admin_node_enrollment_routes PRIVATE
+        pqnas_admin_node_enrollment_routes
+)
+
+target_include_directories(test_admin_node_enrollment_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_admin_node_enrollment_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_node_enrollment_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_node_enrollment_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_node_enrollment_routes
 )
 
 
