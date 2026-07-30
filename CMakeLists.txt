@@ -261,6 +261,38 @@ target_link_libraries(pqnas_node_enrollment_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Node enrollment service
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_service STATIC
+        server/src/cluster/node_enrollment_service.cpp
+        server/src/cluster/node_enrollment_service.h
+)
+
+target_include_directories(pqnas_node_enrollment_service PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_enrollment_service PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_enrollment_service PUBLIC
+        pqnas_node_enrollment_registry
+        pqnas_node_enrollment_token
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
 # Server (C++ / httplib)
 # -----------------------------------------------------------------------------
 add_executable(pqnas_server
@@ -460,6 +492,7 @@ target_link_libraries(pqnas_server PRIVATE
 
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
+        pqnas_node_enrollment_service
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -1289,6 +1322,28 @@ add_custom_target(run_test_node_heartbeat_worker
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_service
+        tests/cluster/test_node_enrollment_service.cpp
+)
+
+target_link_libraries(test_node_enrollment_service PRIVATE
+        pqnas_node_enrollment_service
+)
+
+set_target_properties(test_node_enrollment_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_enrollment_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_service
 )
 
 
