@@ -863,6 +863,195 @@ bool write_all(
     return true;
 }
 
+NodeCredentialRegistryResult
+create_credential_file_if_absent(
+    int directory_descriptor,
+    const std::string& target_filename,
+    const std::string& plaintext_token,
+    std::string* error
+) {
+    bool target_exists = false;
+
+    const CredentialFileResult target_result =
+        inspect_existing_target(
+            directory_descriptor,
+            target_filename,
+            &target_exists,
+            error
+        );
+
+    if (target_result == CredentialFileResult::Ok &&
+        target_exists) {
+        return NodeCredentialRegistryResult::
+            AlreadyExists;
+    }
+
+    if (target_result == CredentialFileResult::Unsafe) {
+        return NodeCredentialRegistryResult::
+            StorageUnsafe;
+    }
+
+    if (target_result == CredentialFileResult::IoFailed) {
+        return NodeCredentialRegistryResult::IoFailed;
+    }
+
+    if (target_result != CredentialFileResult::Missing) {
+        set_error(
+            error,
+            "unexpected node credential target state"
+        );
+        return NodeCredentialRegistryResult::IoFailed;
+    }
+
+    // Security: this is the single create-if-absent commit boundary. O_EXCL
+    // prevents an existing credential, symlink, or racing insertion from being
+    // overwritten or followed.
+    const int raw_descriptor =
+        ::openat(
+            directory_descriptor,
+            target_filename.c_str(),
+            O_WRONLY |
+            O_CREAT |
+            O_EXCL |
+            O_CLOEXEC |
+            O_NOFOLLOW,
+            0600
+        );
+
+    if (raw_descriptor < 0) {
+        if (errno == EEXIST) {
+            bool raced_target_exists = false;
+
+            const CredentialFileResult
+                raced_target_result =
+                    inspect_existing_target(
+                        directory_descriptor,
+                        target_filename,
+                        &raced_target_exists,
+                        error
+                    );
+
+            if (raced_target_result ==
+                    CredentialFileResult::Ok &&
+                raced_target_exists) {
+                return NodeCredentialRegistryResult::
+                    AlreadyExists;
+            }
+
+            if (raced_target_result ==
+                CredentialFileResult::Unsafe) {
+                return NodeCredentialRegistryResult::
+                    StorageUnsafe;
+            }
+
+            if (raced_target_result ==
+                CredentialFileResult::IoFailed) {
+                return NodeCredentialRegistryResult::
+                    IoFailed;
+            }
+
+            set_error(
+                error,
+                "node credential target changed during creation"
+            );
+            return NodeCredentialRegistryResult::IoFailed;
+        }
+
+        set_error(
+            error,
+            "failed to create node credential"
+        );
+        return NodeCredentialRegistryResult::
+            PersistFailed;
+    }
+
+    UniqueFd descriptor(raw_descriptor);
+
+    const auto rollback_created_target = [&]() {
+        if (::unlinkat(
+                directory_descriptor,
+                target_filename.c_str(),
+                0) != 0 &&
+            errno != ENOENT) {
+            set_error(
+                error,
+                "failed to roll back node credential creation"
+            );
+            return false;
+        }
+
+        if (::fsync(directory_descriptor) != 0) {
+            set_error(
+                error,
+                "failed to sync node credential rollback"
+            );
+            return false;
+        }
+
+        return true;
+    };
+
+    std::string contents = plaintext_token;
+    SensitiveStringWiper contents_wiper(contents);
+
+    try {
+        contents.push_back('\n');
+    } catch (...) {
+        set_error(
+            error,
+            "failed to allocate node credential contents"
+        );
+        (void)rollback_created_target();
+        return NodeCredentialRegistryResult::
+            PersistFailed;
+    }
+
+    if (::fchmod(
+            descriptor.get(),
+            0600) != 0 ||
+        !write_all(
+            descriptor.get(),
+            contents,
+            error) ||
+        ::fsync(descriptor.get()) != 0) {
+        if (error && error->empty()) {
+            *error =
+                "failed to sync new node credential";
+        }
+
+        (void)rollback_created_target();
+        return NodeCredentialRegistryResult::
+            PersistFailed;
+    }
+
+    const int created_descriptor =
+        descriptor.release();
+
+    if (::close(created_descriptor) != 0) {
+        set_error(
+            error,
+            "failed to close new node credential"
+        );
+        (void)rollback_created_target();
+        return NodeCredentialRegistryResult::
+            PersistFailed;
+    }
+
+    // Security: enrollment advances only after the new directory entry is
+    // durable. A sync failure leaves a valid visible file for recovery to
+    // inspect, but the current operation still reports an uncertain commit.
+    if (::fsync(directory_descriptor) != 0) {
+        set_error(
+            error,
+            "failed to sync new node credential directory"
+        );
+        return NodeCredentialRegistryResult::
+            PersistFailed;
+    }
+
+    return NodeCredentialRegistryResult::Ok;
+}
+
 NodeCredentialRegistryResult persist_credential_file(
     int directory_descriptor,
     const std::string& target_filename,
@@ -1067,6 +1256,8 @@ const char* node_credential_registry_result_code(
             return "node_credential_invalid_input";
         case NodeCredentialRegistryResult::NotFound:
             return "node_credential_not_found";
+        case NodeCredentialRegistryResult::AlreadyExists:
+            return "node_credential_already_exists";
         case NodeCredentialRegistryResult::CredentialInvalid:
             return "node_credential_invalid";
         case NodeCredentialRegistryResult::StorageUnsafe:
@@ -1200,6 +1391,65 @@ NodeCredentialRegistry::contains(
 
     *present = true;
     return NodeCredentialRegistryResult::Ok;
+}
+
+NodeCredentialRegistryResult
+NodeCredentialRegistry::create_if_absent(
+    const std::string& node_id,
+    const std::string& plaintext_token,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    if (!valid_cluster_node_id(node_id) ||
+        !valid_internal_auth_credential_token(
+            plaintext_token)) {
+        set_error(
+            error,
+            "invalid node credential creation"
+        );
+        return NodeCredentialRegistryResult::
+            InvalidInput;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (directory_.empty()) {
+        set_error(
+            error,
+            "node credential registry is not loaded"
+        );
+        return NodeCredentialRegistryResult::
+            StorageUnsafe;
+    }
+
+    UniqueFd descriptor;
+
+    const DirectoryOpenResult open_result =
+        open_registry_directory(
+            directory_,
+            true,
+            &descriptor,
+            error
+        );
+
+    if (open_result == DirectoryOpenResult::Unsafe) {
+        return NodeCredentialRegistryResult::
+            StorageUnsafe;
+    }
+
+    if (open_result != DirectoryOpenResult::Ok) {
+        return NodeCredentialRegistryResult::IoFailed;
+    }
+
+    return create_credential_file_if_absent(
+        descriptor.get(),
+        credential_filename(node_id),
+        plaintext_token,
+        error
+    );
 }
 
 NodeCredentialRegistryResult

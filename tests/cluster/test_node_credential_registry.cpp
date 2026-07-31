@@ -220,7 +220,7 @@ int main() {
     );
 
     expect_result(
-        registry.upsert(
+        registry.create_if_absent(
             "bad/node",
             token_a,
             &error),
@@ -229,7 +229,7 @@ int main() {
     );
 
     expect_result(
-        registry.upsert(
+        registry.create_if_absent(
             "node-01",
             "not-a-token",
             &error),
@@ -240,12 +240,35 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.upsert(
+        registry.create_if_absent(
             "node-01",
             token_a,
             &error),
         NodeCredentialRegistryResult::Ok,
         "persist first node credential"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.create_if_absent(
+            "node-01",
+            token_b,
+            &error),
+        NodeCredentialRegistryResult::
+            AlreadyExists,
+        "create-only mutation must not replace an existing credential"
+    );
+
+    expect(
+        std::string(
+            pqnas::cluster::
+                node_credential_registry_result_code(
+                    NodeCredentialRegistryResult::
+                        AlreadyExists
+                )
+        ) == "node_credential_already_exists",
+        "stable duplicate credential reason code"
     );
 
     struct stat directory_stats {};

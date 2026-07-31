@@ -10,6 +10,7 @@ enum class NodeCredentialRegistryResult {
     Ok,
     InvalidInput,
     NotFound,
+    AlreadyExists,
     CredentialInvalid,
     StorageUnsafe,
     IoFailed,
@@ -34,6 +35,15 @@ public:
         bool* present,
         std::string* error
     ) const;
+
+    // Creates a credential only when the node has no existing entry. The
+    // O_CREAT | O_EXCL boundary prevents enrollment races from replacing a
+    // credential that another transaction already installed.
+    NodeCredentialRegistryResult create_if_absent(
+        const std::string& node_id,
+        const std::string& plaintext_token,
+        std::string* error
+    );
 
     // Writes one canonical plaintext token to a service-private per-node file.
     // The token is never retained in a copyable registry record or snapshot.
