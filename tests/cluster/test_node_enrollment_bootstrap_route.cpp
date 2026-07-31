@@ -762,7 +762,7 @@ int main() {
         httplib::Request request =
             request_with_body(
                 fixture_body(fresh),
-                fresh.bootstrap_token,
+                fresh.node_credential,
                 "repeat-client"
             );
 
@@ -775,11 +775,25 @@ int main() {
                 context
             );
 
+        const json response_body =
+            response_json(response);
+
         expect(
-            response.status == 401 &&
-            response_json(response)["error"] ==
-                "enrollment_auth_failed",
-            "terminal enrollment uses generic auth failure"
+            response.status == 200 &&
+            response_body["ok"] == true &&
+            response_body["recovered"] ==
+                true,
+            "finalized enrollment recovers with persisted credential"
+        );
+
+        expect(
+            response.body.find(
+                fresh.node_credential) ==
+                    std::string::npos &&
+            response.body.find(
+                fresh.api_base_url) ==
+                    std::string::npos,
+            "finalized recovery response excludes credential and URL"
         );
     }
 

@@ -981,20 +981,164 @@ int main() {
         "wrong bootstrap token"
     );
 
-    const auto repeated_result =
-        service.consume(
+    NodeEnrollmentConsumptionRequest
+        finalized_recovery_request =
             request_for(
                 fresh,
                 "2026-07-31T07:30:00Z"
-            )
+            );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_recovery_request
+                 .bootstrap_token
+        );
+
+    // Recovery after a node crash must not depend on retaining the one-time
+    // bootstrap token after the Director has already consumed the intent.
+    finalized_recovery_request.bootstrap_token =
+        fresh.node_credential;
+
+    const auto repeated_result =
+        service.consume(
+            finalized_recovery_request
         );
 
     expect_result(
         repeated_result,
         NodeEnrollmentConsumptionServiceResult::
-            Consumed,
-        "repeat after finalized consumption"
+            Ok,
+        "recover after finalized consumption"
     );
+
+    expect(
+        repeated_result.ok &&
+        repeated_result.recovered,
+        "finalized recovery result flags"
+    );
+
+    std::string finalized_foreign_credential;
+
+    error.clear();
+
+    expect(
+        pqnas::cluster::
+            generate_internal_auth_credential_token(
+                &finalized_foreign_credential,
+                &error
+            ),
+        "generate finalized foreign credential: " +
+            error
+    );
+
+    NodeEnrollmentConsumptionRequest
+        finalized_foreign_request =
+            request_for(
+                fresh,
+                "2026-07-31T07:31:00Z"
+            );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_foreign_request
+                 .bootstrap_token
+        );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &finalized_foreign_request
+                 .node_credential
+        );
+
+    finalized_foreign_request.bootstrap_token =
+        finalized_foreign_credential;
+
+    finalized_foreign_request.node_credential =
+        finalized_foreign_credential;
+
+    const auto finalized_foreign_result =
+        service.consume(
+            finalized_foreign_request
+        );
+
+    expect_result(
+        finalized_foreign_result,
+        NodeEnrollmentConsumptionServiceResult::
+            Consumed,
+        "finalized recovery rejects foreign credential generically"
+    );
+
+    NodeEnrollmentConsumptionRequest
+        finalized_metadata_request =
+            request_for(
+                fresh,
+                "2026-07-31T07:32:00Z"
+            );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_metadata_request
+                 .bootstrap_token
+        );
+
+    finalized_metadata_request.bootstrap_token =
+        fresh.node_credential;
+
+    finalized_metadata_request.api_base_url =
+        "https://different-finalized-node.internal";
+
+    const auto finalized_metadata_result =
+        service.consume(
+            finalized_metadata_request
+        );
+
+    expect_result(
+        finalized_metadata_result,
+        NodeEnrollmentConsumptionServiceResult::
+            Consumed,
+        "finalized recovery rejects metadata mismatch generically"
+    );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_recovery_request
+                 .bootstrap_token
+        );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &finalized_recovery_request
+                 .node_credential
+        );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &finalized_foreign_credential
+        );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_foreign_request
+                 .bootstrap_token
+        );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &finalized_foreign_request
+                 .node_credential
+        );
+
+    pqnas::cluster::
+        clear_node_enrollment_token_text(
+            &finalized_metadata_request
+                 .bootstrap_token
+        );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &finalized_metadata_request
+                 .node_credential
+        );
 
     const auto invalid_time_result =
         service.consume(

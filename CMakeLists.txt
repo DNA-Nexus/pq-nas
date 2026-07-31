@@ -292,6 +292,178 @@ target_link_libraries(pqnas_node_credential_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Storage node provisioning store
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_node_provisioning_store STATIC
+        server/src/cluster/storage_node_provisioning_store.cpp
+        server/src/cluster/storage_node_provisioning_store.h
+)
+
+target_include_directories(
+        pqnas_storage_node_provisioning_store
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_storage_node_provisioning_store
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        pqnas_storage_node_provisioning_store
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_node_provisioning_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_storage_node_provisioning_store
+        PUBLIC
+        pqnas_cluster_identity_validation
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage node enrollment client
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_node_enrollment_client STATIC
+        server/src/cluster/storage_node_enrollment_client.cpp
+        server/src/cluster/storage_node_enrollment_client.h
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_client
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_client
+        PRIVATE
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        pqnas_storage_node_enrollment_client
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_node_enrollment_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_storage_node_enrollment_client
+        PUBLIC
+        pqnas_storage_node_provisioning_store
+        pqnas_node_enrollment_token
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage node enrollment HTTPS transport
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_node_enrollment_https STATIC
+        server/src/cluster/storage_node_enrollment_https.cpp
+        server/src/cluster/storage_node_enrollment_https.h
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_https
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_https
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_storage_node_enrollment_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_node_enrollment_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_storage_node_enrollment_https
+        PUBLIC
+        pqnas_storage_node_enrollment_client
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage node enrollment runtime
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_node_enrollment_runtime STATIC
+        server/src/cluster/storage_node_enrollment_runtime.cpp
+        server/src/cluster/storage_node_enrollment_runtime.h
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_runtime
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_storage_node_enrollment_runtime
+        PRIVATE
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        pqnas_storage_node_enrollment_runtime
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_node_enrollment_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_storage_node_enrollment_runtime
+        PUBLIC
+        pqnas_storage_node_enrollment_client
+        pqnas_node_enrollment_token
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
 # Node enrollment service
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_enrollment_service STATIC
@@ -626,6 +798,8 @@ target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_consumption_service
         pqnas_admin_node_enrollment_routes
         pqnas_node_enrollment_bootstrap_routes
+        pqnas_storage_node_enrollment_runtime
+        pqnas_storage_node_enrollment_https
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -1694,6 +1868,188 @@ add_custom_target(run_test_node_credential_registry
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_credential_registry"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_credential_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_storage_node_enrollment_runtime
+# -----------------------------------------------------------------------------
+add_executable(test_storage_node_enrollment_runtime
+        tests/cluster/test_storage_node_enrollment_runtime.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_storage_node_enrollment_runtime
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_storage_node_enrollment_runtime
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_storage_node_enrollment_runtime
+        PRIVATE
+        pqnas_storage_node_enrollment_runtime
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_storage_node_enrollment_runtime
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_storage_node_enrollment_runtime
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_storage_node_enrollment_runtime"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_node_enrollment_runtime
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_storage_node_enrollment_client
+# -----------------------------------------------------------------------------
+add_executable(test_storage_node_enrollment_client
+        tests/cluster/test_storage_node_enrollment_client.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_storage_node_enrollment_client
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_storage_node_enrollment_client
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_storage_node_enrollment_client
+        PRIVATE
+        pqnas_storage_node_enrollment_client
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_storage_node_enrollment_client
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_storage_node_enrollment_client
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_storage_node_enrollment_client"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_node_enrollment_client
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_storage_node_enrollment_https
+# -----------------------------------------------------------------------------
+add_executable(test_storage_node_enrollment_https
+        tests/cluster/test_storage_node_enrollment_https.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_storage_node_enrollment_https
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_definitions(
+        test_storage_node_enrollment_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_compile_options(
+        test_storage_node_enrollment_https
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_storage_node_enrollment_https
+        PRIVATE
+        pqnas_storage_node_enrollment_https
+        ${SODIUM_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+set_target_properties(
+        test_storage_node_enrollment_https
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_storage_node_enrollment_https
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_storage_node_enrollment_https"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_node_enrollment_https
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_storage_node_provisioning_store
+# -----------------------------------------------------------------------------
+add_executable(test_storage_node_provisioning_store
+        tests/cluster/test_storage_node_provisioning_store.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_storage_node_provisioning_store
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_storage_node_provisioning_store
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_storage_node_provisioning_store
+        PRIVATE
+        pqnas_storage_node_provisioning_store
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_storage_node_provisioning_store
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_storage_node_provisioning_store
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_storage_node_provisioning_store"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_node_provisioning_store
 )
 
 
