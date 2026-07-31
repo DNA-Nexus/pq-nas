@@ -324,6 +324,38 @@ target_link_libraries(pqnas_node_enrollment_service PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Node enrollment consumption service
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_consumption_service STATIC
+        server/src/cluster/node_enrollment_consumption_service.cpp
+        server/src/cluster/node_enrollment_consumption_service.h
+)
+
+target_include_directories(
+        pqnas_node_enrollment_consumption_service
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_consumption_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_enrollment_consumption_service
+        PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_node_credential_registry
+        pqnas_node_enrollment_registry
+        pqnas_node_enrollment_token
+)
+
+
+# -----------------------------------------------------------------------------
 # Admin node enrollment routes
 # -----------------------------------------------------------------------------
 add_library(pqnas_admin_node_enrollment_routes STATIC
@@ -1384,6 +1416,50 @@ add_custom_target(run_test_node_heartbeat_worker
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_consumption_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_consumption_service
+        tests/cluster/test_node_enrollment_consumption_service.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        pqnas_node_enrollment_consumption_service
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_node_enrollment_consumption_service
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_enrollment_consumption_service
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_consumption_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_consumption_service
 )
 
 
