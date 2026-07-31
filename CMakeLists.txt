@@ -621,8 +621,11 @@ target_link_libraries(pqnas_server PRIVATE
 
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
+        pqnas_node_credential_registry
         pqnas_node_enrollment_service
+        pqnas_node_enrollment_consumption_service
         pqnas_admin_node_enrollment_routes
+        pqnas_node_enrollment_bootstrap_routes
 )
 
 # Treat warnings as errors for the server (security-sensitive)
