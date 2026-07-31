@@ -54,6 +54,8 @@ enum class NodeEnrollmentRegistryResult {
     UrlMismatch,
     ProtocolIncompatible,
     TokenInvalid,
+    ProvisioningActive,
+    ProvisioningStageMismatch,
     PersistFailed
 };
 
@@ -143,18 +145,49 @@ public:
         std::string* error
     );
 
-    // Compare-and-consume operation used later by the bootstrap endpoint.
-    // Every expectation and the state mutation occur under one registry lock.
-    //
-    // presented_token_hash must be computed by the service layer before this
-    // call. It is compared in constant time against the persisted verifier.
-    NodeEnrollmentRegistryResult consume_pending_if_matches(
+    // Authenticates one pending intent and durably starts provisioning. Every
+    // expectation, constant-time verifier comparison, and mutation occurs under
+    // the same registry lock.
+    NodeEnrollmentRegistryResult
+    prepare_provisioning_if_matches(
         const std::string& enrollment_id,
         const std::string& expected_node_id,
         const std::string& expected_api_base_url,
         int presented_protocol_version,
         std::uint64_t expected_generation,
         const std::string& presented_token_hash,
+        const std::string& provisioning_started_at,
+        NodeEnrollmentRecord* prepared,
+        std::string* error
+    );
+
+    // Advances only the exact expected stage. This compare-and-mutate boundary
+    // prevents concurrent bootstrap requests from skipping durable work.
+    NodeEnrollmentRegistryResult
+    advance_provisioning_stage(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
+        NodeEnrollmentProvisioningStage expected_stage,
+        NodeEnrollmentProvisioningStage next_stage,
+        NodeEnrollmentRecord* advanced,
+        std::string* error
+    );
+
+    // Called only after the service has rolled back external state belonging to
+    // this transaction. The verifier remains available for a safe retry.
+    NodeEnrollmentRegistryResult reset_provisioning(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
+        NodeEnrollmentProvisioningStage expected_stage,
+        NodeEnrollmentRecord* reset,
+        std::string* error
+    );
+
+    // Finalizes only after node registration is durable. Authentication may
+    // have occurred before expiry even when recovery completes after expiry.
+    NodeEnrollmentRegistryResult finalize_provisioning(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
         const std::string& consumed_at,
         NodeEnrollmentRecord* consumed,
         std::string* error

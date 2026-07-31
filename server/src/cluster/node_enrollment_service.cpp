@@ -218,6 +218,11 @@ map_registry_failure(
                 UrlConflict;
 
         case NodeEnrollmentRegistryResult::
+                ProvisioningActive:
+            return NodeEnrollmentServiceResult::
+                ProvisioningActive;
+
+        case NodeEnrollmentRegistryResult::
                 PersistFailed:
             return NodeEnrollmentServiceResult::
                 PersistFailed;
@@ -237,6 +242,8 @@ map_registry_failure(
                 ProtocolIncompatible:
         case NodeEnrollmentRegistryResult::
                 TokenInvalid:
+        case NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch:
             return NodeEnrollmentServiceResult::
                 RegistryFailed;
     }
@@ -279,6 +286,11 @@ map_revoke_registry_failure(
                 Consumed;
 
         case NodeEnrollmentRegistryResult::
+                ProvisioningActive:
+            return NodeEnrollmentServiceResult::
+                ProvisioningActive;
+
+        case NodeEnrollmentRegistryResult::
                 PersistFailed:
             return NodeEnrollmentServiceResult::
                 PersistFailed;
@@ -296,6 +308,8 @@ map_revoke_registry_failure(
                 ProtocolIncompatible:
         case NodeEnrollmentRegistryResult::
                 TokenInvalid:
+        case NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch:
             return NodeEnrollmentServiceResult::
                 RegistryFailed;
     }
@@ -352,6 +366,10 @@ const char* node_enrollment_service_result_code(
         case NodeEnrollmentServiceResult::
                 Consumed:
             return "enrollment_consumed";
+
+        case NodeEnrollmentServiceResult::
+                ProvisioningActive:
+            return "enrollment_provisioning_active";
 
         case NodeEnrollmentServiceResult::
                 PersistFailed:

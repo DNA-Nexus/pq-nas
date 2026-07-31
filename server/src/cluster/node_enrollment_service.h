@@ -66,6 +66,7 @@ enum class NodeEnrollmentServiceResult {
     GenerationMismatch,
     Revoked,
     Consumed,
+    ProvisioningActive,
     PersistFailed,
     RegistryFailed
 };

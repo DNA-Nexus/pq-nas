@@ -375,7 +375,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://node-01.internal",
@@ -394,7 +394,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://node-01.internal",
@@ -413,7 +413,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-other",
             "https://node-01.internal",
@@ -432,7 +432,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://other.internal",
@@ -451,7 +451,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://node-01.internal",
@@ -467,12 +467,12 @@ int main() {
         "protocol mismatch"
     );
 
-    NodeEnrollmentRecord consumed;
+    NodeEnrollmentRecord prepared;
 
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://node-01.internal/",
@@ -480,43 +480,259 @@ int main() {
             2,
             kHashB,
             "2026-07-30T06:20:00Z",
-            &consumed,
+            &prepared,
             &error
         ),
         NodeEnrollmentRegistryResult::Ok,
-        "successful consume"
+        "successful provisioning prepare"
     );
 
     expect(
-        consumed.state ==
-            NodeEnrollmentState::Consumed &&
-        consumed.consumed_at ==
+        prepared.state ==
+            NodeEnrollmentState::Pending &&
+        prepared.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                Prepared &&
+        prepared.provisioning_started_at ==
             "2026-07-30T06:20:00Z" &&
-        consumed.token_hash.empty() &&
-        consumed.provisioning_stage ==
-            NodeEnrollmentProvisioningStage::None &&
-        consumed.provisioning_started_at ==
-            "2026-07-30T06:20:00Z",
-        "consume should clear verifier and set terminal state"
+        prepared.token_hash == kHashB,
+        "prepare should retain verifier and persist authenticated start"
     );
 
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             "EnrollmentNodeOne0002",
             "node-01",
             "https://node-01.internal",
             1,
             2,
             kHashB,
+            "2026-07-30T06:20:00Z",
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
+            ProvisioningActive,
+        "parallel prepare must fail closed"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.create_or_replace_pending(
+            "EnrollmentBlocked0001",
+            "node-01",
+            "https://node-01.internal",
+            1,
+            kHashC,
+            "2026-07-30T06:21:00Z",
+            "2026-07-30T07:21:00Z",
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
+            ProvisioningActive,
+        "replacement must not revoke active provisioning"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.revoke_pending(
+            "EnrollmentNodeOne0002",
+            2,
             "2026-07-30T06:21:00Z",
             nullptr,
             &error
         ),
         NodeEnrollmentRegistryResult::
+            ProvisioningActive,
+        "revocation must not interrupt active provisioning"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered,
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
+            ProvisioningStageMismatch,
+        "stage skipping must fail closed"
+    );
+
+    NodeEnrollmentRecord advanced;
+
+    error.clear();
+
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                Prepared,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            &advanced,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "mark credential persisted"
+    );
+
+    expect(
+        advanced.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted &&
+        advanced.provisioning_started_at ==
+            "2026-07-30T06:20:00Z",
+        "credential stage should preserve authenticated start"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.reset_provisioning(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                Prepared,
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
+            ProvisioningStageMismatch,
+        "rollback must compare current stage"
+    );
+
+    NodeEnrollmentRecord reset;
+
+    error.clear();
+
+    expect_result(
+        registry.reset_provisioning(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            &reset,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "reset provisioning after external rollback"
+    );
+
+    expect(
+        reset.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::None &&
+        reset.provisioning_started_at.empty() &&
+        reset.token_hash == kHashB,
+        "reset should retain verifier for a safe retry"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.prepare_provisioning_if_matches(
+            "EnrollmentNodeOne0002",
+            "node-01",
+            "https://node-01.internal",
+            1,
+            2,
+            kHashB,
+            "2026-07-30T06:30:00Z",
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "prepare provisioning retry"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                Prepared,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "retry credential stage"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered,
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "mark node registered"
+    );
+
+    NodeEnrollmentRecord consumed;
+
+    error.clear();
+
+    expect_result(
+        registry.finalize_provisioning(
+            "EnrollmentNodeOne0002",
+            2,
+            "2026-07-30T07:05:00Z",
+            &consumed,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "finalize after authenticated start and later recovery"
+    );
+
+    expect(
+        consumed.state ==
+            NodeEnrollmentState::Consumed &&
+        consumed.consumed_at ==
+            "2026-07-30T07:05:00Z" &&
+        consumed.token_hash.empty() &&
+        consumed.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::None &&
+        consumed.provisioning_started_at ==
+            "2026-07-30T06:30:00Z",
+        "finalize should clear verifier only after durable stages"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.finalize_provisioning(
+            "EnrollmentNodeOne0002",
+            2,
+            "2026-07-30T07:06:00Z",
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
             AlreadyConsumed,
-        "consume replay"
+        "finalize replay"
     );
 
     NodeEnrollmentRecord expired;
@@ -542,7 +758,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             expired.enrollment_id,
             expired.node_id,
             expired.api_base_url,
@@ -583,7 +799,7 @@ int main() {
     error.clear();
 
     expect_result(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             expired.enrollment_id,
             expired.node_id,
             expired.api_base_url,
@@ -677,7 +893,7 @@ int main() {
         reloaded_consumed->provisioning_stage ==
             NodeEnrollmentProvisioningStage::None &&
         reloaded_consumed->provisioning_started_at ==
-            reloaded_consumed->consumed_at,
+            consumed.provisioning_started_at,
         "terminal state should survive reload"
     );
 
@@ -1248,6 +1464,28 @@ int main() {
                 )
         ) == "enrollment_token_invalid",
         "stable token-invalid reason code"
+    );
+
+    expect(
+        std::string(
+            pqnas::cluster::
+                node_enrollment_registry_result_code(
+                    NodeEnrollmentRegistryResult::
+                        ProvisioningActive
+                )
+        ) == "enrollment_provisioning_active",
+        "stable provisioning-active reason code"
+    );
+
+    expect(
+        std::string(
+            pqnas::cluster::
+                node_enrollment_registry_result_code(
+                    NodeEnrollmentRegistryResult::
+                        ProvisioningStageMismatch
+                )
+        ) == "enrollment_provisioning_stage_mismatch",
+        "stable provisioning-stage reason code"
     );
 
     cleanup();
