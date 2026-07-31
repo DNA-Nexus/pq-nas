@@ -161,6 +161,21 @@ public:
         std::string* error
     );
 
+    // Re-authenticates an already prepared transaction without mutating it.
+    // Only the persisted stage is returned; the verifier never leaves the
+    // registry's constant-time comparison boundary.
+    NodeEnrollmentRegistryResult
+    authenticate_active_provisioning_if_matches(
+        const std::string& enrollment_id,
+        const std::string& expected_node_id,
+        const std::string& expected_api_base_url,
+        int presented_protocol_version,
+        std::uint64_t expected_generation,
+        const std::string& presented_token_hash,
+        NodeEnrollmentProvisioningStage* authenticated_stage,
+        std::string* error
+    ) const;
+
     // Advances only the exact expected stage. This compare-and-mutate boundary
     // prevents concurrent bootstrap requests from skipping durable work.
     NodeEnrollmentRegistryResult

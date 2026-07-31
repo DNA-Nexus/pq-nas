@@ -1488,6 +1488,490 @@ int main() {
         "stable provisioning-stage reason code"
     );
 
+    {
+        const fs::path recovery_auth_path =
+            test_directory /
+            "recovery_auth_registry.json";
+
+        NodeEnrollmentRegistry
+            recovery_auth_registry;
+
+        error.clear();
+
+        expect(
+            recovery_auth_registry.load(
+                recovery_auth_path.string(),
+                &error
+            ),
+            "load recovery authentication registry: " +
+                error
+        );
+
+        const std::string recovery_id(
+            32,
+            'Q'
+        );
+
+        NodeEnrollmentRecord recovery_record;
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                create_or_replace_pending(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal/",
+                    7,
+                    kHashA,
+                    "2026-07-30T06:00:00Z",
+                    "2026-07-30T07:00:00Z",
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "create recovery authentication fixture"
+        );
+
+        pqnas::cluster::
+            NodeEnrollmentProvisioningStage
+                authenticated_stage =
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            NodeRegistered;
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            "pending non-provisioning record must not authenticate as recovery"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        None,
+            "failed recovery authentication must clear stage output"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                prepare_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    "2026-07-30T06:30:00Z",
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "prepare recovery authentication fixture"
+        );
+
+        const auto before_authentication =
+            recovery_auth_registry.get(
+                recovery_id
+            );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal/",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "authenticate prepared recovery transaction"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        Prepared,
+            "prepared recovery authentication must return persisted stage"
+        );
+
+        const auto after_authentication =
+            recovery_auth_registry.get(
+                recovery_id
+            );
+
+        expect(
+            before_authentication.has_value() &&
+            after_authentication.has_value() &&
+            before_authentication->state ==
+                after_authentication->state &&
+            before_authentication->provisioning_stage ==
+                after_authentication->provisioning_stage &&
+            before_authentication->provisioning_started_at ==
+                after_authentication->provisioning_started_at &&
+            before_authentication->token_hash ==
+                after_authentication->token_hash,
+            "recovery authentication must be read-only"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashB,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                TokenInvalid,
+            "recovery authentication must reject wrong verifier"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-other",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                NodeMismatch,
+            "recovery authentication node mismatch"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-other.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                UrlMismatch,
+            "recovery authentication URL mismatch"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    8,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                ProtocolIncompatible,
+            "recovery authentication protocol mismatch"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation + 1,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            "recovery authentication generation mismatch"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                advance_provisioning_stage(
+                    recovery_id,
+                    recovery_record.generation,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            Prepared,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            CredentialPersisted,
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "advance recovery fixture to credential persisted"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "authenticate credential-persisted recovery transaction"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        CredentialPersisted,
+            "credential-persisted recovery stage"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                advance_provisioning_stage(
+                    recovery_id,
+                    recovery_record.generation,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            CredentialPersisted,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            NodeRegistered,
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "advance recovery fixture to node registered"
+        );
+
+        NodeEnrollmentRegistry
+            recovery_auth_reloaded;
+
+        error.clear();
+
+        expect(
+            recovery_auth_reloaded.load(
+                recovery_auth_path.string(),
+                &error
+            ),
+            "reload active recovery transaction: " +
+                error
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "authenticate reloaded node-registered transaction"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        NodeRegistered,
+            "node-registered recovery stage must survive reload"
+        );
+
+        // Recovery remains valid after the original TTL because the persisted
+        // prepare time proves authentication happened before expiry.
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                finalize_provisioning(
+                    recovery_id,
+                    recovery_record.generation,
+                    "2026-07-30T08:30:00Z",
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "finalize authenticated recovery after original TTL"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            "consumed transaction must not authenticate for recovery"
+        );
+
+        const std::string revoked_id(
+            32,
+            'V'
+        );
+
+        NodeEnrollmentRecord revoked_record;
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                create_or_replace_pending(
+                    revoked_id,
+                    "node-recovery-revoked",
+                    "https://node-recovery-revoked.internal",
+                    7,
+                    kHashB,
+                    "2026-07-30T09:00:00Z",
+                    "2026-07-30T10:00:00Z",
+                    &revoked_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "create revoked recovery fixture"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                revoke_pending(
+                    revoked_id,
+                    revoked_record.generation,
+                    "2026-07-30T09:10:00Z",
+                    &revoked_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "revoke recovery authentication fixture"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    revoked_id,
+                    "node-recovery-revoked",
+                    "https://node-recovery-revoked.internal",
+                    7,
+                    revoked_record.generation,
+                    kHashB,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            "revoked transaction must not authenticate for recovery"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    std::string(32, 'Z'),
+                    "node-recovery-missing",
+                    "https://node-recovery-missing.internal",
+                    7,
+                    1,
+                    kHashC,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            "missing recovery authentication transaction"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    nullptr,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            "recovery authentication requires stage output"
+        );
+    }
+
     cleanup();
 
     if (failures != 0) {

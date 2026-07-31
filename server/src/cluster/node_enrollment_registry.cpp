@@ -2418,6 +2418,177 @@ prepare_provisioning_if_matches(
 
 NodeEnrollmentRegistryResult
 NodeEnrollmentRegistry::
+authenticate_active_provisioning_if_matches(
+    const std::string& enrollment_id,
+    const std::string& expected_node_id,
+    const std::string& expected_api_base_url,
+    int presented_protocol_version,
+    std::uint64_t expected_generation,
+    const std::string& presented_token_hash,
+    NodeEnrollmentProvisioningStage* authenticated_stage,
+    std::string* error
+) const {
+    if (error) {
+        error->clear();
+    }
+
+    if (authenticated_stage) {
+        *authenticated_stage =
+            NodeEnrollmentProvisioningStage::None;
+    }
+
+    std::string normalized_url;
+
+    if (!authenticated_stage ||
+        !valid_enrollment_id(
+            enrollment_id) ||
+        !valid_cluster_node_id(
+            expected_node_id) ||
+        presented_protocol_version < 1 ||
+        presented_protocol_version > 1000 ||
+        expected_generation == 0 ||
+        !valid_node_enrollment_token_hash(
+            presented_token_hash) ||
+        !normalize_cluster_https_base_url(
+            expected_api_base_url,
+            &normalized_url,
+            error)) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    const auto iterator =
+        records_.find(enrollment_id);
+
+    if (iterator == records_.end()) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            error
+        );
+    }
+
+    const NodeEnrollmentRecord& existing =
+        iterator->second;
+
+    if (existing.state ==
+        NodeEnrollmentState::Revoked) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            error
+        );
+    }
+
+    if (existing.state ==
+        NodeEnrollmentState::Consumed) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            error
+        );
+    }
+
+    if (existing.generation !=
+        expected_generation) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            error
+        );
+    }
+
+    if (existing.node_id !=
+        expected_node_id) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NodeMismatch,
+            error
+        );
+    }
+
+    if (existing.api_base_url !=
+        normalized_url) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                UrlMismatch,
+            error
+        );
+    }
+
+    if (existing.required_protocol_version !=
+        presented_protocol_version) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProtocolIncompatible,
+            error
+        );
+    }
+
+    const bool active_stage =
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                Prepared ||
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted ||
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered;
+
+    if (!active_stage) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            error
+        );
+    }
+
+    // Security: recovery may continue after TTL expiry only when the persisted
+    // authentication time proves that bootstrap acceptance happened inside the
+    // original validity window.
+    if (!valid_iso_utc_seconds(
+            existing.provisioning_started_at) ||
+        existing.provisioning_started_at <
+            existing.created_at ||
+        existing.provisioning_started_at >=
+            existing.expires_at) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    // Both verifier strings have already been validated to the fixed format.
+    // Keep retry authentication under the same mutex and use constant-time
+    // comparison so active provisioning does not create a timing oracle.
+    if (sodium_memcmp(
+            existing.token_hash.data(),
+            presented_token_hash.data(),
+            kNodeEnrollmentTokenHashChars) != 0) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                TokenInvalid,
+            error
+        );
+    }
+
+    *authenticated_stage =
+        existing.provisioning_stage;
+
+    return NodeEnrollmentRegistryResult::Ok;
+}
+
+NodeEnrollmentRegistryResult
+NodeEnrollmentRegistry::
 advance_provisioning_stage(
     const std::string& enrollment_id,
     std::uint64_t expected_generation,
