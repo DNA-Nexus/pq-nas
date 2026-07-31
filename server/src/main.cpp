@@ -132,6 +132,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_service.h"
 #include "cluster/node_enrollment_consumption_service.h"
+#include "cluster/storage_node_enrollment_runtime.h"
+#include "cluster/storage_node_enrollment_https.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
@@ -9185,6 +9187,98 @@ int main()
             << cluster_config_err
             << std::endl;
         return 2;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            StorageNodeEnrollmentRuntimeConfig
+                enrollment_runtime_config;
+
+        const auto enrollment_config_result =
+            pqnas::cluster::
+                load_storage_node_enrollment_runtime_config_from_env(
+                    &enrollment_runtime_config
+                );
+
+        if (enrollment_config_result !=
+            pqnas::cluster::
+                StorageNodeEnrollmentRuntimeConfigResult::Ok) {
+            // Security: report only the stable category. Enrollment identity,
+            // token paths and secret material must never enter startup logs.
+            std::cerr
+                << "[cluster] FATAL: storage node enrollment "
+                   "configuration failed: "
+                << pqnas::cluster::
+                       storage_node_enrollment_runtime_config_result_code(
+                           enrollment_config_result
+                       )
+                << std::endl;
+
+            return 2;
+        }
+
+        pqnas::cluster::
+            StorageNodeEnrollmentRuntimeDependencies
+                enrollment_dependencies;
+
+        enrollment_dependencies.transport =
+            pqnas::cluster::
+                make_https_storage_node_enrollment_transport();
+
+        enrollment_dependencies.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        const auto enrollment_result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    cluster_config,
+                    enrollment_runtime_config,
+                    std::move(
+                        enrollment_dependencies
+                    )
+                );
+
+        if (!enrollment_result.ok) {
+            // Security: never log Director responses, configured URLs,
+            // filesystem paths, bootstrap tokens or node credentials.
+            std::cerr
+                << "[cluster] FATAL: storage node enrollment "
+                   "failed: "
+                << enrollment_result.error_code()
+                << std::endl;
+
+            return 2;
+        }
+
+        if (enrollment_result.code ==
+            pqnas::cluster::
+                StorageNodeEnrollmentRuntimeCode::Ok) {
+            std::cerr
+                << "[cluster] storage_node_enrollment=ready"
+                << " recovered="
+                << (
+                    enrollment_result.recovered
+                    ? "true"
+                    : "false"
+                )
+                << " already_enrolled="
+                << (
+                    enrollment_result.already_enrolled
+                    ? "true"
+                    : "false"
+                )
+                << std::endl;
+        }
+
+        if (enrollment_result
+                .token_cleanup_warning) {
+            std::cerr
+                << "[cluster] WARN: "
+                   "storage_node_bootstrap_token_cleanup_failed"
+                << std::endl;
+        }
     }
 
     pqnas::cluster::InternalAuthCredential cluster_credential;
