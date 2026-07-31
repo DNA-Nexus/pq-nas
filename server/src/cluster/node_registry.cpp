@@ -849,8 +849,19 @@ bool persist_registry_file(
         std::string,
         NodeRegistryRecord
     >& nodes,
+    bool* committed,
     std::string* err
 ) {
+    if (!committed) {
+        set_error(
+            err,
+            "missing node registry commit output"
+        );
+        return false;
+    }
+
+    *committed = false;
+
     std::vector<std::string> node_ids;
     node_ids.reserve(nodes.size());
 
@@ -999,10 +1010,18 @@ bool persist_registry_file(
         return false;
     }
 
-    // The rename has committed the logical snapshot. Directory fsync is
-    // best-effort durability hardening; failure must not roll memory back to
-    // a state that no longer matches the renamed file.
-    (void)::fsync(directory_fd.get());
+    // Security: rename has made the new inode logically visible. Record
+    // that fact before directory fsync so callers never retain stale in-memory
+    // state after an uncertain durability result.
+    *committed = true;
+
+    if (::fsync(directory_fd.get()) != 0) {
+        set_error(
+            err,
+            "failed to sync node registry directory"
+        );
+        return false;
+    }
 
     return true;
 }
@@ -1121,23 +1140,36 @@ NodeRegistry::snapshot() const {
     return result;
 }
 
-bool NodeRegistry::persist_candidate_locked(
-    const std::unordered_map<
+bool NodeRegistry::commit_candidate_locked(
+    std::unordered_map<
         std::string,
         NodeRegistryRecord
-    >& candidate,
+    >&& candidate,
     std::string* err
-) const {
+) {
     if (path_.empty()) {
         set_error(err, "node registry is not loaded");
         return false;
     }
 
-    return persist_registry_file(
-        path_,
-        candidate,
-        err
-    );
+    bool committed = false;
+
+    const bool durable =
+        persist_registry_file(
+            path_,
+            candidate,
+            &committed,
+            err
+        );
+
+    // Security: rename may already have replaced the registry even when the
+    // following directory fsync reports an error. Keep process memory aligned
+    // with the visible inode so retries and recovery cannot use stale state.
+    if (committed) {
+        nodes_ = std::move(candidate);
+    }
+
+    return durable;
 }
 
 bool NodeRegistry::upsert_configured_node(
@@ -1211,11 +1243,11 @@ bool NodeRegistry::upsert_configured_node(
         }
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1259,11 +1291,11 @@ bool NodeRegistry::set_enabled(
         record.health = "unknown";
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1289,11 +1321,11 @@ bool NodeRegistry::erase(
         return false;
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1342,11 +1374,11 @@ bool NodeRegistry::mark_offline(
 
     record.health = "offline";
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
 
     if (transitioned_offline) {
         *transitioned_offline = true;
@@ -1429,11 +1461,11 @@ bool NodeRegistry::apply_status(
     record.users_enabled =
         status.users.enabled;
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
 
     if (transitioned_online) {
         *transitioned_online = became_online;

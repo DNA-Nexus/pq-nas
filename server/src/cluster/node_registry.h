@@ -93,13 +93,16 @@ public:
     );
 
 private:
-    bool persist_candidate_locked(
-        const std::unordered_map<
+    // Persists and installs one candidate while the registry mutex is held.
+    // If rename succeeds but directory fsync fails, memory is still advanced to
+    // the committed inode before the mutation reports failure.
+    bool commit_candidate_locked(
+        std::unordered_map<
             std::string,
             NodeRegistryRecord
-        >& candidate,
+        >&& candidate,
         std::string* err
-    ) const;
+    );
 
     mutable std::mutex mutex_;
     std::filesystem::path path_;
