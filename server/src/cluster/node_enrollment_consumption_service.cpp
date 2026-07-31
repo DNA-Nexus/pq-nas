@@ -578,6 +578,11 @@ NodeEnrollmentConsumptionService::consume(
         enrollment_result ==
         NodeEnrollmentRegistryResult::Ok;
 
+    const bool finalized_retry =
+        enrollment_result ==
+        NodeEnrollmentRegistryResult::
+            AlreadyConsumed;
+
     if (enrollment_result ==
         NodeEnrollmentRegistryResult::
             ProvisioningStageMismatch) {
@@ -653,7 +658,8 @@ NodeEnrollmentConsumptionService::consume(
             NodeEnrollmentProvisioningStage::
                 Prepared;
     } else if (enrollment_result !=
-               NodeEnrollmentRegistryResult::Ok) {
+                   NodeEnrollmentRegistryResult::Ok &&
+               !finalized_retry) {
         return fail(
             map_enrollment_result(
                 enrollment_result
@@ -707,6 +713,70 @@ NodeEnrollmentConsumptionService::consume(
                 : NodeEnrollmentConsumptionServiceResult::
                     NodeConflict;
         };
+
+    if (finalized_retry) {
+        const auto consumed_record =
+            config_.enrollment_registry->get(
+                request.enrollment_id
+            );
+
+        // Security: the bootstrap verifier is deliberately erased at
+        // finalization. Recover only an exact consumed transaction and require
+        // possession of the persisted node credential. Metadata or credential
+        // mismatches remain indistinguishable from any other terminal intent.
+        if (!consumed_record.has_value() ||
+            consumed_record->state !=
+                NodeEnrollmentState::Consumed ||
+            consumed_record->generation !=
+                request.expected_generation ||
+            consumed_record->node_id !=
+                request.node_id ||
+            consumed_record->api_base_url !=
+                normalized_url ||
+            request.protocol_version !=
+                consumed_record
+                    ->required_protocol_version) {
+            return fail(
+                NodeEnrollmentConsumptionServiceResult::
+                    Consumed
+            );
+        }
+
+        const auto credential_result =
+            verify_credential();
+
+        if (credential_result ==
+            NodeEnrollmentConsumptionServiceResult::
+                CredentialConflict) {
+            return fail(
+                NodeEnrollmentConsumptionServiceResult::
+                    Consumed
+            );
+        }
+
+        if (credential_result !=
+            NodeEnrollmentConsumptionServiceResult::Ok) {
+            return fail(
+                credential_result
+            );
+        }
+
+        if (!configured_node_matches(
+                *config_.node_registry,
+                request.node_id,
+                normalized_url)) {
+            return fail(
+                NodeEnrollmentConsumptionServiceResult::
+                    NodeConflict,
+                true
+            );
+        }
+
+        return fail(
+            NodeEnrollmentConsumptionServiceResult::Ok,
+            true
+        );
+    }
 
     if (stage ==
         NodeEnrollmentProvisioningStage::Prepared) {
