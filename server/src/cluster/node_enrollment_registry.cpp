@@ -1365,8 +1365,19 @@ bool persist_registry_file(
         std::string,
         NodeEnrollmentRecord
     >& records,
+    bool* committed,
     std::string* error
 ) {
+    if (!committed) {
+        set_error(
+            error,
+            "missing enrollment registry commit output"
+        );
+        return false;
+    }
+
+    *committed = false;
+
     if (!validate_record_set(
             records,
             error)) {
@@ -1641,11 +1652,19 @@ bool persist_registry_file(
         return false;
     }
 
-    // The logical commit has completed. Directory fsync is best-effort
-    // durability hardening and must not roll memory back after rename.
-    (void)::fsync(
-        directory_descriptor.get()
-    );
+    // Security: rename has made the new inode logically visible. Record
+    // that fact before directory fsync so callers never retain stale in-memory
+    // state after an uncertain durability result.
+    *committed = true;
+
+    if (::fsync(
+            directory_descriptor.get()) != 0) {
+        set_error(
+            error,
+            "failed to sync enrollment registry directory"
+        );
+        return false;
+    }
 
     return true;
 }
@@ -1867,13 +1886,13 @@ NodeEnrollmentRegistry::snapshot() const {
 }
 
 bool NodeEnrollmentRegistry::
-persist_candidate_locked(
-    const std::unordered_map<
+commit_candidate_locked(
+    std::unordered_map<
         std::string,
         NodeEnrollmentRecord
-    >& candidate,
+    >&& candidate,
     std::string* error
-) const {
+) {
     if (path_.empty()) {
         set_error(
             error,
@@ -1882,11 +1901,24 @@ persist_candidate_locked(
         return false;
     }
 
-    return persist_registry_file(
-        path_,
-        candidate,
-        error
-    );
+    bool committed = false;
+
+    const bool durable =
+        persist_registry_file(
+            path_,
+            candidate,
+            &committed,
+            error
+        );
+
+    // Security: rename may already have replaced the registry even when the
+    // following directory fsync reports an error. Keep process memory aligned
+    // with the visible inode so retries and recovery cannot act on stale state.
+    if (committed) {
+        records_ = std::move(candidate);
+    }
+
+    return durable;
 }
 
 NodeEnrollmentRegistryResult
@@ -2052,14 +2084,12 @@ create_or_replace_pending(
         record
     );
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (created) {
         *created = record;
@@ -2162,14 +2192,12 @@ NodeEnrollmentRegistry::revoke_pending(
     // bootstrap token cannot be validated again through another code path.
     updated.token_hash.clear();
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (revoked) {
         *revoked =
@@ -2342,14 +2370,12 @@ consume_pending_if_matches(
     // persistent transaction, making replay fail on terminal state.
     updated.token_hash.clear();
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (consumed) {
         *consumed =
