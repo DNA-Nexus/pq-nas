@@ -1056,6 +1056,25 @@ bool validate_status_snapshot(
 
 } // namespace
 
+const char* node_registry_insert_result_code(
+    NodeRegistryInsertResult result
+) noexcept {
+    switch (result) {
+        case NodeRegistryInsertResult::Ok:
+            return "ok";
+        case NodeRegistryInsertResult::InvalidInput:
+            return "node_registry_invalid_input";
+        case NodeRegistryInsertResult::DuplicateNodeId:
+            return "node_registry_duplicate_node_id";
+        case NodeRegistryInsertResult::DuplicateApiBaseUrl:
+            return "node_registry_duplicate_api_base_url";
+        case NodeRegistryInsertResult::PersistFailed:
+            return "node_registry_persist_failed";
+    }
+
+    return "node_registry_unknown";
+}
+
 bool NodeRegistry::load(
     const std::string& path,
     std::string* err
@@ -1170,6 +1189,86 @@ bool NodeRegistry::commit_candidate_locked(
     }
 
     return durable;
+}
+
+NodeRegistryInsertResult
+NodeRegistry::insert_configured_node_if_absent(
+    const std::string& node_id,
+    const std::string& api_base_url,
+    bool enabled,
+    const std::string& now_iso,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!valid_cluster_node_id(node_id) ||
+        !valid_iso_utc_seconds(now_iso)) {
+        set_error(
+            err,
+            "invalid configured node insertion metadata"
+        );
+        return NodeRegistryInsertResult::InvalidInput;
+    }
+
+    std::string normalized_url;
+
+    if (!normalize_cluster_https_base_url(
+            api_base_url,
+            &normalized_url,
+            err)) {
+        return NodeRegistryInsertResult::InvalidInput;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (nodes_.find(node_id) != nodes_.end()) {
+        set_error(
+            err,
+            "node ID is already registered"
+        );
+        return NodeRegistryInsertResult::DuplicateNodeId;
+    }
+
+    for (const auto& entry : nodes_) {
+        if (entry.second.api_base_url ==
+            normalized_url) {
+            set_error(
+                err,
+                "node API URL is already registered"
+            );
+            return NodeRegistryInsertResult::
+                DuplicateApiBaseUrl;
+        }
+    }
+
+    auto candidate = nodes_;
+
+    NodeRegistryRecord record;
+    record.node_id = node_id;
+    record.api_base_url = normalized_url;
+    record.enabled = enabled;
+    record.added_at = now_iso;
+    record.updated_at = now_iso;
+    record.health =
+        enabled ? "unknown" : "disabled";
+
+    candidate.emplace(
+        node_id,
+        std::move(record)
+    );
+
+    // Security: duplicate checks and the durable snapshot commit occur under
+    // one registry mutex, preventing enrollment races from replacing or
+    // aliasing an already trusted node identity.
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
+        return NodeRegistryInsertResult::PersistFailed;
+    }
+
+    return NodeRegistryInsertResult::Ok;
 }
 
 bool NodeRegistry::upsert_configured_node(

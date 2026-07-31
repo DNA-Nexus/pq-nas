@@ -635,6 +635,261 @@ int main() {
         );
     }
 
+    {
+        const fs::path insert_only_path =
+            test_directory /
+            "insert_only_registry.json";
+
+        pqnas::cluster::NodeRegistry
+            insert_only_registry;
+
+        error.clear();
+
+        expect(
+            insert_only_registry.load(
+                insert_only_path.string(),
+                &error
+            ),
+            "load insert-only registry: " + error
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "../node-insert",
+                    "https://node-insert.internal",
+                    true,
+                    "2026-07-28T08:00:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::
+                        InvalidInput,
+            "insert-only mutation must reject unsafe node ID"
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "node-insert-a",
+                    "http://node-insert-a.internal",
+                    true,
+                    "2026-07-28T08:00:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::
+                        InvalidInput,
+            "insert-only mutation must reject plaintext URL"
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "node-insert-a",
+                    "https://node-insert-a.internal/",
+                    true,
+                    "2026-07-28T08:01:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::Ok,
+            "insert first configured node: " + error
+        );
+
+        const auto inserted_a =
+            insert_only_registry.get(
+                "node-insert-a"
+            );
+
+        expect(
+            inserted_a.has_value() &&
+            inserted_a->api_base_url ==
+                "https://node-insert-a.internal" &&
+            inserted_a->enabled &&
+            inserted_a->health == "unknown" &&
+            inserted_a->added_at ==
+                "2026-07-28T08:01:00Z" &&
+            inserted_a->updated_at ==
+                "2026-07-28T08:01:00Z",
+            "first insert must persist canonical immutable identity metadata"
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "node-insert-a",
+                    "https://replacement.internal",
+                    false,
+                    "2026-07-28T08:02:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::
+                        DuplicateNodeId,
+            "insert-only mutation must reject duplicate node ID"
+        );
+
+        const auto after_id_conflict =
+            insert_only_registry.get(
+                "node-insert-a"
+            );
+
+        expect(
+            after_id_conflict.has_value() &&
+            after_id_conflict->api_base_url ==
+                "https://node-insert-a.internal" &&
+            after_id_conflict->enabled &&
+            after_id_conflict->added_at ==
+                "2026-07-28T08:01:00Z" &&
+            after_id_conflict->updated_at ==
+                "2026-07-28T08:01:00Z",
+            "duplicate node ID must preserve the original record"
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "node-insert-b",
+                    "https://node-insert-a.internal/",
+                    true,
+                    "2026-07-28T08:03:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::
+                        DuplicateApiBaseUrl,
+            "insert-only mutation must reject duplicate canonical URL"
+        );
+
+        expect(
+            !insert_only_registry.get(
+                "node-insert-b"
+            ).has_value(),
+            "duplicate URL must not create a second node"
+        );
+
+        error.clear();
+
+        expect(
+            insert_only_registry.
+                insert_configured_node_if_absent(
+                    "node-insert-b",
+                    "https://node-insert-b.internal",
+                    false,
+                    "2026-07-28T08:04:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::Ok,
+            "insert disabled configured node: " + error
+        );
+
+        const auto inserted_b =
+            insert_only_registry.get(
+                "node-insert-b"
+            );
+
+        expect(
+            inserted_b.has_value() &&
+            !inserted_b->enabled &&
+            inserted_b->health == "disabled",
+            "disabled insert must begin in disabled health"
+        );
+
+        pqnas::cluster::NodeRegistry
+            unloaded_insert_registry;
+
+        error.clear();
+
+        expect(
+            unloaded_insert_registry.
+                insert_configured_node_if_absent(
+                    "node-unloaded",
+                    "https://node-unloaded.internal",
+                    true,
+                    "2026-07-28T08:05:00Z",
+                    &error
+                ) ==
+                pqnas::cluster::
+                    NodeRegistryInsertResult::
+                        PersistFailed,
+            "unloaded insert-only registry must report persistence failure"
+        );
+
+        expect(
+            std::string(
+                pqnas::cluster::
+                    node_registry_insert_result_code(
+                        pqnas::cluster::
+                            NodeRegistryInsertResult::
+                                InvalidInput
+                    )
+            ) == "node_registry_invalid_input" &&
+            std::string(
+                pqnas::cluster::
+                    node_registry_insert_result_code(
+                        pqnas::cluster::
+                            NodeRegistryInsertResult::
+                                DuplicateNodeId
+                    )
+            ) == "node_registry_duplicate_node_id" &&
+            std::string(
+                pqnas::cluster::
+                    node_registry_insert_result_code(
+                        pqnas::cluster::
+                            NodeRegistryInsertResult::
+                                DuplicateApiBaseUrl
+                    )
+            ) ==
+                "node_registry_duplicate_api_base_url" &&
+            std::string(
+                pqnas::cluster::
+                    node_registry_insert_result_code(
+                        pqnas::cluster::
+                            NodeRegistryInsertResult::
+                                PersistFailed
+                    )
+            ) == "node_registry_persist_failed",
+            "stable node insertion reason codes"
+        );
+
+        pqnas::cluster::NodeRegistry
+            insert_only_reloaded;
+
+        error.clear();
+
+        expect(
+            insert_only_reloaded.load(
+                insert_only_path.string(),
+                &error
+            ),
+            "reload insert-only registry: " + error
+        );
+
+        const auto inserted_snapshot =
+            insert_only_reloaded.snapshot();
+
+        expect(
+            inserted_snapshot.size() == 2 &&
+            inserted_snapshot[0].node_id ==
+                "node-insert-a" &&
+            inserted_snapshot[1].node_id ==
+                "node-insert-b",
+            "insert-only records must survive reload deterministically"
+        );
+    }
+
     const auto before_failed_load =
         reloaded.snapshot();
 
