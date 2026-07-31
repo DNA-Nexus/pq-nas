@@ -849,8 +849,19 @@ bool persist_registry_file(
         std::string,
         NodeRegistryRecord
     >& nodes,
+    bool* committed,
     std::string* err
 ) {
+    if (!committed) {
+        set_error(
+            err,
+            "missing node registry commit output"
+        );
+        return false;
+    }
+
+    *committed = false;
+
     std::vector<std::string> node_ids;
     node_ids.reserve(nodes.size());
 
@@ -999,10 +1010,18 @@ bool persist_registry_file(
         return false;
     }
 
-    // The rename has committed the logical snapshot. Directory fsync is
-    // best-effort durability hardening; failure must not roll memory back to
-    // a state that no longer matches the renamed file.
-    (void)::fsync(directory_fd.get());
+    // Security: rename has made the new inode logically visible. Record
+    // that fact before directory fsync so callers never retain stale in-memory
+    // state after an uncertain durability result.
+    *committed = true;
+
+    if (::fsync(directory_fd.get()) != 0) {
+        set_error(
+            err,
+            "failed to sync node registry directory"
+        );
+        return false;
+    }
 
     return true;
 }
@@ -1036,6 +1055,25 @@ bool validate_status_snapshot(
 }
 
 } // namespace
+
+const char* node_registry_insert_result_code(
+    NodeRegistryInsertResult result
+) noexcept {
+    switch (result) {
+        case NodeRegistryInsertResult::Ok:
+            return "ok";
+        case NodeRegistryInsertResult::InvalidInput:
+            return "node_registry_invalid_input";
+        case NodeRegistryInsertResult::DuplicateNodeId:
+            return "node_registry_duplicate_node_id";
+        case NodeRegistryInsertResult::DuplicateApiBaseUrl:
+            return "node_registry_duplicate_api_base_url";
+        case NodeRegistryInsertResult::PersistFailed:
+            return "node_registry_persist_failed";
+    }
+
+    return "node_registry_unknown";
+}
 
 bool NodeRegistry::load(
     const std::string& path,
@@ -1121,23 +1159,116 @@ NodeRegistry::snapshot() const {
     return result;
 }
 
-bool NodeRegistry::persist_candidate_locked(
-    const std::unordered_map<
+bool NodeRegistry::commit_candidate_locked(
+    std::unordered_map<
         std::string,
         NodeRegistryRecord
-    >& candidate,
+    >&& candidate,
     std::string* err
-) const {
+) {
     if (path_.empty()) {
         set_error(err, "node registry is not loaded");
         return false;
     }
 
-    return persist_registry_file(
-        path_,
-        candidate,
-        err
+    bool committed = false;
+
+    const bool durable =
+        persist_registry_file(
+            path_,
+            candidate,
+            &committed,
+            err
+        );
+
+    // Security: rename may already have replaced the registry even when the
+    // following directory fsync reports an error. Keep process memory aligned
+    // with the visible inode so retries and recovery cannot use stale state.
+    if (committed) {
+        nodes_ = std::move(candidate);
+    }
+
+    return durable;
+}
+
+NodeRegistryInsertResult
+NodeRegistry::insert_configured_node_if_absent(
+    const std::string& node_id,
+    const std::string& api_base_url,
+    bool enabled,
+    const std::string& now_iso,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
+    if (!valid_cluster_node_id(node_id) ||
+        !valid_iso_utc_seconds(now_iso)) {
+        set_error(
+            err,
+            "invalid configured node insertion metadata"
+        );
+        return NodeRegistryInsertResult::InvalidInput;
+    }
+
+    std::string normalized_url;
+
+    if (!normalize_cluster_https_base_url(
+            api_base_url,
+            &normalized_url,
+            err)) {
+        return NodeRegistryInsertResult::InvalidInput;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (nodes_.find(node_id) != nodes_.end()) {
+        set_error(
+            err,
+            "node ID is already registered"
+        );
+        return NodeRegistryInsertResult::DuplicateNodeId;
+    }
+
+    for (const auto& entry : nodes_) {
+        if (entry.second.api_base_url ==
+            normalized_url) {
+            set_error(
+                err,
+                "node API URL is already registered"
+            );
+            return NodeRegistryInsertResult::
+                DuplicateApiBaseUrl;
+        }
+    }
+
+    auto candidate = nodes_;
+
+    NodeRegistryRecord record;
+    record.node_id = node_id;
+    record.api_base_url = normalized_url;
+    record.enabled = enabled;
+    record.added_at = now_iso;
+    record.updated_at = now_iso;
+    record.health =
+        enabled ? "unknown" : "disabled";
+
+    candidate.emplace(
+        node_id,
+        std::move(record)
     );
+
+    // Security: duplicate checks and the durable snapshot commit occur under
+    // one registry mutex, preventing enrollment races from replacing or
+    // aliasing an already trusted node identity.
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
+        return NodeRegistryInsertResult::PersistFailed;
+    }
+
+    return NodeRegistryInsertResult::Ok;
 }
 
 bool NodeRegistry::upsert_configured_node(
@@ -1211,11 +1342,11 @@ bool NodeRegistry::upsert_configured_node(
         }
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1259,11 +1390,11 @@ bool NodeRegistry::set_enabled(
         record.health = "unknown";
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1289,11 +1420,11 @@ bool NodeRegistry::erase(
         return false;
     }
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
     return true;
 }
 
@@ -1342,11 +1473,11 @@ bool NodeRegistry::mark_offline(
 
     record.health = "offline";
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
 
     if (transitioned_offline) {
         *transitioned_offline = true;
@@ -1429,11 +1560,11 @@ bool NodeRegistry::apply_status(
     record.users_enabled =
         status.users.enabled;
 
-    if (!persist_candidate_locked(candidate, err)) {
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            err)) {
         return false;
     }
-
-    nodes_ = std::move(candidate);
 
     if (transitioned_online) {
         *transitioned_online = became_online;

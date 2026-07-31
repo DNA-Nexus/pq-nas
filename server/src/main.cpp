@@ -128,8 +128,10 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_credential_registry.h"
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_service.h"
+#include "cluster/node_enrollment_consumption_service.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
@@ -140,6 +142,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
+#include "routes/routes_node_enrollment_bootstrap.h"
 #include "routes/routes_admin_cluster_placement_policies.h"
 #include "routes/routes_admin_cluster_user_placement.h"
 #include "routes/routes_admin_cluster_user_placement_preview.h"
@@ -9223,9 +9226,17 @@ int main()
     pqnas::cluster::NodeEnrollmentRegistry
         director_node_enrollment_registry;
 
+    pqnas::cluster::NodeCredentialRegistry
+        director_node_credential_registry;
+
     std::unique_ptr<
         pqnas::cluster::NodeEnrollmentService
     > director_node_enrollment_service;
+
+    std::unique_ptr<
+        pqnas::cluster::
+            NodeEnrollmentConsumptionService
+    > director_node_enrollment_consumption_service;
 
     pqnas::cluster::UserPlacementPolicyRegistry
         director_placement_policy_registry;
@@ -9287,6 +9298,30 @@ int main()
             return 3;
         }
 
+        // Security: long-lived node credentials are service-private control
+        // plane state. Use one fixed directory below the validated config root
+        // and refuse unsafe ownership, permissions, links or file types.
+        const std::filesystem::path
+            node_credential_registry_path =
+                pqnas::config_root_path() /
+                "node_credentials";
+
+        std::string
+            node_credential_registry_error;
+
+        if (!director_node_credential_registry.load(
+                node_credential_registry_path.string(),
+                &node_credential_registry_error)) {
+            // Security: do not print credential paths or raw filesystem
+            // diagnostics; either could disclose deployment details.
+            std::cerr
+                << "[cluster] FATAL: Director node credential "
+                   "registry load failed"
+                << std::endl;
+
+            return 3;
+        }
+
         pqnas::cluster::
             NodeEnrollmentServiceConfig
                 node_enrollment_service_config;
@@ -9323,6 +9358,55 @@ int main()
             >(
                 std::move(
                     node_enrollment_service_config
+                )
+            );
+
+        pqnas::cluster::
+            NodeEnrollmentConsumptionServiceConfig
+                node_enrollment_consumption_service_config;
+
+        node_enrollment_consumption_service_config
+            .enrollment_registry =
+                &director_node_enrollment_registry;
+
+        node_enrollment_consumption_service_config
+            .credential_registry =
+                &director_node_credential_registry;
+
+        node_enrollment_consumption_service_config
+            .node_registry =
+                &director_node_registry;
+
+        node_enrollment_consumption_service_config
+            .audit_emit =
+                [](
+                    const std::string& event,
+                    const std::string& outcome,
+                    const std::map<
+                        std::string,
+                        std::string
+                    >& fields
+                ) {
+                    pqnas::AuditEvent audit;
+                    audit.event = event;
+                    audit.outcome = outcome;
+
+                    for (const auto& field :
+                         fields) {
+                        audit.f[field.first] =
+                            field.second;
+                    }
+
+                    audit_append(audit);
+                };
+
+        director_node_enrollment_consumption_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeEnrollmentConsumptionService
+            >(
+                std::move(
+                    node_enrollment_consumption_service_config
                 )
             );
 
@@ -10689,6 +10773,41 @@ v5.app_pair_build_qr_uri =
         std::cerr
             << "[cluster] Director admin node enrollment "
                "routes registered"
+            << std::endl;
+
+        pqnas::cluster::
+            NodeEnrollmentBootstrapRoutesContext
+                node_enrollment_bootstrap_context;
+
+        node_enrollment_bootstrap_context.service =
+            director_node_enrollment_consumption_service
+                .get();
+
+        node_enrollment_bootstrap_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        node_enrollment_bootstrap_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        pqnas::cluster::
+            register_node_enrollment_bootstrap_routes(
+                srv,
+                node_enrollment_bootstrap_context
+            );
+
+        std::cerr
+            << "[cluster] Director node enrollment "
+               "bootstrap route registered"
             << std::endl;
 
         pqnas::cluster::AdminClusterNodeRoutesContext

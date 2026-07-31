@@ -1051,7 +1051,7 @@ int main() {
         registry_error.clear();
 
         expect(
-            registry.consume_pending_if_matches(
+            registry.prepare_provisioning_if_matches(
                 consumed_id,
                 "node-consumed-route",
                 "https://node-consumed-route.internal",
@@ -1064,7 +1064,59 @@ int main() {
             ) ==
                 pqnas::cluster::
                     NodeEnrollmentRegistryResult::Ok,
-            "consume route fixture: " +
+            "prepare consumed route fixture: " +
+                registry_error
+        );
+
+        expect(
+            registry.advance_provisioning_stage(
+                consumed_id,
+                consumed_generation,
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        Prepared,
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        CredentialPersisted,
+                &consumed,
+                &registry_error
+            ) ==
+                pqnas::cluster::
+                    NodeEnrollmentRegistryResult::Ok,
+            "advance consumed route credential fixture: " +
+                registry_error
+        );
+
+        expect(
+            registry.advance_provisioning_stage(
+                consumed_id,
+                consumed_generation,
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        CredentialPersisted,
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        NodeRegistered,
+                &consumed,
+                &registry_error
+            ) ==
+                pqnas::cluster::
+                    NodeEnrollmentRegistryResult::Ok,
+            "advance consumed route node fixture: " +
+                registry_error
+        );
+
+        expect(
+            registry.finalize_provisioning(
+                consumed_id,
+                consumed_generation,
+                "2026-07-30T13:05:00Z",
+                &consumed,
+                &registry_error
+            ) ==
+                pqnas::cluster::
+                    NodeEnrollmentRegistryResult::Ok,
+            "finalize consumed route fixture: " +
                 registry_error
         );
 

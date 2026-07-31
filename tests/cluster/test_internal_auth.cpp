@@ -144,6 +144,86 @@ int main() {
         "synthetic token length"
     );
 
+    std::string generated_token =
+        "previous-sensitive-output";
+
+    std::string generated_error;
+
+    expect(
+        pqnas::cluster::
+            generate_internal_auth_credential_token(
+                &generated_token,
+                &generated_error
+            ),
+        "generate credential token: " +
+            generated_error
+    );
+
+    expect(
+        generated_token.size() ==
+            pqnas::cluster::
+                kInternalAuthTokenChars &&
+        pqnas::cluster::
+            valid_internal_auth_credential_token(
+                generated_token
+            ),
+        "generated credential token format"
+    );
+
+    pqnas::cluster::InternalAuthCredential
+        generated_credential;
+
+    generated_error.clear();
+
+    expect(
+        pqnas::cluster::
+            parse_internal_auth_credential_token(
+                generated_token,
+                &generated_credential,
+                &generated_error
+            ),
+        "parse generated credential token: " +
+            generated_error
+    );
+
+    expect(
+        generated_credential.configured() &&
+        pqnas::cluster::
+            verify_internal_bearer_authorization(
+                "Bearer " + generated_token,
+                generated_credential
+            ),
+        "generated credential round trip"
+    );
+
+    std::string generated_copy =
+        generated_token;
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &generated_token
+        );
+
+    expect(
+        generated_token.empty() &&
+        pqnas::cluster::
+            verify_internal_bearer_authorization(
+                "Bearer " + generated_copy,
+                generated_credential
+            ),
+        "secure token clear must not alter parsed credential"
+    );
+
+    pqnas::cluster::
+        clear_internal_auth_token_text(
+            &generated_copy
+        );
+
+    expect(
+        generated_copy.empty(),
+        "generated credential copy must be cleared"
+    );
+
     const fs::path valid_path = test_dir / "node-token";
     expect(
         write_file(valid_path, token + "\n", 0600),
@@ -163,6 +243,28 @@ int main() {
     );
 
     expect(credential.configured(), "credential should be configured");
+
+    err.clear();
+
+    expect(
+        !pqnas::cluster::
+            parse_internal_auth_credential_token(
+                "not-a-valid-token",
+                &credential,
+                &err
+            ),
+        "invalid replacement token must be rejected"
+    );
+
+    expect(
+        credential.configured() &&
+        pqnas::cluster::
+            verify_internal_bearer_authorization(
+                "Bearer " + token,
+                credential
+            ),
+        "invalid replacement must preserve active credential"
+    );
 
     expect(
         pqnas::cluster::verify_internal_bearer_authorization(

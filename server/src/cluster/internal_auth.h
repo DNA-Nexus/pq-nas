@@ -30,6 +30,12 @@ private:
         std::string*
     );
 
+    friend bool parse_internal_auth_credential_token(
+        const std::string&,
+        InternalAuthCredential*,
+        std::string*
+    );
+
     friend bool verify_internal_bearer_authorization(
         const std::string&,
         const InternalAuthCredential&
@@ -43,6 +49,32 @@ private:
     std::array<unsigned char, kInternalAuthSecretBytes> secret_{};
     bool configured_ = false;
 };
+
+// Securely clears the active characters before releasing the logical string.
+// Callers should use this for every temporary plaintext credential token.
+void clear_internal_auth_token_text(
+    std::string* token
+) noexcept;
+
+// Accepts exactly one canonical 32-byte base64url token without padding.
+bool valid_internal_auth_credential_token(
+    const std::string& token
+) noexcept;
+
+// Generates a cryptographically random long-lived credential token.
+// Any previous output content is securely cleared before replacement.
+bool generate_internal_auth_credential_token(
+    std::string* token,
+    std::string* err
+);
+
+// Parses one plaintext token into the move-only credential object. The active
+// credential is replaced only after complete validation and decoding.
+bool parse_internal_auth_credential_token(
+    const std::string& token,
+    InternalAuthCredential* out,
+    std::string* err
+);
 
 // Loads one 32-byte secret encoded as 43-character base64url without padding.
 //

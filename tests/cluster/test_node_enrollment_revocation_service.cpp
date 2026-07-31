@@ -368,7 +368,7 @@ int main() {
     error.clear();
 
     expect(
-        registry.consume_pending_if_matches(
+        registry.prepare_provisioning_if_matches(
             consume_fixture
                 .enrollment()
                 .enrollment_id,
@@ -391,7 +391,70 @@ int main() {
         ) ==
             pqnas::cluster::
                 NodeEnrollmentRegistryResult::Ok,
-        "consume fixture: " + error
+        "prepare consumed fixture: " + error
+    );
+
+    expect(
+        registry.advance_provisioning_stage(
+            consume_fixture
+                .enrollment()
+                .enrollment_id,
+            consume_fixture
+                .enrollment()
+                .generation,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
+                    Prepared,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
+                    CredentialPersisted,
+            &consumed_record,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeEnrollmentRegistryResult::Ok,
+        "advance consumed credential fixture: " +
+            error
+    );
+
+    expect(
+        registry.advance_provisioning_stage(
+            consume_fixture
+                .enrollment()
+                .enrollment_id,
+            consume_fixture
+                .enrollment()
+                .generation,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
+                    CredentialPersisted,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
+                    NodeRegistered,
+            &consumed_record,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeEnrollmentRegistryResult::Ok,
+        "advance consumed node fixture: " +
+            error
+    );
+
+    expect(
+        registry.finalize_provisioning(
+            consume_fixture
+                .enrollment()
+                .enrollment_id,
+            consume_fixture
+                .enrollment()
+                .generation,
+            "2026-07-30T08:05:00Z",
+            &consumed_record,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeEnrollmentRegistryResult::Ok,
+        "finalize consumed fixture: " + error
     );
 
     clear_secret(&consumed_hash);

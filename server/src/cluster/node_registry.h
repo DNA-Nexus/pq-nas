@@ -14,6 +14,18 @@ struct NodeStatusSnapshot;
 
 inline constexpr int kNodeRegistrySchemaVersion = 1;
 
+enum class NodeRegistryInsertResult {
+    Ok,
+    InvalidInput,
+    DuplicateNodeId,
+    DuplicateApiBaseUrl,
+    PersistFailed
+};
+
+const char* node_registry_insert_result_code(
+    NodeRegistryInsertResult result
+) noexcept;
+
 struct NodeRegistryRecord {
     std::string node_id;
     std::string api_base_url;
@@ -52,6 +64,17 @@ public:
     ) const;
 
     std::vector<NodeRegistryRecord> snapshot() const;
+
+    // Creates a configured node without replacing any existing node ID or
+    // normalized API URL. Conflict checks and persistence share one mutex.
+    NodeRegistryInsertResult
+    insert_configured_node_if_absent(
+        const std::string& node_id,
+        const std::string& api_base_url,
+        bool enabled,
+        const std::string& now_iso,
+        std::string* err
+    );
 
     // Mutations use write-through persistence: the in-memory state changes
     // only after the candidate JSON snapshot has been atomically committed.
@@ -93,13 +116,16 @@ public:
     );
 
 private:
-    bool persist_candidate_locked(
-        const std::unordered_map<
+    // Persists and installs one candidate while the registry mutex is held.
+    // If rename succeeds but directory fsync fails, memory is still advanced to
+    // the committed inode before the mutation reports failure.
+    bool commit_candidate_locked(
+        std::unordered_map<
             std::string,
             NodeRegistryRecord
-        >& candidate,
+        >&& candidate,
         std::string* err
-    ) const;
+    );
 
     mutable std::mutex mutex_;
     std::filesystem::path path_;

@@ -361,6 +361,43 @@ bool parse_state(
     return false;
 }
 
+bool parse_provisioning_stage(
+    const std::string& value,
+    NodeEnrollmentProvisioningStage* output
+) {
+    if (!output) {
+        return false;
+    }
+
+    if (value == "none") {
+        *output =
+            NodeEnrollmentProvisioningStage::None;
+        return true;
+    }
+
+    if (value == "prepared") {
+        *output =
+            NodeEnrollmentProvisioningStage::Prepared;
+        return true;
+    }
+
+    if (value == "credential_persisted") {
+        *output =
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted;
+        return true;
+    }
+
+    if (value == "node_registered") {
+        *output =
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered;
+        return true;
+    }
+
+    return false;
+}
+
 bool normalize_registry_path(
     const std::string& raw,
     std::filesystem::path* normalized,
@@ -474,6 +511,32 @@ bool validate_record(
                 return false;
             }
 
+            if (record.provisioning_stage ==
+                    NodeEnrollmentProvisioningStage::
+                        None) {
+                if (!record
+                        .provisioning_started_at
+                        .empty()) {
+                    set_error(
+                        error,
+                        "inactive enrollment provisioning has a start time"
+                    );
+                    return false;
+                }
+            } else if (
+                !valid_iso_utc_seconds(
+                    record.provisioning_started_at) ||
+                record.provisioning_started_at <
+                    record.created_at ||
+                record.provisioning_started_at >=
+                    record.expires_at) {
+                set_error(
+                    error,
+                    "invalid pending enrollment provisioning state"
+                );
+                return false;
+            }
+
             break;
 
         case NodeEnrollmentState::Revoked:
@@ -482,7 +545,12 @@ bool validate_record(
                     record.revoked_at) ||
                 record.revoked_at <
                     record.created_at ||
-                !record.consumed_at.empty()) {
+                !record.consumed_at.empty() ||
+                record.provisioning_stage !=
+                    NodeEnrollmentProvisioningStage::
+                        None ||
+                !record.provisioning_started_at
+                    .empty()) {
                 set_error(
                     error,
                     "invalid revoked enrollment state"
@@ -499,8 +567,17 @@ bool validate_record(
                     record.consumed_at) ||
                 record.consumed_at <
                     record.created_at ||
-                record.consumed_at >=
-                    record.expires_at) {
+                record.provisioning_stage !=
+                    NodeEnrollmentProvisioningStage::
+                        None ||
+                !valid_iso_utc_seconds(
+                    record.provisioning_started_at) ||
+                record.provisioning_started_at <
+                    record.created_at ||
+                record.provisioning_started_at >=
+                    record.expires_at ||
+                record.consumed_at <
+                    record.provisioning_started_at) {
                 set_error(
                     error,
                     "invalid consumed enrollment state"
@@ -674,6 +751,16 @@ json record_to_json(
             record.consumed_at
         },
         {
+            "provisioning_stage",
+            node_enrollment_provisioning_stage_name(
+                record.provisioning_stage
+            )
+        },
+        {
+            "provisioning_started_at",
+            record.provisioning_started_at
+        },
+        {
             "generation",
             record.generation
         }
@@ -682,25 +769,60 @@ json record_to_json(
 
 bool parse_record(
     const json& value,
+    int schema_version,
     NodeEnrollmentRecord* output,
     std::string* error
 ) {
     if (!output ||
-        !has_only_keys(
-            value,
-            {
-                "enrollment_id",
-                "node_id",
-                "api_base_url",
-                "required_protocol_version",
-                "token_hash",
-                "created_at",
-                "expires_at",
-                "state",
-                "revoked_at",
-                "consumed_at",
-                "generation"
-            })) {
+        schema_version <
+            kNodeEnrollmentRegistryMinimumReadableSchemaVersion ||
+        schema_version >
+            kNodeEnrollmentRegistrySchemaVersion) {
+        set_error(
+            error,
+            "invalid enrollment registry entry"
+        );
+        return false;
+    }
+
+    const bool keys_valid =
+        schema_version == 1
+            ? has_only_keys(
+                value,
+                {
+                    "enrollment_id",
+                    "node_id",
+                    "api_base_url",
+                    "required_protocol_version",
+                    "token_hash",
+                    "created_at",
+                    "expires_at",
+                    "state",
+                    "revoked_at",
+                    "consumed_at",
+                    "generation"
+                }
+            )
+            : has_only_keys(
+                value,
+                {
+                    "enrollment_id",
+                    "node_id",
+                    "api_base_url",
+                    "required_protocol_version",
+                    "token_hash",
+                    "created_at",
+                    "expires_at",
+                    "state",
+                    "revoked_at",
+                    "consumed_at",
+                    "provisioning_stage",
+                    "provisioning_started_at",
+                    "generation"
+                }
+            );
+
+    if (!keys_valid) {
         set_error(
             error,
             "invalid enrollment registry entry"
@@ -711,56 +833,100 @@ bool parse_record(
     NodeEnrollmentRecord record;
     std::string state_name;
 
-    if (!json_string(
+    const bool common_fields_valid =
+        json_string(
             value,
             "enrollment_id",
-            &record.enrollment_id) ||
-        !json_string(
+            &record.enrollment_id) &&
+        json_string(
             value,
             "node_id",
-            &record.node_id) ||
-        !json_string(
+            &record.node_id) &&
+        json_string(
             value,
             "api_base_url",
-            &record.api_base_url) ||
-        !json_int(
+            &record.api_base_url) &&
+        json_int(
             value,
             "required_protocol_version",
             1,
             1000,
-            &record.required_protocol_version) ||
-        !json_string(
+            &record.required_protocol_version) &&
+        json_string(
             value,
             "token_hash",
-            &record.token_hash) ||
-        !json_string(
+            &record.token_hash) &&
+        json_string(
             value,
             "created_at",
-            &record.created_at) ||
-        !json_string(
+            &record.created_at) &&
+        json_string(
             value,
             "expires_at",
-            &record.expires_at) ||
-        !json_string(
+            &record.expires_at) &&
+        json_string(
             value,
             "state",
-            &state_name) ||
-        !parse_state(
+            &state_name) &&
+        parse_state(
             state_name,
-            &record.state) ||
-        !json_string(
+            &record.state) &&
+        json_string(
             value,
             "revoked_at",
-            &record.revoked_at) ||
-        !json_string(
+            &record.revoked_at) &&
+        json_string(
             value,
             "consumed_at",
-            &record.consumed_at) ||
-        !json_u64(
+            &record.consumed_at) &&
+        json_u64(
             value,
             "generation",
-            &record.generation) ||
-        !validate_record(
+            &record.generation);
+
+    if (!common_fields_valid) {
+        set_error(
+            error,
+            "invalid enrollment registry entry"
+        );
+        return false;
+    }
+
+    if (schema_version == 1) {
+        record.provisioning_stage =
+            NodeEnrollmentProvisioningStage::None;
+
+        // Version 1 consumed records authenticated and completed in one atomic
+        // registry operation. Use consumed_at as the deterministic migration
+        // value so the v2 invariant remains fail-closed.
+        if (record.state ==
+            NodeEnrollmentState::Consumed) {
+            record.provisioning_started_at =
+                record.consumed_at;
+        }
+    } else {
+        std::string provisioning_stage_name;
+
+        if (!json_string(
+                value,
+                "provisioning_stage",
+                &provisioning_stage_name) ||
+            !parse_provisioning_stage(
+                provisioning_stage_name,
+                &record.provisioning_stage) ||
+            !json_string(
+                value,
+                "provisioning_started_at",
+                &record.provisioning_started_at)) {
+            set_error(
+                error,
+                "invalid enrollment provisioning metadata"
+            );
+            return false;
+        }
+    }
+
+    if (!validate_record(
             record,
             error)) {
         if (error && error->empty()) {
@@ -1084,7 +1250,7 @@ bool read_registry_file(
     if (!json_int(
             root,
             "version",
-            kNodeEnrollmentRegistrySchemaVersion,
+            kNodeEnrollmentRegistryMinimumReadableSchemaVersion,
             kNodeEnrollmentRegistrySchemaVersion,
             &version)) {
         set_error(
@@ -1125,6 +1291,7 @@ bool read_registry_file(
 
         if (!parse_record(
                 value,
+                version,
                 &record,
                 error)) {
             return false;
@@ -1198,8 +1365,19 @@ bool persist_registry_file(
         std::string,
         NodeEnrollmentRecord
     >& records,
+    bool* committed,
     std::string* error
 ) {
+    if (!committed) {
+        set_error(
+            error,
+            "missing enrollment registry commit output"
+        );
+        return false;
+    }
+
+    *committed = false;
+
     if (!validate_record_set(
             records,
             error)) {
@@ -1474,11 +1652,19 @@ bool persist_registry_file(
         return false;
     }
 
-    // The logical commit has completed. Directory fsync is best-effort
-    // durability hardening and must not roll memory back after rename.
-    (void)::fsync(
-        directory_descriptor.get()
-    );
+    // Security: rename has made the new inode logically visible. Record
+    // that fact before directory fsync so callers never retain stale in-memory
+    // state after an uncertain durability result.
+    *committed = true;
+
+    if (::fsync(
+            directory_descriptor.get()) != 0) {
+        set_error(
+            error,
+            "failed to sync enrollment registry directory"
+        );
+        return false;
+    }
 
     return true;
 }
@@ -1511,6 +1697,28 @@ const char* node_enrollment_state_name(
 
         case NodeEnrollmentState::Consumed:
             return "consumed";
+    }
+
+    return "unknown";
+}
+
+const char* node_enrollment_provisioning_stage_name(
+    NodeEnrollmentProvisioningStage stage
+) {
+    switch (stage) {
+        case NodeEnrollmentProvisioningStage::None:
+            return "none";
+
+        case NodeEnrollmentProvisioningStage::Prepared:
+            return "prepared";
+
+        case NodeEnrollmentProvisioningStage::
+                CredentialPersisted:
+            return "credential_persisted";
+
+        case NodeEnrollmentProvisioningStage::
+                NodeRegistered:
+            return "node_registered";
     }
 
     return "unknown";
@@ -1566,6 +1774,14 @@ const char* node_enrollment_registry_result_code(
         case NodeEnrollmentRegistryResult::
                 TokenInvalid:
             return "enrollment_token_invalid";
+
+        case NodeEnrollmentRegistryResult::
+                ProvisioningActive:
+            return "enrollment_provisioning_active";
+
+        case NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch:
+            return "enrollment_provisioning_stage_mismatch";
 
         case NodeEnrollmentRegistryResult::
                 PersistFailed:
@@ -1678,13 +1894,13 @@ NodeEnrollmentRegistry::snapshot() const {
 }
 
 bool NodeEnrollmentRegistry::
-persist_candidate_locked(
-    const std::unordered_map<
+commit_candidate_locked(
+    std::unordered_map<
         std::string,
         NodeEnrollmentRecord
-    >& candidate,
+    >&& candidate,
     std::string* error
-) const {
+) {
     if (path_.empty()) {
         set_error(
             error,
@@ -1693,11 +1909,24 @@ persist_candidate_locked(
         return false;
     }
 
-    return persist_registry_file(
-        path_,
-        candidate,
-        error
-    );
+    bool committed = false;
+
+    const bool durable =
+        persist_registry_file(
+            path_,
+            candidate,
+            &committed,
+            error
+        );
+
+    // Security: rename may already have replaced the registry even when the
+    // following directory fsync reports an error. Keep process memory aligned
+    // with the visible inode so retries and recovery cannot act on stale state.
+    if (committed) {
+        records_ = std::move(candidate);
+    }
+
+    return durable;
 }
 
 NodeEnrollmentRegistryResult
@@ -1815,6 +2044,17 @@ create_or_replace_pending(
             continue;
         }
 
+        // Security: an authenticated provisioning transaction owns this node
+        // and URL until it is finalized or explicitly rolled back.
+        if (record.provisioning_stage !=
+            NodeEnrollmentProvisioningStage::None) {
+            return semantic_failure(
+                NodeEnrollmentRegistryResult::
+                    ProvisioningActive,
+                error
+            );
+        }
+
         if (same_url &&
             !same_node &&
             record.expires_at >
@@ -1833,6 +2073,9 @@ create_or_replace_pending(
 
         record.revoked_at = created_at;
         record.consumed_at.clear();
+        record.provisioning_stage =
+            NodeEnrollmentProvisioningStage::None;
+        record.provisioning_started_at.clear();
         record.token_hash.clear();
     }
 
@@ -1860,14 +2103,12 @@ create_or_replace_pending(
         record
     );
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (created) {
         *created = record;
@@ -1945,6 +2186,17 @@ NodeEnrollmentRegistry::revoke_pending(
         );
     }
 
+    // Security: revocation cannot invalidate a verifier while authenticated
+    // provisioning may already have written external credential or node state.
+    if (existing.provisioning_stage !=
+        NodeEnrollmentProvisioningStage::None) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningActive,
+            error
+        );
+    }
+
     if (revoked_at < existing.created_at) {
         return semantic_failure(
             NodeEnrollmentRegistryResult::
@@ -1962,19 +2214,20 @@ NodeEnrollmentRegistry::revoke_pending(
 
     updated.revoked_at = revoked_at;
     updated.consumed_at.clear();
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+    updated.provisioning_started_at.clear();
 
     // Security: revocation removes the persisted verifier so the old
     // bootstrap token cannot be validated again through another code path.
     updated.token_hash.clear();
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (revoked) {
         *revoked =
@@ -1986,15 +2239,15 @@ NodeEnrollmentRegistry::revoke_pending(
 
 NodeEnrollmentRegistryResult
 NodeEnrollmentRegistry::
-consume_pending_if_matches(
+prepare_provisioning_if_matches(
     const std::string& enrollment_id,
     const std::string& expected_node_id,
     const std::string& expected_api_base_url,
     int presented_protocol_version,
     std::uint64_t expected_generation,
     const std::string& presented_token_hash,
-    const std::string& consumed_at,
-    NodeEnrollmentRecord* consumed,
+    const std::string& provisioning_started_at,
+    NodeEnrollmentRecord* prepared,
     std::string* error
 ) {
     if (error) {
@@ -2013,7 +2266,7 @@ consume_pending_if_matches(
         !valid_node_enrollment_token_hash(
             presented_token_hash) ||
         !valid_iso_utc_seconds(
-            consumed_at) ||
+            provisioning_started_at) ||
         !normalize_cluster_https_base_url(
             expected_api_base_url,
             &normalized_url,
@@ -2061,7 +2314,8 @@ consume_pending_if_matches(
         );
     }
 
-    if (consumed_at < existing.created_at) {
+    if (provisioning_started_at <
+        existing.created_at) {
         return semantic_failure(
             NodeEnrollmentRegistryResult::
                 InvalidInput,
@@ -2069,7 +2323,8 @@ consume_pending_if_matches(
         );
     }
 
-    if (consumed_at >= existing.expires_at) {
+    if (provisioning_started_at >=
+        existing.expires_at) {
         return semantic_failure(
             NodeEnrollmentRegistryResult::
                 Expired,
@@ -2126,6 +2381,520 @@ consume_pending_if_matches(
         );
     }
 
+    if (existing.provisioning_stage !=
+        NodeEnrollmentProvisioningStage::None) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningActive,
+            error
+        );
+    }
+
+    auto candidate = records_;
+    NodeEnrollmentRecord& updated =
+        candidate.at(enrollment_id);
+
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::
+            Prepared;
+
+    updated.provisioning_started_at =
+        provisioning_started_at;
+
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            error)) {
+        return NodeEnrollmentRegistryResult::
+            PersistFailed;
+    }
+
+    if (prepared) {
+        *prepared =
+            records_.at(enrollment_id);
+    }
+
+    return NodeEnrollmentRegistryResult::Ok;
+}
+
+NodeEnrollmentRegistryResult
+NodeEnrollmentRegistry::
+authenticate_active_provisioning_if_matches(
+    const std::string& enrollment_id,
+    const std::string& expected_node_id,
+    const std::string& expected_api_base_url,
+    int presented_protocol_version,
+    std::uint64_t expected_generation,
+    const std::string& presented_token_hash,
+    NodeEnrollmentProvisioningStage* authenticated_stage,
+    std::string* error
+) const {
+    if (error) {
+        error->clear();
+    }
+
+    if (authenticated_stage) {
+        *authenticated_stage =
+            NodeEnrollmentProvisioningStage::None;
+    }
+
+    std::string normalized_url;
+
+    if (!authenticated_stage ||
+        !valid_enrollment_id(
+            enrollment_id) ||
+        !valid_cluster_node_id(
+            expected_node_id) ||
+        presented_protocol_version < 1 ||
+        presented_protocol_version > 1000 ||
+        expected_generation == 0 ||
+        !valid_node_enrollment_token_hash(
+            presented_token_hash) ||
+        !normalize_cluster_https_base_url(
+            expected_api_base_url,
+            &normalized_url,
+            error)) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    const auto iterator =
+        records_.find(enrollment_id);
+
+    if (iterator == records_.end()) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            error
+        );
+    }
+
+    const NodeEnrollmentRecord& existing =
+        iterator->second;
+
+    if (existing.state ==
+        NodeEnrollmentState::Revoked) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            error
+        );
+    }
+
+    if (existing.state ==
+        NodeEnrollmentState::Consumed) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            error
+        );
+    }
+
+    if (existing.generation !=
+        expected_generation) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            error
+        );
+    }
+
+    if (existing.node_id !=
+        expected_node_id) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NodeMismatch,
+            error
+        );
+    }
+
+    if (existing.api_base_url !=
+        normalized_url) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                UrlMismatch,
+            error
+        );
+    }
+
+    if (existing.required_protocol_version !=
+        presented_protocol_version) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProtocolIncompatible,
+            error
+        );
+    }
+
+    const bool active_stage =
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                Prepared ||
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted ||
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered;
+
+    if (!active_stage) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            error
+        );
+    }
+
+    // Security: recovery may continue after TTL expiry only when the persisted
+    // authentication time proves that bootstrap acceptance happened inside the
+    // original validity window.
+    if (!valid_iso_utc_seconds(
+            existing.provisioning_started_at) ||
+        existing.provisioning_started_at <
+            existing.created_at ||
+        existing.provisioning_started_at >=
+            existing.expires_at) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    // Both verifier strings have already been validated to the fixed format.
+    // Keep retry authentication under the same mutex and use constant-time
+    // comparison so active provisioning does not create a timing oracle.
+    if (sodium_memcmp(
+            existing.token_hash.data(),
+            presented_token_hash.data(),
+            kNodeEnrollmentTokenHashChars) != 0) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                TokenInvalid,
+            error
+        );
+    }
+
+    *authenticated_stage =
+        existing.provisioning_stage;
+
+    return NodeEnrollmentRegistryResult::Ok;
+}
+
+NodeEnrollmentRegistryResult
+NodeEnrollmentRegistry::
+advance_provisioning_stage(
+    const std::string& enrollment_id,
+    std::uint64_t expected_generation,
+    NodeEnrollmentProvisioningStage expected_stage,
+    NodeEnrollmentProvisioningStage next_stage,
+    NodeEnrollmentRecord* advanced,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    const bool valid_transition =
+        (
+            expected_stage ==
+                NodeEnrollmentProvisioningStage::
+                    Prepared &&
+            next_stage ==
+                NodeEnrollmentProvisioningStage::
+                    CredentialPersisted
+        ) ||
+        (
+            expected_stage ==
+                NodeEnrollmentProvisioningStage::
+                    CredentialPersisted &&
+            next_stage ==
+                NodeEnrollmentProvisioningStage::
+                    NodeRegistered
+        );
+
+    if (!valid_enrollment_id(
+            enrollment_id) ||
+        expected_generation == 0 ||
+        !valid_transition) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    const auto iterator =
+        records_.find(enrollment_id);
+
+    if (iterator == records_.end()) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            error
+        );
+    }
+
+    const NodeEnrollmentRecord& existing =
+        iterator->second;
+
+    if (existing.state ==
+        NodeEnrollmentState::Revoked) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            error
+        );
+    }
+
+    if (existing.state ==
+        NodeEnrollmentState::Consumed) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            error
+        );
+    }
+
+    if (existing.generation !=
+        expected_generation) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            error
+        );
+    }
+
+    if (existing.provisioning_stage !=
+        expected_stage) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            error
+        );
+    }
+
+    auto candidate = records_;
+    candidate.at(enrollment_id)
+        .provisioning_stage = next_stage;
+
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            error)) {
+        return NodeEnrollmentRegistryResult::
+            PersistFailed;
+    }
+
+    if (advanced) {
+        *advanced =
+            records_.at(enrollment_id);
+    }
+
+    return NodeEnrollmentRegistryResult::Ok;
+}
+
+NodeEnrollmentRegistryResult
+NodeEnrollmentRegistry::reset_provisioning(
+    const std::string& enrollment_id,
+    std::uint64_t expected_generation,
+    NodeEnrollmentProvisioningStage expected_stage,
+    NodeEnrollmentRecord* reset,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    if (!valid_enrollment_id(
+            enrollment_id) ||
+        expected_generation == 0 ||
+        expected_stage ==
+            NodeEnrollmentProvisioningStage::None) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    const auto iterator =
+        records_.find(enrollment_id);
+
+    if (iterator == records_.end()) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            error
+        );
+    }
+
+    const NodeEnrollmentRecord& existing =
+        iterator->second;
+
+    if (existing.state ==
+        NodeEnrollmentState::Revoked) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            error
+        );
+    }
+
+    if (existing.state ==
+        NodeEnrollmentState::Consumed) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            error
+        );
+    }
+
+    if (existing.generation !=
+        expected_generation) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            error
+        );
+    }
+
+    if (existing.provisioning_stage !=
+        expected_stage) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            error
+        );
+    }
+
+    auto candidate = records_;
+    NodeEnrollmentRecord& updated =
+        candidate.at(enrollment_id);
+
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+
+    updated.provisioning_started_at.clear();
+
+    if (!commit_candidate_locked(
+            std::move(candidate),
+            error)) {
+        return NodeEnrollmentRegistryResult::
+            PersistFailed;
+    }
+
+    if (reset) {
+        *reset =
+            records_.at(enrollment_id);
+    }
+
+    return NodeEnrollmentRegistryResult::Ok;
+}
+
+NodeEnrollmentRegistryResult
+NodeEnrollmentRegistry::finalize_provisioning(
+    const std::string& enrollment_id,
+    std::uint64_t expected_generation,
+    const std::string& consumed_at,
+    NodeEnrollmentRecord* consumed,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    if (!valid_enrollment_id(
+            enrollment_id) ||
+        expected_generation == 0 ||
+        !valid_iso_utc_seconds(
+            consumed_at)) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    const auto iterator =
+        records_.find(enrollment_id);
+
+    if (iterator == records_.end()) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                NotFound,
+            error
+        );
+    }
+
+    const NodeEnrollmentRecord& existing =
+        iterator->second;
+
+    if (existing.state ==
+        NodeEnrollmentState::Revoked) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                Revoked,
+            error
+        );
+    }
+
+    if (existing.state ==
+        NodeEnrollmentState::Consumed) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                AlreadyConsumed,
+            error
+        );
+    }
+
+    if (existing.generation !=
+        expected_generation) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                GenerationMismatch,
+            error
+        );
+    }
+
+    if (existing.provisioning_stage !=
+        NodeEnrollmentProvisioningStage::
+            NodeRegistered) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                ProvisioningStageMismatch,
+            error
+        );
+    }
+
+    if (!valid_iso_utc_seconds(
+            existing.provisioning_started_at) ||
+        consumed_at <
+            existing.provisioning_started_at) {
+        return semantic_failure(
+            NodeEnrollmentRegistryResult::
+                InvalidInput,
+            error
+        );
+    }
+
     auto candidate = records_;
     NodeEnrollmentRecord& updated =
         candidate.at(enrollment_id);
@@ -2136,18 +2905,19 @@ consume_pending_if_matches(
     updated.consumed_at = consumed_at;
     updated.revoked_at.clear();
 
-    // Security: one successful consume deletes the verifier in the same
-    // persistent transaction, making replay fail on terminal state.
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+
+    // Security: finalization is the only transition that destroys the verifier.
+    // External credential and node state are already durable at this point.
     updated.token_hash.clear();
 
-    if (!persist_candidate_locked(
-            candidate,
+    if (!commit_candidate_locked(
+            std::move(candidate),
             error)) {
         return NodeEnrollmentRegistryResult::
             PersistFailed;
     }
-
-    records_ = std::move(candidate);
 
     if (consumed) {
         *consumed =

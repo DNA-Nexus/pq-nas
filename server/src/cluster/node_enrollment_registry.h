@@ -14,7 +14,10 @@
 namespace pqnas::cluster {
 
 inline constexpr int
-    kNodeEnrollmentRegistrySchemaVersion = 1;
+    kNodeEnrollmentRegistrySchemaVersion = 2;
+
+inline constexpr int
+    kNodeEnrollmentRegistryMinimumReadableSchemaVersion = 1;
 
 enum class NodeEnrollmentState {
     Pending,
@@ -24,6 +27,17 @@ enum class NodeEnrollmentState {
 
 const char* node_enrollment_state_name(
     NodeEnrollmentState state
+);
+
+enum class NodeEnrollmentProvisioningStage {
+    None,
+    Prepared,
+    CredentialPersisted,
+    NodeRegistered
+};
+
+const char* node_enrollment_provisioning_stage_name(
+    NodeEnrollmentProvisioningStage stage
 );
 
 enum class NodeEnrollmentRegistryResult {
@@ -40,6 +54,8 @@ enum class NodeEnrollmentRegistryResult {
     UrlMismatch,
     ProtocolIncompatible,
     TokenInvalid,
+    ProvisioningActive,
+    ProvisioningStageMismatch,
     PersistFailed
 };
 
@@ -69,6 +85,15 @@ struct NodeEnrollmentRecord {
 
     std::string revoked_at;
     std::string consumed_at;
+
+    // Durable, non-secret transaction metadata. The bootstrap verifier remains
+    // available until provisioning is finalized or rolled back.
+    NodeEnrollmentProvisioningStage provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+
+    // Records when bootstrap authentication was accepted. This remains on a
+    // consumed record so recovery may finalize after the original TTL expires.
+    std::string provisioning_started_at;
 
     // Monotonically increasing for each node ID. Consumers provide the
     // expected generation so replacement races fail closed.
@@ -120,31 +145,80 @@ public:
         std::string* error
     );
 
-    // Compare-and-consume operation used later by the bootstrap endpoint.
-    // Every expectation and the state mutation occur under one registry lock.
-    //
-    // presented_token_hash must be computed by the service layer before this
-    // call. It is compared in constant time against the persisted verifier.
-    NodeEnrollmentRegistryResult consume_pending_if_matches(
+    // Authenticates one pending intent and durably starts provisioning. Every
+    // expectation, constant-time verifier comparison, and mutation occurs under
+    // the same registry lock.
+    NodeEnrollmentRegistryResult
+    prepare_provisioning_if_matches(
         const std::string& enrollment_id,
         const std::string& expected_node_id,
         const std::string& expected_api_base_url,
         int presented_protocol_version,
         std::uint64_t expected_generation,
         const std::string& presented_token_hash,
+        const std::string& provisioning_started_at,
+        NodeEnrollmentRecord* prepared,
+        std::string* error
+    );
+
+    // Re-authenticates an already prepared transaction without mutating it.
+    // Only the persisted stage is returned; the verifier never leaves the
+    // registry's constant-time comparison boundary.
+    NodeEnrollmentRegistryResult
+    authenticate_active_provisioning_if_matches(
+        const std::string& enrollment_id,
+        const std::string& expected_node_id,
+        const std::string& expected_api_base_url,
+        int presented_protocol_version,
+        std::uint64_t expected_generation,
+        const std::string& presented_token_hash,
+        NodeEnrollmentProvisioningStage* authenticated_stage,
+        std::string* error
+    ) const;
+
+    // Advances only the exact expected stage. This compare-and-mutate boundary
+    // prevents concurrent bootstrap requests from skipping durable work.
+    NodeEnrollmentRegistryResult
+    advance_provisioning_stage(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
+        NodeEnrollmentProvisioningStage expected_stage,
+        NodeEnrollmentProvisioningStage next_stage,
+        NodeEnrollmentRecord* advanced,
+        std::string* error
+    );
+
+    // Called only after the service has rolled back external state belonging to
+    // this transaction. The verifier remains available for a safe retry.
+    NodeEnrollmentRegistryResult reset_provisioning(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
+        NodeEnrollmentProvisioningStage expected_stage,
+        NodeEnrollmentRecord* reset,
+        std::string* error
+    );
+
+    // Finalizes only after node registration is durable. Authentication may
+    // have occurred before expiry even when recovery completes after expiry.
+    NodeEnrollmentRegistryResult finalize_provisioning(
+        const std::string& enrollment_id,
+        std::uint64_t expected_generation,
         const std::string& consumed_at,
         NodeEnrollmentRecord* consumed,
         std::string* error
     );
 
 private:
-    bool persist_candidate_locked(
-        const std::unordered_map<
+    // Persists and installs one candidate while the registry mutex is held.
+    // If rename succeeds but directory fsync fails, memory is still advanced to
+    // the committed inode before PersistFailed is returned.
+    bool commit_candidate_locked(
+        std::unordered_map<
             std::string,
             NodeEnrollmentRecord
-        >& candidate,
+        >&& candidate,
         std::string* error
-    ) const;
+    );
 
     mutable std::mutex mutex_;
     std::filesystem::path path_;

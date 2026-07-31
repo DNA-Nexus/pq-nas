@@ -261,6 +261,37 @@ target_link_libraries(pqnas_node_enrollment_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Persistent per-node credential registry
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_credential_registry STATIC
+        server/src/cluster/node_credential_registry.cpp
+        server/src/cluster/node_credential_registry.h
+)
+
+target_include_directories(pqnas_node_credential_registry PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_credential_registry PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_credential_registry
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_credential_registry PUBLIC
+        pqnas_cluster_identity_validation
+        ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
 # Node enrollment service
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_enrollment_service STATIC
@@ -289,6 +320,74 @@ target_link_libraries(pqnas_node_enrollment_service PUBLIC
         pqnas_node_enrollment_registry
         pqnas_node_enrollment_token
         ${SODIUM_LIBRARIES}
+)
+
+
+# -----------------------------------------------------------------------------
+# Node enrollment consumption service
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_consumption_service STATIC
+        server/src/cluster/node_enrollment_consumption_service.cpp
+        server/src/cluster/node_enrollment_consumption_service.h
+)
+
+target_include_directories(
+        pqnas_node_enrollment_consumption_service
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_consumption_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_enrollment_consumption_service
+        PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_node_credential_registry
+        pqnas_node_enrollment_registry
+        pqnas_node_enrollment_token
+)
+
+
+# -----------------------------------------------------------------------------
+# Node enrollment bootstrap route
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_enrollment_bootstrap_routes STATIC
+        server/src/routes/routes_node_enrollment_bootstrap.cpp
+        server/src/routes/routes_node_enrollment_bootstrap.h
+)
+
+target_include_directories(
+        pqnas_node_enrollment_bootstrap_routes
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_node_enrollment_bootstrap_routes
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_enrollment_bootstrap_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_enrollment_bootstrap_routes
+        PUBLIC
+        pqnas_node_enrollment_consumption_service
 )
 
 
@@ -522,8 +621,11 @@ target_link_libraries(pqnas_server PRIVATE
 
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
+        pqnas_node_credential_registry
         pqnas_node_enrollment_service
+        pqnas_node_enrollment_consumption_service
         pqnas_admin_node_enrollment_routes
+        pqnas_node_enrollment_bootstrap_routes
 )
 
 # Treat warnings as errors for the server (security-sensitive)
@@ -1357,6 +1459,96 @@ add_custom_target(run_test_node_heartbeat_worker
 
 
 # -----------------------------------------------------------------------------
+# Test: test_node_enrollment_consumption_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_consumption_service
+        tests/cluster/test_node_enrollment_consumption_service.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_node_enrollment_consumption_service
+        PRIVATE
+        pqnas_node_enrollment_consumption_service
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_node_enrollment_consumption_service
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_enrollment_consumption_service
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_consumption_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_consumption_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_enrollment_bootstrap_route
+# -----------------------------------------------------------------------------
+add_executable(test_node_enrollment_bootstrap_route
+        tests/cluster/test_node_enrollment_bootstrap_route.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(
+        test_node_enrollment_bootstrap_route
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_node_enrollment_bootstrap_route
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(
+        test_node_enrollment_bootstrap_route
+        PRIVATE
+        pqnas_node_enrollment_bootstrap_routes
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(
+        test_node_enrollment_bootstrap_route
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_enrollment_bootstrap_route
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_bootstrap_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_enrollment_bootstrap_route
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_admin_node_enrollment_routes
 # -----------------------------------------------------------------------------
 add_executable(test_admin_node_enrollment_routes
@@ -1469,6 +1661,39 @@ add_custom_target(run_test_node_enrollment_registry
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_enrollment_registry"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_enrollment_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_credential_registry
+# -----------------------------------------------------------------------------
+add_executable(test_node_credential_registry
+        tests/cluster/test_node_credential_registry.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_node_credential_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_node_credential_registry PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_node_credential_registry PRIVATE
+        pqnas_node_credential_registry
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_node_credential_registry PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_credential_registry
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_credential_registry"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_credential_registry
 )
 
 

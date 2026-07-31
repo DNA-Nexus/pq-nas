@@ -598,6 +598,8 @@ int service_result_http_status(
                 Revoked:
         case NodeEnrollmentServiceResult::
                 Consumed:
+        case NodeEnrollmentServiceResult::
+                ProvisioningActive:
             return 409;
 
         case NodeEnrollmentServiceResult::
