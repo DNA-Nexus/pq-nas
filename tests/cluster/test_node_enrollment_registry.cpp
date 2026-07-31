@@ -16,6 +16,7 @@ namespace {
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+using pqnas::cluster::NodeEnrollmentProvisioningStage;
 using pqnas::cluster::NodeEnrollmentRecord;
 using pqnas::cluster::NodeEnrollmentRegistry;
 using pqnas::cluster::NodeEnrollmentRegistryResult;
@@ -230,7 +231,10 @@ int main() {
         first.generation == 1 &&
         first.api_base_url ==
             "https://node-01.internal" &&
-        first.token_hash == kHashA,
+        first.token_hash == kHashA &&
+        first.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::None &&
+        first.provisioning_started_at.empty(),
         "created record should be canonical pending generation one"
     );
 
@@ -488,7 +492,11 @@ int main() {
             NodeEnrollmentState::Consumed &&
         consumed.consumed_at ==
             "2026-07-30T06:20:00Z" &&
-        consumed.token_hash.empty(),
+        consumed.token_hash.empty() &&
+        consumed.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::None &&
+        consumed.provisioning_started_at ==
+            "2026-07-30T06:20:00Z",
         "consume should clear verifier and set terminal state"
     );
 
@@ -665,7 +673,11 @@ int main() {
         reloaded_consumed.has_value() &&
         reloaded_consumed->state ==
             NodeEnrollmentState::Consumed &&
-        reloaded_consumed->token_hash.empty(),
+        reloaded_consumed->token_hash.empty() &&
+        reloaded_consumed->provisioning_stage ==
+            NodeEnrollmentProvisioningStage::None &&
+        reloaded_consumed->provisioning_started_at ==
+            reloaded_consumed->consumed_at,
         "terminal state should survive reload"
     );
 
@@ -740,6 +752,83 @@ int main() {
         expect(
             malformed_registry.snapshot().empty(),
             "malformed load must not install partial state"
+        );
+    }
+
+
+    {
+        const fs::path legacy_v1_path =
+            test_directory /
+            "legacy_v1_consumed.json";
+
+        const json legacy_v1_record{
+            {"enrollment_id", "LegacyConsumed0001"},
+            {"node_id", "node-legacy"},
+            {
+                "api_base_url",
+                "https://node-legacy.internal"
+            },
+            {"required_protocol_version", 1},
+            {"token_hash", ""},
+            {"created_at", "2026-07-30T09:00:00Z"},
+            {"expires_at", "2026-07-30T10:00:00Z"},
+            {"state", "consumed"},
+            {"revoked_at", ""},
+            {"consumed_at", "2026-07-30T09:30:00Z"},
+            {"generation", 1}
+        };
+
+        const json legacy_v1_root{
+            {"version", 1},
+            {
+                "enrollments",
+                json::array({legacy_v1_record})
+            }
+        };
+
+        expect(
+            write_text(
+                legacy_v1_path,
+                legacy_v1_root.dump()
+            ),
+            "write legacy v1 consumed fixture"
+        );
+
+        expect(
+            ::chmod(
+                legacy_v1_path.c_str(),
+                0600
+            ) == 0,
+            "set legacy v1 fixture permissions"
+        );
+
+        NodeEnrollmentRegistry legacy_v1_registry;
+
+        error.clear();
+
+        expect(
+            legacy_v1_registry.load(
+                legacy_v1_path.string(),
+                &error
+            ),
+            "legacy v1 consumed registry should migrate: " +
+                error
+        );
+
+        const auto legacy_consumed =
+            legacy_v1_registry.get(
+                "LegacyConsumed0001"
+            );
+
+        expect(
+            legacy_consumed.has_value() &&
+            legacy_consumed->state ==
+                NodeEnrollmentState::Consumed &&
+            legacy_consumed->provisioning_stage ==
+                NodeEnrollmentProvisioningStage::None &&
+            legacy_consumed->provisioning_started_at ==
+                legacy_consumed->consumed_at,
+            "legacy v1 consumed record should receive deterministic provisioning metadata"
         );
     }
 

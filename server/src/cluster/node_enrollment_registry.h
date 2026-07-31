@@ -14,7 +14,10 @@
 namespace pqnas::cluster {
 
 inline constexpr int
-    kNodeEnrollmentRegistrySchemaVersion = 1;
+    kNodeEnrollmentRegistrySchemaVersion = 2;
+
+inline constexpr int
+    kNodeEnrollmentRegistryMinimumReadableSchemaVersion = 1;
 
 enum class NodeEnrollmentState {
     Pending,
@@ -24,6 +27,17 @@ enum class NodeEnrollmentState {
 
 const char* node_enrollment_state_name(
     NodeEnrollmentState state
+);
+
+enum class NodeEnrollmentProvisioningStage {
+    None,
+    Prepared,
+    CredentialPersisted,
+    NodeRegistered
+};
+
+const char* node_enrollment_provisioning_stage_name(
+    NodeEnrollmentProvisioningStage stage
 );
 
 enum class NodeEnrollmentRegistryResult {
@@ -69,6 +83,15 @@ struct NodeEnrollmentRecord {
 
     std::string revoked_at;
     std::string consumed_at;
+
+    // Durable, non-secret transaction metadata. The bootstrap verifier remains
+    // available until provisioning is finalized or rolled back.
+    NodeEnrollmentProvisioningStage provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+
+    // Records when bootstrap authentication was accepted. This remains on a
+    // consumed record so recovery may finalize after the original TTL expires.
+    std::string provisioning_started_at;
 
     // Monotonically increasing for each node ID. Consumers provide the
     // expected generation so replacement races fail closed.

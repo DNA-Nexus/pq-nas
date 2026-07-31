@@ -361,6 +361,43 @@ bool parse_state(
     return false;
 }
 
+bool parse_provisioning_stage(
+    const std::string& value,
+    NodeEnrollmentProvisioningStage* output
+) {
+    if (!output) {
+        return false;
+    }
+
+    if (value == "none") {
+        *output =
+            NodeEnrollmentProvisioningStage::None;
+        return true;
+    }
+
+    if (value == "prepared") {
+        *output =
+            NodeEnrollmentProvisioningStage::Prepared;
+        return true;
+    }
+
+    if (value == "credential_persisted") {
+        *output =
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted;
+        return true;
+    }
+
+    if (value == "node_registered") {
+        *output =
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered;
+        return true;
+    }
+
+    return false;
+}
+
 bool normalize_registry_path(
     const std::string& raw,
     std::filesystem::path* normalized,
@@ -474,6 +511,32 @@ bool validate_record(
                 return false;
             }
 
+            if (record.provisioning_stage ==
+                    NodeEnrollmentProvisioningStage::
+                        None) {
+                if (!record
+                        .provisioning_started_at
+                        .empty()) {
+                    set_error(
+                        error,
+                        "inactive enrollment provisioning has a start time"
+                    );
+                    return false;
+                }
+            } else if (
+                !valid_iso_utc_seconds(
+                    record.provisioning_started_at) ||
+                record.provisioning_started_at <
+                    record.created_at ||
+                record.provisioning_started_at >=
+                    record.expires_at) {
+                set_error(
+                    error,
+                    "invalid pending enrollment provisioning state"
+                );
+                return false;
+            }
+
             break;
 
         case NodeEnrollmentState::Revoked:
@@ -482,7 +545,12 @@ bool validate_record(
                     record.revoked_at) ||
                 record.revoked_at <
                     record.created_at ||
-                !record.consumed_at.empty()) {
+                !record.consumed_at.empty() ||
+                record.provisioning_stage !=
+                    NodeEnrollmentProvisioningStage::
+                        None ||
+                !record.provisioning_started_at
+                    .empty()) {
                 set_error(
                     error,
                     "invalid revoked enrollment state"
@@ -499,8 +567,17 @@ bool validate_record(
                     record.consumed_at) ||
                 record.consumed_at <
                     record.created_at ||
-                record.consumed_at >=
-                    record.expires_at) {
+                record.provisioning_stage !=
+                    NodeEnrollmentProvisioningStage::
+                        None ||
+                !valid_iso_utc_seconds(
+                    record.provisioning_started_at) ||
+                record.provisioning_started_at <
+                    record.created_at ||
+                record.provisioning_started_at >=
+                    record.expires_at ||
+                record.consumed_at <
+                    record.provisioning_started_at) {
                 set_error(
                     error,
                     "invalid consumed enrollment state"
@@ -674,6 +751,16 @@ json record_to_json(
             record.consumed_at
         },
         {
+            "provisioning_stage",
+            node_enrollment_provisioning_stage_name(
+                record.provisioning_stage
+            )
+        },
+        {
+            "provisioning_started_at",
+            record.provisioning_started_at
+        },
+        {
             "generation",
             record.generation
         }
@@ -682,25 +769,60 @@ json record_to_json(
 
 bool parse_record(
     const json& value,
+    int schema_version,
     NodeEnrollmentRecord* output,
     std::string* error
 ) {
     if (!output ||
-        !has_only_keys(
-            value,
-            {
-                "enrollment_id",
-                "node_id",
-                "api_base_url",
-                "required_protocol_version",
-                "token_hash",
-                "created_at",
-                "expires_at",
-                "state",
-                "revoked_at",
-                "consumed_at",
-                "generation"
-            })) {
+        schema_version <
+            kNodeEnrollmentRegistryMinimumReadableSchemaVersion ||
+        schema_version >
+            kNodeEnrollmentRegistrySchemaVersion) {
+        set_error(
+            error,
+            "invalid enrollment registry entry"
+        );
+        return false;
+    }
+
+    const bool keys_valid =
+        schema_version == 1
+            ? has_only_keys(
+                value,
+                {
+                    "enrollment_id",
+                    "node_id",
+                    "api_base_url",
+                    "required_protocol_version",
+                    "token_hash",
+                    "created_at",
+                    "expires_at",
+                    "state",
+                    "revoked_at",
+                    "consumed_at",
+                    "generation"
+                }
+            )
+            : has_only_keys(
+                value,
+                {
+                    "enrollment_id",
+                    "node_id",
+                    "api_base_url",
+                    "required_protocol_version",
+                    "token_hash",
+                    "created_at",
+                    "expires_at",
+                    "state",
+                    "revoked_at",
+                    "consumed_at",
+                    "provisioning_stage",
+                    "provisioning_started_at",
+                    "generation"
+                }
+            );
+
+    if (!keys_valid) {
         set_error(
             error,
             "invalid enrollment registry entry"
@@ -711,56 +833,100 @@ bool parse_record(
     NodeEnrollmentRecord record;
     std::string state_name;
 
-    if (!json_string(
+    const bool common_fields_valid =
+        json_string(
             value,
             "enrollment_id",
-            &record.enrollment_id) ||
-        !json_string(
+            &record.enrollment_id) &&
+        json_string(
             value,
             "node_id",
-            &record.node_id) ||
-        !json_string(
+            &record.node_id) &&
+        json_string(
             value,
             "api_base_url",
-            &record.api_base_url) ||
-        !json_int(
+            &record.api_base_url) &&
+        json_int(
             value,
             "required_protocol_version",
             1,
             1000,
-            &record.required_protocol_version) ||
-        !json_string(
+            &record.required_protocol_version) &&
+        json_string(
             value,
             "token_hash",
-            &record.token_hash) ||
-        !json_string(
+            &record.token_hash) &&
+        json_string(
             value,
             "created_at",
-            &record.created_at) ||
-        !json_string(
+            &record.created_at) &&
+        json_string(
             value,
             "expires_at",
-            &record.expires_at) ||
-        !json_string(
+            &record.expires_at) &&
+        json_string(
             value,
             "state",
-            &state_name) ||
-        !parse_state(
+            &state_name) &&
+        parse_state(
             state_name,
-            &record.state) ||
-        !json_string(
+            &record.state) &&
+        json_string(
             value,
             "revoked_at",
-            &record.revoked_at) ||
-        !json_string(
+            &record.revoked_at) &&
+        json_string(
             value,
             "consumed_at",
-            &record.consumed_at) ||
-        !json_u64(
+            &record.consumed_at) &&
+        json_u64(
             value,
             "generation",
-            &record.generation) ||
-        !validate_record(
+            &record.generation);
+
+    if (!common_fields_valid) {
+        set_error(
+            error,
+            "invalid enrollment registry entry"
+        );
+        return false;
+    }
+
+    if (schema_version == 1) {
+        record.provisioning_stage =
+            NodeEnrollmentProvisioningStage::None;
+
+        // Version 1 consumed records authenticated and completed in one atomic
+        // registry operation. Use consumed_at as the deterministic migration
+        // value so the v2 invariant remains fail-closed.
+        if (record.state ==
+            NodeEnrollmentState::Consumed) {
+            record.provisioning_started_at =
+                record.consumed_at;
+        }
+    } else {
+        std::string provisioning_stage_name;
+
+        if (!json_string(
+                value,
+                "provisioning_stage",
+                &provisioning_stage_name) ||
+            !parse_provisioning_stage(
+                provisioning_stage_name,
+                &record.provisioning_stage) ||
+            !json_string(
+                value,
+                "provisioning_started_at",
+                &record.provisioning_started_at)) {
+            set_error(
+                error,
+                "invalid enrollment provisioning metadata"
+            );
+            return false;
+        }
+    }
+
+    if (!validate_record(
             record,
             error)) {
         if (error && error->empty()) {
@@ -1084,7 +1250,7 @@ bool read_registry_file(
     if (!json_int(
             root,
             "version",
-            kNodeEnrollmentRegistrySchemaVersion,
+            kNodeEnrollmentRegistryMinimumReadableSchemaVersion,
             kNodeEnrollmentRegistrySchemaVersion,
             &version)) {
         set_error(
@@ -1125,6 +1291,7 @@ bool read_registry_file(
 
         if (!parse_record(
                 value,
+                version,
                 &record,
                 error)) {
             return false;
@@ -1516,6 +1683,28 @@ const char* node_enrollment_state_name(
     return "unknown";
 }
 
+const char* node_enrollment_provisioning_stage_name(
+    NodeEnrollmentProvisioningStage stage
+) {
+    switch (stage) {
+        case NodeEnrollmentProvisioningStage::None:
+            return "none";
+
+        case NodeEnrollmentProvisioningStage::Prepared:
+            return "prepared";
+
+        case NodeEnrollmentProvisioningStage::
+                CredentialPersisted:
+            return "credential_persisted";
+
+        case NodeEnrollmentProvisioningStage::
+                NodeRegistered:
+            return "node_registered";
+    }
+
+    return "unknown";
+}
+
 const char* node_enrollment_registry_result_code(
     NodeEnrollmentRegistryResult result
 ) {
@@ -1833,6 +2022,9 @@ create_or_replace_pending(
 
         record.revoked_at = created_at;
         record.consumed_at.clear();
+        record.provisioning_stage =
+            NodeEnrollmentProvisioningStage::None;
+        record.provisioning_started_at.clear();
         record.token_hash.clear();
     }
 
@@ -1962,6 +2154,9 @@ NodeEnrollmentRegistry::revoke_pending(
 
     updated.revoked_at = revoked_at;
     updated.consumed_at.clear();
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+    updated.provisioning_started_at.clear();
 
     // Security: revocation removes the persisted verifier so the old
     // bootstrap token cannot be validated again through another code path.
@@ -2135,6 +2330,13 @@ consume_pending_if_matches(
 
     updated.consumed_at = consumed_at;
     updated.revoked_at.clear();
+    updated.provisioning_stage =
+        NodeEnrollmentProvisioningStage::None;
+
+    // Legacy direct consumption authenticates and finalizes in one operation.
+    // The next commit replaces this path with explicit durable stage changes.
+    updated.provisioning_started_at =
+        consumed_at;
 
     // Security: one successful consume deletes the verifier in the same
     // persistent transaction, making replay fail on terminal state.
