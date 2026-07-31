@@ -270,6 +270,11 @@ add_library(pqnas_node_credential_registry STATIC
 
 target_include_directories(pqnas_node_credential_registry PUBLIC
         ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_node_credential_registry PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
 )
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -282,6 +287,7 @@ endif()
 
 target_link_libraries(pqnas_node_credential_registry PUBLIC
         pqnas_cluster_identity_validation
+        ${SODIUM_LIBRARIES}
 )
 
 

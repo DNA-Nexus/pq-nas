@@ -3,6 +3,8 @@
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
 
+#include <sodium.h>
+
 
 #include <array>
 #include <atomic>
@@ -1390,6 +1392,97 @@ NodeCredentialRegistry::contains(
     }
 
     *present = true;
+    return NodeCredentialRegistryResult::Ok;
+}
+
+NodeCredentialRegistryResult
+NodeCredentialRegistry::matches(
+    const std::string& node_id,
+    const std::string& plaintext_token,
+    bool* matched,
+    std::string* error
+) const {
+    if (error) {
+        error->clear();
+    }
+
+    if (matched) {
+        *matched = false;
+    }
+
+    if (!matched ||
+        !valid_cluster_node_id(node_id) ||
+        !valid_internal_auth_credential_token(
+            plaintext_token)) {
+        set_error(
+            error,
+            "invalid node credential comparison"
+        );
+        return NodeCredentialRegistryResult::
+            InvalidInput;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (directory_.empty()) {
+        set_error(
+            error,
+            "node credential registry is not loaded"
+        );
+        return NodeCredentialRegistryResult::
+            StorageUnsafe;
+    }
+
+    UniqueFd descriptor;
+
+    const DirectoryOpenResult open_result =
+        open_registry_directory(
+            directory_,
+            false,
+            &descriptor,
+            error
+        );
+
+    if (open_result == DirectoryOpenResult::Missing) {
+        return NodeCredentialRegistryResult::NotFound;
+    }
+
+    if (open_result == DirectoryOpenResult::Unsafe) {
+        return NodeCredentialRegistryResult::
+            StorageUnsafe;
+    }
+
+    if (open_result != DirectoryOpenResult::Ok) {
+        return NodeCredentialRegistryResult::IoFailed;
+    }
+
+    std::string persisted_token;
+    SensitiveStringWiper token_wiper(
+        persisted_token
+    );
+
+    const CredentialFileResult file_result =
+        read_credential_token(
+            descriptor.get(),
+            credential_filename(node_id),
+            &persisted_token,
+            error
+        );
+
+    if (file_result != CredentialFileResult::Ok) {
+        return map_file_result(file_result);
+    }
+
+    // Security: both tokens have already been validated as the same fixed-size
+    // canonical base64url representation. Constant-time comparison prevents a
+    // recovery request from learning a persisted credential prefix.
+    *matched =
+        sodium_memcmp(
+            persisted_token.data(),
+            plaintext_token.data(),
+            kInternalAuthTokenChars
+        ) == 0;
+
     return NodeCredentialRegistryResult::Ok;
 }
 

@@ -482,6 +482,315 @@ int main() {
         "erasing a missing credential"
     );
 
+    {
+        const fs::path match_directory =
+            test_directory /
+            "match-directory";
+
+        NodeCredentialRegistry match_registry;
+
+        error.clear();
+
+        expect(
+            match_registry.load(
+                match_directory.string(),
+                &error
+            ),
+            "load credential match registry: " +
+                error
+        );
+
+        bool matched = true;
+
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::NotFound,
+            "missing credential comparison"
+        );
+
+        expect(
+            !matched,
+            "missing credential comparison must clear output"
+        );
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "bad/node",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                InvalidInput,
+            "credential comparison invalid node ID"
+        );
+
+        expect(
+            !matched,
+            "invalid comparison must clear output"
+        );
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                "not-a-token",
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                InvalidInput,
+            "credential comparison invalid token"
+        );
+
+        expect(
+            !matched,
+            "invalid token comparison must clear output"
+        );
+
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_a,
+                nullptr,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                InvalidInput,
+            "credential comparison requires output"
+        );
+
+        error.clear();
+
+        expect_result(
+            match_registry.create_if_absent(
+                "node-match",
+                token_a,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "create credential match fixture"
+        );
+
+        matched = false;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "matching persisted credential"
+        );
+
+        expect(
+            matched,
+            "identical credential must match"
+        );
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_b,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "non-matching persisted credential"
+        );
+
+        expect(
+            !matched,
+            "different credential must not match"
+        );
+
+        error.clear();
+
+        expect_result(
+            match_registry.create_if_absent(
+                "node-match",
+                token_b,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                AlreadyExists,
+            "duplicate create must preserve match fixture"
+        );
+
+        matched = false;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "match credential after duplicate create"
+        );
+
+        expect(
+            matched,
+            "duplicate create must preserve original credential"
+        );
+
+        error.clear();
+
+        expect_result(
+            match_registry.upsert(
+                "node-match",
+                token_b,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "rotate credential match fixture"
+        );
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "old credential comparison after rotation"
+        );
+
+        expect(
+            !matched,
+            "old credential must not match after rotation"
+        );
+
+        matched = false;
+        error.clear();
+
+        expect_result(
+            match_registry.matches(
+                "node-match",
+                token_b,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "rotated credential comparison"
+        );
+
+        expect(
+            matched,
+            "rotated credential must match"
+        );
+
+        NodeCredentialRegistry match_reloaded;
+
+        error.clear();
+
+        expect(
+            match_reloaded.load(
+                match_directory.string(),
+                &error
+            ),
+            "reload credential match registry: " +
+                error
+        );
+
+        matched = false;
+        error.clear();
+
+        expect_result(
+            match_reloaded.matches(
+                "node-match",
+                token_b,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "reloaded credential comparison"
+        );
+
+        expect(
+            matched,
+            "matching credential must survive reload"
+        );
+
+        error.clear();
+
+        expect_result(
+            match_reloaded.erase(
+                "node-match",
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "erase credential match fixture"
+        );
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            match_reloaded.matches(
+                "node-match",
+                token_b,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::NotFound,
+            "comparison after credential erase"
+        );
+
+        expect(
+            !matched,
+            "erased credential comparison must clear output"
+        );
+
+        NodeCredentialRegistry unloaded_match_registry;
+
+        matched = true;
+        error.clear();
+
+        expect_result(
+            unloaded_match_registry.matches(
+                "node-unloaded",
+                token_a,
+                &matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                StorageUnsafe,
+            "unloaded credential match registry"
+        );
+
+        expect(
+            !matched,
+            "unloaded comparison must clear output"
+        );
+    }
+
     const fs::path unsafe_directory =
         test_directory / "unsafe-directory";
 

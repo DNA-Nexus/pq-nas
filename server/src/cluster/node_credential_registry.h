@@ -36,6 +36,15 @@ public:
         std::string* error
     ) const;
 
+    // Compares one presented canonical token with the persisted credential
+    // under the registry mutex. The stored token is never returned.
+    NodeCredentialRegistryResult matches(
+        const std::string& node_id,
+        const std::string& plaintext_token,
+        bool* matched,
+        std::string* error
+    ) const;
+
     // Creates a credential only when the node has no existing entry. The
     // O_CREAT | O_EXCL boundary prevents enrollment races from replacing a
     // credential that another transaction already installed.
