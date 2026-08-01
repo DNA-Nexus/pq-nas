@@ -9283,7 +9283,7 @@ int main()
 
     pqnas::cluster::InternalAuthCredential cluster_credential;
 
-    if (!cluster_config.is_standalone()) {
+    if (cluster_config.is_node()) {
         std::string credential_err;
 
         if (!pqnas::cluster::load_internal_auth_credential_file(
@@ -9308,7 +9308,7 @@ int main()
         std::cerr << " node_id=" << cluster_config.node_id;
     }
 
-    if (!cluster_config.is_standalone()) {
+    if (cluster_config.is_node()) {
         // Security: log configuration state only, never secret values.
         std::cerr << " internal_auth=configured";
     }
