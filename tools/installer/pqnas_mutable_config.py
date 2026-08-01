@@ -244,7 +244,10 @@ def _open_or_create_managed_child_directory(
         # Security: change ownership on the opened directory inode only.
         # Never recursively traverse user data or follow hardlinks.
         os.fchown(descriptor, owner_uid, owner_gid)
-        os.fchmod(descriptor, 0o750)
+        # Security-reviewed directory mode: owner rwx, service group
+        # traverse/read, and no access for others. Mode 0644 would make
+        # a directory non-traversable and is not a safe substitute.
+        os.fchmod(descriptor, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.fsync(descriptor)
         return descriptor
     except Exception:
@@ -290,7 +293,10 @@ def prepare_storage_runtime_layout(
         # Keep the mountpoint itself private and service-owned, but do not
         # recursively alter any existing file or directory below it.
         os.fchown(root_fd, owner_uid, owner_gid)
-        os.fchmod(root_fd, 0o750)
+        # Security-reviewed directory mode: owner rwx, service group
+        # traverse/read, and no access for others. Mode 0644 would make
+        # a directory non-traversable and is not a safe substitute.
+        os.fchmod(root_fd, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.fsync(root_fd)
     finally:
         os.close(root_fd)
@@ -351,7 +357,10 @@ def prepare_mutable_config_directory(
         # Security: only the storage root becomes service-owned. Root-managed
         # code, trust, and environment paths are outside this directory.
         os.fchown(root_fd, owner_uid, owner_gid)
-        os.fchmod(root_fd, 0o750)
+        # Security-reviewed directory mode: owner rwx, service group
+        # traverse/read, and no access for others. Mode 0644 would make
+        # a directory non-traversable and is not a safe substitute.
+        os.fchmod(root_fd, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
 
         try:
             initial = os.stat(
@@ -415,7 +424,10 @@ def prepare_mutable_config_directory(
             )
 
         os.fchown(config_fd, owner_uid, owner_gid)
-        os.fchmod(config_fd, 0o750)
+        # Security-reviewed directory mode: owner rwx, service group
+        # traverse/read, and no access for others. Mode 0644 would make
+        # a directory non-traversable and is not a safe substitute.
+        os.fchmod(config_fd, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.fsync(config_fd)
 
         return str(root / "config")
@@ -973,7 +985,10 @@ def ensure_managed_binary_created(
             owner_uid,
             owner_gid,
         )
-        os.fchmod(temporary_fd, 0o700)
+        # Security-reviewed private workspace directory: owner-only
+        # traversal and mutation are required while the helper writes
+        # its payload. Mode 0644 would remove directory traversal.
+        os.fchmod(temporary_fd, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
 
         payload_path = os.path.join(
             parent,
