@@ -54,6 +54,12 @@ from pqnas_secure_files import (
     read_private_file_text,
     validate_exact_private_env_keys,
 )
+from pqnas_cluster_config import (
+    ClusterConfigError,
+    ClusterInstallConfig,
+    load_existing_cluster_config,
+    render_cluster_env_lines,
+)
 
 from pqnas_mutable_config import (
     atomic_write_managed_text,
@@ -1323,6 +1329,12 @@ class InstallState:
     plan: List[List[str]] = None
     plan_notes: List[str] = None
 
+    # Non-secret cluster settings are preserved across installer upgrades.
+    # Security: the one-time node bootstrap token itself is never stored here.
+    cluster_config: ClusterInstallConfig = field(
+        default_factory=ClusterInstallConfig
+    )
+
     # Internal verifier/session mode. Keep this v5-only.
     # Do not use this for QR-vs-password UI selection.
     auth_mode: str = "v5"
@@ -2024,6 +2036,7 @@ def write_env_file(
         login_mode: Optional[str] = None,
         password_bootstrap_token: Optional[str] = None,
         tls_spki_pin_sha256: Optional[str] = None,
+        cluster_config: Optional[ClusterInstallConfig] = None,
 ) -> None:
 
     etc_dir = "/etc/pqnas"
@@ -2099,6 +2112,12 @@ def write_env_file(
     if auth_mode and tls_spki_pin_sha256:
         lines += [f"PQNAS_TLS_SPKI_SHA256_PIN={tls_spki_pin_sha256}"]
 
+
+    # Security: render only validated non-secret cluster settings.
+    # The one-time node bootstrap token belongs in its private token file.
+    lines += render_cluster_env_lines(
+        cluster_config or ClusterInstallConfig()
+    )
 
     # Security: do not write PQNAS_DNA_LIB into the server environment.
     # Server-side DNA identity generation loads libdna_lib.so from the fixed
@@ -4194,6 +4213,7 @@ class ExecuteScreen(Screen):
                 auth_mode=st.auth_mode,
                 login_mode=st.login_mode,
                 password_bootstrap_token=st.password_bootstrap_token,
+                cluster_config=st.cluster_config,
                 tls_spki_pin_sha256=tls_spki_pin_sha256,
             )
 
@@ -4417,6 +4437,7 @@ class ExecuteScreen(Screen):
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
                             password_bootstrap_token=st.password_bootstrap_token,
+                            cluster_config=st.cluster_config,
                             tls_spki_pin_sha256=tls_spki_pin_sha256,
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -4452,6 +4473,7 @@ class ExecuteScreen(Screen):
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
                             password_bootstrap_token=st.password_bootstrap_token,
+                            cluster_config=st.cluster_config,
                             tls_spki_pin_sha256="",
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -4529,6 +4551,24 @@ class InstallerApp(App):
     def on_mount(self) -> None:
         if os.geteuid() != 0:
             self.exit(message="Run as root: sudo ./installer/install.sh")
+            return
+
+        try:
+            # Security: never source pqnas.env as shell code. Read the bounded
+            # file through the descriptor-based private-file helper and parse
+            # only the known non-secret cluster settings.
+            self.state.cluster_config = (
+                load_existing_cluster_config()
+            )
+        except ClusterConfigError as exc:
+            self.exit(
+                message=(
+                    "Refusing to overwrite unsafe or invalid existing "
+                    f"cluster configuration: {exc}"
+                )
+            )
+            return
+
         self.push_screen(DiskSelectScreen())
 
 
