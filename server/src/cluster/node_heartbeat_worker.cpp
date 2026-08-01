@@ -1,6 +1,6 @@
 #include "node_heartbeat_worker.h"
 
-#include "internal_auth.h"
+#include "node_credential_registry.h"
 #include "node_registry.h"
 #include "node_status.h"
 
@@ -190,11 +190,10 @@ bool NodeHeartbeatWorker::config_valid(
         return false;
     }
 
-    if (!config_.credential ||
-        !config_.credential->configured()) {
+    if (!config_.credential_registry) {
         set_error(
             error,
-            "heartbeat credential is not configured"
+            "heartbeat credential registry is missing"
         );
         return false;
     }
@@ -343,32 +342,6 @@ NodeHeartbeatWorker::poll_once() {
             }
         };
 
-    std::string authorization;
-    SensitiveStringWiper authorization_wiper(
-        authorization
-    );
-
-    if (!make_internal_bearer_authorization(
-            *config_.credential,
-            &authorization)) {
-        for (const NodeRegistryRecord& node : nodes) {
-            if (!node.enabled) {
-                ++result.skipped_disabled;
-                continue;
-            }
-
-            ++result.checked;
-            ++result.failed;
-
-            record_offline(
-                node,
-                "credential_unavailable"
-            );
-        }
-
-        return result;
-    }
-
     for (const NodeRegistryRecord& node : nodes) {
         if (stop_requested()) {
             break;
@@ -381,6 +354,40 @@ NodeHeartbeatWorker::poll_once() {
 
         ++result.checked;
 
+        std::string authorization;
+        SensitiveStringWiper authorization_wiper(
+            authorization
+        );
+
+        std::string credential_error;
+
+        const NodeCredentialRegistryResult
+            credential_result =
+                config_.credential_registry
+                    ->make_bearer_authorization(
+                        node.node_id,
+                        &authorization,
+                        &credential_error
+                    );
+
+        // Security: never expose credential storage details through health
+        // state, audit output or logs.
+        credential_error.clear();
+
+        if (credential_result !=
+            NodeCredentialRegistryResult::Ok) {
+            ++result.failed;
+
+            record_offline(
+                node,
+                "credential_unavailable"
+            );
+
+            continue;
+        }
+
+        // The registry lock is released before network I/O. The bearer is
+        // wiped by the iteration-local guard after this node is processed.
         std::string response_body;
         std::string fetch_error;
 

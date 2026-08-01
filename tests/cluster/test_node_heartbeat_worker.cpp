@@ -1,4 +1,5 @@
 #include "cluster/internal_auth.h"
+#include "cluster/node_credential_registry.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_status.h"
@@ -67,37 +68,9 @@ fs::path make_test_directory() {
     return fs::path(result);
 }
 
-bool write_file_0600(
-    const fs::path& path,
-    const std::string& body
+std::string synthetic_token(
+    unsigned char seed
 ) {
-    {
-        std::ofstream output(
-            path,
-            std::ios::binary |
-            std::ios::trunc
-        );
-
-        if (!output.good()) {
-            return false;
-        }
-
-        output.write(
-            body.data(),
-            static_cast<std::streamsize>(
-                body.size()
-            )
-        );
-
-        if (!output.good()) {
-            return false;
-        }
-    }
-
-    return ::chmod(path.c_str(), 0600) == 0;
-}
-
-std::string synthetic_token() {
     std::array<
         unsigned char,
         pqnas::cluster::kInternalAuthSecretBytes
@@ -108,7 +81,10 @@ std::string synthetic_token() {
          ++index) {
         bytes[index] =
             static_cast<unsigned char>(
-                index + 1
+                seed +
+                static_cast<unsigned char>(
+                    index
+                )
             );
     }
 
@@ -180,33 +156,21 @@ int main() {
         fs::remove_all(directory, error);
     };
 
-    const std::string token =
-        synthetic_token();
-
-    const fs::path credential_path =
-        directory / "cluster-token";
-
-    expect(
-        write_file_0600(
-            credential_path,
-            token + "\n"
-        ),
-        "write cluster credential"
-    );
-
-    pqnas::cluster::InternalAuthCredential
-        credential;
-
     std::string error;
 
+    pqnas::cluster::NodeCredentialRegistry
+        credential_registry;
+
     expect(
-        pqnas::cluster::
-            load_internal_auth_credential_file(
-                credential_path.string(),
-                &credential,
-                &error
-            ),
-        "load cluster credential: " + error
+        credential_registry.load(
+            (
+                directory /
+                "node_credentials"
+            ).string(),
+            &error
+        ),
+        "load heartbeat credential registry: " +
+            error
     );
 
     pqnas::cluster::NodeRegistry registry;
@@ -248,7 +212,50 @@ int main() {
     add_node("node-03", true);
     add_node("node-04", true);
     add_node("node-05", true);
+    add_node("node-06", true);
 
+    std::map<std::string, std::string>
+        node_tokens;
+
+    const auto add_credential =
+        [&](const std::string& node_id,
+            unsigned char seed) {
+            std::string token =
+                synthetic_token(seed);
+
+            node_tokens[node_id] =
+                token;
+
+            error.clear();
+
+            expect(
+                credential_registry.upsert(
+                    node_id,
+                    token,
+                    &error
+                ) ==
+                    pqnas::cluster::
+                        NodeCredentialRegistryResult::
+                            Ok,
+                "add heartbeat credential " +
+                    node_id +
+                    ": " +
+                    error
+            );
+
+            pqnas::cluster::
+                clear_internal_auth_token_text(
+                    &token
+                );
+        };
+
+    add_credential("node-01", 1);
+    add_credential("node-02", 33);
+    add_credential("node-03", 65);
+    add_credential("node-04", 97);
+    add_credential("node-05", 129);
+
+    // node-06 intentionally has no credential. It must fail before fetch().
     std::map<std::string, int> fetch_calls;
     std::vector<AuditRecord> audits;
     bool authorization_valid = true;
@@ -257,7 +264,8 @@ int main() {
         config;
 
     config.registry = &registry;
-    config.credential = &credential;
+    config.credential_registry =
+        &credential_registry;
 
     config.coordination_mutex =
         std::make_shared<std::mutex>();
@@ -295,13 +303,18 @@ int main() {
         ) -> bool {
             ++fetch_calls[node.node_id];
 
+            const auto expected_token =
+                node_tokens.find(
+                    node.node_id
+                );
+
             authorization_valid =
                 authorization_valid &&
-                pqnas::cluster::
-                    verify_internal_bearer_authorization(
-                        authorization,
-                        credential
-                    );
+                expected_token !=
+                    node_tokens.end() &&
+                authorization ==
+                    "Bearer " +
+                    expected_token->second;
 
             if (fetch_error) {
                 fetch_error->clear();
@@ -364,8 +377,8 @@ int main() {
             worker.poll_once();
 
     expect(
-        poll_result.checked == 4,
-        "four enabled nodes should be checked"
+        poll_result.checked == 5,
+        "five enabled nodes should be checked"
     );
 
     expect(
@@ -374,8 +387,8 @@ int main() {
     );
 
     expect(
-        poll_result.failed == 3,
-        "three invalid heartbeats should fail"
+        poll_result.failed == 4,
+        "four invalid heartbeats should fail"
     );
 
     expect(
@@ -389,12 +402,12 @@ int main() {
     );
 
     expect(
-        poll_result.offline_transitions == 3,
-        "first failures should create three offline transitions"
+        poll_result.offline_transitions == 4,
+        "first failures should create four offline transitions"
     );
 
     expect(
-        audits.size() == 4,
+        audits.size() == 5,
         "only real health transitions should be audited"
     );
 
@@ -405,7 +418,8 @@ int main() {
         expected_offline_reasons{
             {"node-03", "transport_error"},
             {"node-04", "node_id_mismatch"},
-            {"node-05", "response_too_large"}
+            {"node-05", "response_too_large"},
+            {"node-06", "credential_unavailable"}
         };
 
     for (const AuditRecord& audit : audits) {
@@ -464,7 +478,7 @@ int main() {
 
     expect(
         online_audits == 1 &&
-        offline_audits == 3,
+        offline_audits == 4,
         "expected online and offline audit counts"
     );
 
@@ -476,6 +490,11 @@ int main() {
     expect(
         fetch_calls["node-02"] == 0,
         "disabled node must not be fetched"
+    );
+
+    expect(
+        fetch_calls["node-06"] == 0,
+        "credentialless node must fail before network"
     );
 
     const auto node_01 =
@@ -502,7 +521,8 @@ int main() {
     for (const std::string node_id : {
              "node-03",
              "node-04",
-             "node-05"
+             "node-05",
+             "node-06"
          }) {
         const auto record =
             registry.get(node_id);
@@ -590,6 +610,16 @@ int main() {
         );
     }
 
+    add_credential(
+        "node-stale-status",
+        161
+    );
+
+    add_credential(
+        "node-stale-failure",
+        193
+    );
+
     auto stale_coordination_mutex =
         std::make_shared<std::mutex>();
 
@@ -602,8 +632,8 @@ int main() {
     stale_config.registry =
         &stale_registry;
 
-    stale_config.credential =
-        &credential;
+    stale_config.credential_registry =
+        &credential_registry;
 
     stale_config.coordination_mutex =
         stale_coordination_mutex;
@@ -642,13 +672,18 @@ int main() {
             std::string* body,
             std::string* fetch_error
         ) -> bool {
+            const auto expected_token =
+                node_tokens.find(
+                    node.node_id
+                );
+
             expect(
-                pqnas::cluster::
-                    verify_internal_bearer_authorization(
-                        authorization,
-                        credential
-                    ),
-                "stale test bearer authorization"
+                expected_token !=
+                    node_tokens.end() &&
+                authorization ==
+                    "Bearer " +
+                    expected_token->second,
+                "stale test per-node bearer authorization"
             );
 
             if (body) {
@@ -754,12 +789,9 @@ int main() {
         );
     }
 
-    pqnas::cluster::InternalAuthCredential
-        unconfigured_credential;
-
     auto invalid_config = config;
-    invalid_config.credential =
-        &unconfigured_credential;
+    invalid_config.credential_registry =
+        nullptr;
 
     pqnas::cluster::NodeHeartbeatWorker
         invalid_worker(invalid_config);
@@ -768,7 +800,7 @@ int main() {
 
     expect(
         !invalid_worker.start(&error),
-        "worker must reject unconfigured credential"
+        "worker must reject missing credential registry"
     );
 
     auto missing_coordination_config =
