@@ -5,10 +5,11 @@ PQ-NAS CLI Installer (Textual) — Wizard v1
 Flow:
   1) Disk selection (safe: system disks marked + blocked)
   2) Backend selection: ext4 / btrfs
-  3) Plan preview (exact commands shown)
-  4) Optional reverse proxy (nginx, HTTP-only)
-  5) Typed confirm: "WIPE <diskname>" or "INSTALL <mountpoint>"
-  6) Execute with live log
+  3) Server role and storage-node enrollment settings
+  4) Plan preview (exact commands shown)
+  5) Optional reverse proxy (nginx, HTTP-only)
+  6) Typed confirm: "WIPE <diskname>" or "INSTALL <mountpoint>"
+  7) Execute with live log
 
 Notes:
 - Run as root (sudo). Disk operations + systemd need it.
@@ -59,6 +60,15 @@ from pqnas_cluster_config import (
     ClusterInstallConfig,
     load_existing_cluster_config,
     render_cluster_env_lines,
+    validate_cluster_config,
+)
+from pqnas_cluster_secrets import (
+    DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE,
+    DEFAULT_NODE_CREDENTIAL_FILE,
+    ClusterSecretError,
+    apply_cluster_bootstrap_secret,
+    validate_node_bootstrap_token,
+    wipe_secret_buffer,
 )
 
 from pqnas_mutable_config import (
@@ -1334,6 +1344,16 @@ class InstallState:
     cluster_config: ClusterInstallConfig = field(
         default_factory=ClusterInstallConfig
     )
+
+    # Preserve the validated startup value for safe token cleanup when the
+    # selected role or enrollment changes during this installer run.
+    original_cluster_config: ClusterInstallConfig = field(
+        default_factory=ClusterInstallConfig
+    )
+
+    # Security: short-lived plaintext storage only. This buffer is never
+    # rendered into pqnas.env and is wiped after the descriptor-based write.
+    node_bootstrap_token: Optional[bytearray] = None
 
     # Internal verifier/session mode. Keep this v5-only.
     # Do not use this for QR-vs-password UI selection.
@@ -3189,7 +3209,7 @@ class DiskSelectScreen(Screen):
         with Horizontal():
             with Vertical(id="left"):
                 yield Static(
-                    "[b]Step 1/6[/b] Select target disk\n\n"
+                    "[b]Step 1/7[/b] Select target disk\n\n"
                     "[r]R[/r] refresh  •  [r]N[/r] next  •  [r]Q[/r] quit\n",
                     classes="muted",
                 )
@@ -3293,7 +3313,7 @@ class BackendSelectScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 2/6[/b] Select storage backend\n", classes="muted")
+            yield Static("[b]Step 2/7[/b] Select storage backend\n", classes="muted")
 
             self.radio = RadioSet(
                 RadioButton("ext4 (simple, no snapshots)", id="ext4"),
@@ -3348,6 +3368,307 @@ class BackendSelectScreen(Screen):
 
         app.state.backend = chosen
         app.state.mountpoint = mp
+        app.push_screen(ClusterRoleScreen())
+
+class ClusterRoleScreen(Screen):
+    BINDINGS = [
+        ("b", "back", "Back"),
+        ("n", "next", "Next"),
+        ("q", "quit", "Quit"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical():
+            yield Static(
+                "[b]Step 3/7[/b] Select server role\n",
+                classes="muted",
+            )
+
+            self.role_radio = RadioSet(
+                RadioButton(
+                    "Standalone server",
+                    id="standalone",
+                ),
+                RadioButton(
+                    "Director control-plane server",
+                    id="director",
+                ),
+                RadioButton(
+                    "Storage node",
+                    id="node",
+                ),
+            )
+            yield self.role_radio
+
+            yield Static(
+                "\nStorage-node enrollment settings "
+                "(ignored for other roles):",
+                classes="muted",
+            )
+
+            self.node_id_in = Input(
+                placeholder="cellnode1",
+            )
+            yield Static("Node ID:", classes="muted")
+            yield self.node_id_in
+
+            self.director_url_in = Input(
+                placeholder="https://director.example",
+            )
+            yield Static(
+                "Director HTTPS base URL:",
+                classes="muted",
+            )
+            yield self.director_url_in
+
+            self.enrollment_id_in = Input(
+                placeholder="enrollment identifier",
+            )
+            yield Static(
+                "Enrollment ID:",
+                classes="muted",
+            )
+            yield self.enrollment_id_in
+
+            self.generation_in = Input(
+                value="1",
+                placeholder="1",
+            )
+            yield Static(
+                "Enrollment generation:",
+                classes="muted",
+            )
+            yield self.generation_in
+
+            self.node_api_url_in = Input(
+                placeholder="https://cellnode1.example",
+            )
+            yield Static(
+                "Storage-node HTTPS API URL:",
+                classes="muted",
+            )
+            yield self.node_api_url_in
+
+            self.token_in = Input(
+                placeholder="One-time 43-character bootstrap token",
+                password=True,
+            )
+            yield Static(
+                "One-time bootstrap token:",
+                classes="muted",
+            )
+            yield self.token_in
+
+            with Horizontal():
+                yield Button(
+                    "Back",
+                    id="back",
+                    variant="default",
+                )
+                yield Button(
+                    "Next",
+                    id="next",
+                    variant="primary",
+                )
+
+            self.hint = Static(
+                "",
+                classes="warn",
+            )
+            yield self.hint
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        config = app.state.cluster_config
+
+        for button in self.role_radio.query(
+            RadioButton
+        ):
+            if button.id == config.role:
+                button.value = True
+
+        base = config
+        if (
+            base.role != "node"
+            and app.state.original_cluster_config.role == "node"
+        ):
+            base = app.state.original_cluster_config
+
+        if base.role == "node":
+            self.node_id_in.value = base.node_id
+            self.director_url_in.value = base.director_url
+            self.enrollment_id_in.value = base.enrollment_id
+            self.generation_in.value = str(
+                base.enrollment_generation
+            )
+            self.node_api_url_in.value = (
+                base.node_api_base_url
+            )
+
+        self.token_in.value = ""
+        self.hint.update(
+            "Standalone is the safe default. "
+            "A new or changed storage-node enrollment "
+            "requires its one-time token."
+        )
+
+    def on_button_pressed(
+        self,
+        event: Button.Pressed,
+    ) -> None:
+        if event.button.id == "back":
+            self.action_back()
+        elif event.button.id == "next":
+            self.action_next()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_next(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+
+        chosen = None
+        for button in self.role_radio.query(
+            RadioButton
+        ):
+            if button.value:
+                chosen = button.id
+                break
+
+        if chosen not in (
+            "standalone",
+            "director",
+            "node",
+        ):
+            self.hint.update(
+                "Choose standalone, Director, or storage node."
+            )
+            return
+
+        if chosen == "standalone":
+            selected = ClusterInstallConfig(
+                role="standalone"
+            )
+        elif chosen == "director":
+            selected = ClusterInstallConfig(
+                role="director"
+            )
+        else:
+            generation_text = (
+                self.generation_in.value or ""
+            ).strip()
+
+            if (
+                not generation_text
+                or not generation_text.isascii()
+                or not generation_text.isdigit()
+                or len(generation_text) > 20
+            ):
+                self.hint.update(
+                    "Enrollment generation must be a positive integer."
+                )
+                return
+
+            path_source = app.state.cluster_config
+            if (
+                path_source.role != "node"
+                and app.state.original_cluster_config.role == "node"
+            ):
+                path_source = (
+                    app.state.original_cluster_config
+                )
+
+            credential_file = (
+                path_source.cluster_credential_file
+                if path_source.role == "node"
+                else DEFAULT_NODE_CREDENTIAL_FILE
+            )
+            bootstrap_file = (
+                path_source.bootstrap_token_file
+                if path_source.role == "node"
+                else DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE
+            )
+
+            try:
+                selected = validate_cluster_config(
+                    ClusterInstallConfig(
+                        role="node",
+                        node_id=(
+                            self.node_id_in.value or ""
+                        ).strip(),
+                        director_url=(
+                            self.director_url_in.value or ""
+                        ).strip(),
+                        cluster_credential_file=credential_file,
+                        enrollment_id=(
+                            self.enrollment_id_in.value or ""
+                        ).strip(),
+                        enrollment_generation=int(
+                            generation_text,
+                            10,
+                        ),
+                        node_api_base_url=(
+                            self.node_api_url_in.value or ""
+                        ).strip(),
+                        bootstrap_token_file=bootstrap_file,
+                    )
+                )
+            except ClusterConfigError as exc:
+                self.hint.update(
+                    f"Invalid storage-node configuration: {exc}"
+                )
+                return
+
+        if selected != app.state.cluster_config:
+            wipe_secret_buffer(
+                app.state.node_bootstrap_token
+            )
+            app.state.node_bootstrap_token = None
+
+        if selected.role != "node":
+            wipe_secret_buffer(
+                app.state.node_bootstrap_token
+            )
+            app.state.node_bootstrap_token = None
+            self.token_in.value = ""
+        else:
+            raw_token = self.token_in.value or ""
+
+            if raw_token:
+                try:
+                    token_buffer = (
+                        validate_node_bootstrap_token(
+                            raw_token
+                        )
+                    )
+                except ClusterSecretError as exc:
+                    self.hint.update(
+                        f"Invalid bootstrap token: {exc}"
+                    )
+                    return
+
+                wipe_secret_buffer(
+                    app.state.node_bootstrap_token
+                )
+                app.state.node_bootstrap_token = (
+                    token_buffer
+                )
+                self.token_in.value = ""
+            elif (
+                selected !=
+                    app.state.original_cluster_config
+                and app.state.node_bootstrap_token is None
+            ):
+                self.hint.update(
+                    "A new or changed storage-node enrollment "
+                    "requires the one-time bootstrap token."
+                )
+                return
+
+        app.state.cluster_config = selected
         app.push_screen(PlanScreen())
 
 
@@ -3357,7 +3678,7 @@ class PlanScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 3/6[/b] Plan preview (exact commands)\n", classes="muted")
+            yield Static("[b]Step 4/7[/b] Plan preview (exact commands)\n", classes="muted")
             self.plan_box = Static("", classes="muted")
             yield self.plan_box
             with Horizontal():
@@ -3385,6 +3706,14 @@ class PlanScreen(Screen):
         text.append(f"[b]Mode:[/b] {app.state.install_mode}")
         text.append(f"[b]Backend:[/b] {app.state.backend}")
         text.append(f"[b]Login:[/b] {login_mode_label(app.state.login_mode)}")
+        text.append(
+            f"[b]Server role:[/b] {app.state.cluster_config.role}"
+        )
+        if app.state.cluster_config.role == "node":
+            text.append(
+                f"[b]Storage node:[/b] "
+                f"{app.state.cluster_config.node_id}"
+            )
         text.append(f"[b]Mountpoint:[/b] {app.state.mountpoint}\n")
         text.append("[b]Notes:[/b]")
         for n in (app.state.plan_notes or []):
@@ -3417,7 +3746,7 @@ class ReverseProxyScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 4/6[/b] Optional reverse proxy (nginx)\n", classes="muted")
+            yield Static("[b]Step 5/7[/b] Optional reverse proxy (nginx)\n", classes="muted")
 
             yield Static(
                 "If enabled, PQ-NAS will be reachable via:\n"
@@ -3603,7 +3932,7 @@ class ConfirmScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 5/6[/b] Destructive confirmation\n", classes="warn")
+            yield Static("[b]Step 6/7[/b] Destructive confirmation\n", classes="warn")
             self.msg = Static("", classes="muted")
             yield self.msg
 
@@ -3973,7 +4302,7 @@ class ExecuteScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 6/6[/b] Executing… (live log)\n", classes="muted")
+            yield Static("[b]Step 7/7[/b] Executing… (live log)\n", classes="muted")
             self.logw = InstallerLog()
             yield self.logw
             self.done = Static("", classes="muted")
@@ -3994,6 +4323,10 @@ class ExecuteScreen(Screen):
         log_line(self.logw, f"Mode: {mode}")
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
         log_line(self.logw, f"Login mode: {login_mode_label(st.login_mode)}")
+        log_line(
+            self.logw,
+            f"Server role: {st.cluster_config.role}",
+        )
         if st.login_mode == "password":
             log_line(self.logw, "First-admin helper will be installed as: /usr/local/sbin/pqnas-first-admin")
             log_line(self.logw, "After installation, run: sudo pqnas-first-admin")
@@ -4015,6 +4348,10 @@ class ExecuteScreen(Screen):
         st = app.state
 
         if not st.disk:
+            wipe_secret_buffer(
+                st.node_bootstrap_token
+            )
+            st.node_bootstrap_token = None
             self.done.update("No disk selected.")
             return
 
@@ -4024,6 +4361,10 @@ class ExecuteScreen(Screen):
         # 1) Execute destructive plan only in disk mode
         if mode == "disk":
             if not plan:
+                wipe_secret_buffer(
+                    st.node_bootstrap_token
+                )
+                st.node_bootstrap_token = None
                 self.done.update("No plan to execute.")
                 return
 
@@ -4046,6 +4387,10 @@ class ExecuteScreen(Screen):
                     break
 
             if not ok:
+                wipe_secret_buffer(
+                    st.node_bootstrap_token
+                )
+                st.node_bootstrap_token = None
                 self.done.update(
                     "\n❌ Failed.\n\n"
                     "Nothing else will be executed. Check the log above.\n"
@@ -4126,6 +4471,25 @@ class ExecuteScreen(Screen):
                 f"Creating secure PQ-NAS runtime layout under {mp} …"
             )
             create_pqnas_layout(mp)
+
+            self.logw.write(
+                "Applying storage-node bootstrap secret state …"
+            )
+            try:
+                cluster_secret_action = (
+                    apply_cluster_bootstrap_secret(
+                        st.original_cluster_config,
+                        st.cluster_config,
+                        st.node_bootstrap_token,
+                    )
+                )
+            finally:
+                st.node_bootstrap_token = None
+
+            self.logw.write(
+                "[*] Cluster bootstrap secret state: "
+                f"{cluster_secret_action}"
+            )
 
             self.logw.write("Installing static assets to /opt/pqnas/static …")
             install_static_assets(asset_root, "/opt/pqnas/static")
@@ -4522,6 +4886,12 @@ class ExecuteScreen(Screen):
             return
 
         except Exception as e:
+            # Security: failures before the token-file write must not leave the
+            # one-time plaintext token retained in installer state.
+            wipe_secret_buffer(
+                st.node_bootstrap_token
+            )
+            st.node_bootstrap_token = None
             self.logw.write(f"[FINALIZE ERROR] {e}")
             self.done.update(
                 "\n⚠️ Finalize failed.\n\n"
@@ -4557,9 +4927,11 @@ class InstallerApp(App):
             # Security: never source pqnas.env as shell code. Read the bounded
             # file through the descriptor-based private-file helper and parse
             # only the known non-secret cluster settings.
-            self.state.cluster_config = (
+            loaded_cluster_config = (
                 load_existing_cluster_config()
             )
+            self.state.original_cluster_config = loaded_cluster_config
+            self.state.cluster_config = loaded_cluster_config
         except ClusterConfigError as exc:
             self.exit(
                 message=(

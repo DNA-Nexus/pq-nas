@@ -173,6 +173,46 @@ class InstallerRuntimeLayoutTests(unittest.TestCase):
         )
 
 
+    def test_cluster_secret_is_not_written_to_environment(
+        self,
+    ) -> None:
+        body = self.function_body(
+            "write_env_file"
+        )
+
+        self.assertNotIn(
+            "PQNAS_NODE_BOOTSTRAP_TOKEN=",
+            body,
+        )
+        self.assertIn(
+            "render_cluster_env_lines(",
+            body,
+        )
+
+    def test_cluster_secret_apply_precedes_environment_write(
+        self,
+    ) -> None:
+        stop_index = self.source.index(
+            'self.logw.write("Stopping pqnas.service (if running) …")'
+        )
+        apply_index = self.source.index(
+            "apply_cluster_bootstrap_secret("
+        )
+        env_index = self.source.index(
+            "write_env_file(\n"
+            "                mp,"
+        )
+
+        self.assertLess(
+            stop_index,
+            apply_index,
+        )
+        self.assertLess(
+            apply_index,
+            env_index,
+        )
+
+
 
 if __name__ == "__main__":
     unittest.main()
