@@ -53,7 +53,7 @@ bool normalize_cluster_credential_file(
     if (value.empty()) {
         if (err) {
             *err =
-                "director and node roles require "
+                "node role requires "
                 "PQNAS_CLUSTER_CREDENTIAL_FILE";
         }
         return false;
@@ -202,6 +202,23 @@ bool parse_server_role_config(
         return true;
     }
 
+    if (role == "director") {
+        if (!node_id.empty() ||
+            !director_url.empty() ||
+            !credential_file.empty()) {
+            if (err) {
+                *err =
+                    "director role must not define "
+                    "PQNAS_NODE_ID, PQNAS_DIRECTOR_URL, or "
+                    "PQNAS_CLUSTER_CREDENTIAL_FILE";
+            }
+            return false;
+        }
+
+        out->role = ServerRole::Director;
+        return true;
+    }
+
     std::string normalized_credential_file;
 
     if (!normalize_cluster_credential_file(
@@ -209,22 +226,6 @@ bool parse_server_role_config(
             &normalized_credential_file,
             err)) {
         return false;
-    }
-
-    if (role == "director") {
-        if (!node_id.empty() || !director_url.empty()) {
-            if (err) {
-                *err =
-                    "director role must not define "
-                    "PQNAS_NODE_ID or PQNAS_DIRECTOR_URL";
-            }
-            return false;
-        }
-
-        out->role = ServerRole::Director;
-        out->cluster_credential_file =
-            normalized_credential_file;
-        return true;
     }
 
     // Security: constrain node IDs before using them in registry keys,

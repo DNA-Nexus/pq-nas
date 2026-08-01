@@ -126,11 +126,8 @@ int main() {
         " DIRECTOR ",
         "",
         "",
-        credential,
-        ServerRole::Director,
         "",
-        "",
-        credential
+        ServerRole::Director
     );
 
     expect_ok(
@@ -196,13 +193,6 @@ int main() {
 
     expect_error(
         "director",
-        "",
-        "",
-        ""
-    );
-
-    expect_error(
-        "director",
         "node-01",
         "",
         credential
@@ -212,6 +202,13 @@ int main() {
         "director",
         "",
         "https://director.local",
+        credential
+    );
+
+    expect_error(
+        "director",
+        "",
+        "",
         credential
     );
 
