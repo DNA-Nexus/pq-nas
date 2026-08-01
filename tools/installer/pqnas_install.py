@@ -55,6 +55,17 @@ from pqnas_secure_files import (
     validate_exact_private_env_keys,
 )
 
+from pqnas_mutable_config import (
+    atomic_write_managed_text,
+    ensure_managed_binary_created,
+    prepare_mutable_config_directory,
+    prepare_service_state_directory,
+    prepare_storage_runtime_layout,
+    read_managed_text,
+    read_packaged_text,
+    service_owner_ids,
+)
+
 # -----------------------------------------------------------------------------
 # Small UI/log helpers
 # -----------------------------------------------------------------------------
@@ -953,77 +964,101 @@ def install_opaque_helper_assets(asset_root: str, log: Optional[Log] = None) -> 
 
 
 def ensure_opaque_runtime_config(
-        config_dir: str = "/etc/pqnas",
+        config_dir: str = "/srv/pqnas/config",
         helper_path: str = "/usr/local/libexec/pqnas/pqnas_opaque_helper",
         log: Optional[Log] = None,
 ) -> Tuple[str, str]:
     """
-    Prepare OPAQUE runtime config:
-      /etc/pqnas/opaque_credentials.json
-      /etc/pqnas/opaque_server_setup.bin
-
-    The files are readable by pqnas only. The server setup is created by
-    pqnas user so the daemon can validate and use it without root.
+    Prepare OPAQUE credentials and server setup in mutable runtime config.
     """
-    ensure_service_user("pqnas", log=log)
+    owner_uid, owner_gid = service_owner_ids("pqnas")
 
-    os.makedirs(config_dir, exist_ok=True)
-    subprocess.run(["chown", "pqnas:pqnas", config_dir], check=False)
-    os.chmod(config_dir, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: service-owned runtime/config directory; pqnas needs traversal and there is no world access.
+    credentials_path = os.path.join(
+        config_dir,
+        "opaque_credentials.json",
+    )
+    setup_path = os.path.join(
+        config_dir,
+        "opaque_server_setup.bin",
+    )
 
-    credentials_path = os.path.join(config_dir, "opaque_credentials.json")
-    setup_path = os.path.join(config_dir, "opaque_server_setup.bin")
+    credentials_created = atomic_write_managed_text(
+        credentials_path,
+        '{\n  "version": 1,\n  "accounts": []\n}\n',
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o600,
+        replace_existing=False,
+    )
 
-    if not os.path.exists(credentials_path):
-        tmp = credentials_path + ".new"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write('{\n  "version": 1,\n  "accounts": []\n}\n')
-        os.chmod(tmp, 0o600)
-        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
-        os.replace(tmp, credentials_path)
-        if log:
-            log.write(f"[*] Created OPAQUE credentials store: {credentials_path}")
-    else:
-        subprocess.run(["chown", "pqnas:pqnas", credentials_path], check=False)
-        os.chmod(credentials_path, 0o600)
-        if log:
-            log.write(f"[*] OPAQUE credentials store exists: {credentials_path}")
+    if log:
+        if credentials_created:
+            log.write("[*] Created OPAQUE credentials store.")
+        else:
+            log.write("[*] Existing OPAQUE credentials store preserved.")
 
-    if not os.path.exists(setup_path):
-        if log:
-            log.write(f"[*] Creating OPAQUE server setup: {setup_path}")
-
-        create = subprocess.run(
-            ["sudo", "-u", "pqnas", helper_path, "server-setup-create", setup_path],
+    def create_setup(temporary_path: str) -> None:
+        result = subprocess.run(
+            [
+                "sudo",
+                "-u",
+                "pqnas",
+                helper_path,
+                "server-setup-create",
+                temporary_path,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
         )
-        if create.returncode != 0:
-            raise RuntimeError("OPAQUE server setup create failed:\n" + (create.stdout or "").strip())
-    else:
-        if log:
-            log.write(f"[*] OPAQUE server setup exists: {setup_path}")
 
-    subprocess.run(["chown", "pqnas:pqnas", setup_path], check=False)
-    os.chmod(setup_path, 0o600)
+        if result.returncode != 0:
+            # Security: helper output may contain implementation details.
+            # Keep the installer error stable and free of raw subprocess text.
+            raise RuntimeError(
+                "OPAQUE server setup creation failed"
+            )
+
+    setup_created = ensure_managed_binary_created(
+        setup_path,
+        create_setup,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o600,
+    )
+
+    if log:
+        if setup_created:
+            log.write("[*] Created OPAQUE server setup.")
+        else:
+            log.write("[*] Existing OPAQUE server setup preserved.")
 
     check = subprocess.run(
-        ["sudo", "-u", "pqnas", helper_path, "server-setup-check", setup_path],
+        [
+            "sudo",
+            "-u",
+            "pqnas",
+            helper_path,
+            "server-setup-check",
+            setup_path,
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
     )
+
     if check.returncode != 0:
-        raise RuntimeError("OPAQUE server setup check failed:\n" + (check.stdout or "").strip())
+        # Security: do not expose raw helper output through installer errors.
+        raise RuntimeError(
+            "OPAQUE server setup validation failed"
+        )
 
     if log:
         log.write("[*] OPAQUE runtime config validated.")
 
     return credentials_path, setup_path
-
 
 def run_cmd_capture(argv: List[str]) -> str:
     p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -1426,30 +1461,25 @@ def write_fstab_uuid(mountpoint: str, fstype: str, uuid: str, options: str) -> N
 
 
 def create_pqnas_layout(root: str) -> None:
-    for p in (
-        "data",
-        "logs",
-        "apps/bundled",
-        "apps/installed",
-        "apps/users",
-        "audit",
-        "tmp",
+    owner_uid, owner_gid = service_owner_ids("pqnas")
 
-        # Server-managed caches. These are generated artifacts, not user data.
-        "cache",
-        "cache/gallery_thumbs",
-        "cache/reelstack_thumbs",
-        "cache/reelstack_meta",
-        "cache/reelstack_index",
-        "cache/music_covers",
-        "cache/workspace_file_thumbs",
-        "cache/share_posters",
-    ):
-        ensure_dir(os.path.join(root, p))
+    # Security: create only the known service-owned runtime directories.
+    # Every component is opened without following symlinks, and ownership is
+    # changed only on validated directory descriptors.
+    prepare_storage_runtime_layout(
+        root,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
 
+    # These contain installed code/static assets and remain root-managed.
     ensure_dir("/opt/pqnas/static")
     ensure_dir("/opt/pqnas/static/branding")
-
 
 def find_dna_lib_source(asset_root: str) -> str:
     """
@@ -1554,52 +1584,43 @@ def ensure_dna_alerts_runtime_dir(log: Optional[Log] = None) -> str:
     Create runtime data dir for PQ-NAS DNA alerts identity.
     Does NOT create identity; only prepares filesystem.
     """
-    path = "/var/lib/pqnas/dna-alerts"
-    os.makedirs(path, exist_ok=True)
-
-    p = subprocess.run(
-        ["id", "-u", "pqnas"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
-    if p.returncode != 0:
-        raise RuntimeError("pqnas service user does not exist before preparing DNA alerts runtime dir")
-
-    subprocess.run(["chown", "-R", "pqnas:pqnas", "/var/lib/pqnas"], check=True)
-    subprocess.run(["chmod", "750", "/var/lib/pqnas"], check=True)
-    subprocess.run(["chmod", "750", path], check=True)
+    path = prepare_service_state_directory(
+        "/var/lib/pqnas/dna-alerts",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
 
     if log:
         log.write(f"[*] Prepared DNA alerts runtime dir: {path}")
 
     return path
 
-
 def ensure_notification_runtime_dir(log: Optional[Log] = None) -> str:
     """
     Runtime state directory for notification throttling and weekly counters.
     """
-    path = "/var/lib/pqnas/notifications"
-    os.makedirs(path, exist_ok=True)
-
-    p = subprocess.run(
-        ["id", "-u", "pqnas"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
-    if p.returncode != 0:
-        raise RuntimeError("pqnas service user does not exist before preparing notification runtime dir")
-
-    subprocess.run(["chown", "-R", "pqnas:pqnas", path], check=True)
-    subprocess.run(["chmod", "750", path], check=True)
+    path = prepare_service_state_directory(
+        "/var/lib/pqnas/notifications",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
 
     if log:
         log.write(f"[*] Prepared notification runtime dir: {path}")
 
     return path
-
 
 def install_notification_worker_assets(asset_root: str, log: Optional[Log] = None) -> str:
     """
@@ -1703,7 +1724,7 @@ WantedBy=timers.target
 
 
 def seed_dna_connect_alert_defaults(
-        admin_settings_path: str = "/etc/pqnas/admin_settings.json",
+        admin_settings_path: str = "/srv/pqnas/config/admin_settings.json",
         *,
         cli_path: str = "/usr/local/bin/dna-connect-cli",
         data_dir: str = "/var/lib/pqnas/dna-alerts",
@@ -1714,12 +1735,19 @@ def seed_dna_connect_alert_defaults(
     Does not force-enable alerts and does not overwrite existing admin choices.
     """
     try:
+        owner_uid, owner_gid = service_owner_ids("pqnas")
+        text = read_managed_text(
+            admin_settings_path,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=0o640,
+        )
+
         data = {}
-        if os.path.isfile(admin_settings_path):
-            with open(admin_settings_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if not isinstance(data, dict):
-                    data = {}
+        if text is not None:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                data = parsed
 
         cfg = data.get("dna_connect_alerts")
         if not isinstance(cfg, dict):
@@ -1733,32 +1761,50 @@ def seed_dna_connect_alert_defaults(
         if not isinstance(cfg.get("recipient"), str):
             cfg["recipient"] = ""
             changed = True
-        if not isinstance(cfg.get("cli_path"), str) or not cfg.get("cli_path", "").strip():
+        if (
+            not isinstance(cfg.get("cli_path"), str)
+            or not cfg.get("cli_path", "").strip()
+        ):
             cfg["cli_path"] = cli_path
             changed = True
-        if not isinstance(cfg.get("data_dir"), str) or not cfg.get("data_dir", "").strip():
+        if (
+            not isinstance(cfg.get("data_dir"), str)
+            or not cfg.get("data_dir", "").strip()
+        ):
             cfg["data_dir"] = data_dir
             changed = True
-        if cfg.get("min_level") not in ("security", "error", "warning", "info"):
+        if cfg.get("min_level") not in (
+            "security",
+            "error",
+            "warning",
+            "info",
+        ):
             cfg["min_level"] = "warning"
             changed = True
 
         data["dna_connect_alerts"] = cfg
 
         if changed:
-            tmp = admin_settings_path + ".new"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-                f.write("\n")
-            os.replace(tmp, admin_settings_path)
+            atomic_write_managed_text(
+                admin_settings_path,
+                json.dumps(data, indent=2) + "\n",
+                owner_uid=owner_uid,
+                owner_gid=owner_gid,
+                file_mode=0o640,
+                replace_existing=True,
+            )
             if log:
-                log.write(f"[*] Seeded DNA alert defaults in {admin_settings_path}")
-        else:
-            if log:
-                log.write("[*] DNA alert defaults already present in admin settings.")
+                log.write("[*] Seeded DNA alert defaults.")
+        elif log:
+            log.write(
+                "[*] DNA alert defaults already present "
+                "in admin settings."
+            )
 
-    except Exception as e:
-        raise RuntimeError(f"Failed to seed DNA alert defaults: {e}")
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to seed DNA alert defaults safely"
+        ) from exc
 
 def ensure_runtime_deps_for_dna_alert_cli(cli_path: str, log: Optional[Log] = None) -> None:
     ensure_runtime_deps_for_server(cli_path, log=log, extra_ldd_paths=["/usr/local/lib/libdna.so"])
@@ -1847,84 +1893,126 @@ def install_bundled_apps(asset_root: str, apps_bundled_dest: str) -> None:
 
 def ensure_config_files(root: str, asset_root: str) -> None:
     """
-    Ensure PQ-NAS config files exist.
+    Ensure mutable PQ-NAS runtime configuration exists under <root>/config.
 
-    Production layout:
-      - /etc/pqnas/*.json
-      - /srv/pqnas/* (storage root)
-
-    Default source:
-      - <asset_root>/config
+    Root-managed environment, trust, and hardware-secret files remain under
+    /etc/pqnas and must never become service-owned.
     """
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    config_dir = prepare_mutable_config_directory(
+        root,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
+
     src = os.path.join(asset_root, "config")
     if not os.path.isdir(src):
-        raise RuntimeError(f"Missing config dir: {src}")
+        raise RuntimeError("Missing packaged config directory")
 
-    etc_dir = "/etc/pqnas"
-    os.makedirs(etc_dir, exist_ok=True)
+    legacy_dir = "/etc/pqnas"
 
-    force = os.environ.get("PQNAS_FORCE_CONFIG", "").strip().lower() in ("1", "true", "yes", "y", "on")
-
-    for name in ("admin_settings.json", "policy.json", "users.json", "shares.json", "pools.json"):
-        s = os.path.join(src, name)
-        d = os.path.join(etc_dir, name)
-
-        if not os.path.exists(s):
-            raise RuntimeError(f"Missing default config: {s}")
-
-        if os.path.exists(d) and not force:
-            continue
-
-        shutil.copy2(s, d)
-
-    # Ensure app auth store exists (mutable runtime auth state)
-    app_auth_path = os.path.join(etc_dir, "app_auth.json")
-    if not os.path.exists(app_auth_path):
-        with open(app_auth_path, "w", encoding="utf-8") as f:
-            f.write('{\n  "version": 1,\n  "devices": {},\n  "refresh_tokens": {}\n}\n')
-
-    # Notifications + Warnings settings.
-    # Secrets such as Telegram bot tokens are stored here later by the admin UI.
-    # Create the file with safe defaults and strict permissions so first save
-    # does not depend on directory ownership edge cases.
-    notifications_path = os.path.join(etc_dir, "notifications.json")
-    if not os.path.exists(notifications_path):
-        tmp = notifications_path + ".new"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(
-                '{\n'
-                '  "version": 1,\n'
-                '  "info_email_enabled": true,\n'
-                '  "info_telegram_enabled": false,\n'
-                '  "warnings_email_enabled": true,\n'
-                '  "warnings_telegram_enabled": false,\n'
-                '  "weekly_summary_enabled": true,\n'
-                '  "extra_emails": [],\n'
-                '  "telegram_bot_token": "",\n'
-                '  "telegram_chat_id": ""\n'
-                '}\n'
+    def refuse_legacy_overwrite(
+            name: str,
+            destination: str,
+    ) -> None:
+        legacy = os.path.join(legacy_dir, name)
+        if not os.path.lexists(destination) and os.path.lexists(legacy):
+            # Security: never replace an existing legacy identity/auth store
+            # with packaged defaults. Automatic migration needs a separately
+            # reviewed copier that validates every source inode and file type.
+            raise RuntimeError(
+                "Legacy mutable configuration requires manual migration"
             )
-        os.chmod(tmp, 0o600)
-        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
-        os.replace(tmp, notifications_path)
-    else:
-        subprocess.run(["chown", "pqnas:pqnas", notifications_path], check=False)
-        os.chmod(notifications_path, 0o600)
 
-    # Optional breadcrumb under storage root
-    try:
-        marker_dir = os.path.join(root, "config")
-        os.makedirs(marker_dir, exist_ok=True)
-        marker_path = os.path.join(marker_dir, "README.txt")
-        if not os.path.exists(marker_path):
-            with open(marker_path, "w", encoding="utf-8") as f:
-                f.write(
-                    "PQ-NAS config lives in /etc/pqnas.\n"
-                    "This directory is intentionally not used for runtime config.\n"
-                )
-    except Exception:
-        pass
+    for name in (
+        "admin_settings.json",
+        "policy.json",
+        "users.json",
+        "shares.json",
+        "pools.json",
+    ):
+        source = os.path.join(src, name)
+        destination = os.path.join(config_dir, name)
 
+        if not os.path.lexists(destination):
+            refuse_legacy_overwrite(name, destination)
+
+        text = read_packaged_text(source)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Packaged mutable configuration is invalid"
+            ) from exc
+
+        if not isinstance(parsed, (dict, list)):
+            raise RuntimeError(
+                "Packaged mutable configuration has invalid shape"
+            )
+
+        atomic_write_managed_text(
+            destination,
+            text,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=0o640,
+            replace_existing=False,
+        )
+
+    defaults = (
+        (
+            "app_auth.json",
+            '{\n'
+            '  "version": 1,\n'
+            '  "devices": {},\n'
+            '  "refresh_tokens": {}\n'
+            '}\n',
+            0o640,
+        ),
+        (
+            "notifications.json",
+            '{\n'
+            '  "version": 1,\n'
+            '  "info_email_enabled": true,\n'
+            '  "info_telegram_enabled": false,\n'
+            '  "warnings_email_enabled": true,\n'
+            '  "warnings_telegram_enabled": false,\n'
+            '  "weekly_summary_enabled": true,\n'
+            '  "extra_emails": [],\n'
+            '  "telegram_bot_token": "",\n'
+            '  "telegram_chat_id": ""\n'
+            '}\n',
+            0o600,
+        ),
+    )
+
+    for name, text, mode in defaults:
+        destination = os.path.join(config_dir, name)
+
+        if not os.path.lexists(destination):
+            refuse_legacy_overwrite(name, destination)
+
+        atomic_write_managed_text(
+            destination,
+            text,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=mode,
+            replace_existing=False,
+        )
+
+    atomic_write_managed_text(
+        os.path.join(config_dir, "README.txt"),
+        (
+            "PQ-NAS mutable runtime configuration lives here.\n"
+            "Root-managed environment and trust files remain in "
+            "/etc/pqnas.\n"
+        ),
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o640,
+        replace_existing=False,
+    )
 
 def write_env_file(
         root: str,
@@ -1942,9 +2030,11 @@ def write_env_file(
     os.makedirs(etc_dir, exist_ok=True)
 
     env_path = os.path.join(etc_dir, "pqnas.env")
+    config_root = os.path.join(root, "config")
 
     lines = [
-        "PQNAS_CONFIG=/etc/pqnas",
+        f"PQNAS_CONFIG={config_root}",
+        f"PQNAS_CONFIG_ROOT={config_root}",
         "",
         "# Optional SMTP settings for Notifications + Warnings email delivery.",
         "# If PQNAS_SMTP_HOST is empty, pqnas_notify.py falls back to local sendmail/msmtp.",
@@ -2314,9 +2404,11 @@ def write_systemd_unit(
     unit_path = "/etc/systemd/system/pqnas.service"
 
     writable_paths = " ".join(dict.fromkeys([
-        "/etc/pqnas",
         storage_root or "/srv/pqnas",
         "/var/lib/pqnas",
+        # The guarded root update helper runs inside this service mount
+        # namespace and needs these paths writable through ProtectSystem.
+        # DAC ownership remains root:root so pqnas itself cannot modify them.
         "/usr/local/bin",
         "/opt/pqnas",
     ]))
@@ -2442,19 +2534,7 @@ def ensure_service_user(user: str = "pqnas", log: Optional[Log] = None) -> None:
     if log:
         log.write(f"[*] Created service user: {user}")
 
-def ensure_pqnas_ownership(root: str, log: Optional[Log] = None) -> None:
-    paths = [
-        root,
-        "/etc/pqnas",
-        "/opt/pqnas",
-        "/var/lib/pqnas",
-    ]
 
-    for p in paths:
-        if os.path.exists(p):
-            subprocess.run(["chown", "-R", "pqnas:pqnas", p], check=True)
-            if log:
-                log.write(f"[*] Ownership set: pqnas:pqnas {p}")
 
 def enable_letsencrypt_nginx(domain: str, email: str, redirect: bool, logw=None) -> bool:
     """
@@ -3967,7 +4047,6 @@ class ExecuteScreen(Screen):
             asset_root = REPO_ROOT  # REPO_ROOT == ASSET_ROOT in this file
 
             log_line(self.logw, "== Finalize ==")
-            subprocess.run(["mkdir", "-p", mp], check=False)
 
             if mode == "disk":
                 if backend in ("ext4", "btrfs"):
@@ -3989,7 +4068,44 @@ class ExecuteScreen(Screen):
             else:
                 self.logw.write("Existing filesystem mode: NOT writing /etc/fstab and NOT changing mounts.")
 
-            self.logw.write(f"Creating PQ-NAS directory layout under {mp} …")
+            self.logw.write("Ensuring pqnas service user …")
+            ensure_service_user("pqnas", log=self.logw)
+
+            self.logw.write("Stopping pqnas.service (if running) …")
+            if systemd_unit_exists("pqnas.service"):
+                subprocess.run(
+                    ["systemctl", "stop", "pqnas.service"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                # Stop only; do NOT disable during upgrades.
+                #
+                # If the installer is interrupted after stop but before the final
+                # "enable --now", nginx would otherwise be left proxying to a
+                # disabled/dead backend and the public site shows 502 Bad Gateway.
+                #
+                # Finalization still calls:
+                #   systemctl enable --now pqnas.service
+                pass
+            else:
+                self.logw.write(
+                    "pqnas.service not installed yet; "
+                    "skipping stop/disable."
+                )
+
+            subprocess.run(
+                ["pkill", "-f", r"^/usr/local/bin/pqnas_server$"],
+                check=False,
+            )
+            subprocess.run(
+                ["pkill", "-f", "pqnas_server"],
+                check=False,
+            )
+
+            self.logw.write(
+                f"Creating secure PQ-NAS runtime layout under {mp} …"
+            )
             create_pqnas_layout(mp)
 
             self.logw.write("Installing static assets to /opt/pqnas/static …")
@@ -4018,11 +4134,10 @@ class ExecuteScreen(Screen):
             self.logw.write(f"Installing bundled apps to {mp}/apps/bundled …")
             install_bundled_apps(asset_root, os.path.join(mp, "apps", "bundled"))
 
-            self.logw.write("Ensuring /etc/pqnas config files …")
+            self.logw.write(
+                f"Ensuring mutable runtime config under {mp}/config …"
+            )
             ensure_config_files(mp, asset_root)
-
-            self.logw.write("Ensuring pqnas service user …")
-            ensure_service_user("pqnas", log=self.logw)
 
             self.logw.write("Installing DNA Connect alert runtime …")
             dna_alert_cli_path, dna_alert_lib_path = install_dna_alert_runtime(asset_root, log=self.logw)
@@ -4032,7 +4147,7 @@ class ExecuteScreen(Screen):
 
             self.logw.write("Seeding DNA alert defaults into admin settings …")
             seed_dna_connect_alert_defaults(
-                "/etc/pqnas/admin_settings.json",
+                os.path.join(mp, "config", "admin_settings.json"),
                 cli_path=dna_alert_cli_path,
                 data_dir=dna_alert_data_dir,
                 log=self.logw,
@@ -4111,36 +4226,17 @@ class ExecuteScreen(Screen):
 
             install_snapshot_restore_assets(asset_root, backend, log=self.logw)
 
-            self.logw.write("Stopping pqnas.service (if running) …")
-            if systemd_unit_exists("pqnas.service"):
-                subprocess.run(
-                    ["systemctl", "stop", "pqnas.service"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                # Stop only; do NOT disable during upgrades.
-                #
-                # If the installer is interrupted after stop but before the final
-                # "enable --now", nginx would otherwise be left proxying to a
-                # disabled/dead backend and the public site shows 502 Bad Gateway.
-                #
-                # Finalization still calls:
-                #   systemctl enable --now pqnas.service
-                pass
-            else:
-                self.logw.write("pqnas.service not installed yet; skipping stop/disable.")
-
-            subprocess.run(["pkill", "-f", r"^/usr/local/bin/pqnas_server$"], check=False)
-            subprocess.run(["pkill", "-f", "pqnas_server"], check=False)
-
             server_exec, keygen_exec, nodus_exec, was_upgrade = install_binaries(asset_root, "/usr/local/bin")
 
             opaque_helper_path: Optional[str] = None
             if st.login_mode == "opaque":
                 self.logw.write("Installing OPAQUE helper and runtime config …")
                 opaque_helper_path = install_opaque_helper_assets(asset_root, log=self.logw)
-                ensure_opaque_runtime_config("/etc/pqnas", opaque_helper_path, log=self.logw)
+                ensure_opaque_runtime_config(
+                    os.path.join(mp, "config"),
+                    opaque_helper_path,
+                    log=self.logw,
+                )
 
             if was_upgrade:
                 self.logw.write("Upgrade detected: previous binaries saved as /usr/local/bin/*.bak")
@@ -4234,9 +4330,6 @@ class ExecuteScreen(Screen):
                 self.logw.write(
                     "Existing safe keys.env preserved."
                 )
-
-            self.logw.write("Setting ownership for pqnas runtime paths …")
-            ensure_pqnas_ownership(mp, log=self.logw)
 
             unit_path = write_systemd_unit(server_exec, "/etc/pqnas/pqnas.env", storage_root=mp)
             self.logw.write(f"Wrote unit: {unit_path}")

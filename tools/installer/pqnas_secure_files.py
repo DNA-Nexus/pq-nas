@@ -172,11 +172,21 @@ def read_private_file_text(
     owner_gid: int = 0,
 ) -> Optional[str]:
     parent, filename = _normalized_target(path)
-    directory_fd = _open_private_parent(
-        parent,
-        owner_uid=owner_uid,
-        owner_gid=owner_gid,
-    )
+
+    try:
+        directory_fd = _open_private_parent(
+            parent,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+        )
+    except SecurePrivateFileError as exc:
+        # A fresh install may not have created the private config directory
+        # yet. Only a genuine missing path is treated as an absent optional
+        # file; symlinks and unsafe metadata continue to fail closed.
+        if isinstance(exc.__cause__, FileNotFoundError):
+            return None
+        raise
+
     file_fd = -1
 
     try:

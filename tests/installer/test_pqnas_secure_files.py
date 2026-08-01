@@ -271,6 +271,24 @@ class SecurePrivateFileTests(unittest.TestCase):
                 "KEY=value\n",
             )
 
+    def test_read_private_file_text_missing_parent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = (
+                Path(directory)
+                / "missing-private-directory"
+                / "pqnas.env"
+            )
+
+            self.assertIsNone(
+                secure_files.read_private_file_text(
+                    str(target),
+                    owner_uid=self.owner_uid,
+                    owner_gid=self.owner_gid,
+                )
+            )
+
     def test_exact_private_env_keys_accepts_valid_file(
         self,
     ) -> None:
