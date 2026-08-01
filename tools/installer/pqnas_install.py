@@ -49,6 +49,12 @@ from textual.widgets import (
     Log,
 )
 
+from pqnas_secure_files import (
+    atomic_write_private_file,
+    read_private_file_text,
+    validate_exact_private_env_keys,
+)
+
 # -----------------------------------------------------------------------------
 # Small UI/log helpers
 # -----------------------------------------------------------------------------
@@ -2008,13 +2014,17 @@ def write_env_file(
     # Server-side DNA identity generation loads libdna_lib.so from the fixed
     # root-managed runtime path to avoid environment-controlled dlopen().
     # The installer still installs the library to that fixed path.
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    # Security: write the root-owned environment file through a private
+    # sibling temp inode, fsync it, and atomically replace the final name.
+    atomic_write_private_file(
+        env_path,
+        "\n".join(lines) + "\n",
+        owner_uid=0,
+        owner_gid=0,
+        replace_existing=True,
+    )
 
-    os.chown(env_path, 0, 0)
-    os.chmod(env_path, 0o600)
-
-def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
+def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> bool:
     """
     Generate Ed25519 + cookie keys and write systemd-friendly EnvironmentFile.
     Searches for pqnas_keygen in:
@@ -2022,7 +2032,25 @@ def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
       2) <asset_root>/pqnas_keygen              (package)
       3) <asset_root>/build/bin/pqnas_keygen    (repo)
     """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    required_keys = frozenset({
+        "PQNAS_SERVER_PK_B64URL",
+        "PQNAS_SERVER_SK_B64URL",
+        "PQNAS_COOKIE_KEY_B64URL",
+    })
+
+    # Security: upgrades preserve identity only after the opened key file has
+    # passed metadata, bounded UTF-8, exact-key, and non-empty-value checks.
+    existing_keys = read_private_file_text(
+        path,
+        owner_uid=0,
+        owner_gid=0,
+    )
+    if existing_keys is not None:
+        validate_exact_private_env_keys(
+            existing_keys,
+            required_keys,
+        )
+        return False
 
     candidates = [
         "/usr/local/bin/pqnas_keygen",
@@ -2048,15 +2076,24 @@ def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
             v = v.strip().strip("'").strip('"')
             kv.append(f"{k.strip()}={v}")
 
-    needed = {"PQNAS_SERVER_PK_B64URL", "PQNAS_SERVER_SK_B64URL", "PQNAS_COOKIE_KEY_B64URL"}
     got = {x.split("=", 1)[0] for x in kv}
-    if not needed.issubset(got):
-        raise RuntimeError(f"pqnas_keygen output missing keys: {sorted(needed - got)}")
+    if got != required_keys:
+        raise RuntimeError(
+            "pqnas_keygen output did not contain the exact required keys"
+        )
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(kv) + "\n")
+    validate_exact_private_env_keys(
+        "\n".join(kv) + "\n",
+        required_keys,
+    )
 
-    os.chmod(path, 0o600)
+    return atomic_write_private_file(
+        path,
+        "\n".join(kv) + "\n",
+        owner_uid=0,
+        owner_gid=0,
+        replace_existing=False,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -4184,9 +4221,19 @@ class ExecuteScreen(Screen):
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
 
-            self.logw.write("Generating /etc/pqnas/keys.env …")
-            write_keys_env(asset_root, "/etc/pqnas/keys.env")
-            self.logw.write("keys.env written (mode 600).")
+            self.logw.write("Ensuring /etc/pqnas/keys.env …")
+            keys_created = write_keys_env(
+                asset_root,
+                "/etc/pqnas/keys.env",
+            )
+            if keys_created:
+                self.logw.write(
+                    "keys.env created (root:root, mode 600)."
+                )
+            else:
+                self.logw.write(
+                    "Existing safe keys.env preserved."
+                )
 
             self.logw.write("Setting ownership for pqnas runtime paths …")
             ensure_pqnas_ownership(mp, log=self.logw)
