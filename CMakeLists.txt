@@ -1602,6 +1602,7 @@ add_executable(test_node_heartbeat_worker
 
 target_link_libraries(test_node_heartbeat_worker PRIVATE
         pqnas_cluster_identity_validation
+        pqnas_node_credential_registry
 )
 
 target_include_directories(test_node_heartbeat_worker PRIVATE

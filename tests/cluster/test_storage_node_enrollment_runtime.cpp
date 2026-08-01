@@ -591,10 +591,129 @@ int main() {
             "runtime persists enrolled state without bootstrap token"
         );
 
+        Clock restart_clock{
+            {
+                "2026-07-31T13:00:10Z"
+            }
+        };
+
+        int restart_calls = 0;
+
+        StorageNodeEnrollmentRuntimeDependencies
+            restart_dependencies;
+
+        restart_dependencies.now_iso_utc =
+            [&]() {
+                return restart_clock.next();
+            };
+
+        restart_dependencies.transport =
+            [&](const StorageNodeEnrollmentTransportRequest&) {
+                ++restart_calls;
+
+                return
+                    StorageNodeEnrollmentTransportResponse{
+                        StorageNodeEnrollmentTransportCode::
+                            TransportFailed,
+                        false,
+                        0
+                    };
+            };
+
+        const auto restart_result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    role,
+                    config,
+                    std::move(restart_dependencies)
+                );
+
+        expect(
+            restart_result.ok &&
+            restart_result.already_enrolled &&
+            !restart_result.token_cleanup_warning &&
+            restart_calls == 0 &&
+            !fs::exists(token_file),
+            "restart accepts removed configured token after enrollment"
+        );
+
         pqnas::cluster::
             clear_node_enrollment_token_text(
                 &bootstrap_token
             );
+    }
+
+    {
+        const fs::path private_directory =
+            root /
+            "missing-fresh" /
+            "private";
+
+        expect(
+            create_private_directory(
+                private_directory
+            ),
+            "create missing-fresh private directory"
+        );
+
+        const fs::path token_file =
+            private_directory /
+            "bootstrap.token";
+
+        const ServerRoleConfig role =
+            make_role(
+                private_directory,
+                "missing-fresh"
+            );
+
+        const auto config =
+            make_config(
+                token_file,
+                "missing-fresh"
+            );
+
+        int calls = 0;
+
+        StorageNodeEnrollmentRuntimeDependencies
+            dependencies;
+
+        dependencies.now_iso_utc =
+            []() {
+                return "2026-07-31T13:05:00Z";
+            };
+
+        dependencies.transport =
+            [&](const StorageNodeEnrollmentTransportRequest&) {
+                ++calls;
+
+                return
+                    StorageNodeEnrollmentTransportResponse{
+                        StorageNodeEnrollmentTransportCode::
+                            Ok,
+                        false,
+                        200
+                    };
+            };
+
+        const auto result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    role,
+                    config,
+                    std::move(dependencies)
+                );
+
+        expect(
+            !result.ok &&
+            result.code ==
+                StorageNodeEnrollmentRuntimeCode::
+                    BootstrapTokenUnavailable &&
+            calls == 0 &&
+            !fs::exists(
+                role.cluster_credential_file
+            ),
+            "missing configured token fails closed for fresh enrollment"
+        );
     }
 
     {
@@ -681,7 +800,19 @@ int main() {
             "failed Director call retains token file and persisted state"
         );
 
-        config.bootstrap_token_file.clear();
+        std::error_code token_remove_error;
+
+        fs::remove(
+            token_file,
+            token_remove_error
+        );
+
+        expect(
+            !token_remove_error &&
+            !fs::exists(token_file) &&
+            !config.bootstrap_token_file.empty(),
+            "remove recovery token while preserving configured path"
+        );
 
         Clock recovery_clock{
             {
@@ -731,8 +862,9 @@ int main() {
         expect(
             recovery_result.ok &&
             recovery_result.recovered &&
-            calls == 1,
-            "runtime recovers without bootstrap token after credential persistence"
+            calls == 1 &&
+            !fs::exists(token_file),
+            "configured missing token recovers after credential persistence"
         );
 
         pqnas::cluster::

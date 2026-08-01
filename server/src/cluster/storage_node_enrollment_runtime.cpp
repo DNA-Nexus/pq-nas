@@ -145,6 +145,12 @@ private:
     std::array<char, Size>& value_;
 };
 
+enum class BootstrapTokenLoadResult {
+    Loaded,
+    Missing,
+    Invalid
+};
+
 struct BootstrapTokenLease {
     UniqueFd directory;
 
@@ -425,14 +431,15 @@ bool read_all_bounded(
     return true;
 }
 
-bool load_bootstrap_token(
+BootstrapTokenLoadResult
+load_bootstrap_token(
     const std::string& configured_path,
     std::string* token,
     BootstrapTokenLease* lease
 ) {
     if (!token ||
         !lease) {
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     clear_node_enrollment_token_text(
@@ -451,7 +458,7 @@ bool load_bootstrap_token(
     if (!normalize_absolute_file_path(
             configured_path,
             &path)) {
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     const std::filesystem::path parent =
@@ -459,7 +466,7 @@ bool load_bootstrap_token(
 
     if (parent.empty() ||
         parent == parent.root_path()) {
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     const int raw_directory =
@@ -472,7 +479,10 @@ bool load_bootstrap_token(
         );
 
     if (raw_directory < 0) {
-        return false;
+        // Missing or replaced parent directories are not the normal
+        // post-enrollment state. Only an absent token entry below an already
+        // validated private directory may be treated as intentionally removed.
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     UniqueFd directory(
@@ -486,7 +496,7 @@ bool load_bootstrap_token(
             &directory_metadata) != 0 ||
         !safe_directory(
             directory_metadata)) {
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     const std::string filename =
@@ -502,7 +512,15 @@ bool load_bootstrap_token(
         );
 
     if (raw_file < 0) {
-        return false;
+        if (errno == ENOENT) {
+            // Expected after successful enrollment: the one-time token was
+            // durably unlinked while the configured path remains in systemd.
+            return BootstrapTokenLoadResult::Missing;
+        }
+
+        // Security: symlinks, permission failures and ambiguous I/O errors
+        // remain fail-closed rather than looking like an expected restart.
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     UniqueFd file(
@@ -523,7 +541,7 @@ bool load_bootstrap_token(
             token
         );
 
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     if (!token->empty() &&
@@ -541,7 +559,7 @@ bool load_bootstrap_token(
             token
         );
 
-        return false;
+        return BootstrapTokenLoadResult::Invalid;
     }
 
     lease->directory =
@@ -561,7 +579,30 @@ bool load_bootstrap_token(
 
     lease->configured = true;
 
-    return true;
+    return BootstrapTokenLoadResult::Loaded;
+}
+
+bool exact_persisted_intent(
+    const StorageNodeProvisioningRecord& record,
+    const StorageNodeProvisioningIntent& intent
+) noexcept {
+    return
+        record.enrollment_id == intent.enrollment_id &&
+        record.expected_generation == intent.expected_generation &&
+        record.node_id == intent.node_id &&
+        record.director_url == intent.director_url &&
+        record.api_base_url == intent.api_base_url &&
+        record.protocol_version == intent.protocol_version;
+}
+
+bool persisted_credential_stage(
+    StorageNodeProvisioningStage stage
+) noexcept {
+    return
+        stage ==
+            StorageNodeProvisioningStage::CredentialPersisted ||
+        stage ==
+            StorageNodeProvisioningStage::Enrolled;
 }
 
 bool remove_token_if_unchanged(
@@ -1001,27 +1042,6 @@ ensure_storage_node_enrollment(
         );
     }
 
-    std::string bootstrap_token;
-    SensitiveTokenWiper token_wiper(
-        bootstrap_token
-    );
-
-    BootstrapTokenLease lease;
-
-    if (!enrollment_config
-             .bootstrap_token_file
-             .empty() &&
-        !load_bootstrap_token(
-            enrollment_config
-                .bootstrap_token_file,
-            &bootstrap_token,
-            &lease)) {
-        return finish(
-            StorageNodeEnrollmentRuntimeCode::
-                BootstrapTokenUnavailable
-        );
-    }
-
     StorageNodeProvisioningIntent intent;
 
     intent.enrollment_id =
@@ -1042,6 +1062,56 @@ ensure_storage_node_enrollment(
 
     intent.protocol_version =
         kNodeStatusProtocolVersion;
+
+    std::string bootstrap_token;
+    SensitiveTokenWiper token_wiper(
+        bootstrap_token
+    );
+
+    BootstrapTokenLease lease;
+
+    BootstrapTokenLoadResult token_result =
+        BootstrapTokenLoadResult::Missing;
+
+    if (!enrollment_config
+             .bootstrap_token_file
+             .empty()) {
+        token_result =
+            load_bootstrap_token(
+                enrollment_config
+                    .bootstrap_token_file,
+                &bootstrap_token,
+                &lease
+            );
+    }
+
+    if (token_result ==
+        BootstrapTokenLoadResult::Invalid) {
+        return finish(
+            StorageNodeEnrollmentRuntimeCode::
+                BootstrapTokenUnavailable
+        );
+    }
+
+    if (token_result ==
+        BootstrapTokenLoadResult::Missing) {
+        const auto persisted =
+            store.snapshot();
+
+        // Security: an absent one-time token is expected only after the exact
+        // local transaction durably installed its node credential.
+        if (!persisted.has_value() ||
+            !persisted_credential_stage(
+                persisted->stage) ||
+            !exact_persisted_intent(
+                *persisted,
+                intent)) {
+            return finish(
+                StorageNodeEnrollmentRuntimeCode::
+                    BootstrapTokenUnavailable
+            );
+        }
+    }
 
     StorageNodeEnrollmentClientConfig
         client_config;

@@ -12,7 +12,7 @@
 
 namespace pqnas::cluster {
 
-class InternalAuthCredential;
+class NodeCredentialRegistry;
 class NodeRegistry;
 struct NodeRegistryRecord;
 
@@ -36,7 +36,11 @@ using NodeHeartbeatAuditEmit =
 
 struct NodeHeartbeatWorkerConfig {
     NodeRegistry* registry = nullptr;
-    const InternalAuthCredential* credential = nullptr;
+
+    // Per-node credentials stay outside copyable node snapshots. The worker
+    // requests one short-lived bearer value for each enabled node.
+    const NodeCredentialRegistry*
+        credential_registry = nullptr;
 
     // Shared with placement, policy and node administration. Network fetches
     // stay outside this lock; only expected-state checks and registry

@@ -9558,8 +9558,8 @@ int main()
     director_heartbeat_config.coordination_mutex =
         cluster_placement_mutex;
 
-    director_heartbeat_config.credential =
-        &cluster_credential;
+    director_heartbeat_config.credential_registry =
+        &director_node_credential_registry;
 
     director_heartbeat_config.fetch =
         pqnas::cluster::
