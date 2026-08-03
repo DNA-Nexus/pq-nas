@@ -249,17 +249,50 @@ if [[ ! -f "$DNA_ALERT_SO_SRC" ]]; then
 fi
 
 install -d "$STAGE/runtime/dna"
-install -m 0755 "$DNA_ALERT_CLI_SRC" "$STAGE/runtime/dna/dna-connect-cli"
-install -m 0755 "$DNA_ALERT_SO_SRC"  "$STAGE/runtime/dna/libdna.so"
 
-test -x "$STAGE/runtime/dna/dna-connect-cli" || {
+STAGED_DNA_ALERT_CLI="$STAGE/runtime/dna/dna-connect-cli"
+STAGED_DNA_ALERT_SO="$STAGE/runtime/dna/libdna.so"
+
+install -m 0755 "$DNA_ALERT_CLI_SRC" "$STAGED_DNA_ALERT_CLI"
+install -m 0755 "$DNA_ALERT_SO_SRC"  "$STAGED_DNA_ALERT_SO"
+
+test -x "$STAGED_DNA_ALERT_CLI" || {
   echo "ERROR: staged dna-connect-cli missing or not executable"
   exit 15
 }
-test -f "$STAGE/runtime/dna/libdna.so" || {
+test -f "$STAGED_DNA_ALERT_SO" || {
   echo "ERROR: staged libdna.so missing"
   exit 16
 }
+
+for tool in patchelf readelf; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: Required release tool is missing: $tool"
+    echo "Install patchelf and binutils before building a release."
+    exit 21
+  fi
+done
+
+# Security: remove build-host RPATH/RUNPATH from the packaged executable.
+# Otherwise the dynamic loader could prefer a developer-writable libdna.so
+# over the root-managed /usr/local/lib/libdna.so installed by DNA-Nexus.
+patchelf --remove-rpath "$STAGED_DNA_ALERT_CLI"
+
+DNA_ALERT_DYNAMIC_TAGS="$(readelf -d "$STAGED_DNA_ALERT_CLI")"
+
+if grep -Eq '\((RPATH|RUNPATH)\)' <<<"$DNA_ALERT_DYNAMIC_TAGS"; then
+  echo "ERROR: staged dna-connect-cli still contains RPATH or RUNPATH"
+  exit 22
+fi
+
+# Fail closed if ELF patching unexpectedly removed the required dependency.
+if ! grep -F 'Shared library: [libdna.so]' \
+    <<<"$DNA_ALERT_DYNAMIC_TAGS" >/dev/null; then
+  echo "ERROR: staged dna-connect-cli no longer requires libdna.so"
+  exit 23
+fi
+
+echo "[*] DNA Connect CLI: removed build-host RPATH/RUNPATH."
 
 # systemd units (restore jobs + helpers)
 if [[ -d "$SYSTEMD_DIR" ]]; then
