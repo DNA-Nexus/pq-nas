@@ -50,6 +50,7 @@ from textual.widgets import (
     Log,
 )
 
+from pqnas_static_assets import install_static_assets
 from pqnas_secure_files import (
     atomic_write_private_file,
     read_private_file_text,
@@ -1840,34 +1841,6 @@ def seed_dna_connect_alert_defaults(
 
 def ensure_runtime_deps_for_dna_alert_cli(cli_path: str, log: Optional[Log] = None) -> None:
     ensure_runtime_deps_for_server(cli_path, log=log, extra_ldd_paths=["/usr/local/lib/libdna.so"])
-def install_static_assets(asset_root: str, dest_root: str = "/opt/pqnas/static") -> None:
-    """
-    Copy static web assets into /opt/pqnas/static.
-
-    repo mode:    <repo>/server/src/static/*
-    package mode: <pkg>/static/*
-    """
-    pkg = os.path.join(asset_root, "static")
-    repo = os.path.join(asset_root, "server", "src", "static")
-
-    src = pkg if os.path.isdir(pkg) else repo
-    if not os.path.isdir(src):
-        raise RuntimeError(f"Missing static dir (tried): {pkg} and {repo}")
-
-    os.makedirs(dest_root, exist_ok=True)
-
-    for name in os.listdir(src):
-        s = os.path.join(src, name)
-        d = os.path.join(dest_root, name)
-
-        if os.path.isdir(s):
-            if os.path.exists(d):
-                shutil.rmtree(d)
-            shutil.copytree(s, d)
-        else:
-            shutil.copy2(s, d)
-
-
 def install_bundled_apps(asset_root: str, apps_bundled_dest: str) -> None:
     """
     Install bundled app ZIPs into the storage root.
