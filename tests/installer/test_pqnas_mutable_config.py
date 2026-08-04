@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -192,6 +193,116 @@ class MutableConfigTests(unittest.TestCase):
                 stat.S_IMODE(target.stat().st_mode),
                 0o600,
             )
+
+    def test_managed_binary_writer_reopens_stale_workspace_fd(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.prepare(Path(directory) / "storage")
+            target = config / "opaque_server_setup.bin"
+
+            real_open = os.open
+            real_listdir = os.listdir
+            workspace_fds = []
+
+            def tracked_open(
+                path,
+                flags,
+                mode=0o777,
+                *,
+                dir_fd=None,
+            ):
+                descriptor = real_open(
+                    path,
+                    flags,
+                    mode,
+                    dir_fd=dir_fd,
+                )
+
+                if (
+                    isinstance(path, str)
+                    and path.startswith(
+                        ".opaque_server_setup.bin.create."
+                    )
+                    and flags & os.O_DIRECTORY
+                ):
+                    workspace_fds.append(descriptor)
+
+                return descriptor
+
+            def stale_first_workspace_listdir(path):
+                if (
+                    isinstance(path, int)
+                    and workspace_fds
+                    and path == workspace_fds[0]
+                ):
+                    return []
+
+                return real_listdir(path)
+
+            def writer(path: str) -> None:
+                Path(path).write_bytes(b"opaque-setup")
+                Path(path).chmod(0o600)
+
+            with (
+                mock.patch.object(
+                    mutable.os,
+                    "open",
+                    side_effect=tracked_open,
+                ),
+                mock.patch.object(
+                    mutable.os,
+                    "listdir",
+                    side_effect=stale_first_workspace_listdir,
+                ),
+            ):
+                self.assertTrue(
+                    mutable.ensure_managed_binary_created(
+                        str(target),
+                        writer,
+                        owner_uid=self.uid,
+                        owner_gid=self.gid,
+                    )
+                )
+
+            # The first descriptor simulates the stale Btrfs directory view.
+            # A second descriptor must be opened after the writer completes.
+            self.assertGreaterEqual(len(workspace_fds), 2)
+            self.assertEqual(
+                target.read_bytes(),
+                b"opaque-setup",
+            )
+
+    def test_managed_binary_writer_rejects_replaced_workspace(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.prepare(Path(directory) / "storage")
+            target = config / "opaque_server_setup.bin"
+
+            def writer(path: str) -> None:
+                workspace = Path(path).parent
+                displaced = workspace.with_name(
+                    workspace.name + ".displaced"
+                )
+
+                workspace.rename(displaced)
+                workspace.mkdir(mode=0o700)
+                Path(path).write_bytes(b"replacement")
+                Path(path).chmod(0o600)
+
+            with self.assertRaisesRegex(
+                mutable.MutableConfigError,
+                "workspace changed during generation",
+            ):
+                mutable.ensure_managed_binary_created(
+                    str(target),
+                    writer,
+                    owner_uid=self.uid,
+                    owner_gid=self.gid,
+                )
+
+            self.assertFalse(target.exists())
 
     def test_managed_binary_writer_rejects_symlink_payload(
         self,

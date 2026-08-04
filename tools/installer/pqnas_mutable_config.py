@@ -887,6 +887,7 @@ def ensure_managed_binary_created(
     temporary_name = ""
     temporary_created = False
     temporary_fd = -1
+    refreshed_temporary_fd = -1
     payload_fd = -1
 
     try:
@@ -998,6 +999,44 @@ def ensure_managed_binary_created(
 
         writer(payload_path)
 
+        # Security: Btrfs can retain a stale directory-entry view on a
+        # descriptor opened before the external writer runs. Reopen the
+        # workspace without following links and pin the refreshed descriptor
+        # to the previously validated private workspace inode.
+        try:
+            refreshed_temporary_fd = os.open(
+                temporary_name,
+                _directory_flags(),
+                dir_fd=directory_fd,
+            )
+        except OSError as exc:
+            raise MutableConfigError(
+                "failed to reopen mutable binary workspace"
+            ) from exc
+
+        refreshed_workspace = os.fstat(
+            refreshed_temporary_fd
+        )
+        if (
+            not stat.S_ISDIR(refreshed_workspace.st_mode)
+            or refreshed_workspace.st_nlink < 1
+            or refreshed_workspace.st_dev
+            != workspace_metadata.st_dev
+            or refreshed_workspace.st_ino
+            != workspace_metadata.st_ino
+            or refreshed_workspace.st_uid != owner_uid
+            or refreshed_workspace.st_gid != owner_gid
+            or stat.S_IMODE(refreshed_workspace.st_mode)
+            != 0o700
+        ):
+            raise MutableConfigError(
+                "mutable binary workspace changed during generation"
+            )
+
+        os.close(temporary_fd)
+        temporary_fd = refreshed_temporary_fd
+        refreshed_temporary_fd = -1
+
         try:
             entries = os.listdir(temporary_fd)
         except OSError as exc:
@@ -1066,6 +1105,9 @@ def ensure_managed_binary_created(
     finally:
         if payload_fd >= 0:
             os.close(payload_fd)
+
+        if refreshed_temporary_fd >= 0:
+            os.close(refreshed_temporary_fd)
 
         if temporary_fd >= 0:
             try:
