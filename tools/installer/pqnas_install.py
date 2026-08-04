@@ -3751,13 +3751,22 @@ class ReverseProxyScreen(Screen):
             yield Static(
                 "If enabled, PQ-NAS will be reachable via:\n"
                 "  http://<hostname>/   (no :8081)\n\n"
+                "Standalone can listen directly on port 8081.\n"
+                "Director and Storage Node roles remain on "
+                "127.0.0.1:8081. A local reverse proxy or "
+                "secure tunnel is required for remote access.\n\n"
                 "Hostname can be a domain or an IP.\n"
-                "For real-world use, the hostname must resolve to this server (DNS / router DNS / hosts).\n",
+                "Use TLS when exposing the service outside "
+                "the host.\n",
                 classes="muted",
             )
 
             self.enable = RadioSet(
-                RadioButton("No reverse proxy (keep :8081)", id="off"),
+                RadioButton(
+                    "No local nginx "
+                    "(use the role-safe listener)",
+                    id="off",
+                ),
                 RadioButton("Enable nginx reverse proxy", id="on"),
             )
             yield self.enable
@@ -4130,6 +4139,30 @@ class RollbackScreen(Screen):
             self.out.write("❌ Rollback attempted but service still failed to start:")
             self.out.write((p.stdout or "").strip() or "(no output)")
 
+def nginx_health_check_output(
+        nginx_enabled: bool,
+) -> str:
+    """
+    Run the optional nginx diagnostic without allowing a missing
+    executable to terminate the installer health screen.
+    """
+    if not nginx_enabled:
+        return "[SKIP] nginx reverse proxy is not enabled."
+
+    nginx_path = shutil.which("nginx")
+
+    if not nginx_path:
+        return "[SKIP] nginx executable is not installed."
+
+    try:
+        return (
+            run_cmd_capture([nginx_path, "-t"])
+            or "(no output)"
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "[ERROR] nginx health check failed."
+
+
 class HealthScreen(Screen):
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -4143,23 +4176,23 @@ class HealthScreen(Screen):
         mp: str,
         mode: str,
         backend: str,
+        server_role: str,
         nginx_enabled: bool,
         nginx_hostname: str,
         nginx_port: int,
         auth_mode: str,
         login_mode: str,
-        password_bootstrap_token: str,
     ) -> None:
         super().__init__()
         self.mp = mp
         self.mode = mode
         self.backend = backend
+        self.server_role = server_role
         self.nginx_enabled = nginx_enabled
         self.nginx_hostname = nginx_hostname
         self.nginx_port = nginx_port
         self.auth_mode = auth_mode
         self.login_mode = login_mode
-        self.password_bootstrap_token = password_bootstrap_token
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -4173,7 +4206,12 @@ class HealthScreen(Screen):
                 yield Button("Refresh checks", id="refresh", variant="primary")
                 yield Button("systemctl status pqnas", id="status_pqnas", variant="default")
                 yield Button("journalctl pqnas", id="logs_pqnas", variant="default")
-                yield Button("nginx -t", id="nginx_test", variant="default")
+                yield Button(
+                    "nginx -t",
+                    id="nginx_test",
+                    variant="default",
+                    disabled=not self.nginx_enabled,
+                )
                 yield Button("ip addr", id="ip_addr", variant="default")
 
             self.out = InstallerLog()
@@ -4186,55 +4224,74 @@ class HealthScreen(Screen):
         self.action_refresh()
 
     def _render_summary(self) -> None:
+        role = (self.server_role or "standalone").strip().lower()
+
         if self.nginx_enabled and self.nginx_hostname:
+            url_label = "Access URL"
             url = f"http://{self.nginx_hostname}/"
-        else:
+            listener_note = ""
+        elif role == "standalone":
+            url_label = "Access URL"
             url = "http://<server-ip>:8081/"
+            listener_note = (
+                "Standalone listens directly on port 8081 when "
+                "no local nginx proxy is enabled."
+            )
+        else:
+            url_label = "Local service URL"
+            url = "http://127.0.0.1:8081/ (loopback only)"
+            listener_note = (
+                "Director and Storage Node roles require a local "
+                "reverse proxy or secure tunnel for remote access. "
+                "Use TLS when exposing the service outside the host."
+            )
 
         lines = [
             f"[b]Storage:[/b] {self.mp}",
             f"[b]Mode:[/b] {self.mode}",
             f"[b]Backend:[/b] {self.backend}",
+            f"[b]Server role:[/b] {role}",
             f"[b]Auth mode:[/b] v5 (forced by installer)",
             f"[b]Login mode:[/b] {login_mode_label(self.login_mode)}",
             "",
-            f"[b]Access URL:[/b] {url}",
+            f"[b]{url_label}:[/b] {url}",
         ]
 
-        if self.login_mode == "password":
+        if listener_note:
             lines += [
                 "",
-                "[b]First password admin bootstrap[/b]",
-                "Create the first admin after install with:",
-                "curl -k -X POST https://<your-host>/api/auth/password/bootstrap-admin \\",
-                "  -H 'Content-Type: application/json' \\",
-                f"  -H 'X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}' \\",
-                "  -d '{\"login\":\"admin@example.com\",\"password\":\"change-this-long-password\",\"name\":\"Admin\"}'",
-                "",
-                "The response shows 24 recovery words once.",
-                "After bootstrap, remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
-            ]
-        elif self.login_mode == "opaque":
-            lines += [
-                "",
-                "[b]OPAQUE auth[/b]",
-                "OPAQUE helper and server setup were initialized:",
-                "  /usr/local/libexec/pqnas/pqnas_opaque_helper",
-                "  /etc/pqnas/opaque_server_setup.bin",
-                "  /etc/pqnas/opaque_credentials.json",
-                "",
-                "Create the first admin through the OPAQUE bootstrap flow using:",
-                f"  X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}",
-                "",
-                "After bootstrap, remove PQNAS_OPAQUE_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
+                f"[b]Listener note:[/b] {listener_note}",
             ]
 
+        if self.login_mode in ("password", "opaque"):
+            lines += [
+                "",
+                "[b]First administrator setup[/b]",
+                "Run the installed bootstrap helper:",
+                "  sudo pqnas-first-admin",
+                "",
+                "The helper removes the active bootstrap token "
+                "after successful setup.",
+            ]
+
+        if self.login_mode == "opaque":
+            lines += [
+                "",
+                "[b]OPAQUE runtime[/b]",
+                "OPAQUE helper and managed state:",
+                "  /usr/local/libexec/pqnas/pqnas_opaque_helper",
+                f"  {self.mp}/config/opaque_server_setup.bin",
+                f"  {self.mp}/config/opaque_credentials.json",
+            ]
 
         if self.nginx_enabled and self.nginx_hostname:
             if looks_like_ip(self.nginx_hostname):
                 lines.append("[b]DNS:[/b] not needed (you used an IP).")
             else:
-                lines.append("[b]DNS:[/b] make sure this hostname resolves to this server (DNS/router/hosts).")
+                lines.append(
+                    "[b]DNS:[/b] make sure this hostname resolves "
+                    "to this server (DNS/router/hosts)."
+                )
 
         self.summary.update("\n".join(lines))
 
@@ -4244,55 +4301,124 @@ class HealthScreen(Screen):
     def action_refresh(self) -> None:
         self.out.write("== checks ==")
 
-        # pqnas.service status
         self.out.write("$ systemctl is-active pqnas.service")
-        self.out.write(run_cmd_capture(["systemctl", "is-active", "pqnas.service"]) or "(no output)")
+        self.out.write(
+            run_cmd_capture(
+                ["systemctl", "is-active", "pqnas.service"]
+            )
+            or "(no output)"
+        )
 
         self.out.write("$ systemctl status pqnas.service --no-pager -l")
-        self.out.write(run_cmd_capture(["systemctl", "status", "pqnas.service", "--no-pager", "-l"]) or "(no output)")
+        self.out.write(
+            run_cmd_capture(
+                [
+                    "systemctl",
+                    "status",
+                    "pqnas.service",
+                    "--no-pager",
+                    "-l",
+                ]
+            )
+            or "(no output)"
+        )
 
         if self.nginx_enabled:
             self.out.write("")
             self.out.write("$ systemctl is-active nginx")
-            self.out.write(run_cmd_capture(["systemctl", "is-active", "nginx"]) or "(no output)")
+            self.out.write(
+                run_cmd_capture(
+                    ["systemctl", "is-active", "nginx"]
+                )
+                or "(no output)"
+            )
 
             self.out.write("$ nginx -t")
-            self.out.write(run_cmd_capture(["nginx", "-t"]) or "(no output)")
+            self.out.write(
+                nginx_health_check_output(self.nginx_enabled)
+            )
 
         self.out.write("")
-        self.out.write("$ ss -lntp | rg ':80|:8081'  (best effort)")
-        # Don't fail if ss/rg missing; just show what we can.
+        self.out.write(
+            "$ ss -lntp | rg ':80|:8081'  (best effort)"
+        )
+
         try:
             ss = run_cmd_capture(["ss", "-lntp"])
-            filt = "\n".join([ln for ln in ss.splitlines() if (":80" in ln or ":8081" in ln)])
-            self.out.write(filt or "(no listeners found for :80/:8081 in ss output)")
-        except Exception as e:
-            self.out.write(f"(could not run ss: {e})")
+            filtered = "\n".join(
+                line
+                for line in ss.splitlines()
+                if ":80" in line or ":8081" in line
+            )
+            self.out.write(
+                filtered
+                or (
+                    "(no listeners found for "
+                    ":80/:8081 in ss output)"
+                )
+            )
+        except Exception:
+            self.out.write(
+                "[ERROR] listener check could not be executed."
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        bid = event.button.id
-        if bid == "refresh":
+        button_id = event.button.id
+
+        if button_id == "refresh":
             self.action_refresh()
             return
 
-        if bid == "status_pqnas":
-            self.out.write("$ systemctl status pqnas.service --no-pager -l")
-            self.out.write(run_cmd_capture(["systemctl", "status", "pqnas.service", "--no-pager", "-l"]) or "(no output)")
+        if button_id == "status_pqnas":
+            self.out.write(
+                "$ systemctl status pqnas.service --no-pager -l"
+            )
+            self.out.write(
+                run_cmd_capture(
+                    [
+                        "systemctl",
+                        "status",
+                        "pqnas.service",
+                        "--no-pager",
+                        "-l",
+                    ]
+                )
+                or "(no output)"
+            )
             return
 
-        if bid == "logs_pqnas":
-            self.out.write("$ journalctl -u pqnas.service -n 200 --no-pager")
-            self.out.write(run_cmd_capture(["journalctl", "-u", "pqnas.service", "-n", "200", "--no-pager"]) or "(no output)")
+        if button_id == "logs_pqnas":
+            self.out.write(
+                "$ journalctl -u pqnas.service -n 200 --no-pager"
+            )
+            self.out.write(
+                run_cmd_capture(
+                    [
+                        "journalctl",
+                        "-u",
+                        "pqnas.service",
+                        "-n",
+                        "200",
+                        "--no-pager",
+                    ]
+                )
+                or "(no output)"
+            )
             return
 
-        if bid == "nginx_test":
+        if button_id == "nginx_test":
             self.out.write("$ nginx -t")
-            self.out.write(run_cmd_capture(["nginx", "-t"]) or "(no output)")
+            self.out.write(
+                nginx_health_check_output(self.nginx_enabled)
+            )
             return
 
-        if bid == "ip_addr":
+        if button_id == "ip_addr":
             self.out.write("$ ip -br addr")
-            self.out.write(run_cmd_capture(["ip", "-br", "addr"]) or "(no output)")
+            self.out.write(
+                run_cmd_capture(["ip", "-br", "addr"])
+                or "(no output)"
+            )
             return
 
 
@@ -4875,12 +5001,12 @@ class ExecuteScreen(Screen):
                     mp=mp,
                     mode=mode,
                     backend=backend,
+                    server_role=st.cluster_config.role,
                     nginx_enabled=st.nginx_enabled,
                     nginx_hostname=st.nginx_hostname,
                     nginx_port=st.nginx_listen_port,
                     auth_mode=st.auth_mode,
                     login_mode=st.login_mode,
-                    password_bootstrap_token=st.password_bootstrap_token,
                 )
             )
             return
