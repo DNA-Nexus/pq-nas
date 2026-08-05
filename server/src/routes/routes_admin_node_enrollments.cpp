@@ -466,6 +466,25 @@ bool current_timestamp(
         output->clear();
     }
 
+    // Security: the shared runtime timestamp includes milliseconds, while
+    // enrollment expiry validation intentionally uses one canonical
+    // second-precision format. Strip only an exact .dddZ suffix; malformed
+    // timestamps remain rejected by the bounded calendar parser.
+    const bool has_milliseconds =
+        output->size() == 24 &&
+        (*output)[19] == '.' &&
+        (*output)[20] >= '0' &&
+        (*output)[20] <= '9' &&
+        (*output)[21] >= '0' &&
+        (*output)[21] <= '9' &&
+        (*output)[22] >= '0' &&
+        (*output)[22] <= '9' &&
+        (*output)[23] == 'Z';
+
+    if (has_milliseconds) {
+        output->erase(19, 4);
+    }
+
     return !output->empty();
 }
 
