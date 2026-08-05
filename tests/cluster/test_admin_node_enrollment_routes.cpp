@@ -364,7 +364,15 @@ int main() {
 
     context.now_iso_utc =
         [&]() {
-            return now_value;
+            // Regression: the shared runtime clock includes milliseconds.
+            if (now_value.size() != 20 ||
+                now_value.back() != 'Z') {
+                return now_value;
+            }
+
+            return
+                now_value.substr(0, 19) +
+                ".123Z";
         };
 
     context.add_seconds_iso_utc =
