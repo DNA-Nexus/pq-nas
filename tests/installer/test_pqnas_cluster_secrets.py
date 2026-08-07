@@ -328,6 +328,73 @@ class ClusterSecretTests(unittest.TestCase):
                         None,
                     )
 
+    def test_default_cluster_directories_are_owner_only(
+        self,
+    ) -> None:
+        selected = ClusterInstallConfig(
+            role="node",
+            node_id="cellnode1",
+            director_url="https://director.internal",
+            cluster_credential_file=(
+                cluster_secrets.DEFAULT_NODE_CREDENTIAL_FILE
+            ),
+            enrollment_id="enrollment_1",
+            enrollment_generation=1,
+            node_api_base_url="https://cellnode1.internal",
+            bootstrap_token_file=(
+                cluster_secrets.DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE
+            ),
+        )
+        token = (
+            cluster_secrets
+            .validate_node_bootstrap_token(
+                self.valid_token()
+            )
+        )
+
+        with mock.patch.object(
+            cluster_secrets,
+            "service_owner_ids",
+            return_value=(self.uid, self.gid),
+        ), mock.patch.object(
+            cluster_secrets,
+            "prepare_service_state_directory",
+        ) as prepare_directory, mock.patch.object(
+            cluster_secrets,
+            "atomic_write_node_bootstrap_token",
+        ):
+            action = (
+                cluster_secrets
+                .apply_cluster_bootstrap_secret(
+                    ClusterInstallConfig(),
+                    selected,
+                    token,
+                )
+            )
+
+        self.assertEqual(action, "written")
+        self.assertEqual(
+            prepare_directory.call_args_list,
+            [
+                mock.call(
+                    "/var/lib/pqnas/cluster",
+                    owner_uid=self.uid,
+                    owner_gid=self.gid,
+                    directory_mode=0o700,
+                ),
+                mock.call(
+                    "/var/lib/pqnas/cluster/bootstrap",
+                    owner_uid=self.uid,
+                    owner_gid=self.gid,
+                    directory_mode=0o700,
+                ),
+            ],
+        )
+        self.assertEqual(
+            token,
+            bytearray(len(token)),
+        )
+
     def test_apply_writes_and_wipes_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory) / "private"
