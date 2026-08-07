@@ -26,9 +26,11 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import secrets
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -1451,6 +1453,52 @@ def fmt_cmd(argv: List[str]) -> str:
 def dev_part_path(disk: Disk) -> str:
     # nvme uses p1, sata uses 1
     return f"{disk.path}p1" if "nvme" in disk.name else f"{disk.path}1"
+
+
+def wait_for_block_device(
+        path: str,
+        timeout_seconds: float = 10.0,
+        poll_interval_seconds: float = 0.05,
+) -> None:
+    """
+    Wait until the kernel/udev publishes the expected partition block device.
+
+    Security/reliability: partition creation and partprobe can return before
+    the /dev node is usable. Require the exact expected path to be a real
+    block device rather than accepting a regular file or symlink.
+    """
+    if timeout_seconds <= 0:
+        raise ValueError(
+            "block-device wait timeout must be positive"
+        )
+    if poll_interval_seconds <= 0:
+        raise ValueError(
+            "block-device poll interval must be positive"
+        )
+
+    deadline = time.monotonic() + timeout_seconds
+
+    while True:
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISBLK(mode):
+                return
+            raise RuntimeError(
+                f"Expected block device at {path}"
+            )
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(
+                f"Timed out waiting for block device: {path}"
+            )
+
+        time.sleep(
+            min(poll_interval_seconds, remaining)
+        )
 
 
 def get_uuid_for_device(dev: str) -> str:
@@ -4468,7 +4516,7 @@ class ExecuteScreen(Screen):
                 return
 
             ok = True
-            for argv in plan:
+            for index, argv in enumerate(plan):
                 self.logw.write(f"$ {fmt_cmd(argv)}")
                 try:
                     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -4480,6 +4528,28 @@ class ExecuteScreen(Screen):
                         ok = False
                         self.logw.write(f"[ERROR] exit code {rc}")
                         break
+
+                    next_argv = (
+                        plan[index + 1]
+                        if index + 1 < len(plan)
+                        else []
+                    )
+
+                    if (
+                        argv[0] == "partprobe" and
+                        next_argv and
+                        next_argv[0] in (
+                            "mkfs.ext4",
+                            "mkfs.btrfs",
+                        )
+                    ):
+                        partition = dev_part_path(st.disk)
+                        self.logw.write(
+                            f"Waiting for block device: {partition}"
+                        )
+                        wait_for_block_device(
+                            partition
+                        )
                 except Exception as e:
                     ok = False
                     self.logw.write(f"[ERROR] {e}")

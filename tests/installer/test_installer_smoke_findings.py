@@ -159,6 +159,58 @@ class InstallerSmokeFindingTests(
             health,
         )
 
+    def test_partition_device_is_ready_before_mkfs(
+        self,
+    ) -> None:
+        helper = self.function_body(
+            "wait_for_block_device"
+        )
+        execute = self.class_body(
+            "ExecuteScreen"
+        )
+
+        self.assertIn(
+            "os.lstat(path)",
+            helper,
+        )
+        self.assertIn(
+            "stat.S_ISBLK(mode)",
+            helper,
+        )
+        self.assertIn(
+            "time.monotonic()",
+            helper,
+        )
+        self.assertIn(
+            "Timed out waiting for block device",
+            helper,
+        )
+
+        self.assertIn(
+            "for index, argv in enumerate(plan):",
+            execute,
+        )
+        self.assertIn(
+            'argv[0] == "partprobe"',
+            execute,
+        )
+        self.assertIn(
+            '"mkfs.ext4"',
+            execute,
+        )
+        self.assertIn(
+            '"mkfs.btrfs"',
+            execute,
+        )
+        self.assertIn(
+            "partition = dev_part_path(st.disk)",
+            execute,
+        )
+        self.assertIn(
+            "wait_for_block_device(",
+            execute,
+        )
+
     def test_reverse_proxy_text_preserves_listener_security(
         self,
     ) -> None:
