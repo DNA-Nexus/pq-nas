@@ -170,7 +170,15 @@ def _open_or_create_managed_child_directory(
     *,
     owner_uid: int,
     owner_gid: int,
+    directory_mode: int = 0o750,
 ) -> int:
+    # Security: managed service-state directories may be group-readable
+    # or owner-only, but never writable/accessible by broader principals.
+    if directory_mode not in (0o700, 0o750):
+        raise MutableConfigError(
+            "unsupported managed directory mode"
+        )
+
     try:
         initial = os.stat(
             name,
@@ -188,7 +196,7 @@ def _open_or_create_managed_child_directory(
         try:
             os.mkdir(
                 name,
-                mode=0o750,
+                mode=directory_mode,
                 dir_fd=parent_fd,
             )
         except OSError as exc:
@@ -244,10 +252,9 @@ def _open_or_create_managed_child_directory(
         # Security: change ownership on the opened directory inode only.
         # Never recursively traverse user data or follow hardlinks.
         os.fchown(descriptor, owner_uid, owner_gid)
-        # Security-reviewed directory mode: owner rwx, service group
-        # traverse/read, and no access for others. Mode 0644 would make
-        # a directory non-traversable and is not a safe substitute.
-        os.fchmod(descriptor, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        # Security: apply the caller-selected mode to the already-opened
+        # directory inode so an existing directory is hardened as well.
+        os.fchmod(descriptor, directory_mode)
         os.fsync(descriptor)
         return descriptor
     except Exception:
@@ -307,6 +314,7 @@ def prepare_service_state_directory(
     *,
     owner_uid: int,
     owner_gid: int,
+    directory_mode: int = 0o750,
 ) -> str:
     target = _normalized_absolute_path(path)
     parent = str(target.parent)
@@ -326,6 +334,7 @@ def prepare_service_state_directory(
             target.name,
             owner_uid=owner_uid,
             owner_gid=owner_gid,
+            directory_mode=directory_mode,
         )
         return str(target)
     finally:

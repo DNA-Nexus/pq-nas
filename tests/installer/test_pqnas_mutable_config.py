@@ -449,6 +449,31 @@ class MutableConfigTests(unittest.TestCase):
                 0o750,
             )
 
+    def test_service_state_directory_supports_private_mode(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "state"
+            parent.mkdir(mode=0o750)
+            parent.chmod(0o750)
+
+            target = parent / "cluster"
+            target.mkdir(mode=0o750)
+            target.chmod(0o750)
+
+            result = mutable.prepare_service_state_directory(
+                str(target),
+                owner_uid=self.uid,
+                owner_gid=self.gid,
+                directory_mode=0o700,
+            )
+
+            self.assertEqual(result, str(target))
+            self.assertEqual(
+                stat.S_IMODE(target.stat().st_mode),
+                0o700,
+            )
+
     def test_atomic_replace_changes_inode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = self.prepare(Path(directory) / "storage")

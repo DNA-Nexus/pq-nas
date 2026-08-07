@@ -630,15 +630,19 @@ def apply_cluster_bootstrap_secret(
                 and selected.bootstrap_token_file ==
                     DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE
             ):
+                # Security: enrollment credentials and bootstrap secrets
+                # must not be accessible through group or other permissions.
                 prepare_service_state_directory(
                     "/var/lib/pqnas/cluster",
                     owner_uid=owner_uid,
                     owner_gid=owner_gid,
+                    directory_mode=0o700,
                 )
                 prepare_service_state_directory(
                     "/var/lib/pqnas/cluster/bootstrap",
                     owner_uid=owner_uid,
                     owner_gid=owner_gid,
+                    directory_mode=0o700,
                 )
 
             if (
