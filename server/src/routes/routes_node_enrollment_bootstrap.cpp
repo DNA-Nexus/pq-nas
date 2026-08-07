@@ -754,6 +754,22 @@ bool current_timestamp(
         output->clear();
     }
 
+    // Security/reliability: the shared runtime clock may emit millisecond
+    // precision, while enrollment persistence accepts canonical UTC seconds.
+    // Normalize only the exact ".dddZ" suffix and leave all other input for
+    // the strict service-layer timestamp validator.
+    if (output->size() == 24 &&
+        (*output)[19] == '.' &&
+        (*output)[20] >= '0' &&
+        (*output)[20] <= '9' &&
+        (*output)[21] >= '0' &&
+        (*output)[21] <= '9' &&
+        (*output)[22] >= '0' &&
+        (*output)[22] <= '9' &&
+        (*output)[23] == 'Z') {
+        output->erase(19, 4);
+    }
+
     return !output->empty();
 }
 
