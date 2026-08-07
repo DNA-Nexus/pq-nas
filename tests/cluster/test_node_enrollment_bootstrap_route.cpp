@@ -674,6 +674,11 @@ int main() {
     }
 
     {
+        // Regression: production runtime timestamps may contain
+        // milliseconds; canonicalize before the strict consumption service.
+        now_iso =
+            "2026-07-31T06:00:00.123Z";
+
         const std::string request_text =
             fixture_body(fresh);
 
@@ -726,8 +731,10 @@ int main() {
             record.has_value() &&
             record->state ==
                 NodeEnrollmentState::Consumed &&
-            record->token_hash.empty(),
-            "fresh route finalizes enrollment"
+            record->token_hash.empty() &&
+            record->consumed_at ==
+                "2026-07-31T06:00:00Z",
+            "fresh route canonicalizes runtime timestamp and finalizes enrollment"
         );
 
         bool matched = false;

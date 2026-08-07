@@ -237,8 +237,8 @@ int main() {
 
         Clock clock{
             {
-                "2026-07-31T12:00:00Z",
-                "2026-07-31T12:00:01Z"
+                "2026-07-31T12:00:00.123Z",
+                "2026-07-31T12:00:01.456Z"
             }
         };
 
@@ -321,6 +321,17 @@ int main() {
                 StorageNodeProvisioningStage::
                     Enrolled,
             "fresh success commits local Enrolled state"
+        );
+
+        expect(
+            snapshot.has_value() &&
+            snapshot->prepared_at ==
+                "2026-07-31T12:00:00Z" &&
+            snapshot->updated_at ==
+                "2026-07-31T12:00:01Z" &&
+            snapshot->enrolled_at ==
+                "2026-07-31T12:00:01Z",
+            "fresh client canonicalizes millisecond timestamps"
         );
 
         pqnas::cluster::
