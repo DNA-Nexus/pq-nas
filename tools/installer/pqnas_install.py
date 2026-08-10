@@ -1544,6 +1544,16 @@ def write_fstab_uuid(mountpoint: str, fstype: str, uuid: str, options: str) -> N
 def create_pqnas_layout(root: str) -> None:
     owner_uid, owner_gid = service_owner_ids("pqnas")
 
+    # Security: existing-filesystem mode may use a storage root that does not
+    # exist yet. Create only the missing final directory component through the
+    # descriptor-based helper so symlinks and unsafe parent metadata are rejected.
+    if not os.path.lexists(root):
+        prepare_service_state_directory(
+            root,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+        )
+
     # Security: create only the known service-owned runtime directories.
     # Every component is opened without following symlinks, and ownership is
     # changed only on validated directory descriptors.
