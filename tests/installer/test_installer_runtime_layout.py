@@ -78,6 +78,27 @@ class InstallerRuntimeLayoutTests(unittest.TestCase):
             "prepare_service_state_directory(",
             body,
         )
+        self.assertIn(
+            "if not os.path.lexists(root):",
+            body,
+        )
+        self.assertIn(
+            "prepare_service_state_directory(\n"
+            "            root,",
+            body,
+        )
+
+        root_prepare_index = body.index(
+            "prepare_service_state_directory(\n"
+            "            root,"
+        )
+        layout_index = body.index(
+            "prepare_storage_runtime_layout("
+        )
+        self.assertLess(
+            root_prepare_index,
+            layout_index,
+        )
         self.assertNotIn(
             "ensure_pqnas_runtime_ownership",
             self.source,
