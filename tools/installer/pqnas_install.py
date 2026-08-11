@@ -108,6 +108,9 @@ class InstallerLog(Log):
     """
 
     def __init__(self, *args, **kwargs):
+        # Security: bound retained installer output so a very noisy external
+        # process cannot grow the Textual log indefinitely.
+        kwargs.setdefault("max_lines", 4000)
         super().__init__(*args, **kwargs)
         self._ui_thread_id = threading.get_ident()
 
@@ -118,6 +121,17 @@ class InstallerLog(Log):
         text = str(data)
         if not text.endswith("\n"):
             text += "\n"
+
+        # Security: cap a single log write as well as total retained lines.
+        # External command output is untrusted and may contain huge lines.
+        encoded = text.encode("utf-8", errors="replace")
+        max_write_bytes = 16 * 1024
+        if len(encoded) > max_write_bytes:
+            text = encoded[:max_write_bytes].decode(
+                "utf-8",
+                errors="replace",
+            ).rstrip("\n")
+            text += "\n[log entry truncated]\n"
 
         if threading.get_ident() != self._ui_thread_id:
             return self.app.call_from_thread(
@@ -1173,7 +1187,11 @@ def apt_install(pkgs: List[str], log: Optional[Log] = None) -> None:
             print(msg)
 
     def run_apt_streaming(argv: List[str], label: str) -> None:
-        output_lines: List[str] = []
+        # Security: retain only a bounded tail for error reporting. The full
+        # process output is streamed live but must not accumulate in memory.
+        max_error_tail_bytes = 64 * 1024
+        error_tail = bytearray()
+        output_truncated = False
 
         p = subprocess.Popen(
             argv,
@@ -1186,12 +1204,32 @@ def apt_install(pkgs: List[str], log: Optional[Log] = None) -> None:
 
         for raw_line in p.stdout:
             line = raw_line.rstrip("\r\n")
-            output_lines.append(line)
             w(line)
+
+            encoded_line = (line + "\n").encode(
+                "utf-8",
+                errors="replace",
+            )
+            error_tail.extend(encoded_line)
+
+            if len(error_tail) > max_error_tail_bytes:
+                remove_bytes = len(error_tail) - max_error_tail_bytes
+                del error_tail[:remove_bytes]
+                output_truncated = True
 
         rc = p.wait()
         if rc != 0:
-            output = "\n".join(output_lines).strip()
+            output = error_tail.decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+
+            if output_truncated:
+                output = (
+                    "[output truncated; showing last 64 KiB]\n"
+                    + output
+                )
+
             raise RuntimeError(
                 f"{label} failed with exit code {rc}:\n{output}"
             )

@@ -264,6 +264,55 @@ class InstallerLiveLogTests(unittest.TestCase):
             ],
         )
 
+    def test_apt_install_failure_error_capture_is_bounded(
+        self,
+    ) -> None:
+        log = FakeLog()
+
+        noisy_lines = [
+            f"{index:03d}-" + ("x" * 1024)
+            for index in range(80)
+        ]
+        noisy_lines.append("TAIL-MARKER")
+
+        failed = FakeProcess(
+            noisy_lines,
+            returncode=100,
+        )
+
+        with (
+            mock.patch.object(
+                self.module,
+                "have_cmd",
+                return_value=True,
+            ),
+            mock.patch.object(
+                self.module.subprocess,
+                "Popen",
+                return_value=failed,
+            ),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.module.apt_install(
+                    ["libexample"],
+                    log=log,
+                )
+
+        error = str(ctx.exception)
+
+        self.assertIn(
+            "[output truncated; showing last 64 KiB]",
+            error,
+        )
+        self.assertIn(
+            "TAIL-MARKER",
+            error,
+        )
+        self.assertLessEqual(
+            len(error.encode("utf-8")),
+            (64 * 1024) + 512,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
