@@ -29,11 +29,12 @@ import shlex
 import stat
 import subprocess
 import secrets
+import threading
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -100,12 +101,33 @@ class InstallerLog(Log):
     provided. Most of this installer writes short status messages with
     log.write("..."), so normalize every message into a line here instead of
     requiring every call site to remember the newline.
+
+    ExecuteScreen performs long-running installation work in a thread worker.
+    Textual widgets are not thread-safe, so worker-originated log writes are
+    marshalled back to the UI thread with App.call_from_thread().
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ui_thread_id = threading.get_ident()
+
+    def _write_ui(self, text, *args, **kwargs):
+        return super().write(text, *args, **kwargs)
+
     def write(self, data="", *args, **kwargs):
         text = str(data)
         if not text.endswith("\n"):
             text += "\n"
-        return super().write(text, *args, **kwargs)
+
+        if threading.get_ident() != self._ui_thread_id:
+            return self.app.call_from_thread(
+                self._write_ui,
+                text,
+                *args,
+                **kwargs,
+            )
+
+        return self._write_ui(text, *args, **kwargs)
 
 
 def looks_like_ip(host: str) -> bool:
@@ -1150,25 +1172,41 @@ def apt_install(pkgs: List[str], log: Optional[Log] = None) -> None:
         else:
             print(msg)
 
+    def run_apt_streaming(argv: List[str], label: str) -> None:
+        output_lines: List[str] = []
+
+        p = subprocess.Popen(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert p.stdout is not None
+
+        for raw_line in p.stdout:
+            line = raw_line.rstrip("\r\n")
+            output_lines.append(line)
+            w(line)
+
+        rc = p.wait()
+        if rc != 0:
+            output = "\n".join(output_lines).strip()
+            raise RuntimeError(
+                f"{label} failed with exit code {rc}:\n{output}"
+            )
+
     w("[*] apt-get update …")
-    p1 = subprocess.run(
+    run_apt_streaming(
         ["apt-get", "update", "-y"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        "apt-get update",
     )
-    if p1.returncode != 0:
-        raise RuntimeError(f"apt-get update failed:\n{(p1.stdout or '').strip()}")
 
     w(f"[*] apt-get install: {' '.join(pkgs)} …")
-    p2 = subprocess.run(
+    run_apt_streaming(
         ["apt-get", "install", "-y", *pkgs],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        "apt-get install",
     )
-    if p2.returncode != 0:
-        raise RuntimeError(f"apt-get install failed:\n{(p2.stdout or '').strip()}")
 
 
 def ensure_runtime_deps_for_server(server_exec: str, log: Optional[Log] = None, extra_ldd_paths: Optional[List[str]] = None) -> None:
@@ -4498,7 +4536,24 @@ class ExecuteScreen(Screen):
             "from /usr/local/bin/*.bak and restart the service.\n"
         )
 
-        self.set_timer(0.05, self._run_install)
+        self.run_worker(
+            self._run_install,
+            name="installer-execute",
+            thread=True,
+        )
+
+    def _update_done_from_worker(self, text: str) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(self.done.update, text)
+
+    def _push_screen_from_worker(
+        self,
+        screen_factory: Callable[[], Screen],
+    ) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(
+            lambda: app.push_screen(screen_factory())
+        )
 
     def _run_install(self) -> None:
         app: InstallerApp = self.app  # type: ignore
@@ -4509,7 +4564,7 @@ class ExecuteScreen(Screen):
                 st.node_bootstrap_token
             )
             st.node_bootstrap_token = None
-            self.done.update("No disk selected.")
+            self._update_done_from_worker("No disk selected.")
             return
 
         mode = st.install_mode
@@ -4522,7 +4577,7 @@ class ExecuteScreen(Screen):
                     st.node_bootstrap_token
                 )
                 st.node_bootstrap_token = None
-                self.done.update("No plan to execute.")
+                self._update_done_from_worker("No plan to execute.")
                 return
 
             ok = True
@@ -4570,7 +4625,7 @@ class ExecuteScreen(Screen):
                     st.node_bootstrap_token
                 )
                 st.node_bootstrap_token = None
-                self.done.update(
+                self._update_done_from_worker(
                     "\n❌ Failed.\n\n"
                     "Nothing else will be executed. Check the log above.\n"
                     "You can safely rerun after wiping again.\n"
@@ -4907,8 +4962,8 @@ class ExecuteScreen(Screen):
                 err_text = str(e)
                 self.logw.write("[ERROR] pqnas.service failed to start.")
                 self.logw.write(err_text)
-                self.app.push_screen(RollbackScreen(err_text, was_upgrade=was_upgrade))
-                self.done.update(
+                self._push_screen_from_worker(lambda: RollbackScreen(err_text, was_upgrade=was_upgrade))
+                self._update_done_from_worker(
                     "\n⚠️ Service failed to start.\n\n"
                     "Use the rollback screen to restore previous binaries or keep the new ones.\n"
                 )
@@ -5039,7 +5094,7 @@ class ExecuteScreen(Screen):
             self.logw.write("")
             self.logw.write("Layout created: data/ logs/ apps/ audit/ tmp/")
 
-            self.done.update(
+            self._update_done_from_worker(
                 "\n✅ Done.\n\n"
                 f"Storage path: {mp}\n"
                 f"Mode: {mode}\n"
@@ -5049,8 +5104,8 @@ class ExecuteScreen(Screen):
                 "First admin setup:\n"
                 "  sudo pqnas-first-admin\n"
             )
-            self.app.push_screen(
-                HealthScreen(
+            self._push_screen_from_worker(
+                lambda: HealthScreen(
                     mp=mp,
                     mode=mode,
                     backend=backend,
@@ -5072,7 +5127,7 @@ class ExecuteScreen(Screen):
             )
             st.node_bootstrap_token = None
             self.logw.write(f"[FINALIZE ERROR] {e}")
-            self.done.update(
+            self._update_done_from_worker(
                 "\n⚠️ Finalize failed.\n\n"
                 "Check log above.\n"
             )
