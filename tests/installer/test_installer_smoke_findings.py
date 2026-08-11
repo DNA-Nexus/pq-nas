@@ -85,25 +85,36 @@ class InstallerSmokeFindingTests(
         health = self.class_body(
             "HealthScreen"
         )
+        target = self.function_body(
+            "installer_health_access_target"
+        )
 
         self.assertIn(
             "self.server_role",
             health,
         )
         self.assertIn(
-            'role == "standalone"',
+            "installer_health_access_target(",
             health,
+        )
+        self.assertIn(
+            'role == "standalone"',
+            target,
         )
         self.assertIn(
             "http://127.0.0.1:8081/",
-            health,
+            target,
         )
         self.assertIn(
             "loopback only",
-            health,
+            target,
         )
         self.assertIn(
             "server_role=st.cluster_config.role",
+            self.source,
+        )
+        self.assertIn(
+            "public_origin=installer_public_origin(st)",
             self.source,
         )
 

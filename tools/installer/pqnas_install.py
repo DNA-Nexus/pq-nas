@@ -4381,6 +4381,38 @@ def nginx_health_check_output(
         return "[ERROR] nginx health check failed."
 
 
+def installer_health_access_target(
+        public_origin: Optional[str],
+        server_role: str,
+) -> tuple[str, str, str]:
+    """
+    Return (label, URL, listener note) for the installer Health screen.
+
+    Security: the public scheme comes from the already-resolved installer
+    origin rather than being inferred from the local nginx listener.
+    """
+    origin = (public_origin or "").strip().rstrip("/")
+    if origin:
+        return ("Access URL", f"{origin}/", "")
+
+    role = (server_role or "standalone").strip().lower()
+    if role == "standalone":
+        return (
+            "Access URL",
+            "http://<server-ip>:8081/",
+            "Standalone listens directly on port 8081 when "
+            "no local nginx proxy is enabled.",
+        )
+
+    return (
+        "Local service URL",
+        "http://127.0.0.1:8081/ (loopback only)",
+        "Director and Storage Node roles require a local "
+        "reverse proxy or secure tunnel for remote access. "
+        "Use TLS when exposing the service outside the host.",
+    )
+
+
 class HealthScreen(Screen):
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -4395,6 +4427,7 @@ class HealthScreen(Screen):
         mode: str,
         backend: str,
         server_role: str,
+        public_origin: Optional[str],
         nginx_enabled: bool,
         nginx_hostname: str,
         nginx_port: int,
@@ -4406,6 +4439,7 @@ class HealthScreen(Screen):
         self.mode = mode
         self.backend = backend
         self.server_role = server_role
+        self.public_origin = public_origin
         self.nginx_enabled = nginx_enabled
         self.nginx_hostname = nginx_hostname
         self.nginx_port = nginx_port
@@ -4444,25 +4478,10 @@ class HealthScreen(Screen):
     def _render_summary(self) -> None:
         role = (self.server_role or "standalone").strip().lower()
 
-        if self.nginx_enabled and self.nginx_hostname:
-            url_label = "Access URL"
-            url = f"http://{self.nginx_hostname}/"
-            listener_note = ""
-        elif role == "standalone":
-            url_label = "Access URL"
-            url = "http://<server-ip>:8081/"
-            listener_note = (
-                "Standalone listens directly on port 8081 when "
-                "no local nginx proxy is enabled."
-            )
-        else:
-            url_label = "Local service URL"
-            url = "http://127.0.0.1:8081/ (loopback only)"
-            listener_note = (
-                "Director and Storage Node roles require a local "
-                "reverse proxy or secure tunnel for remote access. "
-                "Use TLS when exposing the service outside the host."
-            )
+        url_label, url, listener_note = installer_health_access_target(
+            self.public_origin,
+            role,
+        )
 
         lines = [
             f"[b]Storage:[/b] {self.mp}",
@@ -5306,6 +5325,7 @@ class ExecuteScreen(Screen):
                     mode=mode,
                     backend=backend,
                     server_role=st.cluster_config.role,
+                    public_origin=installer_public_origin(st),
                     nginx_enabled=st.nginx_enabled,
                     nginx_hostname=st.nginx_hostname,
                     nginx_port=st.nginx_listen_port,
