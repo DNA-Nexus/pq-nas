@@ -1453,13 +1453,44 @@ class InstallState:
     nginx_hostname: str = ""  # server_name (e.g. nas.example.com or 192.168.1.50)
     nginx_listen_port: int = 80
 
-    # Optional Let's Encrypt HTTPS (only used if nginx_enabled)
+    # Optional Let's Encrypt HTTPS terminated locally by this host.
     https_enabled: bool = False
     https_email: str = ""
     https_redirect: bool = True
+
+    # Public HTTPS may terminate at an upstream reverse proxy while this
+    # host's local nginx remains HTTP-only.
+    external_tls_termination: bool = False
+
     # Android app pairing TLS SPKI pin.
     # Written as PQNAS_TLS_SPKI_SHA256_PIN when HTTPS cert material is available.
     tls_spki_pin_sha256: str = ""
+
+
+def installer_public_origin(st: InstallState) -> Optional[str]:
+    """
+    Resolve the browser/public origin selected by the installer.
+
+    A local nginx listener and the public TLS termination point are separate
+    concerns. In particular, external TLS must remain HTTPS publicly even
+    though this host serves only HTTP to the upstream reverse proxy.
+    """
+    host = (st.nginx_hostname or "").strip()
+    if not host:
+        return None
+
+    if st.external_tls_termination:
+        return f"https://{host}"
+
+    if st.nginx_enabled:
+        if st.https_enabled and have_letsencrypt_cert(host):
+            return f"https://{host}"
+        return f"http://{host}"
+
+    # Preserve the existing tunnel/external-proxy behavior when local nginx
+    # is disabled. Those deployments expose the configured public host via
+    # HTTPS elsewhere.
+    return f"https://{host}"
 
 
 # -----------------------------------------------------------------------------
@@ -2982,6 +3013,41 @@ def compute_tls_spki_sha256_pin_from_host(hostname: str, port: int = 443) -> str
     return pin
 
 
+def detect_external_tls_spki_sha256_pin(
+        hostname: str,
+        log: Optional[Log] = None,
+) -> tuple[str, str]:
+    """
+    Best-effort SPKI pin detection from the public HTTPS endpoint.
+
+    Security: external TLS must use the certificate actually served by the
+    public endpoint, never stale local certificate files. A temporary DNS/TLS
+    failure must not abort installation; callers receive an empty pin and can
+    retry configuration once the public endpoint is reachable.
+    """
+    host = (hostname or "").strip()
+    if not host:
+        return ("", "")
+
+    try:
+        pin = compute_tls_spki_sha256_pin_from_host(host, 443)
+        if pin:
+            return (pin, f"{host}:443")
+        if log:
+            log.write(
+                f"[WARN] Public HTTPS endpoint {host}:443 did not provide "
+                "a usable TLS SPKI pin."
+            )
+    except Exception as e:
+        if log:
+            log.write(
+                f"[WARN] Could not compute TLS SPKI pin from "
+                f"public endpoint {host}:443: {e}"
+            )
+
+    return ("", "")
+
+
 def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tuple[str, str]:
     """
     Return (pin, source).
@@ -3005,15 +3071,10 @@ def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tupl
             if log:
                 log.write(f"[WARN] Could not compute TLS SPKI pin from {fullchain}: {e}")
 
-    try:
-        pin = compute_tls_spki_sha256_pin_from_host(host, 443)
-        if pin:
-            return (pin, f"{host}:443")
-    except Exception as e:
-        if log:
-            log.write(f"[WARN] Could not compute TLS SPKI pin from live host {host}:443: {e}")
-
-    return ("", "")
+    return detect_external_tls_spki_sha256_pin(
+        host,
+        log=log,
+    )
 
 def write_nginx_site_http_only(
         server_name: str,
@@ -3897,15 +3958,25 @@ class ReverseProxyScreen(Screen):
             yield self.host_in
 
             yield Static(
-                "[dim]For Cloudflare Tunnel with no local nginx, still enter the public hostname here. "
-                "The installer will write PQNAS_ORIGIN/PQNAS_RP_ID for login verification.[/dim]",
+                "[dim]If HTTPS terminates on another proxy, select the external "
+                "HTTPS option. The installer will keep local nginx HTTP-only "
+                "while writing an HTTPS public origin for login verification. "
+                "With local nginx disabled, external HTTPS is selected "
+                "automatically.[/dim]",
                 classes="muted",
             )
 
-            yield Static("\n[b]HTTPS (optional)[/b]", classes="muted")
+            yield Static("\n[b]Public HTTPS mode[/b]", classes="muted")
             self.https_enable = RadioSet(
                 RadioButton("HTTP only", id="https_off"),
-                RadioButton("Enable HTTPS (Let’s Encrypt)", id="https_on"),
+                RadioButton(
+                    "Public HTTPS terminates at an external reverse proxy",
+                    id="https_external",
+                ),
+                RadioButton(
+                    "Enable HTTPS locally (Let’s Encrypt)",
+                    id="https_on",
+                ),
             )
             yield self.https_enable
 
@@ -3942,9 +4013,17 @@ class ReverseProxyScreen(Screen):
         for btn in self.login_mode.query(RadioButton):
             btn.value = (btn.id == st.login_mode)
 
-        # https on/off
+        # Public TLS mode. Local Let's Encrypt and upstream TLS termination
+        # are intentionally separate states.
+        if st.external_tls_termination:
+            https_mode = "https_external"
+        elif st.https_enabled:
+            https_mode = "https_on"
+        else:
+            https_mode = "https_off"
+
         for btn in self.https_enable.query(RadioButton):
-            btn.value = (btn.id == ("https_on" if st.https_enabled else "https_off"))
+            btn.value = (btn.id == https_mode)
 
         self.email_in.value = st.https_email or ""
 
@@ -3958,15 +4037,27 @@ class ReverseProxyScreen(Screen):
         enabled = any(btn.value and btn.id == "on" for btn in self.enable.query(RadioButton))
         self.host_in.disabled = False
 
-        https_on = enabled and any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
-        self.email_in.disabled = not https_on
+        if not enabled:
+            # No local listener means the public hostname is served by an
+            # external HTTPS proxy/tunnel, preserving the existing behaviour.
+            for btn in self.https_enable.query(RadioButton):
+                btn.value = (btn.id == "https_external")
 
-        if not https_on:
+        for btn in self.https_enable.query(RadioButton):
+            btn.disabled = (not enabled and btn.id != "https_external")
+
+        local_https_on = enabled and any(
+            btn.value and btn.id == "https_on"
+            for btn in self.https_enable.query(RadioButton)
+        )
+        self.email_in.disabled = not local_https_on
+
+        if not local_https_on:
             for btn in self.redirect_btn.query(RadioButton):
                 btn.value = (btn.id == "redir_off")
 
         for btn in self.redirect_btn.query(RadioButton):
-            btn.disabled = not https_on
+            btn.disabled = not local_https_on
 
         if not enabled:
             self.err.update("")
@@ -3998,18 +4089,38 @@ class ReverseProxyScreen(Screen):
             self.err.update("Enter a hostname or IP (no spaces, no slashes).")
             return
 
+        tls_mode = "https_off"
+        for btn in self.https_enable.query(RadioButton):
+            if btn.value:
+                tls_mode = btn.id
+                break
+
+        if tls_mode not in ("https_off", "https_external", "https_on"):
+            self.err.update("Choose HTTP, external HTTPS, or local Let’s Encrypt.")
+            return
+
+        if tls_mode == "https_on" and not enabled:
+            self.err.update("Local Let’s Encrypt requires the local nginx reverse proxy.")
+            return
+
         st.nginx_enabled = enabled
         st.nginx_hostname = host
         st.nginx_listen_port = 80
+        st.external_tls_termination = (
+            (not enabled) or tls_mode == "https_external"
+        )
 
         if enabled:
             if not host:
                 self.err.update("Reverse proxy enabled: enter a hostname or IP.")
                 return
 
-            st.https_enabled = any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
+            st.https_enabled = (tls_mode == "https_on")
             st.https_email = (self.email_in.value or "").strip()
-            st.https_redirect = any(btn.value and btn.id == "redir_on" for btn in self.redirect_btn.query(RadioButton))
+            st.https_redirect = any(
+                btn.value and btn.id == "redir_on"
+                for btn in self.redirect_btn.query(RadioButton)
+            )
 
             if st.https_enabled:
                 if not st.https_email or "@" not in st.https_email:
@@ -4821,24 +4932,29 @@ class ExecuteScreen(Screen):
             tls_pin_source = ""
 
             if st.nginx_hostname:
-                if st.nginx_enabled:
-                    if have_letsencrypt_cert(st.nginx_hostname):
-                        origin = f"https://{st.nginx_hostname}"
-                    else:
-                        origin = f"http://{st.nginx_hostname}"
-                else:
-                    # External HTTPS handled elsewhere (e.g. Cloudflare Tunnel / external reverse proxy)
-                    origin = f"https://{st.nginx_hostname}"
-
+                origin = installer_public_origin(st)
                 rp_id = st.nginx_hostname
 
             if origin and origin.startswith("https://") and st.nginx_hostname:
-                ensure_letsencrypt_reuse_key(st.nginx_hostname, log=self.logw)
+                if st.external_tls_termination or not st.nginx_enabled:
+                    # Security: external TLS must pin the certificate actually
+                    # served by the public endpoint, never stale local LE files.
+                    tls_spki_pin_sha256, tls_pin_source = (
+                        detect_external_tls_spki_sha256_pin(
+                            st.nginx_hostname,
+                            log=self.logw,
+                        )
+                    )
+                else:
+                    ensure_letsencrypt_reuse_key(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
+                    tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
 
-                tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
-                    st.nginx_hostname,
-                    log=self.logw,
-                )
                 st.tls_spki_pin_sha256 = tls_spki_pin_sha256
 
             write_env_file(
@@ -5030,16 +5146,46 @@ class ExecuteScreen(Screen):
                 ensure_nginx_installed(log=self.logw)
 
                 self.logw.write("Writing nginx site config …")
-                conf_path = write_nginx_site_https_if_available(
-                    server_name=st.nginx_hostname,
-                    upstream_host="127.0.0.1",
-                    upstream_port=8081,
-                    client_max_body_size="2g",
-                )
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx enabled: https://{st.nginx_hostname}/ (http redirects with 308)")
+
+                if st.external_tls_termination:
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ local nginx enabled: http://{st.nginx_hostname}/ "
+                        "(public HTTPS terminates externally)"
+                    )
+                elif st.https_enabled:
+                    conf_path = write_nginx_site_https_if_available(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        client_max_body_size="2g",
+                    )
+                    if have_letsencrypt_cert(st.nginx_hostname):
+                        self.logw.write(
+                            f"✅ nginx enabled: https://{st.nginx_hostname}/ "
+                            "(http redirects with 308)"
+                        )
+                    else:
+                        self.logw.write(
+                            f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                            "(awaiting local TLS certificate)"
+                        )
                 else:
-                    self.logw.write(f"✅ nginx enabled: http://{st.nginx_hostname}/ (no TLS cert detected)")
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                        "(HTTP-only selected)"
+                    )
 
                 self.logw.write(f"Wrote: {conf_path}")
 
@@ -5114,12 +5260,24 @@ class ExecuteScreen(Screen):
                         )
                         run_systemctl(["restart", "pqnas.service"])
 
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx ready: https://{st.nginx_hostname}/  (http redirects with 308)")
-                    self.logw.write("PQNAS_ORIGIN will be set to https automatically on next install/run (or edit /etc/pqnas/pqnas.env).")
+                if st.external_tls_termination:
+                    self.logw.write(
+                        f"✅ local nginx ready: http://{st.nginx_hostname}/"
+                    )
+                    self.logw.write(
+                        f"✅ public origin: https://{st.nginx_hostname}/ "
+                        "(TLS terminates externally)"
+                    )
+                elif st.https_enabled and have_letsencrypt_cert(st.nginx_hostname):
+                    self.logw.write(
+                        f"✅ nginx ready: https://{st.nginx_hostname}/ "
+                        "(http redirects with 308)"
+                    )
                 else:
-                    self.logw.write(f"✅ nginx ready: http://{st.nginx_hostname}/  (no TLS cert detected)")
-                    self.logw.write("Tip: after you add TLS (certbot), PQNAS_ORIGIN should be https://… and HTTP should redirect with 308.")
+                    self.logw.write(
+                        f"✅ nginx ready: http://{st.nginx_hostname}/ "
+                        "(HTTP-only)"
+                    )
 
                 if not looks_like_ip(st.nginx_hostname):
                     self.logw.write("Note: if you used a hostname, ensure it resolves to this server (DNS/router/hosts).")
