@@ -3290,6 +3290,57 @@ def nginx_test_reload(log: Optional[Log] = None) -> None:
 # -----------------------------------------------------------------------------
 
 
+def detect_existing_filesystem_info(
+        path: str,
+) -> tuple[str, str, str]:
+    """
+    Return (source, filesystem type, backing mount) for an existing path.
+
+    The requested PQ-NAS directory may not exist yet. Walk toward its nearest
+    existing parent and ask findmnt about that path.
+
+    Security: this helper is strictly read-only. It does not create paths,
+    mount filesystems, modify partition tables, or write /etc/fstab.
+    """
+    requested = os.path.abspath((path or "/").strip() or "/")
+    probe = requested
+
+    while not os.path.exists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            break
+        probe = parent
+
+    try:
+        raw = run_cmd([
+            "findmnt",
+            "-J",
+            "-T",
+            probe,
+            "-o",
+            "SOURCE,FSTYPE,TARGET",
+        ])
+        payload = json.loads(raw)
+        filesystems = payload.get("filesystems") or []
+        if not filesystems:
+            return ("", "", "")
+
+        fs = filesystems[0]
+        source = str(fs.get("source") or "").strip()
+        fstype = str(fs.get("fstype") or "").strip()
+        target = str(fs.get("target") or "").strip()
+        return (source, fstype, target)
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
+        # Detection is informational only. Failure must never turn existing
+        # mode into a destructive or mount-changing fallback.
+        return ("", "", "")
+
+
 def plan_for(state: InstallState) -> Tuple[List[List[str]], List[str]]:
     """
     Returns: (plan_argvs, notes)
@@ -3304,8 +3355,31 @@ def plan_for(state: InstallState) -> Tuple[List[List[str]], List[str]]:
 
     if state.install_mode == "existing":
         notes.append("Mode: existing filesystem (NO wipe, NO partitioning).")
-        notes.append(f"PQ-NAS will be installed under: {mp}")
-        notes.append("WARNING: This uses your current root filesystem capacity.")
+        notes.append(f"PQ-NAS path: {mp}")
+
+        source, fstype, backing_mount = detect_existing_filesystem_info(mp)
+
+        notes.append(
+            f"Backing mount: {backing_mount or 'unknown'}"
+        )
+        notes.append(
+            f"Filesystem: {fstype or 'unknown'}"
+        )
+        notes.append(
+            f"Source: {source or 'unknown'}"
+        )
+
+        if backing_mount:
+            notes.append(
+                "WARNING: Existing filesystem capacity is shared with "
+                f"other data on {backing_mount}."
+            )
+        else:
+            notes.append(
+                "WARNING: Existing filesystem capacity is shared with "
+                "other data on its backing filesystem."
+            )
+
         return plan, notes
 
     if d.is_system:
@@ -3468,8 +3542,9 @@ class DiskSelectScreen(Screen):
 
         if chosen_mode == "existing":
             self.mode_hint.update(
-                "WARNING: Existing filesystem mode uses your current root disk capacity. "
-                "Use /srv/pqnas and monitor free space."
+                "WARNING: Existing filesystem mode shares capacity with the "
+                "filesystem backing the selected PQ-NAS path. "
+                "Review the backing mount in the plan and monitor free space."
             )
 
         app.push_screen(BackendSelectScreen())
