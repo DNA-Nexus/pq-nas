@@ -14,6 +14,13 @@ INSTALLER = (
     / "pqnas_install.py"
 )
 
+INSTALLER_CORE = (
+    ROOT
+    / "tools"
+    / "installer"
+    / "pqnas_installer_core.py"
+)
+
 
 class InstallerSmokeFindingTests(
     unittest.TestCase
@@ -21,6 +28,9 @@ class InstallerSmokeFindingTests(
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = INSTALLER.read_text(
+            encoding="utf-8"
+        )
+        cls.core_source = INSTALLER_CORE.read_text(
             encoding="utf-8"
         )
 
@@ -39,6 +49,15 @@ class InstallerSmokeFindingTests(
             rf"(?=^def |^class |\Z)"
         )
         match = pattern.search(self.source)
+        self.assertIsNotNone(match, name)
+        return match.group(0)
+
+    def core_function_body(self, name: str) -> str:
+        pattern = re.compile(
+            rf"(?ms)^def {re.escape(name)}\(.*?"
+            rf"(?=^def |^class |\Z)"
+        )
+        match = pattern.search(self.core_source)
         self.assertIsNotNone(match, name)
         return match.group(0)
 
@@ -85,25 +104,36 @@ class InstallerSmokeFindingTests(
         health = self.class_body(
             "HealthScreen"
         )
+        target = self.core_function_body(
+            "installer_health_access_target"
+        )
 
         self.assertIn(
             "self.server_role",
             health,
         )
         self.assertIn(
-            'role == "standalone"',
+            "installer_health_access_target(",
             health,
+        )
+        self.assertIn(
+            'role == "standalone"',
+            target,
         )
         self.assertIn(
             "http://127.0.0.1:8081/",
-            health,
+            target,
         )
         self.assertIn(
             "loopback only",
-            health,
+            target,
         )
         self.assertIn(
             "server_role=st.cluster_config.role",
+            self.source,
+        )
+        self.assertIn(
+            "public_origin=installer_public_origin(st)",
             self.source,
         )
 

@@ -29,11 +29,12 @@ import shlex
 import stat
 import subprocess
 import secrets
+import threading
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -85,6 +86,8 @@ from pqnas_mutable_config import (
     service_owner_ids,
 )
 
+import pqnas_installer_core as installer_core
+
 # -----------------------------------------------------------------------------
 # Small UI/log helpers
 # -----------------------------------------------------------------------------
@@ -100,12 +103,47 @@ class InstallerLog(Log):
     provided. Most of this installer writes short status messages with
     log.write("..."), so normalize every message into a line here instead of
     requiring every call site to remember the newline.
+
+    ExecuteScreen performs long-running installation work in a thread worker.
+    Textual widgets are not thread-safe, so worker-originated log writes are
+    marshalled back to the UI thread with App.call_from_thread().
     """
+
+    def __init__(self, *args, **kwargs):
+        # Security: bound retained installer output so a very noisy external
+        # process cannot grow the Textual log indefinitely.
+        kwargs.setdefault("max_lines", 4000)
+        super().__init__(*args, **kwargs)
+        self._ui_thread_id = threading.get_ident()
+
+    def _write_ui(self, text, *args, **kwargs):
+        return super().write(text, *args, **kwargs)
+
     def write(self, data="", *args, **kwargs):
         text = str(data)
         if not text.endswith("\n"):
             text += "\n"
-        return super().write(text, *args, **kwargs)
+
+        # Security: cap a single log write as well as total retained lines.
+        # External command output is untrusted and may contain huge lines.
+        encoded = text.encode("utf-8", errors="replace")
+        max_write_bytes = 16 * 1024
+        if len(encoded) > max_write_bytes:
+            text = encoded[:max_write_bytes].decode(
+                "utf-8",
+                errors="replace",
+            ).rstrip("\n")
+            text += "\n[log entry truncated]\n"
+
+        if threading.get_ident() != self._ui_thread_id:
+            return self.app.call_from_thread(
+                self._write_ui,
+                text,
+                *args,
+                **kwargs,
+            )
+
+        return self._write_ui(text, *args, **kwargs)
 
 
 def looks_like_ip(host: str) -> bool:
@@ -1117,7 +1155,7 @@ def rollback_binaries(dest_dir: str = "/usr/local/bin") -> None:
 
 
 def have_cmd(name: str) -> bool:
-    return shutil.which(name) is not None
+    return installer_core.have_cmd(name)
 
 
 def ldd_missing_libs(bin_path: str) -> List[str]:
@@ -1140,35 +1178,14 @@ def ldd_missing_libs(bin_path: str) -> List[str]:
     return missing
 
 
-def apt_install(pkgs: List[str], log: Optional[Log] = None) -> None:
-    if not have_cmd("apt-get"):
-        raise RuntimeError("apt-get not found (unsupported distro).")
-
-    def w(msg: str) -> None:
-        if log:
-            log.write(msg)
-        else:
-            print(msg)
-
-    w("[*] apt-get update …")
-    p1 = subprocess.run(
-        ["apt-get", "update", "-y"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+def apt_install(
+        pkgs: List[str],
+        log: Optional[Log] = None,
+) -> None:
+    return installer_core.apt_install(
+        pkgs,
+        log=log,
     )
-    if p1.returncode != 0:
-        raise RuntimeError(f"apt-get update failed:\n{(p1.stdout or '').strip()}")
-
-    w(f"[*] apt-get install: {' '.join(pkgs)} …")
-    p2 = subprocess.run(
-        ["apt-get", "install", "-y", *pkgs],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if p2.returncode != 0:
-        raise RuntimeError(f"apt-get install failed:\n{(p2.stdout or '').strip()}")
 
 
 def ensure_runtime_deps_for_server(server_exec: str, log: Optional[Log] = None, extra_ldd_paths: Optional[List[str]] = None) -> None:
@@ -1377,13 +1394,24 @@ class InstallState:
     nginx_hostname: str = ""  # server_name (e.g. nas.example.com or 192.168.1.50)
     nginx_listen_port: int = 80
 
-    # Optional Let's Encrypt HTTPS (only used if nginx_enabled)
+    # Optional Let's Encrypt HTTPS terminated locally by this host.
     https_enabled: bool = False
     https_email: str = ""
     https_redirect: bool = True
+
+    # Public HTTPS may terminate at an upstream reverse proxy while this
+    # host's local nginx remains HTTP-only.
+    external_tls_termination: bool = False
+
     # Android app pairing TLS SPKI pin.
     # Written as PQNAS_TLS_SPKI_SHA256_PIN when HTTPS cert material is available.
     tls_spki_pin_sha256: str = ""
+
+
+def installer_public_origin(
+        st: InstallState,
+) -> Optional[str]:
+    return installer_core.installer_public_origin(st)
 
 
 # -----------------------------------------------------------------------------
@@ -1392,10 +1420,7 @@ class InstallState:
 
 
 def run_cmd(argv: List[str]) -> str:
-    p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(argv)}\n{(p.stderr or '').strip()}")
-    return p.stdout or ""
+    return installer_core.run_cmd(argv)
 
 
 def lsblk_json() -> dict:
@@ -1451,8 +1476,7 @@ def fmt_cmd(argv: List[str]) -> str:
 
 
 def dev_part_path(disk: Disk) -> str:
-    # nvme uses p1, sata uses 1
-    return f"{disk.path}p1" if "nvme" in disk.name else f"{disk.path}1"
+    return installer_core.dev_part_path(disk)
 
 
 def wait_for_block_device(
@@ -2718,21 +2742,16 @@ def nginx_sites_layout() -> str:
         return "confd"
     return "sites"
 
-def letsencrypt_cert_paths(hostname: str) -> tuple[str, str]:
-    """
-    Return (fullchain, privkey) paths for a hostname under /etc/letsencrypt/live/<host>/.
-    """
-    h = (hostname or "").strip()
-    base = f"/etc/letsencrypt/live/{h}"
-    return (os.path.join(base, "fullchain.pem"), os.path.join(base, "privkey.pem"))
+def letsencrypt_cert_paths(
+        hostname: str,
+) -> tuple[str, str]:
+    return installer_core.letsencrypt_cert_paths(hostname)
 
 
-def have_letsencrypt_cert(hostname: str) -> bool:
-    """
-    True if certbot/letsencrypt cert files exist for hostname.
-    """
-    fullchain, privkey = letsencrypt_cert_paths(hostname)
-    return os.path.isfile(fullchain) and os.path.isfile(privkey)
+def have_letsencrypt_cert(
+        hostname: str,
+) -> bool:
+    return installer_core.have_letsencrypt_cert(hostname)
 
 
 def ensure_letsencrypt_reuse_key(hostname: str, log: Optional[Log] = None) -> bool:
@@ -2834,76 +2853,24 @@ def compute_tls_spki_sha256_pin_from_cert(cert_path: str) -> str:
     return pin
 
 
-def compute_tls_spki_sha256_pin_from_host(hostname: str, port: int = 443) -> str:
-    """
-    Best-effort fallback for external HTTPS / Cloudflare / non-local TLS.
-
-    This asks the currently reachable TLS endpoint for its leaf certificate and
-    computes the SPKI pin from that. Prefer local Let's Encrypt cert files when
-    available.
-    """
-    host = (hostname or "").strip()
-    if not host:
-        return ""
-
-    p1 = subprocess.run(
-        ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
-        input=b"",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-        check=False,
+def compute_tls_spki_sha256_pin_from_host(
+        hostname: str,
+        port: int = 443,
+) -> str:
+    return installer_core.compute_tls_spki_sha256_pin_from_host(
+        hostname,
+        port,
     )
-    if p1.returncode != 0 or not p1.stdout:
-        return ""
 
-    p2 = subprocess.run(
-        ["openssl", "x509", "-pubkey", "-noout"],
-        input=p1.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+
+def detect_external_tls_spki_sha256_pin(
+        hostname: str,
+        log: Optional[Log] = None,
+) -> tuple[str, str]:
+    return installer_core.detect_external_tls_spki_sha256_pin(
+        hostname,
+        log=log,
     )
-    if p2.returncode != 0 or not p2.stdout:
-        return ""
-
-    p3 = subprocess.run(
-        ["openssl", "pkey", "-pubin", "-outform", "DER"],
-        input=p2.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p3.returncode != 0 or not p3.stdout:
-        return ""
-
-    p4 = subprocess.run(
-        ["openssl", "dgst", "-sha256", "-binary"],
-        input=p3.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p4.returncode != 0 or not p4.stdout:
-        return ""
-
-    p5 = subprocess.run(
-        ["openssl", "base64", "-A"],
-        input=p4.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p5.returncode != 0 or not p5.stdout:
-        return ""
-
-    b64 = (p5.stdout or b"").decode("ascii", errors="replace").strip()
-    pin = f"sha256/{b64}"
-
-    if not re.fullmatch(r"sha256/[A-Za-z0-9+/]{43}=", pin):
-        return ""
-
-    return pin
 
 
 def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tuple[str, str]:
@@ -2929,15 +2896,10 @@ def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tupl
             if log:
                 log.write(f"[WARN] Could not compute TLS SPKI pin from {fullchain}: {e}")
 
-    try:
-        pin = compute_tls_spki_sha256_pin_from_host(host, 443)
-        if pin:
-            return (pin, f"{host}:443")
-    except Exception as e:
-        if log:
-            log.write(f"[WARN] Could not compute TLS SPKI pin from live host {host}:443: {e}")
-
-    return ("", "")
+    return detect_external_tls_spki_sha256_pin(
+        host,
+        log=log,
+    )
 
 def write_nginx_site_http_only(
         server_name: str,
@@ -3153,69 +3115,16 @@ def nginx_test_reload(log: Optional[Log] = None) -> None:
 # -----------------------------------------------------------------------------
 
 
-def plan_for(state: InstallState) -> Tuple[List[List[str]], List[str]]:
-    """
-    Returns: (plan_argvs, notes)
-    Plan uses a single-disk model for now.
-    """
-    assert state.disk, "disk not selected"
-    d = state.disk
-    mp = state.mountpoint.rstrip("/") or "/srv/pqnas"
+def detect_existing_filesystem_info(
+        path: str,
+) -> tuple[str, str, str]:
+    return installer_core.detect_existing_filesystem_info(path)
 
-    notes: List[str] = []
-    plan: List[List[str]] = []
 
-    if state.install_mode == "existing":
-        notes.append("Mode: existing filesystem (NO wipe, NO partitioning).")
-        notes.append(f"PQ-NAS will be installed under: {mp}")
-        notes.append("WARNING: This uses your current root filesystem capacity.")
-        return plan, notes
-
-    if d.is_system:
-        raise RuntimeError("Refusing to operate on system disk (contains / mount).")
-
-    # Always clean slate first
-    plan += [
-        ["wipefs", "-a", d.path],
-        ["sgdisk", "--zap-all", d.path],
-        ["dd", "if=/dev/zero", f"of={d.path}", "bs=1M", "count=32", "status=none"],
-        ["sync"],
-        ["sgdisk", "--zap-all", d.path],
-        ["partprobe", d.path],
-    ]
-    notes.append("Disk will be destroyed (wipefs + zap GPT + zero first 32MiB).")
-
-    if state.backend == "ext4":
-        part = dev_part_path(d)
-        plan += [
-            ["parted", d.path, "--script", "mklabel", "gpt", "mkpart", "primary", "ext4", "1MiB", "100%"],
-            ["partprobe", d.path],
-            ["mkfs.ext4", "-F", "-L", "PQNAS_DATA", part],
-            ["mkdir", "-p", mp],
-            ["mount", part, mp],
-        ]
-        notes.append("Backend: ext4 (no snapshots).")
-
-    elif state.backend == "btrfs":
-        part = dev_part_path(d)
-        plan += [
-            ["parted", d.path, "--script", "mklabel", "gpt", "mkpart", "primary", "btrfs", "1MiB", "100%"],
-            ["partprobe", d.path],
-            ["mkfs.btrfs", "-f", "-L", "PQNAS_DATA", part],
-            ["mkdir", "-p", mp],
-            ["mount", part, mp],
-            ["btrfs", "subvolume", "create", f"{mp}/data"],
-            ["btrfs", "subvolume", "create", f"{mp}/snaps"],
-            ["umount", mp],
-            ["mount", "-o", "subvol=data", part, mp],
-        ]
-        notes.append("Backend: btrfs (snapshots supported via subvolumes).")
-
-    else:
-        raise RuntimeError(f"Unknown backend: {state.backend}")
-
-    notes.append("TODO: fstab + permissions.")
-    return plan, notes
+def plan_for(
+        state: InstallState,
+) -> Tuple[List[List[str]], List[str]]:
+    return installer_core.plan_for(state)
 
 
 # -----------------------------------------------------------------------------
@@ -3331,8 +3240,9 @@ class DiskSelectScreen(Screen):
 
         if chosen_mode == "existing":
             self.mode_hint.update(
-                "WARNING: Existing filesystem mode uses your current root disk capacity. "
-                "Use /srv/pqnas and monitor free space."
+                "WARNING: Existing filesystem mode shares capacity with the "
+                "filesystem backing the selected PQ-NAS path. "
+                "Review the backing mount in the plan and monitor free space."
             )
 
         app.push_screen(BackendSelectScreen())
@@ -3821,15 +3731,25 @@ class ReverseProxyScreen(Screen):
             yield self.host_in
 
             yield Static(
-                "[dim]For Cloudflare Tunnel with no local nginx, still enter the public hostname here. "
-                "The installer will write PQNAS_ORIGIN/PQNAS_RP_ID for login verification.[/dim]",
+                "[dim]If HTTPS terminates on another proxy, select the external "
+                "HTTPS option. The installer will keep local nginx HTTP-only "
+                "while writing an HTTPS public origin for login verification. "
+                "With local nginx disabled, external HTTPS is selected "
+                "automatically.[/dim]",
                 classes="muted",
             )
 
-            yield Static("\n[b]HTTPS (optional)[/b]", classes="muted")
+            yield Static("\n[b]Public HTTPS mode[/b]", classes="muted")
             self.https_enable = RadioSet(
                 RadioButton("HTTP only", id="https_off"),
-                RadioButton("Enable HTTPS (Let’s Encrypt)", id="https_on"),
+                RadioButton(
+                    "Public HTTPS terminates at an external reverse proxy",
+                    id="https_external",
+                ),
+                RadioButton(
+                    "Enable HTTPS locally (Let’s Encrypt)",
+                    id="https_on",
+                ),
             )
             yield self.https_enable
 
@@ -3866,9 +3786,17 @@ class ReverseProxyScreen(Screen):
         for btn in self.login_mode.query(RadioButton):
             btn.value = (btn.id == st.login_mode)
 
-        # https on/off
+        # Public TLS mode. Local Let's Encrypt and upstream TLS termination
+        # are intentionally separate states.
+        if st.external_tls_termination:
+            https_mode = "https_external"
+        elif st.https_enabled:
+            https_mode = "https_on"
+        else:
+            https_mode = "https_off"
+
         for btn in self.https_enable.query(RadioButton):
-            btn.value = (btn.id == ("https_on" if st.https_enabled else "https_off"))
+            btn.value = (btn.id == https_mode)
 
         self.email_in.value = st.https_email or ""
 
@@ -3882,15 +3810,27 @@ class ReverseProxyScreen(Screen):
         enabled = any(btn.value and btn.id == "on" for btn in self.enable.query(RadioButton))
         self.host_in.disabled = False
 
-        https_on = enabled and any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
-        self.email_in.disabled = not https_on
+        if not enabled:
+            # No local listener means the public hostname is served by an
+            # external HTTPS proxy/tunnel, preserving the existing behaviour.
+            for btn in self.https_enable.query(RadioButton):
+                btn.value = (btn.id == "https_external")
 
-        if not https_on:
+        for btn in self.https_enable.query(RadioButton):
+            btn.disabled = (not enabled and btn.id != "https_external")
+
+        local_https_on = enabled and any(
+            btn.value and btn.id == "https_on"
+            for btn in self.https_enable.query(RadioButton)
+        )
+        self.email_in.disabled = not local_https_on
+
+        if not local_https_on:
             for btn in self.redirect_btn.query(RadioButton):
                 btn.value = (btn.id == "redir_off")
 
         for btn in self.redirect_btn.query(RadioButton):
-            btn.disabled = not https_on
+            btn.disabled = not local_https_on
 
         if not enabled:
             self.err.update("")
@@ -3922,18 +3862,38 @@ class ReverseProxyScreen(Screen):
             self.err.update("Enter a hostname or IP (no spaces, no slashes).")
             return
 
+        tls_mode = "https_off"
+        for btn in self.https_enable.query(RadioButton):
+            if btn.value:
+                tls_mode = btn.id
+                break
+
+        if tls_mode not in ("https_off", "https_external", "https_on"):
+            self.err.update("Choose HTTP, external HTTPS, or local Let’s Encrypt.")
+            return
+
+        if tls_mode == "https_on" and not enabled:
+            self.err.update("Local Let’s Encrypt requires the local nginx reverse proxy.")
+            return
+
         st.nginx_enabled = enabled
         st.nginx_hostname = host
         st.nginx_listen_port = 80
+        st.external_tls_termination = (
+            (not enabled) or tls_mode == "https_external"
+        )
 
         if enabled:
             if not host:
                 self.err.update("Reverse proxy enabled: enter a hostname or IP.")
                 return
 
-            st.https_enabled = any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
+            st.https_enabled = (tls_mode == "https_on")
             st.https_email = (self.email_in.value or "").strip()
-            st.https_redirect = any(btn.value and btn.id == "redir_on" for btn in self.redirect_btn.query(RadioButton))
+            st.https_redirect = any(
+                btn.value and btn.id == "redir_on"
+                for btn in self.redirect_btn.query(RadioButton)
+            )
 
             if st.https_enabled:
                 if not st.https_email or "@" not in st.https_email:
@@ -4194,6 +4154,16 @@ def nginx_health_check_output(
         return "[ERROR] nginx health check failed."
 
 
+def installer_health_access_target(
+        public_origin: Optional[str],
+        server_role: str,
+) -> tuple[str, str, str]:
+    return installer_core.installer_health_access_target(
+        public_origin,
+        server_role,
+    )
+
+
 class HealthScreen(Screen):
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -4208,6 +4178,7 @@ class HealthScreen(Screen):
         mode: str,
         backend: str,
         server_role: str,
+        public_origin: Optional[str],
         nginx_enabled: bool,
         nginx_hostname: str,
         nginx_port: int,
@@ -4219,6 +4190,7 @@ class HealthScreen(Screen):
         self.mode = mode
         self.backend = backend
         self.server_role = server_role
+        self.public_origin = public_origin
         self.nginx_enabled = nginx_enabled
         self.nginx_hostname = nginx_hostname
         self.nginx_port = nginx_port
@@ -4257,25 +4229,10 @@ class HealthScreen(Screen):
     def _render_summary(self) -> None:
         role = (self.server_role or "standalone").strip().lower()
 
-        if self.nginx_enabled and self.nginx_hostname:
-            url_label = "Access URL"
-            url = f"http://{self.nginx_hostname}/"
-            listener_note = ""
-        elif role == "standalone":
-            url_label = "Access URL"
-            url = "http://<server-ip>:8081/"
-            listener_note = (
-                "Standalone listens directly on port 8081 when "
-                "no local nginx proxy is enabled."
-            )
-        else:
-            url_label = "Local service URL"
-            url = "http://127.0.0.1:8081/ (loopback only)"
-            listener_note = (
-                "Director and Storage Node roles require a local "
-                "reverse proxy or secure tunnel for remote access. "
-                "Use TLS when exposing the service outside the host."
-            )
+        url_label, url, listener_note = installer_health_access_target(
+            self.public_origin,
+            role,
+        )
 
         lines = [
             f"[b]Storage:[/b] {self.mp}",
@@ -4498,7 +4455,24 @@ class ExecuteScreen(Screen):
             "from /usr/local/bin/*.bak and restart the service.\n"
         )
 
-        self.set_timer(0.05, self._run_install)
+        self.run_worker(
+            self._run_install,
+            name="installer-execute",
+            thread=True,
+        )
+
+    def _update_done_from_worker(self, text: str) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(self.done.update, text)
+
+    def _push_screen_from_worker(
+        self,
+        screen_factory: Callable[[], Screen],
+    ) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(
+            lambda: app.push_screen(screen_factory())
+        )
 
     def _run_install(self) -> None:
         app: InstallerApp = self.app  # type: ignore
@@ -4509,7 +4483,7 @@ class ExecuteScreen(Screen):
                 st.node_bootstrap_token
             )
             st.node_bootstrap_token = None
-            self.done.update("No disk selected.")
+            self._update_done_from_worker("No disk selected.")
             return
 
         mode = st.install_mode
@@ -4522,7 +4496,7 @@ class ExecuteScreen(Screen):
                     st.node_bootstrap_token
                 )
                 st.node_bootstrap_token = None
-                self.done.update("No plan to execute.")
+                self._update_done_from_worker("No plan to execute.")
                 return
 
             ok = True
@@ -4570,7 +4544,7 @@ class ExecuteScreen(Screen):
                     st.node_bootstrap_token
                 )
                 st.node_bootstrap_token = None
-                self.done.update(
+                self._update_done_from_worker(
                     "\n❌ Failed.\n\n"
                     "Nothing else will be executed. Check the log above.\n"
                     "You can safely rerun after wiping again.\n"
@@ -4728,24 +4702,29 @@ class ExecuteScreen(Screen):
             tls_pin_source = ""
 
             if st.nginx_hostname:
-                if st.nginx_enabled:
-                    if have_letsencrypt_cert(st.nginx_hostname):
-                        origin = f"https://{st.nginx_hostname}"
-                    else:
-                        origin = f"http://{st.nginx_hostname}"
-                else:
-                    # External HTTPS handled elsewhere (e.g. Cloudflare Tunnel / external reverse proxy)
-                    origin = f"https://{st.nginx_hostname}"
-
+                origin = installer_public_origin(st)
                 rp_id = st.nginx_hostname
 
             if origin and origin.startswith("https://") and st.nginx_hostname:
-                ensure_letsencrypt_reuse_key(st.nginx_hostname, log=self.logw)
+                if st.external_tls_termination or not st.nginx_enabled:
+                    # Security: external TLS must pin the certificate actually
+                    # served by the public endpoint, never stale local LE files.
+                    tls_spki_pin_sha256, tls_pin_source = (
+                        detect_external_tls_spki_sha256_pin(
+                            st.nginx_hostname,
+                            log=self.logw,
+                        )
+                    )
+                else:
+                    ensure_letsencrypt_reuse_key(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
+                    tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
 
-                tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
-                    st.nginx_hostname,
-                    log=self.logw,
-                )
                 st.tls_spki_pin_sha256 = tls_spki_pin_sha256
 
             write_env_file(
@@ -4907,8 +4886,8 @@ class ExecuteScreen(Screen):
                 err_text = str(e)
                 self.logw.write("[ERROR] pqnas.service failed to start.")
                 self.logw.write(err_text)
-                self.app.push_screen(RollbackScreen(err_text, was_upgrade=was_upgrade))
-                self.done.update(
+                self._push_screen_from_worker(lambda: RollbackScreen(err_text, was_upgrade=was_upgrade))
+                self._update_done_from_worker(
                     "\n⚠️ Service failed to start.\n\n"
                     "Use the rollback screen to restore previous binaries or keep the new ones.\n"
                 )
@@ -4937,16 +4916,46 @@ class ExecuteScreen(Screen):
                 ensure_nginx_installed(log=self.logw)
 
                 self.logw.write("Writing nginx site config …")
-                conf_path = write_nginx_site_https_if_available(
-                    server_name=st.nginx_hostname,
-                    upstream_host="127.0.0.1",
-                    upstream_port=8081,
-                    client_max_body_size="2g",
-                )
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx enabled: https://{st.nginx_hostname}/ (http redirects with 308)")
+
+                if st.external_tls_termination:
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ local nginx enabled: http://{st.nginx_hostname}/ "
+                        "(public HTTPS terminates externally)"
+                    )
+                elif st.https_enabled:
+                    conf_path = write_nginx_site_https_if_available(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        client_max_body_size="2g",
+                    )
+                    if have_letsencrypt_cert(st.nginx_hostname):
+                        self.logw.write(
+                            f"✅ nginx enabled: https://{st.nginx_hostname}/ "
+                            "(http redirects with 308)"
+                        )
+                    else:
+                        self.logw.write(
+                            f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                            "(awaiting local TLS certificate)"
+                        )
                 else:
-                    self.logw.write(f"✅ nginx enabled: http://{st.nginx_hostname}/ (no TLS cert detected)")
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                        "(HTTP-only selected)"
+                    )
 
                 self.logw.write(f"Wrote: {conf_path}")
 
@@ -5021,12 +5030,24 @@ class ExecuteScreen(Screen):
                         )
                         run_systemctl(["restart", "pqnas.service"])
 
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx ready: https://{st.nginx_hostname}/  (http redirects with 308)")
-                    self.logw.write("PQNAS_ORIGIN will be set to https automatically on next install/run (or edit /etc/pqnas/pqnas.env).")
+                if st.external_tls_termination:
+                    self.logw.write(
+                        f"✅ local nginx ready: http://{st.nginx_hostname}/"
+                    )
+                    self.logw.write(
+                        f"✅ public origin: https://{st.nginx_hostname}/ "
+                        "(TLS terminates externally)"
+                    )
+                elif st.https_enabled and have_letsencrypt_cert(st.nginx_hostname):
+                    self.logw.write(
+                        f"✅ nginx ready: https://{st.nginx_hostname}/ "
+                        "(http redirects with 308)"
+                    )
                 else:
-                    self.logw.write(f"✅ nginx ready: http://{st.nginx_hostname}/  (no TLS cert detected)")
-                    self.logw.write("Tip: after you add TLS (certbot), PQNAS_ORIGIN should be https://… and HTTP should redirect with 308.")
+                    self.logw.write(
+                        f"✅ nginx ready: http://{st.nginx_hostname}/ "
+                        "(HTTP-only)"
+                    )
 
                 if not looks_like_ip(st.nginx_hostname):
                     self.logw.write("Note: if you used a hostname, ensure it resolves to this server (DNS/router/hosts).")
@@ -5039,7 +5060,7 @@ class ExecuteScreen(Screen):
             self.logw.write("")
             self.logw.write("Layout created: data/ logs/ apps/ audit/ tmp/")
 
-            self.done.update(
+            self._update_done_from_worker(
                 "\n✅ Done.\n\n"
                 f"Storage path: {mp}\n"
                 f"Mode: {mode}\n"
@@ -5049,12 +5070,13 @@ class ExecuteScreen(Screen):
                 "First admin setup:\n"
                 "  sudo pqnas-first-admin\n"
             )
-            self.app.push_screen(
-                HealthScreen(
+            self._push_screen_from_worker(
+                lambda: HealthScreen(
                     mp=mp,
                     mode=mode,
                     backend=backend,
                     server_role=st.cluster_config.role,
+                    public_origin=installer_public_origin(st),
                     nginx_enabled=st.nginx_enabled,
                     nginx_hostname=st.nginx_hostname,
                     nginx_port=st.nginx_listen_port,
@@ -5072,7 +5094,7 @@ class ExecuteScreen(Screen):
             )
             st.node_bootstrap_token = None
             self.logw.write(f"[FINALIZE ERROR] {e}")
-            self.done.update(
+            self._update_done_from_worker(
                 "\n⚠️ Finalize failed.\n\n"
                 "Check log above.\n"
             )
