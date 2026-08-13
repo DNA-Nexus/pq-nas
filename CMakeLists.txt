@@ -2107,6 +2107,16 @@ add_custom_target(run_test_admin_cluster_node_routes
 
 
 # -----------------------------------------------------------------------------
+# Test: test_admin_api_catalog_cluster_routes
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_admin_api_catalog_cluster_routes
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_admin_api_catalog_cluster_routes.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_registry
 # -----------------------------------------------------------------------------
 add_executable(test_node_registry
