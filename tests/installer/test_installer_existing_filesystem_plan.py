@@ -1,65 +1,28 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import ast
 import json
-import os
-import types
+import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import List, Tuple
 from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INSTALLER = ROOT / "tools" / "installer" / "pqnas_install.py"
+INSTALLER_DIR = ROOT / "tools" / "installer"
+INSTALLER = INSTALLER_DIR / "pqnas_install.py"
 
+if str(INSTALLER_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALLER_DIR))
 
-def load_helpers():
-    source = INSTALLER.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(INSTALLER))
-
-    wanted = {
-        "detect_existing_filesystem_info",
-        "plan_for",
-    }
-    nodes = [
-        item
-        for item in tree.body
-        if isinstance(item, ast.FunctionDef)
-        and item.name in wanted
-    ]
-
-    found = {item.name for item in nodes}
-    if found != wanted:
-        raise RuntimeError(
-            f"installer helper functions missing: {sorted(wanted - found)}"
-        )
-
-    module = types.ModuleType("pqnas_installer_existing_fs_test")
-    module.__dict__.update(
-        {
-            "InstallState": object,
-            "List": List,
-            "Tuple": Tuple,
-            "json": json,
-            "os": os,
-            "run_cmd": lambda _argv: "",
-            "dev_part_path": lambda disk: f"{disk.path}1",
-        }
-    )
-
-    isolated = ast.Module(body=nodes, type_ignores=[])
-    ast.fix_missing_locations(isolated)
-    exec(compile(isolated, str(INSTALLER), "exec"), module.__dict__)
-    return module
+import pqnas_installer_core as installer_core
 
 
 class InstallerExistingFilesystemPlanTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.module = load_helpers()
+        cls.module = installer_core
         cls.source = INSTALLER.read_text(encoding="utf-8")
 
     def test_detection_uses_nearest_existing_parent(self) -> None:
@@ -173,6 +136,135 @@ class InstallerExistingFilesystemPlanTests(unittest.TestCase):
         self.assertIn("Backing mount: unknown", notes)
         self.assertIn("Filesystem: unknown", notes)
         self.assertIn("Source: unknown", notes)
+
+    def test_disk_mode_command_plans_are_preserved(self) -> None:
+        disk = SimpleNamespace(
+            path="/dev/sdb",
+            name="sdb",
+            is_system=False,
+        )
+
+        common_prefix = [
+            ["wipefs", "-a", "/dev/sdb"],
+            ["sgdisk", "--zap-all", "/dev/sdb"],
+            [
+                "dd",
+                "if=/dev/zero",
+                "of=/dev/sdb",
+                "bs=1M",
+                "count=32",
+                "status=none",
+            ],
+            ["sync"],
+            ["sgdisk", "--zap-all", "/dev/sdb"],
+            ["partprobe", "/dev/sdb"],
+        ]
+
+        cases = {
+            "ext4": common_prefix + [
+                [
+                    "parted",
+                    "/dev/sdb",
+                    "--script",
+                    "mklabel",
+                    "gpt",
+                    "mkpart",
+                    "primary",
+                    "ext4",
+                    "1MiB",
+                    "100%",
+                ],
+                ["partprobe", "/dev/sdb"],
+                [
+                    "mkfs.ext4",
+                    "-F",
+                    "-L",
+                    "PQNAS_DATA",
+                    "/dev/sdb1",
+                ],
+                ["mkdir", "-p", "/srv/pqnas"],
+                ["mount", "/dev/sdb1", "/srv/pqnas"],
+            ],
+            "btrfs": common_prefix + [
+                [
+                    "parted",
+                    "/dev/sdb",
+                    "--script",
+                    "mklabel",
+                    "gpt",
+                    "mkpart",
+                    "primary",
+                    "btrfs",
+                    "1MiB",
+                    "100%",
+                ],
+                ["partprobe", "/dev/sdb"],
+                [
+                    "mkfs.btrfs",
+                    "-f",
+                    "-L",
+                    "PQNAS_DATA",
+                    "/dev/sdb1",
+                ],
+                ["mkdir", "-p", "/srv/pqnas"],
+                ["mount", "/dev/sdb1", "/srv/pqnas"],
+                [
+                    "btrfs",
+                    "subvolume",
+                    "create",
+                    "/srv/pqnas/data",
+                ],
+                [
+                    "btrfs",
+                    "subvolume",
+                    "create",
+                    "/srv/pqnas/snaps",
+                ],
+                ["umount", "/srv/pqnas"],
+                [
+                    "mount",
+                    "-o",
+                    "subvol=data",
+                    "/dev/sdb1",
+                    "/srv/pqnas",
+                ],
+            ],
+        }
+
+        for backend, expected in cases.items():
+            with self.subTest(backend=backend):
+                state = SimpleNamespace(
+                    disk=disk,
+                    mountpoint="/srv/pqnas",
+                    install_mode="disk",
+                    backend=backend,
+                )
+
+                plan, notes = self.module.plan_for(state)
+
+                self.assertEqual(plan, expected)
+                self.assertIn(
+                    "Disk will be destroyed",
+                    "\n".join(notes),
+                )
+
+    def test_disk_mode_refuses_system_disk_before_plan(self) -> None:
+        state = SimpleNamespace(
+            disk=SimpleNamespace(
+                path="/dev/sda",
+                name="sda",
+                is_system=True,
+            ),
+            mountpoint="/srv/pqnas",
+            install_mode="disk",
+            backend="btrfs",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Refusing to operate on system disk",
+        ):
+            self.module.plan_for(state)
 
     def test_old_root_capacity_claim_is_removed(self) -> None:
         self.assertNotIn(

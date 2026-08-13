@@ -1,46 +1,25 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import ast
-import types
+import sys
 import unittest
 from pathlib import Path
-from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INSTALLER = ROOT / "tools" / "installer" / "pqnas_install.py"
+INSTALLER_DIR = ROOT / "tools" / "installer"
+INSTALLER = INSTALLER_DIR / "pqnas_install.py"
 
+if str(INSTALLER_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALLER_DIR))
 
-def load_health_helper():
-    source = INSTALLER.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(INSTALLER))
-
-    node = next(
-        (
-            item
-            for item in tree.body
-            if isinstance(item, ast.FunctionDef)
-            and item.name == "installer_health_access_target"
-        ),
-        None,
-    )
-    if node is None:
-        raise RuntimeError("installer_health_access_target function not found")
-
-    module = types.ModuleType("pqnas_installer_health_test")
-    module.__dict__.update({"Optional": Optional})
-
-    isolated = ast.Module(body=[node], type_ignores=[])
-    ast.fix_missing_locations(isolated)
-    exec(compile(isolated, str(INSTALLER), "exec"), module.__dict__)
-    return module
+import pqnas_installer_core as installer_core
 
 
 class InstallerHealthAccessUrlTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.module = load_health_helper()
+        cls.module = installer_core
         cls.source = INSTALLER.read_text(encoding="utf-8")
 
     def test_https_public_origin_is_shown_as_https(self) -> None:

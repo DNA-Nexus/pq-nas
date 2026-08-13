@@ -1,62 +1,28 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import ast
 import subprocess
-import types
+import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
 from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INSTALLER = ROOT / "tools" / "installer" / "pqnas_install.py"
+INSTALLER_DIR = ROOT / "tools" / "installer"
+INSTALLER = INSTALLER_DIR / "pqnas_install.py"
 
+if str(INSTALLER_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALLER_DIR))
 
-def load_origin_helper():
-    source = INSTALLER.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(INSTALLER))
-
-    wanted = {
-        "installer_public_origin",
-        "detect_external_tls_spki_sha256_pin",
-    }
-    nodes = [
-        item
-        for item in tree.body
-        if isinstance(item, ast.FunctionDef)
-        and item.name in wanted
-    ]
-
-    found = {item.name for item in nodes}
-    if found != wanted:
-        raise RuntimeError(
-            f"installer helper functions missing: {sorted(wanted - found)}"
-        )
-
-    module = types.ModuleType("pqnas_installer_external_tls_test")
-    module.__dict__.update(
-        {
-            "InstallState": object,
-            "Log": object,
-            "Optional": Optional,
-            "have_letsencrypt_cert": lambda _host: False,
-            "compute_tls_spki_sha256_pin_from_host": lambda _host, _port=443: "",
-        }
-    )
-
-    isolated = ast.Module(body=nodes, type_ignores=[])
-    ast.fix_missing_locations(isolated)
-    exec(compile(isolated, str(INSTALLER), "exec"), module.__dict__)
-    return module
+import pqnas_installer_core as installer_core
 
 
 class InstallerExternalTlsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.module = load_origin_helper()
+        cls.module = installer_core
         cls.source = INSTALLER.read_text(encoding="utf-8")
 
     def state(

@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import ast
 import io
 import re
 import subprocess
-import types
+import sys
 import unittest
 from pathlib import Path
-from typing import List, Optional
 from unittest import mock
 
 
@@ -16,51 +14,10 @@ ROOT = Path(__file__).resolve().parents[2]
 INSTALLER_DIR = ROOT / "tools" / "installer"
 INSTALLER = INSTALLER_DIR / "pqnas_install.py"
 
+if str(INSTALLER_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALLER_DIR))
 
-def load_installer_module():
-    source = INSTALLER.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(INSTALLER))
-
-    apt_node = next(
-        (
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "apt_install"
-        ),
-        None,
-    )
-    if apt_node is None:
-        raise RuntimeError("apt_install function not found")
-
-    # Keep this regression test independent of Textual and the rest of the
-    # installer runtime. Only apt_install() is executed in this test module.
-    module = types.ModuleType("pqnas_install_live_log_test")
-    module.__dict__.update(
-        {
-            "List": List,
-            "Optional": Optional,
-            "Log": object,
-            "subprocess": subprocess,
-            "have_cmd": lambda _name: True,
-        }
-    )
-
-    isolated = ast.Module(
-        body=[apt_node],
-        type_ignores=[],
-    )
-    ast.fix_missing_locations(isolated)
-
-    exec(
-        compile(
-            isolated,
-            str(INSTALLER),
-            "exec",
-        ),
-        module.__dict__,
-    )
-    return module
+import pqnas_installer_core as installer_core
 
 
 class FakeLog:
@@ -89,7 +46,7 @@ class FakeProcess:
 class InstallerLiveLogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.module = load_installer_module()
+        cls.module = installer_core
         cls.source = INSTALLER.read_text(encoding="utf-8")
 
     def execute_screen_body(self) -> str:
