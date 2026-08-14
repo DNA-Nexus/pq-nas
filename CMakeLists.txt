@@ -2107,6 +2107,31 @@ add_custom_target(run_test_admin_cluster_node_routes
 
 
 # -----------------------------------------------------------------------------
+# Test: test_core_ui_shell_routes
+# -----------------------------------------------------------------------------
+add_executable(test_core_ui_shell_routes
+        tests/cluster/test_core_ui_shell_routes.cpp
+        server/src/routes/routes_core_ui_shell.cpp
+)
+
+target_include_directories(test_core_ui_shell_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+set_target_properties(test_core_ui_shell_routes PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_core_ui_shell_routes
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_core_ui_shell_routes"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_core_ui_shell_routes
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_admin_api_catalog_cluster_routes
 # -----------------------------------------------------------------------------
 add_custom_target(run_test_admin_api_catalog_cluster_routes

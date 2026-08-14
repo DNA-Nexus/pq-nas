@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title data-brand-title-suffix=" • Director">Director</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/components.css?v=20260610-components-v1">
+    <link rel="stylesheet" href="/static/shell_menu.css">
+    <link rel="stylesheet" href="/static/director/admin.css">
+
+    <script src="/static/theme.js"></script>
+    <script src="/static/branding.js?v=20260620-branding-admin-1"></script>
+    <script defer src="/static/director/admin.js"></script>
+</head>
+
+<body>
+<div class="desktop">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logoDot" aria-hidden="true"></div>
+            <div class="director-brand-text">
+                <h1>Director</h1>
+                <div class="sub">cluster control plane</div>
+            </div>
+        </div>
+
+        <nav class="nav" aria-label="Director navigation">
+            <div class="sectionLabel">Director</div>
+
+            <button
+                class="navbtn active"
+                type="button"
+                data-director-view-button="overview"
+                aria-current="page"
+            >
+                <span>Overview</span>
+                <span class="k">O</span>
+            </button>
+
+            <div class="sectionLabel">Cluster</div>
+
+            <button
+                class="navbtn"
+                type="button"
+                data-director-view-button="nodes"
+            >
+                <span>Storage Nodes</span>
+                <span class="k">N</span>
+            </button>
+        </nav>
+
+        <div class="bottom">
+            <div class="statusCard">
+                <div class="pq-badge muted">Director</div>
+                <div class="mini">
+                    Authentication, node coordination and user placement.
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="workspace">
+        <section
+            class="director-content"
+            data-director-view-panel="overview"
+        >
+            <header class="director-heading">
+                <div class="director-eyebrow">DNA-Nexus control plane</div>
+                <h2>Director</h2>
+                <p>
+                    Central administration for authentication,
+                    Storage Nodes and user placement.
+                </p>
+            </header>
+
+            <section class="director-panel" aria-label="Director status">
+                <div class="director-panel-title">Control plane</div>
+                <p>
+                    Director administration is active.
+                </p>
+            </section>
+        </section>
+
+
+        <section
+            class="director-content"
+            data-director-view-panel="nodes"
+            hidden
+        >
+            <header class="director-heading">
+                <div class="director-eyebrow">Cluster</div>
+                <h2>Storage Nodes</h2>
+                <p>
+                    Storage capacity and heartbeat status reported to
+                    this Director.
+                </p>
+            </header>
+
+            <div class="director-node-toolbar">
+                <div
+                    id="directorNodesSummary"
+                    class="director-node-summary"
+                    aria-live="polite"
+                >
+                    Loading Storage Nodes…
+                </div>
+
+                <button
+                    id="directorNodesRefresh"
+                    class="pq-btn secondary"
+                    type="button"
+                >
+                    Refresh
+                </button>
+            </div>
+
+            <div
+                id="directorNodesList"
+                class="director-node-list"
+                aria-live="polite"
+            ></div>
+        </section>
+
+        <div class="footerline" data-brand-text="copyright">
+            © Server 2026
+        </div>
+    </main>
+</div>
+</body>
+</html>
