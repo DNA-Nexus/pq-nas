@@ -272,8 +272,9 @@ int main() {
 
     config.now_iso_utc =
         []() {
+            // Regression: pqnas::now_iso_utc() emits milliseconds.
             return std::string(
-                "2026-07-28T08:00:01Z"
+                "2026-07-28T08:00:01.123Z"
             );
         };
 
