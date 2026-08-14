@@ -1,5 +1,6 @@
 #include "routes_admin_cluster_nodes.h"
 #include "cluster/cluster_identity_validation.h"
+#include "cluster/cluster_timestamp.h"
 
 #include "audit_log.h"
 #include "cluster/node_registry.h"
@@ -593,7 +594,9 @@ void handle_admin_cluster_nodes_create(
             node_id,
             normalized_url,
             enabled,
-            context.now_iso_utc(),
+            canonicalize_cluster_runtime_timestamp(
+                context.now_iso_utc()
+            ),
             &registry_error)) {
         audit_mutation(
             context,
@@ -923,7 +926,9 @@ void handle_admin_cluster_nodes_update(
             node_id,
             final_url,
             final_enabled,
-            context.now_iso_utc(),
+            canonicalize_cluster_runtime_timestamp(
+                context.now_iso_utc()
+            ),
             &registry_error)) {
         audit_mutation(
             context,

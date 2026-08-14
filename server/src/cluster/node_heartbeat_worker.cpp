@@ -1,5 +1,6 @@
 #include "node_heartbeat_worker.h"
 
+#include "cluster_timestamp.h"
 #include "node_credential_registry.h"
 #include "node_registry.h"
 #include "node_status.h"
@@ -489,8 +490,13 @@ NodeHeartbeatWorker::poll_once() {
         std::string received_at;
 
         try {
+            // Reliability/security: the shared runtime clock includes
+            // milliseconds, while cluster persistence intentionally accepts
+            // only canonical UTC seconds.
             received_at =
-                config_.now_iso_utc();
+                canonicalize_cluster_runtime_timestamp(
+                    config_.now_iso_utc()
+                );
         } catch (...) {
             received_at.clear();
         }

@@ -204,8 +204,9 @@ int main() {
 
     context.now_iso_utc =
         []() {
+            // Regression: pqnas::now_iso_utc() emits milliseconds.
             return std::string(
-                "2026-07-28T07:00:00Z"
+                "2026-07-28T07:00:00.123Z"
             );
         };
 
@@ -405,9 +406,16 @@ int main() {
             "created node should use normalized URL"
         );
 
+        const auto created =
+            registry.get("node-01");
+
         expect(
-            registry.get("node-01").has_value(),
-            "created node should persist"
+            created.has_value() &&
+            created->added_at ==
+                "2026-07-28T07:00:00Z" &&
+            created->updated_at ==
+                "2026-07-28T07:00:00Z",
+            "created node should persist canonical timestamps"
         );
 
         expect(
