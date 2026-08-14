@@ -706,6 +706,9 @@ static std::string static_path(const char* rel) {
 const std::string STATIC_AUDIT_HTML          = static_path("admin_audit.html");
 const std::string STATIC_AUDIT_JS            = static_path("admin_audit.js");
 const std::string STATIC_ADMIN_HTML          = static_path("admin.html");
+const std::string STATIC_DIRECTOR_ADMIN_HTML = static_path("director/admin.html");
+const std::string STATIC_DIRECTOR_ADMIN_CSS  = static_path("director/admin.css");
+const std::string STATIC_DIRECTOR_ADMIN_JS   = static_path("director/admin.js");
 const std::string STATIC_ADMIN_JS            = static_path("admin.js");
 const std::string STATIC_ADMIN_APPS_HTML     = static_path("admin_apps.html");
 const std::string STATIC_ADMIN_UPDATES_HTML  = static_path("admin_updates.html");
@@ -12369,9 +12372,19 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     // ---- Core UI shell routes ----
     {
         CoreUiShellRoutesContext core_ui_shell_ctx;
+        core_ui_shell_ctx.is_director =
+            cluster_config.is_director();
+
         core_ui_shell_ctx.static_system_js = STATIC_SYSTEM_JS;
         core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
         core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
+        core_ui_shell_ctx.static_director_admin_html =
+            STATIC_DIRECTOR_ADMIN_HTML;
+        core_ui_shell_ctx.static_director_admin_css =
+            STATIC_DIRECTOR_ADMIN_CSS;
+        core_ui_shell_ctx.static_director_admin_js =
+            STATIC_DIRECTOR_ADMIN_JS;
+        core_ui_shell_ctx.static_app_html = STATIC_APP_HTML;
         core_ui_shell_ctx.static_app_js = STATIC_APP_JS;
         core_ui_shell_ctx.static_app_frame_background_tasks_js =
             STATIC_APP_FRAME_BACKGROUND_TASKS_JS;
@@ -12380,6 +12393,15 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         core_ui_shell_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        core_ui_shell_ctx.is_admin =
+            [&](const httplib::Request& req) {
+                return is_admin_cookie_users(
+                    req,
+                    COOKIE_KEY,
+                    &users
+                );
             };
 
         core_ui_shell_ctx.read_file_to_string =
@@ -12614,25 +12636,6 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     });
 
 
-
-/*
-    srv.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_APP_HTML);
-        if (body.empty()) {
-            res.status = 404;
-            res.set_content("missing app.html", "text/plain");
-            return;
-        }
-        res.set_content(body, "text/html; charset=utf-8");
-    });
-*/
-    srv.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_APP_HTML);
-        if (body.empty()) { res.status = 404; res.set_content("missing app.html","text/plain"); return; }
-        res.set_header("Cache-Control", "no-store");
-        res.set_header("X-Content-Type-Options", "nosniff");
-        res.set_content(body, "text/html; charset=utf-8");
-    });
 
 
 
