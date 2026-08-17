@@ -41,6 +41,10 @@ struct RoutesV5Context {
     const std::string* allowlist_path = nullptr;
     const std::string* users_path     = nullptr;
 
+    // Security: Storage Nodes must not create normal local login sessions.
+    // Their user sessions are established only through Director handoff.
+    bool interactive_user_login_allowed = false;
+
     // ---- callbacks into your existing helpers (defined in main.cpp today) ----
     std::function<long()> now_epoch;
     std::function<std::string()> now_iso_utc;

@@ -127,6 +127,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/server_role.h"
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
+#include "cluster/storage_user_projection_store.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_enrollment_registry.h"
@@ -135,6 +136,11 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_node_enrollment_runtime.h"
 #include "cluster/storage_node_enrollment_https.h"
 #include "cluster/node_heartbeat_worker.h"
+#include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_sync_client.h"
+#include "cluster/storage_user_projection_sync_https.h"
+#include "cluster/storage_user_projection_reconciler.h"
+#include "cluster/storage_user_projection_reconcile_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
 #include "cluster/user_placement_recommendation_apply_service.h"
@@ -142,6 +148,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
+#include "routes/routes_internal_storage_user_projection.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
 #include "routes/routes_node_enrollment_bootstrap.h"
@@ -190,6 +197,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "storage_info.h"
 #include "user_quota.h"
 #include "storage_resolver.h"
+#include "storage_metadata_validation.h"
 #include "file_location_index.h"
 #include "workspaces.h"
 #include "workspace_external_invites.h"
@@ -4597,18 +4605,6 @@ static std::filesystem::path pools_cfg_path_from_users_path(const std::string& u
 static bool write_text_file_atomic(const std::string&, const std::string&);
 static bool read_text_file(const std::string&, std::string*);
 
-static bool is_pool_id_safe(const std::string& s) {
-    if (s.size() < 2 || s.size() > 24) return false;
-    for (char c : s) {
-        const bool ok =
-            (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') ||
-            (c == '_');
-        if (!ok) return false;
-    }
-    return true;
-}
-
 static std::string upper_ascii_copy(std::string s) {
     for (char& c : s) {
         if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
@@ -6797,7 +6793,7 @@ static std::vector<ManagedPoolRef> managed_pools_from_cfg(const json& cfg) {
             std::string pool_id = one.value("pool_id", "");
             if (pool_id.empty()) pool_id = pool_id_from_mount_best_effort(mount);
 
-            if (!is_pool_id_safe(pool_id)) continue;
+            if (!pqnas::valid_managed_storage_pool_id(pool_id)) continue;
 
             ManagedPoolRef r;
             r.mount = mount;
@@ -6824,7 +6820,7 @@ static std::vector<ManagedPoolRef> managed_pools_from_cfg(const json& cfg) {
                 pool_id.clear();
             }
 
-            if (!is_pool_id_safe(pool_id)) continue;
+            if (!pqnas::valid_managed_storage_pool_id(pool_id)) continue;
 
             ManagedPoolRef r;
             r.mount = mount;
@@ -6872,7 +6868,7 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
     	const std::string& mount = mp.mount;
     	const std::string& pool_id = mp.pool_id;
 
-        if (!is_pool_id_safe(pool_id)) {
+        if (!pqnas::valid_managed_storage_pool_id(pool_id)) {
             std::cerr << "[pools] restore: skip invalid pool_id for mount=" << mount << std::endl;
             continue;
         }
@@ -9286,6 +9282,13 @@ int main()
 
     pqnas::cluster::InternalAuthCredential cluster_credential;
 
+    // Node-local authorization projection state.
+    //
+    // Security: this is deliberately separate from UsersRegistry so Storage
+    // projections can never become an interactive-login user authority.
+    pqnas::cluster::StorageUserProjectionStore
+        storage_user_projection_store;
+
     if (cluster_config.is_node()) {
         std::string credential_err;
 
@@ -9301,6 +9304,44 @@ int main()
                 << std::endl;
             return 2;
         }
+    }
+
+    if (cluster_config.is_node()) {
+        // Security: projection metadata is trusted Node authorization state.
+        // Derive one fixed filename from the validated config root instead of
+        // accepting a separate environment-controlled file path.
+        const std::filesystem::path
+            storage_user_projection_path =
+                pqnas::config_root_path() /
+                "storage_user_projections.json";
+
+        std::string
+            storage_user_projection_error;
+
+        if (!storage_user_projection_store.load(
+                storage_user_projection_path.string(),
+                &storage_user_projection_error)) {
+            // Security: fail closed. A malformed, linked, incorrectly owned or
+            // insufficiently private projection store must never turn into an
+            // empty authorization view on a running Storage Node.
+            //
+            // Do not log the configured path or raw file contents.
+            std::cerr
+                << "[cluster] FATAL: storage user projection "
+                   "store load failed: "
+                << storage_user_projection_error
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] storage user projection store loaded "
+               "projections="
+            << storage_user_projection_store
+                   .snapshot()
+                   .size()
+            << std::endl;
     }
 
     std::cerr
@@ -10129,6 +10170,205 @@ auto maybe_auto_rotate_before_append = [&]() {
         return 4;
     }
 
+
+    // ---------------------------------------------------------------------
+    // Director -> Storage user projection reconciliation.
+    //
+    // Security: compose this only after users.json has loaded successfully.
+    // The persistent sync-state remembers the last Node/revision known to
+    // have accepted each projection, allowing crash-safe reconciliation.
+    // ---------------------------------------------------------------------
+    pqnas::cluster::
+        StorageUserProjectionSyncStateStore
+            director_storage_projection_sync_state_store;
+
+    if (cluster_config.is_director()) {
+        const std::filesystem::path
+            projection_sync_state_path =
+                pqnas::config_root_path() /
+                "storage_projection_sync_state.json";
+
+        // Security: production Director must never silently bootstrap an
+        // empty confirmed-sync view after this file has been lost. Otherwise
+        // the previous authoritative Node could be forgotten and retain stale
+        // authorization indefinitely. Initial deployment must explicitly seed
+        // the empty version-1 state file.
+        std::error_code
+            projection_sync_state_status_error;
+
+        const auto projection_sync_state_status =
+            std::filesystem::symlink_status(
+                projection_sync_state_path,
+                projection_sync_state_status_error
+            );
+
+        if (projection_sync_state_status_error ||
+            !std::filesystem::exists(
+                projection_sync_state_status)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "sync-state file is missing or inaccessible"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::string
+            projection_sync_state_error;
+
+        if (!director_storage_projection_sync_state_store.load(
+                projection_sync_state_path.string(),
+                &projection_sync_state_error)) {
+            // Security: fail closed. Losing or accepting malformed confirmed
+            // synchronization state could leave an old Storage Node
+            // authorized after a placement transition.
+            //
+            // Do not log the configured path or file contents.
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "sync-state load failed: "
+                << projection_sync_state_error
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director storage projection sync-state "
+               "loaded entries="
+            << director_storage_projection_sync_state_store
+                   .snapshot()
+                   .size()
+            << std::endl;
+    }
+
+    pqnas::cluster::
+        StorageUserProjectionSyncClientConfig
+            director_storage_projection_sync_client_config;
+
+    director_storage_projection_sync_client_config
+        .node_registry =
+            &director_node_registry;
+
+    director_storage_projection_sync_client_config
+        .credential_registry =
+            &director_node_credential_registry;
+
+    director_storage_projection_sync_client_config
+        .transport =
+            pqnas::cluster::
+                make_https_storage_user_projection_sync_transport();
+
+    pqnas::cluster::
+        StorageUserProjectionSyncClient
+            director_storage_projection_sync_client(
+                std::move(
+                    director_storage_projection_sync_client_config
+                )
+            );
+
+    pqnas::cluster::
+        StorageUserProjectionReconcilerConfig
+            director_storage_projection_reconciler_config;
+
+    director_storage_projection_reconciler_config.users =
+        &users;
+
+    director_storage_projection_reconciler_config.state_store =
+        &director_storage_projection_sync_state_store;
+
+    director_storage_projection_reconciler_config.sync_projection =
+        [&director_storage_projection_sync_client](
+            const pqnas::cluster::StorageUserProjection& projection
+        ) {
+            return
+                director_storage_projection_sync_client.sync(
+                    projection
+                );
+        };
+
+    pqnas::cluster::
+        StorageUserProjectionReconciler
+            director_storage_projection_reconciler(
+                std::move(
+                    director_storage_projection_reconciler_config
+                )
+            );
+
+    pqnas::cluster::
+        StorageUserProjectionReconcileWorkerConfig
+            director_storage_projection_reconcile_worker_config;
+
+    director_storage_projection_reconcile_worker_config
+        .reconcile_once =
+            [&director_storage_projection_reconciler]() {
+                const auto result =
+                    director_storage_projection_reconciler
+                        .reconcile_once();
+
+                if (!result.ok) {
+                    // Security/operations: log aggregate reconciliation
+                    // categories only. Never log fingerprints, Node URLs,
+                    // credentials, projection bodies or filesystem paths.
+                    std::cerr
+                        << "[cluster] WARNING: storage projection "
+                           "reconciliation incomplete"
+                        << " users_seen="
+                        << result.users_seen
+                        << " failed="
+                        << result.failed
+                        << " orphaned_states="
+                        << result.orphaned_states
+                        << " stale_states="
+                        << result.stale_states
+                        << " state_conflicts="
+                        << result.state_conflicts
+                        << " persist_failures="
+                        << result.persist_failures
+                        << std::endl;
+                }
+
+                return result;
+            };
+
+    pqnas::cluster::
+        StorageUserProjectionReconcileWorker
+            director_storage_projection_reconcile_worker(
+                std::move(
+                    director_storage_projection_reconcile_worker_config
+                )
+            );
+
+    if (cluster_config.is_director()) {
+        std::string
+            projection_reconcile_worker_error;
+
+        if (!director_storage_projection_reconcile_worker.start(
+                &projection_reconcile_worker_error)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "reconciliation worker failed to start: "
+                << projection_reconcile_worker_error
+                << std::endl;
+
+            return 3;
+        }
+
+        // Security/correctness: only a running Director worker receives
+        // post-commit projection wakes. Periodic reconciliation remains the
+        // safety net if an individual best-effort wake cannot be delivered.
+        users.set_storage_projection_commit_notifier(
+            [&director_storage_projection_reconcile_worker]() {
+                (void)director_storage_projection_reconcile_worker.wake();
+            }
+        );
+
+        std::cerr
+            << "[cluster] Director storage projection reconciliation "
+               "worker started interval_s=30"
+            << std::endl;
+    }
+
     pqnas::WorkspacesRegistry workspaces;
     const std::string workspaces_path =
         (std::filesystem::path(users_path).parent_path() / "workspaces.json").string();
@@ -10739,6 +10979,10 @@ v5.app_pair_build_qr_uri =
 
 	// (leave v5.sign_token_v4_ed25519 unset for now; we’ll wire once v5 verify uses it)
 
+    // Security: a Storage Node must not authenticate users locally.
+    // Normal user sessions on Node are created only through Director handoff.
+    v5.interactive_user_login_allowed = !cluster_config.is_node();
+
     register_routes_v5(srv, v5);
 
     if (cluster_config.is_node()) {
@@ -10795,6 +11039,46 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] internal node status route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            InternalStorageUserProjectionRoutesContext
+                internal_storage_user_projection_context;
+
+        internal_storage_user_projection_context.credential =
+            &cluster_credential;
+
+        internal_storage_user_projection_context.projection_store =
+            &storage_user_projection_store;
+
+        // Security: bind accepted projections to the configured stable Node
+        // identity. Never infer this trust boundary from hostname or request
+        // metadata.
+        internal_storage_user_projection_context.local_node_id =
+            cluster_config.node_id;
+
+        internal_storage_user_projection_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_internal_storage_user_projection_routes(
+                srv,
+                internal_storage_user_projection_context
+            );
+
+        std::cerr
+            << "[cluster] internal storage user projection "
+               "route registered"
             << std::endl;
     }
 
@@ -13291,6 +13575,10 @@ c.users     = &users;
 c.allowlist_path = &allowlist_path;
 c.users_path     = &users_path;
 
+// Security: normal QR/user login is not a valid authentication path on
+// Storage Nodes. Director handoff is the only normal-user session entry.
+c.interactive_user_login_allowed = !cluster_config.is_node();
+
 // approvals/pending (bridge)
 c.approvals_prune = [&](long now){ approvals_prune(now); };
 c.pending_prune   = [&](long now){ pending_prune(now); };
@@ -14838,8 +15126,18 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 	// ---- Shutdown sequence ----
 
-	// Stop Director heartbeat first so no more registry writes occur while
-	// the remaining background services are being shut down.
+	// Detach the registry callback before stopping the worker so no later
+	// persisted mutation can retain a callback into its shutdown lifetime.
+	if (cluster_config.is_director()) {
+		users.set_storage_projection_commit_notifier({});
+	}
+
+	// Stop Director projection reconciliation first so no more Storage
+	// authorization writes occur during the remaining shutdown sequence.
+	director_storage_projection_reconcile_worker.stop_and_join();
+
+	// Then stop heartbeat so no more Director node-registry observations mutate
+	// while the remaining background services are being shut down.
 	director_node_heartbeat_worker.stop_and_join();
 
 	// Stop background drive health monitor

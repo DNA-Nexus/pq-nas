@@ -44,6 +44,7 @@
 //   lock discipline near RoutesV5OpaqueEnrollmentsFileLock.
 
 #include "routes_v5.h"
+#include "interactive_user_login_policy.h"
 #include "branding_config.h"
 #include "allowlist.h"
 #include "users_registry.h"
@@ -1871,7 +1872,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             final_user_status = updated_user.status;
             user_enabled_by_enrollment = (user->status != "enabled");
 
-            if (!ctx.users->upsert(updated_user) || !ctx.users->save(*ctx.users_path)) {
+            if (!ctx.users->set_status_persisted(
+                    updated_user.fingerprint,
+                    updated_user.status,
+                    *ctx.users_path,
+                    nullptr,
+                    nullptr
+                )) {
                 routes_v5_audit_password(ctx, req, "opaque.registration_finish", "deny", login, actor_fp, "user_enable_failed");
                 reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_enable_failed"}}.dump());
                 return;
@@ -2270,6 +2277,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     //
     // Public token-protected OPAQUE registration start.
     srv.Post("/api/auth/opaque/enrollment/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -2440,6 +2454,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // is generated. Recovery words are returned only in this user-facing
     // response and are never returned to the admin provisioning endpoint.
     srv.Post("/api/auth/opaque/enrollment/finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -2737,7 +2758,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
                 final_user_status = updated_user.status;
                 user_enabled_by_enrollment = (existing_user->status != "enabled");
 
-                if (!ctx.users->upsert(updated_user) || !ctx.users->save(*ctx.users_path)) {
+                if (!ctx.users->set_status_persisted(
+                    updated_user.fingerprint,
+                    updated_user.status,
+                    *ctx.users_path,
+                    nullptr,
+                    nullptr
+                )) {
                     routes_v5_secure_clear_string(generated_ident.recovery_words);
                     routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, final_fingerprint, "user_enable_failed");
                     reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_enable_failed"}}.dump());
@@ -3566,6 +3593,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // credential response plus an opaque in-memory login id. It never accepts
     // plaintext passwords and never mints pqnas_session.
     srv.Post("/api/auth/opaque/login/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -3734,6 +3768,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // This proves the OPAQUE transcript using the helper and mints pqnas_session
     // only after successful transcript verification and enabled-user check.
     srv.Post("/api/auth/opaque/login/finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -3884,6 +3925,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // PQNAS_OPAQUE_BOOTSTRAP_TOKEN. It only works while no enabled admin exists.
     // The plaintext password never reaches the server.
     srv.Post("/api/auth/opaque/bootstrap-admin/start", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -4015,6 +4063,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // Creates the first enabled admin user and stores the OPAQUE credential.
     // The response returns recovery words once, same as password bootstrap.
     srv.Post("/api/auth/opaque/bootstrap-admin/finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_opaque_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "opaque_auth_disabled"}}.dump());
             return;
@@ -4247,6 +4302,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // - request provides matching X-PQNAS-Bootstrap-Token or bootstrap_token
     // - there is no enabled admin in UsersRegistry yet
     srv.Post("/api/auth/password/bootstrap-admin", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -4513,6 +4575,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // identity and recovery words are created. Recovery words are returned once
     // to the user, not to the admin who created the setup link.
     srv.Post("/api/auth/password/setup-finish", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -4725,6 +4794,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
     // ---- POST /api/auth/password/login ----
     srv.Post("/api/auth/password/login", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -4855,6 +4931,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // Body:
     //   { "login": "user@example.com", "recovery_words": "24 words ...", "new_password": "..." }
     srv.Post("/api/auth/password/recover", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -4984,6 +5067,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // Body:
     //   { "fingerprint": "...", "login": "user@example.com", "password": "new password" }
     srv.Post("/api/auth/password/set", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -5103,6 +5193,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
     // Body:
     //   { "login": "user@example.com", "current_password": "...", "new_password": "..." }
     srv.Post("/api/auth/password/change", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!routes_v5_password_auth_enabled()) {
             reply_json(res, 404, json{{"ok", false}, {"error", "password_auth_disabled"}}.dump());
             return;
@@ -5626,6 +5723,15 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             return;
         }
 
+        // Security: fail before rate limiting, ST/pending state,
+        // or preauth-cookie creation on Storage Nodes.
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         const std::string ip_for_rate_limit = routes_v5_request_ip(ctx, req);
         if (!routes_v5_simple_ip_rate_limit_allow(
                 "v5.session",
@@ -5851,6 +5957,13 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 // Route group: /api/v5/session
 // Issues a signed request token (st) and correlation key (k). Inserts PendingEntry.
 srv.Post("/api/v5/consume", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
     const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
     if (ctx.approvals_prune) ctx.approvals_prune(now);
     if (ctx.pending_prune)   ctx.pending_prune(now);
@@ -5958,6 +6071,13 @@ srv.Post("/api/v5/consume", [&](const httplib::Request& req, httplib::Response& 
 // ---- POST /api/v5/consume_app {st|k|sid, device_name?, platform?, app_version?} ----
 // Mobile/app equivalent of /consume: returns bearer tokens instead of Set-Cookie.
 srv.Post("/api/v5/consume_app", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
     const long now = ctx.now_epoch ? ctx.now_epoch() : 0;
     if (ctx.approvals_prune) ctx.approvals_prune(now);
     if (ctx.pending_prune)   ctx.pending_prune(now);
