@@ -93,14 +93,20 @@ void register_admin_user_lifecycle_routes(
                 return;
             }
 
-            if (!ctx.users->set_status(fp, "disabled")) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "set_status failed"}});
-                return;
+            // Security: disabling the user and advancing the Storage
+            // projection revision are one persisted registry mutation.
+            const bool saved =
+                ctx.users->set_status_persisted(
+                    fp,
+                    "disabled",
+                    ctx.users_path,
+                    nullptr,
+                    nullptr
+                );
+
+            if (saved) {
+                ctx.revoke_devices_for_fingerprint(fp);
             }
-
-            ctx.revoke_devices_for_fingerprint(fp);
-
-            const bool saved = ctx.users->save(ctx.users_path);
 
             {
                 pqnas::AuditEvent ev;
@@ -190,26 +196,87 @@ void register_admin_user_lifecycle_routes(
                 return;
             }
 
-            const bool ok_del = ctx.users->erase(fp);
-            const bool ok_save = ok_del ? ctx.users->save(ctx.users_path) : false;
+            bool erased = false;
+            bool placement_blocked = false;
+            std::string delete_error;
+
+            // Security: deletion is one persisted registry mutation. Placed
+            // cluster users are retained until Storage revoke reconciliation
+            // can safely remove their last Node authorization.
+            const bool ok_del =
+                ctx.users->erase_persisted_if_unplaced(
+                    fp,
+                    ctx.users_path,
+                    &erased,
+                    &placement_blocked,
+                    &delete_error
+                );
 
             {
                 pqnas::AuditEvent ev;
                 ev.event = "admin.user_deleted";
-                ev.outcome = (ok_del && ok_save) ? "ok" : "fail";
+                ev.outcome =
+                    (ok_del && erased)
+                        ? "ok"
+                        : "fail";
                 ev.f["fingerprint"] = fp;
                 ev.f["ts"] = ctx.now_iso_utc();
                 ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                ev.f["ip"] =
+                    req.remote_addr.empty()
+                        ? "?"
+                        : req.remote_addr;
                 ctx.audit_append(ev);
             }
 
             if (!ok_del) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "delete failed"}});
+                if (delete_error == "user not found") {
+                    reply(
+                        404,
+                        json{
+                            {"ok", false},
+                            {"error", "not_found"},
+                            {"message", "user not found"}
+                        }
+                    );
+                    return;
+                }
+
+                reply(
+                    500,
+                    json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "user delete persistence failed"}
+                    }
+                );
                 return;
             }
-            if (!ok_save) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "users save failed"}});
+
+            if (placement_blocked) {
+                reply(
+                    409,
+                    json{
+                        {"ok", false},
+                        {"error", "cluster_revoke_required"},
+                        {
+                            "message",
+                            "placed user must be revoked from Storage before deletion"
+                        }
+                    }
+                );
+                return;
+            }
+
+            if (!erased) {
+                reply(
+                    500,
+                    json{
+                        {"ok", false},
+                        {"error", "server_error"},
+                        {"message", "delete failed"}
+                    }
+                );
                 return;
             }
 

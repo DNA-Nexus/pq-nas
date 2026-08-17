@@ -952,43 +952,84 @@ bool verify_user_storage_migration_destination(const UserStorageMigrationPlan& p
 // - storage_set_at
 //
 // It does not delete old source data; cleanup remains outside v1 migration.
-bool switch_user_storage_migration_metadata(UsersRegistry& users,
-                                            const std::string& users_path,
-                                            const std::string& actor_fp,
-                                            const UserStorageMigrationPlan& plan,
-                                            std::string* err) {
-    if (err) err->clear();
-
-    auto uopt = users.get(plan.fingerprint);
-    if (!uopt.has_value()) {
-        if (err) *err = "user_missing_after_copy";
-        return false;
+bool switch_user_storage_migration_metadata(
+    UsersRegistry& users,
+    const std::string& users_path,
+    const std::string& actor_fp,
+    const UserStorageMigrationPlan& plan,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
     }
 
-    auto u = *uopt;
-    const std::string current_pool_id = u.storage_pool_id.empty() ? "default" : u.storage_pool_id;
+    const std::string expected_pool_id =
+        plan.from_pool_id == "default"
+            ? ""
+            : plan.from_pool_id;
 
-    // Compare-before-commit guard:
-    // only switch if metadata still matches the source pool resolved when worker started.
-    if (current_pool_id != plan.from_pool_id) {
+    const std::string new_pool_id =
+        plan.to_pool_id == "default"
+            ? ""
+            : plan.to_pool_id;
+
+    bool expectation_matched = false;
+    std::string registry_error;
+
+    const bool persisted =
+        users.switch_storage_mapping_persisted_if_pool_current(
+            plan.fingerprint,
+            expected_pool_id,
+            new_pool_id,
+            plan.root_rel,
+            pqnas::now_iso_utc(),
+            actor_fp,
+            users_path,
+            &expectation_matched,
+            nullptr,
+            nullptr,
+            &registry_error
+        );
+
+    if (!persisted) {
         if (err) {
-            *err = "source pool changed before metadata switch: expected=" +
-                   plan.from_pool_id + " actual=" + current_pool_id;
+            if (registry_error == "user not found") {
+                *err = "user_missing_after_copy";
+            } else {
+                *err =
+                    registry_error.empty()
+                        ? "users storage mapping persistence failed"
+                        : registry_error;
+            }
         }
+
         return false;
     }
 
-    u.storage_pool_id = (plan.to_pool_id == "default") ? "" : plan.to_pool_id;
-    u.root_rel = plan.root_rel;
-    u.storage_set_by = actor_fp;
-    u.storage_set_at = pqnas::now_iso_utc();
+    if (!expectation_matched) {
+        // Diagnostic read only. Authorization safety comes from the CAS above,
+        // not from this post-failure snapshot.
+        std::string actual_pool_id =
+            "<missing>";
 
-    if (!users.upsert(u)) {
-        if (err) *err = "users.upsert failed";
-        return false;
-    }
-    if (!users.save(users_path)) {
-        if (err) *err = "users.save failed";
+        const auto current =
+            users.get(plan.fingerprint);
+
+        if (current.has_value()) {
+            actual_pool_id =
+                current->storage_pool_id.empty()
+                    ? "default"
+                    : current->storage_pool_id;
+        }
+
+        if (err) {
+            *err =
+                "source pool changed before metadata switch: expected=" +
+                plan.from_pool_id +
+                " actual=" +
+                actual_pool_id;
+        }
+
         return false;
     }
 

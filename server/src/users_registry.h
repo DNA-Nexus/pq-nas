@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 namespace pqnas {
 
@@ -65,6 +66,16 @@ struct UserRec {
     // "node-01" = stable Director-managed node ID
     std::string home_node;
 
+    // Monotonic Director-owned version of the Storage Node projection.
+    //
+    // 0 is the backward-compatible value for users loaded from an older
+    // users.json that predates projection revisions. Once a persisted
+    // projection mutation occurs, the revision becomes positive.
+    //
+    // Security: callers never own this value. UsersRegistry assigns and
+    // persists it together with projection-relevant metadata.
+    std::uint64_t storage_projection_revision = 0;
+
     // Placement intent is separate from the currently realized placement.
     //
     // ""                = no policy override
@@ -72,10 +83,29 @@ struct UserRec {
     std::string placement_policy_id;
 };
 
+struct UserStorageMetadataUpdate {
+    std::string storage_state;
+    std::uint64_t quota_bytes = 0;
+    std::string root_rel;
+    std::string storage_pool_id;
+    std::string storage_set_at;
+    std::string storage_set_by;
+};
+
 class UsersRegistry {
 public:
+    using StorageProjectionCommitNotifier =
+        std::function<void()>;
+
     bool load(const std::string& path);
     bool save(const std::string& path) const;
+
+    // Best-effort latency hook for Director projection reconciliation.
+    // Security: notification happens only after a successful durable
+    // projection-relevant registry commit.
+    void set_storage_projection_commit_notifier(
+        StorageProjectionCommitNotifier notifier
+    );
 
     // Lookups
     bool exists(const std::string& fp_hex) const;
@@ -89,7 +119,78 @@ public:
     // Mutations (auditable by caller)
     bool ensure_present_disabled_user(const std::string& fp_hex, const std::string& now_iso);
     bool upsert(const UserRec& u);
+
+    // Atomically persists a complete user-record replacement.
+    //
+    // If the Storage Node projection changes, UsersRegistry increments the
+    // Director-owned projection revision before saving. Save failure restores
+    // both the previous record and its previous revision.
+    //
+    // New records committed through this API start at revision 1.
+    bool upsert_persisted(
+        const UserRec& u,
+        const std::string& path,
+        bool* projection_changed,
+        std::string* error
+    );
+
     bool set_status(const std::string& fp_hex, const std::string& status);
+
+    // Atomic write-through status mutation with projection revision handling.
+    bool set_status_persisted(
+        const std::string& fp_hex,
+        const std::string& status,
+        const std::string& path,
+        bool* changed,
+        std::string* error
+    );
+    // Atomically persists storage metadata and its Director-owned
+    // projection revision.
+    //
+    // changed reports whether any persisted storage metadata changed.
+    // projection_changed reports whether the Storage Node-visible projection
+    // changed and therefore advanced storage_projection_revision.
+    bool set_storage_metadata_persisted(
+        const std::string& fp_hex,
+        const UserStorageMetadataUpdate& update,
+        const std::string& path,
+        bool* changed,
+        bool* projection_changed,
+        std::string* error
+    );
+
+    // Atomic compare-and-switch used by storage migration.
+    //
+    // Only storage mapping fields are replaced:
+    // - storage_pool_id
+    // - root_rel
+    // - storage_set_at
+    // - storage_set_by
+    //
+    // Current storage_state and quota_bytes are deliberately preserved.
+    //
+    // expected_storage_pool_id uses the persisted representation:
+    //     "" = default pool
+    //
+    // A stale expectation is a successful no-op:
+    // return true, expectation_matched=false, changed=false.
+    //
+    // Security: pool comparison, mapping mutation, projection revision,
+    // persistence and rollback all happen under one UsersRegistry lock.
+    bool switch_storage_mapping_persisted_if_pool_current(
+        const std::string& fp_hex,
+        const std::string& expected_storage_pool_id,
+        const std::string& new_storage_pool_id,
+        const std::string& new_root_rel,
+        const std::string& storage_set_at,
+        const std::string& storage_set_by,
+        const std::string& path,
+        bool* expectation_matched,
+        bool* changed,
+        bool* projection_changed,
+        std::string* error
+    );
+
     bool set_role(const std::string& fp_hex, const std::string& role);
     bool set_name_notes(const std::string& fp_hex, const std::string& name, const std::string& notes);
 
@@ -137,6 +238,21 @@ public:
     bool touch_last_seen(const std::string& fp_hex, const std::string& now_iso);
     bool erase(const std::string& fp_hex);
 
+    // Atomically delete an unplaced user from memory + users.json.
+    //
+    // Security:
+    // - a user with home_node must first go through the cluster revoke flow;
+    // - persistence failure restores the complete previous UserRec.
+    //
+    // placement_blocked=true is a successful policy no-op.
+    bool erase_persisted_if_unplaced(
+        const std::string& fp_hex,
+        const std::string& path,
+        bool* erased,
+        bool* placement_blocked,
+        std::string* error
+    );
+
     // Snapshot for API
     std::unordered_map<std::string, UserRec> snapshot() const;
 
@@ -155,6 +271,11 @@ public:
     > placement_policy_assignment_counts() const;
 
 private:
+    // Caller must hold mu_. The noexcept copy helper ensures a notification
+    // allocation failure can never turn an already-durable commit into failure.
+    StorageProjectionCommitNotifier
+    storage_projection_commit_notifier_copy_locked() const noexcept;
+
     // Caller must hold mu_.
     bool save_locked(
         const std::string& path
@@ -162,6 +283,8 @@ private:
 
     mutable std::mutex mu_;
     std::unordered_map<std::string, UserRec> by_fp_;
+    StorageProjectionCommitNotifier
+        storage_projection_commit_notifier_;
 };
 
 } // namespace pqnas

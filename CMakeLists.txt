@@ -228,6 +228,67 @@ target_link_libraries(pqnas_node_enrollment_token PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Storage handoff one-time ticket store
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_ticket_store STATIC
+        server/src/cluster/storage_handoff_ticket_store.cpp
+        server/src/cluster/storage_handoff_ticket_store.h
+)
+
+target_include_directories(pqnas_storage_handoff_ticket_store PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_storage_handoff_ticket_store PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_ticket_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_ticket_store PUBLIC
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+
+# -----------------------------------------------------------------------------
+# Internal Storage handoff routes
+# -----------------------------------------------------------------------------
+add_library(pqnas_internal_storage_handoff_routes STATIC
+        server/src/routes/routes_internal_storage_handoff.cpp
+        server/src/routes/routes_internal_storage_handoff.h
+)
+
+target_include_directories(pqnas_internal_storage_handoff_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_internal_storage_handoff_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_internal_storage_handoff_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_internal_storage_handoff_routes PUBLIC
+        pqnas_storage_handoff_ticket_store
+)
+
+
+# -----------------------------------------------------------------------------
 # Persistent node enrollment registry
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_enrollment_registry STATIC
@@ -678,6 +739,7 @@ add_executable(pqnas_server
         server/src/storage/snapshots/snapshot_scheduler.cc
 
         server/src/routes/routes_v5.cc
+        server/src/interactive_user_login_policy.cc
         server/src/password_credentials.cpp
         server/src/opaque_credentials.cpp
         server/src/opaque_backend_status.cpp
@@ -1818,6 +1880,75 @@ add_custom_target(run_test_node_enrollment_token
 
 
 # -----------------------------------------------------------------------------
+# Test: test_storage_handoff_ticket_store
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_ticket_store
+        tests/cluster/test_storage_handoff_ticket_store.cpp
+)
+
+target_include_directories(test_storage_handoff_ticket_store PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_handoff_ticket_store PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_storage_handoff_ticket_store PRIVATE
+        pqnas_storage_handoff_ticket_store
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_ticket_store PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_ticket_store
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_ticket_store"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_ticket_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_internal_storage_handoff_route
+# -----------------------------------------------------------------------------
+add_executable(test_internal_storage_handoff_route
+        tests/cluster/test_internal_storage_handoff_route.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_internal_storage_handoff_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_internal_storage_handoff_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_internal_storage_handoff_route PRIVATE
+        pqnas_internal_storage_handoff_routes
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_internal_storage_handoff_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_internal_storage_handoff_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_storage_handoff_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_storage_handoff_route
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_enrollment_registry
 # -----------------------------------------------------------------------------
 add_executable(test_node_enrollment_registry
@@ -2438,5 +2569,982 @@ add_custom_target(run_verify_v5_vectors
 target_sources(pqnas_server PRIVATE
     server/src/federation/pqnas_nodus_client.cpp
     server/src/federation/circle_federation_event.cpp
+)
+
+
+
+# -----------------------------------------------------------------------------
+# Test: test_interactive_user_login_policy
+# -----------------------------------------------------------------------------
+add_executable(test_interactive_user_login_policy
+        tests/auth/test_interactive_user_login_policy.cpp
+        server/src/interactive_user_login_policy.cc
+)
+
+target_include_directories(test_interactive_user_login_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_interactive_user_login_policy PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_interactive_user_login_policy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_interactive_user_login_policy
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_interactive_user_login_policy"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_interactive_user_login_policy
+)
+
+# -----------------------------------------------------------------------------
+# Test: Node interactive-auth structural guards
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_node_interactive_auth_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/auth/test_node_interactive_auth_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+
+# -----------------------------------------------------------------------------
+# Test: storage metadata validation
+# -----------------------------------------------------------------------------
+add_executable(test_storage_metadata_validation
+        tests/cluster/test_storage_metadata_validation.cpp
+)
+
+target_include_directories(test_storage_metadata_validation PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_metadata_validation
+        PRIVATE
+        -Werror
+    )
+endif()
+
+set_target_properties(test_storage_metadata_validation PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_metadata_validation
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_metadata_validation"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_metadata_validation
+)
+
+# -----------------------------------------------------------------------------
+# Test: storage path validation
+# -----------------------------------------------------------------------------
+add_executable(test_storage_path_validation
+        tests/cluster/test_storage_path_validation.cpp
+)
+
+target_include_directories(test_storage_path_validation PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_link_libraries(test_storage_path_validation PRIVATE
+        pqnas_storage_path_validation
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_path_validation
+        PRIVATE
+        -Werror
+    )
+endif()
+
+set_target_properties(test_storage_path_validation PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_path_validation
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_path_validation"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_path_validation
+)
+
+# -----------------------------------------------------------------------------
+# Shared storage path validation
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_path_validation STATIC
+        server/src/storage_path_validation.cpp
+        server/src/storage_path_validation.h
+)
+
+target_include_directories(pqnas_storage_path_validation PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_path_validation
+        PRIVATE
+        -Werror
+    )
+endif()
+
+
+# -----------------------------------------------------------------------------
+# Persistent Storage user projection store
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_store STATIC
+        server/src/cluster/storage_user_projection_store.cpp
+        server/src/cluster/storage_user_projection_store.h
+)
+
+target_include_directories(pqnas_storage_user_projection_store PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_store PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_path_validation
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage user projection store
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_store
+        tests/cluster/test_storage_user_projection_store.cpp
+)
+
+target_include_directories(test_storage_user_projection_store PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_store PRIVATE
+        pqnas_storage_user_projection_store
+)
+
+set_target_properties(test_storage_user_projection_store PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_store
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_store"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_store
+)
+
+# -----------------------------------------------------------------------------
+# Internal Storage user projection routes
+# -----------------------------------------------------------------------------
+add_library(pqnas_internal_storage_user_projection_routes STATIC
+        server/src/routes/routes_internal_storage_user_projection.cpp
+        server/src/routes/routes_internal_storage_user_projection.h
+)
+
+target_include_directories(pqnas_internal_storage_user_projection_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_internal_storage_user_projection_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_internal_storage_user_projection_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_internal_storage_user_projection_routes PUBLIC
+        pqnas_storage_user_projection_store
+)
+
+
+# Node production composition.
+#
+# storage_resolver uses the shared path validator directly, while the internal
+# projection route brings the projection store into the server.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_path_validation
+        pqnas_internal_storage_user_projection_routes
+)
+
+# -----------------------------------------------------------------------------
+# Test: internal Storage user projection route
+# -----------------------------------------------------------------------------
+add_executable(test_internal_storage_user_projection_route
+        tests/cluster/test_internal_storage_user_projection_route.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_internal_storage_user_projection_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_internal_storage_user_projection_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_internal_storage_user_projection_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_internal_storage_user_projection_route PRIVATE
+        pqnas_internal_storage_user_projection_routes
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_internal_storage_user_projection_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_internal_storage_user_projection_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_storage_user_projection_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_storage_user_projection_route
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: Storage user projection production wiring
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Test: Director-owned user Storage projection revisions
+# -----------------------------------------------------------------------------
+add_executable(test_user_storage_projection_revision
+        tests/cluster/test_user_storage_projection_revision.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_storage_projection_revision PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_user_storage_projection_revision
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_user_storage_projection_revision PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_storage_projection_revision PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_storage_projection_revision
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_storage_projection_revision"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_storage_projection_revision
+)
+
+# -----------------------------------------------------------------------------
+# Test: post-commit Storage projection reconciliation notifier
+# -----------------------------------------------------------------------------
+add_executable(test_storage_projection_commit_notifier
+        tests/cluster/test_storage_projection_commit_notifier.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_storage_projection_commit_notifier PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_projection_commit_notifier
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_projection_commit_notifier PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_storage_projection_commit_notifier PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_projection_commit_notifier
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_projection_commit_notifier"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_projection_commit_notifier
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: projection-relevant status callers use write-through API
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_projection_status_persisted_callers
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/auth/test_projection_status_persisted_callers.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Test: atomic persisted user storage metadata + migration CAS
+# -----------------------------------------------------------------------------
+add_executable(test_user_storage_metadata_persisted
+        tests/cluster/test_user_storage_metadata_persisted.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_storage_metadata_persisted PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_user_storage_metadata_persisted
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_user_storage_metadata_persisted PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_storage_metadata_persisted PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_storage_metadata_persisted
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_storage_metadata_persisted"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_storage_metadata_persisted
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: storage allocation/migration use atomic persisted APIs
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_metadata_persisted_callers
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_metadata_persisted_callers.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director -> Storage user projection builder
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_builder STATIC
+        server/src/cluster/storage_user_projection_builder.cpp
+        server/src/cluster/storage_user_projection_builder.h
+)
+
+target_include_directories(pqnas_storage_user_projection_builder PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_builder
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_builder PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_path_validation
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director -> Storage user projection builder
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_builder
+        tests/cluster/test_storage_user_projection_builder.cpp
+)
+
+target_include_directories(test_storage_user_projection_builder PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_builder
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_builder PRIVATE
+        pqnas_storage_user_projection_builder
+)
+
+set_target_properties(test_storage_user_projection_builder PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_builder
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_builder"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_builder
+)
+
+
+# -----------------------------------------------------------------------------
+# Director -> Storage user projection synchronization client
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_sync_client STATIC
+        server/src/cluster/storage_user_projection_sync_client.cpp
+        server/src/cluster/storage_user_projection_sync_client.h
+)
+
+target_include_directories(pqnas_storage_user_projection_sync_client PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_sync_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_sync_client PUBLIC
+        pqnas_node_credential_registry
+        pqnas_cluster_identity_validation
+        pqnas_storage_path_validation
+)
+
+
+# -----------------------------------------------------------------------------
+# Director -> Storage user projection HTTPS transport
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_sync_https STATIC
+        server/src/cluster/storage_user_projection_sync_https.cpp
+        server/src/cluster/storage_user_projection_sync_https.h
+)
+
+target_include_directories(pqnas_storage_user_projection_sync_https PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_user_projection_sync_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_storage_user_projection_sync_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_sync_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_sync_https PUBLIC
+        pqnas_storage_user_projection_sync_client
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director -> Storage projection synchronization client
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_sync_client
+        tests/cluster/test_storage_user_projection_sync_client.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_user_projection_sync_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_projection_sync_client PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_sync_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_sync_client PRIVATE
+        pqnas_storage_user_projection_sync_client
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_sync_client PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_sync_client
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_client"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_sync_client
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: projection synchronization HTTPS protocol parser
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_sync_https
+        tests/cluster/test_storage_user_projection_sync_https.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_user_projection_sync_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_definitions(
+        test_storage_user_projection_sync_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_compile_options(test_storage_user_projection_sync_https PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_sync_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_sync_https PRIVATE
+        pqnas_storage_user_projection_sync_https
+        ${SODIUM_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+set_target_properties(test_storage_user_projection_sync_https PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_sync_https
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_https"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_sync_https
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: projection synchronization HTTPS hardening
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_sync_https_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_sync_https_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director post-commit Storage user projection synchronization policy
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_sync_service STATIC
+        server/src/cluster/storage_user_projection_sync_service.cpp
+        server/src/cluster/storage_user_projection_sync_service.h
+)
+
+target_include_directories(pqnas_storage_user_projection_sync_service PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_sync_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_sync_service PUBLIC
+        pqnas_storage_user_projection_builder
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: transition-aware post-commit projection synchronization
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_sync_service
+        tests/cluster/test_storage_user_projection_sync_service.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_storage_user_projection_sync_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_sync_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_sync_service PRIVATE
+        pqnas_storage_user_projection_sync_service
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_sync_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_sync_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_sync_service
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: transition-aware projection sync remains fail-closed
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_sync_service_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_sync_service_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: Storage projection durability uncertainty
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_projection_durability_guard
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_projection_durability_guard.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director persistent Storage projection synchronization state
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_sync_state_store STATIC
+        server/src/cluster/storage_user_projection_sync_state_store.cpp
+        server/src/cluster/storage_user_projection_sync_state_store.h
+)
+
+target_include_directories(pqnas_storage_user_projection_sync_state_store PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_sync_state_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_sync_state_store PUBLIC
+        pqnas_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director persistent projection synchronization state
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_sync_state_store
+        tests/cluster/test_storage_user_projection_sync_state_store.cpp
+)
+
+target_include_directories(test_storage_user_projection_sync_state_store PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_sync_state_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_sync_state_store PRIVATE
+        pqnas_storage_user_projection_sync_state_store
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_sync_state_store PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_sync_state_store
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_state_store"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_sync_state_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: persistent projection synchronization state
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_sync_state_store_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_sync_state_store_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Test: persisted cluster-safe user deletion
+# -----------------------------------------------------------------------------
+add_executable(test_user_delete_persisted
+        tests/cluster/test_user_delete_persisted.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_user_delete_persisted PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_user_delete_persisted
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_user_delete_persisted PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_user_delete_persisted PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_user_delete_persisted
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_delete_persisted"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_user_delete_persisted
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: user deletion stays persisted + cluster-safe
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_user_delete_persisted_callers
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_user_delete_persisted_callers.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director Storage user projection reconciliation
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_reconciler STATIC
+        server/src/cluster/storage_user_projection_reconciler.cpp
+        server/src/cluster/storage_user_projection_reconciler.h
+)
+
+target_include_directories(pqnas_storage_user_projection_reconciler PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_reconciler
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_reconciler PUBLIC
+        pqnas_storage_user_projection_builder
+        pqnas_storage_user_projection_sync_state_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: deterministic Director projection reconciliation
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_reconciler
+        tests/cluster/test_storage_user_projection_reconciler.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_storage_user_projection_reconciler PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_reconciler
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_reconciler PRIVATE
+        pqnas_storage_user_projection_reconciler
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_reconciler PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_reconciler
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_reconciler"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_reconciler
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: deterministic projection reconciliation
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_reconciler_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_reconciler_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director Storage projection reconciliation worker
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_reconcile_worker STATIC
+        server/src/cluster/storage_user_projection_reconcile_worker.cpp
+        server/src/cluster/storage_user_projection_reconcile_worker.h
+)
+
+target_include_directories(pqnas_storage_user_projection_reconcile_worker PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_reconcile_worker
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_reconcile_worker PUBLIC
+        pqnas_storage_user_projection_reconciler
+        Threads::Threads
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Storage projection reconciliation worker lifecycle
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_reconcile_worker
+        tests/cluster/test_storage_user_projection_reconcile_worker.cpp
+)
+
+target_include_directories(test_storage_user_projection_reconcile_worker PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_reconcile_worker
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_reconcile_worker PRIVATE
+        pqnas_storage_user_projection_reconcile_worker
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_reconcile_worker PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_reconcile_worker
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_reconcile_worker"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_reconcile_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: projection reconciliation worker remains only scheduling
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_reconcile_worker_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_reconcile_worker_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
+# Director production Storage projection reconciliation composition
+# -----------------------------------------------------------------------------
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_user_projection_sync_https
+        pqnas_storage_user_projection_reconcile_worker
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: Director projection reconciliation production composition
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_user_projection_reconcile_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_reconcile_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 

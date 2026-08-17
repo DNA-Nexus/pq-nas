@@ -214,17 +214,44 @@ void register_admin_user_profile_routes(
                 return;
             }
 
-            if (!c.users->set_status(fp, "enabled")) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "set_status failed"}});
+            auto user =
+                c.users->get(fp);
+
+            if (!user.has_value()) {
+                reply(404, json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "user not found"}
+                });
                 return;
             }
 
-            c.users->set_role(fp, role);
+            pqnas::UserRec updated_user =
+                *user;
+
+            updated_user.status =
+                "enabled";
+
+            updated_user.role =
+                role;
+
             if (!name.empty() || !notes.empty()) {
-                c.users->set_name_notes(fp, name, notes);
+                updated_user.name =
+                    name;
+                updated_user.notes =
+                    notes;
             }
 
-            const bool saved = c.users->save(c.users_path);
+            // Security: status and its Storage projection revision must be
+            // committed atomically. A failed users.json write must not leave
+            // an enabled user visible only in memory or without a revision bump.
+            const bool saved =
+                c.users->upsert_persisted(
+                    updated_user,
+                    c.users_path,
+                    nullptr,
+                    nullptr
+                );
 
             {
                 pqnas::AuditEvent ev;

@@ -30,6 +30,10 @@ struct VerifyLoginCommonContext {
     const std::string* allowlist_path = nullptr;
     const std::string* users_path = nullptr;
 
+    // Security: normal user login is disabled on Storage Nodes.
+    // External-workspace flows are handled before this policy gate.
+    bool interactive_user_login_allowed = false;
+
     // external workspace invite hook
     //
     // If a verified v5 st_hash belongs to a pending workspace external invite,

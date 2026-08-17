@@ -357,6 +357,45 @@ bool UsersRegistry::load(const std::string& path) {
       u.home_node = "";
     }
 
+    // Missing projection revision is the backward-compatible representation
+    // for registries written before Director -> Storage projection versioning.
+    //
+    // Security: explicit malformed or negative revisions fail closed rather
+    // than silently resetting a Director-owned monotonic authorization version.
+    if (it.contains("storage_projection_revision")) {
+      const auto& revision_json =
+          it["storage_projection_revision"];
+
+      if (revision_json.is_number_unsigned()) {
+        try {
+          u.storage_projection_revision =
+              revision_json.get<std::uint64_t>();
+        } catch (...) {
+          return false;
+        }
+      } else if (revision_json.is_number_integer()) {
+        try {
+          const std::int64_t signed_revision =
+              revision_json.get<std::int64_t>();
+
+          if (signed_revision < 0) {
+            return false;
+          }
+
+          u.storage_projection_revision =
+              static_cast<std::uint64_t>(
+                  signed_revision
+              );
+        } catch (...) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      u.storage_projection_revision = 0;
+    }
+
     // Missing policy ID preserves backward compatibility. Malformed explicit
     // values fail closed instead of silently dropping an intended override.
     if (it.contains("placement_policy_id")) {
@@ -510,6 +549,7 @@ bool UsersRegistry::save_locked(
       // Cluster placement metadata. The policy is intent; home_node is
       // the currently realized placement.
       {"home_node", u.home_node},
+      {"storage_projection_revision", u.storage_projection_revision},
       {"placement_policy_id", u.placement_policy_id},
 
       // New: storage metadata
@@ -655,6 +695,91 @@ bool UsersRegistry::ensure_present_disabled_user(const std::string& fp_hex, cons
   return true; // created
 }
 
+namespace {
+
+// Compare only fields that are projected to a Storage Node.
+//
+// Security: this deliberately excludes role, profile data, Vault metadata,
+// placement-policy intent and storage audit metadata. Those fields must not
+// churn the authorization projection revision.
+//
+// Disabled and revoked are intentionally equivalent here: Storage receives
+// only enabled=true/false.
+bool storage_metadata_fields_equal(
+    const UserRec& left,
+    const UserRec& right
+) {
+  return
+      left.storage_state == right.storage_state &&
+      left.quota_bytes == right.quota_bytes &&
+      left.root_rel == right.root_rel &&
+      left.storage_pool_id == right.storage_pool_id &&
+      left.storage_set_at == right.storage_set_at &&
+      left.storage_set_by == right.storage_set_by;
+}
+
+bool storage_projection_semantics_equal(
+    const UserRec& left,
+    const UserRec& right
+) {
+  const bool left_enabled =
+      left.status == "enabled";
+
+  const bool right_enabled =
+      right.status == "enabled";
+
+  if (left_enabled != right_enabled) {
+    return false;
+  }
+
+  const bool left_allocated =
+      left.storage_state == "allocated";
+
+  const bool right_allocated =
+      right.storage_state == "allocated";
+
+  if (left_allocated != right_allocated) {
+    return false;
+  }
+
+  if (left.home_node != right.home_node) {
+    return false;
+  }
+
+  if (!left_allocated) {
+    // StorageUserProjection canonicalizes unallocated users to no quota/root/
+    // pool metadata, so stale local storage metadata is not projection state.
+    return true;
+  }
+
+  return
+      left.quota_bytes == right.quota_bytes &&
+      left.root_rel == right.root_rel &&
+      left.storage_pool_id == right.storage_pool_id;
+}
+
+bool next_storage_projection_revision(
+    std::uint64_t current,
+    std::uint64_t* next
+) {
+  if (!next ||
+      current ==
+          std::numeric_limits<std::uint64_t>::max()) {
+    return false;
+  }
+
+  *next = current + 1;
+
+  // Revision zero is reserved for legacy/unversioned state.
+  if (*next == 0) {
+    return false;
+  }
+
+  return true;
+}
+
+} // namespace
+
 /*
 upsert()
   - Inserts or replaces a user record.
@@ -670,17 +795,223 @@ bool UsersRegistry::upsert(const UserRec& in) {
   }
 
   std::lock_guard<std::mutex> lk(mu_);
-  if (in.fingerprint.empty()) return false;
+
+  if (in.fingerprint.empty()) {
+    return false;
+  }
 
   UserRec u = in;
 
   // Normalize (schema firewall)
   u.role = norm_role(u.role);
   u.status = norm_status(u.status);
-  u.storage_state = norm_storage_state(u.storage_state);
-  if (u.app_prefs_json.empty()) u.app_prefs_json = "{}";
+  u.storage_state =
+      norm_storage_state(u.storage_state);
 
-  by_fp_[u.fingerprint] = u;
+  if (u.app_prefs_json.empty()) {
+    u.app_prefs_json = "{}";
+  }
+
+  const auto existing =
+      by_fp_.find(u.fingerprint);
+
+  if (existing != by_fp_.end()) {
+    // Security: projection revisions are registry-owned. A generic caller
+    // cannot forge, rewind or advance the Director's control-plane version.
+    u.storage_projection_revision =
+        existing->second.storage_projection_revision;
+  } else {
+    // Legacy/generic insertion remains unversioned until a write-through
+    // projection mutation establishes the first authoritative revision.
+    u.storage_projection_revision = 0;
+  }
+
+  by_fp_[u.fingerprint] =
+      std::move(u);
+
+  return true;
+}
+
+void UsersRegistry::set_storage_projection_commit_notifier(
+    UsersRegistry::StorageProjectionCommitNotifier notifier
+) {
+  std::lock_guard<std::mutex> lk(mu_);
+  storage_projection_commit_notifier_ =
+      notifier;
+}
+
+UsersRegistry::StorageProjectionCommitNotifier
+UsersRegistry::storage_projection_commit_notifier_copy_locked() const noexcept {
+  try {
+    return storage_projection_commit_notifier_;
+  } catch (...) {
+    // Security/correctness: failure to prepare a best-effort wake must never
+    // change the result of an already-durable users.json commit.
+    return {};
+  }
+}
+
+
+bool UsersRegistry::upsert_persisted(
+    const UserRec& in,
+    const std::string& path,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  if (in.fingerprint.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (!valid_user_home_node_id(in.home_node) ||
+      !valid_user_placement_policy_id(
+          in.placement_policy_id)) {
+    if (error) {
+      *error = "invalid user placement metadata";
+    }
+
+    return false;
+  }
+
+  UserRec candidate = in;
+  bool projection_differs = false;
+
+  candidate.role =
+      norm_role(candidate.role);
+
+  candidate.status =
+      norm_status(candidate.status);
+
+  candidate.storage_state =
+      norm_storage_state(
+          candidate.storage_state
+      );
+
+  if (candidate.app_prefs_json.empty()) {
+    candidate.app_prefs_json = "{}";
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  const auto existing =
+      by_fp_.find(candidate.fingerprint);
+
+  const bool inserting_new =
+      existing == by_fp_.end();
+
+  UserRec previous;
+
+  if (!inserting_new) {
+    previous =
+        existing->second;
+
+    projection_differs =
+        !storage_projection_semantics_equal(
+            previous,
+            candidate
+        );
+
+    candidate.storage_projection_revision =
+        previous.storage_projection_revision;
+
+    if (projection_differs) {
+      std::uint64_t next_revision = 0;
+
+      if (!next_storage_projection_revision(
+              previous.storage_projection_revision,
+              &next_revision)) {
+        if (error) {
+          *error =
+              "storage projection revision exhausted";
+        }
+
+        return false;
+      }
+
+      candidate.storage_projection_revision =
+          next_revision;
+
+      if (projection_changed) {
+        *projection_changed = true;
+      }
+    }
+  } else {
+    projection_differs = true;
+
+    // Creation is the first authoritative persisted projection snapshot.
+    // Starting at 1 also means a newly created + immediately placed user can
+    // be synchronized without inventing a revision outside UsersRegistry.
+    candidate.storage_projection_revision = 1;
+
+    if (projection_changed) {
+      *projection_changed = true;
+    }
+  }
+
+  by_fp_[candidate.fingerprint] =
+      candidate;
+
+  // Security: projection data and its revision are committed by the same
+  // users.json replacement. On failure both are rolled back together.
+  if (!save_locked(path)) {
+    if (inserting_new) {
+      by_fp_.erase(
+          candidate.fingerprint
+      );
+    } else {
+      by_fp_[candidate.fingerprint] =
+          std::move(previous);
+    }
+
+    if (projection_changed) {
+      *projection_changed = false;
+    }
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  // Security: never invoke external callbacks while holding the registry
+  // mutation lock. The durable commit above is authoritative even if wake fails.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort latency optimization. Periodic reconciliation remains
+      // the safety net and the successful durable commit stays successful.
+    }
+  }
+
   return true;
 }
 
@@ -694,6 +1025,453 @@ bool UsersRegistry::set_status(const std::string& fp_hex, const std::string& sta
   auto it = by_fp_.find(fp_hex);
   if (it == by_fp_.end()) return false;
   it->second.status = norm_status(status);
+  return true;
+}
+
+
+bool UsersRegistry::set_status_persisted(
+    const std::string& fp_hex,
+    const std::string& status,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  const std::string normalized_status =
+      norm_status(status);
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  if (previous.status ==
+      normalized_status) {
+    return true;
+  }
+
+  UserRec candidate =
+      previous;
+
+  candidate.status =
+      normalized_status;
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  if (!save_locked(path)) {
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; durable registry state remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+bool UsersRegistry::set_storage_metadata_persisted(
+    const std::string& fp_hex,
+    const UserStorageMetadataUpdate& update,
+    const std::string& path,
+    bool* changed,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  UserRec candidate =
+      previous;
+
+  candidate.storage_state =
+      norm_storage_state(
+          update.storage_state
+      );
+
+  candidate.quota_bytes =
+      update.quota_bytes;
+
+  candidate.root_rel =
+      update.root_rel;
+
+  candidate.storage_pool_id =
+      update.storage_pool_id;
+
+  candidate.storage_set_at =
+      update.storage_set_at;
+
+  candidate.storage_set_by =
+      update.storage_set_by;
+
+  if (storage_metadata_fields_equal(
+          previous,
+          candidate)) {
+    return true;
+  }
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  // Security: storage metadata and the revision describing its Node-visible
+  // projection are committed by the same users.json replacement.
+  if (!save_locked(path)) {
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (projection_changed) {
+    *projection_changed =
+        projection_differs;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  // Security: callback runs only after the durable commit and outside mu_.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; periodic reconciliation remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+bool UsersRegistry::switch_storage_mapping_persisted_if_pool_current(
+    const std::string& fp_hex,
+    const std::string& expected_storage_pool_id,
+    const std::string& new_storage_pool_id,
+    const std::string& new_root_rel,
+    const std::string& storage_set_at,
+    const std::string& storage_set_by,
+    const std::string& path,
+    bool* expectation_matched,
+    bool* changed,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (changed) {
+    *changed = false;
+  }
+
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  // Security: compare while holding the same lock used for the mapping
+  // mutation and persistence. A migration planned against an older pool
+  // cannot overwrite a newer pool selection.
+  if (iterator->second.storage_pool_id !=
+      expected_storage_pool_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  UserRec candidate =
+      previous;
+
+  // Security: migration owns only mapping/audit fields. In particular, keep
+  // current quota and allocation state from the locked record instead of
+  // copying them from a potentially stale worker snapshot.
+  candidate.storage_pool_id =
+      new_storage_pool_id;
+
+  candidate.root_rel =
+      new_root_rel;
+
+  candidate.storage_set_at =
+      storage_set_at;
+
+  candidate.storage_set_by =
+      storage_set_by;
+
+  if (storage_metadata_fields_equal(
+          previous,
+          candidate)) {
+    return true;
+  }
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  // Security: CAS comparison, mapping, projection revision, persistence and
+  // rollback are one locked transaction from the registry's point of view.
+  if (!save_locked(path)) {
+    iterator->second =
+        previous;
+
+    if (changed) {
+      *changed = false;
+    }
+
+    if (projection_changed) {
+      *projection_changed = false;
+    }
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (projection_changed) {
+    *projection_changed =
+        projection_differs;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  // Security: stale CAS/no-op paths never reach this notification point.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; durable mapping remains authoritative.
+    }
+  }
+
   return true;
 }
 
@@ -775,7 +1553,7 @@ bool UsersRegistry::set_home_node_persisted(
     return false;
   }
 
-  std::lock_guard<std::mutex> lk(mu_);
+  std::unique_lock<std::mutex> lk(mu_);
 
   auto iterator = by_fp_.find(fp_hex);
 
@@ -788,16 +1566,33 @@ bool UsersRegistry::set_home_node_persisted(
     return true;
   }
 
-  const std::string previous_home_node =
-      iterator->second.home_node;
+  const UserRec previous =
+      iterator->second;
 
-  iterator->second.home_node = home_node;
+  std::uint64_t next_revision = 0;
 
-  // Security: persist while holding the registry mutation lock. If the
-  // atomic file replacement fails, restore the previous in-memory value.
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
+
+  iterator->second.home_node =
+      home_node;
+
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: placement and its projection revision are persisted together.
+  // Save failure restores both values under the same mutation lock.
   if (!save_locked(path)) {
-    iterator->second.home_node =
-        previous_home_node;
+    iterator->second =
+        previous;
 
     if (error) {
       *error = "users registry persistence failed";
@@ -808,6 +1603,20 @@ bool UsersRegistry::set_home_node_persisted(
 
   if (changed) {
     *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  // Security: placement is durable before reconciliation is signalled.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; durable placement remains authoritative.
+    }
   }
 
   return true;
@@ -871,7 +1680,7 @@ bool UsersRegistry::set_home_node_persisted_if_current(
     return false;
   }
 
-  std::lock_guard<std::mutex> lk(mu_);
+  std::unique_lock<std::mutex> lk(mu_);
 
   auto iterator = by_fp_.find(fp_hex);
 
@@ -898,17 +1707,33 @@ bool UsersRegistry::set_home_node_persisted_if_current(
     return true;
   }
 
-  const std::string previous_home_node =
-      iterator->second.home_node;
+  const UserRec previous =
+      iterator->second;
+
+  std::uint64_t next_revision = 0;
+
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
 
   iterator->second.home_node =
       new_home_node;
 
-  // Security: keep the compare, mutation, atomic replacement and rollback
-  // under one registry lock. A failed save preserves the prior placement.
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: compare, placement, revision, persistence and rollback stay
+  // under one registry lock so stale workers cannot split authorization state.
   if (!save_locked(path)) {
-    iterator->second.home_node =
-        previous_home_node;
+    iterator->second =
+        previous;
 
     if (error) {
       *error =
@@ -920,6 +1745,20 @@ bool UsersRegistry::set_home_node_persisted_if_current(
 
   if (changed) {
     *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  // Security: CAS state and revision are durable before reconciliation wakes.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; durable placement remains authoritative.
+    }
   }
 
   return true;
@@ -1019,6 +1858,91 @@ erase()
 bool UsersRegistry::erase(const std::string& fp_hex) {
   std::lock_guard<std::mutex> lk(mu_);
   return by_fp_.erase(fp_hex) > 0;
+}
+
+
+bool UsersRegistry::erase_persisted_if_unplaced(
+    const std::string& fp_hex,
+    const std::string& path,
+    bool* erased,
+    bool* placement_blocked,
+    std::string* error
+) {
+  if (erased) {
+    *erased = false;
+  }
+
+  if (placement_blocked) {
+    *placement_blocked = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  // Security: deleting a placed Director user before its Storage Node has
+  // received a newer revoke/tombstone could leave stale authorization active.
+  if (!iterator->second.home_node.empty()) {
+    if (placement_blocked) {
+      *placement_blocked = true;
+    }
+
+    return true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  by_fp_.erase(iterator);
+
+  // Security/correctness: memory and users.json form one logical mutation.
+  // Restore the complete record if persistence fails.
+  if (!save_locked(path)) {
+    by_fp_[previous.fingerprint] =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (erased) {
+    *erased = true;
+  }
+
+  return true;
 }
 
 /*

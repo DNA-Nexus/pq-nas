@@ -1,4 +1,5 @@
 #include "storage_resolver.h"
+#include "storage_path_validation.h"
 #include <iostream>
 
 #include "file_location_index.h"
@@ -185,56 +186,16 @@ This is the primary path hygiene barrier used by the Files API. It guarantees:
 - reserved namespace rejection
 - normalized generic-string output suitable for metadata keys and locks
 */
-bool normalize_user_rel_path_strict(const std::string& rel_path,
-                                    std::string* out_rel_norm,
-                                    std::string* err) {
-    if (err) err->clear();
-    if (!out_rel_norm) {
-        if (err) *err = "null out_rel_norm";
-        return false;
-    }
-
-    if (rel_path.empty()) {
-        if (err) *err = "empty path";
-        return false;
-    }
-
-    if (rel_path.find('\0') != std::string::npos) {
-        if (err) *err = "invalid path";
-        return false;
-    }
-
-    std::filesystem::path rel(rel_path);
-
-    if (rel.is_absolute() || rel.has_root_path()) {
-        if (err) *err = "absolute path not allowed";
-        return false;
-    }
-
-    rel = rel.lexically_normal();
-
-    if (rel.empty()) {
-        if (err) *err = "invalid path";
-        return false;
-    }
-
-    for (const auto& part : rel) {
-        const std::string s = part.string();
-
-        if (s.empty() || s == "." || s == "..") {
-            if (err) *err = "invalid path";
-            return false;
-        }
-
-        // Reserved system namespace must never be user-accessible.
-        if (s == ".pqnas") {
-            if (err) *err = "reserved path";
-            return false;
-        }
-    }
-
-    *out_rel_norm = rel.generic_string();
-    return true;
+bool normalize_user_rel_path_strict(
+    const std::string& rel_path,
+    std::string* out_rel_norm,
+    std::string* err
+) {
+    return normalize_storage_relative_path_strict(
+        rel_path,
+        out_rel_norm,
+        err
+    );
 }
 
 /*
