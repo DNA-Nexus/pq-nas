@@ -58,6 +58,17 @@ public:
         const std::string& actor_fingerprint
     );
 
+    // Explicitly removes the realized home-node placement while preserving
+    // placement_policy_id as future placement intent.
+    //
+    // expected_home_node is a stale-action guard. Repeating a successful
+    // unassign after the user is already unplaced is idempotent.
+    UserPlacementResult unassign(
+        const std::string& fingerprint,
+        const std::string& expected_home_node,
+        const std::string& actor_fingerprint
+    );
+
 private:
     bool config_valid() const;
 
@@ -68,7 +79,9 @@ private:
         const std::string& actor_fingerprint,
         const std::string& reason_code,
         bool changed,
-        const std::string& previous_home_node
+        const std::string& previous_home_node,
+        const std::string& event =
+            "admin.user_home_node.assign"
     ) const;
 
     UserPlacementServiceConfig config_;

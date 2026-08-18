@@ -45,7 +45,8 @@ void UserPlacementService::audit_best_effort(
     const std::string& actor_fingerprint,
     const std::string& reason_code,
     bool changed,
-    const std::string& previous_home_node
+    const std::string& previous_home_node,
+    const std::string& event
 ) const {
     if (!config_.audit_emit) {
         return;
@@ -75,7 +76,7 @@ void UserPlacementService::audit_best_effort(
 
     try {
         config_.audit_emit(
-            "admin.user_home_node.assign",
+            event,
             outcome,
             fields
         );
@@ -244,5 +245,211 @@ UserPlacementResult UserPlacementService::assign(
 
     return result;
 }
+
+
+UserPlacementResult UserPlacementService::unassign(
+    const std::string& fingerprint,
+    const std::string& expected_home_node,
+    const std::string& actor_fingerprint
+) {
+    constexpr const char*
+        kAuditEvent =
+            "admin.user_home_node.unassign";
+
+    if (!config_valid()) {
+        return failure_result(
+            "service_unavailable"
+        );
+    }
+
+    if (fingerprint.empty()) {
+        audit_best_effort(
+            "fail",
+            "",
+            "",
+            actor_fingerprint,
+            "invalid_fingerprint",
+            false,
+            "",
+            kAuditEvent
+        );
+
+        return failure_result(
+            "invalid_fingerprint"
+        );
+    }
+
+    if (expected_home_node.empty() ||
+        !valid_user_home_node_id(
+            expected_home_node)) {
+        audit_best_effort(
+            "fail",
+            fingerprint,
+            "",
+            actor_fingerprint,
+            "invalid_expected_home_node",
+            false,
+            "",
+            kAuditEvent
+        );
+
+        return failure_result(
+            "invalid_expected_home_node"
+        );
+    }
+
+    // Integrity: explicit unplacement is serialized with assignment, policy
+    // changes and node disable/delete through the Director coordination mutex.
+    std::lock_guard<std::mutex> placement_lock(
+        *config_.placement_mutex
+    );
+
+    const auto user =
+        config_.users->get(
+            fingerprint
+        );
+
+    if (!user.has_value()) {
+        audit_best_effort(
+            "fail",
+            fingerprint,
+            expected_home_node,
+            actor_fingerprint,
+            "user_not_found",
+            false,
+            "",
+            kAuditEvent
+        );
+
+        return failure_result(
+            "user_not_found"
+        );
+    }
+
+    const std::string previous_home_node =
+        user->home_node;
+
+    // Safe retry semantics: once the desired unplaced state is already durable,
+    // repeating the request must not create another projection revision.
+    if (previous_home_node.empty()) {
+        audit_best_effort(
+            "ok",
+            fingerprint,
+            expected_home_node,
+            actor_fingerprint,
+            "placement_already_unassigned",
+            false,
+            "",
+            kAuditEvent
+        );
+
+        UserPlacementResult result;
+        result.ok = true;
+        result.changed = false;
+        result.previous_home_node.clear();
+        result.home_node.clear();
+
+        return result;
+    }
+
+    if (previous_home_node !=
+        expected_home_node) {
+        audit_best_effort(
+            "fail",
+            fingerprint,
+            expected_home_node,
+            actor_fingerprint,
+            "placement_stale",
+            false,
+            previous_home_node,
+            kAuditEvent
+        );
+
+        return failure_result(
+            "placement_stale",
+            previous_home_node
+        );
+    }
+
+    bool changed = false;
+    bool expectation_matched = false;
+    std::string persistence_error;
+
+    if (!config_.users->
+            clear_home_node_persisted_if_current(
+                fingerprint,
+                expected_home_node,
+                user->placement_policy_id,
+                config_.users_path,
+                &changed,
+                &expectation_matched,
+                &persistence_error
+            )) {
+        const std::string error_code =
+            persistence_error ==
+                "user not found"
+                    ? "user_not_found"
+                    : "persistence_failed";
+
+        audit_best_effort(
+            "fail",
+            fingerprint,
+            expected_home_node,
+            actor_fingerprint,
+            error_code,
+            false,
+            previous_home_node,
+            kAuditEvent
+        );
+
+        return failure_result(
+            error_code,
+            previous_home_node
+        );
+    }
+
+    // Defense in depth: direct UsersRegistry mutations that bypass the shared
+    // placement mutex still cannot clear a placement from a stale snapshot.
+    if (!expectation_matched) {
+        audit_best_effort(
+            "fail",
+            fingerprint,
+            expected_home_node,
+            actor_fingerprint,
+            "placement_stale",
+            false,
+            previous_home_node,
+            kAuditEvent
+        );
+
+        return failure_result(
+            "placement_stale",
+            previous_home_node
+        );
+    }
+
+    audit_best_effort(
+        "ok",
+        fingerprint,
+        expected_home_node,
+        actor_fingerprint,
+        changed
+            ? "placement_unassigned"
+            : "placement_already_unassigned",
+        changed,
+        previous_home_node,
+        kAuditEvent
+    );
+
+    UserPlacementResult result;
+    result.ok = true;
+    result.changed = changed;
+    result.previous_home_node =
+        previous_home_node;
+    result.home_node.clear();
+
+    return result;
+}
+
 
 } // namespace pqnas::cluster

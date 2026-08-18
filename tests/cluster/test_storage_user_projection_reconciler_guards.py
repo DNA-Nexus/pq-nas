@@ -39,30 +39,92 @@ require(
     "old-Node tombstone must remove storage allocation",
 )
 
-# Scope the ordering check to the placement-move branch. There are legitimate
-# sync_projection(current) calls earlier in the file for first placement and
-# same-Node revision updates.
+# Scope A->B ordering to the placed-user move branch. Explicit unplacement
+# now has its own earlier tombstone and must not weaken this invariant.
 move_branch = source.find(
-    "const StorageUserProjection tombstone ="
+    "// confirmed revision is older than current Director revision."
+)
+
+move_tombstone = source.find(
+    "const StorageUserProjection tombstone =",
+    move_branch,
 )
 
 revoke_pos = source.find(
     "config_.sync_projection(\n"
     "                        tombstone",
-    move_branch,
+    move_tombstone,
 )
 
 current_pos = source.find(
     "config_.sync_projection(\n"
     "                        current",
-    revoke_pos + 1 if revoke_pos >= 0 else move_branch,
+    revoke_pos + 1 if revoke_pos >= 0 else move_tombstone,
 )
 
 require(
     move_branch >= 0 and
-    revoke_pos >= move_branch and
+    move_tombstone >= move_branch and
+    revoke_pos >= move_tombstone and
     current_pos > revoke_pos,
     "old Node must be revoked before current Node is synchronized",
+)
+
+# Explicit A->empty ordering:
+# durable Director revision -> newer tombstone to the last confirmed Node ->
+# CAS erase of that exact confirmed state.
+unplaced_branch = source.find(
+    "if (user.home_node.empty())"
+)
+
+unplaced_tombstone = source.find(
+    "unplaced_user_tombstone(",
+    unplaced_branch,
+)
+
+unplaced_revoke = source.find(
+    "config_.sync_projection(\n"
+    "                        tombstone",
+    unplaced_tombstone,
+)
+
+unplaced_erase = source.find(
+    "erase_if_current(",
+    unplaced_revoke,
+)
+
+placed_projection_build = source.find(
+    "StorageUserProjection current;",
+    unplaced_branch,
+)
+
+require(
+    unplaced_branch >= 0 and
+    unplaced_tombstone >= unplaced_branch and
+    unplaced_revoke >= unplaced_tombstone and
+    unplaced_erase > unplaced_revoke and
+    (
+        placed_projection_build < 0 or
+        unplaced_erase < placed_projection_build
+    ),
+    "unplacement must revoke the last confirmed Node before erasing sync-state",
+)
+
+require(
+    "confirmed->revision >\n"
+    "                user.storage_projection_revision" in source,
+    "unplacement must reject newer confirmed revisions",
+)
+
+require(
+    "confirmed->revision ==\n"
+    "                user.storage_projection_revision" in source,
+    "unplacement must fail closed on ambiguous equal revisions",
+)
+
+require(
+    "++result.revoked_unplaced;" in source,
+    "successful explicit unplacement must be surfaced separately",
 )
 
 require(

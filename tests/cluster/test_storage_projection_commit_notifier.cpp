@@ -498,6 +498,87 @@ int main() {
         );
     }
 
+    // Explicit placed -> unplaced mutation advances authorization revision
+    // and wakes reconciliation only after durable persistence.
+    {
+        const auto before =
+            users.get(
+                "notifier-user"
+            );
+
+        const int notify_before =
+            notify_count;
+
+        bool changed = false;
+        bool expectation_matched = false;
+        error.clear();
+
+        expect(
+            users.clear_home_node_persisted_if_current(
+                "notifier-user",
+                "node-02",
+                "",
+                users_path.string(),
+                &changed,
+                &expectation_matched,
+                &error
+            ),
+            "matching unplacement CAS persists"
+        );
+
+        const auto after =
+            users.get(
+                "notifier-user"
+            );
+
+        expect(
+            before &&
+            after &&
+            changed &&
+            expectation_matched &&
+            after->home_node.empty() &&
+            after->placement_policy_id ==
+                before->placement_policy_id &&
+            after->storage_projection_revision ==
+                before->storage_projection_revision + 1 &&
+            notify_count ==
+                notify_before + 1,
+            "durable unplacement advances revision, preserves intent and notifies"
+        );
+    }
+
+    // Retrying the stale placed-state CAS after unplacement must be a no-op.
+    {
+        const int notify_before =
+            notify_count;
+
+        bool changed = true;
+        bool expectation_matched = true;
+        error.clear();
+
+        expect(
+            users.clear_home_node_persisted_if_current(
+                "notifier-user",
+                "node-02",
+                "",
+                users_path.string(),
+                &changed,
+                &expectation_matched,
+                &error
+            ),
+            "stale unplacement CAS succeeds as no-op"
+        );
+
+        expect(
+            !changed &&
+            !expectation_matched &&
+            notify_count ==
+                notify_before,
+            "stale unplacement CAS does not notify"
+        );
+    }
+
+
     // Failed persistence rolls back state and must never notify.
     {
         const auto before =

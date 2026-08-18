@@ -14,6 +14,10 @@ main = Path(
     "server/src/main.cpp"
 ).read_text()
 
+reconciler = Path(
+    "server/src/cluster/storage_user_projection_reconciler.cpp"
+).read_text()
+
 errors = []
 
 
@@ -65,6 +69,48 @@ require(
 require(
     "if (!durability_uncertain_)" in source,
     "identical state retry must preserve durability recovery",
+)
+
+ensure_start = source.find(
+    "StorageUserProjectionSyncStateStore::\nensure_durable("
+)
+
+ensure_end = source.find(
+    "StorageUserProjectionSyncStateStore::mark_synced(",
+    ensure_start,
+)
+
+ensure_body = (
+    source[ensure_start:ensure_end]
+    if ensure_start >= 0 and
+    ensure_end > ensure_start
+    else ""
+)
+
+require(
+    "bool ensure_durable(" in header,
+    "sync-state store must expose current-snapshot durability healing",
+)
+
+require(
+    bool(ensure_body),
+    "sync-state ensure_durable implementation must be present",
+)
+
+require(
+    "if (!durability_uncertain_)" in ensure_body,
+    "ensure_durable must avoid unnecessary rewrites of durable state",
+)
+
+require(
+    "states_" in ensure_body and
+    "commit_candidate_locked(" in ensure_body,
+    "ensure_durable must re-persist the exact current snapshot",
+)
+
+require(
+    "state_store->ensure_durable(" in reconciler,
+    "reconciler must heal confirmed-state durability before transitions",
 )
 
 

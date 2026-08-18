@@ -47,6 +47,13 @@ void handle_admin_cluster_user_home_node_assign(
     const AdminClusterUserPlacementRoutesContext& context
 );
 
+// Exposed separately for deterministic unit testing.
+void handle_admin_cluster_user_home_node_unassign(
+    const httplib::Request& request,
+    httplib::Response& response,
+    const AdminClusterUserPlacementRoutesContext& context
+);
+
 void register_admin_cluster_user_placement_routes(
     httplib::Server& server,
     const AdminClusterUserPlacementRoutesContext& context

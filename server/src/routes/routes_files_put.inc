@@ -1473,6 +1473,119 @@ register_apps_manage_routes(srv, apps_ctx);
                 audit_append(ev);
             };
 
+        if (cluster_config.is_director()) {
+            admin_user_lifecycle_ctx
+                .erase_user_persisted_cluster_safe =
+                    [
+                        &users,
+                        &director_storage_projection_sync_state_store,
+                        director_storage_projection_transition_mutex,
+                        users_path
+                    ](
+                        const std::string& fp,
+                        bool* erased,
+                        bool* placement_blocked,
+                        bool* cluster_revoke_pending,
+                        std::string* error
+                    ) -> bool {
+                        if (erased) {
+                            *erased = false;
+                        }
+
+                        if (placement_blocked) {
+                            *placement_blocked = false;
+                        }
+
+                        if (cluster_revoke_pending) {
+                            *cluster_revoke_pending = false;
+                        }
+
+                        if (error) {
+                            error->clear();
+                        }
+
+                        if (!director_storage_projection_transition_mutex) {
+                            if (error) {
+                                *error =
+                                    "projection transition mutex unavailable";
+                            }
+
+                            return false;
+                        }
+
+                        // Security: this lock spans both the confirmed-state
+                        // decision and the durable Director user deletion.
+                        // Therefore an older reconcile snapshot cannot finish
+                        // after the user disappears and recreate confirmed
+                        // Storage authorization.
+                        std::lock_guard<std::mutex>
+                            transition_lock(
+                                *director_storage_projection_transition_mutex
+                            );
+
+                        const auto current =
+                            users.get(fp);
+
+                        if (!current.has_value()) {
+                            if (error) {
+                                *error = "user not found";
+                            }
+
+                            return false;
+                        }
+
+                        if (!current->home_node.empty()) {
+                            if (placement_blocked) {
+                                *placement_blocked = true;
+                            }
+
+                            return true;
+                        }
+
+                        std::string durability_error;
+
+                        // Security: an absent confirmed entry is trustworthy
+                        // for physical deletion only when the current sync-state
+                        // snapshot itself is known durable.
+                        if (!director_storage_projection_sync_state_store
+                                .ensure_durable(
+                                    &durability_error
+                                )) {
+                            durability_error.clear();
+
+                            if (error) {
+                                *error =
+                                    "projection sync-state persistence failed";
+                            }
+
+                            return false;
+                        }
+
+                        if (director_storage_projection_sync_state_store
+                                .get(fp)
+                                .has_value()) {
+                            if (cluster_revoke_pending) {
+                                *cluster_revoke_pending = true;
+                            }
+
+                            return true;
+                        }
+
+                        // Defense in depth: UsersRegistry rechecks home_node
+                        // under its own mutation lock. A concurrent assignment
+                        // therefore cannot be deleted using this earlier
+                        // unplaced snapshot.
+                        return
+                            users.erase_persisted_if_unplaced(
+                                fp,
+                                users_path,
+                                erased,
+                                placement_blocked,
+                                error
+                            );
+                    };
+        }
+
         register_admin_user_lifecycle_routes(srv, admin_user_lifecycle_ctx);
     }
 

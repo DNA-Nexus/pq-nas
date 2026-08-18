@@ -299,6 +299,33 @@ int main() {
         "revision zero fails closed"
     );
 
+    // A fully durable snapshot is an idempotent ensure_durable no-op.
+    {
+        error.clear();
+
+        expect(
+            store.ensure_durable(
+                &error
+            ),
+            "durable sync-state snapshot remains durable: " +
+                error
+        );
+
+        const auto after_durability_check =
+            store.get(
+                first.fingerprint
+            );
+
+        expect(
+            after_durability_check.has_value() &&
+            after_durability_check->home_node ==
+                "storage-02" &&
+            after_durability_check->revision == 18,
+            "ensure_durable must preserve the current confirmed snapshot"
+        );
+    }
+
+
     // Stale erase expectation must not remove newer knowledge.
     {
         bool matched = true;
