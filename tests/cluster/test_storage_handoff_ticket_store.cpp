@@ -90,6 +90,12 @@ int main() {
         'a'
     );
 
+    const std::string home_node =
+        "storage-01";
+
+    constexpr std::uint64_t
+        projection_revision = 17;
+
     std::int64_t now = 1000;
 
     StorageHandoffTicketStore store(
@@ -105,6 +111,8 @@ int main() {
     expect_result(
         store.issue(
             fingerprint,
+            home_node,
+            projection_revision,
             30,
             &ticket,
             &expires_at
@@ -146,6 +154,9 @@ int main() {
 
     expect(
         claims.fingerprint == fingerprint &&
+        claims.home_node == home_node &&
+        claims.projection_revision ==
+            projection_revision &&
         claims.issued_at == 1000 &&
         claims.expires_at == 1030,
         "consumed ticket claims"
@@ -198,6 +209,8 @@ int main() {
         expect_result(
             store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 5,
                 &expiring_ticket,
                 nullptr
@@ -237,6 +250,8 @@ int main() {
         expect_result(
             store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 5,
                 &first,
                 nullptr
@@ -250,6 +265,8 @@ int main() {
         expect_result(
             store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 20,
                 &second,
                 nullptr
@@ -299,6 +316,8 @@ int main() {
         expect_result(
             small_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 1,
                 &first,
                 nullptr
@@ -310,6 +329,8 @@ int main() {
         expect_result(
             small_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 1,
                 &second,
                 nullptr
@@ -321,6 +342,8 @@ int main() {
         expect_result(
             small_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 1,
                 &third,
                 nullptr
@@ -339,6 +362,8 @@ int main() {
         expect_result(
             small_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 1,
                 &third,
                 nullptr
@@ -374,6 +399,8 @@ int main() {
         expect_result(
             store.issue(
                 std::string(127, 'a'),
+                home_node,
+                projection_revision,
                 30,
                 &output,
                 nullptr
@@ -391,6 +418,46 @@ int main() {
         expect_result(
             store.issue(
                 fingerprint,
+                "../storage-01",
+                projection_revision,
+                30,
+                &output,
+                nullptr
+            ),
+            StorageHandoffTicketResult::
+                InvalidInput,
+            "invalid home node rejected"
+        );
+
+        expect(
+            output.empty(),
+            "invalid home node clears output"
+        );
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                0,
+                30,
+                &output,
+                nullptr
+            ),
+            StorageHandoffTicketResult::
+                InvalidInput,
+            "zero projection revision rejected"
+        );
+
+        expect(
+            output.empty(),
+            "zero projection revision clears output"
+        );
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                projection_revision,
                 0,
                 &output,
                 nullptr
@@ -403,6 +470,8 @@ int main() {
         expect_result(
             store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 pqnas::cluster::
                     kStorageHandoffTicketMaxTtlSeconds +
                     1,
@@ -430,6 +499,8 @@ int main() {
         expect_result(
             concurrent_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 30,
                 &concurrent_ticket,
                 nullptr
@@ -516,8 +587,12 @@ int main() {
 
         expect(
             successful_claims.fingerprint ==
-                fingerprint,
-            "successful concurrent consume returns fingerprint"
+                fingerprint &&
+            successful_claims.home_node ==
+                home_node &&
+            successful_claims.projection_revision ==
+                projection_revision,
+            "successful concurrent consume returns bound claims"
         );
 
         expect(
@@ -544,6 +619,8 @@ int main() {
         expect_result(
             bad_clock_store.issue(
                 fingerprint,
+                home_node,
+                projection_revision,
                 30,
                 &output,
                 nullptr
@@ -557,6 +634,8 @@ int main() {
     expect_result(
         store.issue(
             fingerprint,
+            home_node,
+            projection_revision,
             30,
             nullptr,
             nullptr

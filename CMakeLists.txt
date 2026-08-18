@@ -253,6 +253,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 target_link_libraries(pqnas_storage_handoff_ticket_store PUBLIC
+        pqnas_cluster_identity_validation
         ${SODIUM_LIBRARIES}
         Threads::Threads
 )
@@ -2752,6 +2753,63 @@ add_custom_target(run_test_storage_user_projection_store
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_store"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_projection_store
+)
+
+# -----------------------------------------------------------------------------
+# Storage Node user session authorization policy
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_session_policy STATIC
+        server/src/cluster/storage_user_session_policy.cpp
+        server/src/cluster/storage_user_session_policy.h
+)
+
+target_include_directories(pqnas_storage_user_session_policy PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_session_policy
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_session_policy PUBLIC
+        pqnas_cluster_identity_validation
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node user session authorization policy
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_session_policy
+        tests/cluster/test_storage_user_session_policy.cpp
+)
+
+target_include_directories(test_storage_user_session_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_session_policy
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_session_policy PRIVATE
+        pqnas_storage_user_session_policy
+)
+
+set_target_properties(test_storage_user_session_policy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_session_policy
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_session_policy"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_session_policy
 )
 
 # -----------------------------------------------------------------------------

@@ -48,6 +48,13 @@ void clear_storage_handoff_ticket_text(
 
 struct StorageHandoffTicketClaims {
     std::string fingerprint;
+
+    // Security: bind redemption to the exact Storage placement snapshot that
+    // authorized ticket issuance. A later consume must compare these claims
+    // against the Node's current local projection before creating a session.
+    std::string home_node;
+    std::uint64_t projection_revision = 0;
+
     std::int64_t issued_at = 0;
     std::int64_t expires_at = 0;
 };
@@ -72,6 +79,8 @@ public:
     // - the in-memory store has a hard entry cap
     StorageHandoffTicketResult issue(
         const std::string& fingerprint,
+        const std::string& home_node,
+        std::uint64_t projection_revision,
         std::int64_t ttl_seconds,
         std::string* out_ticket,
         std::int64_t* out_expires_at = nullptr
@@ -91,6 +100,8 @@ public:
 private:
     struct Entry {
         std::string fingerprint;
+        std::string home_node;
+        std::uint64_t projection_revision = 0;
         std::int64_t issued_at = 0;
         std::int64_t expires_at = 0;
     };

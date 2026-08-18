@@ -1,4 +1,5 @@
 #include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include <sodium.h>
 
@@ -363,6 +364,8 @@ prune_expired_locked(
 StorageHandoffTicketResult
 StorageHandoffTicketStore::issue(
     const std::string& fingerprint,
+    const std::string& home_node,
+    std::uint64_t projection_revision,
     std::int64_t ttl_seconds,
     std::string* out_ticket,
     std::int64_t* out_expires_at
@@ -380,7 +383,12 @@ StorageHandoffTicketStore::issue(
         out_ticket
     );
 
+    // Security: never create an unbound handoff bearer. The ticket must
+    // identify both the Storage Node and the Director-owned projection revision
+    // whose authorization decision allowed issuance.
     if (!valid_fingerprint(fingerprint) ||
+        !valid_cluster_node_id(home_node) ||
+        projection_revision == 0 ||
         ttl_seconds <= 0 ||
         ttl_seconds >
             kStorageHandoffTicketMaxTtlSeconds) {
@@ -445,6 +453,9 @@ StorageHandoffTicketStore::issue(
 
             Entry entry;
             entry.fingerprint = fingerprint;
+            entry.home_node = home_node;
+            entry.projection_revision =
+                projection_revision;
             entry.issued_at = now;
             entry.expires_at = expires_at;
 
@@ -541,6 +552,12 @@ StorageHandoffTicketStore::consume(
     try {
         claims.fingerprint =
             iterator->second.fingerprint;
+
+        claims.home_node =
+            iterator->second.home_node;
+
+        claims.projection_revision =
+            iterator->second.projection_revision;
 
         claims.issued_at =
             iterator->second.issued_at;

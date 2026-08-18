@@ -174,6 +174,12 @@ int main() {
         'a'
     );
 
+    const std::string home_node =
+        "storage-01";
+
+    constexpr std::uint64_t
+        projection_revision = 17;
+
     int authorize_calls = 0;
     bool allow_user = true;
 
@@ -215,12 +221,26 @@ int main() {
         };
 
     context.authorize_user =
-        [&](const std::string& candidate) {
+        [&](const std::string& candidate,
+            std::string* out_home_node,
+            std::uint64_t* out_projection_revision) {
             ++authorize_calls;
 
-            return
-                allow_user &&
-                candidate == fingerprint;
+            if (!allow_user ||
+                candidate != fingerprint) {
+                return false;
+            }
+
+            if (out_home_node) {
+                *out_home_node = home_node;
+            }
+
+            if (out_projection_revision) {
+                *out_projection_revision =
+                    projection_revision;
+            }
+
+            return true;
         };
 
     {
@@ -654,8 +674,12 @@ int main() {
 
             expect(
                 claims.fingerprint ==
-                    fingerprint,
-                "returned ticket is bound to fingerprint"
+                    fingerprint &&
+                claims.home_node ==
+                    home_node &&
+                claims.projection_revision ==
+                    projection_revision,
+                "returned ticket is bound to projection snapshot"
             );
 
             pqnas::cluster::

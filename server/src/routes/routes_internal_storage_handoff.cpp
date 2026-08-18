@@ -631,11 +631,19 @@ void handle_internal_storage_handoff_ticket_request(
     }
 
     bool user_authorized = false;
+    std::string authorized_home_node;
+    std::uint64_t authorized_projection_revision = 0;
 
     try {
+        // Security: authorization returns the exact local projection snapshot
+        // that justified issuance. The one-time ticket carries this binding so
+        // browser redemption can reject a placement/revision transition that
+        // happened after the ticket was created.
         user_authorized =
             context.authorize_user(
-                fingerprint
+                fingerprint,
+                &authorized_home_node,
+                &authorized_projection_revision
             );
     } catch (...) {
         reply_json_local(
@@ -673,6 +681,8 @@ void handle_internal_storage_handoff_ticket_request(
     const StorageHandoffTicketResult result =
         context.ticket_store->issue(
             fingerprint,
+            authorized_home_node,
+            authorized_projection_revision,
             kInternalStorageHandoffTicketTtlSeconds,
             &ticket,
             &expires_at
