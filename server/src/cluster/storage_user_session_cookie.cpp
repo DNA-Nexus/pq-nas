@@ -14,15 +14,23 @@ namespace {
 
 constexpr char
     kStorageSessionDomain[] =
-        "pqnas-storage-session-v1";
+        "pqnas-storage-session-v2";
 
 constexpr std::size_t
     kFingerprintBytes = 128;
 
 constexpr std::size_t
-    kFingerprintBase64Bytes =
+    kProjectionRevisionBytes = 8;
+
+constexpr std::size_t
+    kStorageSessionIdentityBytes =
+        kFingerprintBytes +
+        kProjectionRevisionBytes;
+
+constexpr std::size_t
+    kStorageSessionIdentityBase64Bytes =
         sodium_base64_ENCODED_LEN(
-            kFingerprintBytes,
+            kStorageSessionIdentityBytes,
             sodium_base64_VARIANT_ORIGINAL
         );
 
@@ -62,10 +70,15 @@ private:
 
 void clear_verify_outputs(
     std::string* fingerprint,
+    std::uint64_t* projection_revision,
     long* expires_at
 ) noexcept {
     if (fingerprint) {
         fingerprint->clear();
+    }
+
+    if (projection_revision) {
+        *projection_revision = 0;
     }
 
     if (expires_at) {
@@ -165,11 +178,13 @@ bool derive_storage_session_key(
     return true;
 }
 
-bool fingerprint_to_base64(
+bool encode_storage_session_identity(
     const std::string& fingerprint_hex,
+    std::uint64_t projection_revision,
     std::string* output
 ) {
     if (!output ||
+        projection_revision == 0 ||
         !pqnas::valid_storage_user_fingerprint_hex(
             fingerprint_hex
         )) {
@@ -177,40 +192,71 @@ bool fingerprint_to_base64(
     }
 
     std::array<
+        unsigned char,
+        kStorageSessionIdentityBytes
+    > payload{};
+
+    std::memcpy(
+        payload.data(),
+        fingerprint_hex.data(),
+        kFingerprintBytes
+    );
+
+    // Security: fixed-width big-endian encoding gives one canonical binary
+    // representation for the Director-owned authorization revision.
+    for (std::size_t i = 0;
+         i < kProjectionRevisionBytes;
+         ++i) {
+        const std::size_t shift =
+            (kProjectionRevisionBytes - 1 - i) * 8;
+
+        payload[
+            kFingerprintBytes + i
+        ] = static_cast<unsigned char>(
+            (projection_revision >> shift) &
+            0xffu
+        );
+    }
+
+    std::array<
         char,
-        kFingerprintBase64Bytes
+        kStorageSessionIdentityBase64Bytes
     > encoded{};
 
     if (!sodium_bin2base64(
             encoded.data(),
             encoded.size(),
-            reinterpret_cast<
-                const unsigned char*
-            >(fingerprint_hex.data()),
-            fingerprint_hex.size(),
+            payload.data(),
+            payload.size(),
             sodium_base64_VARIANT_ORIGINAL
         )) {
         return false;
     }
 
     *output = encoded.data();
+
     return true;
 }
 
-bool base64_to_fingerprint(
+bool decode_storage_session_identity(
     const std::string& encoded,
-    std::string* output
+    std::string* fingerprint,
+    std::uint64_t* projection_revision
 ) {
-    if (!output ||
+    if (!fingerprint ||
+        !projection_revision ||
         encoded.empty() ||
         encoded.size() >=
-            kFingerprintBase64Bytes) {
+            kStorageSessionIdentityBase64Bytes) {
         return false;
     }
 
+    fingerprint->clear();
+    *projection_revision = 0;
+
     std::array<
         unsigned char,
-        kFingerprintBytes
+        kStorageSessionIdentityBytes
     > decoded{};
 
     std::size_t decoded_size = 0;
@@ -227,17 +273,16 @@ bool base64_to_fingerprint(
             sodium_base64_VARIANT_ORIGINAL
         ) != 0 ||
         decoded_size !=
-            kFingerprintBytes ||
+            kStorageSessionIdentityBytes ||
         !encoded_end ||
         *encoded_end != '\0') {
         return false;
     }
 
-    // Security: require the canonical base64 representation that our own
-    // minting path creates; reject alternate encodings of the same bytes.
+    // Security: reject alternate textual encodings of the same binary claims.
     std::array<
         char,
-        kFingerprintBase64Bytes
+        kStorageSessionIdentityBase64Bytes
     > canonical{};
 
     if (!sodium_bin2base64(
@@ -251,24 +296,64 @@ bool base64_to_fingerprint(
         return false;
     }
 
-    std::string fingerprint(
+    std::string decoded_fingerprint(
         reinterpret_cast<const char*>(
             decoded.data()
         ),
-        decoded_size
+        kFingerprintBytes
     );
 
     if (!pqnas::valid_storage_user_fingerprint_hex(
-            fingerprint
+            decoded_fingerprint
         )) {
         return false;
     }
 
-    *output = std::move(fingerprint);
+    std::uint64_t decoded_revision = 0;
+
+    for (std::size_t i = 0;
+         i < kProjectionRevisionBytes;
+         ++i) {
+        decoded_revision =
+            (decoded_revision << 8) |
+            static_cast<std::uint64_t>(
+                decoded[
+                    kFingerprintBytes + i
+                ]
+            );
+    }
+
+    if (decoded_revision == 0) {
+        return false;
+    }
+
+    *fingerprint =
+        std::move(decoded_fingerprint);
+
+    *projection_revision =
+        decoded_revision;
+
     return true;
 }
 
 } // namespace
+
+void clear_storage_user_session_cookie_text(
+    std::string* value
+) noexcept {
+    if (!value) {
+        return;
+    }
+
+    if (!value->empty()) {
+        sodium_memzero(
+            value->data(),
+            value->size()
+        );
+    }
+
+    value->clear();
+}
 
 const char*
 storage_user_session_cookie_verify_result_code(
@@ -299,13 +384,14 @@ bool storage_user_session_cookie_mint(
     const unsigned char base_cookie_key[32],
     const std::string& local_node_id,
     const std::string& fingerprint_hex,
+    std::uint64_t projection_revision,
     long issued_at,
     long expires_at,
     std::string* out_cookie
 ) noexcept {
-    if (out_cookie) {
-        out_cookie->clear();
-    }
+    clear_storage_user_session_cookie_text(
+        out_cookie
+    );
 
     if (!out_cookie ||
         !base_cookie_key ||
@@ -316,11 +402,14 @@ bool storage_user_session_cookie_mint(
         !valid_cluster_node_id(
             local_node_id
         ) ||
+        projection_revision == 0 ||
         !pqnas::valid_storage_user_fingerprint_hex(
             fingerprint_hex
         )) {
         return false;
     }
+
+    std::string cookie;
 
     try {
         ScopedDerivedKey derived_key;
@@ -333,20 +422,19 @@ bool storage_user_session_cookie_mint(
             return false;
         }
 
-        std::string fingerprint_b64;
+        std::string identity_b64;
 
-        if (!fingerprint_to_base64(
+        if (!encode_storage_session_identity(
                 fingerprint_hex,
-                &fingerprint_b64
+                projection_revision,
+                &identity_b64
             )) {
             return false;
         }
 
-        std::string cookie;
-
         if (!session_cookie_mint(
                 derived_key.data(),
-                fingerprint_b64,
+                identity_b64,
                 issued_at,
                 expires_at,
                 cookie
@@ -354,6 +442,10 @@ bool storage_user_session_cookie_mint(
             cookie.empty() ||
             cookie.size() >
                 kStorageUserSessionCookieMaxBytes) {
+            clear_storage_user_session_cookie_text(
+                &cookie
+            );
+
             return false;
         }
 
@@ -362,7 +454,14 @@ bool storage_user_session_cookie_mint(
 
         return true;
     } catch (...) {
-        out_cookie->clear();
+        clear_storage_user_session_cookie_text(
+            &cookie
+        );
+
+        clear_storage_user_session_cookie_text(
+            out_cookie
+        );
+
         return false;
     }
 }
@@ -374,14 +473,17 @@ storage_user_session_cookie_verify(
     const std::string& cookie_value,
     long now,
     std::string* out_fingerprint_hex,
+    std::uint64_t* out_projection_revision,
     long* out_expires_at
 ) noexcept {
     clear_verify_outputs(
         out_fingerprint_hex,
+        out_projection_revision,
         out_expires_at
     );
 
     if (!out_fingerprint_hex ||
+        !out_projection_revision ||
         !base_cookie_key ||
         now < 0 ||
         cookie_value.empty() ||
@@ -406,13 +508,13 @@ storage_user_session_cookie_verify(
                 InvalidInput;
         }
 
-        std::string fingerprint_b64;
+        std::string identity_b64;
         long expires_at = 0;
 
         if (!session_cookie_verify(
                 derived_key.data(),
                 cookie_value,
-                fingerprint_b64,
+                identity_b64,
                 expires_at
             )) {
             return StorageUserSessionCookieVerifyResult::
@@ -428,10 +530,12 @@ storage_user_session_cookie_verify(
         }
 
         std::string fingerprint;
+        std::uint64_t projection_revision = 0;
 
-        if (!base64_to_fingerprint(
-                fingerprint_b64,
-                &fingerprint
+        if (!decode_storage_session_identity(
+                identity_b64,
+                &fingerprint,
+                &projection_revision
             )) {
             return StorageUserSessionCookieVerifyResult::
                 InvalidCookie;
@@ -439,6 +543,9 @@ storage_user_session_cookie_verify(
 
         *out_fingerprint_hex =
             std::move(fingerprint);
+
+        *out_projection_revision =
+            projection_revision;
 
         if (out_expires_at) {
             *out_expires_at =
@@ -450,6 +557,7 @@ storage_user_session_cookie_verify(
     } catch (...) {
         clear_verify_outputs(
             out_fingerprint_hex,
+            out_projection_revision,
             out_expires_at
         );
 

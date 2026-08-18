@@ -107,6 +107,7 @@ int main() {
                 base_key.data(),
                 node_one,
                 fingerprint,
+                17,
                 1000,
                 1600,
                 &cookie
@@ -120,6 +121,7 @@ int main() {
     );
 
     std::string verified_fp;
+    std::uint64_t verified_revision = 0;
     long verified_exp = 0;
 
     expect_result(
@@ -130,6 +132,7 @@ int main() {
                 cookie,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -139,11 +142,13 @@ int main() {
 
     expect(
         verified_fp == fingerprint &&
+        verified_revision == 17 &&
         verified_exp == 1600,
-        "verified Storage cookie returns identity and expiry"
+        "verified Storage cookie returns identity revision and expiry"
     );
 
     verified_fp = "stale";
+    verified_revision = 9999;
     verified_exp = 9999;
 
     expect_result(
@@ -154,6 +159,7 @@ int main() {
                 cookie,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -163,6 +169,7 @@ int main() {
 
     expect(
         verified_fp.empty() &&
+        verified_revision == 0 &&
         verified_exp == 0,
         "cross-Node failure clears outputs"
     );
@@ -193,6 +200,7 @@ int main() {
                 director_cookie,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -201,6 +209,7 @@ int main() {
     );
 
     verified_fp = "stale";
+    verified_revision = 9999;
     verified_exp = 9999;
 
     expect_result(
@@ -211,6 +220,7 @@ int main() {
                 cookie,
                 1600,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -220,11 +230,13 @@ int main() {
 
     expect(
         verified_fp.empty() &&
+        verified_revision == 0 &&
         verified_exp == 0,
         "exact-exp failure clears outputs"
     );
 
     verified_fp = "stale";
+    verified_revision = 9999;
     verified_exp = 9999;
 
     expect_result(
@@ -235,6 +247,7 @@ int main() {
                 cookie,
                 1601,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -244,6 +257,7 @@ int main() {
 
     expect(
         verified_fp.empty() &&
+        verified_revision == 0 &&
         verified_exp == 0,
         "expired cookie clears outputs"
     );
@@ -271,6 +285,7 @@ int main() {
                 tampered,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -286,6 +301,7 @@ int main() {
                 base_key.data(),
                 "../storage-01",
                 fingerprint,
+                17,
                 1000,
                 1600,
                 &output
@@ -304,6 +320,7 @@ int main() {
                 base_key.data(),
                 node_one,
                 std::string(127, 'a'),
+                17,
                 1000,
                 1600,
                 &output
@@ -317,6 +334,7 @@ int main() {
                 base_key.data(),
                 node_one,
                 fingerprint,
+                17,
                 1000,
                 1000 +
                     pqnas::cluster::
@@ -333,11 +351,31 @@ int main() {
                 base_key.data(),
                 node_one,
                 fingerprint,
+                17,
                 2000,
                 1999,
                 &output
             ),
         "reversed Storage cookie time window rejected"
+    );
+
+    expect(
+        !pqnas::cluster::
+            storage_user_session_cookie_mint(
+                base_key.data(),
+                node_one,
+                fingerprint,
+                0,
+                1000,
+                1600,
+                &output
+            ),
+        "zero projection revision cannot mint Storage cookie"
+    );
+
+    expect(
+        output.empty(),
+        "zero-revision mint clears output"
     );
 
     std::array<unsigned char, 32>
@@ -349,6 +387,7 @@ int main() {
                 zero_key.data(),
                 node_one,
                 fingerprint,
+                17,
                 1000,
                 1600,
                 &output
@@ -364,6 +403,7 @@ int main() {
                 cookie,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
@@ -386,6 +426,7 @@ int main() {
                 oversized,
                 1200,
                 &verified_fp,
+                &verified_revision,
                 &verified_exp
             ),
         StorageUserSessionCookieVerifyResult::
