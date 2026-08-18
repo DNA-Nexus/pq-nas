@@ -2912,6 +2912,37 @@ target_link_libraries(pqnas_storage_handoff_consume_service PUBLIC
 )
 
 # -----------------------------------------------------------------------------
+# Storage browser handoff preauth route
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_preauth_routes STATIC
+        server/src/routes/routes_storage_handoff_preauth.cpp
+        server/src/routes/routes_storage_handoff_preauth.h
+)
+
+target_include_directories(pqnas_storage_handoff_preauth_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_handoff_preauth_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_preauth_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_preauth_routes PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_handoff_ticket_store
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Storage browser handoff consume service
 # -----------------------------------------------------------------------------
 add_executable(test_storage_handoff_consume_service
@@ -2953,6 +2984,57 @@ add_custom_target(run_test_storage_handoff_consume_service
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_handoff_consume_service
 )
+
+# -----------------------------------------------------------------------------
+# Test: Storage browser handoff preauth route
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_preauth_route
+        tests/cluster/test_storage_handoff_preauth_route.cpp
+)
+
+target_include_directories(test_storage_handoff_preauth_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_handoff_preauth_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_preauth_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_preauth_route PRIVATE
+        pqnas_storage_handoff_preauth_routes
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_preauth_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_preauth_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_preauth_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_preauth_route
+)
+
+# Security: keep the browser-facing handoff chain closed until its complete
+# production trust path and E2E tests are ready.
+add_custom_target(run_test_storage_handoff_preauth_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_handoff_preauth_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 
 # -----------------------------------------------------------------------------
 # Storage Node session authenticator
