@@ -1764,6 +1764,140 @@ bool UsersRegistry::set_home_node_persisted_if_current(
   return true;
 }
 
+bool UsersRegistry::clear_home_node_persisted_if_current(
+    const std::string& fp_hex,
+    const std::string& expected_home_node,
+    const std::string& expected_placement_policy_id,
+    const std::string& path,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Security: this primitive represents placed -> unplaced only. An empty
+  // expected node must never become a generic "clear whatever is there".
+  if (expected_home_node.empty() ||
+      !valid_user_home_node_id(
+          expected_home_node)) {
+    if (error) {
+      *error = "invalid expected home node ID";
+    }
+
+    return false;
+  }
+
+  // Empty policy ID is valid and means no policy override. The policy is only
+  // compared here; explicit unplacement preserves placement intent.
+  if (!valid_user_placement_policy_id(
+          expected_placement_policy_id)) {
+    if (error) {
+      *error =
+          "invalid expected placement policy ID";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  // TOCTOU protection: both realized placement and placement intent must still
+  // match the caller's snapshot while holding the registry mutation lock.
+  if (iterator->second.home_node !=
+          expected_home_node ||
+      iterator->second.placement_policy_id !=
+          expected_placement_policy_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  std::uint64_t next_revision = 0;
+
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
+
+  iterator->second.home_node.clear();
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: the unplacement decision and its newer revoke revision become
+  // durable together. Persistence failure restores the complete prior record.
+  if (!save_locked(path)) {
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  // Security: reconciliation is woken only after users.json durably records
+  // the newer unplaced revision. The notifier runs outside the registry lock.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier();
+    } catch (...) {
+      // Best-effort wake only; durable unplacement remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+
 bool UsersRegistry::set_placement_policy_id_persisted(
     const std::string& fp_hex,
     const std::string& placement_policy_id,

@@ -198,19 +198,34 @@ void register_admin_user_lifecycle_routes(
 
             bool erased = false;
             bool placement_blocked = false;
+            bool cluster_revoke_pending = false;
             std::string delete_error;
 
-            // Security: deletion is one persisted registry mutation. Placed
-            // cluster users are retained until Storage revoke reconciliation
-            // can safely remove their last Node authorization.
-            const bool ok_del =
-                ctx.users->erase_persisted_if_unplaced(
-                    fp,
-                    ctx.users_path,
-                    &erased,
-                    &placement_blocked,
-                    &delete_error
-                );
+            // Security: Director deletion must serialize the confirmed
+            // projection-state check with reconciliation and keep that boundary
+            // held through the durable users.json erase. Standalone keeps the
+            // ordinary persisted unplaced-user path.
+            bool ok_del = false;
+
+            if (ctx.erase_user_persisted_cluster_safe) {
+                ok_del =
+                    ctx.erase_user_persisted_cluster_safe(
+                        fp,
+                        &erased,
+                        &placement_blocked,
+                        &cluster_revoke_pending,
+                        &delete_error
+                    );
+            } else {
+                ok_del =
+                    ctx.users->erase_persisted_if_unplaced(
+                        fp,
+                        ctx.users_path,
+                        &erased,
+                        &placement_blocked,
+                        &delete_error
+                    );
+            }
 
             {
                 pqnas::AuditEvent ev;
@@ -262,6 +277,21 @@ void register_admin_user_lifecycle_routes(
                         {
                             "message",
                             "placed user must be revoked from Storage before deletion"
+                        }
+                    }
+                );
+                return;
+            }
+
+            if (cluster_revoke_pending) {
+                reply(
+                    409,
+                    json{
+                        {"ok", false},
+                        {"error", "cluster_revoke_pending"},
+                        {
+                            "message",
+                            "Storage revoke reconciliation is still pending"
                         }
                     }
                 );

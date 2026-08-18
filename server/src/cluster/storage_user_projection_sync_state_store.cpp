@@ -1265,6 +1265,44 @@ commit_candidate_locked(
     return durable;
 }
 
+bool StorageUserProjectionSyncStateStore::
+ensure_durable(
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    std::lock_guard<std::mutex> lock(
+        mutex_
+    );
+
+    if (path_.empty()) {
+        set_error(
+            error,
+            "projection sync-state store is not loaded"
+        );
+
+        return false;
+    }
+
+    if (!durability_uncertain_) {
+        return true;
+    }
+
+    // Security/correctness: persist the exact current snapshot. This also
+    // heals an erase whose rename committed but whose parent-directory fsync
+    // failed after the erased entry disappeared from process memory.
+    auto candidate =
+        states_;
+
+    return commit_candidate_locked(
+        std::move(candidate),
+        error
+    );
+}
+
+
 StorageUserProjectionSyncStateStoreResult
 StorageUserProjectionSyncStateStore::mark_synced(
     const StorageUserProjectionSyncState& state,

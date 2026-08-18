@@ -75,6 +75,13 @@ from pqnas_cluster_secrets import (
     wipe_secret_buffer,
 )
 
+from pqnas_director_projection_state import (
+    DIRECTOR_PROJECTION_BOOTSTRAP_CONFIRM_SUFFIX,
+    binary_rollback_restart_allowed,
+    director_projection_bootstrap_confirmation_required,
+    ensure_director_projection_sync_state,
+)
+
 from pqnas_mutable_config import (
     atomic_write_managed_text,
     ensure_managed_binary_created,
@@ -1370,6 +1377,11 @@ class InstallState:
     original_cluster_config: ClusterInstallConfig = field(
         default_factory=ClusterInstallConfig
     )
+
+    # Security: one-shot operator acknowledgement for creating an empty
+    # Director confirmed-sync snapshot. Never infer this permission from a
+    # missing file, an upgrade flag, or the presence of installed binaries.
+    director_projection_sync_state_bootstrap_approved: bool = False
 
     # Security: short-lived plaintext storage only. This buffer is never
     # rendered into pqnas.env and is wiped after the descriptor-based write.
@@ -3964,25 +3976,61 @@ class ConfirmScreen(Screen):
         self.logw.write("")
 
         mode = app.state.install_mode
+        root = (
+            app.state.mountpoint.rstrip("/")
+            or "/srv/pqnas"
+        )
+
+        # Security: approval is one-shot and is granted only by the exact
+        # confirmation phrase shown on this screen.
+        app.state.director_projection_sync_state_bootstrap_approved = False
+
+        self.director_projection_sync_state_bootstrap_required = (
+            director_projection_bootstrap_confirmation_required(
+                root,
+                mode,
+                app.state.cluster_config,
+            )
+        )
 
         if mode == "existing":
-            self.required = f"INSTALL {app.state.mountpoint.rstrip('/') or '/srv/pqnas'}"
-            self.msg.update(
+            base_required = f"INSTALL {root}"
+            message = (
                 "This will install PQ-NAS into the existing filesystem.\n\n"
                 "No partitioning or formatting will be done.\n\n"
                 "Target path:\n\n"
-                f"[b]{app.state.mountpoint}[/b]\n\n"
-                "To proceed, type exactly:\n\n"
-                f"[b]{self.required}[/b]\n"
+                f"[b]{app.state.mountpoint}[/b]\n"
             )
         else:
             assert d is not None
-            self.required = f"WIPE {d.name}"
-            self.msg.update(
-                f"This will DESTROY ALL DATA on [b]{d.path}[/b].\n\n"
-                "To proceed, type exactly:\n\n"
-                f"[b]{self.required}[/b]\n"
+            base_required = f"WIPE {d.name}"
+            message = (
+                f"This will DESTROY ALL DATA on [b]{d.path}[/b].\n"
             )
+
+        if self.director_projection_sync_state_bootstrap_required:
+            self.required = (
+                f"{base_required} "
+                f"{DIRECTOR_PROJECTION_BOOTSTRAP_CONFIRM_SUFFIX}"
+            )
+            message += (
+                "\n[b]DIRECTOR CONTROL-PLANE WARNING[/b]\n\n"
+                "An empty Director projection sync-state will need to be "
+                "created. This is safe only when intentionally initializing "
+                "a new Director control plane.\n\n"
+                "If this server previously acted as a Director, STOP and "
+                "restore storage_projection_sync_state.json from backup. "
+                "Resetting it can forget the last Storage Node known to hold "
+                "a user's authorization.\n"
+            )
+        else:
+            self.required = base_required
+
+        message += (
+            "\nTo proceed, type exactly:\n\n"
+            f"[b]{self.required}[/b]\n"
+        )
+        self.msg.update(message)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input is self.confirm_in:
@@ -3995,6 +4043,8 @@ class ConfirmScreen(Screen):
             self._start()
 
     def action_back(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.state.director_projection_sync_state_bootstrap_approved = False
         self.app.pop_screen()
 
     def action_try_start(self) -> None:
@@ -4012,6 +4062,11 @@ class ConfirmScreen(Screen):
         if val != self.required:
             self.err.update("Confirmation does not match. Nothing has been done.")
             return
+
+        app: InstallerApp = self.app  # type: ignore
+        app.state.director_projection_sync_state_bootstrap_approved = bool(
+            self.director_projection_sync_state_bootstrap_required
+        )
         self.app.push_screen(ExecuteScreen())
 
 
@@ -4020,10 +4075,21 @@ class ConfirmScreen(Screen):
 class RollbackScreen(Screen):
     BINDINGS = [("q", "quit", "Quit"), ("b", "back", "Back")]
 
-    def __init__(self, error_text: str, *, was_upgrade: bool) -> None:
+    def __init__(
+        self,
+        error_text: str,
+        *,
+        was_upgrade: bool,
+        restart_after_rollback: bool = True,
+    ) -> None:
         super().__init__()
         self.error_text = error_text
         self.was_upgrade = was_upgrade
+
+        # Security: binary rollback is not equivalent to config/data rollback.
+        # Destructive installs and newly bootstrapped Director authority must
+        # leave the service stopped after restoring old binaries.
+        self.restart_after_rollback = restart_after_rollback
 
         # Ensure attributes exist even if something calls methods early
         self.err_box: Optional[Static] = None
@@ -4037,6 +4103,15 @@ class RollbackScreen(Screen):
         with Vertical():
             yield Static("[b]Service failed to start[/b]\n", classes="warn")
 
+            rollback_effect = (
+                "  • Rollback will restore those .bak files and restart "
+                "pqnas.service.\n"
+                if self.restart_after_rollback
+                else
+                "  • Rollback will restore those .bak files but will NOT "
+                "restart pqnas.service.\n"
+            )
+
             expl = (
                 "What happened:\n"
                 "  • PQ-NAS was installed, but systemd could not start pqnas.service.\n\n"
@@ -4045,8 +4120,8 @@ class RollbackScreen(Screen):
                 "      /usr/local/bin/pqnas_server.bak\n"
                 "      /usr/local/bin/pqnas_keygen.bak\n"
                 "      /usr/local/bin/nodus-cli.bak\n"
-                "  • Rollback will restore those .bak files and restart pqnas.service.\n\n"
-                "Notes:\n"
+                + rollback_effect +
+                "\nNotes:\n"
                 "  • Rollback changes ONLY binaries, not your data/config.\n"
             )
             yield Static(expl, classes="muted")
@@ -4062,7 +4137,17 @@ class RollbackScreen(Screen):
                 self.btn_keep = Button("Keep new binaries (no rollback)", id="keep", variant="default")
                 yield self.btn_keep
 
-                self.btn_rollback = Button("Rollback binaries + restart service", id="rollback", variant="error")
+                rollback_label = (
+                    "Rollback binaries + restart service"
+                    if self.restart_after_rollback
+                    else
+                    "Rollback binaries (leave service stopped)"
+                )
+                self.btn_rollback = Button(
+                    rollback_label,
+                    id="rollback",
+                    variant="error",
+                )
                 yield self.btn_rollback
 
             self.out = InstallerLog()
@@ -4115,6 +4200,17 @@ class RollbackScreen(Screen):
 
         self.out.write("[*] systemd daemon-reload …")
         subprocess.run(["systemctl", "daemon-reload"], check=False)
+
+        if not self.restart_after_rollback:
+            # Security: old binaries must not be started automatically against
+            # destructively replaced data/config or newly bootstrapped Director
+            # authority. Recovery requires an explicit operator decision.
+            self.out.write(
+                "✅ Binary rollback done. pqnas.service was intentionally "
+                "left stopped because data/config authority changed during "
+                "this installer run."
+            )
+            return
 
         self.out.write("[*] Restarting pqnas.service …")
         p = subprocess.run(
@@ -4626,6 +4722,34 @@ class ExecuteScreen(Screen):
             create_pqnas_layout(mp)
 
             self.logw.write(
+                "Checking Director projection sync-state …"
+            )
+            director_state_owner_uid, director_state_owner_gid = (
+                service_owner_ids("pqnas")
+            )
+
+            try:
+                director_projection_state_action = (
+                    ensure_director_projection_sync_state(
+                        mp,
+                        st.cluster_config,
+                        bootstrap_approved=(
+                            st.director_projection_sync_state_bootstrap_approved
+                        ),
+                        owner_uid=director_state_owner_uid,
+                        owner_gid=director_state_owner_gid,
+                    )
+                )
+            finally:
+                # Security: approval cannot leak into a later installer action.
+                st.director_projection_sync_state_bootstrap_approved = False
+
+            self.logw.write(
+                "[*] Director projection sync-state: "
+                f"{director_projection_state_action}"
+            )
+
+            self.logw.write(
                 "Applying storage-node bootstrap secret state …"
             )
             try:
@@ -4886,7 +5010,23 @@ class ExecuteScreen(Screen):
                 err_text = str(e)
                 self.logw.write("[ERROR] pqnas.service failed to start.")
                 self.logw.write(err_text)
-                self._push_screen_from_worker(lambda: RollbackScreen(err_text, was_upgrade=was_upgrade))
+                # Security: rollback restores binaries only. Automatic restart
+                # is safe only when the existing filesystem was preserved and
+                # this run did not create a new Director authority snapshot.
+                restart_after_rollback = (
+                    binary_rollback_restart_allowed(
+                        mode,
+                        director_projection_state_action,
+                    )
+                )
+
+                self._push_screen_from_worker(
+                    lambda: RollbackScreen(
+                        err_text,
+                        was_upgrade=was_upgrade,
+                        restart_after_rollback=restart_after_rollback,
+                    )
+                )
                 self._update_done_from_worker(
                     "\n⚠️ Service failed to start.\n\n"
                     "Use the rollback screen to restore previous binaries or keep the new ones.\n"

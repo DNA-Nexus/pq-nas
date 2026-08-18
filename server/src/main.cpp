@@ -10178,6 +10178,13 @@ auto maybe_auto_rotate_before_append = [&]() {
     // The persistent sync-state remembers the last Node/revision known to
     // have accepted each projection, allowing crash-safe reconciliation.
     // ---------------------------------------------------------------------
+    // Security: physical Director user deletion and projection
+    // reconciliation share this lifetime-wide transition boundary. This prevents
+    // an older in-flight reconciliation snapshot from re-authorizing a Storage
+    // Node after the authoritative Director user record has been deleted.
+    auto director_storage_projection_transition_mutex =
+        std::make_shared<std::mutex>();
+
     pqnas::cluster::
         StorageUserProjectionSyncStateStore
             director_storage_projection_sync_state_store;
@@ -10301,7 +10308,18 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     director_storage_projection_reconcile_worker_config
         .reconcile_once =
-            [&director_storage_projection_reconciler]() {
+            [
+                &director_storage_projection_reconciler,
+                director_storage_projection_transition_mutex
+            ]() {
+                // Security: hold the authorization-transition boundary across
+                // snapshot, network synchronization and confirmed-state commit.
+                // Physical Director user deletion takes this same mutex.
+                std::lock_guard<std::mutex>
+                    transition_lock(
+                        *director_storage_projection_transition_mutex
+                    );
+
                 const auto result =
                     director_storage_projection_reconciler
                         .reconcile_once();

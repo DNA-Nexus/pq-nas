@@ -3345,6 +3345,25 @@ add_custom_target(run_test_storage_user_projection_sync_state_store_guards
 )
 
 # -----------------------------------------------------------------------------
+# Installer test: explicit Director projection sync-state bootstrap
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_pqnas_director_projection_state
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/installer/test_pqnas_director_projection_state.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
+# Structural guard: Director sync-state bootstrap trust boundary
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_storage_projection_sync_state_bootstrap_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_projection_sync_state_bootstrap_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
 # Test: persisted cluster-safe user deletion
 # -----------------------------------------------------------------------------
 add_executable(test_user_delete_persisted

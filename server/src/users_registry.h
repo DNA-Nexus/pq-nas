@@ -225,6 +225,23 @@ public:
         std::string* error
     );
 
+    // Atomically clears an existing Director-managed placement.
+    //
+    // Security:
+    // - expected_home_node must name the currently placed Storage Node;
+    // - expected policy intent participates in the CAS but is never cleared;
+    // - home_node clear and projection revision increment are persisted together;
+    // - a stale expectation is a successful no-op.
+    bool clear_home_node_persisted_if_current(
+        const std::string& fp_hex,
+        const std::string& expected_home_node,
+        const std::string& expected_placement_policy_id,
+        const std::string& path,
+        bool* changed,
+        bool* expectation_matched,
+        std::string* error
+    );
+
     // Atomically persists a policy-reference change before committing it to
     // memory. Empty policy ID deliberately clears the override.
     bool set_placement_policy_id_persisted(

@@ -31,6 +31,7 @@ struct StorageUserProjectionReconcileResult {
 
     std::size_t synced_current = 0;
     std::size_t moved = 0;
+    std::size_t revoked_unplaced = 0;
 
     std::size_t orphaned_states = 0;
     std::size_t stale_states = 0;

@@ -65,6 +65,16 @@ public:
     std::vector<StorageUserProjectionSyncState>
     snapshot() const;
 
+    // Ensure that the currently visible in-memory snapshot is durably
+    // represented on disk.
+    //
+    // Security: a rename may already have changed the authoritative snapshot
+    // when the following parent-directory fsync fails. Reconciliation must
+    // heal that uncertainty before performing further authorization writes.
+    bool ensure_durable(
+        std::string* error
+    );
+
     // Confirm a successfully synchronized Node/revision.
     //
     // Revision contract:
@@ -78,8 +88,8 @@ public:
         std::string* error
     );
 
-    // Used after a deleted Director user has been successfully revoked from
-    // its last known Storage Node.
+    // Used after a Director user has been successfully revoked from its last
+    // known Storage Node during explicit unplacement or deletion.
     //
     // A stale expectation is a successful no-op:
     // return true, expectation_matched=false.

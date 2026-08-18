@@ -591,6 +591,271 @@ int main() {
         );
     }
 
+    // Unassign authentication runs before body parsing.
+    {
+        auth_allowed = false;
+        origin_allowed = true;
+        auth_calls = 0;
+        origin_calls = 0;
+
+        const std::size_t audits_before =
+            audits.size();
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    pqnas::cluster::
+                        kAdminClusterUserPlacementBodyMaxBytes +
+                    100,
+                    'x'
+                )
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 401,
+            "unassign authentication should run before body parsing"
+        );
+
+        expect(
+            auth_calls == 1 &&
+            origin_calls == 0 &&
+            audits.size() == audits_before,
+            "unauthorized unassign must not reach origin or service"
+        );
+    }
+
+    // Same-origin protection also applies to explicit unassignment.
+    {
+        auth_allowed = true;
+        origin_allowed = false;
+
+        const std::size_t audits_before =
+            audits.size();
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"node-01"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 403 &&
+            audits.size() == audits_before,
+            "same-origin failure must block unassign before service"
+        );
+    }
+
+    origin_allowed = true;
+
+    // Strict body schema rejects unexpected keys before service invocation.
+    {
+        const std::size_t audits_before =
+            audits.size();
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"node-01",
+                    "extra":true
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400 &&
+            audits.size() == audits_before,
+            "unassign must reject unknown JSON keys"
+        );
+    }
+
+    // Semantically invalid expected node reaches the service but fails closed.
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"../node"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        expect(
+            response.status == 400 &&
+            body["reason_code"] ==
+                "invalid_expected_home_node",
+            "invalid expected home node should return 400"
+        );
+    }
+
+    // CAS protection: a stale UI must not clear a different current Node.
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"node-02"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        const auto current_user =
+            users.get(
+                "user-fingerprint"
+            );
+
+        expect(
+            response.status == 409 &&
+            body["reason_code"] ==
+                "placement_stale" &&
+            current_user.has_value() &&
+            current_user->home_node ==
+                "node-01",
+            "stale unassign must return conflict and preserve placement"
+        );
+    }
+
+    // Matching expected placement performs durable explicit unassignment.
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"node-01"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        expect(
+            response.status == 200 &&
+            body["ok"] == true &&
+            body["changed"] == true &&
+            body["previous_home_node"] ==
+                "node-01" &&
+            body["home_node"] == "",
+            "matching unassign should return changed success"
+        );
+
+        expect(
+            response.headers.find(
+                "Cache-Control"
+            ) != response.headers.end() &&
+            response.headers.find(
+                "Cache-Control"
+            )->second == "no-store",
+            "unassign response should disable caching"
+        );
+    }
+
+    // Retrying the same successful request is idempotent and must not create
+    // another projection revision.
+    {
+        const auto before_retry =
+            users.get(
+                "user-fingerprint"
+            );
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "fingerprint":"user-fingerprint",
+                    "expected_home_node":"node-01"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_user_home_node_unassign(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        const auto after_retry =
+            users.get(
+                "user-fingerprint"
+            );
+
+        expect(
+            response.status == 200 &&
+            body["changed"] == false &&
+            body["home_node"] == "" &&
+            before_retry.has_value() &&
+            after_retry.has_value() &&
+            before_retry->
+                storage_projection_revision ==
+            after_retry->
+                storage_projection_revision,
+            "repeated unassign should be idempotent without revision churn"
+        );
+    }
+
+
     pqnas::UsersRegistry reloaded;
 
     expect(
@@ -603,23 +868,42 @@ int main() {
 
     expect(
         reloaded_user.has_value() &&
-        reloaded_user->home_node ==
-            "node-01",
-        "route placement should persist home_node"
+        reloaded_user->home_node.empty(),
+        "route unassign should durably clear home_node"
     );
 
     expect(
-        audits.size() == 6,
+        audits.size() == 10,
         "only requests reaching placement service should be audited"
     );
 
+    std::size_t assign_audits = 0;
+    std::size_t unassign_audits = 0;
+
     for (const AuditRecord& audit : audits) {
+        if (audit.event ==
+            "admin.user_home_node.assign") {
+            ++assign_audits;
+            continue;
+        }
+
+        if (audit.event ==
+            "admin.user_home_node.unassign") {
+            ++unassign_audits;
+            continue;
+        }
+
         expect(
-            audit.event ==
-                "admin.user_home_node.assign",
-            "route must use placement service audit event"
+            false,
+            "route must use a known placement service audit event"
         );
     }
+
+    expect(
+        assign_audits == 6 &&
+        unassign_audits == 4,
+        "assign and unassign service calls must emit separate audit events"
+    );
 
     cleanup();
 

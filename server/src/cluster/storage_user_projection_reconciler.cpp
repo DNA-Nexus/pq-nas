@@ -51,6 +51,28 @@ StorageUserProjection previous_node_tombstone(
     return tombstone;
 }
 
+StorageUserProjection unplaced_user_tombstone(
+    const pqnas::UserRec& user,
+    const std::string& previous_home_node
+) {
+    StorageUserProjection revision_source;
+
+    revision_source.fingerprint =
+        user.fingerprint;
+
+    revision_source.revision =
+        user.storage_projection_revision;
+
+    // Security: explicit unplacement uses the Director's newer durable
+    // revision while targeting the last Node confirmed to hold authorization.
+    // Reuse the exact A->B tombstone shape so no usable storage mapping leaks.
+    return previous_node_tombstone(
+        revision_source,
+        previous_home_node
+    );
+}
+
+
 bool persist_confirmed_state(
     StorageUserProjectionSyncStateStore* store,
     const StorageUserProjection& projection,
@@ -169,6 +191,21 @@ StorageUserProjectionReconciler::reconcile_once() const {
         return result;
     }
 
+    std::string durability_error;
+
+    // Security: never perform another Storage authorization transition while
+    // the Director is uncertain whether its current confirmed-state snapshot
+    // survived the previous atomic persistence operation durably.
+    if (!config_.state_store->ensure_durable(
+            &durability_error)) {
+        durability_error.clear();
+
+        ++result.persist_failures;
+        ++result.failed;
+
+        return result;
+    }
+
     const auto users =
         config_.users->snapshot();
 
@@ -242,15 +279,87 @@ StorageUserProjectionReconciler::reconcile_once() const {
             );
 
         if (user.home_node.empty()) {
-            if (confirmed.has_value()) {
-                // Security: an unplaced Director user must not silently leave a
-                // previously confirmed Storage authorization behind.
-                ++result.state_conflicts;
-                ++result.failed;
-            } else {
+            if (!confirmed.has_value()) {
                 ++result.no_placement;
+                continue;
             }
 
+            if (confirmed->revision >
+                user.storage_projection_revision) {
+                // Security: persistent knowledge newer than Director state
+                // cannot be revoked using an older revision.
+                ++result.stale_states;
+                ++result.failed;
+                continue;
+            }
+
+            if (confirmed->revision ==
+                user.storage_projection_revision) {
+                // Security: equal revision cannot prove whether the Node holds
+                // the old live projection or an already-applied tombstone.
+                // Never send conflicting same-revision authorization content.
+                ++result.state_conflicts;
+                ++result.failed;
+                continue;
+            }
+
+            const StorageUserProjection tombstone =
+                unplaced_user_tombstone(
+                    user,
+                    confirmed->home_node
+                );
+
+            StorageUserProjectionSyncResult
+                revoke_result;
+
+            try {
+                revoke_result =
+                    config_.sync_projection(
+                        tombstone
+                    );
+            } catch (...) {
+                ++result.failed;
+                continue;
+            }
+
+            if (!sync_succeeded(
+                    revoke_result.code)) {
+                // Security: retain confirmed state until the last known Node
+                // has accepted the newer disabling tombstone.
+                ++result.failed;
+                continue;
+            }
+
+            bool expectation_matched = false;
+            std::string persistence_error;
+
+            if (!config_.state_store->
+                    erase_if_current(
+                        fingerprint,
+                        confirmed->home_node,
+                        confirmed->revision,
+                        &expectation_matched,
+                        &persistence_error)) {
+                persistence_error.clear();
+
+                // Security: a revoke is not considered reconciled until the
+                // Director has durably removed the old confirmed placement.
+                ++result.persist_failures;
+                ++result.failed;
+                continue;
+            }
+
+            persistence_error.clear();
+
+            if (!expectation_matched) {
+                // Another state transition won the CAS. Never erase or claim
+                // success against newer confirmed synchronization knowledge.
+                ++result.state_conflicts;
+                ++result.failed;
+                continue;
+            }
+
+            ++result.revoked_unplaced;
             continue;
         }
 

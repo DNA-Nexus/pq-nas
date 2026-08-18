@@ -267,6 +267,86 @@ int main() {
         "assignment counts should expose only aggregate node references"
     );
 
+    const auto stale_unassign =
+        service.unassign(
+            "abc123",
+            "node-01",
+            "admin-fp"
+        );
+
+    expect(
+        !stale_unassign.ok &&
+        stale_unassign.error_code ==
+            "placement_stale" &&
+        stale_unassign.previous_home_node ==
+            "node-03",
+        "stale unassign expectation must not clear a newer placement"
+    );
+
+    const auto after_stale_unassign =
+        users.get("abc123");
+
+    expect(
+        after_stale_unassign.has_value() &&
+        after_stale_unassign->home_node ==
+            "node-03",
+        "stale unassign must preserve current placement"
+    );
+
+    const auto unassigned =
+        service.unassign(
+            "abc123",
+            "node-03",
+            "admin-fp"
+        );
+
+    expect(
+        unassigned.ok &&
+        unassigned.changed &&
+        unassigned.previous_home_node ==
+            "node-03" &&
+        unassigned.home_node.empty(),
+        "matching unassign should durably clear home_node"
+    );
+
+    const auto unassigned_user =
+        users.get("abc123");
+
+    expect(
+        unassigned_user.has_value() &&
+        unassigned_user->home_node.empty(),
+        "unassign should update authoritative user placement"
+    );
+
+    const auto repeated_unassign =
+        service.unassign(
+            "abc123",
+            "node-03",
+            "admin-fp"
+        );
+
+    expect(
+        repeated_unassign.ok &&
+        !repeated_unassign.changed &&
+        repeated_unassign.home_node.empty(),
+        "repeated successful unassign should be idempotent"
+    );
+
+    const auto restored_after_unassign =
+        service.assign(
+            "abc123",
+            "node-03",
+            "admin-fp"
+        );
+
+    expect(
+        restored_after_unassign.ok &&
+        restored_after_unassign.changed &&
+        restored_after_unassign.home_node ==
+            "node-03",
+        "placement should remain assignable after explicit unassign"
+    );
+
     const auto disabled_node =
         service.assign(
             "abc123",
@@ -384,15 +464,43 @@ int main() {
         "failed persistence must roll back in-memory placement"
     );
 
+    const auto failed_unassign =
+        service.unassign(
+            "abc123",
+            "node-03",
+            "admin-fp"
+        );
+
     expect(
-        audits.size() == 8,
+        !failed_unassign.ok &&
+        failed_unassign.error_code ==
+            "persistence_failed",
+        "unassign persistence failure must be reported"
+    );
+
+    const auto after_failed_unassign =
+        users.get("abc123");
+
+    expect(
+        after_failed_unassign.has_value() &&
+        after_failed_unassign->home_node ==
+            "node-03",
+        "failed unassign persistence must preserve placement"
+    );
+
+    expect(
+        audits.size() == 13,
         "every placement operation should emit one audit result"
     );
 
     for (const AuditRecord& audit : audits) {
         expect(
-            audit.event ==
-                "admin.user_home_node.assign",
+            (
+                audit.event ==
+                    "admin.user_home_node.assign" ||
+                audit.event ==
+                    "admin.user_home_node.unassign"
+            ),
             "placement audit event name"
         );
 
