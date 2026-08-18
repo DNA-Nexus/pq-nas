@@ -101,6 +101,7 @@ now_epoch_safe() const noexcept {
 StorageHandoffConsumeServiceResult
 StorageHandoffConsumeService::consume(
     const std::string& ticket,
+    const std::string& browser_binding_secret,
     StorageHandoffConsumeServiceOutput* output
 ) const noexcept {
     clear_output(output);
@@ -125,6 +126,7 @@ StorageHandoffConsumeService::consume(
             ticket_result =
                 config_.ticket_store->consume(
                     ticket,
+                    browser_binding_secret,
                     &claims
                 );
 

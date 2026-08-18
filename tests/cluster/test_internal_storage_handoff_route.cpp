@@ -180,6 +180,23 @@ int main() {
     constexpr std::uint64_t
         projection_revision = 17;
 
+    std::string browser_binding_secret(
+        pqnas::cluster::
+            kStorageHandoffBrowserBindingChars,
+        'A'
+    );
+
+    std::string browser_binding_hash;
+
+    expect(
+        pqnas::cluster::
+            storage_handoff_browser_binding_hash(
+                browser_binding_secret,
+                &browser_binding_hash
+            ),
+        "internal route browser binding fixture hashes"
+    );
+
     int authorize_calls = 0;
     bool allow_user = true;
 
@@ -249,7 +266,9 @@ int main() {
                 "",
                 "application/json",
                 json{
-                    {"fingerprint", fingerprint}
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -296,7 +315,9 @@ int main() {
                 "Bearer " + wrong_token,
                 "application/json",
                 json{
-                    {"fingerprint", fingerprint}
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -339,7 +360,9 @@ int main() {
                 "Bearer " + token,
                 "application/json",
                 json{
-                    {"fingerprint", fingerprint}
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -429,7 +452,9 @@ int main() {
                 "Bearer " + token,
                 "text/plain",
                 json{
-                    {"fingerprint", fingerprint}
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -555,7 +580,9 @@ int main() {
                 "Bearer " + token,
                 "application/json",
                 json{
-                    {"fingerprint", fingerprint}
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -586,9 +613,113 @@ int main() {
         auto request =
             make_request(
                 "Bearer " + token,
-                "application/json; charset=utf-8",
+                "application/json",
                 json{
                     {"fingerprint", fingerprint}
+                }.dump()
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400,
+            "missing browser binding hash returns 400"
+        );
+
+        expect(
+            authorize_calls == 1 &&
+            store.size() == 0,
+            "missing binding fails before authorization or issue"
+        );
+    }
+
+    {
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                json{
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     std::string(
+                         pqnas::cluster::
+                             kStorageHandoffBrowserBindingChars,
+                         'B'
+                     )}
+                }.dump()
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400,
+            "non-canonical browser binding hash returns 400"
+        );
+
+        expect(
+            authorize_calls == 1 &&
+            store.size() == 0,
+            "invalid binding fails before authorization or issue"
+        );
+    }
+
+    {
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                json{
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash},
+                    {"unexpected", true}
+                }.dump()
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400,
+            "extra internal handoff field returns 400"
+        );
+
+        expect(
+            authorize_calls == 1 &&
+            store.size() == 0,
+            "extra field fails before authorization or issue"
+        );
+    }
+
+    {
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json; charset=utf-8",
+                json{
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
                 }.dump()
             );
 
@@ -665,6 +796,7 @@ int main() {
             expect(
                 store.consume(
                     handoff_ticket,
+                    browser_binding_secret,
                     &claims
                 ) ==
                     pqnas::cluster::
@@ -693,6 +825,11 @@ int main() {
             );
         }
     }
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &browser_binding_secret
+        );
 
     pqnas::cluster::
         clear_internal_auth_token_text(

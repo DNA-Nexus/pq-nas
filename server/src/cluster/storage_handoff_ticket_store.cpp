@@ -106,36 +106,13 @@ bool valid_fingerprint(
     }
 
     for (unsigned char ch : fingerprint) {
+        // Security: fingerprints are canonical lowercase hex everywhere
+        // else in the Storage projection boundary. Reject alternate encodings.
         const bool hex =
             (ch >= '0' && ch <= '9') ||
-            (ch >= 'a' && ch <= 'f') ||
-            (ch >= 'A' && ch <= 'F');
+            (ch >= 'a' && ch <= 'f');
 
         if (!hex) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool valid_ticket_text(
-    const std::string& ticket
-) noexcept {
-    if (ticket.size() !=
-        kStorageHandoffTicketChars) {
-        return false;
-    }
-
-    for (unsigned char ch : ticket) {
-        const bool alphanumeric =
-            (ch >= 'A' && ch <= 'Z') ||
-            (ch >= 'a' && ch <= 'z') ||
-            (ch >= '0' && ch <= '9');
-
-        if (!alphanumeric &&
-            ch != '-' &&
-            ch != '_') {
             return false;
         }
     }
@@ -169,6 +146,62 @@ bool encode_32(
         result != nullptr &&
         (*output)[kStorageHandoffTicketChars] ==
             '\0';
+}
+
+bool valid_encoded_32_text(
+    const std::string& value
+) noexcept {
+    if (value.size() !=
+        kStorageHandoffTicketChars) {
+        return false;
+    }
+
+    for (unsigned char ch : value) {
+        const bool alphanumeric =
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9');
+
+        if (!alphanumeric &&
+            ch != '-' &&
+            ch != '_') {
+            return false;
+        }
+    }
+
+    // 32 bytes encode to 43 unpadded base64url characters. The final sextet
+    // contains four data bits and two zero padding bits, so only these sixteen
+    // final characters are canonical encodings.
+    switch (value.back()) {
+        case 'A':
+        case 'E':
+        case 'I':
+        case 'M':
+        case 'Q':
+        case 'U':
+        case 'Y':
+        case 'c':
+        case 'g':
+        case 'k':
+        case 'o':
+        case 's':
+        case 'w':
+        case '0':
+        case '4':
+        case '8':
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+bool valid_ticket_text(
+    const std::string& ticket
+) noexcept {
+    return valid_encoded_32_text(
+        ticket
+    );
 }
 
 bool generate_ticket(
@@ -297,6 +330,10 @@ const char* storage_handoff_ticket_result_code(
         case StorageHandoffTicketResult::Expired:
             return "handoff_ticket_expired";
 
+        case StorageHandoffTicketResult::
+                BindingMismatch:
+            return "handoff_ticket_binding_mismatch";
+
         case StorageHandoffTicketResult::InternalError:
             return "handoff_ticket_internal_error";
     }
@@ -319,6 +356,65 @@ void clear_storage_handoff_ticket_text(
     }
 
     value->clear();
+}
+
+bool generate_storage_handoff_browser_binding_secret(
+    std::string* out_secret
+) noexcept {
+    if (!out_secret) {
+        return false;
+    }
+
+    clear_storage_handoff_browser_binding_secret_text(
+        out_secret
+    );
+
+    if (!sodium_ready()) {
+        return false;
+    }
+
+    // Security: use the same 256-bit CSPRNG primitive as the ticket itself,
+    // but keep the browser-binding value semantically distinct.
+    return generate_ticket(
+        out_secret
+    );
+}
+
+bool storage_handoff_browser_binding_hash(
+    const std::string& secret,
+    std::string* out_hash
+) noexcept {
+    if (!out_hash) {
+        return false;
+    }
+
+    out_hash->clear();
+
+    if (!valid_encoded_32_text(secret) ||
+        !sodium_ready()) {
+        return false;
+    }
+
+    return hash_ticket(
+        secret,
+        out_hash
+    );
+}
+
+bool valid_storage_handoff_browser_binding_hash(
+    const std::string& value
+) noexcept {
+    return valid_encoded_32_text(
+        value
+    );
+}
+
+void clear_storage_handoff_browser_binding_secret_text(
+    std::string* value
+) noexcept {
+    clear_storage_handoff_ticket_text(
+        value
+    );
 }
 
 StorageHandoffTicketStore::
@@ -366,6 +462,7 @@ StorageHandoffTicketStore::issue(
     const std::string& fingerprint,
     const std::string& home_node,
     std::uint64_t projection_revision,
+    const std::string& browser_binding_hash,
     std::int64_t ttl_seconds,
     std::string* out_ticket,
     std::int64_t* out_expires_at
@@ -389,6 +486,9 @@ StorageHandoffTicketStore::issue(
     if (!valid_fingerprint(fingerprint) ||
         !valid_cluster_node_id(home_node) ||
         projection_revision == 0 ||
+        !valid_storage_handoff_browser_binding_hash(
+            browser_binding_hash
+        ) ||
         ttl_seconds <= 0 ||
         ttl_seconds >
             kStorageHandoffTicketMaxTtlSeconds) {
@@ -456,6 +556,10 @@ StorageHandoffTicketStore::issue(
             entry.home_node = home_node;
             entry.projection_revision =
                 projection_revision;
+
+            entry.browser_binding_hash =
+                browser_binding_hash;
+
             entry.issued_at = now;
             entry.expires_at = expires_at;
 
@@ -491,6 +595,7 @@ StorageHandoffTicketStore::issue(
 StorageHandoffTicketResult
 StorageHandoffTicketStore::consume(
     const std::string& ticket,
+    const std::string& browser_binding_secret,
     StorageHandoffTicketClaims* out_claims
 ) {
     if (!out_claims) {
@@ -501,7 +606,10 @@ StorageHandoffTicketStore::consume(
     *out_claims =
         StorageHandoffTicketClaims{};
 
-    if (!valid_ticket_text(ticket)) {
+    if (!valid_ticket_text(ticket) ||
+        !valid_encoded_32_text(
+            browser_binding_secret
+        )) {
         return StorageHandoffTicketResult::
             InvalidInput;
     }
@@ -516,6 +624,15 @@ StorageHandoffTicketStore::consume(
     if (!hash_ticket(
             ticket,
             &ticket_hash)) {
+        return StorageHandoffTicketResult::
+            CryptoFailed;
+    }
+
+    std::string browser_binding_hash;
+
+    if (!hash_ticket(
+            browser_binding_secret,
+            &browser_binding_hash)) {
         return StorageHandoffTicketResult::
             CryptoFailed;
     }
@@ -545,6 +662,25 @@ StorageHandoffTicketStore::consume(
 
         return StorageHandoffTicketResult::
             Expired;
+    }
+
+    if (iterator->second.browser_binding_hash.size() !=
+            kStorageHandoffBrowserBindingChars ||
+        browser_binding_hash.size() !=
+            kStorageHandoffBrowserBindingChars) {
+        return StorageHandoffTicketResult::
+            InternalError;
+    }
+
+    // Security: binding verification and successful ticket removal happen
+    // under the same mutex. A wrong browser cannot consume or burn the ticket.
+    if (sodium_memcmp(
+            browser_binding_hash.data(),
+            iterator->second.browser_binding_hash.data(),
+            kStorageHandoffBrowserBindingChars
+        ) != 0) {
+        return StorageHandoffTicketResult::
+            BindingMismatch;
     }
 
     StorageHandoffTicketClaims claims;

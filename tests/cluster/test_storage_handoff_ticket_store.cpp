@@ -96,6 +96,51 @@ int main() {
     constexpr std::uint64_t
         projection_revision = 17;
 
+    // Deterministic canonical 32-byte base64url fixture.
+    std::string browser_binding_secret(
+        pqnas::cluster::
+            kStorageHandoffBrowserBindingChars,
+        'A'
+    );
+
+    std::string wrong_browser_binding_secret(
+        pqnas::cluster::
+            kStorageHandoffBrowserBindingChars,
+        'A'
+    );
+
+    wrong_browser_binding_secret.back() =
+        'E';
+
+    std::string browser_binding_hash;
+
+    expect(
+        pqnas::cluster::
+            storage_handoff_browser_binding_hash(
+                browser_binding_secret,
+                &browser_binding_hash
+            ),
+        "hash deterministic browser binding fixture"
+    );
+
+    std::string generated_binding_secret;
+
+    expect(
+        pqnas::cluster::
+            generate_storage_handoff_browser_binding_secret(
+                &generated_binding_secret
+            ) &&
+        generated_binding_secret.size() ==
+            pqnas::cluster::
+                kStorageHandoffBrowserBindingChars,
+        "generate production-shaped browser binding secret"
+    );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &generated_binding_secret
+        );
+
     std::int64_t now = 1000;
 
     StorageHandoffTicketStore store(
@@ -105,6 +150,62 @@ int main() {
         }
     );
 
+    {
+        std::string invalid_output =
+            "stale";
+
+        expect_result(
+            store.issue(
+                std::string(
+                    pqnas::cluster::
+                        kStorageHandoffFingerprintHexChars,
+                    'A'
+                ),
+                home_node,
+                projection_revision,
+                browser_binding_hash,
+                30,
+                &invalid_output,
+                nullptr
+            ),
+            StorageHandoffTicketResult::
+                InvalidInput,
+            "uppercase non-canonical fingerprint rejected"
+        );
+
+        expect(
+            invalid_output.empty(),
+            "uppercase fingerprint failure clears ticket output"
+        );
+
+        invalid_output =
+            "stale";
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                projection_revision,
+                std::string(
+                    pqnas::cluster::
+                        kStorageHandoffBrowserBindingChars,
+                    'B'
+                ),
+                30,
+                &invalid_output,
+                nullptr
+            ),
+            StorageHandoffTicketResult::
+                InvalidInput,
+            "non-canonical browser binding hash rejected"
+        );
+
+        expect(
+            invalid_output.empty(),
+            "invalid browser binding hash clears ticket output"
+        );
+    }
+
     std::string ticket = "stale";
     std::int64_t expires_at = -1;
 
@@ -113,6 +214,7 @@ int main() {
             fingerprint,
             home_node,
             projection_revision,
+            browser_binding_hash,
             30,
             &ticket,
             &expires_at
@@ -139,6 +241,34 @@ int main() {
         "issued ticket stored"
     );
 
+    {
+        StorageHandoffTicketClaims
+            wrong_binding_claims;
+
+        expect_result(
+            store.consume(
+                ticket,
+                wrong_browser_binding_secret,
+                &wrong_binding_claims
+            ),
+            StorageHandoffTicketResult::
+                BindingMismatch,
+            "wrong browser binding rejects existing ticket"
+        );
+
+        expect(
+            store.size() == 1,
+            "wrong browser binding does not burn ticket"
+        );
+
+        expect(
+            wrong_binding_claims.fingerprint.empty() &&
+            wrong_binding_claims.home_node.empty() &&
+            wrong_binding_claims.projection_revision == 0,
+            "wrong browser binding returns no ticket claims"
+        );
+    }
+
     now = 1001;
 
     StorageHandoffTicketClaims claims;
@@ -146,6 +276,7 @@ int main() {
     expect_result(
         store.consume(
             ticket,
+            browser_binding_secret,
             &claims
         ),
         StorageHandoffTicketResult::Ok,
@@ -170,6 +301,7 @@ int main() {
     expect_result(
         store.consume(
             ticket,
+            browser_binding_secret,
             &claims
         ),
         StorageHandoffTicketResult::NotFound,
@@ -193,6 +325,7 @@ int main() {
         expect_result(
             store.consume(
                 bad_ticket,
+                browser_binding_secret,
                 &bad_claims
             ),
             StorageHandoffTicketResult::
@@ -211,6 +344,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 5,
                 &expiring_ticket,
                 nullptr
@@ -224,6 +358,7 @@ int main() {
         expect_result(
             store.consume(
                 expiring_ticket,
+                browser_binding_secret,
                 &claims
             ),
             StorageHandoffTicketResult::Expired,
@@ -252,6 +387,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 5,
                 &first,
                 nullptr
@@ -267,6 +403,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 20,
                 &second,
                 nullptr
@@ -318,6 +455,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 1,
                 &first,
                 nullptr
@@ -331,6 +469,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 1,
                 &second,
                 nullptr
@@ -344,6 +483,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 1,
                 &third,
                 nullptr
@@ -364,6 +504,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 1,
                 &third,
                 nullptr
@@ -401,6 +542,7 @@ int main() {
                 std::string(127, 'a'),
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 30,
                 &output,
                 nullptr
@@ -420,6 +562,7 @@ int main() {
                 fingerprint,
                 "../storage-01",
                 projection_revision,
+                browser_binding_hash,
                 30,
                 &output,
                 nullptr
@@ -439,6 +582,7 @@ int main() {
                 fingerprint,
                 home_node,
                 0,
+                browser_binding_hash,
                 30,
                 &output,
                 nullptr
@@ -458,6 +602,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 0,
                 &output,
                 nullptr
@@ -472,6 +617,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 pqnas::cluster::
                     kStorageHandoffTicketMaxTtlSeconds +
                     1,
@@ -501,6 +647,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 30,
                 &concurrent_ticket,
                 nullptr
@@ -531,6 +678,7 @@ int main() {
                 result_one =
                     concurrent_store.consume(
                         concurrent_ticket,
+                        browser_binding_secret,
                         &claims_one
                     );
             }
@@ -547,6 +695,7 @@ int main() {
                 result_two =
                     concurrent_store.consume(
                         concurrent_ticket,
+                        browser_binding_secret,
                         &claims_two
                     );
             }
@@ -621,6 +770,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
+                browser_binding_hash,
                 30,
                 &output,
                 nullptr
@@ -636,6 +786,7 @@ int main() {
             fingerprint,
             home_node,
             projection_revision,
+            browser_binding_hash,
             30,
             nullptr,
             nullptr
@@ -644,6 +795,16 @@ int main() {
             InvalidInput,
         "missing ticket output rejected"
     );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &browser_binding_secret
+        );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &wrong_browser_binding_secret
+        );
 
     if (failures != 0) {
         std::cerr

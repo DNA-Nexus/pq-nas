@@ -68,7 +68,7 @@ public:
 
     // Security ordering:
     //
-    // 1. atomically consume the one-time ticket
+    // 1. atomically verify browser binding + consume the one-time ticket
     // 2. authorize against the current local projection
     // 3. require exact ticket/projection Node + revision binding
     // 4. mint a Node-domain-separated Storage session cookie
@@ -77,6 +77,7 @@ public:
     // ticket permanently spent. Bearers are never restored or re-issued.
     StorageHandoffConsumeServiceResult consume(
         const std::string& ticket,
+        const std::string& browser_binding_secret,
         StorageHandoffConsumeServiceOutput* output
     ) const noexcept;
 

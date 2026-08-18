@@ -120,6 +120,34 @@ int main() {
     const std::string local_node =
         "storage-01";
 
+    // Security: handoff tickets are redeemable only by the browser
+    // that owns the matching pre-auth binding secret.
+    std::string browser_binding_secret(
+        pqnas::cluster::
+            kStorageHandoffBrowserBindingChars,
+        'A'
+    );
+
+    std::string wrong_browser_binding_secret(
+        pqnas::cluster::
+            kStorageHandoffBrowserBindingChars,
+        'A'
+    );
+
+    wrong_browser_binding_secret.back() =
+        'E';
+
+    std::string browser_binding_hash;
+
+    expect(
+        pqnas::cluster::
+            storage_handoff_browser_binding_hash(
+                browser_binding_secret,
+                &browser_binding_hash
+            ),
+        "consume fixture browser binding hashes"
+    );
+
     std::int64_t ticket_now = 1000;
 
     StorageHandoffTicketStore ticket_store(
@@ -226,6 +254,7 @@ int main() {
                         fingerprint,
                         home_node,
                         revision,
+                        browser_binding_hash,
                         30,
                         &ticket,
                         nullptr
@@ -262,6 +291,29 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            wrong_browser_binding_secret,
+            &output
+        ),
+        StorageHandoffConsumeServiceResult::
+            Rejected,
+        "wrong browser binding rejects handoff"
+    );
+
+    expect(
+        ticket_store.size() == 1,
+        "wrong browser binding does not burn handoff ticket"
+    );
+
+    expect(
+        output.session_cookie_value.empty() &&
+        output.expires_at == 0,
+        "wrong browser binding returns no session"
+    );
+
+    expect_result(
+        service.consume(
+            ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -310,6 +362,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -339,6 +392,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -354,6 +408,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -383,6 +438,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -412,6 +468,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -438,6 +495,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -465,6 +523,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -492,6 +551,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -545,6 +605,7 @@ int main() {
     expect_result(
         throwing_service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -555,6 +616,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -601,6 +663,7 @@ int main() {
     expect_result(
         zero_key_service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -617,6 +680,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -650,6 +714,7 @@ int main() {
     expect_result(
         bad_clock_service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -660,6 +725,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -695,6 +761,7 @@ int main() {
     expect_result(
         bad_ttl_service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -705,6 +772,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &output
         ),
         StorageHandoffConsumeServiceResult::
@@ -749,6 +817,7 @@ int main() {
             result_one =
                 service.consume(
                     ticket,
+                    browser_binding_secret,
                     &concurrent_one
                 );
         }
@@ -759,6 +828,7 @@ int main() {
             result_two =
                 service.consume(
                     ticket,
+                    browser_binding_secret,
                     &concurrent_two
                 );
         }
@@ -805,6 +875,7 @@ int main() {
     expect_result(
         service.consume(
             ticket,
+            browser_binding_secret,
             &replay_after_race
         ),
         StorageHandoffConsumeServiceResult::
@@ -812,6 +883,16 @@ int main() {
         "concurrent ticket remains spent after race"
     );
 
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &browser_binding_secret
+        );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &wrong_browser_binding_secret
+        );
 
     if (failures != 0) {
         std::cerr
