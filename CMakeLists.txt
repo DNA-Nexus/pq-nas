@@ -253,6 +253,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 target_link_libraries(pqnas_storage_handoff_ticket_store PUBLIC
+        pqnas_cluster_identity_validation
         ${SODIUM_LIBRARIES}
         Threads::Threads
 )
@@ -2753,6 +2754,630 @@ add_custom_target(run_test_storage_user_projection_store
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_projection_store
 )
+
+# -----------------------------------------------------------------------------
+# Storage pool runtime registry
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_pool_runtime STATIC
+        server/src/storage_pool_runtime.cpp
+        server/src/storage_pool_runtime.h
+)
+
+target_include_directories(pqnas_storage_pool_runtime PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_pool_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+# -----------------------------------------------------------------------------
+# Test: Storage pool runtime registry
+# -----------------------------------------------------------------------------
+add_executable(test_storage_pool_runtime
+        tests/test_storage_pool_runtime.cpp
+)
+
+target_include_directories(test_storage_pool_runtime PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_pool_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_pool_runtime PRIVATE
+        pqnas_storage_pool_runtime
+)
+
+set_target_properties(test_storage_pool_runtime PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_pool_runtime
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_pool_runtime"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_pool_runtime
+)
+
+# Production server uses the shared Node-local runtime pool registry.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_pool_runtime
+)
+
+# -----------------------------------------------------------------------------
+# Storage Node user root resolver
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_root_resolver STATIC
+        server/src/cluster/storage_user_root_resolver.cpp
+        server/src/cluster/storage_user_root_resolver.h
+)
+
+target_include_directories(pqnas_storage_user_root_resolver PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_root_resolver
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_root_resolver PUBLIC
+        pqnas_storage_user_projection_store
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node user root resolver
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_root_resolver
+        tests/cluster/test_storage_user_root_resolver.cpp
+)
+
+target_include_directories(test_storage_user_root_resolver PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_root_resolver
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_root_resolver PRIVATE
+        pqnas_storage_user_root_resolver
+)
+
+set_target_properties(test_storage_user_root_resolver PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_root_resolver
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_root_resolver"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_root_resolver
+)
+
+# -----------------------------------------------------------------------------
+# Storage Node user session authorization policy
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_session_policy STATIC
+        server/src/cluster/storage_user_session_policy.cpp
+        server/src/cluster/storage_user_session_policy.h
+)
+
+target_include_directories(pqnas_storage_user_session_policy PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_session_policy
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_session_policy PUBLIC
+        pqnas_cluster_identity_validation
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node user session authorization policy
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_session_policy
+        tests/cluster/test_storage_user_session_policy.cpp
+)
+
+target_include_directories(test_storage_user_session_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_session_policy
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_session_policy PRIVATE
+        pqnas_storage_user_session_policy
+)
+
+set_target_properties(test_storage_user_session_policy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_session_policy
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_session_policy"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_session_policy
+)
+
+# -----------------------------------------------------------------------------
+# Domain-separated Storage Node session cookie primitive
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_session_cookie STATIC
+        server/src/cluster/storage_user_session_cookie.cpp
+        server/src/cluster/storage_user_session_cookie.h
+)
+
+target_include_directories(pqnas_storage_user_session_cookie PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_storage_user_session_cookie PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_session_cookie
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_session_cookie PUBLIC
+        pqnas_cluster_identity_validation
+        ${SODIUM_LIBRARIES}
+)
+
+# -----------------------------------------------------------------------------
+# Test: domain-separated Storage Node session cookie
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_session_cookie
+        tests/cluster/test_storage_user_session_cookie.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_user_session_cookie PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_session_cookie PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_session_cookie
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_session_cookie PRIVATE
+        pqnas_storage_user_session_cookie
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_storage_user_session_cookie PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_session_cookie
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_session_cookie"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_session_cookie
+)
+
+# -----------------------------------------------------------------------------
+# Storage browser handoff consume service
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_consume_service STATIC
+        server/src/cluster/storage_handoff_consume_service.cpp
+        server/src/cluster/storage_handoff_consume_service.h
+)
+
+target_include_directories(pqnas_storage_handoff_consume_service PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_consume_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_consume_service PUBLIC
+        pqnas_storage_handoff_ticket_store
+        pqnas_storage_user_session_policy
+        pqnas_storage_user_session_cookie
+)
+
+# -----------------------------------------------------------------------------
+# Storage browser handoff preauth route
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_preauth_routes STATIC
+        server/src/routes/routes_storage_handoff_preauth.cpp
+        server/src/routes/routes_storage_handoff_preauth.h
+)
+
+target_include_directories(pqnas_storage_handoff_preauth_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_handoff_preauth_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_preauth_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_preauth_routes PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_handoff_ticket_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage browser handoff consume route
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_consume_routes STATIC
+        server/src/routes/routes_storage_handoff_consume.cpp
+        server/src/routes/routes_storage_handoff_consume.h
+)
+
+target_include_directories(pqnas_storage_handoff_consume_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_handoff_consume_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_consume_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_consume_routes PUBLIC
+        pqnas_storage_handoff_consume_service
+        pqnas_cluster_identity_validation
+        pqnas_storage_handoff_ticket_store
+        pqnas_storage_user_session_cookie
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Storage browser handoff consume service
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_consume_service
+        tests/cluster/test_storage_handoff_consume_service.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_handoff_consume_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_handoff_consume_service PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_consume_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_consume_service PRIVATE
+        pqnas_storage_handoff_consume_service
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_consume_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_consume_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_consume_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_consume_service
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage browser handoff consume route
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_consume_route
+        tests/cluster/test_storage_handoff_consume_route.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_handoff_consume_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_consume_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_consume_route PRIVATE
+        pqnas_storage_handoff_consume_routes
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_consume_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_consume_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_consume_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_consume_route
+)
+
+# Security: browser handoff remains closed until the complete role-aware
+# production trust chain and browser E2E flow are ready.
+add_custom_target(run_test_storage_handoff_consume_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_handoff_consume_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Storage browser handoff preauth route
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_preauth_route
+        tests/cluster/test_storage_handoff_preauth_route.cpp
+)
+
+target_include_directories(test_storage_handoff_preauth_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_handoff_preauth_route PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_preauth_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_preauth_route PRIVATE
+        pqnas_storage_handoff_preauth_routes
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_preauth_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_preauth_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_preauth_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_preauth_route
+)
+
+# Security: keep the browser-facing handoff chain closed until its complete
+# production trust path and E2E tests are ready.
+add_custom_target(run_test_storage_handoff_preauth_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_handoff_preauth_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage Node session authenticator
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_session_authenticator STATIC
+        server/src/cluster/storage_user_session_authenticator.cpp
+        server/src/cluster/storage_user_session_authenticator.h
+)
+
+target_include_directories(pqnas_storage_user_session_authenticator PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(pqnas_storage_user_session_authenticator PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_session_authenticator
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_session_authenticator PUBLIC
+        pqnas_storage_user_session_policy
+        pqnas_storage_user_session_cookie
+        ${SODIUM_LIBRARIES}
+)
+
+# -----------------------------------------------------------------------------
+# Storage Node request authentication boundary
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_request_auth STATIC
+        server/src/cluster/storage_user_request_auth.cpp
+        server/src/cluster/storage_user_request_auth.h
+)
+
+target_include_directories(pqnas_storage_user_request_auth PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_user_request_auth PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_request_auth
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_request_auth PUBLIC
+        pqnas_storage_user_session_authenticator
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node session authenticator
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_session_authenticator
+        tests/cluster/test_storage_user_session_authenticator.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_user_session_authenticator PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_session_authenticator PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_session_authenticator
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_session_authenticator PRIVATE
+        pqnas_storage_user_session_authenticator
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_storage_user_session_authenticator PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_session_authenticator
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_session_authenticator"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_session_authenticator
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node request authentication boundary
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_request_auth
+        tests/cluster/test_storage_user_request_auth.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_user_request_auth PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_request_auth PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_request_auth
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_request_auth PRIVATE
+        pqnas_storage_user_request_auth
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_storage_user_request_auth PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_request_auth
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_request_auth"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_request_auth
+)
+
 
 # -----------------------------------------------------------------------------
 # Internal Storage user projection routes

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -49,7 +50,9 @@ struct InternalStorageHandoffRoutesContext {
     // The route deliberately does not know how cluster user projections are
     // represented. That policy is supplied by the Storage runtime.
     std::function<bool(
-        const std::string& fingerprint
+        const std::string& fingerprint,
+        std::string* out_home_node,
+        std::uint64_t* out_projection_revision
     )> authorize_user;
 
     std::function<void(

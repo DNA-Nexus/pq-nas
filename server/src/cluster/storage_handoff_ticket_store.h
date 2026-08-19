@@ -18,6 +18,12 @@ inline constexpr std::size_t
 inline constexpr std::size_t
     kStorageHandoffFingerprintHexChars = 128;
 
+inline constexpr std::size_t
+    kStorageHandoffBrowserBindingBytes = 32;
+
+inline constexpr std::size_t
+    kStorageHandoffBrowserBindingChars = 43;
+
 inline constexpr std::int64_t
     kStorageHandoffTicketMaxTtlSeconds = 120;
 
@@ -33,6 +39,11 @@ enum class StorageHandoffTicketResult {
     StoreFull,
     NotFound,
     Expired,
+
+    // Security: the ticket exists but belongs to another browser binding.
+    // This result does NOT consume the ticket.
+    BindingMismatch,
+
     InternalError
 };
 
@@ -46,8 +57,39 @@ void clear_storage_handoff_ticket_text(
     std::string* value
 ) noexcept;
 
+// Create the short-lived browser secret used to bind a handoff ticket to the
+// browser that initiated the Storage flow.
+//
+// The secret has the same 32-byte / 43-char canonical base64url shape as a
+// ticket, but it is a distinct security value and must never be logged.
+bool generate_storage_handoff_browser_binding_secret(
+    std::string* out_secret
+) noexcept;
+
+// Hash a canonical browser-binding secret for safe transport through the
+// Director. The Storage ticket retains only this verifier, never the secret.
+bool storage_handoff_browser_binding_hash(
+    const std::string& secret,
+    std::string* out_hash
+) noexcept;
+
+bool valid_storage_handoff_browser_binding_hash(
+    const std::string& value
+) noexcept;
+
+void clear_storage_handoff_browser_binding_secret_text(
+    std::string* value
+) noexcept;
+
 struct StorageHandoffTicketClaims {
     std::string fingerprint;
+
+    // Security: bind redemption to the exact Storage placement snapshot that
+    // authorized ticket issuance. A later consume must compare these claims
+    // against the Node's current local projection before creating a session.
+    std::string home_node;
+    std::uint64_t projection_revision = 0;
+
     std::int64_t issued_at = 0;
     std::int64_t expires_at = 0;
 };
@@ -72,15 +114,25 @@ public:
     // - the in-memory store has a hard entry cap
     StorageHandoffTicketResult issue(
         const std::string& fingerprint,
+        const std::string& home_node,
+        std::uint64_t projection_revision,
+        const std::string& browser_binding_hash,
         std::int64_t ttl_seconds,
         std::string* out_ticket,
         std::int64_t* out_expires_at = nullptr
     );
 
     // Atomically validates and removes one ticket.
-    // A successful ticket can never be consumed twice.
+    //
+    // Security:
+    // - browser_binding_secret must match the verifier bound at issue time
+    // - binding comparison is constant-time
+    // - a binding mismatch does NOT erase the ticket, preventing an attacker
+    //   who stole only the ticket from burning the intended browser's handoff
+    // - a successful ticket can never be consumed twice
     StorageHandoffTicketResult consume(
         const std::string& ticket,
+        const std::string& browser_binding_secret,
         StorageHandoffTicketClaims* out_claims
     );
 
@@ -91,6 +143,12 @@ public:
 private:
     struct Entry {
         std::string fingerprint;
+        std::string home_node;
+        std::uint64_t projection_revision = 0;
+
+        // One-way verifier only. The plaintext browser secret is never stored.
+        std::string browser_binding_hash;
+
         std::int64_t issued_at = 0;
         std::int64_t expires_at = 0;
     };
