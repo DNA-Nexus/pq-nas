@@ -227,4 +227,48 @@ StorageUserRootResolver::resolve(
     }
 }
 
+StorageUserRootResolveResult
+StorageUserRootResolver::resolve_at_revision(
+    const std::string& fingerprint,
+    std::uint64_t expected_projection_revision,
+    StorageUserRootResolveOutput* output
+) const noexcept {
+    clear_output(output);
+
+    if (!output ||
+        expected_projection_revision == 0) {
+        return StorageUserRootResolveResult::
+            InvalidInput;
+    }
+
+    // Security: resolve() performs exactly one fresh projection lookup and
+    // returns both the filesystem root and the projection revision from that
+    // same snapshot. Compare only after that resolution so root + revision
+    // cannot come from two different projection reads.
+    const StorageUserRootResolveResult result =
+        resolve(
+            fingerprint,
+            output
+        );
+
+    if (result !=
+        StorageUserRootResolveResult::
+            Resolved) {
+        return result;
+    }
+
+    if (output->projection_revision !=
+        expected_projection_revision) {
+        // Security: never expose a filesystem root authorized by a different
+        // projection revision than the one authenticated for this request.
+        clear_output(output);
+
+        return StorageUserRootResolveResult::
+            Unauthorized;
+    }
+
+    return StorageUserRootResolveResult::
+        Resolved;
+}
+
 } // namespace pqnas::cluster

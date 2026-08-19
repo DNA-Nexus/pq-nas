@@ -674,6 +674,58 @@ int main() {
         "rev16 resolution returns current root"
     );
 
+    // Matching authenticated revision may use this freshly resolved root.
+    expect_result(
+        resolver.resolve_at_revision(
+            fingerprint,
+            16,
+            &output
+        ),
+        StorageUserRootResolveResult::
+            Resolved,
+        "matching authenticated revision resolves root"
+    );
+
+    expect(
+        output.projection_revision == 16 &&
+        !output.user_root.empty(),
+        "matching revision preserves revision-bound root"
+    );
+
+    // Security regression: a request authenticated under an older projection
+    // must not cross into a root resolved from the current newer projection.
+    expect_result(
+        resolver.resolve_at_revision(
+            fingerprint,
+            15,
+            &output
+        ),
+        StorageUserRootResolveResult::
+            Unauthorized,
+        "mismatched authenticated revision fails closed"
+    );
+
+    expect_output_empty(
+        output,
+        "revision mismatch clears resolved filesystem root"
+    );
+
+    expect_result(
+        resolver.resolve_at_revision(
+            fingerprint,
+            0,
+            &output
+        ),
+        StorageUserRootResolveResult::
+            InvalidInput,
+        "zero authenticated revision is rejected"
+    );
+
+    expect_output_empty(
+        output,
+        "zero authenticated revision leaves empty output"
+    );
+
     // Security regression: resolver must fetch the projection again on every
     // call. A rev17 tombstone must invalidate the previously resolved root.
     StorageUserProjection tombstone =

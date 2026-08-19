@@ -2,6 +2,7 @@
 
 #include "httplib.h"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -103,6 +104,7 @@ int main() {
 
         std::string fingerprint;
         std::string role;
+        std::uint64_t projection_revision = 0;
 
         const int calls_before =
             authenticate_calls;
@@ -114,7 +116,8 @@ int main() {
                     response,
                     context,
                     &fingerprint,
-                    &role
+                    &role,
+                    &projection_revision
                 ),
             "valid Storage session authenticates"
         );
@@ -134,8 +137,9 @@ int main() {
         expect(
             fingerprint ==
                 std::string(128, 'a') &&
-            role == "user",
-            "successful request returns Storage identity"
+            role == "user" &&
+            projection_revision == 17,
+            "successful request returns revision-bound Storage identity"
         );
     }
 
@@ -153,6 +157,9 @@ int main() {
         std::string role =
             "admin";
 
+        std::uint64_t projection_revision =
+            999;
+
         const int calls_before =
             authenticate_calls;
 
@@ -163,7 +170,8 @@ int main() {
                     response,
                     context,
                     &fingerprint,
-                    &role
+                    &role,
+                    &projection_revision
                 ),
             "missing cookie is rejected"
         );
@@ -181,8 +189,9 @@ int main() {
 
         expect(
             fingerprint.empty() &&
-            role.empty(),
-            "missing cookie clears identity outputs"
+            role.empty() &&
+            projection_revision == 0,
+            "missing cookie clears revision-bound identity outputs"
         );
     }
 

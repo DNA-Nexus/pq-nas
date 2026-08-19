@@ -73,6 +73,17 @@ public:
         StorageUserRootResolveOutput* output
     ) const noexcept;
 
+    // Resolve a filesystem root only when the fresh projection used for that
+    // resolution still matches the revision authenticated for this request.
+    //
+    // Security: this prevents a request authenticated under revision N from
+    // silently receiving a root from revision N+1 after relocation/revoke.
+    StorageUserRootResolveResult resolve_at_revision(
+        const std::string& fingerprint,
+        std::uint64_t expected_projection_revision,
+        StorageUserRootResolveOutput* output
+    ) const noexcept;
+
 private:
     StorageUserRootResolverConfig config_;
 };

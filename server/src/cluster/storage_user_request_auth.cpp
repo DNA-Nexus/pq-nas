@@ -11,7 +11,8 @@ namespace {
 
 void clear_outputs(
     std::string* fingerprint,
-    std::string* role
+    std::string* role,
+    std::uint64_t* projection_revision
 ) noexcept {
     if (fingerprint) {
         fingerprint->clear();
@@ -19,6 +20,10 @@ void clear_outputs(
 
     if (role) {
         role->clear();
+    }
+
+    if (projection_revision) {
+        *projection_revision = 0;
     }
 }
 
@@ -215,11 +220,13 @@ bool require_storage_user_request_auth(
     httplib::Response& response,
     const StorageUserRequestAuthContext& context,
     std::string* out_fingerprint,
-    std::string* out_role
+    std::string* out_role,
+    std::uint64_t* out_projection_revision
 ) {
     clear_outputs(
         out_fingerprint,
-        out_role
+        out_role,
+        out_projection_revision
     );
 
     if (!out_fingerprint ||
@@ -384,6 +391,15 @@ bool require_storage_user_request_auth(
 
     *out_role =
         authentication.role;
+
+    // Security: expose the exact projection revision that participated in
+    // this authentication decision so later filesystem authorization can bind
+    // itself to the same revision rather than silently crossing a relocation
+    // or revoke boundary between two fresh projection lookups.
+    if (out_projection_revision) {
+        *out_projection_revision =
+            authentication.projection_revision;
+    }
 
     return true;
 }
