@@ -2756,6 +2756,63 @@ add_custom_target(run_test_storage_user_projection_store
 )
 
 # -----------------------------------------------------------------------------
+# Storage Node user root resolver
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_root_resolver STATIC
+        server/src/cluster/storage_user_root_resolver.cpp
+        server/src/cluster/storage_user_root_resolver.h
+)
+
+target_include_directories(pqnas_storage_user_root_resolver PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_root_resolver
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_root_resolver PUBLIC
+        pqnas_storage_user_projection_store
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node user root resolver
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_root_resolver
+        tests/cluster/test_storage_user_root_resolver.cpp
+)
+
+target_include_directories(test_storage_user_root_resolver PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_root_resolver
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_root_resolver PRIVATE
+        pqnas_storage_user_root_resolver
+)
+
+set_target_properties(test_storage_user_root_resolver PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_root_resolver
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_root_resolver"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_root_resolver
+)
+
+# -----------------------------------------------------------------------------
 # Storage Node user session authorization policy
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_user_session_policy STATIC
