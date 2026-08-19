@@ -840,9 +840,30 @@ srv.Put("/api/v4/files/put",
                 std::string* role) {
                 return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
             };
-        file_version_archive_blob_ctx.user_dir_for_fp =
-            [&](const std::string& fp_hex) {
-                return user_dir_for_fp(users, fp_hex);
+        file_version_archive_blob_ctx.resolve_user_root =
+            [&](const std::string& fp_hex,
+                std::filesystem::path* user_root) {
+                if (!user_root) {
+                    return false;
+                }
+
+                user_root->clear();
+
+                const std::filesystem::path resolved =
+                    user_dir_for_fp(
+                        users,
+                        fp_hex
+                    ).lexically_normal();
+
+                if (resolved.empty() ||
+                    !resolved.is_absolute()) {
+                    return false;
+                }
+
+                *user_root =
+                    resolved;
+
+                return true;
             };
 
         register_file_version_archive_blob_routes(srv, file_version_archive_blob_ctx);

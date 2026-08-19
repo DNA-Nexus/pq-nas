@@ -4,6 +4,7 @@
 #include "archive_zip_manifest.h"
 #include "file_versions_read.h"
 #include "storage_resolver.h"
+#include "storage_path_validation.h"
 
 #include <nlohmann/json.hpp>
 
@@ -20,12 +21,81 @@ using json = nlohmann::json;
 namespace {
 
 bool context_ok(const FileVersionArchiveBlobRoutesContext& c) {
-    return c.file_versions && c.require_user_auth && c.user_dir_for_fp;
+    return
+        c.file_versions &&
+        c.require_user_auth &&
+        c.resolve_user_root;
 }
 
 void json_error(httplib::Response& res, int status, const json& body) {
     res.status = status;
     res.set_content(body.dump(), "application/json");
+}
+
+bool resolve_user_root_for_request(
+    const FileVersionArchiveBlobRoutesContext& context,
+    const std::string& fingerprint,
+    httplib::Response& response,
+    std::filesystem::path* user_root
+) {
+    if (user_root) {
+        user_root->clear();
+    }
+
+    if (!user_root ||
+        !context.resolve_user_root) {
+        json_error(
+            response,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"}
+            }
+        );
+
+        return false;
+    }
+
+    try {
+        if (!context.resolve_user_root(
+                fingerprint,
+                user_root) ||
+            user_root->empty() ||
+            !user_root->is_absolute()) {
+            user_root->clear();
+
+            // Security: do not reuse stale filesystem placement after current
+            // authorization/root resolution fails.
+            json_error(
+                response,
+                403,
+                json{
+                    {"ok", false},
+                    {"error", "authorization_failed"}
+                }
+            );
+
+            return false;
+        }
+
+        *user_root =
+            user_root->lexically_normal();
+
+        return true;
+    } catch (...) {
+        user_root->clear();
+
+        json_error(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "authorization_unavailable"}
+            }
+        );
+
+        return false;
+    }
 }
 
 bool ends_with_ascii_ci(const std::string& value, const std::string& suffix) {
@@ -80,25 +150,47 @@ void register_file_version_archive_blob_routes(
                 return;
             }
 
-            const auto user_root = c.user_dir_for_fp(fp_hex).lexically_normal();
-            const auto abs_path = (user_root / rel_norm).lexically_normal();
+            std::filesystem::path user_root;
+
+            if (!resolve_user_root_for_request(
+                    c,
+                    fp_hex,
+                    res,
+                    &user_root)) {
+                return;
+            }
+
+            const std::filesystem::path abs_path =
+                (
+                    user_root /
+                    rel_norm
+                ).lexically_normal();
+
+            std::filesystem::path canon_file;
+            std::string containment_error;
+
+            if (!pqnas::canonical_existing_path_within_root(
+                    user_root,
+                    abs_path,
+                    &canon_file,
+                    &containment_error)) {
+                json_error(
+                    res,
+                    404,
+                    json{
+                        {"ok", false},
+                        {"error", "not_found"}
+                    }
+                );
+
+                return;
+            }
 
             std::error_code ec;
-            const auto canon_root = std::filesystem::weakly_canonical(user_root, ec);
-            if (ec) {
-                json_error(res, 500, json{{"ok", false}, {"error", "user_root_not_found"}});
-                return;
-            }
 
-            ec.clear();
-            const auto canon_file = std::filesystem::weakly_canonical(abs_path, ec);
-            if (ec || canon_file.string().rfind(canon_root.string(), 0) != 0) {
-                json_error(res, 404, json{{"ok", false}, {"error", "not_found"}});
-                return;
-            }
-
-            ec.clear();
-            if (!std::filesystem::is_regular_file(canon_file, ec)) {
+            if (!std::filesystem::is_regular_file(
+                    canon_file,
+                    ec)) {
                 json_error(res, 404, json{{"ok", false}, {"error", "not_a_file"}});
                 return;
             }
@@ -154,7 +246,15 @@ void register_file_version_archive_blob_routes(
                 return;
             }
 
-            const auto scope_root = c.user_dir_for_fp(fp_hex).lexically_normal();
+            std::filesystem::path scope_root;
+
+            if (!resolve_user_root_for_request(
+                    c,
+                    fp_hex,
+                    res,
+                    &scope_root)) {
+                return;
+            }
 
             auto rr = pqnas::resolve_version_blob_for_download(
                 c.file_versions,
@@ -230,7 +330,15 @@ void register_file_version_archive_blob_routes(
                 return;
             }
 
-            const std::filesystem::path scope_root = c.user_dir_for_fp(fp_hex).lexically_normal();
+            std::filesystem::path scope_root;
+
+            if (!resolve_user_root_for_request(
+                    c,
+                    fp_hex,
+                    res,
+                    &scope_root)) {
+                return;
+            }
 
             auto rr = pqnas::resolve_version_blob_for_download(
                 c.file_versions,

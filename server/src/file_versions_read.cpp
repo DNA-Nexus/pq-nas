@@ -1,6 +1,7 @@
 #include "file_versions_read.h"
 
 #include "file_versions.h"
+#include "storage_path_validation.h"
 
 #include <filesystem>
 #include <fstream>
@@ -191,7 +192,43 @@ VersionBlobDownloadRef resolve_version_blob_for_download(
         return rr;
     }
 
-    const auto sz = std::filesystem::file_size(blob_abs, ec);
+    std::filesystem::path canonical_blob_root;
+    std::filesystem::path canonical_blob_abs;
+    std::string containment_error;
+
+    // Security: first keep the internal versions tree inside the currently
+    // authorized filesystem scope. This rejects intermediate symlink escapes
+    // from .pqnas/versions/blobs to another user's or system filesystem tree.
+    if (!pqnas::canonical_existing_path_within_root(
+            scope_root_norm,
+            blob_root,
+            &canonical_blob_root,
+            &containment_error)) {
+        rr.error = "server_error";
+        rr.message = "version blob root escapes scope root";
+        rr.detail = containment_error;
+        return rr;
+    }
+
+    // Security: lexical metadata validation above is not sufficient once
+    // filesystem symlinks are followed. Require the actual existing blob to
+    // remain inside the canonical versions blob tree as well.
+    if (!pqnas::canonical_existing_path_within_root(
+            canonical_blob_root,
+            blob_abs,
+            &canonical_blob_abs,
+            &containment_error)) {
+        rr.error = "server_error";
+        rr.message = "version blob path escapes versions root";
+        rr.detail = containment_error;
+        return rr;
+    }
+
+    const auto sz =
+        std::filesystem::file_size(
+            canonical_blob_abs,
+            ec
+        );
     if (ec) {
         rr.error = "server_error";
         rr.message = "failed to stat version blob";
@@ -205,7 +242,8 @@ VersionBlobDownloadRef resolve_version_blob_for_download(
     rr.created_at = row->created_at;
     rr.bytes = static_cast<std::uint64_t>(sz);
     rr.sha256_hex = row->sha256_hex;
-    rr.blob_abs_path = blob_abs;
+    rr.blob_abs_path =
+        canonical_blob_abs;
     return rr;
 }
 
@@ -275,7 +313,41 @@ ReadVersionTextResult read_version_blob_as_text(
         return rr;
     }
 
-    const auto sz = std::filesystem::file_size(blob_abs, ec);
+    std::filesystem::path canonical_blob_root;
+    std::filesystem::path canonical_blob_abs;
+    std::string containment_error;
+
+    // Security: keep the internal versions tree inside the authorized scope
+    // after filesystem symlinks have been resolved.
+    if (!pqnas::canonical_existing_path_within_root(
+            scope_root_norm,
+            blob_root,
+            &canonical_blob_root,
+            &containment_error)) {
+        rr.error = "server_error";
+        rr.message = "version blob root escapes scope root";
+        rr.detail = containment_error;
+        return rr;
+    }
+
+    // Security: metadata lexical validation alone cannot prevent an
+    // intermediate-directory symlink from escaping the versions blob tree.
+    if (!pqnas::canonical_existing_path_within_root(
+            canonical_blob_root,
+            blob_abs,
+            &canonical_blob_abs,
+            &containment_error)) {
+        rr.error = "server_error";
+        rr.message = "version blob path escapes versions root";
+        rr.detail = containment_error;
+        return rr;
+    }
+
+    const auto sz =
+        std::filesystem::file_size(
+            canonical_blob_abs,
+            ec
+        );
     if (ec) {
         rr.error = "server_error";
         rr.message = "failed to stat version blob";
@@ -291,7 +363,7 @@ ReadVersionTextResult read_version_blob_as_text(
     }
 
     std::string raw;
-    if (!read_file_bytes_all_local(blob_abs, &raw, &err)) {
+    if (!read_file_bytes_all_local(canonical_blob_abs, &raw, &err)) {
         rr.error = "server_error";
         rr.message = "failed to read version blob";
         rr.detail = err;
