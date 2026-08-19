@@ -831,42 +831,149 @@ srv.Put("/api/v4/files/put",
 
     // ---- File Manager file-version archive/blob routes ----
     {
-        FileVersionArchiveBlobRoutesContext file_version_archive_blob_ctx;
-        file_version_archive_blob_ctx.file_versions = &file_versions_index;
-        file_version_archive_blob_ctx.require_user_auth =
-            [&](const httplib::Request& req,
-                httplib::Response& res,
-                std::string* fp_hex,
-                std::string* role) {
-                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
-            };
-        file_version_archive_blob_ctx.resolve_user_root =
-            [&](const std::string& fp_hex,
-                std::filesystem::path* user_root) {
-                if (!user_root) {
-                    return false;
-                }
+        FileVersionArchiveBlobRoutesContext
+            file_version_archive_blob_ctx;
 
-                user_root->clear();
+        file_version_archive_blob_ctx.file_versions =
+            &file_versions_index;
 
-                const std::filesystem::path resolved =
-                    user_dir_for_fp(
-                        users,
-                        fp_hex
-                    ).lexically_normal();
+        if (cluster_config.is_node()) {
+            // Security: a Storage Node must never fall back to Director user
+            // authentication or UsersRegistry filesystem placement.
+            if (!storage_user_access_runtime) {
+                std::cerr
+                    << "[cluster] FATAL: Storage user access runtime "
+                       "missing during file route registration"
+                    << std::endl;
 
-                if (resolved.empty() ||
-                    !resolved.is_absolute()) {
-                    return false;
-                }
+                return 2;
+            }
 
-                *user_root =
-                    resolved;
+            const auto* storage_access_runtime =
+                storage_user_access_runtime.get();
 
-                return true;
-            };
+            file_version_archive_blob_ctx.require_user_auth =
+                [storage_access_runtime](
+                    const httplib::Request& req,
+                    httplib::Response& res,
+                    std::string* fp_hex,
+                    std::string* role,
+                    std::uint64_t*
+                        authenticated_projection_revision) {
+                    return pqnas::cluster::
+                        require_storage_user_request_auth(
+                            req,
+                            res,
+                            storage_access_runtime->
+                                request_auth_context(),
+                            fp_hex,
+                            role,
+                            authenticated_projection_revision
+                        );
+                };
 
-        register_file_version_archive_blob_routes(srv, file_version_archive_blob_ctx);
+            file_version_archive_blob_ctx.resolve_user_root =
+                [storage_access_runtime](
+                    const std::string& fp_hex,
+                    std::uint64_t
+                        authenticated_projection_revision,
+                    std::filesystem::path* user_root) {
+                    if (user_root) {
+                        user_root->clear();
+                    }
+
+                    if (!user_root ||
+                        authenticated_projection_revision == 0) {
+                        return false;
+                    }
+
+                    pqnas::cluster::
+                        StorageUserRootResolveOutput
+                            resolved;
+
+                    const auto result =
+                        storage_access_runtime->
+                            root_resolver().
+                            resolve_at_revision(
+                                fp_hex,
+                                authenticated_projection_revision,
+                                &resolved
+                            );
+
+                    if (result !=
+                            pqnas::cluster::
+                                StorageUserRootResolveResult::
+                                    Resolved ||
+                        resolved.user_root.empty() ||
+                        !resolved.user_root.is_absolute()) {
+                        return false;
+                    }
+
+                    // Security: use only the filesystem root returned by the
+                    // revision-bound Storage authorization resolver.
+                    *user_root =
+                        resolved.user_root.lexically_normal();
+
+                    return true;
+                };
+        } else {
+            // Director compatibility path. Director sessions are not Storage
+            // projection sessions, so they intentionally carry revision zero.
+            file_version_archive_blob_ctx.require_user_auth =
+                [&](const httplib::Request& req,
+                    httplib::Response& res,
+                    std::string* fp_hex,
+                    std::string* role,
+                    std::uint64_t*
+                        authenticated_projection_revision) {
+                    if (authenticated_projection_revision) {
+                        *authenticated_projection_revision = 0;
+                    }
+
+                    return require_user_auth_users_actor(
+                        req,
+                        res,
+                        COOKIE_KEY,
+                        &users,
+                        fp_hex,
+                        role
+                    );
+                };
+
+            file_version_archive_blob_ctx.resolve_user_root =
+                [&](const std::string& fp_hex,
+                    std::uint64_t,
+                    std::filesystem::path* user_root) {
+                    if (!user_root) {
+                        return false;
+                    }
+
+                    user_root->clear();
+
+                    const std::filesystem::path resolved =
+                        user_dir_for_fp(
+                            users,
+                            fp_hex
+                        ).lexically_normal();
+
+                    if (resolved.empty() ||
+                        !resolved.is_absolute()) {
+                        return false;
+                    }
+
+                    *user_root =
+                        resolved;
+
+                    return true;
+                };
+        }
+
+        // Exactly one registration per process. The role changes only the
+        // authentication/root-resolution callbacks above.
+        register_file_version_archive_blob_routes(
+            srv,
+            file_version_archive_blob_ctx
+        );
     }
 
     // ---- File version read routes ----

@@ -35,6 +35,7 @@ void json_error(httplib::Response& res, int status, const json& body) {
 bool resolve_user_root_for_request(
     const FileVersionArchiveBlobRoutesContext& context,
     const std::string& fingerprint,
+    std::uint64_t authenticated_projection_revision,
     httplib::Response& response,
     std::filesystem::path* user_root
 ) {
@@ -59,6 +60,7 @@ bool resolve_user_root_for_request(
     try {
         if (!context.resolve_user_root(
                 fingerprint,
+                authenticated_projection_revision,
                 user_root) ||
             user_root->empty() ||
             !user_root->is_absolute()) {
@@ -139,7 +141,16 @@ void register_file_version_archive_blob_routes(
 
             std::string fp_hex;
             std::string role;
-            if (!c.require_user_auth(req, res, &fp_hex, &role)) return;
+            std::uint64_t authenticated_projection_revision = 0;
+
+            if (!c.require_user_auth(
+                    req,
+                    res,
+                    &fp_hex,
+                    &role,
+                    &authenticated_projection_revision)) {
+                return;
+            }
             (void)role;
 
             const std::string rel_raw = req.get_param_value("path");
@@ -155,6 +166,7 @@ void register_file_version_archive_blob_routes(
             if (!resolve_user_root_for_request(
                     c,
                     fp_hex,
+                    authenticated_projection_revision,
                     res,
                     &user_root)) {
                 return;
@@ -233,7 +245,16 @@ void register_file_version_archive_blob_routes(
 
             std::string fp_hex;
             std::string role;
-            if (!c.require_user_auth(req, res, &fp_hex, &role)) return;
+            std::uint64_t authenticated_projection_revision = 0;
+
+            if (!c.require_user_auth(
+                    req,
+                    res,
+                    &fp_hex,
+                    &role,
+                    &authenticated_projection_revision)) {
+                return;
+            }
             (void)role;
 
             const std::string rel_raw = req.get_param_value("path");
@@ -251,6 +272,7 @@ void register_file_version_archive_blob_routes(
             if (!resolve_user_root_for_request(
                     c,
                     fp_hex,
+                    authenticated_projection_revision,
                     res,
                     &scope_root)) {
                 return;
@@ -309,7 +331,16 @@ void register_file_version_archive_blob_routes(
 
             std::string fp_hex;
             std::string role;
-            if (!c.require_user_auth(req, res, &fp_hex, &role)) return;
+            std::uint64_t authenticated_projection_revision = 0;
+
+            if (!c.require_user_auth(
+                    req,
+                    res,
+                    &fp_hex,
+                    &role,
+                    &authenticated_projection_revision)) {
+                return;
+            }
             (void)role;
 
             const std::string rel_raw = req.get_param_value("path");
@@ -335,6 +366,7 @@ void register_file_version_archive_blob_routes(
             if (!resolve_user_root_for_request(
                     c,
                     fp_hex,
+                    authenticated_projection_revision,
                     res,
                     &scope_root)) {
                 return;

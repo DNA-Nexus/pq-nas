@@ -3488,6 +3488,14 @@ add_custom_target(run_test_storage_user_access_runtime_production_wiring
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
+# Security: the first Storage user file routes must use the Node-only
+# authentication/root chain while browser handoff remains closed.
+add_custom_target(run_test_storage_archive_blob_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_archive_blob_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 # -----------------------------------------------------------------------------
 # Internal Storage user projection routes
 # -----------------------------------------------------------------------------
