@@ -2943,6 +2943,39 @@ target_link_libraries(pqnas_storage_handoff_preauth_routes PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Storage browser handoff consume route
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_consume_routes STATIC
+        server/src/routes/routes_storage_handoff_consume.cpp
+        server/src/routes/routes_storage_handoff_consume.h
+)
+
+target_include_directories(pqnas_storage_handoff_consume_routes PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_handoff_consume_routes PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_consume_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_consume_routes PUBLIC
+        pqnas_storage_handoff_consume_service
+        pqnas_cluster_identity_validation
+        pqnas_storage_handoff_ticket_store
+        pqnas_storage_user_session_cookie
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Storage browser handoff consume service
 # -----------------------------------------------------------------------------
 add_executable(test_storage_handoff_consume_service
@@ -2984,6 +3017,54 @@ add_custom_target(run_test_storage_handoff_consume_service
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_handoff_consume_service
 )
+
+# -----------------------------------------------------------------------------
+# Test: Storage browser handoff consume route
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_consume_route
+        tests/cluster/test_storage_handoff_consume_route.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_handoff_consume_route PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_consume_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_consume_route PRIVATE
+        pqnas_storage_handoff_consume_routes
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_consume_route PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_consume_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_consume_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_consume_route
+)
+
+# Security: browser handoff remains closed until the complete role-aware
+# production trust chain and browser E2E flow are ready.
+add_custom_target(run_test_storage_handoff_consume_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_handoff_consume_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 
 # -----------------------------------------------------------------------------
 # Test: Storage browser handoff preauth route
