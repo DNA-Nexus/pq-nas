@@ -128,6 +128,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
 #include "cluster/storage_user_projection_store.h"
+#include "cluster/storage_user_access_runtime.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_enrollment_registry.h"
@@ -9320,6 +9321,15 @@ int main()
     pqnas::cluster::StorageUserProjectionStore
         storage_user_projection_store;
 
+    // Storage Node user authorization composition.
+    //
+    // Security: the runtime stores pointers to the projection store and cookie
+    // key, so it must remain at a stable address and be destroyed before its
+    // dependencies.
+    std::unique_ptr<
+        pqnas::cluster::StorageUserAccessRuntime
+    > storage_user_access_runtime;
+
     if (cluster_config.is_node()) {
         std::string credential_err;
 
@@ -10508,6 +10518,55 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 	g_users_path_for_user_workers = users_path;
 	pool_mounts_init_default_only();
 	pool_mounts_restore_managed(users_path);
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            StorageUserAccessRuntimeConfig
+                storage_user_access_runtime_config;
+
+        storage_user_access_runtime_config.projections =
+            &storage_user_projection_store;
+
+        // Security: the Storage authenticator domain-separates this base key
+        // by purpose + stable Node ID before verifying Storage session cookies.
+        storage_user_access_runtime_config.base_cookie_key =
+            COOKIE_KEY;
+
+        storage_user_access_runtime_config.local_node_id =
+            cluster_config.node_id;
+
+        // Security: Storage authorization must use the strict resolver directly.
+        // Never call data_root_for_pool_id(), whose Director compatibility
+        // behavior may fall back from an unavailable named pool to default.
+        storage_user_access_runtime_config.resolve_pool_data_root =
+            [](const std::string& storage_pool_id,
+               std::filesystem::path* data_root) -> bool {
+                return pqnas::
+                    resolve_storage_pool_data_root_strict(
+                        storage_pool_id,
+                        data_root
+                    );
+            };
+
+        storage_user_access_runtime_config.clock =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        storage_user_access_runtime =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageUserAccessRuntime
+            >(
+                std::move(
+                    storage_user_access_runtime_config
+                )
+            );
+
+        std::cerr
+            << "[cluster] Storage user access runtime composed"
+            << std::endl;
+    }
 
     {
         std::filesystem::path default_data_root;
