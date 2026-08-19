@@ -40,7 +40,7 @@ int main() {
     const std::string storage_cookie_header =
         std::string(
             pqnas::cluster::
-                kStorageUserSessionCookieName
+                kStorageUserRequestSessionCookieName
         ) +
         "=" +
         storage_cookie;

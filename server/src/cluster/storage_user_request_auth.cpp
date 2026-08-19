@@ -172,7 +172,7 @@ bool extract_single_storage_session_cookie(
         }
 
         if (name ==
-            kStorageUserSessionCookieName) {
+            kStorageUserRequestSessionCookieName) {
             // Security: duplicate cookie names enable cookie-tossing/parser
             // ambiguity. Never choose first or last.
             if (found) {

@@ -18,7 +18,7 @@ inline constexpr std::size_t
     kStorageUserRequestMaxCookieHeaderBytes = 4096;
 
 inline constexpr const char*
-    kStorageUserSessionCookieName =
+    kStorageUserRequestSessionCookieName =
         "pqnas_storage_session";
 
 using StorageUserRequestAuthenticate =
