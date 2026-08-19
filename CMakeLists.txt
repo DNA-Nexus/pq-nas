@@ -2756,6 +2756,64 @@ add_custom_target(run_test_storage_user_projection_store
 )
 
 # -----------------------------------------------------------------------------
+# Storage pool runtime registry
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_pool_runtime STATIC
+        server/src/storage_pool_runtime.cpp
+        server/src/storage_pool_runtime.h
+)
+
+target_include_directories(pqnas_storage_pool_runtime PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_pool_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+# -----------------------------------------------------------------------------
+# Test: Storage pool runtime registry
+# -----------------------------------------------------------------------------
+add_executable(test_storage_pool_runtime
+        tests/test_storage_pool_runtime.cpp
+)
+
+target_include_directories(test_storage_pool_runtime PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_pool_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_pool_runtime PRIVATE
+        pqnas_storage_pool_runtime
+)
+
+set_target_properties(test_storage_pool_runtime PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_pool_runtime
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_pool_runtime"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_pool_runtime
+)
+
+# Production server uses the shared Node-local runtime pool registry.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_pool_runtime
+)
+
+# -----------------------------------------------------------------------------
 # Storage Node user root resolver
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_user_root_resolver STATIC

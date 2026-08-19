@@ -223,6 +223,7 @@ failures must return an error and should emit an audit event when security-relev
 //pool migration
 #include "user_storage_migration.h"
 #include "storage_pools.h"
+#include "storage_pool_runtime.h"
 
 // snapshots
 #include "storage/snapshots/snapshot_scheduler.h"
@@ -1840,42 +1841,23 @@ static bool ensure_dir_exists(const std::filesystem::path& p, std::string* err =
 
 static void pool_mounts_init_default_only();
 
-static std::mutex& pool_mu() {
-    static std::mutex mu;
-    return mu;
-}
+static std::filesystem::path data_root_for_pool_id(
+    const std::string& pool_id
+) {
+    std::filesystem::path data_root;
 
-static std::unordered_map<std::string, std::string>& pool_mount_by_id() {
-    static std::unordered_map<std::string, std::string> m;
-    return m;
-}
-
-static std::string& default_pool_id() {
-    static std::string id = "default";
-    return id;
-}
-
-static std::filesystem::path data_root_for_pool_id(const std::string& pool_id) {
-    // default / legacy pool
-    if (pool_id.empty() || pool_id == "default") {
-        return std::filesystem::path(pqnas::data_root_dir());
+    if (pqnas::resolve_storage_pool_data_root_strict(
+            pool_id,
+            &data_root)) {
+        return data_root;
     }
 
-    std::string pool_mount;
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        auto& m = pool_mount_by_id();
-        auto it = m.find(pool_id);
-        if (it != m.end()) pool_mount = it->second;
-    }
-
-    // named pool missing from runtime map -> safest compatibility fallback
-    if (pool_mount.empty()) {
-        return std::filesystem::path(pqnas::data_root_dir());
-    }
-
-    // canonical PQ-NAS data root inside pool
-    return std::filesystem::path(pool_mount) / "data";
+    // Compatibility: legacy Director callers historically fall back to the
+    // default data root when a named runtime pool is unavailable.
+    //
+    // Security: Storage user authorization must not call this wrapper. It
+    // uses resolve_storage_pool_data_root_strict() directly and fails closed.
+    return pqnas::data_root_path();
 }
 
 static std::string default_root_rel_for_fp(const std::string& fp_hex) {
@@ -1919,14 +1901,14 @@ static std::filesystem::path user_dir_for_fp(pqnas::UsersRegistry& users, const 
         if (!u.storage_pool_id.empty()) {
             std::string pool_mount;
 
-            // 1) Prefer runtime pool map if present
-            {
-                std::lock_guard<std::mutex> lk(pool_mu());
-                auto& m = pool_mount_by_id();
-                auto it = m.find(u.storage_pool_id);
-                if (it != m.end()) {
-                    pool_mount = it->second;
-                }
+            // 1) Prefer the shared runtime pool registry if present.
+            std::filesystem::path runtime_pool_mount;
+
+            if (pqnas::storage_pool_runtime_get_named_mount(
+                    u.storage_pool_id,
+                    &runtime_pool_mount)) {
+                pool_mount =
+                    runtime_pool_mount.string();
             }
 
             // 2) Fallback: resolve from persisted pools.json
@@ -4567,10 +4549,14 @@ static std::filesystem::path pools_cfg_path_from_users_path(const std::string& u
 }
 
 static void pool_mounts_init_default_only() {
-    std::lock_guard<std::mutex> lk(pool_mu());
-    auto& m = pool_mount_by_id();
-    m.clear();
-    m[default_pool_id()] = pqnas::data_root_dir();
+    if (!pqnas::storage_pool_runtime_reset(
+            pqnas::data_root_path())) {
+        // Security: invalid trusted runtime paths must not populate the
+        // authorization-visible pool registry with ambiguous locations.
+        std::cerr
+            << "[pools] WARNING: failed to initialize runtime pool registry"
+            << std::endl;
+    }
 }
 
 static std::string pool_id_from_mount_best_effort(const std::string& mount) {
@@ -6879,8 +6865,18 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }
 
         if (is_btrfs_mount_active_at(mount)) {
-            std::lock_guard<std::mutex> lk(pool_mu());
-            pool_mount_by_id()[pool_id] = mount;
+            if (!pqnas::storage_pool_runtime_set_named_mount(
+                    pool_id,
+                    mount)) {
+                // Security: do not expose an invalid local pool mapping to
+                // filesystem authorization or upload placement.
+                std::cerr
+                    << "[pools] restore: invalid runtime mapping"
+                    << " pool_id=" << pool_id
+                    << " mount=" << mount
+                    << std::endl;
+                continue;
+            }
             std::cerr << "[pools] restore: already mounted pool_id=" << pool_id
                       << " mount=" << mount << std::endl;
             continue;
@@ -6937,8 +6933,18 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }, &out, 64u * 1024u);
 
         if (is_btrfs_mount_active_at(mount)) {
-            std::lock_guard<std::mutex> lk(pool_mu());
-            pool_mount_by_id()[pool_id] = mount;
+            if (!pqnas::storage_pool_runtime_set_named_mount(
+                    pool_id,
+                    mount)) {
+                // Security: do not expose an invalid local pool mapping to
+                // filesystem authorization or upload placement.
+                std::cerr
+                    << "[pools] restore: invalid runtime mapping"
+                    << " pool_id=" << pool_id
+                    << " mount=" << mount
+                    << std::endl;
+                continue;
+            }
 		std::cerr << "[pools] restore: mounted pool_id=" << pool_id
         		  << " mount=" << mount
 		          << " via=" << log_spec
@@ -7355,16 +7361,23 @@ static json build_upload_tiering_candidates_json() {
         arr.push_back(landing_pool_candidate_to_json(c));
     }
 
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        for (const auto& kv : pool_mount_by_id()) {
-            const std::string& pid = kv.first;
-            const std::string& mount = kv.second;
-            if (pid.empty() || pid == "default") continue;
+    for (const auto& entry :
+         pqnas::storage_pool_runtime_snapshot()) {
+        const std::string& pid =
+            entry.pool_id;
 
-            auto c = inspect_landing_pool_candidate(pid, mount);
-            arr.push_back(landing_pool_candidate_to_json(c));
-        }
+        const std::string mount =
+            entry.mount.string();
+
+        auto c =
+            inspect_landing_pool_candidate(
+                pid,
+                mount
+            );
+
+        arr.push_back(
+            landing_pool_candidate_to_json(c)
+        );
     }
 
     return arr;
@@ -7603,35 +7616,53 @@ static UploadTieringConfig upload_tiering_config() {
     return cfg;
 }
 
-static bool landing_root_for_pool_id(const std::string& pool_id,
-                                     std::filesystem::path* out,
-                                     std::string* err) {
-    if (err) err->clear();
+static bool landing_root_for_pool_id(
+    const std::string& pool_id,
+    std::filesystem::path* out,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
     if (!out) {
-        if (err) *err = "null out";
+        if (err) {
+            *err = "null out";
+        }
+
         return false;
     }
 
+    out->clear();
+
     // Default / non-pooled landing area is still allowed.
-    if (pool_id.empty() || pool_id == "default") {
-        *out = std::filesystem::path(pqnas::data_root_dir()).parent_path() / "landing";
+    if (pool_id.empty() ||
+        pool_id == "default") {
+        *out =
+            pqnas::data_root_path()
+                .parent_path() /
+            "landing";
+
         return true;
     }
 
-    std::string pool_mount;
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        auto& m = pool_mount_by_id();
-        auto it = m.find(pool_id);
-        if (it != m.end()) pool_mount = it->second;
-    }
+    std::filesystem::path pool_mount;
 
-    if (pool_mount.empty()) {
-        if (err) *err = "landing_pool_not_found";
+    if (!pqnas::storage_pool_runtime_get_named_mount(
+            pool_id,
+            &pool_mount)) {
+        if (err) {
+            *err =
+                "landing_pool_not_found";
+        }
+
         return false;
     }
 
-    *out = std::filesystem::path(pool_mount) / "landing";
+    *out =
+        pool_mount /
+        "landing";
+
     return true;
 }
 
@@ -10478,23 +10509,37 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 	pool_mounts_init_default_only();
 	pool_mounts_restore_managed(users_path);
 
-	{
-    	std::lock_guard<std::mutex> lk(pool_mu());
-    	auto& m = pool_mount_by_id();
-    	auto it = m.find(default_pool_id());
-	    std::cerr << "[cfg] default_pool_id=" << default_pool_id()
-    	          << " mount=" << (it == m.end() ? "(missing)" : it->second)
-        	      << std::endl;
+    {
+        std::filesystem::path default_data_root;
 
-	    for (const auto& kv : m) {
-    	    if (kv.first == default_pool_id()) continue;
-        	std::cerr << "[cfg] managed_pool_id=" << kv.first
-            	      << " mount=" << kv.second
-                	  << std::endl;
-    	}
-	}
+        const bool default_available =
+            pqnas::resolve_storage_pool_data_root_strict(
+                "default",
+                &default_data_root
+            );
 
-	RoutesV5Context v5;
+        std::cerr
+            << "[cfg] default_pool_id=default"
+            << " mount="
+            << (
+                default_available
+                    ? default_data_root.string()
+                    : "(missing)"
+            )
+            << std::endl;
+
+        for (const auto& entry :
+             pqnas::storage_pool_runtime_snapshot()) {
+            std::cerr
+                << "[cfg] managed_pool_id="
+                << entry.pool_id
+                << " mount="
+                << entry.mount.string()
+                << std::endl;
+        }
+    }
+
+    RoutesV5Context v5;
 	v5.origin = &ORIGIN;
 	v5.rp_id  = &RP_ID;
 	v5.app    = &APP_NAME;

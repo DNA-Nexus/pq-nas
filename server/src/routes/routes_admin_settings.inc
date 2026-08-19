@@ -218,19 +218,14 @@
 	        {"mount", pqnas::data_root_dir()}
     	});
 
-	    // runtime-managed pools
-    	{
-        	std::lock_guard<std::mutex> lk(pool_mu());
-	        for (const auto& kv : pool_mount_by_id()) {
-    	        const std::string& pid = kv.first;
-        	    const std::string& mount = kv.second;
-            	if (pid.empty() || pid == "default") continue;
-	            pools.push_back(json{
-    	            {"pool_id", pid},
-        	        {"mount", mount}
-            	});
-	        }
-    	}
+        // runtime-managed pools
+        for (const auto& entry :
+             pqnas::storage_pool_runtime_snapshot()) {
+            pools.push_back(json{
+                {"pool_id", entry.pool_id},
+                {"mount", entry.mount.string()}
+            });
+        }
 
     	storage_roots["pools"] = std::move(pools);
 	}
@@ -578,10 +573,16 @@ srv.Post("/api/v4/admin/settings", [&](const httplib::Request& req, httplib::Res
         std::vector<std::string> ids;
         ids.push_back("default");
 
-        std::lock_guard<std::mutex> lk(pool_mu());
-        for (const auto& kv : pool_mount_by_id()) {
-            const std::string pid = trim_copy(kv.first);
-            if (!pid.empty()) ids.push_back(pid);
+        for (const auto& entry :
+             pqnas::storage_pool_runtime_snapshot()) {
+            const std::string pid =
+                trim_copy(
+                    entry.pool_id
+                );
+
+            if (!pid.empty()) {
+                ids.push_back(pid);
+            }
         }
 
         std::sort(ids.begin(), ids.end());
@@ -1626,17 +1627,12 @@ auto normalize_tiering = [&](const json& in_tier, std::string& err) -> json {
 		        {"mount", pqnas::data_root_dir()}
     		});
 
-		    {
-        		std::lock_guard<std::mutex> lk(pool_mu());
-		        for (const auto& kv : pool_mount_by_id()) {
-        		    const std::string& pid = kv.first;
-		            const std::string& mount = kv.second;
-        		    if (pid.empty() || pid == "default") continue;
-		            pools.push_back(json{
-        		        {"pool_id", pid},
-                		{"mount", mount}
-		            });
-        		}
+		    for (const auto& entry :
+		         pqnas::storage_pool_runtime_snapshot()) {
+		        pools.push_back(json{
+		            {"pool_id", entry.pool_id},
+		            {"mount", entry.mount.string()}
+		        });
 		    }
 
     		storage_roots["pools"] = std::move(pools);
