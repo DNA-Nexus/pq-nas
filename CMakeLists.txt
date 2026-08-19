@@ -3149,6 +3149,36 @@ target_link_libraries(pqnas_storage_user_session_authenticator PUBLIC
 )
 
 # -----------------------------------------------------------------------------
+# Storage Node request authentication boundary
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_request_auth STATIC
+        server/src/cluster/storage_user_request_auth.cpp
+        server/src/cluster/storage_user_request_auth.h
+)
+
+target_include_directories(pqnas_storage_user_request_auth PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_user_request_auth PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_request_auth
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_request_auth PUBLIC
+        pqnas_storage_user_session_authenticator
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Storage Node session authenticator
 # -----------------------------------------------------------------------------
 add_executable(test_storage_user_session_authenticator
@@ -3189,6 +3219,50 @@ add_custom_target(run_test_storage_user_session_authenticator
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_session_authenticator
 )
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node request authentication boundary
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_request_auth
+        tests/cluster/test_storage_user_request_auth.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_user_request_auth PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_request_auth PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_request_auth
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_request_auth PRIVATE
+        pqnas_storage_user_request_auth
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_storage_user_request_auth PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_request_auth
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_request_auth"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_request_auth
+)
+
 
 # -----------------------------------------------------------------------------
 # Internal Storage user projection routes
