@@ -190,6 +190,17 @@ void handle_verify_login_common(const httplib::Request& req,
             return fail(400, "verify failed");
         }
 
+        // Security: Storage Nodes have no local user authority. Enforce the
+        // role policy before alternate external-workspace authentication hooks
+        // so those flows cannot bypass the Node interactive-login boundary.
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            audit_fail("interactive_login_disabled");
+            return;
+        }
+
         // ---- external workspace invite mode ----
         //
         // External members are DNA Connect identities, not full DNA-Nexus users.
@@ -276,17 +287,6 @@ void handle_verify_login_common(const httplib::Request& req,
                 }.dump());
                 return;
             }
-        }
-
-        // Security: external-workspace flows above are intentionally separate
-        // from normal DNA-Nexus login. Storage Nodes must stop here before
-        // bootstrap, users.json mutation, enablement policy, AT or cookie minting.
-        if (!pqnas::require_interactive_user_login(
-                ctx.interactive_user_login_allowed,
-                res
-            )) {
-            audit_fail("interactive_login_disabled");
-            return;
         }
 
         // Bootstrap: first verified fingerprint becomes admin if fresh install

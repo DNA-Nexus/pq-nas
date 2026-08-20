@@ -3,6 +3,7 @@
 #include "cluster/storage_user_session_authenticator.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -48,7 +49,8 @@ bool require_storage_user_request_auth(
     httplib::Response& response,
     const StorageUserRequestAuthContext& context,
     std::string* out_fingerprint,
-    std::string* out_role
+    std::string* out_role,
+    std::uint64_t* out_projection_revision = nullptr
 );
 
 } // namespace pqnas::cluster

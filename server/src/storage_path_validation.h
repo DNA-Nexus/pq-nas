@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace pqnas {
@@ -18,6 +19,21 @@ namespace pqnas {
 bool normalize_storage_relative_path_strict(
     const std::string& rel_path,
     std::string* out_rel_norm,
+    std::string* err
+);
+
+// Resolve an existing filesystem path canonically and require it to remain
+// inside the canonical root.
+//
+// Security:
+// - resolves filesystem symlinks for both root and candidate
+// - compares path components, never string prefixes
+// - rejects sibling-prefix aliases such as /root and /root_evil
+// - rejects symlink escapes outside the supplied root
+bool canonical_existing_path_within_root(
+    const std::filesystem::path& root,
+    const std::filesystem::path& candidate,
+    std::filesystem::path* out_canonical,
     std::string* err
 );
 

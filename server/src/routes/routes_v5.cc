@@ -6195,6 +6195,14 @@ srv.Post("/api/v5/consume_app", [&](const httplib::Request& req, httplib::Respon
 // ---- POST /api/v5/token/refresh {refresh_token, device_id} ----
 // Mobile/app access-token refresh.
 srv.Post("/api/v5/token/refresh", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: Storage Nodes must not renew legacy Node-local app credentials.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     json j;
     std::string jerr;
     if (!parse_json_body(req, j, jerr)) {
@@ -6339,6 +6347,14 @@ srv.Post("/api/v5/token/revoke", [&](const httplib::Request& req, httplib::Respo
 });
 // ---- POST /api/v5/app_pair/start ----
 srv.Post("/api/v5/app_pair/start", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: a legacy browser cookie must not start credential pairing on a Storage Node.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     if (!ctx.require_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "require_user_cookie_not_configured"}}.dump());
         return;
@@ -6464,6 +6480,14 @@ srv.Post("/api/v5/app_pair/cancel", [&](const httplib::Request& req, httplib::Re
 });
 
 srv.Get("/api/v5/app_devices", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: Storage Nodes must not expose the legacy local credential lifecycle surface.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     if (!ctx.require_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "require_user_cookie_not_configured"}}.dump());
         return;
@@ -6599,6 +6623,14 @@ srv.Post("/api/v5/app_devices/revoke", [&](const httplib::Request& req, httplib:
 // The URL carries only pair_id. The secret pair_token is looked up server-side
 // so it does not leak into access logs, proxy logs, browser history, or Referer.
 srv.Get("/api/v5/app_pair/qr.svg", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: do not reveal Node-local pairing material when interactive login is disabled.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     if (!ctx.require_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "missing require_user_cookie"}}.dump());
         return;
@@ -6664,6 +6696,14 @@ srv.Get("/api/v5/app_pair/qr.svg", [&](const httplib::Request& req, httplib::Res
 });
 // ---- GET /api/v5/app_pair/status?pair_id=... ----
 srv.Get("/api/v5/app_pair/status", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: legacy Node-local pairing state must not remain usable on Storage Nodes.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     if (!ctx.require_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "missing require_user_cookie"}}.dump());
         return;
@@ -6748,6 +6788,14 @@ srv.Get("/api/v5/app_pair/status", [&](const httplib::Request& req, httplib::Res
 
 // ---- POST /api/v5/app_pair/consume {pair_token, device_name?, platform?, app_version?} ----
 srv.Post("/api/v5/app_pair/consume", [&](const httplib::Request& req, httplib::Response& res) {
+    // Security: pairing tokens must not mint fresh Node-local credentials on Storage Nodes.
+    if (!pqnas::require_interactive_user_login(
+            ctx.interactive_user_login_allowed,
+            res
+        )) {
+        return;
+    }
+
     json j;
     std::string jerr;
     if (!parse_json_body(req, j, jerr)) {

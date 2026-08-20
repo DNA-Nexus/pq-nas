@@ -2697,6 +2697,39 @@ endif()
 
 
 # -----------------------------------------------------------------------------
+# Test: canonical existing-path containment
+# -----------------------------------------------------------------------------
+add_executable(test_storage_canonical_path_containment
+        tests/cluster/test_storage_canonical_path_containment.cpp
+)
+
+target_include_directories(test_storage_canonical_path_containment PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_canonical_path_containment
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_canonical_path_containment PRIVATE
+        pqnas_storage_path_validation
+)
+
+set_target_properties(test_storage_canonical_path_containment PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_canonical_path_containment
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_canonical_path_containment"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_canonical_path_containment
+)
+
+# -----------------------------------------------------------------------------
 # Persistent Storage user projection store
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_user_projection_store STATIC
@@ -3380,6 +3413,90 @@ add_custom_target(run_test_storage_user_request_auth
 
 
 # -----------------------------------------------------------------------------
+# Storage Node user access runtime composition
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_access_runtime STATIC
+        server/src/cluster/storage_user_access_runtime.cpp
+        server/src/cluster/storage_user_access_runtime.h
+)
+
+target_include_directories(pqnas_storage_user_access_runtime PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_access_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_access_runtime PUBLIC
+        pqnas_storage_user_request_auth
+        pqnas_storage_user_root_resolver
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage Node user access runtime composition
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_access_runtime
+        tests/cluster/test_storage_user_access_runtime.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_storage_user_access_runtime PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_access_runtime PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_access_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_access_runtime PRIVATE
+        pqnas_storage_user_access_runtime
+        OpenSSL::Crypto
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_storage_user_access_runtime PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_access_runtime
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_access_runtime"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_access_runtime
+)
+
+# Security: composition may exist before browser handoff or user file routes
+# are production-enabled. Keep that trust boundary structurally closed.
+add_custom_target(run_test_storage_user_access_runtime_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_access_runtime_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# Security: the first Storage user file routes must use the Node-only
+# authentication/root chain while browser handoff remains closed.
+add_custom_target(run_test_storage_archive_blob_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_archive_blob_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
 # Internal Storage user projection routes
 # -----------------------------------------------------------------------------
 add_library(pqnas_internal_storage_user_projection_routes STATIC
@@ -3416,6 +3533,7 @@ target_link_libraries(pqnas_internal_storage_user_projection_routes PUBLIC
 target_link_libraries(pqnas_server PRIVATE
         pqnas_storage_path_validation
         pqnas_internal_storage_user_projection_routes
+        pqnas_storage_user_access_runtime
 )
 
 # -----------------------------------------------------------------------------
