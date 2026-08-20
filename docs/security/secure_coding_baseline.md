@@ -145,6 +145,41 @@ Rules:
 - use compare-and-set style state transitions for job/status records
 - do not trust cached authorization or visibility state for later media/file serving
 
+### Crash durability for authoritative security state
+
+Atomic rename alone does not mean a security-sensitive state transition is
+durable across power loss.
+
+For authoritative files such as user registries, credential state, placement
+state, revocation state, or other authorization control-plane records:
+
+- create temporary files exclusively and without following symlinks
+- write the complete new snapshot
+- `fsync()` the temporary file before rename
+- atomically rename the temporary file over the target
+- `fsync()` the parent directory before reporting the transition durable
+- do not emit downstream authorization effects from state whose durability is
+  still uncertain
+
+If rename succeeds but the following directory `fsync()` fails, the new inode
+is already logically visible. Process memory must follow that visible commit;
+do not roll memory back to the old snapshot. Mark durability uncertain and
+re-persist the exact current snapshot before an idempotent persisted operation
+is reported successful or before derived state is sent to another component.
+
+A failure before rename is different: because the replacement never committed,
+the in-memory mutation may safely be rolled back.
+
+
+When durable derived control-plane state carries a monotonic revision copied
+from an authoritative source, startup must validate that the derived revision
+has not advanced beyond the loaded authoritative revision. If a persisted
+confirmed/derived revision is newer than its authoritative source, fail startup
+closed or enter an explicitly designed degraded recovery mode. Do not silently
+start a reconciliation loop that can only reject the older authoritative
+revision.
+
+
 Examples where TOCTOU matters:
 
 - share access
