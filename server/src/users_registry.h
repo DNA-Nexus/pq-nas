@@ -100,6 +100,16 @@ public:
     bool load(const std::string& path);
     bool save(const std::string& path) const;
 
+    // Ensure that the currently visible users.json snapshot is durably
+    // represented on disk.
+    //
+    // Security: rename may already have committed a new authoritative
+    // snapshot when parent-directory fsync fails. Callers that can cause
+    // downstream authorization effects must heal that uncertainty first.
+    bool ensure_durable(
+        std::string* error
+    ) const;
+
     // Best-effort latency hook for Director projection reconciliation.
     // Security: notification happens only after a successful durable
     // projection-relevant registry commit.
@@ -123,8 +133,10 @@ public:
     // Atomically persists a complete user-record replacement.
     //
     // If the Storage Node projection changes, UsersRegistry increments the
-    // Director-owned projection revision before saving. Save failure restores
-    // both the previous record and its previous revision.
+    // Director-owned projection revision before saving. A failure before
+    // rename restores the previous record and revision. If rename committed
+    // but directory fsync failed, the visible new state remains authoritative
+    // in memory and durability is healed before later persisted operations.
     //
     // New records committed through this API start at revision 1.
     bool upsert_persisted(
@@ -201,8 +213,9 @@ public:
         const std::string& home_node
     );
 
-    // Atomically persists a placement change before committing it to memory.
-    // A failed save preserves the previous in-memory placement.
+    // Atomically persists a placement change.
+    // A failure before rename restores the previous in-memory placement.
+    // Post-rename durability uncertainty keeps the visible committed placement.
     bool set_home_node_persisted(
         const std::string& fp_hex,
         const std::string& home_node,
@@ -259,7 +272,8 @@ public:
     //
     // Security:
     // - a user with home_node must first go through the cluster revoke flow;
-    // - persistence failure restores the complete previous UserRec.
+    // - failure before rename restores the complete previous UserRec;
+    // - post-rename durability uncertainty keeps the visible deletion.
     //
     // placement_blocked=true is a successful policy no-op.
     bool erase_persisted_if_unplaced(
@@ -294,14 +308,30 @@ private:
     storage_projection_commit_notifier_copy_locked() const noexcept;
 
     // Caller must hold mu_.
+    //
+    // committed reports whether renameat() already made the new snapshot
+    // logically visible. A false return with committed=true therefore MUST
+    // NOT roll process memory back to the old authorization snapshot.
     bool save_locked(
-        const std::string& path
+        const std::string& path,
+        bool* committed
+    ) const;
+
+    // Caller must hold mu_.
+    bool ensure_durable_locked(
+        std::string* error
     ) const;
 
     mutable std::mutex mu_;
     std::unordered_map<std::string, UserRec> by_fp_;
     StorageProjectionCommitNotifier
         storage_projection_commit_notifier_;
+
+    // Security: directory fsync can fail after rename has already made a new
+    // users.json inode visible. Preserve that state and re-persist the exact
+    // current snapshot before another persisted mutation or Node transition.
+    mutable bool durability_uncertain_ = false;
+    mutable std::string durability_path_;
 };
 
 } // namespace pqnas

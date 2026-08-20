@@ -4019,6 +4019,16 @@ add_custom_target(run_test_storage_projection_durability_guard
 )
 
 # -----------------------------------------------------------------------------
+# Structural guard: authoritative users.json crash durability
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_users_registry_durability_guard
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_users_registry_durability_guard.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Director persistent Storage projection synchronization state
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_user_projection_sync_state_store STATIC
@@ -4086,6 +4096,54 @@ add_custom_target(run_test_storage_user_projection_sync_state_store_guards
                 "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_user_projection_sync_state_store_guards.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+
+# -----------------------------------------------------------------------------
+# RT-003: Director startup consistency for users.json vs confirmed projections
+# -----------------------------------------------------------------------------
+target_sources(pqnas_server PRIVATE
+        server/src/cluster/storage_projection_startup_consistency.cpp
+)
+
+add_executable(test_storage_projection_startup_consistency
+        tests/cluster/test_storage_projection_startup_consistency.cpp
+        server/src/cluster/storage_projection_startup_consistency.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_storage_projection_startup_consistency PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_projection_startup_consistency
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_projection_startup_consistency PRIVATE
+        pqnas_storage_user_projection_sync_state_store
+        Threads::Threads
+)
+
+set_target_properties(test_storage_projection_startup_consistency PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_projection_startup_consistency
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_projection_startup_consistency"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_projection_startup_consistency
+)
+
+add_custom_target(run_test_storage_projection_startup_consistency_guard
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_projection_startup_consistency_guard.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 
 # -----------------------------------------------------------------------------
 # Installer test: explicit Director projection sync-state bootstrap

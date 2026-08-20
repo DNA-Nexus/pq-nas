@@ -7,6 +7,10 @@
 #include <cstdint>
 #include <ctime>
 #include <iostream>
+#include <atomic>
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 using json = nlohmann::json;
@@ -64,8 +68,10 @@ Persistence model
     then renames tmp -> target for atomic replace.
 
 Durability notes:
-  - save() uses flush(), but does not fsync() file or parent directory.
-    If you need power-loss durability, consider fsync(tmp_fd) + fsync(dir_fd).
+  - save() fsyncs the temporary file before atomic rename and fsyncs the
+    parent directory before reporting a durable commit.
+  - if rename succeeds but directory fsync fails, the visible new snapshot is
+    retained in memory and marked durability-uncertain for exact re-persistence.
 
 Security / correctness notes
 ----------------------------
@@ -415,6 +421,9 @@ bool UsersRegistry::load(const std::string& path) {
     by_fp_[u.fingerprint] = u;
   }
 
+  durability_path_ = path;
+  durability_uncertain_ = false;
+
   return true;
 }
 
@@ -435,6 +444,47 @@ Caveats:
     That is likely unintentional. Nlohmann JSON will keep the last duplicate key,
     but it’s confusing and should be removed.
 */
+namespace {
+
+std::atomic<std::uint64_t>
+    g_users_registry_temp_counter{0};
+
+
+bool users_registry_write_all(
+    int descriptor,
+    const std::string& contents
+) {
+  std::size_t offset = 0;
+
+  while (offset < contents.size()) {
+    const ssize_t written =
+        ::write(
+            descriptor,
+            contents.data() + offset,
+            contents.size() - offset
+        );
+
+    if (written < 0 &&
+        errno == EINTR) {
+      continue;
+    }
+
+    if (written <= 0) {
+      return false;
+    }
+
+    offset +=
+        static_cast<std::size_t>(
+            written
+        );
+  }
+
+  return true;
+}
+
+} // namespace
+
+
 static std::size_t users_registry_existing_user_count_for_guard(const std::filesystem::path& p) {
   std::ifstream f(p);
   if (!f.good()) return 0;
@@ -456,12 +506,75 @@ bool UsersRegistry::save(
     const std::string& path
 ) const {
   std::lock_guard<std::mutex> lk(mu_);
-  return save_locked(path);
+
+  bool committed = false;
+
+  return save_locked(
+      path,
+      &committed
+  );
+}
+
+
+bool UsersRegistry::ensure_durable(
+    std::string* error
+) const {
+  if (error) {
+    error->clear();
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  return ensure_durable_locked(
+      error
+  );
+}
+
+
+bool UsersRegistry::ensure_durable_locked(
+    std::string* error
+) const {
+  if (!durability_uncertain_) {
+    return true;
+  }
+
+  if (durability_path_.empty()) {
+    if (error) {
+      *error =
+          "users registry durability path unavailable";
+    }
+
+    return false;
+  }
+
+  bool committed = false;
+
+  if (!save_locked(
+          durability_path_,
+          &committed)) {
+    if (error) {
+      *error =
+          committed
+              ? "users registry durability remains uncertain"
+              : "users registry durability retry failed";
+    }
+
+    return false;
+  }
+
+  return true;
 }
 
 bool UsersRegistry::save_locked(
-    const std::string& path
+    const std::string& path,
+    bool* committed
 ) const {
+  if (!committed) {
+    return false;
+  }
+
+  *committed = false;
+
   /*
    * Safety guard:
    *
@@ -562,40 +675,174 @@ bool UsersRegistry::save_locked(
     });
   }
 
-  std::filesystem::path p(path);
+  const std::filesystem::path p(path);
+
+  std::filesystem::path parent =
+      p.parent_path();
+
+  if (parent.empty()) {
+    parent = ".";
+  }
+
   std::error_code ec;
 
-  // Ensure parent dir exists
-  std::filesystem::create_directories(p.parent_path(), ec);
-  if (ec) return false;
+  std::filesystem::create_directories(
+      parent,
+      ec
+  );
 
-  // Unique temp file in the same directory (atomic rename guarantee)
-  std::filesystem::path tmp = p;
-  tmp += ".tmp.";
-  tmp += std::to_string(::getpid());
-  tmp += ".";
-  tmp += std::to_string(static_cast<long long>(std::time(nullptr)));
+  if (ec) {
+    return false;
+  }
 
-  // Write temp
-  {
-    std::ofstream out(tmp.string(), std::ios::trunc);
-    if (!out.good()) return false;
-    out << j.dump(2) << "\n";
-    out.flush();
-    if (!out.good()) {
-      std::filesystem::remove(tmp, ec);
+  const std::string target_filename =
+      p.filename().string();
+
+  if (target_filename.empty() ||
+      target_filename == "." ||
+      target_filename == "..") {
+    return false;
+  }
+
+  const int directory_descriptor =
+      ::open(
+          parent.c_str(),
+          O_RDONLY |
+          O_DIRECTORY |
+          O_CLOEXEC
+      );
+
+  if (directory_descriptor < 0) {
+    return false;
+  }
+
+  const auto close_directory = [&]() {
+    (void)::close(
+        directory_descriptor
+    );
+  };
+
+  std::string temporary_filename;
+  int temporary_descriptor = -1;
+
+  for (int attempt = 0;
+       attempt < 16;
+       ++attempt) {
+    const std::uint64_t counter =
+        g_users_registry_temp_counter.fetch_add(
+            1
+        );
+
+    temporary_filename =
+        "." +
+        target_filename +
+        ".tmp." +
+        std::to_string(
+            static_cast<long long>(
+                ::getpid()
+            )
+        ) +
+        "." +
+        std::to_string(counter);
+
+    temporary_descriptor =
+        ::openat(
+            directory_descriptor,
+            temporary_filename.c_str(),
+            O_WRONLY |
+            O_CREAT |
+            O_EXCL |
+            O_CLOEXEC |
+            O_NOFOLLOW,
+            0600
+        );
+
+    if (temporary_descriptor >= 0) {
+      break;
+    }
+
+    if (errno != EEXIST) {
+      close_directory();
       return false;
     }
   }
 
-  // Atomic replace: rename tmp -> target
-  ec.clear();
-  std::filesystem::rename(tmp, p, ec);
-  if (ec) {
-    // Cleanup tmp on failure
-    std::filesystem::remove(tmp, ec);
+  if (temporary_descriptor < 0) {
+    close_directory();
     return false;
   }
+
+  const auto remove_temporary = [&]() {
+    if (!temporary_filename.empty()) {
+      (void)::unlinkat(
+          directory_descriptor,
+          temporary_filename.c_str(),
+          0
+      );
+    }
+  };
+
+  const std::string contents =
+      j.dump(2) + "\n";
+
+  // Security: data must reach stable storage before the atomic name switch.
+  if (::fchmod(
+          temporary_descriptor,
+          0600) != 0 ||
+      !users_registry_write_all(
+          temporary_descriptor,
+          contents) ||
+      ::fsync(
+          temporary_descriptor) != 0) {
+    (void)::close(
+        temporary_descriptor
+    );
+
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  if (::close(
+          temporary_descriptor) != 0) {
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  temporary_descriptor = -1;
+
+  // Atomic commit. Until this succeeds, callers may safely roll memory back.
+  if (::renameat(
+          directory_descriptor,
+          temporary_filename.c_str(),
+          directory_descriptor,
+          target_filename.c_str()) != 0) {
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  // Security/correctness: after rename the new inode is already logically
+  // visible. A later directory-fsync failure is uncertainty, not rollback.
+  *committed = true;
+
+  durability_path_ = path;
+  durability_uncertain_ = true;
+
+  if (::fsync(
+          directory_descriptor) != 0) {
+    close_directory();
+
+    return false;
+  }
+
+  durability_uncertain_ = false;
+
+  close_directory();
 
   return true;
 }
@@ -912,6 +1159,13 @@ bool UsersRegistry::upsert_persisted(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   const auto existing =
       by_fp_.find(candidate.fingerprint);
 
@@ -970,9 +1224,23 @@ bool UsersRegistry::upsert_persisted(
   by_fp_[candidate.fingerprint] =
       candidate;
 
-  // Security: projection data and its revision are committed by the same
-  // users.json replacement. On failure both are rolled back together.
-  if (!save_locked(path)) {
+  // Security: projection data and its revision use the same users.json
+  // replacement. Pre-rename failure rolls both back; post-rename durability
+  // uncertainty keeps the visible committed state in memory.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     if (inserting_new) {
       by_fp_.erase(
           candidate.fingerprint
@@ -1065,6 +1333,13 @@ bool UsersRegistry::set_status_persisted(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator =
       by_fp_.find(fp_hex);
 
@@ -1117,7 +1392,20 @@ bool UsersRegistry::set_status_persisted(
   iterator->second =
       candidate;
 
-  if (!save_locked(path)) {
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1188,6 +1476,13 @@ bool UsersRegistry::set_storage_metadata_persisted(
   }
 
   std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
 
   auto iterator =
       by_fp_.find(fp_hex);
@@ -1261,7 +1556,20 @@ bool UsersRegistry::set_storage_metadata_persisted(
 
   // Security: storage metadata and the revision describing its Node-visible
   // projection are committed by the same users.json replacement.
-  if (!save_locked(path)) {
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1348,6 +1656,13 @@ bool UsersRegistry::switch_storage_mapping_persisted_if_pool_current(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator =
       by_fp_.find(fp_hex);
 
@@ -1427,7 +1742,20 @@ bool UsersRegistry::switch_storage_mapping_persisted_if_pool_current(
 
   // Security: CAS comparison, mapping, projection revision, persistence and
   // rollback are one locked transaction from the registry's point of view.
-  if (!save_locked(path)) {
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1555,6 +1883,13 @@ bool UsersRegistry::set_home_node_persisted(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator = by_fp_.find(fp_hex);
 
   if (iterator == by_fp_.end()) {
@@ -1589,8 +1924,22 @@ bool UsersRegistry::set_home_node_persisted(
       next_revision;
 
   // Security: placement and its projection revision are persisted together.
-  // Save failure restores both values under the same mutation lock.
-  if (!save_locked(path)) {
+  // Pre-rename failure restores both values under the same mutation lock;
+  // post-rename durability uncertainty keeps the visible committed values.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1682,6 +2031,13 @@ bool UsersRegistry::set_home_node_persisted_if_current(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator = by_fp_.find(fp_hex);
 
   if (iterator == by_fp_.end()) {
@@ -1731,7 +2087,20 @@ bool UsersRegistry::set_home_node_persisted_if_current(
 
   // Security: compare, placement, revision, persistence and rollback stay
   // under one registry lock so stale workers cannot split authorization state.
-  if (!save_locked(path)) {
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1821,6 +2190,13 @@ bool UsersRegistry::clear_home_node_persisted_if_current(
 
   std::unique_lock<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator = by_fp_.find(fp_hex);
 
   if (iterator == by_fp_.end()) {
@@ -1861,9 +2237,23 @@ bool UsersRegistry::clear_home_node_persisted_if_current(
   iterator->second.storage_projection_revision =
       next_revision;
 
-  // Security: the unplacement decision and its newer revoke revision become
-  // durable together. Persistence failure restores the complete prior record.
-  if (!save_locked(path)) {
+  // Security: the unplacement decision and its newer revoke revision are one
+  // users.json commit. Pre-rename failure restores the prior record; a visible
+  // post-rename commit is retained until its durability can be healed.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second =
         previous;
 
@@ -1932,6 +2322,13 @@ bool UsersRegistry::set_placement_policy_id_persisted(
 
   std::lock_guard<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator = by_fp_.find(fp_hex);
 
   if (iterator == by_fp_.end()) {
@@ -1950,9 +2347,23 @@ bool UsersRegistry::set_placement_policy_id_persisted(
   iterator->second.placement_policy_id =
       placement_policy_id;
 
-  // Security: persist while holding the registry mutation lock. A failed
-  // atomic replacement restores the previous in-memory policy reference.
-  if (!save_locked(path)) {
+  // Security: persist while holding the registry mutation lock.
+  // Pre-rename failure restores the previous policy reference; post-rename
+  // durability uncertainty retains the visible committed policy reference.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     iterator->second.placement_policy_id =
         previous_policy_id;
 
@@ -2032,6 +2443,13 @@ bool UsersRegistry::erase_persisted_if_unplaced(
 
   std::lock_guard<std::mutex> lk(mu_);
 
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
   auto iterator =
       by_fp_.find(fp_hex);
 
@@ -2059,8 +2477,22 @@ bool UsersRegistry::erase_persisted_if_unplaced(
   by_fp_.erase(iterator);
 
   // Security/correctness: memory and users.json form one logical mutation.
-  // Restore the complete record if persistence fails.
-  if (!save_locked(path)) {
+  // Restore the record only if replacement did not commit. A post-rename
+  // durability failure retains the visible deletion in memory.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
     by_fp_[previous.fingerprint] =
         previous;
 

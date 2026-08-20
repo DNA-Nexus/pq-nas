@@ -141,6 +141,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_projection_sync_client.h"
 #include "cluster/storage_user_projection_sync_https.h"
 #include "cluster/storage_user_projection_reconciler.h"
+#include "cluster/storage_projection_startup_consistency.h"
 #include "cluster/storage_user_projection_reconcile_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
@@ -10276,6 +10277,28 @@ auto maybe_auto_rotate_before_append = [&]() {
                 << "[cluster] FATAL: Director storage projection "
                    "sync-state load failed: "
                 << projection_sync_state_error
+                << std::endl;
+
+            return 3;
+        }
+
+        const auto projection_startup_consistency =
+            pqnas::cluster::
+                check_storage_projection_startup_consistency(
+                    users,
+                    director_storage_projection_sync_state_store
+                );
+
+        if (!projection_startup_consistency.ok) {
+            // Security: never continue from a users.json rollback whose
+            // previously-derived confirmed Node state is already newer.
+            // Aggregate counts only; never log user fingerprints.
+            std::cerr
+                << "[cluster] FATAL: Director authoritative user "
+                   "projection state is older than confirmed sync state"
+                << " newer_confirmed_entries="
+                << projection_startup_consistency
+                       .confirmed_revision_ahead
                 << std::endl;
 
             return 3;

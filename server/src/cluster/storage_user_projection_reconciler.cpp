@@ -193,9 +193,23 @@ StorageUserProjectionReconciler::reconcile_once() const {
 
     std::string durability_error;
 
-    // Security: never perform another Storage authorization transition while
-    // the Director is uncertain whether its current confirmed-state snapshot
-    // survived the previous atomic persistence operation durably.
+    // Security: users.json is authoritative Director state. Never derive or
+    // send Storage authorization while its latest visible commit has uncertain
+    // crash durability.
+    if (!config_.users->ensure_durable(
+            &durability_error)) {
+        durability_error.clear();
+
+        ++result.persist_failures;
+        ++result.failed;
+
+        return result;
+    }
+
+    durability_error.clear();
+
+    // Security: confirmed Node synchronization state must also be durable
+    // before another Storage authorization transition is attempted.
     if (!config_.state_store->ensure_durable(
             &durability_error)) {
         durability_error.clear();
