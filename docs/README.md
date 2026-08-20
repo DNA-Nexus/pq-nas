@@ -17,6 +17,7 @@ Product documents describe what is being built, why it exists, who it is for, an
 Architecture documents describe how the main system parts fit together.
 
 - `architecture/system-architecture.md` — High-level DNA-Nexus Server system architecture.
+- `architecture/director-storage-architecture.md` — Director / Storage Node roles, trust boundaries, projections, sessions, placement, and standalone compatibility.
 
 ### Technical documents
 
