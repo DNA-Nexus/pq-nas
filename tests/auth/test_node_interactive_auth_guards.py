@@ -31,29 +31,37 @@ main = MAIN.read_text()
 guard = "pqnas::require_interactive_user_login("
 
 # ------------------------------------------------------------------
-# Direct POST routes:
-# Security: every local user-auth / credential / consume endpoint must
-# hit the shared fail-closed policy immediately at handler entry.
+# Direct routes:
+# Security: every local user-auth / credential-minting or credential-
+# lifecycle endpoint that is unsafe on Storage Nodes must hit the shared
+# fail-closed policy immediately at handler entry.
 # ------------------------------------------------------------------
-protected_routes = [
-    "/api/auth/opaque/enrollment/start",
-    "/api/auth/opaque/enrollment/finish",
-    "/api/auth/opaque/login/start",
-    "/api/auth/opaque/login/finish",
-    "/api/auth/opaque/bootstrap-admin/start",
-    "/api/auth/opaque/bootstrap-admin/finish",
-    "/api/auth/password/bootstrap-admin",
-    "/api/auth/password/setup-finish",
-    "/api/auth/password/login",
-    "/api/auth/password/recover",
-    "/api/auth/password/set",
-    "/api/auth/password/change",
-    "/api/v5/consume",
-    "/api/v5/consume_app",
+protected_endpoints = [
+    ("Post", "/api/auth/opaque/enrollment/start"),
+    ("Post", "/api/auth/opaque/enrollment/finish"),
+    ("Post", "/api/auth/opaque/login/start"),
+    ("Post", "/api/auth/opaque/login/finish"),
+    ("Post", "/api/auth/opaque/bootstrap-admin/start"),
+    ("Post", "/api/auth/opaque/bootstrap-admin/finish"),
+    ("Post", "/api/auth/password/bootstrap-admin"),
+    ("Post", "/api/auth/password/setup-finish"),
+    ("Post", "/api/auth/password/login"),
+    ("Post", "/api/auth/password/recover"),
+    ("Post", "/api/auth/password/set"),
+    ("Post", "/api/auth/password/change"),
+    ("Post", "/api/v5/consume"),
+    ("Post", "/api/v5/consume_app"),
+    ("Post", "/api/v5/token/refresh"),
+    ("Post", "/api/v5/app_pair/start"),
+    ("Post", "/api/v5/app_pair/consume"),
+    ("Get", "/api/v5/app_pair/qr.svg"),
+    ("Get", "/api/v5/app_pair/status"),
+    ("Get", "/api/v5/app_devices"),
 ]
 
-for route in protected_routes:
-    marker = f'srv.Post("{route}"'
+
+for method, route in protected_endpoints:
+    marker = f'srv.{method}("{route}"'
     start = routes.find(marker)
 
     expect(
@@ -64,13 +72,42 @@ for route in protected_routes:
     if start < 0:
         continue
 
-    # The gate must remain at the very beginning of the handler rather
-    # than after parsing, crypto, mutation, or credential minting.
+    # Gate must stay at handler entry rather than after parsing,
+    # authentication, state lookup, mutation or credential minting.
     window = routes[start:start + 700]
 
     expect(
         guard in window,
         f"protected route has early interactive-login gate: {route}",
+    )
+
+
+# Cleanup operations intentionally remain available on a Storage Node.
+# Security: disabling credential minting must not prevent revocation.
+ungated_cleanup_endpoints = [
+    ("Post", "/api/v5/token/revoke"),
+    ("Post", "/api/v5/app_devices/revoke"),
+    ("Post", "/api/v5/app_pair/cancel"),
+]
+
+
+for method, route in ungated_cleanup_endpoints:
+    marker = f'srv.{method}("{route}"'
+    start = routes.find(marker)
+
+    expect(
+        start >= 0,
+        f"cleanup route exists: {route}",
+    )
+
+    if start < 0:
+        continue
+
+    window = routes[start:start + 700]
+
+    expect(
+        guard not in window,
+        f"cleanup route remains available when interactive login is disabled: {route}",
     )
 
 
@@ -118,9 +155,9 @@ if session_start >= 0:
 
 # ------------------------------------------------------------------
 # Shared QR verify:
-# External workspace flows intentionally remain separate. Normal Node
-# login must stop after those hooks but before first-admin bootstrap or
-# users.json mutation.
+# Security: alternate external-workspace authentication hooks must not
+# bypass the Storage-Node interactive-login policy. The gate must run
+# before those hooks and before first-admin/bootstrap state mutation.
 # ------------------------------------------------------------------
 verify_guard = verify.find(guard)
 bootstrap = verify.find(
@@ -153,14 +190,14 @@ if verify_guard >= 0 and bootstrap >= 0:
 
 if external_invite >= 0 and verify_guard >= 0:
     expect(
-        external_invite < verify_guard,
-        "external invite flow remains before normal-user gate",
+        verify_guard < external_invite,
+        "shared verify gate runs before external invite authentication",
     )
 
 if external_session >= 0 and verify_guard >= 0:
     expect(
-        external_session < verify_guard,
-        "external workspace session flow remains before normal-user gate",
+        verify_guard < external_session,
+        "shared verify gate runs before external workspace session authentication",
     )
 
 

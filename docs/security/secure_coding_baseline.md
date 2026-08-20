@@ -201,6 +201,41 @@ Login attempts must never create users. User creation must be explicit, auditabl
 
 Recovery flows must not create users and must not enable disabled or pending users unless a separate explicit admin-approved state transition is performed.
 
+
+### Credential lifecycle and role gates
+
+Routes that mint, renew, expose, or otherwise advance user credential state must
+consult the shared role/login policy at the beginning of the handler. This
+includes session cookies, access tokens, refresh-token renewal, pairing tokens,
+device pairing, and credential-lifecycle state used to create new credentials.
+
+The role/login gate must execute before:
+
+- request-body parsing or expensive authentication work when practical
+- rate-limit/state consumption
+- credential or pairing lookup
+- persistent or in-memory state mutation
+- alternate authentication branches such as workspace/external-session hooks
+- any session, token, pairing token, or other credential minting
+
+Storage Node role must fail closed for Node-local user credential creation,
+renewal, pairing, and legacy credential-management read flows. Standalone and
+Director behavior must be enabled explicitly by the production composition
+root; do not infer permission merely because a legacy credential store exists.
+
+Alternative authentication or onboarding branches must never bypass a
+role-level deny decision.
+
+Revocation and cancellation are different from credential creation. Safe
+credential revocation and pending-pair cancellation should remain available
+when credential minting is disabled, so existing credentials can still be
+invalidated.
+
+Add or extend a regression guard whenever a new credential-minting,
+credential-renewal, pairing, or alternate-authentication route is introduced.
+The guard must verify both the presence and the ordering of the role/login
+policy check.
+
 ---
 
 ## 7. Rate-limit sensitive and expensive endpoints
