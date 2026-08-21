@@ -2612,6 +2612,16 @@ add_custom_target(run_test_node_interactive_auth_guards
 )
 
 
+# -----------------------------------------------------------------------------
+# Test: RT-001 legacy Node route/auth structural guards
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_legacy_file_routes_role_gating
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_legacy_file_routes_role_gating.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
 
 # -----------------------------------------------------------------------------
 # Test: storage metadata validation

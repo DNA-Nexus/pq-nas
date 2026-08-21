@@ -1,6 +1,7 @@
 #include "authz.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -13,6 +14,12 @@
 #include "users_registry.h"
 
 namespace {
+
+// Process-wide role policy is configured once from the validated server role
+// before HTTP traffic starts. Storage Nodes must not trust local users.json
+// as a user or administrative authority.
+std::atomic<bool> g_legacy_users_auth_allowed{false};
+
 
 // Extract pqnas_session=<...> from Cookie header. Returns "" if missing.
 static std::string extract_cookie_value(const httplib::Request& req, const std::string& name) {
@@ -60,6 +67,21 @@ static void reply_text(httplib::Response& res, int code, const std::string& msg)
 }
 
 } // namespace
+
+void set_legacy_users_auth_allowed(bool allowed)
+{
+    g_legacy_users_auth_allowed.store(
+        allowed,
+        std::memory_order_release
+    );
+}
+
+bool legacy_users_auth_allowed()
+{
+    return g_legacy_users_auth_allowed.load(
+        std::memory_order_acquire
+    );
+}
 
 bool require_admin_cookie(const httplib::Request& req,
                           httplib::Response& res,
@@ -126,6 +148,13 @@ bool require_admin_cookie_users_actor(const httplib::Request& req,
 {
     (void)users_path;
     if (out_admin_fp_hex) out_admin_fp_hex->clear();
+
+    // Security: Node role must never authorize legacy admin requests from its
+    // local users.json. Director/Standalone configure this policy as allowed.
+    if (!legacy_users_auth_allowed()) {
+        reply_text(res, 403, "legacy admin authentication disabled");
+        return false;
+    }
 
     // Require cookie header + pqnas_session
     const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
@@ -205,6 +234,11 @@ bool is_admin_cookie_users(const httplib::Request& req,
                            std::string* out_fp_hex)
 {
     if (out_fp_hex) out_fp_hex->clear();
+
+    // Security: never infer Node administration from legacy local users.json.
+    if (!legacy_users_auth_allowed()) {
+        return false;
+    }
 
     const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
     if (cookieVal.empty()) return false;

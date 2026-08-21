@@ -178,6 +178,10 @@ struct RoutesV5Context {
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_user_cookie;
 
+    // Security: cleanup-only authentication may verify an already-issued
+    // session identity on a Storage Node without consulting local users.json.
+    std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_cleanup_user_cookie;
+
     std::function<void(long)> app_pair_prune;
 
     std::function<bool(const std::string& fingerprint_hex,

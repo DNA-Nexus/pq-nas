@@ -6464,13 +6464,13 @@ srv.Post("/api/v5/app_pair/start", [&](const httplib::Request& req, httplib::Res
 });
 
 srv.Post("/api/v5/app_pair/cancel", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!ctx.require_user_cookie) {
+    if (!ctx.require_cleanup_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "require_user_cookie_not_configured"}}.dump());
         return;
     }
 
     std::string fp_hex, role;
-    if (!ctx.require_user_cookie(req, res, &fp_hex, &role)) return;
+    if (!ctx.require_cleanup_user_cookie(req, res, &fp_hex, &role)) return;
 
     json j;
     std::string jerr;
@@ -6595,13 +6595,13 @@ srv.Get("/api/v5/app_devices", [&](const httplib::Request& req, httplib::Respons
 });
 
 srv.Post("/api/v5/app_devices/revoke", [&](const httplib::Request& req, httplib::Response& res) {
-    if (!ctx.require_user_cookie) {
+    if (!ctx.require_cleanup_user_cookie) {
         reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "require_user_cookie_not_configured"}}.dump());
         return;
     }
 
     std::string fp_hex, role;
-    if (!ctx.require_user_cookie(req, res, &fp_hex, &role)) return;
+    if (!ctx.require_cleanup_user_cookie(req, res, &fp_hex, &role)) return;
 
     json j;
     std::string jerr;

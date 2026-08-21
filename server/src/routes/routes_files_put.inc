@@ -1,3 +1,7 @@
+// Security: the legacy PUT route uses local users.json authorization and
+// user_dir_for_fp() root resolution, so it must not be registered on a
+// Storage Node.
+if (!cluster_config.is_node()) {
 // ---- Files API (user storage) ----
 // PUT /api/v4/files/put?path=relative/path.bin[&overwrite=1]
 // Body: raw bytes (streamed to temp file, then renamed atomically)
@@ -827,9 +831,9 @@ srv.Put("/api/v4/files/put",
     }
 });
 
+}
 
-
-    // ---- File Manager file-version archive/blob routes ----
+// ---- File Manager file-version archive/blob routes ----
     {
         FileVersionArchiveBlobRoutesContext
             file_version_archive_blob_ctx;
@@ -975,6 +979,11 @@ srv.Put("/api/v4/files/put",
             file_version_archive_blob_ctx
         );
     }
+
+    // Security: the remaining file-version/admin routes below still depend on
+    // legacy users.json authorization or user_dir_for_fp(). Keep them absent
+    // from Storage Nodes until each route is migrated to projection-bound auth.
+    if (!cluster_config.is_node()) {
 
     // ---- File version read routes ----
     {
@@ -1634,3 +1643,5 @@ register_apps_manage_routes(srv, apps_ctx);
 
         register_auth_debug_approvals_routes(srv, auth_debug_approvals_ctx);
     }
+
+    } // !cluster_config.is_node(): legacy file/admin routes
