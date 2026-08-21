@@ -24,6 +24,12 @@ struct AdminUserLifecycleRoutesContext {
 
     std::function<bool(const std::string&)> admin_would_remove_last_enabled_admin;
     std::function<void(const std::string&)> revoke_devices_for_fingerprint;
+
+    // Security: after durable physical deletion, authentication state must be
+    // torn down durably. Returning false leaves the delete retryable.
+    std::function<bool(const std::string&, std::string*)>
+        cleanup_auth_state_for_fingerprint;
+
     std::function<std::string()> now_iso_utc;
     std::function<void(const pqnas::AuditEvent&)> audit_append;
 

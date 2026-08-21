@@ -1,4 +1,5 @@
 #include "opaque_credentials.h"
+#include "durable_file.h"
 
 #include <algorithm>
 #include <cctype>
@@ -190,6 +191,20 @@ bool OpaqueCredentials::save(const std::string& path) const {
     return true;
 }
 
+bool OpaqueCredentials::save_durable(
+    const std::string& path
+) const {
+    if (!save(path)) {
+        return false;
+    }
+
+    std::string durability_error;
+    return fsync_file_and_parent_directory(
+        path,
+        &durability_error
+    );
+}
+
 std::optional<OpaqueCredentialRec> OpaqueCredentials::get(const std::string& normalized_login) const {
     const std::string login = normalize_login(normalized_login);
     if (login.empty()) return std::nullopt;
@@ -220,6 +235,26 @@ bool OpaqueCredentials::erase(const std::string& normalized_login) {
 
     std::lock_guard<std::mutex> lk(mu_);
     return by_login_.erase(login) > 0;
+}
+
+std::size_t OpaqueCredentials::erase_for_fingerprint(
+    const std::string& fingerprint
+) {
+    if (fingerprint.empty()) return 0;
+
+    std::lock_guard<std::mutex> lk(mu_);
+
+    std::size_t erased = 0;
+    for (auto it = by_login_.begin(); it != by_login_.end();) {
+        if (it->second.fingerprint == fingerprint) {
+            it = by_login_.erase(it);
+            ++erased;
+        } else {
+            ++it;
+        }
+    }
+
+    return erased;
 }
 
 std::size_t OpaqueCredentials::size() const {

@@ -743,6 +743,7 @@ add_executable(pqnas_server
         server/src/interactive_user_login_policy.cc
         server/src/password_credentials.cpp
         server/src/opaque_credentials.cpp
+        server/src/durable_file.cpp
         server/src/opaque_backend_status.cpp
         server/src/opaque_helper_client.cpp
         server/src/dna_identity_generator.cpp
@@ -1174,6 +1175,7 @@ add_executable(test_opaque_backend_status
         server/src/opaque_backend_status.cpp
         server/src/opaque_helper_client.cpp
         server/src/opaque_credentials.cpp
+        server/src/durable_file.cpp
         server/src/runtime_paths.cpp
 )
 
@@ -2433,6 +2435,7 @@ add_custom_target(run_test_server_role_config
 add_executable(test_opaque_credentials
         tests/opaque_credentials/test_opaque_credentials.cpp
         server/src/opaque_credentials.cpp
+        server/src/durable_file.cpp
 )
 
 target_include_directories(test_opaque_credentials PRIVATE
@@ -4417,3 +4420,65 @@ add_custom_target(run_test_storage_user_projection_reconcile_production_wiring
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
+
+# -----------------------------------------------------------------------------
+# Test: test_admin_user_delete_auth_cleanup
+# -----------------------------------------------------------------------------
+add_executable(test_admin_user_delete_auth_cleanup
+        tests/cluster/test_admin_user_delete_auth_cleanup.cpp
+        server/src/routes/routes_admin_user_lifecycle.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_admin_user_delete_auth_cleanup PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_link_libraries(test_admin_user_delete_auth_cleanup PRIVATE
+        Threads::Threads
+)
+
+set_target_properties(test_admin_user_delete_auth_cleanup PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_admin_user_delete_auth_cleanup
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_admin_user_delete_auth_cleanup"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_admin_user_delete_auth_cleanup
+)
+
+# -----------------------------------------------------------------------------
+# Test: test_auth_credentials_fingerprint_erase
+# -----------------------------------------------------------------------------
+add_executable(test_auth_credentials_fingerprint_erase
+        tests/cluster/test_auth_credentials_fingerprint_erase.cpp
+        server/src/opaque_credentials.cpp
+        server/src/password_credentials.cpp
+        server/src/durable_file.cpp
+)
+
+target_include_directories(test_auth_credentials_fingerprint_erase PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_auth_credentials_fingerprint_erase PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_auth_credentials_fingerprint_erase PRIVATE
+        Threads::Threads
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_auth_credentials_fingerprint_erase PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_auth_credentials_fingerprint_erase
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_auth_credentials_fingerprint_erase"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_auth_credentials_fingerprint_erase
+)

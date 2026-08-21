@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -24,9 +25,16 @@ public:
     bool load(const std::string& path);
     bool save(const std::string& path) const;
 
+    // Security-sensitive callers use this when success must survive a crash.
+    bool save_durable(const std::string& path) const;
+
     std::optional<PasswordCredentialRec> get(const std::string& normalized_login) const;
     bool upsert(const PasswordCredentialRec& rec);
     bool erase(const std::string& normalized_login);
+
+    // Security: physical user deletion must remove every login alias bound to
+    // the deleted fingerprint, not only one currently known login string.
+    std::size_t erase_for_fingerprint(const std::string& fingerprint);
 
     bool verify_password(const std::string& normalized_login,
                          const std::string& password,

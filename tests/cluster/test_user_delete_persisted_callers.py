@@ -57,6 +57,22 @@ v5 = Path(
     "server/src/routes/routes_v5.cc"
 ).read_text()
 
+durable_file = Path(
+    "server/src/durable_file.cpp"
+).read_text()
+
+opaque_credentials = Path(
+    "server/src/opaque_credentials.cpp"
+).read_text()
+
+password_credentials = Path(
+    "server/src/password_credentials.cpp"
+).read_text()
+
+app_tokens = Path(
+    "server/src/app_tokens.cpp"
+).read_text()
+
 errors = []
 
 
@@ -351,6 +367,140 @@ require(
 require(
     "routes_v5_rollback_new_user(" in v5,
     "v5 rollback must use persisted delete helper",
+)
+
+
+# ---------------------------------------------------------------------------
+# Physical-delete authentication cleanup must be crash-durable and retryable.
+# ---------------------------------------------------------------------------
+
+require(
+    "O_DIRECTORY" in durable_file and
+    "O_NOFOLLOW" in durable_file,
+    "durability barrier must open the parent directory and reject symlinks",
+)
+
+file_fsync = durable_file.find(
+    "::fsync(file_fd)"
+)
+
+directory_fsync = durable_file.find(
+    "::fsync(directory_fd)",
+    file_fsync,
+)
+
+require(
+    file_fsync >= 0 and
+    directory_fsync > file_fsync,
+    "durability barrier must fsync the committed file before its parent directory",
+)
+
+require(
+    "bool OpaqueCredentials::save_durable(" in opaque_credentials and
+    "fsync_file_and_parent_directory(" in opaque_credentials,
+    "OPAQUE credential store must expose crash-durable save",
+)
+
+require(
+    "bool PasswordCredentials::save_durable(" in password_credentials and
+    "fsync_file_and_parent_directory(" in password_credentials,
+    "password credential store must expose crash-durable save",
+)
+
+revoke_start = app_tokens.find(
+    "bool AppTokenStore::revoke_devices_for_fingerprint("
+)
+
+revoke_end = app_tokens.find(
+    "\nbool AppTokenStore::",
+    revoke_start + 10,
+)
+
+revoke_body = (
+    app_tokens[revoke_start:revoke_end]
+    if revoke_start >= 0 and revoke_end > revoke_start
+    else ""
+)
+
+require(
+    "save_durable(&save_err)" in revoke_body,
+    "fingerprint app-token revocation must persist durably on every retry",
+)
+
+require(
+    "opaque_store_exists" in files_put and
+    "opaque_creds.save_durable(opaque_path)" in files_put,
+    "deleted-user OPAQUE cleanup must heal durability uncertainty on retry",
+)
+
+require(
+    "password_store_exists" in files_put and
+    "password_creds.save_durable(password_path)" in files_put,
+    "deleted-user password cleanup must heal durability uncertainty on retry",
+)
+
+enrollment_save = main.find(
+    "auto save_opaque_enrollments_for_admin_status"
+)
+
+enrollment_invalidate = main.find(
+    "auto invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke",
+    enrollment_save,
+)
+
+enrollment_save_body = (
+    main[enrollment_save:enrollment_invalidate]
+    if enrollment_save >= 0 and enrollment_invalidate > enrollment_save
+    else ""
+)
+
+require(
+    "fsync_file_and_parent_directory(" in enrollment_save_body,
+    "OPAQUE enrollment invalidation save must finish with a durability barrier",
+)
+
+invalidation_end = main.find(
+    "// ---- Admin user status routes ----",
+    enrollment_invalidate,
+)
+
+invalidation_body = (
+    main[enrollment_invalidate:invalidation_end]
+    if enrollment_invalidate >= 0 and invalidation_end > enrollment_invalidate
+    else ""
+)
+
+require(
+    "store_exists" in invalidation_body and
+    "fsync_file_and_parent_directory(" in invalidation_body,
+    "OPAQUE enrollment cleanup retry must heal an already-visible uncertain commit",
+)
+
+admin_delete = route.find(
+    'srv.Post("/api/v4/admin/users/delete"'
+)
+
+physical_delete = route.find(
+    "ctx.erase_user_persisted_cluster_safe(",
+    admin_delete,
+)
+
+auth_cleanup = route.find(
+    "ctx.cleanup_auth_state_for_fingerprint(",
+    admin_delete,
+)
+
+require(
+    admin_delete >= 0 and
+    physical_delete > admin_delete and
+    auth_cleanup > physical_delete,
+    "admin physical delete must reach the durable delete boundary before auth cleanup",
+)
+
+require(
+    "const bool user_exists = ctx.users->exists(fp);" in route and
+    '{"already_deleted", !user_exists}' in route,
+    "admin delete must retain the missing-user cleanup retry path",
 )
 
 

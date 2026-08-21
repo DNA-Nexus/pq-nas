@@ -1601,6 +1601,108 @@ register_apps_manage_routes(srv, apps_ctx);
                 std::string token_revoke_err;
                 (void)g_app_tokens.revoke_devices_for_fingerprint(fp, &token_revoke_err);
             };
+
+        admin_user_lifecycle_ctx.cleanup_auth_state_for_fingerprint =
+            [&](const std::string& fp, std::string* err) -> bool {
+                if (err) err->clear();
+
+                if (fp.empty()) {
+                    if (err) *err = "missing_fingerprint";
+                    return false;
+                }
+
+                // Security: invalidate still-active OPAQUE enrollment/reset
+                // tokens so deleted identities cannot be re-provisioned.
+                std::size_t invalidated = 0;
+                std::string cleanup_err;
+                if (!invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke(
+                        fp,
+                        &invalidated,
+                        &cleanup_err)) {
+                    if (err) {
+                        *err = "opaque_enrollment_cleanup_failed: " +
+                               cleanup_err;
+                    }
+                    return false;
+                }
+
+                // Security: revoke browser/app device authorization before
+                // removing reusable credential records.
+                cleanup_err.clear();
+                if (!g_app_tokens.revoke_devices_for_fingerprint(
+                        fp,
+                        &cleanup_err)) {
+                    if (err) {
+                        *err = "app_token_cleanup_failed: " + cleanup_err;
+                    }
+                    return false;
+                }
+
+                pqnas::OpaqueCredentials opaque_creds;
+                const std::string opaque_path =
+                    pqnas::opaque_credentials_path().string();
+
+                if (!opaque_creds.load(opaque_path)) {
+                    if (err) *err = "opaque_credentials_load_failed";
+                    return false;
+                }
+
+                const std::size_t opaque_erased =
+                    opaque_creds.erase_for_fingerprint(fp);
+
+                std::error_code opaque_exists_error;
+                const bool opaque_store_exists =
+                    std::filesystem::exists(
+                        opaque_path,
+                        opaque_exists_error
+                    );
+
+                if (opaque_exists_error) {
+                    if (err) *err = "opaque_credentials_stat_failed";
+                    return false;
+                }
+
+                if ((opaque_erased > 0 || opaque_store_exists) &&
+                    !opaque_creds.save_durable(opaque_path)) {
+                    if (err) *err = "opaque_credentials_save_failed";
+                    return false;
+                }
+
+                pqnas::PasswordCredentials password_creds;
+                const std::filesystem::path users_file(users_path);
+                const std::string password_path =
+                    (users_file.parent_path() /
+                     "password_credentials.json").string();
+
+                if (!password_creds.load(password_path)) {
+                    if (err) *err = "password_credentials_load_failed";
+                    return false;
+                }
+
+                const std::size_t password_erased =
+                    password_creds.erase_for_fingerprint(fp);
+
+                std::error_code password_exists_error;
+                const bool password_store_exists =
+                    std::filesystem::exists(
+                        password_path,
+                        password_exists_error
+                    );
+
+                if (password_exists_error) {
+                    if (err) *err = "password_credentials_stat_failed";
+                    return false;
+                }
+
+                if ((password_erased > 0 || password_store_exists) &&
+                    !password_creds.save_durable(password_path)) {
+                    if (err) *err = "password_credentials_save_failed";
+                    return false;
+                }
+
+                return true;
+            };
+
         admin_user_lifecycle_ctx.now_iso_utc =
             [&]() {
                 return now_iso_utc();
