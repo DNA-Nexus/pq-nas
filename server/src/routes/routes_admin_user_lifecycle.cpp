@@ -31,6 +31,7 @@ void register_admin_user_lifecycle_routes(
                ctx.require_same_origin &&
                ctx.admin_would_remove_last_enabled_admin &&
                ctx.revoke_devices_for_fingerprint &&
+               ctx.cleanup_auth_state_for_fingerprint &&
                ctx.now_iso_utc &&
                ctx.audit_append;
     };
@@ -184,12 +185,12 @@ void register_admin_user_lifecycle_routes(
                 return;
             }
 
-            if (!ctx.users->exists(fp)) {
-                reply(404, json{{"ok", false}, {"error", "not_found"}, {"message", "user not found"}});
-                return;
-            }
+            // Security: a missing user may represent a previous physical delete
+            // whose authentication-state cleanup failed. Keep DELETE idempotent
+            // so an authenticated admin can retry that cleanup to completion.
+            const bool user_exists = ctx.users->exists(fp);
 
-            if (ctx.users->is_admin_enabled(fp)) {
+            if (user_exists && ctx.users->is_admin_enabled(fp)) {
                 reply(400, json{
                     {"ok", false},
                     {"error", "bad_request"},
@@ -209,34 +210,132 @@ void register_admin_user_lifecycle_routes(
             // ordinary persisted unplaced-user path.
             bool ok_del = false;
 
-            if (ctx.erase_user_persisted_cluster_safe) {
-                ok_del =
-                    ctx.erase_user_persisted_cluster_safe(
-                        fp,
-                        &erased,
-                        &placement_blocked,
-                        &cluster_revoke_pending,
-                        &delete_error
+            if (user_exists) {
+                if (ctx.erase_user_persisted_cluster_safe) {
+                    ok_del =
+                        ctx.erase_user_persisted_cluster_safe(
+                            fp,
+                            &erased,
+                            &placement_blocked,
+                            &cluster_revoke_pending,
+                            &delete_error
+                        );
+                } else {
+                    ok_del =
+                        ctx.users->erase_persisted_if_unplaced(
+                            fp,
+                            ctx.users_path,
+                            &erased,
+                            &placement_blocked,
+                            &delete_error
+                        );
+                }
+
+                {
+                    pqnas::AuditEvent ev;
+                    ev.event = "admin.user_deleted";
+                    ev.outcome =
+                        (ok_del && erased)
+                            ? "ok"
+                            : "fail";
+                    ev.f["fingerprint"] = fp;
+                    ev.f["ts"] = ctx.now_iso_utc();
+                    ev.f["actor_fp"] = actor_fp;
+                    ev.f["ip"] =
+                        req.remote_addr.empty()
+                            ? "?"
+                            : req.remote_addr;
+                    ctx.audit_append(ev);
+                }
+
+                if (!ok_del) {
+                    if (delete_error == "user not found") {
+                        reply(
+                            404,
+                            json{
+                                {"ok", false},
+                                {"error", "not_found"},
+                                {"message", "user not found"}
+                            }
+                        );
+                        return;
+                    }
+
+                    reply(
+                        500,
+                        json{
+                            {"ok", false},
+                            {"error", "server_error"},
+                            {"message", "user delete persistence failed"}
+                        }
                     );
-            } else {
-                ok_del =
-                    ctx.users->erase_persisted_if_unplaced(
-                        fp,
-                        ctx.users_path,
-                        &erased,
-                        &placement_blocked,
-                        &delete_error
+                    return;
+                }
+
+                if (placement_blocked) {
+                    reply(
+                        409,
+                        json{
+                            {"ok", false},
+                            {"error", "cluster_revoke_required"},
+                            {
+                                "message",
+                                "placed user must be revoked from Storage before deletion"
+                            }
+                        }
                     );
+                    return;
+                }
+
+                if (cluster_revoke_pending) {
+                    reply(
+                        409,
+                        json{
+                            {"ok", false},
+                            {"error", "cluster_revoke_pending"},
+                            {
+                                "message",
+                                "Storage revoke reconciliation is still pending"
+                            }
+                        }
+                    );
+                    return;
+                }
+
+                if (!erased) {
+                    reply(
+                        500,
+                        json{
+                            {"ok", false},
+                            {"error", "server_error"},
+                            {"message", "delete failed"}
+                        }
+                    );
+                    return;
+                }
             }
+
+            // Security: authentication state is removed only after users.json
+            // deletion is durable and Storage authorization is confirmed gone.
+            // If cleanup persistence fails, the missing-user path above allows
+            // this same DELETE request to retry the teardown safely.
+            std::string auth_cleanup_error;
+            const bool auth_cleanup_ok =
+                ctx.cleanup_auth_state_for_fingerprint(
+                    fp,
+                    &auth_cleanup_error
+                );
 
             {
                 pqnas::AuditEvent ev;
-                ev.event = "admin.user_deleted";
-                ev.outcome =
-                    (ok_del && erased)
-                        ? "ok"
-                        : "fail";
+                ev.event = "admin.user_auth_cleanup";
+                ev.outcome = auth_cleanup_ok ? "ok" : "fail";
                 ev.f["fingerprint"] = fp;
+                ev.f["delete_retry"] =
+                    user_exists ? "false" : "true";
+                if (!auth_cleanup_error.empty()) {
+                    ev.f["reason"] = auth_cleanup_error;
+                }
                 ev.f["ts"] = ctx.now_iso_utc();
                 ev.f["actor_fp"] = actor_fp;
                 ev.f["ip"] =
@@ -246,73 +345,28 @@ void register_admin_user_lifecycle_routes(
                 ctx.audit_append(ev);
             }
 
-            if (!ok_del) {
-                if (delete_error == "user not found") {
-                    reply(
-                        404,
-                        json{
-                            {"ok", false},
-                            {"error", "not_found"},
-                            {"message", "user not found"}
+            if (!auth_cleanup_ok) {
+                reply(
+                    500,
+                    json{
+                        {"ok", false},
+                        {"error", "auth_cleanup_pending"},
+                        {
+                            "message",
+                            "user authentication-state cleanup is still pending"
                         }
-                    );
-                    return;
+                    }
+                );
+                return;
+            }
+
+            reply(
+                200,
+                json{
+                    {"ok", true},
+                    {"already_deleted", !user_exists}
                 }
-
-                reply(
-                    500,
-                    json{
-                        {"ok", false},
-                        {"error", "server_error"},
-                        {"message", "user delete persistence failed"}
-                    }
-                );
-                return;
-            }
-
-            if (placement_blocked) {
-                reply(
-                    409,
-                    json{
-                        {"ok", false},
-                        {"error", "cluster_revoke_required"},
-                        {
-                            "message",
-                            "placed user must be revoked from Storage before deletion"
-                        }
-                    }
-                );
-                return;
-            }
-
-            if (cluster_revoke_pending) {
-                reply(
-                    409,
-                    json{
-                        {"ok", false},
-                        {"error", "cluster_revoke_pending"},
-                        {
-                            "message",
-                            "Storage revoke reconciliation is still pending"
-                        }
-                    }
-                );
-                return;
-            }
-
-            if (!erased) {
-                reply(
-                    500,
-                    json{
-                        {"ok", false},
-                        {"error", "server_error"},
-                        {"message", "delete failed"}
-                    }
-                );
-                return;
-            }
-
-            reply(200, json{{"ok", true}});
+            );
         }
     );
 }

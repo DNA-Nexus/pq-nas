@@ -1,4 +1,5 @@
 #include "app_tokens.h"
+#include "durable_file.h"
 
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
@@ -318,6 +319,32 @@ bool AppTokenStore::save(std::string* err) const {
 
     return write_json_atomic(path_, root, err);
 }
+
+bool AppTokenStore::save_durable(
+    std::string* err
+) const {
+    if (!save(err)) {
+        return false;
+    }
+
+    std::string path;
+
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        path = path_;
+    }
+
+    if (path.empty()) {
+        if (err) *err = "path not set";
+        return false;
+    }
+
+    return fsync_file_and_parent_directory(
+        path,
+        err
+    );
+}
+
 
 bool AppTokenStore::mint_from_approved_fingerprint(
     const std::string& fingerprint_hex,
@@ -703,8 +730,6 @@ bool AppTokenStore::revoke_devices_for_fingerprint(const std::string& fingerprin
         return false;
     }
 
-    bool changed = false;
-
     {
         std::lock_guard<std::mutex> lk(mu_);
 
@@ -712,7 +737,6 @@ bool AppTokenStore::revoke_devices_for_fingerprint(const std::string& fingerprin
             TrustedAppDevice& d = kv.second;
             if (d.fingerprint_hex == fingerprint_hex && !d.revoked) {
                 d.revoked = true;
-                changed = true;
             }
         }
 
@@ -720,7 +744,6 @@ bool AppTokenStore::revoke_devices_for_fingerprint(const std::string& fingerprin
             AppRefreshSession& s = kv.second;
             if (s.fingerprint_hex == fingerprint_hex && !s.revoked) {
                 s.revoked = true;
-                changed = true;
             }
         }
 
@@ -728,17 +751,16 @@ bool AppTokenStore::revoke_devices_for_fingerprint(const std::string& fingerprin
             AppAccessSession& s = kv.second;
             if (s.fingerprint_hex == fingerprint_hex && !s.revoked) {
                 s.revoked = true;
-                changed = true;
             }
         }
     }
 
-    if (!changed) {
-        return true;
-    }
-
+    // Security: always persist the current revocation state, even when this
+    // invocation found everything already revoked. A previous save may have
+    // failed after the in-memory state was changed; a retry must therefore
+    // attempt the durable write again instead of treating no changes as success.
     std::string save_err;
-    if (!save(&save_err)) {
+    if (!save_durable(&save_err)) {
         if (err) *err = "save failed: " + save_err;
         return false;
     }

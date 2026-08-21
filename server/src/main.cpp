@@ -124,6 +124,9 @@ failures must return an error and should emit an audit event when security-relev
 #include "authz.h"
 #include "session_cookie.h"
 #include "runtime_paths.h"
+#include "durable_file.h"
+#include "opaque_credentials.h"
+#include "password_credentials.h"
 #include "cluster/server_role.h"
 #include "cluster/internal_auth.h"
 #include "cluster/node_status.h"
@@ -14680,7 +14683,13 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
             return false;
         }
 
-        return true;
+        // Security: the rename is not a durable auth-state commit until
+        // both the file and parent directory have reached stable storage.
+        return pqnas::fsync_file_and_parent_directory(
+            path,
+            err
+        );
+
     };
 
     auto invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke =
@@ -14738,6 +14747,32 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
                 if (!save_opaque_enrollments_for_admin_status(path, doc, &serr)) {
                     if (err) *err = "opaque_enrollments_save_failed: " + serr;
                     return false;
+                }
+            } else {
+                std::error_code exists_error;
+                const bool store_exists =
+                    std::filesystem::exists(
+                        path,
+                        exists_error
+                    );
+
+                if (exists_error) {
+                    if (err) *err = "opaque_enrollments_stat_failed";
+                    return false;
+                }
+
+                if (store_exists) {
+                    std::string durability_error;
+                    if (!pqnas::fsync_file_and_parent_directory(
+                            path,
+                            &durability_error)) {
+                        if (err) {
+                            *err =
+                                "opaque_enrollments_durability_failed: " +
+                                durability_error;
+                        }
+                        return false;
+                    }
                 }
             }
 

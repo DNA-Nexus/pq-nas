@@ -58,6 +58,9 @@ public:
     bool load(const std::string& path, std::string* err);
     bool save(std::string* err) const;
 
+    // Security-sensitive callers use this when success must survive a crash.
+    bool save_durable(std::string* err) const;
+
     void set_now_epoch_fn(std::function<long()> fn) { now_epoch_fn_ = std::move(fn); }
     void set_now_iso_utc_fn(std::function<std::string()> fn) { now_iso_utc_fn_ = std::move(fn); }
     void set_random_b64url_fn(std::function<std::string(size_t)> fn) { random_b64url_fn_ = std::move(fn); }
