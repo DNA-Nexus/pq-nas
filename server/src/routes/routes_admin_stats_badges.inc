@@ -1494,6 +1494,8 @@ LIMIT 2000;
     ws_file_deps.users = &users;
     ws_file_deps.workspaces = &workspaces;
     ws_file_deps.users_path = users_path;
+    ws_file_deps.erase_user_persisted_cluster_safe =
+        cluster_safe_user_delete;
     ws_file_deps.workspaces_path = workspaces_path;
     ws_file_deps.cookie_key = COOKIE_KEY;
     ws_file_deps.session_cookie_verify =
@@ -1552,6 +1554,8 @@ ws_external_invite_deps.users = &users;
 ws_external_invite_deps.workspaces = &workspaces;
 ws_external_invite_deps.external_invites = &workspace_external_invites;
 ws_external_invite_deps.users_path = users_path;
+ws_external_invite_deps.erase_user_persisted_cluster_safe =
+    cluster_safe_user_delete;
 ws_external_invite_deps.workspaces_path = workspaces_path;
 ws_external_invite_deps.external_invites_path = workspace_external_invites_path;
 ws_external_invite_deps.cookie_key = COOKIE_KEY;

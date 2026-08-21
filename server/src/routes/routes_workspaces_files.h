@@ -66,6 +66,17 @@ namespace pqnas {
         ReplyJsonFn reply_json;
         RequireUserAuthUsersActorFn require_user_auth_users_actor;
         AuditEmitFn audit_emit;
+
+        // Security: Director physical deletion must serialize with Storage
+        // projection reconciliation. Standalone leaves this callback unset.
+        std::function<bool(
+            const std::string&,
+            bool*,
+            bool*,
+            bool*,
+            std::string*
+        )> erase_user_persisted_cluster_safe;
+
         NowEpochSecFn now_epoch_sec;
     };
 
