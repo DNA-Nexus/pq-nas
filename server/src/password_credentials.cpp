@@ -1,5 +1,6 @@
 #include "password_credentials.h"
 #include "durable_file.h"
+#include "credential_store_guard.h"
 
 #include <algorithm>
 #include <cctype>
@@ -156,13 +157,51 @@ bool PasswordCredentials::hash_password(const std::string& password, std::string
     return !out_hash.empty();
 }
 
-bool PasswordCredentials::load(const std::string& path) {
+bool PasswordCredentials::load(
+    const std::string& path
+) {
     std::lock_guard<std::mutex> lk(mu_);
-    by_login_.clear();
 
-    std::ifstream f(path);
+    by_login_.clear();
+    snapshot_loaded_ = false;
+    snapshot_path_.clear();
+    snapshot_generation_.clear();
+
+    const std::string normalized_path =
+        credential_store_normalized_path(path);
+
+    if (normalized_path.empty()) {
+        return false;
+    }
+
+    // Security: keep parsing and generation capture on the same file snapshot.
+    CredentialStoreFileLock file_lock(
+        normalized_path,
+        CredentialStoreFileLock::Mode::shared
+    );
+
+    if (!file_lock.ok()) {
+        return false;
+    }
+
+    std::string generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &generation
+        )) {
+        return false;
+    }
+
+    if (generation == "missing") {
+        snapshot_loaded_ = true;
+        snapshot_path_ = normalized_path;
+        snapshot_generation_ = generation;
+        return true;
+    }
+
+    std::ifstream f(normalized_path);
     if (!f.good()) {
-        return true; // missing credentials file = empty store
+        return false;
     }
 
     json j;
@@ -172,37 +211,100 @@ bool PasswordCredentials::load(const std::string& path) {
         return false;
     }
 
-    if (!j.is_object()) return false;
+    if (!j.is_object()) {
+        return false;
+    }
 
     const auto it_accounts = j.find("accounts");
-    if (it_accounts == j.end()) return true;
-    if (!it_accounts->is_array()) return false;
 
-    for (const auto& it : *it_accounts) {
-        if (!it.is_object()) continue;
+    if (it_accounts != j.end()) {
+        if (!it_accounts->is_array()) {
+            return false;
+        }
 
-        PasswordCredentialRec rec;
-        rec.login = normalize_login(it.value("login", ""));
-        rec.fingerprint = it.value("fingerprint", "");
-        rec.password_hash = it.value("password_hash", "");
-        rec.enabled = json_bool_or_default(it, "enabled", true);
-        rec.temporary = json_bool_or_default(it, "temporary", false);
-        rec.expires_at_epoch = json_long_or_default(it, "expires_at_epoch", 0);
-        rec.created_at = it.value("created_at", "");
-        rec.updated_at = it.value("updated_at", "");
+        for (const auto& it : *it_accounts) {
+            if (!it.is_object()) {
+                continue;
+            }
 
-        if (rec.login.empty()) continue;
-        if (rec.fingerprint.empty()) continue;
-        if (rec.password_hash.empty()) continue;
+            PasswordCredentialRec rec;
+            rec.login =
+                normalize_login(it.value("login", ""));
+            rec.fingerprint =
+                it.value("fingerprint", "");
+            rec.password_hash =
+                it.value("password_hash", "");
+            rec.enabled =
+                json_bool_or_default(it, "enabled", true);
+            rec.temporary =
+                json_bool_or_default(it, "temporary", false);
+            rec.expires_at_epoch =
+                json_long_or_default(
+                    it,
+                    "expires_at_epoch",
+                    0
+                );
+            rec.created_at =
+                it.value("created_at", "");
+            rec.updated_at =
+                it.value("updated_at", "");
 
-        by_login_[rec.login] = rec;
+            if (rec.login.empty()) continue;
+            if (rec.fingerprint.empty()) continue;
+            if (rec.password_hash.empty()) continue;
+
+            by_login_[rec.login] = rec;
+        }
     }
+
+    snapshot_loaded_ = true;
+    snapshot_path_ = normalized_path;
+    snapshot_generation_ = generation;
 
     return true;
 }
 
-bool PasswordCredentials::save(const std::string& path) const {
+bool PasswordCredentials::save(
+    const std::string& path
+) const {
     std::lock_guard<std::mutex> lk(mu_);
+
+    const std::string normalized_path =
+        credential_store_normalized_path(path);
+
+    if (normalized_path.empty()) {
+        return false;
+    }
+
+    // Security: serialize credential commits and reject snapshots that were
+    // loaded before another writer committed authentication-state changes.
+    CredentialStoreFileLock file_lock(
+        normalized_path,
+        CredentialStoreFileLock::Mode::exclusive
+    );
+
+    if (!file_lock.ok()) {
+        return false;
+    }
+
+    std::string current_generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &current_generation
+        )) {
+        return false;
+    }
+
+    if (snapshot_loaded_) {
+        if (snapshot_path_ != normalized_path ||
+            snapshot_generation_ != current_generation) {
+            return false;
+        }
+    } else if (current_generation != "missing") {
+        // Security: prevent an unbased in-memory snapshot from replacing an
+        // already-existing password credential store.
+        return false;
+    }
 
     json j;
     j["version"] = 1;
@@ -210,41 +312,66 @@ bool PasswordCredentials::save(const std::string& path) const {
 
     std::vector<std::string> keys;
     keys.reserve(by_login_.size());
+
     for (const auto& kv : by_login_) {
         keys.push_back(kv.first);
     }
+
     std::sort(keys.begin(), keys.end());
 
     for (const auto& login : keys) {
         const auto& rec = by_login_.at(login);
+
         j["accounts"].push_back(json{
             {"login", rec.login},
             {"fingerprint", rec.fingerprint},
             {"password_hash", rec.password_hash},
             {"enabled", rec.enabled},
             {"temporary", rec.temporary},
-            {"expires_at_epoch", rec.expires_at_epoch},
+            {
+                "expires_at_epoch",
+                rec.expires_at_epoch
+            },
             {"created_at", rec.created_at},
             {"updated_at", rec.updated_at}
         });
     }
 
-    std::filesystem::path p(path);
+    std::filesystem::path p(normalized_path);
     std::error_code ec;
-    std::filesystem::create_directories(p.parent_path(), ec);
-    if (ec) return false;
+
+    if (p.has_parent_path()) {
+        std::filesystem::create_directories(
+            p.parent_path(),
+            ec
+        );
+
+        if (ec) {
+            return false;
+        }
+    }
 
     std::filesystem::path tmp = p;
     tmp += ".tmp.";
     tmp += std::to_string(::getpid());
     tmp += ".";
-    tmp += std::to_string(static_cast<long long>(std::time(nullptr)));
+    tmp += std::to_string(
+        static_cast<long long>(std::time(nullptr))
+    );
 
     {
-        std::ofstream out(tmp.string(), std::ios::trunc);
-        if (!out.good()) return false;
+        std::ofstream out(
+            tmp.string(),
+            std::ios::trunc
+        );
+
+        if (!out.good()) {
+            return false;
+        }
+
         out << j.dump(2) << "\n";
         out.flush();
+
         if (!out.good()) {
             std::filesystem::remove(tmp, ec);
             return false;
@@ -253,17 +380,32 @@ bool PasswordCredentials::save(const std::string& path) const {
 
     std::filesystem::permissions(
         tmp,
-        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write,
         std::filesystem::perm_options::replace,
         ec
     );
 
     ec.clear();
+
     std::filesystem::rename(tmp, p, ec);
+
     if (ec) {
         std::filesystem::remove(tmp, ec);
         return false;
     }
+
+    std::string committed_generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &committed_generation
+        )) {
+        return false;
+    }
+
+    snapshot_loaded_ = true;
+    snapshot_path_ = normalized_path;
+    snapshot_generation_ = committed_generation;
 
     return true;
 }
