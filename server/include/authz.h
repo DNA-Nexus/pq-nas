@@ -16,6 +16,11 @@ namespace pqnas { class UsersRegistry; }
 //
 // allowlist_path is kept for logging / future fallback loading, but if allowlist != nullptr
 // it will be used directly (preferred).
+// Security: Storage Nodes must never treat their local users.json as
+// authoritative for legacy user or administrative authentication.
+void set_legacy_users_auth_allowed(bool allowed);
+bool legacy_users_auth_allowed();
+
 bool require_admin_cookie(const httplib::Request& req,
                           httplib::Response& res,
                           const unsigned char cookie_key[32],

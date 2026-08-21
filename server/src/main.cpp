@@ -3174,6 +3174,21 @@ static bool require_user_cookie_users_actor(
     if (out_fp_hex) out_fp_hex->clear();
     if (out_role) out_role->clear();
 
+    // Security: Storage Nodes authorize normal users only from the Director
+    // projection. Never fall back to the Node-local users.json registry.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_user_auth_disabled"},
+                {"message", "legacy user authentication disabled"}
+            }).dump()
+        );
+        return false;
+    }
+
     auto it = req.headers.find("Cookie");
     if (it == req.headers.end()) {
         reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing cookie"}}).dump());
@@ -3225,6 +3240,108 @@ static bool require_user_cookie_users_actor(
     return true;
 }
 
+// ----- Cleanup-only session identity -----------------------------------------
+// Security: RT-002 intentionally keeps credential revocation/cancellation
+// available on Storage Nodes. Verify the already-issued signed session
+// identity without consulting Node-local users.json. Cleanup handlers perform
+// their own fingerprint ownership check before changing state.
+static bool require_cleanup_session_cookie_identity(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const unsigned char cookie_key[32],
+    std::string* out_fp_hex,
+    std::string* out_role
+) {
+    if (out_fp_hex) out_fp_hex->clear();
+    if (out_role) out_role->clear();
+
+    auto it = req.headers.find("Cookie");
+    if (it == req.headers.end()) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "missing cookie"}
+            }).dump()
+        );
+        return false;
+    }
+
+    const std::string cookie_val =
+        extract_named_cookie_value(it->second, "pqnas_session");
+
+    if (cookie_val.empty()) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "missing pqnas_session"}
+            }).dump()
+        );
+        return false;
+    }
+
+    std::string fp_b64;
+    long exp = 0;
+
+    if (!session_cookie_verify(
+            cookie_key,
+            cookie_val,
+            fp_b64,
+            exp
+        )) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "invalid session"}
+            }).dump()
+        );
+        return false;
+    }
+
+    if (pqnas::now_epoch() > exp) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "session expired"}
+            }).dump()
+        );
+        return false;
+    }
+
+    std::string raw;
+    if (!b64std_decode_to_bytes(fp_b64, raw) || raw.empty()) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "invalid session"}
+            }).dump()
+        );
+        return false;
+    }
+
+    if (out_fp_hex) {
+        *out_fp_hex = std::string(raw.begin(), raw.end());
+    }
+
+    // Deliberately no role/users.json lookup on a Storage Node.
+    return true;
+}
+
+
 // ----- Bearer gate: user OR admin (AppTokenStore + UsersRegistry policy) -----
 // Mobile/API auth path. Accepts Authorization: Bearer <access_token>.
 // Returns false silently if there is no usable bearer auth, so caller can
@@ -3239,6 +3356,21 @@ static bool try_user_bearer_users_actor(
 ) {
     if (out_fp_hex) out_fp_hex->clear();
     if (out_role) out_role->clear();
+
+    // Security: legacy app tokens must not make Node-local users.json an
+    // authorization source for normal Storage Node requests.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_user_auth_disabled"},
+                {"message", "legacy user authentication disabled"}
+            }).dump()
+        );
+        return false;
+    }
 
     auto it = req.headers.find("Authorization");
     if (it == req.headers.end()) {
@@ -3336,6 +3468,21 @@ static bool require_admin_auth_users_actor(
     std::string* out_fp_hex
 ) {
     if (out_fp_hex) out_fp_hex->clear();
+
+    // Security: bearer authentication must not bypass the Storage Node
+    // legacy-admin users.json backstop.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_admin_auth_disabled"},
+                {"message", "legacy admin authentication disabled"}
+            }).dump()
+        );
+        return false;
+    }
 
     auto it = req.headers.find("Authorization");
     const bool has_bearer =
@@ -9222,6 +9369,13 @@ int main()
         return 2;
     }
 
+    // Security: a Storage Node's local users.json is not cluster user/admin
+    // authority. Configure the process-wide legacy auth backstop before any
+    // HTTP routes are registered.
+    set_legacy_users_auth_allowed(
+        !cluster_config.is_node()
+    );
+
     if (cluster_config.is_node()) {
         pqnas::cluster::
             StorageNodeEnrollmentRuntimeConfig
@@ -11027,6 +11181,31 @@ v5.consume_app_mint =
 v5.require_user_cookie =
     [&](const httplib::Request& req, httplib::Response& res, std::string* fp_hex, std::string* role) -> bool {
         return require_user_cookie_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
+    };
+
+v5.require_cleanup_user_cookie =
+    [&](const httplib::Request& req,
+        httplib::Response& res,
+        std::string* fp_hex,
+        std::string* role) -> bool {
+        if (!legacy_users_auth_allowed()) {
+            return require_cleanup_session_cookie_identity(
+                req,
+                res,
+                COOKIE_KEY,
+                fp_hex,
+                role
+            );
+        }
+
+        return require_user_cookie_users_actor(
+            req,
+            res,
+            COOKIE_KEY,
+            &users,
+            fp_hex,
+            role
+        );
     };
 
 v5.app_pair_prune = [&](long now) {
@@ -15024,8 +15203,9 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 
     // ---- Chunked Upload API (user storage, My Files) ----
-    // ---- Chunked Upload API (user storage, My Files) ----
-    {
+    // Security: this route still uses legacy users.json authorization/root
+    // resolution and therefore must not exist on a Storage Node.
+    if (!cluster_config.is_node()) {
         ChunkedUploadRoutesContext uploads_ctx;
         uploads_ctx.users = &users;
         uploads_ctx.file_versions = &file_versions_index;
@@ -15149,9 +15329,12 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 // ============================================================================
 
     // ---- Files core routes ----
-    // Transitional bulk split: route/helper block lives in routes_files_core.inc.
-
+    // Security: these routes still use legacy users.json authorization and
+    // user_dir_for_fp() root resolution. Storage Node access must go only
+    // through explicitly migrated projection-backed routes.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_files_core.inc"
+    }
 
     // ---- Gallery / ReelStack routes ----
     // Transitional bulk split: route/helper block lives in routes_gallery_reelstack.inc.
