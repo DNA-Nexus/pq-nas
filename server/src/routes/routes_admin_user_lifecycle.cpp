@@ -23,7 +23,9 @@ void register_admin_user_lifecycle_routes(
     httplib::Server& srv,
     const AdminUserLifecycleRoutesContext& ctx
 ) {
-    auto context_ok = [&]() -> bool {
+    // Security: route helpers outlive this registration call. Capture the
+    // context by value so handlers never retain a dangling stack reference.
+    auto context_ok = [ctx]() -> bool {
         return ctx.users &&
                ctx.require_admin &&
                ctx.require_same_origin &&
@@ -33,7 +35,7 @@ void register_admin_user_lifecycle_routes(
                ctx.audit_append;
     };
 
-    auto reply_json_ctx = [&](httplib::Response& res, int status, const std::string& body) {
+    auto reply_json_ctx = [ctx](httplib::Response& res, int status, const std::string& body) {
         if (ctx.reply_json) ctx.reply_json(res, status, body);
         else fallback_reply_json(res, status, body);
     };

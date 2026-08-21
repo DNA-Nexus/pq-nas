@@ -66,6 +66,27 @@ def require(condition, message):
 
 
 # ---------------------------------------------------------------------------
+# Admin lifecycle route helpers must own their captured context.
+# ---------------------------------------------------------------------------
+
+require(
+    "auto context_ok = [ctx]() -> bool {" in route,
+    "admin lifecycle context_ok must capture route context by value",
+)
+
+require(
+    "auto reply_json_ctx = [ctx](" in route,
+    "admin lifecycle reply helper must capture route context by value",
+)
+
+require(
+    "auto context_ok = [&]" not in route and
+    "auto reply_json_ctx = [&]" not in route,
+    "admin lifecycle route helpers must not retain registration-stack references",
+)
+
+
+# ---------------------------------------------------------------------------
 # UsersRegistry primitive remains persisted and fail-closed.
 # ---------------------------------------------------------------------------
 
