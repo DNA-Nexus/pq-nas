@@ -370,6 +370,50 @@ require(
 )
 
 
+# RT-005: persisted external password rollback must never reuse the stale
+# request-local credential snapshot.
+rollback_helper_start = invite.find(
+    "bool workspace_external_rollback_password_credential_local("
+)
+
+rollback_helper_end = invite.find(
+    "bool workspace_external_delete_orphan_user_local(",
+    rollback_helper_start,
+)
+
+require(
+    rollback_helper_start >= 0 and
+    rollback_helper_end > rollback_helper_start,
+    "external password invite must have a dedicated persisted credential "
+    "rollback helper",
+)
+
+rollback_helper = invite[
+    rollback_helper_start:rollback_helper_end
+]
+
+require(
+    "for (int attempt = 0; attempt < 4; ++attempt)" in rollback_helper and
+    "pqnas::PasswordCredentials rollback_creds;" in rollback_helper and
+    "rollback_creds.load(creds_path)" in rollback_helper and
+    "existing->fingerprint != fingerprint" in rollback_helper and
+    "rollback_creds.save(creds_path)" in rollback_helper,
+    "credential rollback must fresh-load, verify fingerprint and retry "
+    "stale saves",
+)
+
+require(
+    "creds.erase(login);\n"
+    "                    creds.save(creds_path);" not in invite,
+    "persisted credential rollback must not ignore a stale request-local save",
+)
+
+require(
+    "credential_rollback_pending" in invite,
+    "incomplete credential rollback must remain an explicit error state",
+)
+
+
 # ---------------------------------------------------------------------------
 # Physical-delete authentication cleanup must be crash-durable and retryable.
 # ---------------------------------------------------------------------------

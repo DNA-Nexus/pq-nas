@@ -4482,3 +4482,37 @@ add_custom_target(run_test_auth_credentials_fingerprint_erase
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_auth_credentials_fingerprint_erase
 )
+
+# -----------------------------------------------------------------------------
+# Test: test_auth_credentials_stale_write
+# -----------------------------------------------------------------------------
+add_executable(test_auth_credentials_stale_write
+        tests/cluster/test_auth_credentials_stale_write.cpp
+        server/src/opaque_credentials.cpp
+        server/src/password_credentials.cpp
+        server/src/durable_file.cpp
+)
+
+target_include_directories(test_auth_credentials_stale_write PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_auth_credentials_stale_write PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_auth_credentials_stale_write PRIVATE
+        Threads::Threads
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_auth_credentials_stale_write PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_auth_credentials_stale_write
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_auth_credentials_stale_write"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_auth_credentials_stale_write
+)

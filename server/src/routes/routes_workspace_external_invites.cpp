@@ -1397,6 +1397,84 @@ bool workspace_external_rollback_user_record_local(
 }
 
 
+bool workspace_external_rollback_password_credential_local(
+    const std::string& creds_path,
+    const std::string& login_raw,
+    const std::string& fingerprint,
+    std::string* error
+) {
+    if (error) error->clear();
+
+    const std::string login =
+        pqnas::PasswordCredentials::normalize_login(
+            login_raw
+        );
+
+    if (creds_path.empty() ||
+        login.empty() ||
+        fingerprint.empty()) {
+        if (error) {
+            *error = "invalid_credential_rollback_input";
+        }
+        return false;
+    }
+
+    // Security: never reuse the stale request-local credential snapshot for
+    // rollback. Reload after every conflicting write so a concurrent writer
+    // cannot be overwritten or a deleted credential resurrected.
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        pqnas::PasswordCredentials rollback_creds;
+
+        if (!rollback_creds.load(creds_path)) {
+            if (error) {
+                *error =
+                    "credential_rollback_load_failed";
+            }
+            return false;
+        }
+
+        const auto existing =
+            rollback_creds.get(login);
+
+        if (!existing.has_value()) {
+            return true;
+        }
+
+        // Security: login reuse must never let an old failed request delete a
+        // newer credential that belongs to another fingerprint.
+        if (existing->fingerprint != fingerprint) {
+            if (error) {
+                *error =
+                    "credential_rollback_fingerprint_mismatch";
+            }
+            return false;
+        }
+
+        if (!rollback_creds.erase(login)) {
+            if (error) {
+                *error =
+                    "credential_rollback_erase_failed";
+            }
+            return false;
+        }
+
+        if (rollback_creds.save(creds_path)) {
+            return true;
+        }
+
+        // save() may have rejected a stale generation. Retry from a fresh
+        // snapshot instead of committing the obsolete in-memory state.
+    }
+
+    if (error) {
+        *error =
+            "credential_rollback_save_conflict";
+    }
+
+    return false;
+}
+
+
 bool workspace_external_delete_orphan_user_local(
     const WorkspaceExternalInviteRouteDeps& deps,
     httplib::Response& res,
@@ -2739,8 +2817,32 @@ void register_workspace_external_invite_routes(
                     );
 
                 if (user_rolled_back) {
-                    creds.erase(login);
-                    creds.save(creds_path);
+                    std::string credential_rollback_error;
+
+                    if (!workspace_external_rollback_password_credential_local(
+                            creds_path,
+                            login,
+                            fp_hex,
+                            &credential_rollback_error
+                        )) {
+                        // Security: expose incomplete auth rollback instead of
+                        // silently leaving a reusable orphan credential behind.
+                        deps.reply_json(res, 500, json{
+                            {"ok", false},
+                            {
+                                "error",
+                                "credential_rollback_pending"
+                            },
+                            {
+                                "message",
+                                "workspace save failed and credential rollback is incomplete"
+                            },
+                            {
+                                "detail",
+                                credential_rollback_error
+                            }
+                        }.dump());
+                    }
                 }
 
                 clear_string_best_effort_local(temp_password);

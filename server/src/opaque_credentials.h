@@ -46,6 +46,12 @@ public:
 private:
     mutable std::mutex mu_;
     std::unordered_map<std::string, OpaqueCredentialRec> by_login_;
+
+    // Security: remember the exact on-disk snapshot loaded by this instance.
+    // save() rejects stale snapshots instead of overwriting newer credentials.
+    mutable bool snapshot_loaded_ = false;
+    mutable std::string snapshot_path_;
+    mutable std::string snapshot_generation_;
 };
 
 } // namespace pqnas
