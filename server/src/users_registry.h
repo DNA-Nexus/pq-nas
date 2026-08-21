@@ -266,7 +266,6 @@ public:
     );
 
     bool touch_last_seen(const std::string& fp_hex, const std::string& now_iso);
-    bool erase(const std::string& fp_hex);
 
     // Atomically delete an unplaced user from memory + users.json.
     //
@@ -302,6 +301,13 @@ public:
     > placement_policy_assignment_counts() const;
 
 private:
+    // Internal in-memory primitive only.
+    //
+    // Security: production routes and rollback paths must use a persisted
+    // deletion primitive so a Director user cannot disappear while Storage
+    // authorization may still exist.
+    bool erase(const std::string& fp_hex);
+
     // Caller must hold mu_. The noexcept copy helper ensures a notification
     // allocation failure can never turn an already-durable commit into failure.
     StorageProjectionCommitNotifier

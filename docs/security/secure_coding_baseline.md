@@ -180,6 +180,33 @@ start a reconciliation loop that can only reject the older authoritative
 revision.
 
 
+### Physical deletion of authorization principals
+
+Physical user deletion is an authorization-state transition, including
+deletion performed only as error rollback.
+
+Rules:
+
+- production routes and rollback handlers must not call an in-memory-only
+  `UsersRegistry::erase()` primitive
+- use a persisted deletion primitive that re-checks placement while holding
+  the registry mutation lock
+- on Director, serialize physical deletion with Storage projection
+  reconciliation
+- before Director deletion, ensure confirmed projection state is durable and
+  refuse deletion while confirmed Storage authorization remains
+- a user with `home_node` must first transition through the Storage revoke flow
+- rollback code is not exempt merely because the user was created earlier in
+  the same request
+- if cluster policy can block physical deletion, do not destroy login
+  credentials before the authoritative user deletion has been allowed and
+  committed
+
+The fail-closed outcome is to retain an extra Director user record until revoke
+reconciliation can complete. Never delete the Director source of truth while a
+Storage Node may still authorize that fingerprint.
+
+
 Examples where TOCTOU matters:
 
 - share access

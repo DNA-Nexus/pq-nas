@@ -4102,6 +4102,7 @@ add_custom_target(run_test_storage_user_projection_sync_state_store_guards
 # -----------------------------------------------------------------------------
 target_sources(pqnas_server PRIVATE
         server/src/cluster/storage_projection_startup_consistency.cpp
+        server/src/cluster/cluster_safe_user_delete.cpp
 )
 
 add_executable(test_storage_projection_startup_consistency
@@ -4197,6 +4198,44 @@ add_custom_target(run_test_user_delete_persisted
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_user_delete_persisted"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_user_delete_persisted
+)
+
+
+# -----------------------------------------------------------------------------
+# RT-004: Director cluster-safe physical user deletion
+# -----------------------------------------------------------------------------
+add_executable(test_cluster_safe_user_delete
+        tests/cluster/test_cluster_safe_user_delete.cpp
+        server/src/cluster/cluster_safe_user_delete.cpp
+        server/src/users_registry.cpp
+)
+
+target_include_directories(test_cluster_safe_user_delete PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_cluster_safe_user_delete
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_cluster_safe_user_delete PRIVATE
+        pqnas_storage_user_projection_sync_state_store
+        Threads::Threads
+)
+
+set_target_properties(test_cluster_safe_user_delete PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_cluster_safe_user_delete
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_cluster_safe_user_delete"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_cluster_safe_user_delete
 )
 
 

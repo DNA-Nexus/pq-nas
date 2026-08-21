@@ -142,6 +142,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_projection_sync_https.h"
 #include "cluster/storage_user_projection_reconciler.h"
 #include "cluster/storage_projection_startup_consistency.h"
+#include "cluster/cluster_safe_user_delete.h"
 #include "cluster/storage_user_projection_reconcile_worker.h"
 #include "cluster/user_placement_service.h"
 #include "cluster/user_placement_preview_service.h"
@@ -10451,6 +10452,43 @@ auto maybe_auto_rotate_before_append = [&]() {
             << std::endl;
     }
 
+    std::function<bool(
+        const std::string&,
+        bool*,
+        bool*,
+        bool*,
+        std::string*
+    )> cluster_safe_user_delete;
+
+    if (cluster_config.is_director()) {
+        cluster_safe_user_delete =
+            [
+                &users,
+                &director_storage_projection_sync_state_store,
+                director_storage_projection_transition_mutex,
+                users_path
+            ](
+                const std::string& fingerprint,
+                bool* erased,
+                bool* placement_blocked,
+                bool* cluster_revoke_pending,
+                std::string* error
+            ) -> bool {
+                return pqnas::cluster::
+                    erase_user_persisted_cluster_safe(
+                        users,
+                        director_storage_projection_sync_state_store,
+                        director_storage_projection_transition_mutex,
+                        users_path,
+                        fingerprint,
+                        erased,
+                        placement_blocked,
+                        cluster_revoke_pending,
+                        error
+                    );
+            };
+    }
+
     pqnas::WorkspacesRegistry workspaces;
     const std::string workspaces_path =
         (std::filesystem::path(users_path).parent_path() / "workspaces.json").string();
@@ -10639,6 +10677,8 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 
 	v5.allowlist_path = &allowlist_path;
 	v5.users_path     = &users_path;
+    v5.erase_user_persisted_cluster_safe =
+        cluster_safe_user_delete;
 
 	// ---- hook existing helpers (these already exist in main.cpp today) ----
 	v5.now_epoch = []() { return pqnas::now_epoch(); };

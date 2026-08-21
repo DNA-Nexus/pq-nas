@@ -184,6 +184,58 @@ static bool routes_v5_sync_admin_to_allowlist(const RoutesV5Context& ctx, const 
 }
 
 
+static bool routes_v5_rollback_new_user(
+    const RoutesV5Context& ctx,
+    const std::string& fingerprint
+) {
+    if (!ctx.users ||
+        !ctx.users_path ||
+        ctx.users_path->empty() ||
+        fingerprint.empty()) {
+        return false;
+    }
+
+    bool erased = false;
+    bool placement_blocked = false;
+    bool cluster_revoke_pending = false;
+    std::string error;
+
+    bool ok = false;
+
+    if (ctx.erase_user_persisted_cluster_safe) {
+        // Security: Director rollback must serialize with Storage projection
+        // reconciliation exactly like an explicit physical user deletion.
+        ok =
+            ctx.erase_user_persisted_cluster_safe(
+                fingerprint,
+                &erased,
+                &placement_blocked,
+                &cluster_revoke_pending,
+                &error
+            );
+    } else {
+        // Standalone compatibility: still use one persisted unplaced-user
+        // deletion instead of an in-memory erase + separate save.
+        ok =
+            ctx.users->erase_persisted_if_unplaced(
+                fingerprint,
+                *ctx.users_path,
+                &erased,
+                &placement_blocked,
+                &error
+            );
+    }
+
+    error.clear();
+
+    return
+        ok &&
+        erased &&
+        !placement_blocked &&
+        !cluster_revoke_pending;
+}
+
+
 static bool routes_v5_is_safe_b64ish(const std::string& s, std::size_t max_len) {
     if (s.empty() || s.size() > max_len) return false;
 
@@ -4507,8 +4559,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
 
         if (!routes_v5_sync_admin_to_allowlist(ctx, fp_hex)) {
             if (!have_existing_admin) {
-                ctx.users->erase(fp_hex);
-                ctx.users->save(*ctx.users_path);
+                (void)routes_v5_rollback_new_user(
+                    ctx,
+                    fp_hex
+                );
             }
 
             routes_v5_secure_clear_string(bootstrap_recovery_words);
@@ -4519,8 +4573,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
             if (!have_existing_admin) {
                 const bool rolled_back =
-                    ctx.users->erase(fp_hex) &&
-                    ctx.users->save(*ctx.users_path);
+                    routes_v5_rollback_new_user(
+                        ctx,
+                        fp_hex
+                    );
                 if (!rolled_back) {
                     routes_v5_audit_password(ctx, req, "password.bootstrap_admin", "deny", login, fp_hex, "user_rollback_failed");
                 }
@@ -4741,8 +4797,10 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         }
 
         if (!creds.upsert(rec) || !creds.save(creds_path)) {
-            ctx.users->erase(ident.fingerprint_hex);
-            ctx.users->save(*ctx.users_path);
+            (void)routes_v5_rollback_new_user(
+                ctx,
+                ident.fingerprint_hex
+            );
 
             routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "credentials_save_failed"}}.dump());
