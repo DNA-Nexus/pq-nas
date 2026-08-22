@@ -355,6 +355,69 @@ int main() {
     }
 
     {
+        const int calls_before_unauth_flood =
+            builder_calls;
+
+        // Security: unauthenticated traffic must not consume the authenticated
+        // service-to-service status budget. Otherwise a reachable peer could
+        // starve legitimate Director status polling from the same transport IP.
+        for (int index = 0;
+             index <
+                 pqnas::cluster::
+                     kInternalNodeStatusRateLimit + 5;
+             ++index) {
+            auto request =
+                make_request("192.0.2.19");
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_node_status_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 401,
+                "unauthenticated status flood must remain 401"
+            );
+        }
+
+        expect(
+            builder_calls ==
+                calls_before_unauth_flood,
+            "unauthenticated status flood must not collect status"
+        );
+
+        auto authenticated_request =
+            make_request(
+                "192.0.2.19",
+                "Bearer " + token
+            );
+
+        httplib::Response authenticated_response;
+
+        pqnas::cluster::
+            handle_internal_node_status_request(
+                authenticated_request,
+                authenticated_response,
+                context
+            );
+
+        expect(
+            authenticated_response.status == 200,
+            "unauthenticated traffic must not exhaust authenticated status rate limit"
+        );
+
+        expect(
+            builder_calls ==
+                calls_before_unauth_flood + 1,
+            "authenticated request after unauthenticated flood must collect status"
+        );
+    }
+
+    {
         const int calls_before_rate_test =
             builder_calls;
 

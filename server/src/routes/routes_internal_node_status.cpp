@@ -219,6 +219,21 @@ void handle_internal_node_status_request(
         return;
     }
 
+    std::string authorization;
+
+    // Security: authenticate before consuming the status rate-limit budget.
+    // Otherwise unauthenticated traffic from the same transport peer could
+    // starve legitimate Director polling.
+    if (!exact_authorization_header(
+            req,
+            &authorization) ||
+        !verify_internal_bearer_authorization(
+            authorization,
+            *context.credential)) {
+        reply_unauthorized(context, res);
+        return;
+    }
+
     if (rate_limited(req, now_epoch(context))) {
         res.set_header("Retry-After", "60");
 
@@ -232,18 +247,6 @@ void handle_internal_node_status_request(
                 {"message", "request limit exceeded"}
             }
         );
-        return;
-    }
-
-    std::string authorization;
-
-    if (!exact_authorization_header(
-            req,
-            &authorization) ||
-        !verify_internal_bearer_authorization(
-            authorization,
-            *context.credential)) {
-        reply_unauthorized(context, res);
         return;
     }
 
