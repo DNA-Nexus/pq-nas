@@ -112,9 +112,17 @@ int main() {
     int notify_count = 0;
     bool callback_reentered_registry = false;
 
+    std::vector<
+        pqnas::StorageProjectionCommitInfo
+    > notifications;
+
     users.set_storage_projection_commit_notifier(
-        [&]() {
+        [&](const pqnas::StorageProjectionCommitInfo& info) {
             ++notify_count;
+
+            notifications.push_back(
+                info
+            );
 
             // Deadlock guard: this succeeds only if the notifier runs outside
             // UsersRegistry::mu_. External callbacks must never run under the
@@ -145,8 +153,15 @@ int main() {
     expect(
         projection_changed &&
         notify_count == 1 &&
-        callback_reentered_registry,
-        "new projection commit notifies outside registry lock"
+        callback_reentered_registry &&
+        notifications.size() == 1 &&
+        notifications[0].fingerprint ==
+            "notifier-user" &&
+        notifications[0].previous_revision == 0 &&
+        notifications[0].projection_revision == 1 &&
+        notifications[0].previous_home_node.empty() &&
+        notifications[0].home_node.empty(),
+        "new projection commit reports exact revision transition outside registry lock"
     );
 
     // Profile-only changes are persisted but are invisible to Storage.
@@ -578,6 +593,56 @@ int main() {
         );
     }
 
+
+    // All successful projection mutations must form one monotonic audit
+    // correlation chain. No-op/profile-only mutations above add no entries.
+    expect(
+        notifications.size() == 8,
+        "all projection mutations report commit metadata"
+    );
+
+    for (std::size_t i = 0;
+         i < notifications.size();
+         ++i) {
+        const auto& notification =
+            notifications[i];
+
+        expect(
+            notification.fingerprint ==
+                "notifier-user",
+            "projection commit metadata identifies exact user"
+        );
+
+        expect(
+            notification.projection_revision ==
+                notification.previous_revision + 1,
+            "projection commit metadata reports one revision advance"
+        );
+
+        if (i > 0) {
+            expect(
+                notification.previous_revision ==
+                    notifications[i - 1].
+                        projection_revision,
+                "projection commit metadata forms monotonic revision chain"
+            );
+        }
+    }
+
+    expect(
+        notifications.size() >= 8 &&
+        notifications[5].previous_home_node.empty() &&
+        notifications[5].home_node ==
+            "node-01" &&
+        notifications[6].previous_home_node ==
+            "node-01" &&
+        notifications[6].home_node ==
+            "node-02" &&
+        notifications[7].previous_home_node ==
+            "node-02" &&
+        notifications[7].home_node.empty(),
+        "placement commit metadata reports exact home-node transitions"
+    );
 
     // Failed persistence rolls back state and must never notify.
     {

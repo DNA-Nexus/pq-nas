@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <functional>
+#include <map>
+#include <string>
 
 namespace pqnas {
 
@@ -19,6 +21,18 @@ using StorageUserProjectionReconcileSyncInvoke =
     std::function<
         StorageUserProjectionSyncResult(
             const StorageUserProjection&
+        )
+    >;
+
+using StorageUserProjectionReconcileAuditEmit =
+    std::function<
+        void(
+            const std::string& event,
+            const std::string& outcome,
+            const std::map<
+                std::string,
+                std::string
+            >& fields
         )
     >;
 
@@ -48,6 +62,10 @@ struct StorageUserProjectionReconcilerConfig {
 
     StorageUserProjectionReconcileSyncInvoke
         sync_projection;
+
+    // Best-effort audit sink. Reconciliation safety never depends on audit I/O.
+    StorageUserProjectionReconcileAuditEmit
+        audit_emit;
 };
 
 class StorageUserProjectionReconciler {

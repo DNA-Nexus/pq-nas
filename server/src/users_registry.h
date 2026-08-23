@@ -92,10 +92,23 @@ struct UserStorageMetadataUpdate {
     std::string storage_set_by;
 };
 
+// Bounded correlation metadata for one durably committed Storage projection.
+struct StorageProjectionCommitInfo {
+    std::string fingerprint;
+
+    std::uint64_t previous_revision = 0;
+    std::uint64_t projection_revision = 0;
+
+    std::string previous_home_node;
+    std::string home_node;
+};
+
 class UsersRegistry {
 public:
     using StorageProjectionCommitNotifier =
-        std::function<void()>;
+        std::function<void(
+            const StorageProjectionCommitInfo&
+        )>;
 
     bool load(const std::string& path);
     bool save(const std::string& path) const;
@@ -110,9 +123,9 @@ public:
         std::string* error
     ) const;
 
-    // Best-effort latency hook for Director projection reconciliation.
+    // Post-commit hook for Director audit correlation and reconciliation.
     // Security: notification happens only after a successful durable
-    // projection-relevant registry commit.
+    // projection-relevant registry commit and runs outside the registry lock.
     void set_storage_projection_commit_notifier(
         StorageProjectionCommitNotifier notifier
     );

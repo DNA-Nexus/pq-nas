@@ -152,6 +152,18 @@ require(
     "orphaned persistent state must be surfaced, not silently deleted",
 )
 
+require(
+    '"cluster.storage_projection.synced"' in source and
+    '"cluster.storage_projection.moved"' in source and
+    '"cluster.storage_projection.revoked"' in source,
+    "successful projection reconciliation transitions must be audit-correlated",
+)
+
+require(
+    "emit_reconcile_audit_best_effort(" in source,
+    "reconciler must use the bounded best-effort audit helper",
+)
+
 # Still foundation-only. Worker/thread and production wiring come later.
 
 
@@ -164,6 +176,12 @@ require(
 require(
     "director_storage_projection_reconciler" in main,
     "production worker must delegate through the Director reconciler",
+)
+
+require(
+    "director_storage_projection_reconciler_config.audit_emit =" in main and
+    "audit_append(audit);" in main,
+    "Director must bridge reconciliation success events into the audit log",
 )
 
 if errors:
