@@ -37,6 +37,10 @@ using pqnas::cluster::
 
 int failures = 0;
 
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -248,6 +252,9 @@ int main() {
         StorageNodeEnrollmentClientConfig
             config;
 
+        config.tls_spki_sha256_pin =
+            kTestTlsPin;
+
         config.store =
             &store;
 
@@ -273,6 +280,13 @@ int main() {
                             request.node_credential
                         ),
                     "fresh request has canonical node credential"
+                );
+
+
+                expect(
+                    request.tls_spki_sha256_pin ==
+                        kTestTlsPin,
+                    "fresh request carries canonical TLS SPKI pin"
                 );
 
                 observed_credential =
@@ -385,6 +399,9 @@ int main() {
         StorageNodeEnrollmentClientConfig
             first_config;
 
+        first_config.tls_spki_sha256_pin =
+            kTestTlsPin;
+
         first_config.store =
             &store;
 
@@ -448,6 +465,9 @@ int main() {
 
         StorageNodeEnrollmentClientConfig
             retry_config;
+
+        retry_config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         retry_config.store =
             &store;
@@ -526,6 +546,9 @@ int main() {
 
         StorageNodeEnrollmentClientConfig
             enrolled_config;
+
+        enrolled_config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         enrolled_config.store =
             &store;
@@ -616,6 +639,9 @@ int main() {
         StorageNodeEnrollmentClientConfig
             first_config;
 
+        first_config.tls_spki_sha256_pin =
+            kTestTlsPin;
+
         first_config.store =
             &store;
 
@@ -659,6 +685,9 @@ int main() {
 
         StorageNodeEnrollmentClientConfig
             retry_config;
+
+        retry_config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         retry_config.store =
             &store;
@@ -752,7 +781,11 @@ int main() {
 
         int calls = 0;
 
-        StorageNodeEnrollmentClientConfig config;
+        StorageNodeEnrollmentClientConfig
+            config;
+
+        config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         config.store =
             &store;
@@ -844,7 +877,11 @@ int main() {
             }
         };
 
-        StorageNodeEnrollmentClientConfig config;
+        StorageNodeEnrollmentClientConfig
+            config;
+
+        config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         config.store =
             &store;
@@ -932,7 +969,11 @@ int main() {
 
         int calls = 0;
 
-        StorageNodeEnrollmentClientConfig config;
+        StorageNodeEnrollmentClientConfig
+            config;
+
+        config.tls_spki_sha256_pin =
+            kTestTlsPin;
 
         config.store =
             &store;

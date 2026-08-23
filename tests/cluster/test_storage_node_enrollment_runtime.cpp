@@ -41,6 +41,10 @@ using pqnas::cluster::
 
 int failures = 0;
 
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -244,6 +248,9 @@ make_config(
         suffix +
         ".internal";
 
+    config.tls_spki_sha256_pin =
+        kTestTlsPin;
+
     config.bootstrap_token_file =
         token_file.empty()
         ? std::string()
@@ -296,6 +303,7 @@ int main() {
                     "",
                     "",
                     "",
+                    kTestTlsPin,
                     "",
                     &config
                 ) ==
@@ -311,6 +319,7 @@ int main() {
                     "enrollment_runtime_config",
                     "7",
                     "https://node-config.internal/",
+                    kTestTlsPin,
                     "/run/pqnas/bootstrap.token",
                     &config
                 ) ==
@@ -326,9 +335,42 @@ int main() {
         expect(
             pqnas::cluster::
                 parse_storage_node_enrollment_runtime_config(
+                    "enrollment_runtime_missing_pin",
+                    "1",
+                    "https://node-config.internal",
+                    "",
+                    "",
+                    &config
+                ) ==
+                StorageNodeEnrollmentRuntimeConfigResult::
+                    InvalidInput,
+            "enabled enrollment without TLS pin rejected"
+        );
+
+        expect(
+            pqnas::cluster::
+                parse_storage_node_enrollment_runtime_config(
+                    "enrollment_runtime_noncanonical_pin",
+                    "1",
+                    "https://node-config.internal",
+                    std::string(" ") + kTestTlsPin,
+                    "",
+                    &config
+                ) ==
+                StorageNodeEnrollmentRuntimeConfigResult::
+                    Ok &&
+            config.tls_spki_sha256_pin ==
+                kTestTlsPin,
+            "runtime config canonicalizes TLS pin ingress"
+        );
+
+        expect(
+            pqnas::cluster::
+                parse_storage_node_enrollment_runtime_config(
                     "enrollment_runtime_partial",
                     "",
                     "https://node-config.internal",
+                    kTestTlsPin,
                     "",
                     &config
                 ) ==
@@ -343,6 +385,7 @@ int main() {
                     "",
                     "",
                     "",
+                    kTestTlsPin,
                     "/run/pqnas/bootstrap.token",
                     &config
                 ) ==
@@ -357,6 +400,7 @@ int main() {
                     "enrollment_runtime_generation",
                     "18446744073709551616",
                     "https://node-config.internal",
+                    kTestTlsPin,
                     "",
                     &config
                 ) ==
@@ -371,6 +415,7 @@ int main() {
                     "enrollment_runtime_http",
                     "1",
                     "http://node-config.internal",
+                    kTestTlsPin,
                     "",
                     &config
                 ) ==
@@ -385,6 +430,7 @@ int main() {
                     "enrollment_runtime_path",
                     "1",
                     "https://node-config.internal",
+                    kTestTlsPin,
                     "relative/bootstrap.token",
                     &config
                 ) ==

@@ -6,6 +6,7 @@
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_token.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 #include "httplib.h"
 
 #include <nlohmann/json.hpp>
@@ -49,6 +50,10 @@ using pqnas::cluster::
 
 int failures = 0;
 
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
+
 struct Fixture {
     std::string enrollment_id;
     std::string node_id;
@@ -56,6 +61,7 @@ struct Fixture {
     std::uint64_t generation = 0;
     std::string bootstrap_token;
     std::string node_credential;
+    std::string tls_spki_sha256_pin;
 };
 
 void expect(
@@ -158,6 +164,10 @@ std::string fixture_body(
             7
         },
         {
+            "tls_spki_sha256_pin",
+            fixture.tls_spki_sha256_pin
+        },
+        {
             "node_credential",
             fixture.node_credential
         }
@@ -190,6 +200,9 @@ bool create_fixture(
 
     fixture->api_base_url =
         api_base_url;
+
+    fixture->tls_spki_sha256_pin =
+        kTestTlsPin;
 
     pqnas::cluster::
         NodeEnrollmentTokenMaterial material;
@@ -328,6 +341,9 @@ int main() {
     NodeCredentialRegistry
         credential_registry;
 
+    pqnas::cluster::NodeTlsTrustStore
+        tls_trust_store;
+
     NodeRegistry node_registry;
 
     std::string error;
@@ -361,6 +377,20 @@ int main() {
     error.clear();
 
     expect(
+        tls_trust_store.load(
+            (
+                directory /
+                "tls-trust"
+            ).string(),
+            &error
+        ),
+        "load route TLS trust store: " +
+            error
+    );
+
+    error.clear();
+
+    expect(
         node_registry.load(
             (
                 directory /
@@ -380,6 +410,9 @@ int main() {
 
     service_config.credential_registry =
         &credential_registry;
+
+    service_config.tls_trust_store =
+        &tls_trust_store;
 
     service_config.node_registry =
         &node_registry;

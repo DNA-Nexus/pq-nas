@@ -241,6 +241,10 @@ int main() {
     request.protocol_version =
         7;
 
+    request.tls_spki_sha256_pin =
+        "sha256/"
+        "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
+
     request.node_credential =
         token;
 

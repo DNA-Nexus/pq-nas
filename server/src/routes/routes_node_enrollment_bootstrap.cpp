@@ -686,6 +686,8 @@ int service_http_status(
         case NodeEnrollmentConsumptionServiceResult::
                 CredentialConflict:
         case NodeEnrollmentConsumptionServiceResult::
+                TlsTrustConflict:
+        case NodeEnrollmentConsumptionServiceResult::
                 NodeConflict:
             return 409;
 
@@ -693,6 +695,8 @@ int service_http_status(
                 ServiceUnavailable:
         case NodeEnrollmentConsumptionServiceResult::
                 CredentialUnavailable:
+        case NodeEnrollmentConsumptionServiceResult::
+                TlsTrustUnavailable:
         case NodeEnrollmentConsumptionServiceResult::
                 PersistFailed:
         case NodeEnrollmentConsumptionServiceResult::
@@ -908,6 +912,7 @@ void handle_node_enrollment_bootstrap_consume(
                 "node_id",
                 "api_base_url",
                 "protocol_version",
+                "tls_spki_sha256_pin",
                 "node_credential"
             })) {
         reply_json_local(
@@ -951,6 +956,12 @@ void handle_node_enrollment_bootstrap_consume(
             "protocol_version",
             &service_request
                  .protocol_version) ||
+        !json_string(
+            body,
+            "tls_spki_sha256_pin",
+            128,
+            &service_request
+                 .tls_spki_sha256_pin) ||
         !json_string(
             body,
             "node_credential",

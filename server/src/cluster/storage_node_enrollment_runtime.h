@@ -16,6 +16,10 @@ struct StorageNodeEnrollmentRuntimeConfig {
     std::uint64_t expected_generation = 0;
     std::string api_base_url;
 
+    // Public TLS identity of this Storage Node.
+    // Required whenever enrollment is enabled.
+    std::string tls_spki_sha256_pin;
+
     // Optional during recovery after a credential has already been persisted.
     // Fresh enrollment still requires a valid token file.
     std::string bootstrap_token_file;
@@ -38,6 +42,7 @@ parse_storage_node_enrollment_runtime_config(
     const std::string& raw_enrollment_id,
     const std::string& raw_generation,
     const std::string& raw_api_base_url,
+    const std::string& raw_tls_spki_sha256_pin,
     const std::string& raw_bootstrap_token_file,
     StorageNodeEnrollmentRuntimeConfig* output
 );

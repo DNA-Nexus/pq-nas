@@ -2,6 +2,7 @@
 
 #include "cluster/internal_auth.h"
 #include "cluster/node_enrollment_token.h"
+#include "cluster/node_tls_identity.h"
 
 #include <string>
 #include <utility>
@@ -362,6 +363,21 @@ StorageNodeEnrollmentClient::enroll(
         );
     }
 
+    std::string normalized_tls_pin;
+
+    if (!normalize_node_tls_spki_sha256_pin(
+            config_.tls_spki_sha256_pin,
+            &normalized_tls_pin,
+            nullptr) ||
+        normalized_tls_pin !=
+            config_.tls_spki_sha256_pin) {
+        // Security: no blank/default/unpinned enrollment path.
+        return finish(
+            StorageNodeEnrollmentClientCode::
+                InvalidInput
+        );
+    }
+
     const auto prior =
         config_.store->snapshot();
 
@@ -484,6 +500,9 @@ StorageNodeEnrollmentClient::enroll(
 
             request.protocol_version =
                 prepared.protocol_version;
+
+            request.tls_spki_sha256_pin =
+                config_.tls_spki_sha256_pin;
 
             request.node_credential =
                 node_credential;

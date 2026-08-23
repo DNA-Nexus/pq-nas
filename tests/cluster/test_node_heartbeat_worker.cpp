@@ -3,6 +3,7 @@
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_status.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <sodium.h>
 
@@ -24,6 +25,10 @@ namespace {
 namespace fs = std::filesystem;
 
 int failures = 0;
+
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
 struct AuditRecord {
     std::string event;
@@ -173,6 +178,23 @@ int main() {
             error
     );
 
+    pqnas::cluster::NodeTlsTrustStore
+        tls_trust_store;
+
+    error.clear();
+
+    expect(
+        tls_trust_store.load(
+            (
+                directory /
+                "node_tls_trust"
+            ).string(),
+            &error
+        ),
+        "load heartbeat TLS trust store: " +
+            error
+    );
+
     pqnas::cluster::NodeRegistry registry;
 
     expect(
@@ -213,7 +235,35 @@ int main() {
     add_node("node-04", true);
     add_node("node-05", true);
     add_node("node-06", true);
+    add_node("node-07", true);
 
+    const auto bind_tls_trust =
+        [&](const std::string& node_id) {
+            error.clear();
+
+            expect(
+                tls_trust_store.bind_if_absent(
+                    node_id,
+                    kTestTlsPin,
+                    &error
+                ) ==
+                    pqnas::cluster::
+                        NodeTlsTrustStoreResult::Ok,
+                "bind heartbeat TLS trust " +
+                    node_id +
+                    ": " +
+                    error
+            );
+        };
+
+    bind_tls_trust("node-01");
+    bind_tls_trust("node-02");
+    bind_tls_trust("node-03");
+    bind_tls_trust("node-04");
+    bind_tls_trust("node-05");
+    bind_tls_trust("node-06");
+
+    // node-07 intentionally receives a bearer credential but no TLS trust.
     std::map<std::string, std::string>
         node_tokens;
 
@@ -254,6 +304,7 @@ int main() {
     add_credential("node-03", 65);
     add_credential("node-04", 97);
     add_credential("node-05", 129);
+    add_credential("node-07", 225);
 
     // node-06 intentionally has no credential. It must fail before fetch().
     std::map<std::string, int> fetch_calls;
@@ -266,6 +317,8 @@ int main() {
     config.registry = &registry;
     config.credential_registry =
         &credential_registry;
+    config.tls_trust_store =
+        &tls_trust_store;
 
     config.coordination_mutex =
         std::make_shared<std::mutex>();
@@ -298,11 +351,18 @@ int main() {
         [&](
             const pqnas::cluster::
                 NodeRegistryRecord& node,
+            const std::string& tls_spki_sha256_pin,
             const std::string& authorization,
             std::string* body,
             std::string* fetch_error
         ) -> bool {
             ++fetch_calls[node.node_id];
+
+            expect(
+                tls_spki_sha256_pin ==
+                    kTestTlsPin,
+                "heartbeat fetch receives exact TLS pin"
+            );
 
             const auto expected_token =
                 node_tokens.find(
@@ -378,8 +438,8 @@ int main() {
             worker.poll_once();
 
     expect(
-        poll_result.checked == 5,
-        "five enabled nodes should be checked"
+        poll_result.checked == 6,
+        "six enabled nodes should be checked"
     );
 
     expect(
@@ -388,8 +448,8 @@ int main() {
     );
 
     expect(
-        poll_result.failed == 4,
-        "four invalid heartbeats should fail"
+        poll_result.failed == 5,
+        "five invalid heartbeats should fail"
     );
 
     expect(
@@ -403,12 +463,12 @@ int main() {
     );
 
     expect(
-        poll_result.offline_transitions == 4,
-        "first failures should create four offline transitions"
+        poll_result.offline_transitions == 5,
+        "first failures should create five offline transitions"
     );
 
     expect(
-        audits.size() == 5,
+        audits.size() == 6,
         "only real health transitions should be audited"
     );
 
@@ -420,7 +480,8 @@ int main() {
             {"node-03", "transport_error"},
             {"node-04", "node_id_mismatch"},
             {"node-05", "response_too_large"},
-            {"node-06", "credential_unavailable"}
+            {"node-06", "credential_unavailable"},
+            {"node-07", "tls_trust_unavailable"}
         };
 
     for (const AuditRecord& audit : audits) {
@@ -479,7 +540,7 @@ int main() {
 
     expect(
         online_audits == 1 &&
-        offline_audits == 4,
+        offline_audits == 5,
         "expected online and offline audit counts"
     );
 
@@ -496,6 +557,11 @@ int main() {
     expect(
         fetch_calls["node-06"] == 0,
         "credentialless node must fail before network"
+    );
+
+    expect(
+        fetch_calls["node-07"] == 0,
+        "untrusted node must fail before bearer/network"
     );
 
     const auto node_01 =
@@ -523,7 +589,8 @@ int main() {
              "node-03",
              "node-04",
              "node-05",
-             "node-06"
+             "node-06",
+             "node-07"
          }) {
         const auto record =
             registry.get(node_id);
@@ -611,6 +678,14 @@ int main() {
         );
     }
 
+    bind_tls_trust(
+        "node-stale-status"
+    );
+
+    bind_tls_trust(
+        "node-stale-failure"
+    );
+
     add_credential(
         "node-stale-status",
         161
@@ -635,6 +710,9 @@ int main() {
 
     stale_config.credential_registry =
         &credential_registry;
+
+    stale_config.tls_trust_store =
+        &tls_trust_store;
 
     stale_config.coordination_mutex =
         stale_coordination_mutex;
@@ -669,10 +747,17 @@ int main() {
         [&](
             const pqnas::cluster::
                 NodeRegistryRecord& node,
+            const std::string& tls_spki_sha256_pin,
             const std::string& authorization,
             std::string* body,
             std::string* fetch_error
         ) -> bool {
+            expect(
+                tls_spki_sha256_pin ==
+                    kTestTlsPin,
+                "stale heartbeat fetch receives exact TLS pin"
+            );
+
             const auto expected_token =
                 node_tokens.find(
                     node.node_id
@@ -802,6 +887,26 @@ int main() {
     expect(
         !invalid_worker.start(&error),
         "worker must reject missing credential registry"
+    );
+
+    auto missing_tls_trust_config =
+        config;
+
+    missing_tls_trust_config.tls_trust_store =
+        nullptr;
+
+    pqnas::cluster::NodeHeartbeatWorker
+        missing_tls_trust_worker(
+            missing_tls_trust_config
+        );
+
+    error.clear();
+
+    expect(
+        !missing_tls_trust_worker.start(
+            &error
+        ),
+        "worker must reject missing TLS trust store"
     );
 
     auto missing_coordination_config =

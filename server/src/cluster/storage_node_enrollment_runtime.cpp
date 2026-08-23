@@ -3,6 +3,7 @@
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
 #include "cluster/node_enrollment_token.h"
+#include "cluster/node_tls_identity.h"
 #include "cluster/node_status.h"
 #include "cluster/storage_node_provisioning_store.h"
 
@@ -785,6 +786,7 @@ parse_storage_node_enrollment_runtime_config(
     const std::string& raw_enrollment_id,
     const std::string& raw_generation,
     const std::string& raw_api_base_url,
+    const std::string& raw_tls_spki_sha256_pin,
     const std::string& raw_bootstrap_token_file,
     StorageNodeEnrollmentRuntimeConfig* output
 ) {
@@ -823,6 +825,7 @@ parse_storage_node_enrollment_runtime_config(
 
     std::uint64_t generation = 0;
     std::string api_base_url;
+    std::string tls_spki_sha256_pin;
 
     if (!valid_enrollment_id(
             raw_enrollment_id) ||
@@ -832,6 +835,10 @@ parse_storage_node_enrollment_runtime_config(
         !normalize_cluster_https_base_url(
             raw_api_base_url,
             &api_base_url,
+            nullptr) ||
+        !normalize_node_tls_spki_sha256_pin(
+            raw_tls_spki_sha256_pin,
+            &tls_spki_sha256_pin,
             nullptr)) {
         return
             StorageNodeEnrollmentRuntimeConfigResult::
@@ -866,6 +873,9 @@ parse_storage_node_enrollment_runtime_config(
     output->api_base_url =
         std::move(api_base_url);
 
+    output->tls_spki_sha256_pin =
+        std::move(tls_spki_sha256_pin);
+
     output->bootstrap_token_file =
         std::move(token_file);
 
@@ -888,6 +898,9 @@ load_storage_node_enrollment_runtime_config_from_env(
             ),
             environment_value(
                 "PQNAS_NODE_API_BASE_URL"
+            ),
+            environment_value(
+                "PQNAS_TLS_SPKI_SHA256_PIN"
             ),
             environment_value(
                 "PQNAS_NODE_BOOTSTRAP_TOKEN_FILE"
@@ -1118,6 +1131,9 @@ ensure_storage_node_enrollment(
 
     client_config.store =
         &store;
+
+    client_config.tls_spki_sha256_pin =
+        enrollment_config.tls_spki_sha256_pin;
 
     client_config.transport =
         std::move(

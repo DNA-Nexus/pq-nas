@@ -4,6 +4,7 @@
 #include "cluster/internal_auth.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include "storage_metadata_validation.h"
 #include "storage_path_validation.h"
@@ -157,6 +158,8 @@ const char* storage_user_projection_sync_client_code(
             return "node_not_found";
         case StorageUserProjectionSyncClientCode::NodeDisabled:
             return "node_disabled";
+        case StorageUserProjectionSyncClientCode::TlsTrustUnavailable:
+            return "tls_trust_unavailable";
         case StorageUserProjectionSyncClientCode::CredentialUnavailable:
             return "credential_unavailable";
         case StorageUserProjectionSyncClientCode::Rejected:
@@ -207,6 +210,7 @@ StorageUserProjectionSyncClient::sync(
 
     if (!config_.node_registry ||
         !config_.credential_registry ||
+        !config_.tls_trust_store ||
         !config_.transport) {
         return finish(
             StorageUserProjectionSyncClientCode::
@@ -267,6 +271,30 @@ StorageUserProjectionSyncClient::sync(
     request.projection =
         projection;
 
+    std::string tls_trust_error;
+
+    const NodeTlsTrustStoreResult
+        tls_trust_result =
+            config_.tls_trust_store->get(
+                projection.home_node,
+                &request.tls_spki_sha256_pin,
+                &tls_trust_error
+            );
+
+    // Security: trust-store implementation details and filesystem diagnostics
+    // are never exposed through projection synchronization results.
+    tls_trust_error.clear();
+
+    if (tls_trust_result !=
+        NodeTlsTrustStoreResult::Ok) {
+        return finish(
+            StorageUserProjectionSyncClientCode::
+                TlsTrustUnavailable
+        );
+    }
+
+    // Security: only after the authoritative TLS identity exists may the
+    // reusable per-node bearer value be materialized.
     std::string credential_error;
 
     const NodeCredentialRegistryResult

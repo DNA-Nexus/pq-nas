@@ -31,6 +31,10 @@ struct StorageNodeEnrollmentTransportRequest {
     std::string api_base_url;
     int protocol_version = 0;
 
+    // Public TLS identity presented during authenticated enrollment.
+    // Security: the transport requires a canonical SPKI SHA-256 pin.
+    std::string tls_spki_sha256_pin;
+
     std::string node_credential;
 };
 
@@ -83,6 +87,10 @@ struct StorageNodeEnrollmentClientResult {
 struct StorageNodeEnrollmentClientConfig {
     StorageNodeProvisioningStore* store =
         nullptr;
+
+    // Security: enrollment has no blank/default TLS identity path.
+    // The client requires a canonical node SPKI SHA-256 pin before transport.
+    std::string tls_spki_sha256_pin;
 
     StorageNodeEnrollmentTransport transport;
 

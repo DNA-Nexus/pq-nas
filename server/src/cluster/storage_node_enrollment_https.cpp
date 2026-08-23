@@ -2,6 +2,7 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_tls_identity.h"
 
 #include "httplib.h"
 
@@ -508,8 +509,15 @@ bool valid_transport_request(
     }
 
     std::string normalized_api;
+    std::string normalized_tls_pin;
 
-    if (!normalize_cluster_https_base_url(
+    if (!normalize_node_tls_spki_sha256_pin(
+            request.tls_spki_sha256_pin,
+            &normalized_tls_pin,
+            nullptr) ||
+        normalized_tls_pin !=
+            request.tls_spki_sha256_pin ||
+        !normalize_cluster_https_base_url(
             request.director_url,
             normalized_director,
             nullptr) ||
@@ -682,6 +690,10 @@ make_https_storage_node_enrollment_transport() {
             {
                 "protocol_version",
                 request.protocol_version
+            },
+            {
+                "tls_spki_sha256_pin",
+                request.tls_spki_sha256_pin
             },
             {
                 "node_credential",

@@ -43,6 +43,69 @@ int main() {
     );
 
     {
+        pqnas::cluster::
+            NodeCredentialRotationPrepareRequest
+                request;
+
+        request.api_base_url =
+            "https://storage.example:8443";
+
+        request.tls_spki_sha256_pin =
+            "sha256/not-base64";
+
+        request.authorization =
+            "Bearer " +
+            credential;
+
+        const auto transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_prepare_transport();
+
+        const auto response =
+            transport(request);
+
+        expect(
+            response.code ==
+                NodeCredentialRotationTransportCode::
+                    InvalidResponse &&
+            response.http_status == 0 &&
+            response.pending_credential.empty(),
+            "malformed TLS pin fails before prepare network I/O"
+        );
+    }
+
+    {
+        pqnas::cluster::
+            NodeCredentialRotationFinalizeRequest
+                request;
+
+        request.api_base_url =
+            "https://storage.example:8443";
+
+        request.tls_spki_sha256_pin =
+            "sha256/not-base64";
+
+        request.authorization =
+            "Bearer " +
+            credential;
+
+        const auto transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_finalize_transport();
+
+        const auto response =
+            transport(request);
+
+        expect(
+            response.code ==
+                NodeCredentialRotationTransportCode::
+                    InvalidResponse &&
+            response.http_status == 0,
+            "malformed TLS pin fails before finalize network I/O"
+        );
+    }
+
+    {
         auto response =
             pqnas::cluster::
                 parse_node_credential_rotation_prepare_https_response(

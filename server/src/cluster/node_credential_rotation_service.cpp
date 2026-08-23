@@ -4,6 +4,7 @@
 #include "cluster/internal_auth.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <string>
 #include <utility>
@@ -192,6 +193,10 @@ node_credential_rotation_service_code(
             return "node_changed";
 
         case NodeCredentialRotationServiceCode::
+                TlsTrustUnavailable:
+            return "tls_trust_unavailable";
+
+        case NodeCredentialRotationServiceCode::
                 CredentialUnavailable:
             return "credential_unavailable";
 
@@ -229,6 +234,7 @@ config_valid() const noexcept {
     return
         config_.node_registry &&
         config_.credential_registry &&
+        config_.tls_trust_store &&
         config_.coordination_mutex &&
         static_cast<bool>(
             config_.prepare_transport
@@ -364,6 +370,29 @@ NodeCredentialRotationService::rotate(
         prepare_request.api_base_url =
             expected_node.api_base_url;
 
+        std::string tls_trust_error;
+
+        const NodeTlsTrustStoreResult
+            tls_trust_result =
+                config_.tls_trust_store->get(
+                    node_id,
+                    &prepare_request.tls_spki_sha256_pin,
+                    &tls_trust_error
+                );
+
+        // Security: never disclose trust-store filesystem details through the
+        // credential-rotation API or audit surface.
+        tls_trust_error.clear();
+
+        if (tls_trust_result !=
+            NodeTlsTrustStoreResult::Ok) {
+            return finish(
+                NodeCredentialRotationServiceCode::
+                    TlsTrustUnavailable
+            );
+        }
+
+        // Security: TLS trust is resolved before reusable OLD bearer material.
         std::string credential_error;
 
         const NodeCredentialRegistryResult
@@ -461,6 +490,11 @@ NodeCredentialRotationService::rotate(
 
     NodeCredentialRotationFinalizeRequest
         finalize_request;
+
+    // Security: bearer rotation never changes node identity. Finalize uses
+    // exactly the same immutable TLS pin captured before prepare.
+    finalize_request.tls_spki_sha256_pin =
+        prepare_request.tls_spki_sha256_pin;
 
     SensitiveStringWiper
         finalize_authorization_wiper(

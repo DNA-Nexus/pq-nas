@@ -25,37 +25,38 @@ require(
 )
 
 require(
-    source.count("client.Post(") == 1,
+    source.count("client->Post(") == 1,
     "both transports share one hardened POST implementation",
 )
 
 require(
-    'client.set_follow_location(false);' in source,
+    'client->set_follow_location(false);' in source,
     "redirects remain disabled",
 )
 
 require(
-    'client.set_keep_alive(false);' in source,
+    'client->set_keep_alive(false);' in source,
     "keep-alive remains disabled",
 )
 
 require(
-    'client.set_decompress(false);' in source,
+    'client->set_decompress(false);' in source,
     "automatic decompression remains disabled",
 )
 
 require(
-    'client.enable_server_certificate_verification(\n'
-    '        true\n'
-    '    );' in source,
-    "TLS certificate-chain verification remains enabled",
+    "make_pinned_node_https_client(" in source,
+    "rotation HTTPS must use the shared pinned TLS client",
 )
 
 require(
-    'client.enable_server_hostname_verification(\n'
-    '        true\n'
-    '    );' in source,
-    "TLS hostname verification remains enabled",
+    "httplib::SSLClient client(" not in source,
+    "rotation HTTPS must not construct a raw SSLClient",
+)
+
+require(
+    "tls_spki_sha256_pin" in source,
+    "rotation HTTPS must propagate the exact per-node TLS pin",
 )
 
 require(
