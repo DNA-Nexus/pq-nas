@@ -90,6 +90,9 @@ pqnas::cluster::NodeRegistryRecord make_node(
     node.enabled = true;
     node.health = "online";
 
+    // RT-007: normal placement fixtures represent Director-approved capacity.
+    node.capacity_ceiling_bytes = 1000;
+
     node.protocol_version =
         pqnas::cluster::
             kNodeStatusProtocolVersion;

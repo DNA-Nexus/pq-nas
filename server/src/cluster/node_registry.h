@@ -12,7 +12,8 @@ namespace pqnas::cluster {
 
 struct NodeStatusSnapshot;
 
-inline constexpr int kNodeRegistrySchemaVersion = 1;
+inline constexpr int kNodeRegistryLegacySchemaVersion = 1;
+inline constexpr int kNodeRegistrySchemaVersion = 2;
 
 enum class NodeRegistryInsertResult {
     Ok,
@@ -30,6 +31,10 @@ struct NodeRegistryRecord {
     std::string node_id;
     std::string api_base_url;
     bool enabled = true;
+
+    // Security: this is Director-owned configuration, never Node-reported
+    // status. Zero means placement capacity has not been trusted yet.
+    std::uint64_t capacity_ceiling_bytes = 0;
 
     std::string added_at;
     std::string updated_at;
@@ -83,7 +88,9 @@ public:
         const std::string& api_base_url,
         bool enabled,
         const std::string& now_iso,
-        std::string* err
+        std::string* err,
+        std::optional<std::uint64_t>
+            capacity_ceiling_bytes = std::nullopt
     );
 
     bool set_enabled(

@@ -445,6 +445,12 @@ int main() {
         "fresh node configured canonically"
     );
 
+    expect(
+        fresh_node.has_value() &&
+        fresh_node->capacity_ceiling_bytes == 0,
+        "enrollment must not establish trusted node capacity"
+    );
+
     Fixture prepared;
     error.clear();
 

@@ -432,6 +432,58 @@ int main() {
             request_with_body(
                 R"({
                     "node_id":"node-01",
+                    "capacity_ceiling_bytes":1000
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_update(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(response);
+
+        expect(
+            response.status == 200,
+            "capacity ceiling update should return 200"
+        );
+
+        bool capacity_ceiling_exposed = false;
+
+        if (body.is_object()) {
+            const auto node_iterator =
+                body.find("node");
+
+            if (node_iterator != body.end() &&
+                node_iterator->is_object()) {
+                const auto ceiling_iterator =
+                    node_iterator->find(
+                        "capacity_ceiling_bytes"
+                    );
+
+                capacity_ceiling_exposed =
+                    ceiling_iterator !=
+                        node_iterator->end() &&
+                    *ceiling_iterator == 1000;
+            }
+        }
+
+        expect(
+            capacity_ceiling_exposed,
+            "capacity ceiling update should expose Director-owned limit"
+        );
+    }
+
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "node_id":"node-01",
                     "api_base_url":"https://duplicate.internal"
                 })"
             );
@@ -506,9 +558,10 @@ int main() {
             updated.has_value() &&
             updated->api_base_url ==
                 "https://node-01.internal:8443" &&
+            updated->capacity_ceiling_bytes == 1000 &&
             !updated->enabled &&
             updated->health == "disabled",
-            "update should persist URL and enabled state"
+            "update should preserve capacity ceiling with URL and enabled state"
         );
 
         expect(

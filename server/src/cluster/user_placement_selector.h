@@ -40,8 +40,8 @@ struct UserPlacementSelectionResult {
 // Produces a deterministic recommendation without mutating either registry.
 //
 // Ranking:
-// 1. highest free storage
-// 2. lowest assigned-user count
+// 1. lowest assigned-user count
+// 2. highest free storage
 // 3. lexicographically smallest stable node ID
 UserPlacementSelectionResult select_user_home_node(
     const std::vector<NodeRegistryRecord>& nodes,
