@@ -1018,6 +1018,536 @@ int main() {
         );
     }
 
+    // Security/restart invariant: if the previous Node accepted its
+    // tombstone but synchronization to the new Node failed, a Director restart
+    // must reload the last confirmed Node and safely retry revoke-before-move.
+    {
+        const fs::path restart_move_users_path =
+            directory /
+            "restart_move_users.json";
+
+        const fs::path restart_move_state_path =
+            directory /
+            "restart_move_state.json";
+
+        pqnas::UsersRegistry
+            before_restart_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                before_restart_store;
+
+        expect(
+            before_restart_store.load(
+                restart_move_state_path.string(),
+                &error
+            ),
+            "restart move state store loads"
+        );
+
+        const auto restart_move_user =
+            make_user(
+                '1',
+                "storage-01"
+            );
+
+        bool restart_move_projection_changed = false;
+
+        expect(
+            before_restart_users.upsert_persisted(
+                restart_move_user,
+                restart_move_users_path.string(),
+                &restart_move_projection_changed,
+                &error
+            ) &&
+            restart_move_projection_changed,
+            "restart move fixture user persists"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > before_restart_sent;
+
+        bool fail_new_node_sync = false;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                before_restart_config;
+
+        before_restart_config.users =
+            &before_restart_users;
+
+        before_restart_config.state_store =
+            &before_restart_store;
+
+        before_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                before_restart_sent.push_back(
+                    projection
+                );
+
+                if (fail_new_node_sync &&
+                    projection.home_node ==
+                        "storage-02" &&
+                    projection.enabled) {
+                    pqnas::cluster::
+                        StorageUserProjectionSyncResult
+                            failed;
+
+                    failed.code =
+                        pqnas::cluster::
+                            StorageUserProjectionSyncClientCode::
+                                TransportFailed;
+
+                    return failed;
+                }
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                before_restart_reconciler(
+                    before_restart_config
+                );
+
+        expect(
+            before_restart_reconciler.
+                reconcile_once().ok,
+            "restart move fixture initially synchronizes"
+        );
+
+        const auto confirmed_before_move =
+            before_restart_store.get(
+                restart_move_user.fingerprint
+            );
+
+        bool move_changed = false;
+
+        expect(
+            before_restart_users.set_home_node_persisted(
+                restart_move_user.fingerprint,
+                "storage-02",
+                restart_move_users_path.string(),
+                &move_changed,
+                &error
+            ) &&
+            move_changed,
+            "restart move Director commit persists"
+        );
+
+        before_restart_sent.clear();
+        fail_new_node_sync = true;
+
+        const auto partial_move =
+            before_restart_reconciler.
+                reconcile_once();
+
+        const auto state_after_partial_move =
+            before_restart_store.get(
+                restart_move_user.fingerprint
+            );
+
+        expect(
+            !partial_move.ok &&
+            partial_move.failed == 1 &&
+            partial_move.moved == 0 &&
+            before_restart_sent.size() == 2 &&
+            before_restart_sent[0].home_node ==
+                "storage-01" &&
+            !before_restart_sent[0].enabled &&
+            !before_restart_sent[0].storage_allocated &&
+            before_restart_sent[1].home_node ==
+                "storage-02" &&
+            confirmed_before_move.has_value() &&
+            state_after_partial_move.has_value() &&
+            state_after_partial_move->home_node ==
+                confirmed_before_move->home_node &&
+            state_after_partial_move->revision ==
+                confirmed_before_move->revision,
+            "failed new-Node sync preserves old confirmed state for restart"
+        );
+
+        // Simulate process loss: reconstruct both authoritative stores solely
+        // from their durable on-disk state.
+        pqnas::UsersRegistry
+            restarted_users;
+
+        expect(
+            restarted_users.load(
+                restart_move_users_path.string()
+            ),
+            "restart move users reload"
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                restarted_store;
+
+        expect(
+            restarted_store.load(
+                restart_move_state_path.string(),
+                &error
+            ),
+            "restart move sync-state reload"
+        );
+
+        const auto restarted_user =
+            restarted_users.get(
+                restart_move_user.fingerprint
+            );
+
+        const auto restarted_state =
+            restarted_store.get(
+                restart_move_user.fingerprint
+            );
+
+        expect(
+            restarted_user.has_value() &&
+            restarted_user->home_node ==
+                "storage-02" &&
+            restarted_state.has_value() &&
+            restarted_state->home_node ==
+                "storage-01" &&
+            restarted_state->revision <
+                restarted_user->
+                    storage_projection_revision,
+            "restart reload retains new Director placement and old confirmed Node"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > after_restart_sent;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                after_restart_config;
+
+        after_restart_config.users =
+            &restarted_users;
+
+        after_restart_config.state_store =
+            &restarted_store;
+
+        after_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                after_restart_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                after_restart_reconciler(
+                    after_restart_config
+                );
+
+        const auto completed_move =
+            after_restart_reconciler.
+                reconcile_once();
+
+        const auto final_move_state =
+            restarted_store.get(
+                restart_move_user.fingerprint
+            );
+
+        expect(
+            completed_move.ok &&
+            completed_move.moved == 1 &&
+            after_restart_sent.size() == 2 &&
+            after_restart_sent[0].home_node ==
+                "storage-01" &&
+            !after_restart_sent[0].enabled &&
+            !after_restart_sent[0].storage_allocated &&
+            after_restart_sent[1].home_node ==
+                "storage-02" &&
+            restarted_user.has_value() &&
+            after_restart_sent[0].revision ==
+                restarted_user->
+                    storage_projection_revision &&
+            after_restart_sent[1].revision ==
+                restarted_user->
+                    storage_projection_revision &&
+            final_move_state.has_value() &&
+            final_move_state->home_node ==
+                "storage-02" &&
+            final_move_state->revision ==
+                restarted_user->
+                    storage_projection_revision,
+            "restart safely retries old-Node revoke before completing move"
+        );
+    }
+
+
+    // Security/restart invariant: an explicit unplacement must retain the last
+    // confirmed Node across restart when its disabling tombstone has not yet
+    // been accepted.
+    {
+        const fs::path restart_unplace_users_path =
+            directory /
+            "restart_unplace_users.json";
+
+        const fs::path restart_unplace_state_path =
+            directory /
+            "restart_unplace_state.json";
+
+        pqnas::UsersRegistry
+            before_restart_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                before_restart_store;
+
+        expect(
+            before_restart_store.load(
+                restart_unplace_state_path.string(),
+                &error
+            ),
+            "restart unplacement state store loads"
+        );
+
+        const auto restart_unplace_user =
+            make_user(
+                '2',
+                "storage-01"
+            );
+
+        bool restart_unplace_projection_changed = false;
+
+        expect(
+            before_restart_users.upsert_persisted(
+                restart_unplace_user,
+                restart_unplace_users_path.string(),
+                &restart_unplace_projection_changed,
+                &error
+            ) &&
+            restart_unplace_projection_changed,
+            "restart unplacement fixture user persists"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > before_restart_sent;
+
+        bool fail_revoke = false;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                before_restart_config;
+
+        before_restart_config.users =
+            &before_restart_users;
+
+        before_restart_config.state_store =
+            &before_restart_store;
+
+        before_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                before_restart_sent.push_back(
+                    projection
+                );
+
+                if (fail_revoke &&
+                    !projection.enabled) {
+                    pqnas::cluster::
+                        StorageUserProjectionSyncResult
+                            failed;
+
+                    failed.code =
+                        pqnas::cluster::
+                            StorageUserProjectionSyncClientCode::
+                                TransportFailed;
+
+                    return failed;
+                }
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                before_restart_reconciler(
+                    before_restart_config
+                );
+
+        expect(
+            before_restart_reconciler.
+                reconcile_once().ok,
+            "restart unplacement fixture initially synchronizes"
+        );
+
+        const auto confirmed_before_unplace =
+            before_restart_store.get(
+                restart_unplace_user.fingerprint
+            );
+
+        bool clear_changed = false;
+        bool clear_matched = false;
+
+        expect(
+            before_restart_users.
+                clear_home_node_persisted_if_current(
+                    restart_unplace_user.fingerprint,
+                    "storage-01",
+                    "",
+                    restart_unplace_users_path.string(),
+                    &clear_changed,
+                    &clear_matched,
+                    &error
+                ) &&
+            clear_changed &&
+            clear_matched,
+            "restart unplacement Director commit persists"
+        );
+
+        before_restart_sent.clear();
+        fail_revoke = true;
+
+        const auto failed_revoke =
+            before_restart_reconciler.
+                reconcile_once();
+
+        const auto state_after_failed_revoke =
+            before_restart_store.get(
+                restart_unplace_user.fingerprint
+            );
+
+        expect(
+            !failed_revoke.ok &&
+            failed_revoke.failed == 1 &&
+            failed_revoke.revoked_unplaced == 0 &&
+            before_restart_sent.size() == 1 &&
+            before_restart_sent[0].home_node ==
+                "storage-01" &&
+            !before_restart_sent[0].enabled &&
+            !before_restart_sent[0].storage_allocated &&
+            confirmed_before_unplace.has_value() &&
+            state_after_failed_revoke.has_value() &&
+            state_after_failed_revoke->home_node ==
+                confirmed_before_unplace->home_node &&
+            state_after_failed_revoke->revision ==
+                confirmed_before_unplace->revision,
+            "failed revoke preserves confirmed Node for restart"
+        );
+
+        // Simulate Director restart by discarding all in-memory placement
+        // knowledge and reloading both durable stores.
+        pqnas::UsersRegistry
+            restarted_users;
+
+        expect(
+            restarted_users.load(
+                restart_unplace_users_path.string()
+            ),
+            "restart unplacement users reload"
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                restarted_store;
+
+        expect(
+            restarted_store.load(
+                restart_unplace_state_path.string(),
+                &error
+            ),
+            "restart unplacement sync-state reload"
+        );
+
+        const auto restarted_user =
+            restarted_users.get(
+                restart_unplace_user.fingerprint
+            );
+
+        const auto restarted_state =
+            restarted_store.get(
+                restart_unplace_user.fingerprint
+            );
+
+        expect(
+            restarted_user.has_value() &&
+            restarted_user->home_node.empty() &&
+            restarted_state.has_value() &&
+            restarted_state->home_node ==
+                "storage-01" &&
+            restarted_state->revision <
+                restarted_user->
+                    storage_projection_revision,
+            "restart reload retains unplacement plus previous confirmed Node"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > after_restart_sent;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                after_restart_config;
+
+        after_restart_config.users =
+            &restarted_users;
+
+        after_restart_config.state_store =
+            &restarted_store;
+
+        after_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                after_restart_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                after_restart_reconciler(
+                    after_restart_config
+                );
+
+        const auto completed_revoke =
+            after_restart_reconciler.
+                reconcile_once();
+
+        expect(
+            completed_revoke.ok &&
+            completed_revoke.revoked_unplaced == 1 &&
+            completed_revoke.failed == 0 &&
+            after_restart_sent.size() == 1 &&
+            after_restart_sent[0].home_node ==
+                "storage-01" &&
+            !after_restart_sent[0].enabled &&
+            !after_restart_sent[0].storage_allocated &&
+            restarted_user.has_value() &&
+            after_restart_sent[0].revision ==
+                restarted_user->
+                    storage_projection_revision &&
+            !restarted_store.get(
+                restart_unplace_user.fingerprint
+            ).has_value(),
+            "restart reload revokes previous Node and durably completes unplacement"
+        );
+    }
+
+
     // Equal Director/confirmed revision is deliberately ambiguous for an
     // unplaced user: the Node could still hold live same-revision content.
     // Never try to replace it with a different tombstone at that revision.
