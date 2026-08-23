@@ -45,18 +45,21 @@ bool candidate_is_better(
         return true;
     }
 
-    if (candidate.storage_free_bytes !=
-        current.storage_free_bytes) {
-        return
-            candidate.storage_free_bytes >
-            current.storage_free_bytes;
-    }
-
+    // Security: Director-observed placement load is authoritative for
+    // balancing. Node-self-reported free capacity is only a tie-breaker so
+    // one compromised Storage Node cannot attract every future placement.
     if (candidate_assigned_users !=
         current.assigned_users) {
         return
             candidate_assigned_users <
             current.assigned_users;
+    }
+
+    if (candidate.storage_free_bytes !=
+        current.storage_free_bytes) {
+        return
+            candidate.storage_free_bytes >
+            current.storage_free_bytes;
     }
 
     return candidate.node_id <
@@ -130,6 +133,26 @@ UserPlacementSelectionResult select_user_home_node(
             continue;
         }
 
+        // Security: placement capacity is trusted only inside the
+        // Director-owned envelope. A Storage Node must not be able to make
+        // itself more attractive by inventing a larger filesystem.
+        if (node.capacity_ceiling_bytes == 0) {
+            reject(
+                &result,
+                "capacity_unconfigured"
+            );
+            continue;
+        }
+
+        if (node.storage_total_bytes >
+            node.capacity_ceiling_bytes) {
+            reject(
+                &result,
+                "capacity_exceeds_ceiling"
+            );
+            continue;
+        }
+
         if (node.storage_free_bytes == 0) {
             reject(
                 &result,
@@ -170,7 +193,7 @@ UserPlacementSelectionResult select_user_home_node(
     }
 
     result.selection_reason =
-        "free_bytes_desc_assigned_users_asc_node_id_asc";
+        "assigned_users_asc_free_bytes_desc_node_id_asc";
 
     return result;
 }

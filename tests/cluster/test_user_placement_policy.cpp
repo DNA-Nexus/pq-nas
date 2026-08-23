@@ -36,6 +36,9 @@ make_online_node(
     node.enabled = true;
     node.health = "online";
 
+    // RT-007: normal placement fixtures represent Director-approved capacity.
+    node.capacity_ceiling_bytes = 1000;
+
     node.last_seen_at =
         "2026-07-28T12:00:00Z";
 
@@ -114,11 +117,11 @@ int main() {
         expect(
             result.ok &&
             result.selection.node_id ==
-                "node-standard-01" &&
+                "node-business-01" &&
             result.selected_scope ==
                 "automatic" &&
             !result.used_fallback,
-            "automatic policy should use the normal selector"
+            "automatic policy should use the bounded normal selector"
         );
     }
 
@@ -181,8 +184,8 @@ int main() {
         expect(
             result.ok &&
             result.selection.node_id ==
-                "node-business-02",
-            "allowed-node policy should select only within its node set"
+                "node-business-01",
+            "allowed-node policy should use bounded ranking within its node set"
         );
     }
 
@@ -257,7 +260,7 @@ int main() {
             result.selected_scope ==
                 "fallback_automatic" &&
             result.selection.node_id ==
-                "node-standard-01",
+                "node-business-02",
             "explicit automatic fallback may escape the pinned node"
         );
     }

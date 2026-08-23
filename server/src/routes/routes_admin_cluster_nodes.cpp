@@ -9,8 +9,10 @@
 #include <nlohmann/json.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -158,6 +160,10 @@ json node_record_to_json(
         {"node_id", record.node_id},
         {"api_base_url", record.api_base_url},
         {"enabled", record.enabled},
+        {
+            "capacity_ceiling_bytes",
+            record.capacity_ceiling_bytes
+        },
         {"added_at", record.added_at},
         {"updated_at", record.updated_at},
         {"health", record.health},
@@ -437,7 +443,8 @@ void handle_admin_cluster_nodes_create(
             {
                 "node_id",
                 "api_base_url",
-                "enabled"
+                "enabled",
+                "capacity_ceiling_bytes"
             })) {
         audit_mutation(
             context,
@@ -561,6 +568,45 @@ void handle_admin_cluster_nodes_create(
             enabled_iterator->get<bool>();
     }
 
+    std::optional<std::uint64_t>
+        capacity_ceiling_bytes;
+
+    const auto capacity_ceiling_iterator =
+        body.find("capacity_ceiling_bytes");
+
+    if (capacity_ceiling_iterator != body.end()) {
+        if (!capacity_ceiling_iterator->
+                is_number_unsigned()) {
+            audit_mutation(
+                context,
+                req,
+                actor_fp,
+                "admin.cluster_node.create",
+                node_id,
+                "fail"
+            );
+
+            reply_json_local(
+                context,
+                res,
+                400,
+                json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {
+                        "message",
+                        "capacity_ceiling_bytes must be an unsigned integer"
+                    }
+                }
+            );
+            return;
+        }
+
+        capacity_ceiling_bytes =
+            capacity_ceiling_iterator->
+                get<std::uint64_t>();
+    }
+
     std::lock_guard<std::mutex> lock(
         g_cluster_node_mutation_mutex
     );
@@ -597,7 +643,8 @@ void handle_admin_cluster_nodes_create(
             canonicalize_cluster_runtime_timestamp(
                 context.now_iso_utc()
             ),
-            &registry_error)) {
+            &registry_error,
+            capacity_ceiling_bytes)) {
         audit_mutation(
             context,
             req,
@@ -706,7 +753,8 @@ void handle_admin_cluster_nodes_update(
             {
                 "node_id",
                 "api_base_url",
-                "enabled"
+                "enabled",
+                "capacity_ceiling_bytes"
             })) {
         audit_mutation(
             context,
@@ -789,13 +837,21 @@ void handle_admin_cluster_nodes_update(
     const auto enabled_iterator =
         body.find("enabled");
 
+    const auto capacity_ceiling_iterator =
+        body.find("capacity_ceiling_bytes");
+
     const bool has_url =
         url_iterator != body.end();
 
     const bool has_enabled =
         enabled_iterator != body.end();
 
-    if (!has_url && !has_enabled) {
+    const bool has_capacity_ceiling =
+        capacity_ceiling_iterator != body.end();
+
+    if (!has_url &&
+        !has_enabled &&
+        !has_capacity_ceiling) {
         audit_mutation(
             context,
             req,
@@ -879,6 +935,42 @@ void handle_admin_cluster_nodes_update(
             enabled_iterator->get<bool>();
     }
 
+    std::optional<std::uint64_t>
+        requested_capacity_ceiling_bytes;
+
+    if (has_capacity_ceiling) {
+        if (!capacity_ceiling_iterator->
+                is_number_unsigned()) {
+            audit_mutation(
+                context,
+                req,
+                actor_fp,
+                "admin.cluster_node.update",
+                node_id,
+                "fail"
+            );
+
+            reply_json_local(
+                context,
+                res,
+                400,
+                json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {
+                        "message",
+                        "capacity_ceiling_bytes must be an unsigned integer"
+                    }
+                }
+            );
+            return;
+        }
+
+        requested_capacity_ceiling_bytes =
+            capacity_ceiling_iterator->
+                get<std::uint64_t>();
+    }
+
     std::scoped_lock lock(
         *context.placement_mutex,
         g_cluster_node_mutation_mutex
@@ -929,7 +1021,8 @@ void handle_admin_cluster_nodes_update(
             canonicalize_cluster_runtime_timestamp(
                 context.now_iso_utc()
             ),
-            &registry_error)) {
+            &registry_error,
+            requested_capacity_ceiling_bytes)) {
         audit_mutation(
             context,
             req,

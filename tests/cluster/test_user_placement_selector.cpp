@@ -50,6 +50,8 @@ pqnas::cluster::NodeRegistryRecord make_online_node(
     node.enabled = true;
     node.health = "online";
 
+    node.capacity_ceiling_bytes = 1000;
+
     node.last_seen_at =
         "2026-07-28T12:00:00Z";
 
@@ -233,6 +235,66 @@ int main() {
     }
 
     {
+        NodeRegistryRecord unconfigured =
+            make_online_node(
+                "node-unconfigured",
+                800
+            );
+
+        unconfigured.capacity_ceiling_bytes = 0;
+
+        const auto result =
+            select_user_home_node(
+                {unconfigured},
+                {}
+            );
+
+        // Security: a Node without a Director-owned capacity envelope must
+        // never become eligible based only on its self-reported free space.
+        expect(
+            !result.ok &&
+            result.eligible_nodes == 0 &&
+            rejection_count(
+                result,
+                "capacity_unconfigured"
+            ) == 1,
+            "unconfigured capacity ceiling should fail closed"
+        );
+    }
+
+    {
+        NodeRegistryRecord over_ceiling =
+            make_online_node(
+                "node-over-ceiling",
+                800
+            );
+
+        over_ceiling.capacity_ceiling_bytes = 1000;
+
+        // Keep the Node-reported counters internally consistent while making
+        // the claimed total exceed the Director-owned trust envelope.
+        over_ceiling.storage_total_bytes = 2000;
+        over_ceiling.storage_used_bytes = 1200;
+        over_ceiling.storage_free_bytes = 800;
+
+        const auto result =
+            select_user_home_node(
+                {over_ceiling},
+                {}
+            );
+
+        expect(
+            !result.ok &&
+            result.eligible_nodes == 0 &&
+            rejection_count(
+                result,
+                "capacity_exceeds_ceiling"
+            ) == 1,
+            "reported capacity above Director ceiling should fail closed"
+        );
+    }
+
+    {
         std::vector<NodeRegistryRecord> nodes{
             make_online_node(
                 "node-more-free",
@@ -258,13 +320,16 @@ int main() {
                 counts
             );
 
+        // Security: Director-side placement load must dominate
+        // node-self-reported capacity. Otherwise one compromised Storage Node
+        // can exaggerate free space and attract every future placement.
         expect(
             result.ok &&
             result.node_id ==
-                "node-more-free" &&
-            result.storage_free_bytes == 800 &&
-            result.assigned_users == 20,
-            "free capacity should be the primary ranking criterion"
+                "node-fewer-users" &&
+            result.storage_free_bytes == 700 &&
+            result.assigned_users == 0,
+            "assigned-user count should bound self-reported capacity influence"
         );
     }
 
@@ -337,7 +402,7 @@ int main() {
 
         expect(
             result.selection_reason ==
-                "free_bytes_desc_assigned_users_asc_node_id_asc",
+                "assigned_users_asc_free_bytes_desc_node_id_asc",
             "selection should expose the bounded policy identifier"
         );
     }

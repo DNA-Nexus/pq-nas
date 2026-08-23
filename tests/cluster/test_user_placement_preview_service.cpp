@@ -38,6 +38,9 @@ pqnas::cluster::NodeRegistryRecord make_node(
     node.enabled = true;
     node.health = "online";
 
+    // RT-007: normal placement fixtures represent Director-approved capacity.
+    node.capacity_ceiling_bytes = 1000;
+
     node.protocol_version =
         pqnas::cluster::
             kNodeStatusProtocolVersion;
@@ -241,9 +244,9 @@ int main() {
         automatic_preview.selected_scope ==
             "automatic" &&
         automatic_preview.recommended_home_node ==
-            "node-01" &&
-        automatic_preview.current_home_node_matches,
-        "empty policy reference should use implicit automatic selection"
+            "node-business-01" &&
+        !automatic_preview.current_home_node_matches,
+        "empty policy reference should use bounded implicit automatic selection"
     );
 
     nodes[1].health = "offline";

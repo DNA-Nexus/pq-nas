@@ -166,7 +166,8 @@ int main() {
             "https://node-01.internal:8443",
             true,
             "2026-07-28T06:02:00Z",
-            &error
+            &error,
+            2000
         ),
         "add node-01: " + error
     );
@@ -243,6 +244,14 @@ int main() {
         "persisted nodes should be deterministic"
     );
 
+    expect(
+        persisted["nodes"][0]["capacity_ceiling_bytes"] ==
+            2000 &&
+        persisted["nodes"][1]["capacity_ceiling_bytes"] ==
+            0,
+        "persisted Director-owned capacity ceilings"
+    );
+
     pqnas::cluster::NodeRegistry reloaded;
 
     error.clear();
@@ -268,6 +277,67 @@ int main() {
         node_one->api_base_url ==
             "https://node-01.internal:8443",
         "reloaded node URL"
+    );
+
+    expect(
+        node_one.has_value() &&
+        node_one->capacity_ceiling_bytes == 2000,
+        "reloaded Director-owned capacity ceiling"
+    );
+
+    // Security/backward compatibility: a schema-v1 registry has no trusted
+    // Director capacity envelope. It must load as zero, which makes placement
+    // fail closed until an administrator configures the ceiling.
+    const fs::path legacy_registry_path =
+        test_directory / "legacy_node_registry.json";
+
+    json legacy = persisted;
+    legacy["version"] =
+        pqnas::cluster::kNodeRegistryLegacySchemaVersion;
+
+    for (auto& node : legacy["nodes"]) {
+        node.erase("capacity_ceiling_bytes");
+    }
+
+    expect(
+        write_text(
+            legacy_registry_path,
+            legacy.dump(2) + "\n"
+        ),
+        "write legacy schema-v1 registry"
+    );
+
+    // Keep the manually-created security fixture deterministic regardless
+    // of the test process umask.
+    expect(
+        ::chmod(
+            legacy_registry_path.c_str(),
+            0600
+        ) == 0,
+        "secure legacy schema-v1 registry fixture"
+    );
+
+    pqnas::cluster::NodeRegistry legacy_registry;
+    error.clear();
+
+    const bool legacy_loaded =
+        legacy_registry.load(
+            legacy_registry_path.string(),
+            &error
+        );
+
+    expect(
+        legacy_loaded,
+        "legacy schema-v1 registry should load: " + error
+    );
+
+    const auto legacy_node =
+        legacy_registry.get("node-01");
+
+    expect(
+        legacy_node.has_value() &&
+        legacy_node->capacity_ceiling_bytes == 0,
+        "legacy node capacity must migrate fail closed"
     );
 
     pqnas::cluster::NodeStatusSnapshot status;
@@ -319,6 +389,12 @@ int main() {
         observed->storage_used_bytes == 400 &&
         observed->storage_free_bytes == 600,
         "observed storage counters"
+    );
+
+    expect(
+        observed.has_value() &&
+        observed->capacity_ceiling_bytes == 2000,
+        "heartbeat must preserve Director-owned capacity ceiling"
     );
 
     pqnas::cluster::NodeStatusSnapshot unknown_status =

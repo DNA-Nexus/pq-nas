@@ -395,6 +395,10 @@ json record_to_json(
         {"node_id", record.node_id},
         {"api_base_url", record.api_base_url},
         {"enabled", record.enabled},
+        {
+            "capacity_ceiling_bytes",
+            record.capacity_ceiling_bytes
+        },
         {"added_at", record.added_at},
         {"updated_at", record.updated_at},
         {"health", record.health},
@@ -429,6 +433,7 @@ bool parse_record(
                 "node_id",
                 "api_base_url",
                 "enabled",
+                "capacity_ceiling_bytes",
                 "added_at",
                 "updated_at",
                 "health",
@@ -474,6 +479,23 @@ bool parse_record(
 
     record.enabled =
         enabled_iterator->get<bool>();
+
+    const auto capacity_ceiling_iterator =
+        value.find("capacity_ceiling_bytes");
+
+    // Backward-compatible migration: old registries have no Director-owned
+    // ceiling. Keep them fail-closed for placement until an admin configures it.
+    if (capacity_ceiling_iterator != value.end() &&
+        !json_u64(
+            value,
+            "capacity_ceiling_bytes",
+            &record.capacity_ceiling_bytes)) {
+        set_error(
+            err,
+            "invalid node capacity ceiling"
+        );
+        return false;
+    }
 
     if (!json_string(value, "added_at", &record.added_at) ||
         !json_string(value, "updated_at", &record.updated_at) ||
@@ -766,7 +788,7 @@ bool load_registry_file(
     if (!json_int(
             root,
             "version",
-            kNodeRegistrySchemaVersion,
+            kNodeRegistryLegacySchemaVersion,
             kNodeRegistrySchemaVersion,
             &version)) {
         set_error(err, "unsupported node registry version");
@@ -1276,7 +1298,9 @@ bool NodeRegistry::upsert_configured_node(
     const std::string& api_base_url,
     bool enabled,
     const std::string& now_iso,
-    std::string* err
+    std::string* err,
+    std::optional<std::uint64_t>
+        capacity_ceiling_bytes
 ) {
     if (err) {
         err->clear();
@@ -1316,6 +1340,8 @@ bool NodeRegistry::upsert_configured_node(
         record.node_id = node_id;
         record.api_base_url = normalized_url;
         record.enabled = enabled;
+        record.capacity_ceiling_bytes =
+            capacity_ceiling_bytes.value_or(0);
         record.added_at = now_iso;
         record.updated_at = now_iso;
         record.health =
@@ -1332,6 +1358,13 @@ bool NodeRegistry::upsert_configured_node(
         record.api_base_url = normalized_url;
         record.enabled = enabled;
         record.updated_at = now_iso;
+
+        if (capacity_ceiling_bytes.has_value()) {
+            // Security: only an explicit Director-side configuration mutation
+            // may change the trusted capacity ceiling.
+            record.capacity_ceiling_bytes =
+                *capacity_ceiling_bytes;
+        }
 
         if (!enabled) {
             record.health = "disabled";
