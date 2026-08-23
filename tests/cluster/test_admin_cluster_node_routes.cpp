@@ -126,6 +126,9 @@ int main() {
     int auth_calls = 0;
     int origin_calls = 0;
 
+    std::string actor_fingerprint =
+        "admin-fingerprint";
+
     std::vector<pqnas::AuditEvent> audits;
 
     std::unordered_map<
@@ -146,12 +149,58 @@ int main() {
             return assigned_user_counts;
         };
 
+    bool rotation_busy = false;
+    bool rotation_query_throws = false;
+
+    context.rotation_in_progress =
+        [&](const std::string&) {
+            if (rotation_query_throws) {
+                throw 1;
+            }
+
+            return rotation_busy;
+        };
+
+    int rotation_calls = 0;
+    bool rotation_callback_throws = false;
+    std::string last_rotation_node_id;
+
+    pqnas::cluster::
+        NodeCredentialRotationResult
+            rotation_result;
+
+    rotation_result.code =
+        pqnas::cluster::
+            NodeCredentialRotationServiceCode::Ok;
+
+    rotation_result.director_credential_committed =
+        true;
+
+    rotation_result.storage_finalized =
+        true;
+
+    context.rotate_node_credential =
+        [&](const std::string& node_id) {
+            ++rotation_calls;
+            last_rotation_node_id =
+                node_id;
+
+            if (rotation_callback_throws) {
+                throw 1;
+            }
+
+            return rotation_result;
+        };
+
     bool deletion_provisioning_active = false;
+    int deletion_calls = 0;
     std::string last_delete_revoked_at;
 
     context.erase_unassigned_node =
         [&](const std::string& node_id,
             const std::string& revoked_at) {
+            ++deletion_calls;
+
             pqnas::cluster::NodeDeletionResult result;
 
             last_delete_revoked_at = revoked_at;
@@ -205,7 +254,8 @@ int main() {
             }
 
             if (actor_fp) {
-                *actor_fp = "admin-fingerprint";
+                *actor_fp =
+                    actor_fingerprint;
             }
 
             return true;
@@ -568,6 +618,117 @@ int main() {
         );
     }
 
+    // Security regression: a lifecycle UPDATE must not change the same Node
+    // while credential rotation owns its per-node operation marker.
+    rotation_busy = true;
+
+    {
+        const auto before =
+            registry.get(
+                "node-01"
+            );
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "node_id":"node-01",
+                    "api_base_url":"https://blocked-update.internal",
+                    "enabled":false
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_update(
+                request,
+                response,
+                context
+            );
+
+        const auto after =
+            registry.get(
+                "node-01"
+            );
+
+        const json body =
+            response_json(
+                response
+            );
+
+        expect(
+            response.status == 409 &&
+            body["error"] == "conflict",
+            "rotation-busy node update should return 409"
+        );
+
+        expect(
+            before.has_value() &&
+            after.has_value() &&
+            after->api_base_url ==
+                before->api_base_url &&
+            after->enabled ==
+                before->enabled &&
+            after->capacity_ceiling_bytes ==
+                before->capacity_ceiling_bytes,
+            "rotation-busy update must preserve node configuration"
+        );
+    }
+
+    rotation_busy = false;
+
+    // Security regression: an uncertain busy-state query fails closed rather
+    // than allowing a Node lifecycle mutation to proceed.
+    rotation_query_throws = true;
+
+    {
+        const auto before =
+            registry.get(
+                "node-01"
+            );
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "node_id":"node-01",
+                    "enabled":false
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_update(
+                request,
+                response,
+                context
+            );
+
+        const auto after =
+            registry.get(
+                "node-01"
+            );
+
+        expect(
+            response.status == 500,
+            "rotation-state query failure should fail update closed"
+        );
+
+        expect(
+            before.has_value() &&
+            after.has_value() &&
+            after->api_base_url ==
+                before->api_base_url &&
+            after->enabled ==
+                before->enabled &&
+            after->capacity_ceiling_bytes ==
+                before->capacity_ceiling_bytes,
+            "rotation query failure must preserve node configuration"
+        );
+    }
+
+    rotation_query_throws = false;
+
     {
         httplib::Request request =
             request_with_body(
@@ -613,6 +774,370 @@ int main() {
             "successful update should be audited"
         );
     }
+
+    // -----------------------------------------------------------------
+    // Admin credential rotation trigger.
+    // -----------------------------------------------------------------
+
+    actor_fingerprint =
+        "rotation-success-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        rotation_result.code =
+            pqnas::cluster::
+                NodeCredentialRotationServiceCode::Ok;
+
+        rotation_result.director_credential_committed =
+            true;
+
+        rotation_result.storage_finalized =
+            true;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(
+                response
+            );
+
+        expect(
+            response.status == 200 &&
+            body["ok"] == true &&
+            body["rotation"] == "completed" &&
+            body["director_credential_committed"] == true &&
+            body["storage_finalized"] == true,
+            "successful credential rotation trigger should return 200"
+        );
+
+        expect(
+            rotation_calls ==
+                calls_before + 1 &&
+            last_rotation_node_id ==
+                "node-01",
+            "rotation trigger should invoke service exactly once"
+        );
+
+        expect(
+            !audits.empty() &&
+            audits.back().event ==
+                "admin.cluster_node.credential_rotation" &&
+            audits.back().outcome ==
+                "ok",
+            "successful credential rotation should be audited"
+        );
+    }
+
+    actor_fingerprint =
+        "rotation-finalize-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        rotation_result.code =
+            pqnas::cluster::
+                NodeCredentialRotationServiceCode::
+                    FinalizePending;
+
+        rotation_result.director_credential_committed =
+            true;
+
+        rotation_result.storage_finalized =
+            false;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(
+                response
+            );
+
+        expect(
+            response.status == 502 &&
+            body["error"] ==
+                "finalize_pending" &&
+            body["retryable"] == true &&
+            body["director_credential_committed"] == true &&
+            body["storage_finalized"] == false,
+            "FinalizePending should expose retryable lifecycle state without credentials"
+        );
+
+        expect(
+            rotation_calls ==
+                calls_before + 1,
+            "FinalizePending should come from one service invocation"
+        );
+    }
+
+    actor_fingerprint =
+        "rotation-conflict-admin";
+
+    {
+        rotation_result.code =
+            pqnas::cluster::
+                NodeCredentialRotationServiceCode::
+                    RotationInProgress;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 409,
+            "concurrent credential rotation should return 409"
+        );
+    }
+
+    actor_fingerprint =
+        "rotation-invalid-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01","extra":true})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400 &&
+            rotation_calls ==
+                calls_before,
+            "rotation trigger must reject extra JSON fields before service"
+        );
+    }
+
+    actor_fingerprint =
+        "rotation-throw-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        rotation_callback_throws =
+            true;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        rotation_callback_throws =
+            false;
+
+        expect(
+            response.status == 500 &&
+            rotation_calls ==
+                calls_before + 1,
+            "rotation service exception must fail admin trigger closed"
+        );
+    }
+
+    // Unauthenticated requests must not reach same-origin validation, rate
+    // limiting or the rotation service.
+    actor_fingerprint =
+        "rotation-auth-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        auth_allowed = false;
+        origin_allowed = true;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 401 &&
+            rotation_calls ==
+                calls_before,
+            "unauthenticated rotation trigger must stop before service"
+        );
+
+        auth_allowed = true;
+    }
+
+    actor_fingerprint =
+        "rotation-origin-admin";
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        origin_allowed = false;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 403 &&
+            rotation_calls ==
+                calls_before,
+            "cross-origin rotation trigger must stop before service"
+        );
+
+        origin_allowed = true;
+    }
+
+    // Security regression: authenticated administrative callers are bounded
+    // without giving unauthenticated traffic a way to consume the budget.
+    actor_fingerprint =
+        "rotation-rate-admin";
+
+    rotation_result.code =
+        pqnas::cluster::
+            NodeCredentialRotationServiceCode::Ok;
+
+    rotation_result.director_credential_committed =
+        true;
+
+    rotation_result.storage_finalized =
+        true;
+
+    {
+        const int calls_before =
+            rotation_calls;
+
+        for (std::size_t index = 0;
+             index <
+                 pqnas::cluster::
+                     kAdminClusterNodeRotationRateLimit;
+             ++index) {
+            httplib::Request request =
+                request_with_body(
+                    R"({"node_id":"node-01"})"
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_admin_cluster_node_credential_rotation(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 200,
+                "rotation requests within admin rate limit should succeed"
+            );
+        }
+
+        httplib::Request blocked_request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response blocked_response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_credential_rotation(
+                blocked_request,
+                blocked_response,
+                context
+            );
+
+        expect(
+            blocked_response.status == 429 &&
+            response_header(
+                blocked_response,
+                "Retry-After"
+            ) != "",
+            "rotation request above admin rate limit should return 429"
+        );
+
+        expect(
+            rotation_calls ==
+                calls_before +
+                static_cast<int>(
+                    pqnas::cluster::
+                        kAdminClusterNodeRotationRateLimit
+                ),
+            "rate-limited rotation must not invoke service"
+        );
+    }
+
+    actor_fingerprint =
+        "admin-fingerprint";
 
     assigned_user_counts["node-01"] = 2;
 
@@ -681,6 +1206,55 @@ int main() {
     }
 
     assigned_user_counts.erase("node-01");
+
+    // Security regression: deletion cannot begin after rotation has installed
+    // its busy marker under the shared placement coordination mutex.
+    rotation_busy = true;
+
+    {
+        const int calls_before =
+            deletion_calls;
+
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_delete(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(
+                response
+            );
+
+        expect(
+            response.status == 409 &&
+            body["error"] == "conflict",
+            "rotation-busy node delete should return 409"
+        );
+
+        expect(
+            registry.get(
+                "node-01"
+            ).has_value(),
+            "rotation-busy delete must preserve node"
+        );
+
+        expect(
+            deletion_calls ==
+                calls_before,
+            "rotation-busy delete must not enter deletion lifecycle"
+        );
+    }
+
+    rotation_busy = false;
 
     // Security regression: active provisioning must be surfaced as a
     // conflict and must not remove the configured Node.

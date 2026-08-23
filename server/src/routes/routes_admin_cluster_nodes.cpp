@@ -8,6 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -24,6 +25,158 @@ using json = nlohmann::json;
 
 std::mutex g_cluster_node_mutation_mutex;
 
+struct AdminRotationRateState {
+    std::chrono::steady_clock::time_point
+        window_started;
+
+    std::chrono::steady_clock::time_point
+        last_seen;
+
+    std::size_t count = 0;
+};
+
+std::mutex
+    g_admin_rotation_rate_mutex;
+
+std::unordered_map<
+    std::string,
+    AdminRotationRateState
+> g_admin_rotation_rate_states;
+
+bool consume_admin_rotation_rate_limit(
+    const std::string& actor_fp,
+    long* retry_after_seconds
+) {
+    if (retry_after_seconds) {
+        *retry_after_seconds =
+            kAdminClusterNodeRotationRateWindowSeconds;
+    }
+
+    if (actor_fp.empty() ||
+        actor_fp.size() > 512) {
+        return false;
+    }
+
+    using Clock =
+        std::chrono::steady_clock;
+
+    const auto now =
+        Clock::now();
+
+    const auto window =
+        std::chrono::seconds(
+            kAdminClusterNodeRotationRateWindowSeconds
+        );
+
+    std::lock_guard<std::mutex>
+        lock(
+            g_admin_rotation_rate_mutex
+        );
+
+    auto iterator =
+        g_admin_rotation_rate_states.find(
+            actor_fp
+        );
+
+    if (iterator ==
+        g_admin_rotation_rate_states.end()) {
+        if (g_admin_rotation_rate_states.size() >=
+            kAdminClusterNodeRotationTrackedActors) {
+            auto oldest =
+                g_admin_rotation_rate_states.begin();
+
+            for (auto current =
+                     g_admin_rotation_rate_states.begin();
+                 current !=
+                     g_admin_rotation_rate_states.end();
+                 ++current) {
+                if (current->second.last_seen <
+                    oldest->second.last_seen) {
+                    oldest = current;
+                }
+            }
+
+            // Security: keep attacker-controlled actor cardinality bounded.
+            g_admin_rotation_rate_states.erase(
+                oldest
+            );
+        }
+
+        AdminRotationRateState state;
+        state.window_started = now;
+        state.last_seen = now;
+        state.count = 1;
+
+        g_admin_rotation_rate_states.emplace(
+            actor_fp,
+            state
+        );
+
+        if (retry_after_seconds) {
+            *retry_after_seconds = 0;
+        }
+
+        return true;
+    }
+
+    AdminRotationRateState& state =
+        iterator->second;
+
+    state.last_seen = now;
+
+    const auto elapsed =
+        now - state.window_started;
+
+    if (elapsed >= window) {
+        state.window_started = now;
+        state.count = 1;
+
+        if (retry_after_seconds) {
+            *retry_after_seconds = 0;
+        }
+
+        return true;
+    }
+
+    if (state.count >=
+        kAdminClusterNodeRotationRateLimit) {
+        if (retry_after_seconds) {
+            const auto remaining =
+                window - elapsed;
+
+            const auto milliseconds =
+                std::chrono::duration_cast<
+                    std::chrono::milliseconds
+                >(
+                    remaining
+                ).count();
+
+            long seconds =
+                static_cast<long>(
+                    (milliseconds + 999) /
+                    1000
+                );
+
+            if (seconds < 1) {
+                seconds = 1;
+            }
+
+            *retry_after_seconds =
+                seconds;
+        }
+
+        return false;
+    }
+
+    ++state.count;
+
+    if (retry_after_seconds) {
+        *retry_after_seconds = 0;
+    }
+
+    return true;
+}
+
 bool context_ok(
     const AdminClusterNodeRoutesContext& context
 ) {
@@ -31,12 +184,42 @@ bool context_ok(
         context.registry &&
         context.placement_mutex &&
         static_cast<bool>(context.assigned_user_counts) &&
+        static_cast<bool>(context.rotation_in_progress) &&
+        static_cast<bool>(context.rotate_node_credential) &&
         static_cast<bool>(context.erase_unassigned_node) &&
         static_cast<bool>(context.require_admin_auth) &&
         static_cast<bool>(context.require_same_origin) &&
         static_cast<bool>(context.reply_json) &&
         static_cast<bool>(context.now_iso_utc) &&
         static_cast<bool>(context.audit_append);
+}
+
+bool query_rotation_in_progress(
+    const AdminClusterNodeRoutesContext& context,
+    const std::string& node_id,
+    bool* in_progress
+) noexcept {
+    if (!in_progress ||
+        !context.rotation_in_progress) {
+        return false;
+    }
+
+    *in_progress = true;
+
+    try {
+        *in_progress =
+            context.rotation_in_progress(
+                node_id
+            );
+
+        return true;
+    } catch (...) {
+        // Security: an uncertain rotation state must fail closed. A lifecycle
+        // mutation must never proceed merely because the busy-state provider
+        // failed.
+        *in_progress = true;
+        return false;
+    }
 }
 
 void reply_json_local(
@@ -1008,6 +1191,63 @@ void handle_admin_cluster_nodes_update(
         return;
     }
 
+    bool rotation_busy = false;
+
+    if (!query_rotation_in_progress(
+            context,
+            node_id,
+            &rotation_busy)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.update",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {
+                    "message",
+                    "failed to check node credential rotation state"
+                }
+            }
+        );
+        return;
+    }
+
+    if (rotation_busy) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.update",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            409,
+            json{
+                {"ok", false},
+                {"error", "conflict"},
+                {
+                    "message",
+                    "node credential rotation is in progress"
+                }
+            }
+        );
+        return;
+    }
+
     const std::string final_url =
         has_url
             ? normalized_url
@@ -1094,6 +1334,323 @@ void handle_admin_cluster_nodes_update(
             {"ok", true},
             {"node", node_record_to_json(*updated)}
         }
+    );
+}
+
+void handle_admin_cluster_node_credential_rotation(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminClusterNodeRoutesContext& context
+) {
+    std::string actor_fp;
+
+    if (!authorize_mutation(
+            context,
+            req,
+            res,
+            &actor_fp)) {
+        return;
+    }
+
+    json body;
+
+    if (!parse_json_object(
+            context,
+            req,
+            res,
+            &body)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.credential_rotation",
+            "",
+            "fail"
+        );
+        return;
+    }
+
+    if (!has_only_keys(
+            body,
+            {"node_id"}) ||
+        body.find("node_id") ==
+            body.end() ||
+        !body["node_id"].is_string()) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.credential_rotation",
+            "",
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {
+                    "message",
+                    "request must contain only node_id"
+                }
+            }
+        );
+        return;
+    }
+
+    const std::string node_id =
+        body["node_id"].get<std::string>();
+
+    if (!valid_cluster_node_id(
+            node_id)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.credential_rotation",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "invalid node_id"}
+            }
+        );
+        return;
+    }
+
+    long retry_after_seconds = 0;
+
+    if (!consume_admin_rotation_rate_limit(
+            actor_fp,
+            &retry_after_seconds)) {
+        if (retry_after_seconds < 1) {
+            retry_after_seconds =
+                kAdminClusterNodeRotationRateWindowSeconds;
+        }
+
+        res.set_header(
+            "Retry-After",
+            std::to_string(
+                retry_after_seconds
+            )
+        );
+
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.credential_rotation",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            429,
+            json{
+                {"ok", false},
+                {"error", "rate_limited"},
+                {
+                    "message",
+                    "credential rotation rate limit exceeded"
+                }
+            }
+        );
+        return;
+    }
+
+    NodeCredentialRotationResult result;
+
+    try {
+        // Security: do not acquire placement_mutex here. rotate() establishes
+        // its own short coordination boundaries and performs prepare/finalize
+        // HTTPS only after releasing them.
+        result =
+            context.rotate_node_credential(
+                node_id
+            );
+    } catch (...) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.credential_rotation",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {"message", "credential rotation failed"}
+            }
+        );
+        return;
+    }
+
+    int status = 500;
+
+    json response{
+        {"ok", false}
+    };
+
+    switch (result.code) {
+        case NodeCredentialRotationServiceCode::Ok:
+            status = 200;
+            response = json{
+                {"ok", true},
+                {"node_id", node_id},
+                {"rotation", "completed"},
+                {
+                    "director_credential_committed",
+                    result.director_credential_committed
+                },
+                {
+                    "storage_finalized",
+                    result.storage_finalized
+                }
+            };
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                InvalidInput:
+            status = 400;
+            response["error"] =
+                "bad_request";
+            response["message"] =
+                "node configuration is invalid for credential rotation";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                NodeNotFound:
+            status = 404;
+            response["error"] =
+                "not_found";
+            response["message"] =
+                "node not found";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                NodeDisabled:
+            status = 409;
+            response["error"] =
+                "conflict";
+            response["message"] =
+                "node is disabled";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                RotationInProgress:
+            status = 409;
+            response["error"] =
+                "conflict";
+            response["message"] =
+                "node credential rotation is already in progress";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                NodeChanged:
+            status = 409;
+            response["error"] =
+                "conflict";
+            response["message"] =
+                "node configuration changed during credential rotation";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                CredentialStateConflict:
+            status = 409;
+            response["error"] =
+                "conflict";
+            response["message"] =
+                "node credential state changed during rotation";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                CredentialUnavailable:
+            status = 503;
+            response["error"] =
+                "service_unavailable";
+            response["message"] =
+                "node credential is unavailable";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                PrepareFailed:
+            status = 502;
+            response["error"] =
+                "upstream_error";
+            response["message"] =
+                "Storage credential rotation prepare failed";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                CredentialCommitFailed:
+            status = 500;
+            response["error"] =
+                "server_error";
+            response["message"] =
+                "failed to commit rotated credential";
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                FinalizePending:
+            // Director NEW is already authoritative. Expose only lifecycle
+            // state, never credential material or upstream diagnostics.
+            status = 502;
+            response["error"] =
+                "finalize_pending";
+            response["message"] =
+                "Storage credential rotation finalization is unconfirmed";
+            response["retryable"] = true;
+            response["director_credential_committed"] =
+                result.director_credential_committed;
+            response["storage_finalized"] =
+                result.storage_finalized;
+            break;
+
+        case NodeCredentialRotationServiceCode::
+                ServiceUnavailable:
+            status = 503;
+            response["error"] =
+                "service_unavailable";
+            response["message"] =
+                "credential rotation service is unavailable";
+            break;
+    }
+
+    audit_mutation(
+        context,
+        req,
+        actor_fp,
+        "admin.cluster_node.credential_rotation",
+        node_id,
+        result.code ==
+                NodeCredentialRotationServiceCode::Ok
+            ? "ok"
+            : "fail"
+    );
+
+    reply_json_local(
+        context,
+        res,
+        status,
+        response
     );
 }
 
@@ -1208,6 +1765,63 @@ void handle_admin_cluster_nodes_delete(
                 {"ok", false},
                 {"error", "not_found"},
                 {"message", "node not found"}
+            }
+        );
+        return;
+    }
+
+    bool rotation_busy = false;
+
+    if (!query_rotation_in_progress(
+            context,
+            node_id,
+            &rotation_busy)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.delete",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"},
+                {
+                    "message",
+                    "failed to check node credential rotation state"
+                }
+            }
+        );
+        return;
+    }
+
+    if (rotation_busy) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.delete",
+            node_id,
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            409,
+            json{
+                {"ok", false},
+                {"error", "conflict"},
+                {
+                    "message",
+                    "node credential rotation is in progress"
+                }
             }
         );
         return;
@@ -1430,6 +2044,20 @@ void register_admin_cluster_node_routes(
             httplib::Response& res
         ) {
             handle_admin_cluster_nodes_update(
+                req,
+                res,
+                captured
+            );
+        }
+    );
+
+    server.Post(
+        "/api/v4/admin/cluster/nodes/credential/rotation",
+        [captured](
+            const httplib::Request& req,
+            httplib::Response& res
+        ) {
+            handle_admin_cluster_node_credential_rotation(
                 req,
                 res,
                 captured

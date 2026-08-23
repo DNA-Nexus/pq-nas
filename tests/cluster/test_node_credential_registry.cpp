@@ -11,6 +11,41 @@
 #include <unistd.h>
 #include <vector>
 
+#if defined(__linux__)
+
+// Test-only durability fault injection.
+//
+// Security: production code has no fault hook, environment variable or
+// runtime switch. GNU ld --wrap redirects fsync() only inside this test
+// executable.
+bool g_fail_next_directory_fsync = false;
+int g_injected_directory_fsync_failures = 0;
+
+extern "C" int __real_fsync(int descriptor);
+
+extern "C" int __wrap_fsync(int descriptor) {
+    struct stat stats {};
+
+    if (g_fail_next_directory_fsync &&
+        ::fstat(
+            descriptor,
+            &stats
+        ) == 0 &&
+        S_ISDIR(stats.st_mode)) {
+        g_fail_next_directory_fsync = false;
+        ++g_injected_directory_fsync_failures;
+
+        errno = EIO;
+        return -1;
+    }
+
+    return __real_fsync(
+        descriptor
+    );
+}
+
+#endif
+
 namespace {
 
 namespace fs = std::filesystem;
@@ -377,6 +412,291 @@ int main() {
     pqnas::cluster::clear_internal_auth_token_text(
         &authorization
     );
+
+    // Security: re-persisting the exact already-visible generation is
+    // idempotent. This is the recovery operation used when a previous rename
+    // was visible but parent-directory durability was uncertain.
+    error.clear();
+
+    expect_result(
+        registry.upsert(
+            "node-01",
+            token_b,
+            &error
+        ),
+        NodeCredentialRegistryResult::Ok,
+        "idempotent exact credential re-persist"
+    );
+
+    expect_result(
+        registry.make_bearer_authorization(
+            "node-01",
+            &authorization,
+            &error
+        ),
+        NodeCredentialRegistryResult::Ok,
+        "build authorization after exact credential re-persist"
+    );
+
+    expect(
+        pqnas::cluster::
+            verify_internal_bearer_authorization(
+                authorization,
+                credential_b
+            ),
+        "exact credential re-persist must preserve NEW"
+    );
+
+    pqnas::cluster::clear_internal_auth_token_text(
+        &authorization
+    );
+
+#if defined(__linux__)
+    {
+        // Security regression: exercise the real ambiguous durability boundary
+        // used by Director credential rotation:
+        //
+        //     write NEW temp
+        //     fsync(temp)
+        //     rename(temp -> active)
+        //     fsync(parent) -> injected EIO
+        //
+        // NEW is already visible after rename. The registry must detect that
+        // exact visible generation, re-persist NEW and confirm parent-directory
+        // durability. It must never roll back to OLD.
+        const std::string durability_node =
+            "node-durability";
+
+        error.clear();
+
+        expect_result(
+            registry.create_if_absent(
+                durability_node,
+                token_a,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "create durability recovery fixture"
+        );
+
+        const int failures_before =
+            g_injected_directory_fsync_failures;
+
+        g_fail_next_directory_fsync = true;
+
+        error.clear();
+
+        expect_result(
+            registry.replace_if_matches(
+                durability_node,
+                token_a,
+                token_b,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "recover rename-visible credential after parent fsync failure"
+        );
+
+        expect(
+            !g_fail_next_directory_fsync &&
+            g_injected_directory_fsync_failures ==
+                failures_before + 1,
+            "exactly one parent-directory fsync failure must be injected"
+        );
+
+        // Never allow a failed assertion above to poison later test cases.
+        g_fail_next_directory_fsync = false;
+
+        bool durability_new_matched = false;
+        bool durability_old_matched = true;
+
+        error.clear();
+
+        expect_result(
+            registry.matches(
+                durability_node,
+                token_b,
+                &durability_new_matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "match recovered durable NEW credential"
+        );
+
+        error.clear();
+
+        expect_result(
+            registry.matches(
+                durability_node,
+                token_a,
+                &durability_old_matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "check OLD after durability recovery"
+        );
+
+        expect(
+            durability_new_matched &&
+            !durability_old_matched,
+            "durability recovery must keep NEW authoritative and retire OLD"
+        );
+
+        // A fresh registry instance proves recovery was not merely an
+        // in-process observation of a rename-visible inode.
+        NodeCredentialRegistry durability_reloaded;
+
+        error.clear();
+
+        expect(
+            durability_reloaded.load(
+                registry_directory.string(),
+                &error
+            ),
+            "reload registry after durability recovery: " +
+                error
+        );
+
+        durability_new_matched = false;
+
+        error.clear();
+
+        expect_result(
+            durability_reloaded.matches(
+                durability_node,
+                token_b,
+                &durability_new_matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "match durability-recovered NEW after reload"
+        );
+
+        expect(
+            durability_new_matched,
+            "durability-recovered NEW must survive registry reload"
+        );
+
+        error.clear();
+
+        expect_result(
+            registry.erase(
+                durability_node,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "erase durability recovery fixture"
+        );
+    }
+#endif
+
+    {
+        // Security: Director rotation must commit NEW only when the exact OLD
+        // generation used for prepare is still authoritative. Comparison and
+        // replacement therefore need one atomic registry operation.
+        const std::string cas_node =
+            "node-cas";
+
+        error.clear();
+
+        expect_result(
+            registry.create_if_absent(
+                cas_node,
+                token_a,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "create compare-and-replace credential fixture"
+        );
+
+        error.clear();
+
+        expect_result(
+            registry.replace_if_matches(
+                cas_node,
+                token_a,
+                token_b,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "replace credential when expected generation matches"
+        );
+
+        bool cas_matched = false;
+
+        error.clear();
+
+        expect_result(
+            registry.matches(
+                cas_node,
+                token_b,
+                &cas_matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "match compare-and-replace NEW credential"
+        );
+
+        expect(
+            cas_matched,
+            "successful compare-and-replace installs NEW"
+        );
+
+        error.clear();
+
+        expect_result(
+            registry.replace_if_matches(
+                cas_node,
+                token_a,
+                token_a,
+                &error
+            ),
+            NodeCredentialRegistryResult::
+                StateMismatch,
+            "stale OLD cannot replace newer credential"
+        );
+
+        cas_matched = false;
+        error.clear();
+
+        expect_result(
+            registry.matches(
+                cas_node,
+                token_b,
+                &cas_matched,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "match credential after stale compare-and-replace"
+        );
+
+        expect(
+            cas_matched,
+            "state mismatch preserves authoritative NEW"
+        );
+
+        expect(
+            std::string(
+                pqnas::cluster::
+                    node_credential_registry_result_code(
+                        NodeCredentialRegistryResult::
+                            StateMismatch
+                    )
+            ) == "node_credential_state_mismatch",
+            "stable compare-and-replace mismatch reason code"
+        );
+
+        error.clear();
+
+        expect_result(
+            registry.erase(
+                cas_node,
+                &error
+            ),
+            NodeCredentialRegistryResult::Ok,
+            "erase compare-and-replace fixture"
+        );
+    }
 
     NodeCredentialRegistry reloaded;
     error.clear();

@@ -282,7 +282,12 @@ map_credential_result(
         case NodeCredentialRegistryResult::NotFound:
         case NodeCredentialRegistryResult::AlreadyExists:
         case NodeCredentialRegistryResult::
+                StateMismatch:
+        case NodeCredentialRegistryResult::
                 CredentialInvalid:
+            // Security: a credential generation mismatch is a state conflict,
+            // not an availability failure. Fail closed without treating stale
+            // credential state as recoverable I/O or persistence trouble.
             return NodeEnrollmentConsumptionServiceResult::
                 CredentialConflict;
 

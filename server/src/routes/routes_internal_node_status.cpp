@@ -60,8 +60,9 @@ bool context_ok(
     const InternalNodeStatusRoutesContext& context
 ) {
     return
-        context.credential &&
-        context.credential->configured() &&
+        static_cast<bool>(
+            context.verify_authorization
+        ) &&
         static_cast<bool>(context.build_status_json);
 }
 
@@ -224,12 +225,23 @@ void handle_internal_node_status_request(
     // Security: authenticate before consuming the status rate-limit budget.
     // Otherwise unauthenticated traffic from the same transport peer could
     // starve legitimate Director polling.
-    if (!exact_authorization_header(
+    bool authorized = false;
+
+    if (exact_authorization_header(
             req,
-            &authorization) ||
-        !verify_internal_bearer_authorization(
-            authorization,
-            *context.credential)) {
+            &authorization)) {
+        try {
+            authorized =
+                context.verify_authorization(
+                    authorization
+                );
+        } catch (...) {
+            // Security: authentication dependency failures fail closed.
+            authorized = false;
+        }
+    }
+
+    if (!authorized) {
         reply_unauthorized(context, res);
         return;
     }

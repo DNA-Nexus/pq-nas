@@ -31,7 +31,12 @@ inline constexpr std::size_t
     kInternalStorageUserProjectionRateLimitTrackedPeers = 256;
 
 struct InternalStorageUserProjectionRoutesContext {
-    const InternalAuthCredential* credential = nullptr;
+    // Security: route code receives only a verifier. Credential rotation
+    // can therefore accept active + pending credentials without exposing
+    // either secret or coupling HTTP handlers to credential storage.
+    std::function<bool(
+        const std::string&
+    )> verify_authorization;
 
     StorageUserProjectionStore* projection_store =
         nullptr;

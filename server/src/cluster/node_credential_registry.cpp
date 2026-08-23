@@ -1227,6 +1227,120 @@ NodeCredentialRegistryResult persist_credential_file(
     return NodeCredentialRegistryResult::Ok;
 }
 
+NodeCredentialRegistryResult
+persist_credential_file_with_visible_recovery(
+    int directory_descriptor,
+    const std::string& filename,
+    const std::string& plaintext_token,
+    std::string* error
+) {
+    const NodeCredentialRegistryResult
+        persist_result =
+            persist_credential_file(
+                directory_descriptor,
+                filename,
+                plaintext_token,
+                error
+            );
+
+    if (persist_result !=
+        NodeCredentialRegistryResult::
+            PersistFailed) {
+        return persist_result;
+    }
+
+    // Security: PersistFailed is ambiguous after renameat(). The requested
+    // credential may already be the visible authoritative inode even though
+    // its directory entry was not confirmed durable.
+    //
+    // Never roll back to an older generation. If and only if the exact
+    // requested credential is visible, re-persist that same snapshot and
+    // require a successful parent-directory fsync before reporting Ok.
+    std::string visible_token;
+
+    SensitiveStringWiper
+        visible_token_wiper(
+            visible_token
+        );
+
+    std::string recovery_error;
+
+    const CredentialFileResult
+        visible_result =
+            read_credential_token(
+                directory_descriptor,
+                filename,
+                &visible_token,
+                &recovery_error
+            );
+
+    if (visible_result ==
+        CredentialFileResult::Unsafe) {
+        set_error(
+            error,
+            "unsafe node credential after uncertain persistence"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                StorageUnsafe;
+    }
+
+    if (visible_result ==
+        CredentialFileResult::IoFailed) {
+        set_error(
+            error,
+            "failed to inspect node credential after uncertain persistence"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                IoFailed;
+    }
+
+    if (visible_result ==
+        CredentialFileResult::Invalid) {
+        set_error(
+            error,
+            "invalid node credential after uncertain persistence"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                CredentialInvalid;
+    }
+
+    if (visible_result !=
+            CredentialFileResult::Ok ||
+        sodium_memcmp(
+            visible_token.data(),
+            plaintext_token.data(),
+            kInternalAuthTokenChars
+        ) != 0) {
+        set_error(
+            error,
+            "node credential persistence remains uncertain"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                PersistFailed;
+    }
+
+    if (error) {
+        error->clear();
+    }
+
+    // Security: this exact re-persist establishes a fresh
+    // write -> fsync(file) -> rename -> fsync(parent) boundary.
+    return persist_credential_file(
+        directory_descriptor,
+        filename,
+        plaintext_token,
+        error
+    );
+}
+
 NodeCredentialRegistryResult map_file_result(
     CredentialFileResult result
 ) {
@@ -1260,6 +1374,8 @@ const char* node_credential_registry_result_code(
             return "node_credential_not_found";
         case NodeCredentialRegistryResult::AlreadyExists:
             return "node_credential_already_exists";
+        case NodeCredentialRegistryResult::StateMismatch:
+            return "node_credential_state_mismatch";
         case NodeCredentialRegistryResult::CredentialInvalid:
             return "node_credential_invalid";
         case NodeCredentialRegistryResult::StorageUnsafe:
@@ -1593,12 +1709,151 @@ NodeCredentialRegistry::upsert(
         return NodeCredentialRegistryResult::IoFailed;
     }
 
-    return persist_credential_file(
+    return persist_credential_file_with_visible_recovery(
         descriptor.get(),
-        credential_filename(node_id),
+        credential_filename(
+            node_id
+        ),
         plaintext_token,
         error
     );
+
+}
+
+NodeCredentialRegistryResult
+NodeCredentialRegistry::replace_if_matches(
+    const std::string& node_id,
+    const std::string& expected_plaintext_token,
+    const std::string& replacement_plaintext_token,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    if (!valid_cluster_node_id(
+            node_id) ||
+        !valid_internal_auth_credential_token(
+            expected_plaintext_token) ||
+        !valid_internal_auth_credential_token(
+            replacement_plaintext_token)) {
+        set_error(
+            error,
+            "invalid node credential compare-and-replace"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                InvalidInput;
+    }
+
+    // Security: the expected-generation check and replacement share one
+    // registry mutex. Never split this into matches() followed by upsert().
+    std::lock_guard<std::mutex>
+        lock(mutex_);
+
+    if (directory_.empty()) {
+        set_error(
+            error,
+            "node credential registry is not loaded"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                StorageUnsafe;
+    }
+
+    UniqueFd descriptor;
+
+    const DirectoryOpenResult open_result =
+        open_registry_directory(
+            directory_,
+            false,
+            &descriptor,
+            error
+        );
+
+    if (open_result ==
+        DirectoryOpenResult::Missing) {
+        return
+            NodeCredentialRegistryResult::
+                NotFound;
+    }
+
+    if (open_result ==
+        DirectoryOpenResult::Unsafe) {
+        return
+            NodeCredentialRegistryResult::
+                StorageUnsafe;
+    }
+
+    if (open_result !=
+        DirectoryOpenResult::Ok) {
+        return
+            NodeCredentialRegistryResult::
+                IoFailed;
+    }
+
+    const std::string filename =
+        credential_filename(
+            node_id
+        );
+
+    std::string current_token;
+
+    SensitiveStringWiper
+        current_token_wiper(
+            current_token
+        );
+
+    const CredentialFileResult
+        current_result =
+            read_credential_token(
+                descriptor.get(),
+                filename,
+                &current_token,
+                error
+            );
+
+    if (current_result ==
+        CredentialFileResult::Missing) {
+        return
+            NodeCredentialRegistryResult::
+                NotFound;
+    }
+
+    if (current_result !=
+        CredentialFileResult::Ok) {
+        return map_file_result(
+            current_result
+        );
+    }
+
+    // Both values are canonical fixed-size tokens. Constant-time comparison
+    // prevents the compare-and-replace result from disclosing a credential
+    // prefix.
+    if (sodium_memcmp(
+            current_token.data(),
+            expected_plaintext_token.data(),
+            kInternalAuthTokenChars
+        ) != 0) {
+        set_error(
+            error,
+            "node credential generation changed"
+        );
+
+        return
+            NodeCredentialRegistryResult::
+                StateMismatch;
+    }
+
+    return
+        persist_credential_file_with_visible_recovery(
+            descriptor.get(),
+            filename,
+            replacement_plaintext_token,
+            error
+        );
 }
 
 NodeCredentialRegistryResult
