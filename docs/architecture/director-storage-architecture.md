@@ -307,6 +307,42 @@ pool_id = ""
 
 means there is no valid Storage assignment.
 
+## Placement Capacity Trust Boundary
+
+Storage Node heartbeat capacity values are operational telemetry, not
+authoritative placement configuration.
+
+The Director owns a per-node:
+
+    capacity_ceiling_bytes
+
+value in the Node registry.
+
+Security rules:
+
+- `capacity_ceiling_bytes = 0` means placement capacity is not configured.
+- A node with unconfigured capacity is not eligible for automatic placement.
+- A node is not eligible when its reported `storage_total_bytes` exceeds the
+  Director-owned capacity ceiling.
+- Storage Node enrollment does not establish the trusted capacity ceiling.
+- Storage Node heartbeat/status updates must never overwrite the capacity
+  ceiling.
+- The ceiling must be configured through the Director administrative control
+  plane from trusted infrastructure information.
+
+The capacity ceiling is a hard trust envelope, not a quota or reservation.
+Heartbeat-reported free/used capacity may change normally inside that envelope.
+
+After policy scope and eligibility filtering, automatic placement ranks
+candidate nodes by:
+
+1. lowest Director-observed assigned-user count
+2. highest reported free storage
+3. lexicographically smallest stable node ID
+
+Node-reported free capacity is therefore only a tie-breaker and cannot by
+itself make one Storage Node attract every future placement.
+
 ---
 
 # 8. Storage User Projection
@@ -822,6 +858,11 @@ It is not the permanent architectural contract.
 
 The current implementation includes:
 
+- Director-owned Storage Node capacity ceilings
+- fail-closed automatic placement for nodes without trusted capacity
+- placement balancing using Director-observed assigned-user count before
+  Node-reported free capacity
+
 - Director and Node runtime roles
 - Storage Node enrollment state
 - Director Node registry
@@ -850,6 +891,8 @@ Live staging has confirmed that:
 - reverse-proxy access does not bypass internal authentication
 - Director sees the enrolled Storage Node
 - Director and Storage binaries run successfully with the new cluster code
+- Director Node registry schema v1 -> v2 migration has been live verified
+- Director-owned capacity ceiling persists across Storage Node heartbeats
 
 ## NOT YET WIRED / NOT YET COMPLETE
 
