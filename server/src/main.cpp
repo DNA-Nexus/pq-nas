@@ -134,6 +134,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_access_runtime.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
+#include "cluster/node_deletion_service.h"
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_service.h"
 #include "cluster/node_enrollment_consumption_service.h"
@@ -9567,6 +9568,23 @@ int main()
     pqnas::cluster::NodeCredentialRegistry
         director_node_credential_registry;
 
+    pqnas::cluster::NodeDeletionServiceConfig
+        director_node_deletion_service_config;
+
+    director_node_deletion_service_config.node_registry =
+        &director_node_registry;
+
+    director_node_deletion_service_config.enrollment_registry =
+        &director_node_enrollment_registry;
+
+    director_node_deletion_service_config.credential_registry =
+        &director_node_credential_registry;
+
+    pqnas::cluster::NodeDeletionService
+        director_node_deletion_service(
+            director_node_deletion_service_config
+        );
+
     std::unique_ptr<
         pqnas::cluster::NodeEnrollmentService
     > director_node_enrollment_service;
@@ -11517,6 +11535,9 @@ v5.app_pair_build_qr_uri =
         admin_node_enrollment_context.service =
             director_node_enrollment_service.get();
 
+        admin_node_enrollment_context.lifecycle_mutex =
+            cluster_placement_mutex;
+
         admin_node_enrollment_context.require_admin_auth =
             [&](const httplib::Request& req,
                 httplib::Response& res,
@@ -11591,6 +11612,9 @@ v5.app_pair_build_qr_uri =
             director_node_enrollment_consumption_service
                 .get();
 
+        node_enrollment_bootstrap_context.lifecycle_mutex =
+            cluster_placement_mutex;
+
         node_enrollment_bootstrap_context.reply_json =
             [](httplib::Response& response,
                int status,
@@ -11631,6 +11655,19 @@ v5.app_pair_build_qr_uri =
             [&users]() {
                 return
                     users.home_node_assignment_counts();
+            };
+
+        admin_cluster_node_context.erase_unassigned_node =
+            [&director_node_deletion_service](
+                const std::string& node_id,
+                const std::string& revoked_at
+            ) {
+                return
+                    director_node_deletion_service
+                        .erase_unassigned_node_locked(
+                            node_id,
+                            revoked_at
+                        );
             };
 
         admin_cluster_node_context.require_admin_auth =

@@ -354,6 +354,33 @@ target_link_libraries(pqnas_node_credential_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Cluster-safe Node deletion lifecycle
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_deletion_service STATIC
+        server/src/cluster/node_deletion_service.cpp
+        server/src/cluster/node_deletion_service.h
+)
+
+target_include_directories(pqnas_node_deletion_service PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_deletion_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_node_deletion_service PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_node_credential_registry
+        pqnas_node_enrollment_registry
+)
+
+
+# -----------------------------------------------------------------------------
 # Storage node provisioning store
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_node_provisioning_store STATIC
@@ -858,6 +885,7 @@ target_link_libraries(pqnas_server PRIVATE
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
         pqnas_node_credential_registry
+        pqnas_node_deletion_service
         pqnas_node_enrollment_service
         pqnas_node_enrollment_consumption_service
         pqnas_admin_node_enrollment_routes
@@ -1695,6 +1723,42 @@ add_custom_target(run_test_node_heartbeat_worker
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_heartbeat_worker"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_node_heartbeat_worker
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_node_deletion_service
+# -----------------------------------------------------------------------------
+add_executable(test_node_deletion_service
+        tests/cluster/test_node_deletion_service.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(test_node_deletion_service PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_node_deletion_service PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+target_link_libraries(test_node_deletion_service PRIVATE
+        pqnas_node_deletion_service
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_node_deletion_service PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_node_deletion_service
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_node_deletion_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_deletion_service
 )
 
 

@@ -148,6 +148,7 @@ bool context_ok(
 ) noexcept {
     return
         context.service &&
+        context.lifecycle_mutex &&
         static_cast<bool>(
             context.now_iso_utc
         );
@@ -1003,6 +1004,12 @@ void handle_node_enrollment_bootstrap_consume(
 
         return;
     }
+
+    // Security: serialize the complete credential -> configured Node ->
+    // consumed-enrollment transaction against administrative Node deletion.
+    std::lock_guard<std::mutex> lifecycle_lock(
+        *context.lifecycle_mutex
+    );
 
     const NodeEnrollmentConsumptionResult result =
         context.service->consume(

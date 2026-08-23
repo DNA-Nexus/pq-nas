@@ -1,0 +1,83 @@
+#pragma once
+
+#include <cstddef>
+#include <string>
+
+namespace pqnas::cluster {
+
+class NodeCredentialRegistry;
+class NodeEnrollmentRegistry;
+class NodeRegistry;
+
+enum class NodeDeletionServiceResult {
+    Ok,
+    ServiceUnavailable,
+    InvalidInput,
+    NotFound,
+    ProvisioningActive,
+    EnrollmentCleanupFailed,
+    CredentialCleanupFailed,
+    RegistryCleanupFailed
+};
+
+const char* node_deletion_service_result_code(
+    NodeDeletionServiceResult result
+) noexcept;
+
+struct NodeDeletionResult {
+    NodeDeletionServiceResult result =
+        NodeDeletionServiceResult::ServiceUnavailable;
+
+    std::size_t revoked_pending_enrollments = 0;
+    bool credential_removed = false;
+    bool node_removed = false;
+
+    bool ok() const noexcept {
+        return result ==
+            NodeDeletionServiceResult::Ok;
+    }
+
+    const char* error_code() const noexcept {
+        return
+            node_deletion_service_result_code(
+                result
+            );
+    }
+};
+
+struct NodeDeletionServiceConfig {
+    NodeRegistry* node_registry = nullptr;
+
+    NodeEnrollmentRegistry* enrollment_registry =
+        nullptr;
+
+    NodeCredentialRegistry* credential_registry =
+        nullptr;
+};
+
+class NodeDeletionService {
+public:
+    explicit NodeDeletionService(
+        NodeDeletionServiceConfig config
+    );
+
+    // Security: the caller must hold the shared Director lifecycle/
+    // placement coordination mutex for the complete operation. Enrollment
+    // creation/consumption will use the same mutex in production wiring.
+    //
+    // The node registry is removed last. A crash or persistence failure
+    // before that point therefore leaves either the old node intact or a
+    // registered node whose reusable bootstrap/bearer credentials have
+    // already been revoked.
+    NodeDeletionResult erase_unassigned_node_locked(
+        const std::string& node_id,
+        const std::string& revoked_at
+    );
+
+private:
+    bool config_valid() const noexcept;
+
+    NodeDeletionServiceConfig config_;
+};
+
+} // namespace pqnas::cluster
