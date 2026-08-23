@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 
 namespace httplib {
@@ -34,6 +36,10 @@ inline constexpr int
 struct NodeEnrollmentBootstrapRoutesContext {
     NodeEnrollmentConsumptionService* service =
         nullptr;
+
+    // Security: consume persists credential -> NodeRegistry -> consumed state.
+    // Node deletion must not interleave with that durable sequence.
+    std::shared_ptr<std::mutex> lifecycle_mutex;
 
     std::function<void(
         httplib::Response&,

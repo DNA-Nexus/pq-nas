@@ -53,6 +53,7 @@ bool context_ok(
 ) {
     return
         context.service &&
+        context.lifecycle_mutex &&
         static_cast<bool>(
             context.require_admin_auth
         ) &&
@@ -1106,6 +1107,13 @@ void handle_admin_node_enrollments_create(
         return;
     }
 
+    // Security: serialize the complete pending-enrollment transaction
+    // against Node deletion. This scope also covers cleanup revocation if the
+    // one-time token cannot be safely returned.
+    std::lock_guard<std::mutex> lifecycle_lock(
+        *context.lifecycle_mutex
+    );
+
     NodeEnrollmentCreateResult result =
         context.service->create_pending(
             node_id,
@@ -1331,6 +1339,11 @@ void handle_admin_node_enrollments_revoke(
 
         return;
     }
+
+    // Security: a Node deletion must not race an enrollment revocation.
+    std::lock_guard<std::mutex> lifecycle_lock(
+        *context.lifecycle_mutex
+    );
 
     const NodeEnrollmentMutationResult result =
         context.service->revoke_pending(

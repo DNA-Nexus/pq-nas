@@ -406,6 +406,9 @@ int main() {
     NodeEnrollmentBootstrapRoutesContext context;
     context.service = &service;
 
+    context.lifecycle_mutex =
+        std::make_shared<std::mutex>();
+
     context.reply_json =
         [](
             httplib::Response& response,

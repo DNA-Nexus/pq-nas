@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cluster/node_deletion_service.h"
+
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -37,6 +39,14 @@ struct AdminClusterNodeRoutesContext {
         std::string,
         std::size_t
     >()> assigned_user_counts;
+
+    // Security: node deletion is a coordinated lifecycle transaction that
+    // revokes pending bootstrap state and the long-lived bearer before the
+    // trusted NodeRegistry entry disappears.
+    std::function<NodeDeletionResult(
+        const std::string&,
+        const std::string&
+    )> erase_unassigned_node;
 
     std::function<bool(
         const httplib::Request&,

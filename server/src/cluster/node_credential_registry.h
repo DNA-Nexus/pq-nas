@@ -70,6 +70,9 @@ public:
         std::string* error
     ) const;
 
+    // Security: NotFound means credential absence was confirmed against a
+    // service-private registry directory and durably synchronized. Callers may
+    // therefore use NotFound as an idempotent deletion-retry state.
     NodeCredentialRegistryResult erase(
         const std::string& node_id,
         std::string* error

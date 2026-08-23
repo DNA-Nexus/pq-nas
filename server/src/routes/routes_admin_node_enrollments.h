@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 
 namespace httplib {
@@ -38,6 +40,10 @@ bool add_admin_node_enrollment_seconds_iso_utc(
 
 struct AdminNodeEnrollmentRoutesContext {
     NodeEnrollmentService* service = nullptr;
+
+    // Shared with Node deletion and bootstrap consumption so creation,
+    // revocation and provisioning have one Director lifecycle boundary.
+    std::shared_ptr<std::mutex> lifecycle_mutex;
 
     std::function<bool(
         const httplib::Request&,

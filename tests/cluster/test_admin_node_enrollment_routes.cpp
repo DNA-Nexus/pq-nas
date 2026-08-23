@@ -300,6 +300,9 @@ int main() {
 
     context.service = &service;
 
+    context.lifecycle_mutex =
+        std::make_shared<std::mutex>();
+
     context.require_admin_auth =
         [&](
             const httplib::Request&,

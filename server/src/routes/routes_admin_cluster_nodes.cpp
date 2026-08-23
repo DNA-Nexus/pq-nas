@@ -31,6 +31,7 @@ bool context_ok(
         context.registry &&
         context.placement_mutex &&
         static_cast<bool>(context.assigned_user_counts) &&
+        static_cast<bool>(context.erase_unassigned_node) &&
         static_cast<bool>(context.require_admin_auth) &&
         static_cast<bool>(context.require_same_origin) &&
         static_cast<bool>(context.reply_json) &&
@@ -607,7 +608,12 @@ void handle_admin_cluster_nodes_create(
                 get<std::uint64_t>();
     }
 
-    std::lock_guard<std::mutex> lock(
+    // Security: direct administrative Node creation shares the Director
+    // lifecycle boundary with enrollment consumption. Otherwise bootstrap
+    // provisioning could persist a credential and race a second NodeRegistry
+    // insertion for the same node ID.
+    std::scoped_lock lock(
+        *context.placement_mutex,
         g_cluster_node_mutation_mutex
     );
 
@@ -1278,11 +1284,26 @@ void handle_admin_cluster_nodes_delete(
         return;
     }
 
-    std::string registry_error;
+    NodeDeletionResult deletion_result;
 
-    if (!context.registry->erase(
-            node_id,
-            &registry_error)) {
+    try {
+        const std::string revoked_at =
+            canonicalize_cluster_runtime_timestamp(
+                context.now_iso_utc()
+            );
+
+        deletion_result =
+            context.erase_unassigned_node(
+                node_id,
+                revoked_at
+            );
+    } catch (...) {
+        deletion_result.result =
+            NodeDeletionServiceResult::
+                RegistryCleanupFailed;
+    }
+
+    if (!deletion_result.ok()) {
         audit_mutation(
             context,
             req,
@@ -1292,6 +1313,46 @@ void handle_admin_cluster_nodes_delete(
             "fail"
         );
 
+        if (deletion_result.result ==
+            NodeDeletionServiceResult::
+                ProvisioningActive) {
+            // Security: never tear down credentials underneath an authenticated
+            // provisioning transaction that must finish or recover atomically.
+            reply_json_local(
+                context,
+                res,
+                409,
+                json{
+                    {"ok", false},
+                    {"error", "conflict"},
+                    {
+                        "message",
+                        "node provisioning is active"
+                    }
+                }
+            );
+
+            return;
+        }
+
+        if (deletion_result.result ==
+            NodeDeletionServiceResult::NotFound) {
+            reply_json_local(
+                context,
+                res,
+                404,
+                json{
+                    {"ok", false},
+                    {"error", "not_found"},
+                    {"message", "node not found"}
+                }
+            );
+
+            return;
+        }
+
+        // Security: do not expose credential, enrollment or persistence
+        // diagnostics from the coordinated deletion transaction.
         reply_json_local(
             context,
             res,
@@ -1302,6 +1363,7 @@ void handle_admin_cluster_nodes_delete(
                 {"message", "failed to delete node"}
             }
         );
+
         return;
     }
 

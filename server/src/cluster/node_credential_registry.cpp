@@ -1735,14 +1735,10 @@ NodeCredentialRegistry::erase(
     const DirectoryOpenResult open_result =
         open_registry_directory(
             directory_,
-            false,
+            true,
             &descriptor,
             error
         );
-
-    if (open_result == DirectoryOpenResult::Missing) {
-        return NodeCredentialRegistryResult::NotFound;
-    }
 
     if (open_result == DirectoryOpenResult::Unsafe) {
         return NodeCredentialRegistryResult::StorageUnsafe;
@@ -1763,6 +1759,22 @@ NodeCredentialRegistry::erase(
             error
         );
 
+    if (target_result == CredentialFileResult::Missing) {
+        // Security: NotFound is used by cluster-safe Node deletion as an
+        // idempotent retry state. Confirm the absence durably so an earlier
+        // unlink whose directory fsync failed cannot be mistaken for a
+        // completed credential revocation.
+        if (::fsync(descriptor.get()) != 0) {
+            set_error(
+                error,
+                "failed to sync absent node credential"
+            );
+            return NodeCredentialRegistryResult::PersistFailed;
+        }
+
+        return NodeCredentialRegistryResult::NotFound;
+    }
+
     if (target_result != CredentialFileResult::Ok) {
         return map_file_result(target_result);
     }
@@ -1772,6 +1784,17 @@ NodeCredentialRegistry::erase(
             filename.c_str(),
             0) != 0) {
         if (errno == ENOENT) {
+            // Security: another local mutation may have removed the target
+            // after inspection. NotFound is safe only after that absence is
+            // durably committed to the containing directory.
+            if (::fsync(descriptor.get()) != 0) {
+                set_error(
+                    error,
+                    "failed to sync absent node credential"
+                );
+                return NodeCredentialRegistryResult::PersistFailed;
+            }
+
             return NodeCredentialRegistryResult::NotFound;
         }
 

@@ -146,6 +146,47 @@ int main() {
             return assigned_user_counts;
         };
 
+    bool deletion_provisioning_active = false;
+    std::string last_delete_revoked_at;
+
+    context.erase_unassigned_node =
+        [&](const std::string& node_id,
+            const std::string& revoked_at) {
+            pqnas::cluster::NodeDeletionResult result;
+
+            last_delete_revoked_at = revoked_at;
+
+            if (deletion_provisioning_active) {
+                result.result =
+                    pqnas::cluster::
+                        NodeDeletionServiceResult::
+                            ProvisioningActive;
+
+                return result;
+            }
+
+            std::string deletion_error;
+
+            if (!registry.erase(
+                    node_id,
+                    &deletion_error)) {
+                result.result =
+                    pqnas::cluster::
+                        NodeDeletionServiceResult::
+                            NotFound;
+
+                return result;
+            }
+
+            result.result =
+                pqnas::cluster::
+                    NodeDeletionServiceResult::Ok;
+
+            result.node_removed = true;
+
+            return result;
+        };
+
     context.require_admin_auth =
         [&](
             const httplib::Request&,
@@ -641,6 +682,38 @@ int main() {
 
     assigned_user_counts.erase("node-01");
 
+    // Security regression: active provisioning must be surfaced as a
+    // conflict and must not remove the configured Node.
+    deletion_provisioning_active = true;
+
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_delete(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 409,
+            "active provisioning delete should return 409"
+        );
+
+        expect(
+            registry.get("node-01").has_value(),
+            "active provisioning conflict must preserve node"
+        );
+    }
+
+    deletion_provisioning_active = false;
+
     {
         httplib::Request request =
             request_with_body(
@@ -664,6 +737,12 @@ int main() {
         expect(
             registry.snapshot().empty(),
             "deleted node should be removed"
+        );
+
+        expect(
+            last_delete_revoked_at ==
+                "2026-07-28T07:00:00Z",
+            "delete lifecycle timestamp should be canonical"
         );
 
         expect(
