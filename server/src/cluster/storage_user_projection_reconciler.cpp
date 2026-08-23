@@ -128,6 +128,57 @@ bool persist_confirmed_state(
     return false;
 }
 
+void emit_reconcile_audit_best_effort(
+    const StorageUserProjectionReconcilerConfig& config,
+    const std::string& event,
+    const std::string& fingerprint,
+    std::uint64_t previous_revision,
+    std::uint64_t projection_revision,
+    const std::string& previous_home_node,
+    const std::string& home_node
+) noexcept {
+    if (!config.audit_emit) {
+        return;
+    }
+
+    try {
+        config.audit_emit(
+            event,
+            "ok",
+            {
+                {
+                    "fingerprint",
+                    fingerprint
+                },
+                {
+                    "previous_revision",
+                    std::to_string(
+                        previous_revision
+                    )
+                },
+                {
+                    "projection_revision",
+                    std::to_string(
+                        projection_revision
+                    )
+                },
+                {
+                    "previous_home_node",
+                    previous_home_node
+                },
+                {
+                    "home_node",
+                    home_node
+                }
+            }
+        );
+    } catch (...) {
+        // Security/availability: audit is best-effort after the durable
+        // authorization transition. Never turn an already-completed
+        // reconciliation into a retry or rollback because audit I/O failed.
+    }
+}
+
 bool heal_confirmed_state_durability(
     StorageUserProjectionSyncStateStore* store,
     const StorageUserProjectionSyncState& state,
@@ -373,6 +424,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 continue;
             }
 
+            emit_reconcile_audit_best_effort(
+                config_,
+                "cluster.storage_projection.revoked",
+                fingerprint,
+                confirmed->revision,
+                user.storage_projection_revision,
+                confirmed->home_node,
+                ""
+            );
+
             ++result.revoked_unplaced;
             continue;
         }
@@ -414,6 +475,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                     config_.state_store,
                     current,
                     &result)) {
+                emit_reconcile_audit_best_effort(
+                    config_,
+                    "cluster.storage_projection.synced",
+                    fingerprint,
+                    0,
+                    current.revision,
+                    "",
+                    current.home_node
+                );
+
                 ++result.synced_current;
             }
 
@@ -506,6 +577,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                     config_.state_store,
                     current,
                     &result)) {
+                emit_reconcile_audit_best_effort(
+                    config_,
+                    "cluster.storage_projection.moved",
+                    fingerprint,
+                    confirmed->revision,
+                    current.revision,
+                    confirmed->home_node,
+                    current.home_node
+                );
+
                 ++result.moved;
             }
 
@@ -535,6 +616,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 config_.state_store,
                 current,
                 &result)) {
+            emit_reconcile_audit_best_effort(
+                config_,
+                "cluster.storage_projection.synced",
+                fingerprint,
+                confirmed->revision,
+                current.revision,
+                confirmed->home_node,
+                current.home_node
+            );
+
             ++result.synced_current;
         }
     }

@@ -1025,6 +1025,33 @@ bool next_storage_projection_revision(
   return true;
 }
 
+StorageProjectionCommitInfo
+make_storage_projection_commit_info(
+    const UserRec* previous,
+    const UserRec& current
+) {
+  StorageProjectionCommitInfo info;
+
+  info.fingerprint =
+      current.fingerprint;
+
+  if (previous) {
+    info.previous_revision =
+        previous->storage_projection_revision;
+
+    info.previous_home_node =
+        previous->home_node;
+  }
+
+  info.projection_revision =
+      current.storage_projection_revision;
+
+  info.home_node =
+      current.home_node;
+
+  return info;
+}
+
 } // namespace
 
 /*
@@ -1267,13 +1294,23 @@ bool UsersRegistry::upsert_persisted(
           ? storage_projection_commit_notifier_copy_locked()
           : StorageProjectionCommitNotifier{};
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                inserting_new
+                    ? nullptr
+                    : &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
   // Security: never invoke external callbacks while holding the registry
   // mutation lock. The durable commit above is authoritative even if wake fails.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort latency optimization. Periodic reconciliation remains
       // the safety net and the successful durable commit stays successful.
@@ -1426,11 +1463,19 @@ bool UsersRegistry::set_status_persisted(
           ? storage_projection_commit_notifier_copy_locked()
           : StorageProjectionCommitNotifier{};
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; durable registry state remains authoritative.
     }
@@ -1595,12 +1640,20 @@ bool UsersRegistry::set_storage_metadata_persisted(
           ? storage_projection_commit_notifier_copy_locked()
           : StorageProjectionCommitNotifier{};
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
   // Security: callback runs only after the durable commit and outside mu_.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; periodic reconciliation remains authoritative.
     }
@@ -1789,12 +1842,20 @@ bool UsersRegistry::switch_storage_mapping_persisted_if_pool_current(
           ? storage_projection_commit_notifier_copy_locked()
           : StorageProjectionCommitNotifier{};
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
   // Security: stale CAS/no-op paths never reach this notification point.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; durable mapping remains authoritative.
     }
@@ -1957,12 +2018,18 @@ bool UsersRegistry::set_home_node_persisted(
   const auto projection_notifier =
       storage_projection_commit_notifier_copy_locked();
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
   // Security: placement is durable before reconciliation is signalled.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; durable placement remains authoritative.
     }
@@ -2119,12 +2186,18 @@ bool UsersRegistry::set_home_node_persisted_if_current(
   const auto projection_notifier =
       storage_projection_commit_notifier_copy_locked();
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
   // Security: CAS state and revision are durable before reconciliation wakes.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; durable placement remains authoritative.
     }
@@ -2272,13 +2345,19 @@ bool UsersRegistry::clear_home_node_persisted_if_current(
   const auto projection_notifier =
       storage_projection_commit_notifier_copy_locked();
 
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
   // Security: reconciliation is woken only after users.json durably records
   // the newer unplaced revision. The notifier runs outside the registry lock.
   lk.unlock();
 
   if (projection_notifier) {
     try {
-      projection_notifier();
+      projection_notifier(projection_commit_info);
     } catch (...) {
       // Best-effort wake only; durable unplacement remains authoritative.
     }

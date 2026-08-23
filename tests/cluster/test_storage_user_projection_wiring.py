@@ -87,9 +87,14 @@ require(
 )
 
 require(
-    "[&director_storage_projection_reconcile_worker]()" in main and
+    "const pqnas::StorageProjectionCommitInfo& info" in main and
+    'audit.event =\n                        "cluster.storage_projection.committed";' in main and
+    'audit.f["previous_revision"]' in main and
+    'audit.f["projection_revision"]' in main and
+    'audit.f["previous_home_node"]' in main and
+    'audit.f["home_node"]' in main and
     "(void)director_storage_projection_reconcile_worker.wake();" in main,
-    "projection commit notifier wakes Director reconciliation worker",
+    "projection commit notifier audits exact revision transition and wakes Director reconciliation worker",
 )
 
 shutdown_notifier_clear_pos = main.rfind(

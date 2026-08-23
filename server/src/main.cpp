@@ -10506,6 +10506,29 @@ auto maybe_auto_rotate_before_append = [&]() {
     director_storage_projection_reconciler_config.state_store =
         &director_storage_projection_sync_state_store;
 
+    director_storage_projection_reconciler_config.audit_emit =
+        [](
+            const std::string& event,
+            const std::string& outcome,
+            const std::map<
+                std::string,
+                std::string
+            >& fields
+        ) {
+            pqnas::AuditEvent audit;
+
+            audit.event = event;
+            audit.outcome = outcome;
+
+            for (const auto& field :
+                 fields) {
+                audit.f[field.first] =
+                    field.second;
+            }
+
+            audit_append(audit);
+        };
+
     director_storage_projection_reconciler_config.sync_projection =
         [&director_storage_projection_sync_client](
             const pqnas::cluster::StorageUserProjection& projection
@@ -10598,7 +10621,44 @@ auto maybe_auto_rotate_before_append = [&]() {
         // post-commit projection wakes. Periodic reconciliation remains the
         // safety net if an individual best-effort wake cannot be delivered.
         users.set_storage_projection_commit_notifier(
-            [&director_storage_projection_reconcile_worker]() {
+            [&director_storage_projection_reconcile_worker](
+                const pqnas::StorageProjectionCommitInfo& info
+            ) {
+                // Security/audit: correlate every durable Director projection
+                // transition with the exact registry-owned revision.
+                try {
+                    pqnas::AuditEvent audit;
+
+                    audit.event =
+                        "cluster.storage_projection.committed";
+
+                    audit.outcome = "ok";
+
+                    audit.f["fingerprint"] =
+                        info.fingerprint;
+
+                    audit.f["previous_revision"] =
+                        std::to_string(
+                            info.previous_revision
+                        );
+
+                    audit.f["projection_revision"] =
+                        std::to_string(
+                            info.projection_revision
+                        );
+
+                    audit.f["previous_home_node"] =
+                        info.previous_home_node;
+
+                    audit.f["home_node"] =
+                        info.home_node;
+
+                    audit_append(audit);
+                } catch (...) {
+                    // Audit is best-effort here. Never suppress the
+                    // reconciliation wake for an already-durable commit.
+                }
+
                 (void)director_storage_projection_reconcile_worker.wake();
             }
         );

@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -14,6 +15,25 @@ namespace fs = std::filesystem;
 namespace {
 
 int failures = 0;
+
+struct AuditRecord {
+    std::string event;
+    std::string outcome;
+    std::map<std::string, std::string> fields;
+};
+
+bool audit_field_equals(
+    const AuditRecord& audit,
+    const std::string& key,
+    const std::string& expected
+) {
+    const auto it =
+        audit.fields.find(key);
+
+    return
+        it != audit.fields.end() &&
+        it->second == expected;
+}
 
 void expect(
     bool condition,
@@ -196,6 +216,8 @@ int main() {
 
     bool fail_next = false;
 
+    std::vector<AuditRecord> audits;
+
     pqnas::cluster::
         StorageUserProjectionReconcilerConfig
             config;
@@ -205,6 +227,19 @@ int main() {
 
     config.state_store =
         &state_store;
+
+    config.audit_emit =
+        [&](const std::string& event,
+            const std::string& outcome,
+            const std::map<std::string, std::string>& fields) {
+            audits.push_back(
+                AuditRecord{
+                    event,
+                    outcome,
+                    fields
+                }
+            );
+        };
 
     config.sync_projection =
         [&](const pqnas::cluster::
@@ -261,8 +296,37 @@ int main() {
             state->home_node ==
                 "storage-01" &&
             state->revision ==
-                sent[0].revision,
-            "initial reconciliation synchronizes exact current projection"
+                sent[0].revision &&
+            audits.size() == 1 &&
+            audits[0].event ==
+                "cluster.storage_projection.synced" &&
+            audits[0].outcome == "ok" &&
+            audit_field_equals(
+                audits[0],
+                "fingerprint",
+                placed.fingerprint
+            ) &&
+            audit_field_equals(
+                audits[0],
+                "previous_revision",
+                "0"
+            ) &&
+            audit_field_equals(
+                audits[0],
+                "projection_revision",
+                std::to_string(sent[0].revision)
+            ) &&
+            audit_field_equals(
+                audits[0],
+                "previous_home_node",
+                ""
+            ) &&
+            audit_field_equals(
+                audits[0],
+                "home_node",
+                "storage-01"
+            ),
+            "initial reconciliation synchronizes and audits exact current projection"
         );
     }
 
@@ -277,8 +341,9 @@ int main() {
             result.ok &&
             result.already_synced == 1 &&
             result.no_placement == 1 &&
-            sent.empty(),
-            "already-confirmed revision performs no network write"
+            sent.empty() &&
+            audits.size() == 1,
+            "already-confirmed revision performs no network write or audit"
         );
     }
 
@@ -318,8 +383,39 @@ int main() {
             !sent[0].enabled &&
             state.has_value() &&
             state->revision ==
-                sent[0].revision,
-            "same-Node newer revision synchronizes current projection"
+                sent[0].revision &&
+            audits.size() == 2 &&
+            audits[1].event ==
+                "cluster.storage_projection.synced" &&
+            audits[1].outcome == "ok" &&
+            audit_field_equals(
+                audits[1],
+                "fingerprint",
+                placed.fingerprint
+            ) &&
+            audit_field_equals(
+                audits[1],
+                "previous_revision",
+                std::to_string(
+                    sent[0].revision - 1
+                )
+            ) &&
+            audit_field_equals(
+                audits[1],
+                "projection_revision",
+                std::to_string(sent[0].revision)
+            ) &&
+            audit_field_equals(
+                audits[1],
+                "previous_home_node",
+                "storage-01"
+            ) &&
+            audit_field_equals(
+                audits[1],
+                "home_node",
+                "storage-01"
+            ),
+            "same-Node newer revision synchronizes and audits current projection"
         );
     }
 
@@ -374,8 +470,9 @@ int main() {
             state->home_node ==
                 before_move_state->home_node &&
             state->revision ==
-                before_move_state->revision,
-            "failed previous-Node revoke blocks move and preserves state"
+                before_move_state->revision &&
+            audits.size() == 2,
+            "failed previous-Node revoke blocks move, preserves state and emits no success audit"
         );
     }
 
@@ -408,8 +505,40 @@ int main() {
             state->home_node ==
                 "storage-02" &&
             state->revision ==
-                sent[1].revision,
-            "placement retry revokes old Node before synchronizing new Node"
+                sent[1].revision &&
+            before_move_state.has_value() &&
+            audits.size() == 3 &&
+            audits[2].event ==
+                "cluster.storage_projection.moved" &&
+            audits[2].outcome == "ok" &&
+            audit_field_equals(
+                audits[2],
+                "fingerprint",
+                placed.fingerprint
+            ) &&
+            audit_field_equals(
+                audits[2],
+                "previous_revision",
+                std::to_string(
+                    before_move_state->revision
+                )
+            ) &&
+            audit_field_equals(
+                audits[2],
+                "projection_revision",
+                std::to_string(sent[1].revision)
+            ) &&
+            audit_field_equals(
+                audits[2],
+                "previous_home_node",
+                "storage-01"
+            ) &&
+            audit_field_equals(
+                audits[2],
+                "home_node",
+                "storage-02"
+            ),
+            "placement retry revokes old Node, synchronizes new Node and audits move"
         );
     }
 
@@ -627,6 +756,9 @@ int main() {
 
         bool unplace_fail_next = false;
 
+        std::vector<AuditRecord>
+            unplace_audits;
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 unplace_config;
@@ -636,6 +768,19 @@ int main() {
 
         unplace_config.state_store =
             &unplace_store;
+
+        unplace_config.audit_emit =
+            [&](const std::string& event,
+                const std::string& outcome,
+                const std::map<std::string, std::string>& fields) {
+                unplace_audits.push_back(
+                    AuditRecord{
+                        event,
+                        outcome,
+                        fields
+                    }
+                );
+            };
 
         unplace_config.sync_projection =
             [&](const pqnas::cluster::
@@ -695,8 +840,28 @@ int main() {
                 "storage-01" &&
             before_unplace_state->revision ==
                 before_unplace_user->
-                    storage_projection_revision,
-            "unplacement fixture first confirms placed projection"
+                    storage_projection_revision &&
+            unplace_audits.size() == 1 &&
+            unplace_audits[0].event ==
+                "cluster.storage_projection.synced" &&
+            audit_field_equals(
+                unplace_audits[0],
+                "previous_revision",
+                "0"
+            ) &&
+            audit_field_equals(
+                unplace_audits[0],
+                "projection_revision",
+                std::to_string(
+                    before_unplace_state->revision
+                )
+            ) &&
+            audit_field_equals(
+                unplace_audits[0],
+                "home_node",
+                "storage-01"
+            ),
+            "unplacement fixture first confirms and audits placed projection"
         );
 
         bool clear_changed = false;
@@ -767,8 +932,9 @@ int main() {
             after_failed_revoke_state->home_node ==
                 before_unplace_state->home_node &&
             after_failed_revoke_state->revision ==
-                before_unplace_state->revision,
-            "failed unplacement revoke retains last confirmed Node"
+                before_unplace_state->revision &&
+            unplace_audits.size() == 1,
+            "failed unplacement revoke retains last confirmed Node and emits no success audit"
         );
 
         // Retry accepts the same newer tombstone, then CAS-erases exactly the
@@ -796,8 +962,43 @@ int main() {
             unplace_sent[0].revision ==
                 after_unplace_user->
                     storage_projection_revision &&
-            !after_success_state.has_value(),
-            "successful unplacement revokes old Node and erases confirmed state"
+            !after_success_state.has_value() &&
+            before_unplace_state.has_value() &&
+            unplace_audits.size() == 2 &&
+            unplace_audits[1].event ==
+                "cluster.storage_projection.revoked" &&
+            unplace_audits[1].outcome == "ok" &&
+            audit_field_equals(
+                unplace_audits[1],
+                "fingerprint",
+                unplace_user.fingerprint
+            ) &&
+            audit_field_equals(
+                unplace_audits[1],
+                "previous_revision",
+                std::to_string(
+                    before_unplace_state->revision
+                )
+            ) &&
+            audit_field_equals(
+                unplace_audits[1],
+                "projection_revision",
+                std::to_string(
+                    after_unplace_user->
+                        storage_projection_revision
+                )
+            ) &&
+            audit_field_equals(
+                unplace_audits[1],
+                "previous_home_node",
+                "storage-01"
+            ) &&
+            audit_field_equals(
+                unplace_audits[1],
+                "home_node",
+                ""
+            ),
+            "successful unplacement revokes old Node, erases confirmed state and audits revoke"
         );
 
         // Once revoke + durable erase are complete, an unplaced user is a
@@ -811,8 +1012,9 @@ int main() {
             steady_unplaced.ok &&
             steady_unplaced.no_placement == 1 &&
             steady_unplaced.revoked_unplaced == 0 &&
-            unplace_sent.empty(),
-            "reconciled unplaced user remains a network no-op"
+            unplace_sent.empty() &&
+            unplace_audits.size() == 2,
+            "reconciled unplaced user remains a network and audit no-op"
         );
     }
 
