@@ -10,6 +10,7 @@ namespace pqnas::cluster {
 
 class NodeCredentialRegistry;
 class NodeRegistry;
+class NodeTlsTrustStore;
 
 enum class NodeCredentialRotationTransportCode {
     Ok,
@@ -22,6 +23,10 @@ enum class NodeCredentialRotationTransportCode {
 
 struct NodeCredentialRotationPrepareRequest {
     std::string api_base_url;
+
+    // Public immutable identity of the exact Storage node.
+    // Security: authenticated rotation has no blank/unpinned transport path.
+    std::string tls_spki_sha256_pin;
 
     // Security: exact short-lived "Bearer <token>" value. The transport must
     // never log or retain this field after the request completes.
@@ -42,6 +47,10 @@ struct NodeCredentialRotationPrepareResponse {
 
 struct NodeCredentialRotationFinalizeRequest {
     std::string api_base_url;
+
+    // Security: this must be the same immutable TLS identity used by prepare.
+    // Credential rotation must never rotate or replace the TLS trust binding.
+    std::string tls_spki_sha256_pin;
 
     // Security: finalization must be authenticated specifically by NEW while
     // the Storage node has a pending rotation.
@@ -78,6 +87,7 @@ enum class NodeCredentialRotationServiceCode {
     NodeDisabled,
     RotationInProgress,
     NodeChanged,
+    TlsTrustUnavailable,
     CredentialUnavailable,
     PrepareFailed,
     CredentialStateConflict,
@@ -114,6 +124,11 @@ struct NodeCredentialRotationResult {
 struct NodeCredentialRotationServiceConfig {
     NodeRegistry* node_registry = nullptr;
     NodeCredentialRegistry* credential_registry =
+        nullptr;
+
+    // Security: durable TLS identity is mandatory before OLD or NEW bearer
+    // material may be used for Director -> Storage rotation traffic.
+    const NodeTlsTrustStore* tls_trust_store =
         nullptr;
 
     // Shared with node lifecycle/placement administration.

@@ -559,7 +559,7 @@ int main() {
             "EnrollmentNodeOne0002",
             2,
             NodeEnrollmentProvisioningStage::
-                CredentialPersisted,
+                TlsTrustBound,
             NodeEnrollmentProvisioningStage::
                 NodeRegistered,
             nullptr,
@@ -596,6 +596,26 @@ int main() {
         advanced.provisioning_started_at ==
             "2026-07-30T06:20:00Z",
         "credential stage should preserve authenticated start"
+    );
+
+    error.clear();
+
+    // Security regression: node registration must never be reachable directly
+    // from CredentialPersisted. Durable TLS identity binding is mandatory.
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered,
+            nullptr,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::
+            InvalidInput,
+        "credential -> node must not bypass TLS trust binding"
     );
 
     error.clear();
@@ -683,12 +703,38 @@ int main() {
             NodeEnrollmentProvisioningStage::
                 CredentialPersisted,
             NodeEnrollmentProvisioningStage::
-                NodeRegistered,
-            nullptr,
+                TlsTrustBound,
+            &advanced,
             &error
         ),
         NodeEnrollmentRegistryResult::Ok,
-        "mark node registered"
+        "mark TLS trust bound"
+    );
+
+    expect(
+        advanced.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
+                TlsTrustBound &&
+        advanced.provisioning_started_at ==
+            "2026-07-30T06:30:00Z",
+        "TLS trust stage should preserve authenticated start"
+    );
+
+    error.clear();
+
+    expect_result(
+        registry.advance_provisioning_stage(
+            "EnrollmentNodeOne0002",
+            2,
+            NodeEnrollmentProvisioningStage::
+                TlsTrustBound,
+            NodeEnrollmentProvisioningStage::
+                NodeRegistered,
+            &advanced,
+            &error
+        ),
+        NodeEnrollmentRegistryResult::Ok,
+        "mark node registered after TLS trust binding"
     );
 
     NodeEnrollmentRecord consumed;
@@ -1789,12 +1835,100 @@ int main() {
                             CredentialPersisted,
                     pqnas::cluster::
                         NodeEnrollmentProvisioningStage::
+                            TlsTrustBound,
+                    &recovery_record,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "advance recovery fixture to TLS trust bound"
+        );
+
+        error.clear();
+
+        expect_result(
+            recovery_auth_registry.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "authenticate TLS-trust-bound recovery transaction"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        TlsTrustBound,
+            "TLS-trust-bound recovery stage"
+        );
+
+        // Security regression: prove that TlsTrustBound itself is durable and
+        // parseable after restart before node registration is allowed.
+        NodeEnrollmentRegistry
+            tls_stage_reloaded;
+
+        error.clear();
+
+        expect(
+            tls_stage_reloaded.load(
+                recovery_auth_path.string(),
+                &error
+            ),
+            "reload TLS-trust-bound recovery transaction: " +
+                error
+        );
+
+        error.clear();
+
+        expect_result(
+            tls_stage_reloaded.
+                authenticate_active_provisioning_if_matches(
+                    recovery_id,
+                    "node-recovery-auth",
+                    "https://node-recovery-auth.internal",
+                    7,
+                    recovery_record.generation,
+                    kHashA,
+                    &authenticated_stage,
+                    &error
+                ),
+            NodeEnrollmentRegistryResult::Ok,
+            "authenticate reloaded TLS-trust-bound transaction"
+        );
+
+        expect(
+            authenticated_stage ==
+                pqnas::cluster::
+                    NodeEnrollmentProvisioningStage::
+                        TlsTrustBound,
+            "TLS-trust-bound stage must survive reload"
+        );
+
+        error.clear();
+
+        expect_result(
+            tls_stage_reloaded.
+                advance_provisioning_stage(
+                    recovery_id,
+                    recovery_record.generation,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
+                            TlsTrustBound,
+                    pqnas::cluster::
+                        NodeEnrollmentProvisioningStage::
                             NodeRegistered,
                     &recovery_record,
                     &error
                 ),
             NodeEnrollmentRegistryResult::Ok,
-            "advance recovery fixture to node registered"
+            "advance recovery fixture to node registered after TLS trust"
         );
 
         NodeEnrollmentRegistry

@@ -3,6 +3,7 @@
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <cstdint>
 #include <functional>
@@ -29,6 +30,10 @@ struct NodeEnrollmentConsumptionRequest {
     std::string api_base_url;
     int protocol_version = 0;
 
+    // Public, canonical sha256/<base64(SHA256(DER SPKI))> identity.
+    // Security: this is mandatory enrollment trust material, never optional.
+    std::string tls_spki_sha256_pin;
+
     // The route owns and clears these request strings after the service call.
     // This service never stores or returns either plaintext secret.
     std::string bootstrap_token;
@@ -53,6 +58,8 @@ enum class NodeEnrollmentConsumptionServiceResult {
     ProvisioningStateConflict,
     CredentialConflict,
     CredentialUnavailable,
+    TlsTrustConflict,
+    TlsTrustUnavailable,
     NodeConflict,
     PersistFailed,
     RegistryFailed
@@ -81,6 +88,11 @@ struct NodeEnrollmentConsumptionServiceConfig {
     NodeCredentialRegistry* credential_registry =
         nullptr;
 
+    // Security: TLS identity state is separate from bearer credentials so
+    // credential rotation cannot implicitly replace node TLS identity.
+    NodeTlsTrustStore* tls_trust_store =
+        nullptr;
+
     NodeRegistry* node_registry = nullptr;
 
     NodeEnrollmentConsumptionAuditEmit audit_emit;
@@ -93,7 +105,8 @@ public:
     );
 
     // Authenticates the bootstrap intent and executes or recovers the durable
-    // sequence: credential -> configured node -> consumed enrollment.
+    // sequence:
+    // credential -> TLS trust binding -> configured node -> consumed enrollment.
     NodeEnrollmentConsumptionResult consume(
         const NodeEnrollmentConsumptionRequest& request
     );

@@ -2,6 +2,7 @@
 
 #include "cluster/internal_auth.h"
 #include "cluster/node_enrollment_token.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <sodium.h>
 
@@ -40,11 +41,19 @@ using pqnas::cluster::
 using pqnas::cluster::
     NodeCredentialRegistryResult;
 using pqnas::cluster::
+    NodeTlsTrustStore;
+using pqnas::cluster::
+    NodeTlsTrustStoreResult;
+using pqnas::cluster::
     NodeRegistry;
 using pqnas::cluster::
     NodeRegistryInsertResult;
 
 int failures = 0;
+
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
 struct AuditRecord {
     std::string event;
@@ -59,6 +68,7 @@ struct Fixture {
     std::uint64_t generation = 0;
     std::string bootstrap_token;
     std::string node_credential;
+    std::string tls_spki_sha256_pin;
 };
 
 void expect(
@@ -135,6 +145,8 @@ bool create_fixture(
         );
     fixture->node_id = node_id;
     fixture->api_base_url = api_base_url;
+    fixture->tls_spki_sha256_pin =
+        kTestTlsPin;
 
     pqnas::cluster::
         NodeEnrollmentTokenMaterial material;
@@ -195,6 +207,8 @@ NodeEnrollmentConsumptionRequest request_for(
     request.api_base_url =
         fixture.api_base_url;
     request.protocol_version = 7;
+    request.tls_spki_sha256_pin =
+        fixture.tls_spki_sha256_pin;
     request.bootstrap_token =
         fixture.bootstrap_token;
     request.node_credential =
@@ -293,6 +307,8 @@ int main() {
         enrollment_registry;
     NodeCredentialRegistry
         credential_registry;
+    NodeTlsTrustStore
+        tls_trust_store;
     NodeRegistry node_registry;
 
     std::string error;
@@ -324,6 +340,19 @@ int main() {
     error.clear();
 
     expect(
+        tls_trust_store.load(
+            (
+                directory /
+                "tls-trust"
+            ).string(),
+            &error
+        ),
+        "load TLS trust store: " + error
+    );
+
+    error.clear();
+
+    expect(
         node_registry.load(
             (
                 directory /
@@ -341,6 +370,8 @@ int main() {
         &enrollment_registry;
     config.credential_registry =
         &credential_registry;
+    config.tls_trust_store =
+        &tls_trust_store;
     config.node_registry =
         &node_registry;
     config.audit_emit =
@@ -430,6 +461,21 @@ int main() {
             NodeCredentialRegistryResult::Ok &&
         credential_matched,
         "fresh credential persisted"
+    );
+
+    std::string fresh_tls_pin;
+    error.clear();
+
+    expect(
+        tls_trust_store.get(
+            fresh.node_id,
+            &fresh_tls_pin,
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::Ok &&
+        fresh_tls_pin ==
+            fresh.tls_spki_sha256_pin,
+        "fresh TLS identity persisted before node registration"
     );
 
     const auto fresh_node =
@@ -680,6 +726,35 @@ int main() {
     error.clear();
 
     expect(
+        tls_trust_store.bind_if_absent(
+            node_stage.node_id,
+            node_stage.tls_spki_sha256_pin,
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::Ok,
+        "persist node-stage TLS trust: " + error
+    );
+
+    error.clear();
+
+    expect(
+        enrollment_registry.advance_provisioning_stage(
+            node_stage.enrollment_id,
+            node_stage.generation,
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted,
+            NodeEnrollmentProvisioningStage::
+                TlsTrustBound,
+            &transition_record,
+            &error
+        ) ==
+            NodeEnrollmentRegistryResult::Ok,
+        "advance node-stage TLS trust: " + error
+    );
+
+    error.clear();
+
+    expect(
         node_registry.insert_configured_node_if_absent(
             node_stage.node_id,
             node_stage.api_base_url,
@@ -698,7 +773,7 @@ int main() {
             node_stage.enrollment_id,
             node_stage.generation,
             NodeEnrollmentProvisioningStage::
-                CredentialPersisted,
+                TlsTrustBound,
             NodeEnrollmentProvisioningStage::
                 NodeRegistered,
             &transition_record,

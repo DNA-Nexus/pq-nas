@@ -14,6 +14,7 @@ namespace pqnas::cluster {
 
 class NodeCredentialRegistry;
 class NodeRegistry;
+class NodeTlsTrustStore;
 struct NodeRegistryRecord;
 
 inline constexpr std::size_t
@@ -22,6 +23,7 @@ inline constexpr std::size_t
 using NodeHeartbeatFetch =
     std::function<bool(
         const NodeRegistryRecord& node,
+        const std::string& tls_spki_sha256_pin,
         const std::string& authorization,
         std::string* response_body,
         std::string* error
@@ -41,6 +43,11 @@ struct NodeHeartbeatWorkerConfig {
     // requests one short-lived bearer value for each enabled node.
     const NodeCredentialRegistry*
         credential_registry = nullptr;
+
+    // Security: authenticated Director -> Storage traffic requires a durable
+    // per-node TLS identity before bearer material may be requested.
+    const NodeTlsTrustStore*
+        tls_trust_store = nullptr;
 
     // Shared with placement, policy and node administration. Network fetches
     // stay outside this lock; only expected-state checks and registry

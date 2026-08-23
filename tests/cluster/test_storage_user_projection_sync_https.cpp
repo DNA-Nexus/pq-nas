@@ -1,4 +1,5 @@
 #include "cluster/storage_user_projection_sync_https.h"
+#include "cluster/internal_auth.h"
 
 #include <iostream>
 #include <string>
@@ -50,6 +51,48 @@ void expect_code(
 } // namespace
 
 int main() {
+    {
+        pqnas::cluster::
+            StorageUserProjectionSyncTransportRequest
+                request;
+
+        request.api_base_url =
+            "https://storage.example:8443";
+
+        // Valid bearer syntax, but deliberately malformed TLS identity.
+        request.authorization =
+            "Bearer " +
+            std::string(
+                pqnas::cluster::
+                    kInternalAuthTokenChars,
+                'A'
+            );
+
+        request.tls_spki_sha256_pin =
+            "sha256/not-base64";
+
+        request.projection.fingerprint =
+            std::string(128, 'a');
+        request.projection.enabled = true;
+        request.projection.storage_allocated = false;
+        request.projection.home_node = "storage-01";
+        request.projection.revision = 17;
+
+        const auto transport =
+            pqnas::cluster::
+                make_https_storage_user_projection_sync_transport();
+
+        const auto result =
+            transport(request);
+
+        expect(
+            result.code ==
+                Code::InvalidResponse &&
+            result.http_status == 0,
+            "malformed TLS pin fails before network transport"
+        );
+    }
+
     expect_code(
         200,
         R"({"ok":true,"result":"applied","revision":17})",

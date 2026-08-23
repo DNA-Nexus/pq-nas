@@ -1582,6 +1582,17 @@ void handle_admin_cluster_node_credential_rotation(
             break;
 
         case NodeCredentialRotationServiceCode::
+                TlsTrustUnavailable:
+            // Security: expose only the stable trust-state category. Never
+            // return trust-store paths or underlying filesystem diagnostics.
+            status = 503;
+            response["error"] =
+                "service_unavailable";
+            response["message"] =
+                "node TLS identity trust is unavailable";
+            break;
+
+        case NodeCredentialRotationServiceCode::
                 CredentialUnavailable:
             status = 503;
             response["error"] =

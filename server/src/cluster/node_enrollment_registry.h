@@ -33,6 +33,11 @@ enum class NodeEnrollmentProvisioningStage {
     None,
     Prepared,
     CredentialPersisted,
+
+    // Security: the Director has durably bound the authenticated Storage
+    // node_id to its canonical TLS SPKI identity before node registration.
+    TlsTrustBound,
+
     NodeRegistered
 };
 

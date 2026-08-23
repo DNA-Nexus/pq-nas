@@ -4156,6 +4156,267 @@ target_link_libraries(pqnas_storage_user_projection_sync_client PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Cluster Node TLS SPKI identity
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_tls_identity STATIC
+        server/src/cluster/node_tls_identity.cpp
+        server/src/cluster/node_tls_identity.h
+)
+
+target_include_directories(
+        pqnas_node_tls_identity
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_tls_identity
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_tls_identity
+        PUBLIC
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
+# Shared pinned HTTPS client for authenticated Director -> Storage traffic
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_tls_https_client STATIC
+        server/src/cluster/node_tls_https_client.cpp
+        server/src/cluster/node_tls_https_client.h
+)
+
+target_include_directories(
+        pqnas_node_tls_https_client
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_node_tls_https_client
+        PUBLIC
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_tls_https_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_tls_https_client
+        PUBLIC
+        pqnas_node_tls_identity
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# Heartbeat HTTPS is compiled into pqnas_server. Link the mandatory pinned
+# client only after its CMake target exists.
+target_link_libraries(
+        pqnas_server
+        PRIVATE
+        pqnas_node_tls_https_client
+)
+
+
+# RT014: every Storage enrollment layer that validates or propagates the
+# canonical TLS SPKI identity depends explicitly on the shared primitive.
+target_link_libraries(
+        pqnas_storage_node_enrollment_client
+        PUBLIC
+        pqnas_node_tls_identity
+)
+
+target_link_libraries(
+        pqnas_storage_node_enrollment_https
+        PUBLIC
+        pqnas_node_tls_identity
+)
+
+target_link_libraries(
+        pqnas_storage_node_enrollment_runtime
+        PUBLIC
+        pqnas_node_tls_identity
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Cluster Node TLS SPKI identity
+# -----------------------------------------------------------------------------
+add_executable(test_node_tls_identity
+        tests/cluster/test_node_tls_identity.cpp
+)
+
+target_include_directories(
+        test_node_tls_identity
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_node_tls_identity
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_node_tls_identity
+        PRIVATE
+        pqnas_node_tls_identity
+        OpenSSL::Crypto
+)
+
+set_target_properties(
+        test_node_tls_identity
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_tls_identity
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_tls_identity"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_tls_identity
+)
+
+
+# -----------------------------------------------------------------------------
+# Director Node TLS trust store
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_tls_trust_store STATIC
+        server/src/cluster/node_tls_trust_store.cpp
+        server/src/cluster/node_tls_trust_store.h
+)
+
+target_include_directories(
+        pqnas_node_tls_trust_store
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_tls_trust_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_tls_trust_store
+        PUBLIC
+        pqnas_node_tls_identity
+        pqnas_cluster_identity_validation
+)
+
+
+# RT014: credential rotation must resolve immutable TLS trust before any OLD
+# bearer is materialized.
+target_link_libraries(
+        pqnas_node_credential_rotation_service
+        PUBLIC
+        pqnas_node_tls_trust_store
+)
+
+
+# RT014: projection synchronization must resolve durable node TLS trust before
+# it is able to obtain or transport any per-node bearer credential.
+target_link_libraries(
+        pqnas_storage_user_projection_sync_client
+        PUBLIC
+        pqnas_node_tls_trust_store
+)
+
+
+# Heartbeat trust lookup is mandatory and the test target must depend on the
+# actual trust-store target rather than an unresolved library-name string.
+target_link_libraries(
+        test_node_heartbeat_worker
+        PRIVATE
+        pqnas_node_tls_trust_store
+)
+
+
+# Enrollment consumption must not be linkable without the durable TLS trust
+# implementation used before Node registration.
+target_link_libraries(
+        pqnas_node_enrollment_consumption_service
+        PUBLIC
+        pqnas_node_tls_trust_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director Node TLS trust store
+# -----------------------------------------------------------------------------
+add_executable(test_node_tls_trust_store
+        tests/cluster/test_node_tls_trust_store.cpp
+)
+
+target_include_directories(
+        test_node_tls_trust_store
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_node_tls_trust_store
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_node_tls_trust_store
+        PRIVATE
+        pqnas_node_tls_trust_store
+)
+
+if (
+    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    # Security regression only: inject one parent-directory fsync failure
+    # after the immutable TLS binding becomes visible.
+    target_link_options(
+        test_node_tls_trust_store
+        PRIVATE
+        "-Wl,--wrap=fsync"
+    )
+endif()
+
+set_target_properties(
+        test_node_tls_trust_store
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_tls_trust_store
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_tls_trust_store"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_tls_trust_store
+)
+
+
+# -----------------------------------------------------------------------------
 # Director -> Storage Node credential rotation HTTPS transport
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_credential_rotation_https STATIC
@@ -4193,6 +4454,7 @@ target_link_libraries(
         pqnas_node_credential_rotation_https
         PUBLIC
         pqnas_node_credential_rotation_service
+        pqnas_node_tls_https_client
         OpenSSL::SSL
         OpenSSL::Crypto
 )
@@ -4230,6 +4492,7 @@ endif()
 
 target_link_libraries(pqnas_storage_user_projection_sync_https PUBLIC
         pqnas_storage_user_projection_sync_client
+        pqnas_node_tls_https_client
         OpenSSL::SSL
         OpenSSL::Crypto
 )

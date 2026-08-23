@@ -1,6 +1,7 @@
 #include "cluster/internal_auth.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 #include "cluster/storage_user_projection_sync_client.h"
 
 #include <filesystem>
@@ -14,6 +15,10 @@ namespace fs = std::filesystem;
 namespace {
 
 int failures = 0;
+
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
 void expect(
     bool condition,
@@ -134,6 +139,52 @@ int main() {
         "credential-less storage node added"
     );
 
+    expect(
+        node_registry.upsert_configured_node(
+            "storage-no-trust",
+            "https://notrust.example:8443",
+            true,
+            "2026-08-17T00:00:00Z",
+            &error
+        ),
+        "untrusted storage node added"
+    );
+
+    pqnas::cluster::NodeTlsTrustStore
+        tls_trust_store;
+
+    error.clear();
+
+    expect(
+        tls_trust_store.load(
+            (directory / "node_tls_trust").string(),
+            &error
+        ),
+        "TLS trust store loads"
+    );
+
+    expect(
+        tls_trust_store.bind_if_absent(
+            "storage-01",
+            kTestTlsPin,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeTlsTrustStoreResult::Ok,
+        "primary storage TLS trust persisted"
+    );
+
+    expect(
+        tls_trust_store.bind_if_absent(
+            "storage-no-credential",
+            kTestTlsPin,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeTlsTrustStoreResult::Ok,
+        "credential-less storage TLS trust persisted"
+    );
+
     pqnas::cluster::NodeCredentialRegistry
         credential_registry;
 
@@ -167,6 +218,19 @@ int main() {
         "per-node credential persisted"
     );
 
+    // Security regression: this node has a valid reusable credential but no
+    // TLS trust binding. The credential must never reach transport.
+    expect(
+        credential_registry.create_if_absent(
+            "storage-no-trust",
+            token,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeCredentialRegistryResult::Ok,
+        "untrusted node credential persisted"
+    );
+
     pqnas::cluster::
         clear_internal_auth_token_text(
             &token
@@ -184,6 +248,7 @@ int main() {
 
     bool transport_called = false;
     bool authorization_seen = false;
+    bool tls_pin_seen = false;
     std::string seen_url;
     std::string seen_node;
 
@@ -196,11 +261,18 @@ int main() {
     config.credential_registry =
         &credential_registry;
 
+    config.tls_trust_store =
+        &tls_trust_store;
+
     config.transport =
         [&](const pqnas::cluster::
                 StorageUserProjectionSyncTransportRequest&
                     request) {
             transport_called = true;
+
+            tls_pin_seen =
+                request.tls_spki_sha256_pin ==
+                    kTestTlsPin;
 
             authorization_seen =
                 request.authorization.rfind(
@@ -240,6 +312,7 @@ int main() {
             result.http_status == 200 &&
             result.revision == 7 &&
             transport_called &&
+            tls_pin_seen &&
             authorization_seen &&
             seen_url ==
                 "https://storage.example:8443" &&
@@ -305,6 +378,26 @@ int main() {
                         CredentialUnavailable &&
             !transport_called,
             "node without credential fails before transport"
+        );
+    }
+
+    {
+        transport_called = false;
+
+        const auto result =
+            client.sync(
+                projection_for(
+                    "storage-no-trust"
+                )
+            );
+
+        expect(
+            result.code ==
+                pqnas::cluster::
+                    StorageUserProjectionSyncClientCode::
+                        TlsTrustUnavailable &&
+            !transport_called,
+            "node without TLS trust fails before bearer transport"
         );
     }
 
@@ -429,6 +522,38 @@ int main() {
                 "transport result maps to client result"
             );
         }
+    }
+
+    {
+        auto missing_trust_config =
+            config;
+
+        missing_trust_config.tls_trust_store =
+            nullptr;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncClient
+                missing_trust_client(
+                    missing_trust_config
+                );
+
+        transport_called = false;
+
+        const auto result =
+            missing_trust_client.sync(
+                projection_for(
+                    "storage-01"
+                )
+            );
+
+        expect(
+            result.code ==
+                pqnas::cluster::
+                    StorageUserProjectionSyncClientCode::
+                        ClientUnavailable &&
+            !transport_called,
+            "client rejects missing TLS trust-store configuration"
+        );
     }
 
     cleanup();

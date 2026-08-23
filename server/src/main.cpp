@@ -135,6 +135,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_access_runtime.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
+#include "cluster/node_tls_trust_store.h"
 #include "cluster/node_credential_rotation_service.h"
 #include "cluster/node_credential_rotation_https.h"
 #include "cluster/node_deletion_service.h"
@@ -9573,6 +9574,11 @@ int main()
     pqnas::cluster::NodeCredentialRegistry
         director_node_credential_registry;
 
+    // Security: TLS identity bindings live for the complete Director process
+    // lifetime and are separate from bearer credential state.
+    pqnas::cluster::NodeTlsTrustStore
+        director_node_tls_trust_store;
+
     pqnas::cluster::NodeDeletionServiceConfig
         director_node_deletion_service_config;
 
@@ -9688,6 +9694,33 @@ int main()
             return 3;
         }
 
+        // Security: node TLS identities are trusted control-plane state.
+        // Keep them in a fixed private directory below the validated config
+        // root; never accept an independent path override or perform TOFU.
+        const std::filesystem::path
+            node_tls_trust_store_path =
+                pqnas::config_root_path() /
+                "node_tls_trust";
+
+        std::string node_tls_trust_store_error;
+
+        if (!director_node_tls_trust_store.load(
+                node_tls_trust_store_path.string(),
+                &node_tls_trust_store_error)) {
+            // Security: fail closed without disclosing the filesystem path or
+            // raw diagnostic from trusted TLS identity storage.
+            std::cerr
+                << "[cluster] FATAL: Director node TLS trust "
+                   "store load failed"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director node TLS trust store loaded"
+            << std::endl;
+
         pqnas::cluster::
             NodeCredentialRotationServiceConfig
                 node_credential_rotation_service_config;
@@ -9697,6 +9730,11 @@ int main()
 
         node_credential_rotation_service_config.credential_registry =
             &director_node_credential_registry;
+
+        // Security: bearer rotation is authorized only toward the node identity
+        // durably established during enrollment.
+        node_credential_rotation_service_config.tls_trust_store =
+            &director_node_tls_trust_store;
 
         node_credential_rotation_service_config.coordination_mutex =
             cluster_placement_mutex;
@@ -9772,6 +9810,12 @@ int main()
         node_enrollment_consumption_service_config
             .credential_registry =
                 &director_node_credential_registry;
+
+        // Security: enrollment cannot reach NodeRegistered until the node's
+        // immutable TLS SPKI identity has been durably bound here.
+        node_enrollment_consumption_service_config
+            .tls_trust_store =
+                &director_node_tls_trust_store;
 
         node_enrollment_consumption_service_config
             .node_registry =
@@ -9866,6 +9910,11 @@ int main()
 
     director_heartbeat_config.credential_registry =
         &director_node_credential_registry;
+
+    // Security: heartbeat bearer material is unavailable until an exact
+    // per-node TLS identity has been durably enrolled.
+    director_heartbeat_config.tls_trust_store =
+        &director_node_tls_trust_store;
 
     director_heartbeat_config.fetch =
         pqnas::cluster::
@@ -10544,6 +10593,12 @@ auto maybe_auto_rotate_before_append = [&]() {
     director_storage_projection_sync_client_config
         .credential_registry =
             &director_node_credential_registry;
+
+    // Security: projection synchronization cannot materialize a bearer until
+    // the target Storage node has an authoritative TLS identity binding.
+    director_storage_projection_sync_client_config
+        .tls_trust_store =
+            &director_node_tls_trust_store;
 
     director_storage_projection_sync_client_config
         .transport =

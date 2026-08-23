@@ -2,6 +2,7 @@
 
 #include "internal_auth.h"
 #include "node_registry.h"
+#include "node_tls_https_client.h"
 
 #include "httplib.h"
 
@@ -228,6 +229,7 @@ bool content_type_is_json(
 NodeHeartbeatFetch make_https_node_heartbeat_fetch() {
     return [](
         const NodeRegistryRecord& node,
+        const std::string& tls_spki_sha256_pin,
         const std::string& authorization,
         std::string* response_body,
         std::string* error
@@ -272,33 +274,29 @@ NodeHeartbeatFetch make_https_node_heartbeat_fetch() {
             return false;
         }
 
-        httplib::SSLClient client(
-            authority.host,
-            authority.port
-        );
-
-        if (!client.is_valid()) {
-            set_error(
-                error,
-                "heartbeat TLS client initialization failed"
+        // Security: client construction itself requires the canonical
+        // per-node TLS identity. There is no unpinned SSLClient path.
+        auto client =
+            make_pinned_node_https_client(
+                authority.host,
+                authority.port,
+                tls_spki_sha256_pin,
+                error
             );
+
+        if (!client) {
             return false;
         }
 
         // Security: never follow redirects because they could forward the
         // cluster bearer credential to another origin.
-        client.set_follow_location(false);
-        client.set_keep_alive(false);
-        client.set_decompress(false);
+        client->set_follow_location(false);
+        client->set_keep_alive(false);
+        client->set_decompress(false);
 
-        client.set_connection_timeout(5, 0);
-        client.set_read_timeout(8, 0);
-        client.set_write_timeout(5, 0);
-
-        // Security: both certificate-chain and hostname verification remain
-        // enabled. There is deliberately no insecure configuration switch.
-        client.enable_server_certificate_verification(true);
-        client.enable_server_hostname_verification(true);
+        client->set_connection_timeout(5, 0);
+        client->set_read_timeout(8, 0);
+        client->set_write_timeout(5, 0);
 
         const httplib::Headers headers{
             {
@@ -321,7 +319,7 @@ NodeHeartbeatFetch make_https_node_heartbeat_fetch() {
         bool too_large = false;
 
         const httplib::Result result =
-            client.Get(
+            client->Get(
                 "/internal/node/status",
                 headers,
                 [&](

@@ -388,6 +388,13 @@ bool parse_provisioning_stage(
         return true;
     }
 
+    if (value == "tls_trust_bound") {
+        *output =
+            NodeEnrollmentProvisioningStage::
+                TlsTrustBound;
+        return true;
+    }
+
     if (value == "node_registered") {
         *output =
             NodeEnrollmentProvisioningStage::
@@ -1717,6 +1724,10 @@ const char* node_enrollment_provisioning_stage_name(
             return "credential_persisted";
 
         case NodeEnrollmentProvisioningStage::
+                TlsTrustBound:
+            return "tls_trust_bound";
+
+        case NodeEnrollmentProvisioningStage::
                 NodeRegistered:
             return "node_registered";
     }
@@ -2541,6 +2552,9 @@ authenticate_active_provisioning_if_matches(
                 CredentialPersisted ||
         existing.provisioning_stage ==
             NodeEnrollmentProvisioningStage::
+                TlsTrustBound ||
+        existing.provisioning_stage ==
+            NodeEnrollmentProvisioningStage::
                 NodeRegistered;
 
     if (!active_stage) {
@@ -2614,6 +2628,14 @@ advance_provisioning_stage(
             expected_stage ==
                 NodeEnrollmentProvisioningStage::
                     CredentialPersisted &&
+            next_stage ==
+                NodeEnrollmentProvisioningStage::
+                    TlsTrustBound
+        ) ||
+        (
+            expected_stage ==
+                NodeEnrollmentProvisioningStage::
+                    TlsTrustBound &&
             next_stage ==
                 NodeEnrollmentProvisioningStage::
                     NodeRegistered

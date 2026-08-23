@@ -52,6 +52,13 @@ require(
     "rotation service shares the Director placement coordination mutex",
 )
 
+
+require(
+    ".tls_trust_store =\n"
+    "            &director_node_tls_trust_store;" in main,
+    "rotation service uses the authoritative Director TLS trust store",
+)
+
 require(
     "make_https_node_credential_rotation_prepare_transport()" in main and
     "make_https_node_credential_rotation_finalize_transport()" in main,
@@ -64,6 +71,17 @@ credential_load_position = main.find(
 
 service_position = main.find(
     "NodeCredentialRotationServiceConfig"
+)
+
+
+trust_load_position = main.find(
+    "director_node_tls_trust_store.load("
+)
+
+require(
+    trust_load_position >= 0 and
+    service_position > trust_load_position,
+    "rotation service is constructed only after TLS trust-store load",
 )
 
 require(

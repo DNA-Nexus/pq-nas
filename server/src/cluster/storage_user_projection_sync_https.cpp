@@ -2,6 +2,8 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_tls_https_client.h"
+#include "cluster/node_tls_identity.h"
 
 #include "storage_metadata_validation.h"
 #include "storage_path_validation.h"
@@ -509,7 +511,15 @@ bool valid_transport_request(
         request,
     std::string* normalized_url
 ) {
+    std::string normalized_tls_pin;
+
     if (!normalized_url ||
+        !normalize_node_tls_spki_sha256_pin(
+            request.tls_spki_sha256_pin,
+            &normalized_tls_pin,
+            nullptr) ||
+        normalized_tls_pin !=
+            request.tls_spki_sha256_pin ||
         !valid_authorization(
             request.authorization) ||
         !valid_projection(
@@ -826,12 +836,16 @@ make_https_storage_user_projection_sync_transport() {
             headers
         );
 
-        httplib::SSLClient client(
-            authority.host,
-            authority.port
-        );
+        // Security: there is no raw or unpinned SSLClient construction path.
+        auto client =
+            make_pinned_node_https_client(
+                authority.host,
+                authority.port,
+                request.tls_spki_sha256_pin,
+                nullptr
+            );
 
-        if (!client.is_valid()) {
+        if (!client) {
             return response(
                 StorageUserProjectionSyncTransportCode::
                     TransportFailed
@@ -840,22 +854,13 @@ make_https_storage_user_projection_sync_transport() {
 
         // Security: redirects could forward the reusable per-node bearer
         // credential to another origin.
-        client.set_follow_location(false);
-        client.set_keep_alive(false);
-        client.set_decompress(false);
+        client->set_follow_location(false);
+        client->set_keep_alive(false);
+        client->set_decompress(false);
 
-        client.set_connection_timeout(5, 0);
-        client.set_read_timeout(8, 0);
-        client.set_write_timeout(5, 0);
-
-        // Security: there is deliberately no runtime insecure-TLS switch.
-        client.enable_server_certificate_verification(
-            true
-        );
-
-        client.enable_server_hostname_verification(
-            true
-        );
+        client->set_connection_timeout(5, 0);
+        client->set_read_timeout(8, 0);
+        client->set_write_timeout(5, 0);
 
         std::string response_body;
 
@@ -868,7 +873,7 @@ make_https_storage_user_projection_sync_transport() {
         bool too_large = false;
 
         const httplib::Result result =
-            client.Post(
+            client->Post(
                 "/internal/storage/user-projection",
                 headers,
                 request_body,

@@ -2,6 +2,8 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_tls_https_client.h"
+#include "cluster/node_tls_identity.h"
 
 #include "httplib.h"
 
@@ -464,10 +466,19 @@ bool valid_authorization(
 
 bool valid_transport_request(
     const std::string& api_base_url,
+    const std::string& tls_spki_sha256_pin,
     const std::string& authorization,
     HttpsAuthority* authority
 ) {
+    std::string normalized_tls_pin;
+
     if (!authority ||
+        !normalize_node_tls_spki_sha256_pin(
+            tls_spki_sha256_pin,
+            &normalized_tls_pin,
+            nullptr) ||
+        normalized_tls_pin !=
+            tls_spki_sha256_pin ||
         !valid_authorization(
             authorization)) {
         return false;
@@ -628,6 +639,7 @@ parse_common_failure<
 template <typename ParsedResponse>
 ParsedResponse perform_post(
     const std::string& api_base_url,
+    const std::string& tls_spki_sha256_pin,
     const std::string& authorization,
     const char* path,
     const std::function<
@@ -648,6 +660,7 @@ ParsedResponse perform_post(
 
     if (!valid_transport_request(
             api_base_url,
+            tls_spki_sha256_pin,
             authorization,
             &authority)) {
         return failure_factory(
@@ -677,12 +690,17 @@ ParsedResponse perform_post(
             headers
         );
 
-    httplib::SSLClient client(
-        authority.host,
-        authority.port
-    );
+    // Security: every credential-rotation POST is bound to the enrolled
+    // Storage-node TLS identity. There is no raw/unpinned SSLClient path.
+    auto client =
+        make_pinned_node_https_client(
+            authority.host,
+            authority.port,
+            tls_spki_sha256_pin,
+            nullptr
+        );
 
-    if (!client.is_valid()) {
+    if (!client) {
         return failure_factory(
             NodeCredentialRotationTransportCode::
                 TransportFailed,
@@ -692,32 +710,23 @@ ParsedResponse perform_post(
 
     // Security: never allow redirects to forward a reusable cluster bearer to
     // another origin.
-    client.set_follow_location(false);
-    client.set_keep_alive(false);
-    client.set_decompress(false);
+    client->set_follow_location(false);
+    client->set_keep_alive(false);
+    client->set_decompress(false);
 
-    client.set_connection_timeout(
+    client->set_connection_timeout(
         5,
         0
     );
 
-    client.set_read_timeout(
+    client->set_read_timeout(
         8,
         0
     );
 
-    client.set_write_timeout(
+    client->set_write_timeout(
         5,
         0
-    );
-
-    // Security: there is deliberately no insecure TLS runtime switch.
-    client.enable_server_certificate_verification(
-        true
-    );
-
-    client.enable_server_hostname_verification(
-        true
     );
 
     std::string response_body;
@@ -734,7 +743,7 @@ ParsedResponse perform_post(
     bool too_large = false;
 
     const httplib::Result result =
-        client.Post(
+        client->Post(
             path,
             headers,
             "",
@@ -965,6 +974,7 @@ make_https_node_credential_rotation_prepare_transport() {
             NodeCredentialRotationPrepareResponse
         >(
             request.api_base_url,
+            request.tls_spki_sha256_pin,
             request.authorization,
             "/internal/node/credential/rotation/prepare",
             [](
@@ -1002,6 +1012,7 @@ make_https_node_credential_rotation_finalize_transport() {
             NodeCredentialRotationFinalizeResponse
         >(
             request.api_base_url,
+            request.tls_spki_sha256_pin,
             request.authorization,
             "/internal/node/credential/rotation/finalize",
             [](

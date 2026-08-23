@@ -3,6 +3,7 @@
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
 #include "cluster/node_enrollment_token.h"
+#include "cluster/node_tls_identity.h"
 
 #include <cctype>
 #include <map>
@@ -305,6 +306,73 @@ map_credential_result(
         RegistryFailed;
 }
 
+NodeEnrollmentConsumptionServiceResult
+map_tls_trust_bind_result(
+    NodeTlsTrustStoreResult result
+) noexcept {
+    switch (result) {
+        case NodeTlsTrustStoreResult::Ok:
+            return NodeEnrollmentConsumptionServiceResult::Ok;
+
+        case NodeTlsTrustStoreResult::InvalidInput:
+        case NodeTlsTrustStoreResult::PinInvalid:
+            return NodeEnrollmentConsumptionServiceResult::
+                InvalidInput;
+
+        case NodeTlsTrustStoreResult::TrustConflict:
+            return NodeEnrollmentConsumptionServiceResult::
+                TlsTrustConflict;
+
+        case NodeTlsTrustStoreResult::StorageUnsafe:
+        case NodeTlsTrustStoreResult::IoFailed:
+            return NodeEnrollmentConsumptionServiceResult::
+                TlsTrustUnavailable;
+
+        case NodeTlsTrustStoreResult::PersistFailed:
+            return NodeEnrollmentConsumptionServiceResult::
+                PersistFailed;
+
+        case NodeTlsTrustStoreResult::NotFound:
+            return NodeEnrollmentConsumptionServiceResult::
+                RegistryFailed;
+    }
+
+    return NodeEnrollmentConsumptionServiceResult::
+        RegistryFailed;
+}
+
+NodeEnrollmentConsumptionServiceResult
+map_tls_trust_lookup_result(
+    NodeTlsTrustStoreResult result
+) noexcept {
+    switch (result) {
+        case NodeTlsTrustStoreResult::Ok:
+            return NodeEnrollmentConsumptionServiceResult::Ok;
+
+        case NodeTlsTrustStoreResult::InvalidInput:
+            return NodeEnrollmentConsumptionServiceResult::
+                InvalidInput;
+
+        case NodeTlsTrustStoreResult::NotFound:
+        case NodeTlsTrustStoreResult::TrustConflict:
+            return NodeEnrollmentConsumptionServiceResult::
+                TlsTrustConflict;
+
+        case NodeTlsTrustStoreResult::PinInvalid:
+        case NodeTlsTrustStoreResult::StorageUnsafe:
+        case NodeTlsTrustStoreResult::IoFailed:
+            return NodeEnrollmentConsumptionServiceResult::
+                TlsTrustUnavailable;
+
+        case NodeTlsTrustStoreResult::PersistFailed:
+            return NodeEnrollmentConsumptionServiceResult::
+                PersistFailed;
+    }
+
+    return NodeEnrollmentConsumptionServiceResult::
+        RegistryFailed;
+}
+
 bool configured_node_matches(
     const NodeRegistry& registry,
     const std::string& node_id,
@@ -388,6 +456,12 @@ node_enrollment_consumption_service_result_code(
                 CredentialUnavailable:
             return "enrollment_consumption_credential_unavailable";
         case NodeEnrollmentConsumptionServiceResult::
+                TlsTrustConflict:
+            return "enrollment_consumption_tls_trust_conflict";
+        case NodeEnrollmentConsumptionServiceResult::
+                TlsTrustUnavailable:
+            return "enrollment_consumption_tls_trust_unavailable";
+        case NodeEnrollmentConsumptionServiceResult::
                 NodeConflict:
             return "enrollment_consumption_node_conflict";
         case NodeEnrollmentConsumptionServiceResult::
@@ -421,6 +495,7 @@ config_valid() const noexcept {
     return
         config_.enrollment_registry &&
         config_.credential_registry &&
+        config_.tls_trust_store &&
         config_.node_registry &&
         static_cast<bool>(
             config_.audit_emit
@@ -523,6 +598,7 @@ NodeEnrollmentConsumptionService::consume(
     }
 
     std::string normalized_url;
+    std::string normalized_tls_pin;
 
     if (!valid_enrollment_id_text(
             request.enrollment_id) ||
@@ -533,6 +609,12 @@ NodeEnrollmentConsumptionService::consume(
         request.protocol_version > 1000 ||
         !valid_internal_auth_credential_token(
             request.node_credential) ||
+        !normalize_node_tls_spki_sha256_pin(
+            request.tls_spki_sha256_pin,
+            &normalized_tls_pin,
+            nullptr) ||
+        normalized_tls_pin !=
+            request.tls_spki_sha256_pin ||
         !valid_iso_utc_seconds_text(
             request.now_iso) ||
         !normalize_cluster_https_base_url(
@@ -622,6 +704,37 @@ NodeEnrollmentConsumptionService::consume(
             );
         }
 
+        std::string existing_tls_pin;
+        internal_error.clear();
+
+        const NodeTlsTrustStoreResult
+            trust_lookup_result =
+                config_.tls_trust_store->get(
+                    request.node_id,
+                    &existing_tls_pin,
+                    &internal_error
+                );
+
+        // Security: before this enrollment owns an active transaction, any
+        // existing TLS identity is foreign state. Never silently adopt it,
+        // even if its public pin happens to equal the presented value.
+        if (trust_lookup_result ==
+            NodeTlsTrustStoreResult::Ok) {
+            return fail(
+                NodeEnrollmentConsumptionServiceResult::
+                    TlsTrustConflict
+            );
+        }
+
+        if (trust_lookup_result !=
+            NodeTlsTrustStoreResult::NotFound) {
+            return fail(
+                map_tls_trust_lookup_result(
+                    trust_lookup_result
+                )
+            );
+        }
+
         if (config_.node_registry->get(
                 request.node_id).has_value() ||
             configured_url_exists(
@@ -700,6 +813,45 @@ NodeEnrollmentConsumptionService::consume(
                     CredentialConflict;
         };
 
+    const auto verify_tls_trust =
+        [&]() -> NodeEnrollmentConsumptionServiceResult {
+            std::string persisted_pin;
+            internal_error.clear();
+
+            const NodeTlsTrustStoreResult result =
+                config_.tls_trust_store->get(
+                    request.node_id,
+                    &persisted_pin,
+                    &internal_error
+                );
+
+            if (result !=
+                NodeTlsTrustStoreResult::Ok) {
+                return map_tls_trust_lookup_result(
+                    result
+                );
+            }
+
+            return persisted_pin ==
+                    request.tls_spki_sha256_pin
+                ? NodeEnrollmentConsumptionServiceResult::Ok
+                : NodeEnrollmentConsumptionServiceResult::
+                    TlsTrustConflict;
+        };
+
+    const auto bind_tls_trust =
+        [&]() -> NodeEnrollmentConsumptionServiceResult {
+            internal_error.clear();
+
+            return map_tls_trust_bind_result(
+                config_.tls_trust_store->bind_if_absent(
+                    request.node_id,
+                    request.tls_spki_sha256_pin,
+                    &internal_error
+                )
+            );
+        };
+
     const auto verify_final_state =
         [&]() -> NodeEnrollmentConsumptionServiceResult {
             const auto credential_result =
@@ -708,6 +860,14 @@ NodeEnrollmentConsumptionService::consume(
             if (credential_result !=
                 NodeEnrollmentConsumptionServiceResult::Ok) {
                 return credential_result;
+            }
+
+            const auto tls_result =
+                verify_tls_trust();
+
+            if (tls_result !=
+                NodeEnrollmentConsumptionServiceResult::Ok) {
+                return tls_result;
             }
 
             return configured_node_matches(
@@ -763,6 +923,25 @@ NodeEnrollmentConsumptionService::consume(
             NodeEnrollmentConsumptionServiceResult::Ok) {
             return fail(
                 credential_result
+            );
+        }
+
+        const auto tls_result =
+            verify_tls_trust();
+
+        if (tls_result ==
+            NodeEnrollmentConsumptionServiceResult::
+                TlsTrustConflict) {
+            return fail(
+                NodeEnrollmentConsumptionServiceResult::
+                    Consumed
+            );
+        }
+
+        if (tls_result !=
+            NodeEnrollmentConsumptionServiceResult::Ok) {
+            return fail(
+                tls_result
             );
         }
 
@@ -895,8 +1074,11 @@ NodeEnrollmentConsumptionService::consume(
     }
 
     if (stage ==
-        NodeEnrollmentProvisioningStage::
-            CredentialPersisted) {
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted ||
+        stage ==
+            NodeEnrollmentProvisioningStage::
+                TlsTrustBound) {
         const auto credential_result =
             verify_credential();
 
@@ -904,6 +1086,108 @@ NodeEnrollmentConsumptionService::consume(
             NodeEnrollmentConsumptionServiceResult::Ok) {
             return fail(
                 credential_result,
+                recovered
+            );
+        }
+
+        if (stage ==
+            NodeEnrollmentProvisioningStage::
+                CredentialPersisted) {
+            const auto trust_result =
+                bind_tls_trust();
+
+            if (trust_result !=
+                NodeEnrollmentConsumptionServiceResult::Ok) {
+                return fail(
+                    trust_result,
+                    recovered
+                );
+            }
+
+            NodeEnrollmentRecord tls_advanced;
+            internal_error.clear();
+
+            enrollment_result =
+                config_.enrollment_registry
+                    ->advance_provisioning_stage(
+                        request.enrollment_id,
+                        request.expected_generation,
+                        NodeEnrollmentProvisioningStage::
+                            CredentialPersisted,
+                        NodeEnrollmentProvisioningStage::
+                            TlsTrustBound,
+                        &tls_advanced,
+                        &internal_error
+                    );
+
+            if (enrollment_result ==
+                NodeEnrollmentRegistryResult::Ok) {
+                stage =
+                    NodeEnrollmentProvisioningStage::
+                        TlsTrustBound;
+            } else if (
+                enrollment_result ==
+                NodeEnrollmentRegistryResult::
+                    ProvisioningStageMismatch) {
+                internal_error.clear();
+
+                enrollment_result =
+                    config_.enrollment_registry
+                        ->authenticate_active_provisioning_if_matches(
+                            request.enrollment_id,
+                            request.node_id,
+                            normalized_url,
+                            request.protocol_version,
+                            request.expected_generation,
+                            bootstrap_hash,
+                            &stage,
+                            &internal_error
+                        );
+
+                if (enrollment_result !=
+                    NodeEnrollmentRegistryResult::Ok) {
+                    return fail(
+                        map_enrollment_result(
+                            enrollment_result
+                        ),
+                        true
+                    );
+                }
+
+                recovered = true;
+            } else if (
+                enrollment_result ==
+                NodeEnrollmentRegistryResult::
+                    AlreadyConsumed) {
+                const auto final_state =
+                    verify_final_state();
+
+                return fail(
+                    final_state ==
+                        NodeEnrollmentConsumptionServiceResult::Ok
+                        ? NodeEnrollmentConsumptionServiceResult::Ok
+                        : final_state,
+                    true
+                );
+            } else {
+                return fail(
+                    map_enrollment_result(
+                        enrollment_result
+                    ),
+                    recovered
+                );
+            }
+        }
+
+        // Security: a persisted TlsTrustBound stage is authoritative only if
+        // the immutable trust store still contains the exact presented pin.
+        const auto tls_result =
+            verify_tls_trust();
+
+        if (tls_result !=
+            NodeEnrollmentConsumptionServiceResult::Ok) {
+            return fail(
+                tls_result,
                 recovered
             );
         }
@@ -970,7 +1254,7 @@ NodeEnrollmentConsumptionService::consume(
                     request.enrollment_id,
                     request.expected_generation,
                     NodeEnrollmentProvisioningStage::
-                        CredentialPersisted,
+                        TlsTrustBound,
                     NodeEnrollmentProvisioningStage::
                         NodeRegistered,
                     &advanced,

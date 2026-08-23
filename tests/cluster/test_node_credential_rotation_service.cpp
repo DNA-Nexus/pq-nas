@@ -3,6 +3,7 @@
 #include "cluster/internal_auth.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -56,7 +57,17 @@ using pqnas::cluster::
 using pqnas::cluster::
     NodeRegistry;
 
+using pqnas::cluster::
+    NodeTlsTrustStore;
+
+using pqnas::cluster::
+    NodeTlsTrustStoreResult;
+
 int failures = 0;
+
+constexpr char kTestTlsPin[] =
+    "sha256/"
+    "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
 void expect(
     bool condition,
@@ -219,6 +230,9 @@ int main() {
     NodeCredentialRegistry
         credential_registry;
 
+    NodeTlsTrustStore
+        tls_trust_store;
+
     std::string error;
 
     expect(
@@ -244,6 +258,20 @@ int main() {
             &error
         ),
         "load empty credential registry: " +
+            error
+    );
+
+    error.clear();
+
+    expect(
+        tls_trust_store.load(
+            (
+                root /
+                "node_tls_trust"
+            ).string(),
+            &error
+        ),
+        "load empty TLS trust store: " +
             error
     );
 
@@ -284,6 +312,21 @@ int main() {
                     ": " +
                     error
             );
+
+            error.clear();
+
+            expect(
+                tls_trust_store.bind_if_absent(
+                    node_id,
+                    kTestTlsPin,
+                    &error
+                ) ==
+                    NodeTlsTrustStoreResult::Ok,
+                "bind TLS trust " +
+                    node_id +
+                    ": " +
+                    error
+            );
         };
 
     add_node(
@@ -316,6 +359,33 @@ int main() {
         token_a
     );
 
+    error.clear();
+
+    expect(
+        node_registry.upsert_configured_node(
+            "node-no-trust",
+            "https://node-no-trust.internal",
+            true,
+            "2026-08-23T10:00:00Z",
+            &error
+        ),
+        "add node without TLS trust: " +
+            error
+    );
+
+    error.clear();
+
+    expect(
+        credential_registry.create_if_absent(
+            "node-no-trust",
+            token_a,
+            &error
+        ) ==
+            NodeCredentialRegistryResult::Ok,
+        "add credential for node without TLS trust: " +
+            error
+    );
+
     auto coordination_mutex =
         std::make_shared<std::mutex>();
 
@@ -339,6 +409,9 @@ int main() {
     config.credential_registry =
         &credential_registry;
 
+    config.tls_trust_store =
+        &tls_trust_store;
+
     config.coordination_mutex =
         coordination_mutex;
 
@@ -350,6 +423,12 @@ int main() {
                     coordination_mutex
                 ),
                 "prepare transport runs outside coordination mutex"
+            );
+
+            expect(
+                request.tls_spki_sha256_pin ==
+                    kTestTlsPin,
+                "prepare uses exact enrolled TLS pin"
             );
 
             NodeCredentialRotationPrepareResponse
@@ -468,6 +547,12 @@ int main() {
                 "finalize transport runs outside coordination mutex"
             );
 
+            expect(
+                request.tls_spki_sha256_pin ==
+                    kTestTlsPin,
+                "finalize preserves exact prepare TLS pin"
+            );
+
             NodeCredentialRotationFinalizeResponse
                 response;
 
@@ -526,6 +611,59 @@ int main() {
         service(
             config
         );
+
+    // ---------------------------------------------------------------------
+    // TLS trust is mandatory before OLD bearer material or transport.
+    // ---------------------------------------------------------------------
+    {
+        const NodeCredentialRotationResult result =
+            service.rotate(
+                "node-no-trust"
+            );
+
+        expect(
+            result.code ==
+                NodeCredentialRotationServiceCode::
+                    TlsTrustUnavailable &&
+            !result.director_credential_committed &&
+            !result.storage_finalized,
+            "node without TLS trust fails closed before rotation"
+        );
+
+        expect(
+            credential_matches(
+                credential_registry,
+                "node-no-trust",
+                token_a
+            ),
+            "TLS trust failure leaves OLD credential unchanged"
+        );
+    }
+
+    {
+        auto invalid_config =
+            config;
+
+        invalid_config.tls_trust_store =
+            nullptr;
+
+        NodeCredentialRotationService
+            invalid_service(
+                invalid_config
+            );
+
+        const auto result =
+            invalid_service.rotate(
+                "node-success"
+            );
+
+        expect(
+            result.code ==
+                NodeCredentialRotationServiceCode::
+                    ServiceUnavailable,
+            "missing TLS trust-store configuration fails closed"
+        );
+    }
 
     // ---------------------------------------------------------------------
     // Normal state-machine order:

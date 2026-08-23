@@ -4,6 +4,7 @@
 #include "node_credential_registry.h"
 #include "node_registry.h"
 #include "node_status.h"
+#include "node_tls_trust_store.h"
 
 #include <nlohmann/json.hpp>
 #include <sodium.h>
@@ -199,6 +200,14 @@ bool NodeHeartbeatWorker::config_valid(
         return false;
     }
 
+    if (!config_.tls_trust_store) {
+        set_error(
+            error,
+            "heartbeat TLS trust store is missing"
+        );
+        return false;
+    }
+
     if (!config_.fetch) {
         set_error(
             error,
@@ -355,6 +364,35 @@ NodeHeartbeatWorker::poll_once() {
 
         ++result.checked;
 
+        std::string tls_spki_sha256_pin;
+        std::string tls_trust_error;
+
+        const NodeTlsTrustStoreResult
+            tls_trust_result =
+                config_.tls_trust_store->get(
+                    node.node_id,
+                    &tls_spki_sha256_pin,
+                    &tls_trust_error
+                );
+
+        // Security: never disclose trust-store filesystem diagnostics through
+        // heartbeat state, audit fields or logs.
+        tls_trust_error.clear();
+
+        if (tls_trust_result !=
+            NodeTlsTrustStoreResult::Ok) {
+            ++result.failed;
+
+            record_offline(
+                node,
+                "tls_trust_unavailable"
+            );
+
+            continue;
+        }
+
+        // Security: only after an authoritative TLS identity exists may the
+        // reusable bearer credential be materialized.
         std::string authorization;
         SensitiveStringWiper authorization_wiper(
             authorization
@@ -397,6 +435,7 @@ NodeHeartbeatWorker::poll_once() {
         try {
             fetched = config_.fetch(
                 node,
+                tls_spki_sha256_pin,
                 authorization,
                 &response_body,
                 &fetch_error

@@ -10,6 +10,7 @@ namespace pqnas::cluster {
 
 class NodeRegistry;
 class NodeCredentialRegistry;
+class NodeTlsTrustStore;
 
 enum class StorageUserProjectionSyncTransportCode {
     Applied,
@@ -27,6 +28,10 @@ enum class StorageUserProjectionSyncTransportCode {
 
 struct StorageUserProjectionSyncTransportRequest {
     std::string api_base_url;
+
+    // Public, canonical TLS identity of the exact Storage node.
+    // Security: authenticated transport has no blank/unpinned path.
+    std::string tls_spki_sha256_pin;
 
     // Exact short-lived "Bearer <token>" value obtained from the
     // Director's per-node credential registry.
@@ -57,6 +62,7 @@ enum class StorageUserProjectionSyncClientCode {
     ClientUnavailable,
     NodeNotFound,
     NodeDisabled,
+    TlsTrustUnavailable,
     CredentialUnavailable,
     Rejected,
     AuthenticationFailed,
@@ -84,6 +90,11 @@ struct StorageUserProjectionSyncResult {
 struct StorageUserProjectionSyncClientConfig {
     const NodeRegistry* node_registry = nullptr;
     const NodeCredentialRegistry* credential_registry = nullptr;
+
+    // Security: trust is resolved before any reusable bearer credential is
+    // materialized for authenticated Director -> Storage traffic.
+    const NodeTlsTrustStore* tls_trust_store = nullptr;
+
     StorageUserProjectionSyncTransport transport;
 };
 
