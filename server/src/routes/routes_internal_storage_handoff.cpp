@@ -187,8 +187,9 @@ bool context_ok(
     const InternalStorageHandoffRoutesContext& context
 ) noexcept {
     return
-        context.credential &&
-        context.credential->configured() &&
+        static_cast<bool>(
+            context.verify_authorization
+        ) &&
         context.ticket_store &&
         static_cast<bool>(
             context.consume_rate_limit_slot) &&
@@ -459,10 +460,21 @@ void handle_internal_storage_handoff_ticket_request(
             request
         );
 
-    if (!authorization ||
-        !verify_internal_bearer_authorization(
-            *authorization,
-            *context.credential)) {
+    bool authorized = false;
+
+    if (authorization) {
+        try {
+            authorized =
+                context.verify_authorization(
+                    *authorization
+                );
+        } catch (...) {
+            // Security: authentication dependency failures fail closed.
+            authorized = false;
+        }
+    }
+
+    if (!authorized) {
         reply_unauthorized(
             context,
             response

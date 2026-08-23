@@ -206,8 +206,16 @@ int main() {
     pqnas::cluster::
         InternalStorageHandoffRoutesContext context;
 
-    context.credential =
-        &credential;
+    context.verify_authorization =
+        [&credential](
+            const std::string& authorization
+        ) {
+            return pqnas::cluster::
+                verify_internal_bearer_authorization(
+                    authorization,
+                    credential
+                );
+        };
 
     context.ticket_store =
         &store;
@@ -352,6 +360,61 @@ int main() {
             clear_internal_auth_token_text(
                 &wrong_token
             );
+    }
+
+    // Security regression: a verifier exception must fail as generic bearer
+    // authentication and must not reach rate limiting or handoff issuance.
+    {
+        const auto saved_verifier =
+            context.verify_authorization;
+
+        context.verify_authorization =
+            [](const std::string&) -> bool {
+                throw 1;
+            };
+
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                json{
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
+                }.dump()
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 401,
+            "throwing handoff verifier must fail closed with 401"
+        );
+
+        expect(
+            rate_limit_calls == 0 &&
+            authorize_calls == 0 &&
+            store.size() == 0,
+            "throwing handoff verifier must perform no handoff work"
+        );
+
+        expect(
+            response_header(
+                response,
+                "WWW-Authenticate"
+            ) == "Bearer",
+            "throwing handoff verifier returns generic bearer challenge"
+        );
+
+        context.verify_authorization =
+            saved_verifier;
     }
 
     {

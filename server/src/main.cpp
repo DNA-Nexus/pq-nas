@@ -129,11 +129,14 @@ failures must return an error and should emit an audit event when security-relev
 #include "password_credentials.h"
 #include "cluster/server_role.h"
 #include "cluster/internal_auth.h"
+#include "cluster/storage_node_credential_runtime.h"
 #include "cluster/node_status.h"
 #include "cluster/storage_user_projection_store.h"
 #include "cluster/storage_user_access_runtime.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
+#include "cluster/node_credential_rotation_service.h"
+#include "cluster/node_credential_rotation_https.h"
 #include "cluster/node_deletion_service.h"
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_service.h"
@@ -155,6 +158,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/user_placement_policy_registry.h"
 #include "cluster/node_heartbeat_https.h"
 #include "routes/routes_internal_node_status.h"
+#include "routes/routes_internal_node_credential_rotation.h"
 #include "routes/routes_internal_storage_user_projection.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
@@ -9472,7 +9476,8 @@ int main()
         }
     }
 
-    pqnas::cluster::InternalAuthCredential cluster_credential;
+    pqnas::cluster::StorageNodeCredentialRuntime
+        cluster_credential_runtime;
 
     // Node-local authorization projection state.
     //
@@ -9493,12 +9498,12 @@ int main()
     if (cluster_config.is_node()) {
         std::string credential_err;
 
-        if (!pqnas::cluster::load_internal_auth_credential_file(
+        if (!cluster_credential_runtime.load(
                 cluster_config.cluster_credential_file,
-                &cluster_credential,
                 &credential_err)) {
             // Security: report only the failure category. Never log the
             // credential contents or its configured filesystem path.
+            // Pending rotation state is recovered fail-closed by the runtime.
             std::cerr
                 << "[cluster] FATAL: internal credential setup failed: "
                 << credential_err
@@ -9594,6 +9599,11 @@ int main()
             NodeEnrollmentConsumptionService
     > director_node_enrollment_consumption_service;
 
+    std::unique_ptr<
+        pqnas::cluster::
+            NodeCredentialRotationService
+    > director_node_credential_rotation_service;
+
     pqnas::cluster::UserPlacementPolicyRegistry
         director_placement_policy_registry;
 
@@ -9677,6 +9687,40 @@ int main()
 
             return 3;
         }
+
+        pqnas::cluster::
+            NodeCredentialRotationServiceConfig
+                node_credential_rotation_service_config;
+
+        node_credential_rotation_service_config.node_registry =
+            &director_node_registry;
+
+        node_credential_rotation_service_config.credential_registry =
+            &director_node_credential_registry;
+
+        node_credential_rotation_service_config.coordination_mutex =
+            cluster_placement_mutex;
+
+        node_credential_rotation_service_config.prepare_transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_prepare_transport();
+
+        node_credential_rotation_service_config.finalize_transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_finalize_transport();
+
+        // Security: credential rotation shares the Director lifecycle
+        // coordination boundary, but the service releases that mutex before
+        // every network operation.
+        director_node_credential_rotation_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeCredentialRotationService
+            >(
+                std::move(
+                    node_credential_rotation_service_config
+                )
+            );
 
         pqnas::cluster::
             NodeEnrollmentServiceConfig
@@ -11434,8 +11478,16 @@ v5.app_pair_build_qr_uri =
         pqnas::cluster::InternalNodeStatusRoutesContext
             internal_node_status_context;
 
-        internal_node_status_context.credential =
-            &cluster_credential;
+        internal_node_status_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
 
         internal_node_status_context.build_status_json =
             [&](nlohmann::json* out,
@@ -11489,11 +11541,41 @@ v5.app_pair_build_qr_uri =
 
     if (cluster_config.is_node()) {
         pqnas::cluster::
+            InternalNodeCredentialRotationRoutesContext
+                internal_node_credential_rotation_context;
+
+        // Security: credential mutation routes receive the runtime itself so
+        // authentication and state mutation remain one atomic operation.
+        internal_node_credential_rotation_context.runtime =
+            &cluster_credential_runtime;
+
+        pqnas::cluster::
+            register_internal_node_credential_rotation_routes(
+                srv,
+                internal_node_credential_rotation_context
+            );
+
+        std::cerr
+            << "[cluster] internal node credential rotation "
+               "routes registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
             InternalStorageUserProjectionRoutesContext
                 internal_storage_user_projection_context;
 
-        internal_storage_user_projection_context.credential =
-            &cluster_credential;
+        internal_storage_user_projection_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
 
         internal_storage_user_projection_context.projection_store =
             &storage_user_projection_store;
@@ -11655,6 +11737,46 @@ v5.app_pair_build_qr_uri =
             [&users]() {
                 return
                     users.home_node_assignment_counts();
+            };
+
+        admin_cluster_node_context.rotation_in_progress =
+            [&director_node_credential_rotation_service](
+                const std::string& node_id
+            ) {
+                // Security: this callback is invoked while the caller holds
+                // cluster_placement_mutex. The rotation service establishes
+                // its busy marker under that same coordination boundary.
+                return
+                    director_node_credential_rotation_service &&
+                    director_node_credential_rotation_service
+                        ->rotation_in_progress(
+                            node_id
+                        );
+            };
+
+        admin_cluster_node_context.rotate_node_credential =
+            [&director_node_credential_rotation_service](
+                const std::string& node_id
+            ) {
+                if (!director_node_credential_rotation_service) {
+                    pqnas::cluster::
+                        NodeCredentialRotationResult result;
+
+                    result.code =
+                        pqnas::cluster::
+                            NodeCredentialRotationServiceCode::
+                                ServiceUnavailable;
+
+                    return result;
+                }
+
+                // Security: rotate() performs remote I/O without holding the
+                // shared placement/lifecycle coordination mutex.
+                return
+                    director_node_credential_rotation_service
+                        ->rotate(
+                            node_id
+                        );
             };
 
         admin_cluster_node_context.erase_unassigned_node =

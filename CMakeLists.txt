@@ -354,6 +354,36 @@ target_link_libraries(pqnas_node_credential_registry PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Director Node credential rotation orchestration
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_credential_rotation_service STATIC
+        server/src/cluster/node_credential_rotation_service.cpp
+        server/src/cluster/node_credential_rotation_service.h
+)
+
+target_include_directories(
+        pqnas_node_credential_rotation_service
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_credential_rotation_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_credential_rotation_service
+        PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_node_credential_registry
+)
+
+
+# -----------------------------------------------------------------------------
 # Cluster-safe Node deletion lifecycle
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_deletion_service STATIC
@@ -377,6 +407,71 @@ target_link_libraries(pqnas_node_deletion_service PUBLIC
         pqnas_cluster_identity_validation
         pqnas_node_credential_registry
         pqnas_node_enrollment_registry
+)
+
+
+# -----------------------------------------------------------------------------
+# Storage node credential rotation runtime
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_node_credential_runtime STATIC
+        server/src/cluster/storage_node_credential_runtime.cpp
+        server/src/cluster/storage_node_credential_runtime.h
+)
+
+target_include_directories(
+        pqnas_storage_node_credential_runtime
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_node_credential_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_storage_node_credential_runtime
+        PUBLIC
+        Threads::Threads
+)
+
+
+# -----------------------------------------------------------------------------
+# Internal Storage Node credential rotation routes
+# -----------------------------------------------------------------------------
+add_library(pqnas_internal_node_credential_rotation_routes STATIC
+        server/src/routes/routes_internal_node_credential_rotation.cpp
+        server/src/routes/routes_internal_node_credential_rotation.h
+)
+
+target_include_directories(
+        pqnas_internal_node_credential_rotation_routes
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_internal_node_credential_rotation_routes
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_internal_node_credential_rotation_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_internal_node_credential_rotation_routes
+        PUBLIC
+        pqnas_storage_node_credential_runtime
 )
 
 
@@ -885,6 +980,8 @@ target_link_libraries(pqnas_server PRIVATE
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_enrollment_registry
         pqnas_node_credential_registry
+        pqnas_storage_node_credential_runtime
+        pqnas_internal_node_credential_rotation_routes
         pqnas_node_deletion_service
         pqnas_node_enrollment_service
         pqnas_node_enrollment_consumption_service
@@ -1727,6 +1824,60 @@ add_custom_target(run_test_node_heartbeat_worker
 
 
 # -----------------------------------------------------------------------------
+# Test: Director Node credential rotation service
+# -----------------------------------------------------------------------------
+add_executable(test_node_credential_rotation_service
+        tests/cluster/test_node_credential_rotation_service.cpp
+        server/src/cluster/internal_auth.cpp
+        server/src/cluster/node_registry.cpp
+)
+
+target_include_directories(
+        test_node_credential_rotation_service
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_node_credential_rotation_service
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_node_credential_rotation_service
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_node_credential_rotation_service
+        PRIVATE
+        pqnas_node_credential_rotation_service
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(
+        test_node_credential_rotation_service
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_credential_rotation_service
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_credential_rotation_service"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_credential_rotation_service
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_deletion_service
 # -----------------------------------------------------------------------------
 add_executable(test_node_deletion_service
@@ -2059,6 +2210,19 @@ target_link_libraries(test_node_credential_registry PRIVATE
         ${SODIUM_LIBRARIES}
 )
 
+if (
+    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    # Security regression only: inject one parent-directory fsync failure
+    # after rename without adding a production runtime fault hook.
+    target_link_options(
+        test_node_credential_registry
+        PRIVATE
+        "-Wl,--wrap=fsync"
+    )
+endif()
+
 set_target_properties(test_node_credential_registry PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -2367,6 +2531,60 @@ add_custom_target(run_test_node_registry
 
 
 # -----------------------------------------------------------------------------
+# Test: test_internal_node_credential_rotation_route
+# -----------------------------------------------------------------------------
+add_executable(test_internal_node_credential_rotation_route
+        tests/cluster/test_internal_node_credential_rotation_route.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_internal_node_credential_rotation_route
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_internal_node_credential_rotation_route
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_internal_node_credential_rotation_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_internal_node_credential_rotation_route
+        PRIVATE
+        pqnas_internal_node_credential_rotation_routes
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(
+        test_internal_node_credential_rotation_route
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_internal_node_credential_rotation_route
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_internal_node_credential_rotation_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_internal_node_credential_rotation_route
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_internal_node_status_route
 # -----------------------------------------------------------------------------
 add_executable(test_internal_node_status_route
@@ -2463,6 +2681,58 @@ add_custom_target(run_test_internal_auth
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_internal_auth"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_internal_auth
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: test_storage_node_credential_runtime
+# -----------------------------------------------------------------------------
+add_executable(test_storage_node_credential_runtime
+        tests/cluster/test_storage_node_credential_runtime.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_storage_node_credential_runtime
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(
+        test_storage_node_credential_runtime
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_node_credential_runtime
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_storage_node_credential_runtime
+        PRIVATE
+        pqnas_storage_node_credential_runtime
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(
+        test_storage_node_credential_runtime
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_storage_node_credential_runtime
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_storage_node_credential_runtime"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_node_credential_runtime
 )
 
 
@@ -3657,6 +3927,16 @@ add_custom_target(run_test_internal_storage_user_projection_route
 )
 
 # -----------------------------------------------------------------------------
+# Structural guard: Node credential rotation production wiring
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_node_credential_rotation_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_node_credential_rotation_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Structural guard: Storage user projection production wiring
 # -----------------------------------------------------------------------------
 add_custom_target(run_test_storage_user_projection_wiring
@@ -3876,6 +4156,49 @@ target_link_libraries(pqnas_storage_user_projection_sync_client PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Director -> Storage Node credential rotation HTTPS transport
+# -----------------------------------------------------------------------------
+add_library(pqnas_node_credential_rotation_https STATIC
+        server/src/cluster/node_credential_rotation_https.cpp
+        server/src/cluster/node_credential_rotation_https.h
+)
+
+target_include_directories(
+        pqnas_node_credential_rotation_https
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_node_credential_rotation_https
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_node_credential_rotation_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_node_credential_rotation_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_node_credential_rotation_https
+        PUBLIC
+        pqnas_node_credential_rotation_service
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
 # Director -> Storage user projection HTTPS transport
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_user_projection_sync_https STATIC
@@ -3953,6 +4276,73 @@ add_custom_target(run_test_storage_user_projection_sync_client
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_client"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_projection_sync_client
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Node credential rotation HTTPS protocol parser
+# -----------------------------------------------------------------------------
+add_executable(test_node_credential_rotation_https
+        tests/cluster/test_node_credential_rotation_https.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(
+        test_node_credential_rotation_https
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_definitions(
+        test_node_credential_rotation_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_compile_options(
+        test_node_credential_rotation_https
+        PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_node_credential_rotation_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_node_credential_rotation_https
+        PRIVATE
+        pqnas_node_credential_rotation_https
+        ${SODIUM_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+set_target_properties(
+        test_node_credential_rotation_https
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(
+        run_test_node_credential_rotation_https
+        COMMAND
+        "${CMAKE_BINARY_DIR}/bin/test_node_credential_rotation_https"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_node_credential_rotation_https
+)
+
+add_custom_target(
+        run_test_node_credential_rotation_https_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_node_credential_rotation_https_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
 
@@ -4471,8 +4861,18 @@ add_custom_target(run_test_storage_user_projection_reconcile_worker_guards
 # Director production Storage projection reconciliation composition
 # -----------------------------------------------------------------------------
 target_link_libraries(pqnas_server PRIVATE
+        pqnas_node_credential_rotation_https
         pqnas_storage_user_projection_sync_https
         pqnas_storage_user_projection_reconcile_worker
+)
+
+# -----------------------------------------------------------------------------
+# Structural guard: Director Node credential rotation production composition
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_node_credential_rotation_director_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_node_credential_rotation_director_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
 # -----------------------------------------------------------------------------

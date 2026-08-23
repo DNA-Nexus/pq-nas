@@ -179,7 +179,16 @@ int main() {
     std::int64_t fake_now = 1000;
 
     pqnas::cluster::InternalNodeStatusRoutesContext context;
-    context.credential = &credential;
+    context.verify_authorization =
+        [&credential](
+            const std::string& authorization
+        ) {
+            return pqnas::cluster::
+                verify_internal_bearer_authorization(
+                    authorization,
+                    credential
+                );
+        };
     context.now_epoch_sec = [&fake_now]() {
         return fake_now;
     };
@@ -273,6 +282,53 @@ int main() {
                 std::string::npos,
             "response must not reflect credentials"
         );
+    }
+
+    // Security regression: an exception from the runtime credential verifier
+    // is authentication failure, never authorization success.
+    {
+        const auto saved_verifier =
+            context.verify_authorization;
+
+        context.verify_authorization =
+            [](const std::string&) -> bool {
+                throw 1;
+            };
+
+        auto request = make_request(
+            "192.0.2.18",
+            "Bearer " + token
+        );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_node_status_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 401,
+            "throwing status verifier must fail closed with 401"
+        );
+
+        expect(
+            builder_calls == 0,
+            "throwing status verifier must not collect status"
+        );
+
+        expect(
+            response_header(
+                response,
+                "Cache-Control"
+            ) == "no-store",
+            "throwing status verifier response must disable caching"
+        );
+
+        context.verify_authorization =
+            saved_verifier;
     }
 
     {

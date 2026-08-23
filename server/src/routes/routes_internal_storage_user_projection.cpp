@@ -162,8 +162,9 @@ bool context_ok(
     const InternalStorageUserProjectionRoutesContext& context
 ) noexcept {
     return
-        context.credential &&
-        context.credential->configured() &&
+        static_cast<bool>(
+            context.verify_authorization
+        ) &&
         context.projection_store &&
         valid_cluster_node_id(
             context.local_node_id) &&
@@ -592,10 +593,21 @@ void handle_internal_storage_user_projection_request(
             request
         );
 
-    if (!authorization ||
-        !verify_internal_bearer_authorization(
-            *authorization,
-            *context.credential)) {
+    bool authorized = false;
+
+    if (authorization) {
+        try {
+            authorized =
+                context.verify_authorization(
+                    *authorization
+                );
+        } catch (...) {
+            // Security: authentication dependency failures fail closed.
+            authorized = false;
+        }
+    }
+
+    if (!authorized) {
         reply_unauthorized(
             context,
             response

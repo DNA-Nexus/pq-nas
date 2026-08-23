@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cluster/node_deletion_service.h"
+#include "cluster/node_credential_rotation_service.h"
 
 #include <cstddef>
 #include <functional>
@@ -26,6 +27,18 @@ class NodeRegistry;
 inline constexpr std::size_t
     kAdminClusterNodeRequestBodyMaxBytes = 4096;
 
+// Security: credential rotation performs remote privileged state changes.
+// Limit only authenticated admin actors so unauthenticated traffic cannot
+// consume the mutation budget.
+inline constexpr std::size_t
+    kAdminClusterNodeRotationRateLimit = 8;
+
+inline constexpr long
+    kAdminClusterNodeRotationRateWindowSeconds = 60;
+
+inline constexpr std::size_t
+    kAdminClusterNodeRotationTrackedActors = 256;
+
 struct AdminClusterNodeRoutesContext {
     NodeRegistry* registry = nullptr;
 
@@ -39,6 +52,19 @@ struct AdminClusterNodeRoutesContext {
         std::string,
         std::size_t
     >()> assigned_user_counts;
+
+    // Security: UPDATE and DELETE query this while holding placement_mutex.
+    // Rotation establishes its busy marker under the same mutex before
+    // releasing it for network I/O, closing the lifecycle race.
+    std::function<bool(
+        const std::string&
+    )> rotation_in_progress;
+
+    // Security: this callback may perform network I/O. Callers must never hold
+    // placement_mutex or another global lifecycle lock while invoking it.
+    std::function<NodeCredentialRotationResult(
+        const std::string&
+    )> rotate_node_credential;
 
     // Security: node deletion is a coordinated lifecycle transaction that
     // revokes pending bootstrap state and the long-lived bearer before the
@@ -87,6 +113,12 @@ void handle_admin_cluster_nodes_create(
 );
 
 void handle_admin_cluster_nodes_update(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminClusterNodeRoutesContext& context
+);
+
+void handle_admin_cluster_node_credential_rotation(
     const httplib::Request& req,
     httplib::Response& res,
     const AdminClusterNodeRoutesContext& context
