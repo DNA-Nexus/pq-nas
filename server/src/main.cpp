@@ -9580,26 +9580,6 @@ int main()
     pqnas::cluster::NodeTlsTrustStore
         director_node_tls_trust_store;
 
-    pqnas::cluster::NodeDeletionServiceConfig
-        director_node_deletion_service_config;
-
-    director_node_deletion_service_config.node_registry =
-        &director_node_registry;
-
-    director_node_deletion_service_config.enrollment_registry =
-        &director_node_enrollment_registry;
-
-    director_node_deletion_service_config.credential_registry =
-        &director_node_credential_registry;
-
-    director_node_deletion_service_config.tls_trust_store =
-        &director_node_tls_trust_store;
-
-    pqnas::cluster::NodeDeletionService
-        director_node_deletion_service(
-            director_node_deletion_service_config
-        );
-
     std::unique_ptr<
         pqnas::cluster::NodeEnrollmentService
     > director_node_enrollment_service;
@@ -10585,6 +10565,35 @@ auto maybe_auto_rotate_before_append = [&]() {
                    .size()
             << std::endl;
     }
+
+    // RT010: compose Node deletion only after the durable confirmed projection
+    // state and its reconciliation transition boundary have process lifetime.
+    pqnas::cluster::NodeDeletionServiceConfig
+        director_node_deletion_service_config;
+
+    director_node_deletion_service_config.node_registry =
+        &director_node_registry;
+
+    director_node_deletion_service_config.enrollment_registry =
+        &director_node_enrollment_registry;
+
+    director_node_deletion_service_config.credential_registry =
+        &director_node_credential_registry;
+
+    director_node_deletion_service_config.tls_trust_store =
+        &director_node_tls_trust_store;
+
+    director_node_deletion_service_config.projection_sync_state_store =
+        &director_storage_projection_sync_state_store;
+
+    director_node_deletion_service_config.projection_transition_mutex =
+        director_storage_projection_transition_mutex;
+
+    pqnas::cluster::NodeDeletionService
+        director_node_deletion_service(
+            director_node_deletion_service_config
+        );
+
 
     pqnas::cluster::
         StorageUserProjectionSyncClientConfig

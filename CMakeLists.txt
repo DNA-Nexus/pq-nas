@@ -4817,6 +4817,13 @@ target_link_libraries(pqnas_storage_user_projection_sync_state_store PUBLIC
 )
 
 
+# RT010: Node deletion must fail closed while durable confirmed Storage
+# projection state still references the Node being removed.
+target_link_libraries(pqnas_node_deletion_service PUBLIC
+        pqnas_storage_user_projection_sync_state_store
+)
+
+
 # -----------------------------------------------------------------------------
 # Test: Director persistent projection synchronization state
 # -----------------------------------------------------------------------------

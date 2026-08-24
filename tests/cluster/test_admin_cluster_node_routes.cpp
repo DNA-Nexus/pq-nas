@@ -310,6 +310,7 @@ int main() {
         };
 
     bool deletion_provisioning_active = false;
+    bool deletion_confirmed_projection_active = false;
     int deletion_calls = 0;
     std::string last_delete_revoked_at;
 
@@ -327,6 +328,15 @@ int main() {
                     pqnas::cluster::
                         NodeDeletionServiceResult::
                             ProvisioningActive;
+
+                return result;
+            }
+
+            if (deletion_confirmed_projection_active) {
+                result.result =
+                    pqnas::cluster::
+                        NodeDeletionServiceResult::
+                            ConfirmedProjectionActive;
 
                 return result;
             }
@@ -1687,6 +1697,46 @@ int main() {
     }
 
     deletion_provisioning_active = false;
+
+    // RT010 security regression: durable confirmed projection state is a
+    // conflict even after authoritative assigned-user count reaches zero.
+    deletion_confirmed_projection_active = true;
+
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({"node_id":"node-01"})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_delete(
+                request,
+                response,
+                context
+            );
+
+        const json body =
+            response_json(
+                response
+            );
+
+        expect(
+            response.status == 409 &&
+            body["error"] == "conflict",
+            "confirmed projection node delete should return 409"
+        );
+
+        expect(
+            registry.get(
+                "node-01"
+            ).has_value(),
+            "confirmed projection conflict must preserve node"
+        );
+    }
+
+    deletion_confirmed_projection_active = false;
 
     {
         httplib::Request request =

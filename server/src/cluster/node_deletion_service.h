@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
+#include <mutex>
 #include <string>
 
 namespace pqnas::cluster {
@@ -9,6 +11,7 @@ class NodeCredentialRegistry;
 class NodeEnrollmentRegistry;
 class NodeRegistry;
 class NodeTlsTrustStore;
+class StorageUserProjectionSyncStateStore;
 
 enum class NodeDeletionServiceResult {
     Ok,
@@ -16,6 +19,8 @@ enum class NodeDeletionServiceResult {
     InvalidInput,
     NotFound,
     ProvisioningActive,
+    ConfirmedProjectionActive,
+    ProjectionStateCheckFailed,
     EnrollmentCleanupFailed,
     CredentialCleanupFailed,
     TlsTrustCleanupFailed,
@@ -59,6 +64,15 @@ struct NodeDeletionServiceConfig {
 
     NodeTlsTrustStore* tls_trust_store =
         nullptr;
+
+    StorageUserProjectionSyncStateStore*
+        projection_sync_state_store =
+            nullptr;
+
+    // Security: this is the same transition boundary used by projection
+    // reconciliation and cluster-safe user deletion.
+    std::shared_ptr<std::mutex>
+        projection_transition_mutex;
 };
 
 class NodeDeletionService {
@@ -68,8 +82,11 @@ public:
     );
 
     // Security: the caller must hold the shared Director lifecycle/
-    // placement coordination mutex for the complete operation. Enrollment
-    // creation/consumption will use the same mutex in production wiring.
+    // placement coordination mutex for the complete operation. This service
+    // then acquires projection_transition_mutex before confirmed-state
+    // preflight and keeps it through the final NodeRegistry commit.
+    //
+    // Lock order is therefore lifecycle/placement -> projection transition.
     //
     // The node registry is removed last. A crash or persistence failure
     // before that point therefore leaves either the old node intact or a

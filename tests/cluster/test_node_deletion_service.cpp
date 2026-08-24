@@ -6,9 +6,12 @@
 #include "cluster/node_enrollment_token.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_tls_trust_store.h"
+#include "cluster/storage_user_projection_sync_state_store.h"
 
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -211,6 +214,27 @@ int main() {
         "load TLS trust store: " + error
     );
 
+    pqnas::cluster::
+        StorageUserProjectionSyncStateStore
+            projection_sync_state_store;
+
+    error.clear();
+
+    expect(
+        projection_sync_state_store.load(
+            (
+                directory /
+                "storage_projection_sync_state.json"
+            ).string(),
+            &error
+        ),
+        "load projection sync-state store: " +
+            error
+    );
+
+    auto projection_transition_mutex =
+        std::make_shared<std::mutex>();
+
     pqnas::cluster::NodeDeletionServiceConfig
         config;
 
@@ -221,6 +245,10 @@ int main() {
         &credential_registry;
     config.tls_trust_store =
         &tls_trust_store;
+    config.projection_sync_state_store =
+        &projection_sync_state_store;
+    config.projection_transition_mutex =
+        projection_transition_mutex;
 
     pqnas::cluster::NodeDeletionService
         service(config);
@@ -348,6 +376,310 @@ int main() {
                     NodeEnrollmentState::Revoked &&
             revoked->token_hash.empty(),
             "deleted node pending enrollment must be durably revoked"
+        );
+    }
+
+    // RT010 security regression: durable confirmed Storage authorization
+    // blocks Node deletion before bootstrap, bearer, TLS or registry mutation.
+    {
+        error.clear();
+
+        expect(
+            create_node(
+                node_registry,
+                "node-confirmed",
+                "https://node-confirmed.internal",
+                &error
+            ),
+            "create confirmed-state node: " +
+                error
+        );
+
+        error.clear();
+
+        expect(
+            tls_trust_store.bind_if_absent(
+                "node-confirmed",
+                "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=",
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "create confirmed-state TLS trust: " +
+                error
+        );
+
+        const std::string credential(
+            pqnas::cluster::
+                kInternalAuthTokenChars,
+            'A'
+        );
+
+        error.clear();
+
+        expect(
+            credential_registry.create_if_absent(
+                "node-confirmed",
+                credential,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok,
+            "create confirmed-state credential: " +
+                error
+        );
+
+        error.clear();
+
+        const PendingFixture pending =
+            create_pending(
+                enrollment_registry,
+                std::string(32, 'I'),
+                "node-confirmed",
+                "https://node-confirmed.internal",
+                'J',
+                &error
+            );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncState
+                confirmed_state;
+
+        confirmed_state.fingerprint =
+            std::string(128, 'a');
+
+        confirmed_state.home_node =
+            "node-confirmed";
+
+        confirmed_state.revision = 42;
+
+        error.clear();
+
+        expect(
+            projection_sync_state_store.mark_synced(
+                confirmed_state,
+                &error
+            ) ==
+                pqnas::cluster::
+                    StorageUserProjectionSyncStateStoreResult::
+                        Applied,
+            "persist confirmed projection state: " +
+                error
+        );
+
+        const auto result =
+            service.erase_unassigned_node_locked(
+                "node-confirmed",
+                "2026-08-23T05:11:00Z"
+            );
+
+        expect(
+            result.result ==
+                pqnas::cluster::
+                    NodeDeletionServiceResult::
+                        ConfirmedProjectionActive &&
+            result.revoked_pending_enrollments == 0 &&
+            !result.credential_removed &&
+            !result.tls_trust_removed &&
+            !result.node_removed,
+            "confirmed projection must block deletion before mutation"
+        );
+
+        expect(
+            node_registry.get(
+                "node-confirmed"
+            ).has_value(),
+            "confirmed projection must preserve NodeRegistry"
+        );
+
+        bool credential_present = false;
+        error.clear();
+
+        expect(
+            credential_registry.contains(
+                "node-confirmed",
+                &credential_present,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok &&
+            credential_present,
+            "confirmed projection must preserve credential"
+        );
+
+        std::string persisted_tls_pin;
+        error.clear();
+
+        expect(
+            tls_trust_store.get(
+                "node-confirmed",
+                &persisted_tls_pin,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "confirmed projection must preserve TLS trust"
+        );
+
+        const auto still_pending =
+            enrollment_registry.get(
+                pending.record.enrollment_id
+            );
+
+        expect(
+            still_pending.has_value() &&
+            still_pending->state ==
+                pqnas::cluster::
+                    NodeEnrollmentState::Pending &&
+            !still_pending->token_hash.empty(),
+            "confirmed projection must preserve pending enrollment"
+        );
+    }
+
+    // RT010 fail-closed regression: if durable confirmed-state cannot be
+    // established, deletion must not touch any Node lifecycle state.
+    {
+        error.clear();
+
+        expect(
+            create_node(
+                node_registry,
+                "node-state-fail",
+                "https://node-state-fail.internal",
+                &error
+            ),
+            "create state-check-failure node: " +
+                error
+        );
+
+        error.clear();
+
+        expect(
+            tls_trust_store.bind_if_absent(
+                "node-state-fail",
+                "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=",
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "create state-check-failure TLS trust: " +
+                error
+        );
+
+        const std::string credential(
+            pqnas::cluster::
+                kInternalAuthTokenChars,
+            'A'
+        );
+
+        error.clear();
+
+        expect(
+            credential_registry.create_if_absent(
+                "node-state-fail",
+                credential,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok,
+            "create state-check-failure credential: " +
+                error
+        );
+
+        error.clear();
+
+        const PendingFixture pending =
+            create_pending(
+                enrollment_registry,
+                std::string(32, 'K'),
+                "node-state-fail",
+                "https://node-state-fail.internal",
+                'L',
+                &error
+            );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                unloaded_projection_state_store;
+
+        auto unavailable_config =
+            config;
+
+        unavailable_config.projection_sync_state_store =
+            &unloaded_projection_state_store;
+
+        pqnas::cluster::NodeDeletionService
+            unavailable_service(
+                unavailable_config
+            );
+
+        const auto result =
+            unavailable_service
+                .erase_unassigned_node_locked(
+                    "node-state-fail",
+                    "2026-08-23T05:12:00Z"
+                );
+
+        expect(
+            result.result ==
+                pqnas::cluster::
+                    NodeDeletionServiceResult::
+                        ProjectionStateCheckFailed &&
+            result.revoked_pending_enrollments == 0 &&
+            !result.credential_removed &&
+            !result.tls_trust_removed &&
+            !result.node_removed,
+            "projection durability uncertainty must fail closed"
+        );
+
+        expect(
+            node_registry.get(
+                "node-state-fail"
+            ).has_value(),
+            "state-check failure must preserve NodeRegistry"
+        );
+
+        bool credential_present = false;
+        error.clear();
+
+        expect(
+            credential_registry.contains(
+                "node-state-fail",
+                &credential_present,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok &&
+            credential_present,
+            "state-check failure must preserve credential"
+        );
+
+        std::string persisted_tls_pin;
+        error.clear();
+
+        expect(
+            tls_trust_store.get(
+                "node-state-fail",
+                &persisted_tls_pin,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "state-check failure must preserve TLS trust"
+        );
+
+        const auto still_pending =
+            enrollment_registry.get(
+                pending.record.enrollment_id
+            );
+
+        expect(
+            still_pending.has_value() &&
+            still_pending->state ==
+                pqnas::cluster::
+                    NodeEnrollmentState::Pending &&
+            !still_pending->token_hash.empty(),
+            "state-check failure must preserve pending enrollment"
         );
     }
 
