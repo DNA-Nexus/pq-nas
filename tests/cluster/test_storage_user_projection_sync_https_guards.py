@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 source = Path(
     "server/src/cluster/storage_user_projection_sync_https.cpp"
 ).read_text()
@@ -13,6 +17,11 @@ client = Path(
 main = Path(
     "server/src/main.cpp"
 ).read_text()
+
+# Security: negative production-wiring assertions must inspect the
+# implementation .inc files compiled into main.cpp as well as the
+# literal main.cpp source. This closes historical RT-011.
+production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -121,7 +130,7 @@ require(
 )
 
 require(
-    "register_internal_storage_handoff_routes(" not in main,
+    "register_internal_storage_handoff_routes(" not in production_tu,
     "production projection sync must not implicitly enable Storage handoff",
 )
 

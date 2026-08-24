@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 source = Path(
     "server/src/cluster/storage_user_projection_sync_service.cpp"
 ).read_text()
@@ -9,6 +13,11 @@ source = Path(
 main = Path(
     "server/src/main.cpp"
 ).read_text()
+
+# Security: negative production-wiring assertions must inspect the
+# implementation .inc files compiled into main.cpp as well as the
+# literal main.cpp source. This closes historical RT-011.
+production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -61,7 +70,7 @@ require(
 # Still no production wiring. First validate this transition policy in
 # isolation; persistent retry/reconciliation is a separate step.
 require(
-    "StorageUserProjectionSyncService" not in main,
+    "StorageUserProjectionSyncService" not in production_tu,
     "transition-aware sync service must not yet be production-wired",
 )
 
