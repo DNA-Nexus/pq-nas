@@ -6,6 +6,7 @@
 #include "cluster/node_registry.h"
 #include "cluster/node_tls_trust_store.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 
 #include <utility>
 #include <vector>
@@ -75,6 +76,7 @@ bool NodeDeletionService::config_valid()
         config_.credential_registry &&
         config_.tls_trust_store &&
         config_.projection_sync_state_store &&
+        config_.projection_transition_store &&
         config_.projection_transition_mutex;
 }
 
@@ -117,9 +119,13 @@ NodeDeletionService::erase_unassigned_node_locked(
 
     std::string projection_state_error;
 
-    // Security: absence from confirmed state is authoritative only when the
-    // visible sync-state snapshot is known durable.
+    // Security: absence from confirmed or pending authorization knowledge is
+    // trustworthy only when both durable snapshots are known durable.
     if (!config_.projection_sync_state_store
+             ->ensure_durable(
+                 &projection_state_error
+             ) ||
+        !config_.projection_transition_store
              ->ensure_durable(
                  &projection_state_error
              )) {
@@ -145,6 +151,30 @@ NodeDeletionService::erase_unassigned_node_locked(
         // Security: reconciliation must first revoke this confirmed Storage
         // authorization and remove its durable state before Node lifecycle
         // credentials or identity may be destroyed.
+        output.result =
+            NodeDeletionServiceResult::
+                ConfirmedProjectionActive;
+
+        return output;
+    }
+
+    const auto pending_states =
+        config_.projection_transition_store
+            ->snapshot();
+
+    for (const auto& state :
+         pending_states) {
+        if (state.home_node != node_id) {
+            continue;
+        }
+
+        // Security: RT-009 pending state means this Node may already have
+        // accepted authorization. It is therefore just as deletion-blocking as
+        // confirmed state until reconciliation durably clears the journal.
+        //
+        // Keep the existing public result code for compatibility: callers only
+        // need to distinguish active projection knowledge from a state-check
+        // failure.
         output.result =
             NodeDeletionServiceResult::
                 ConfirmedProjectionActive;

@@ -1,5 +1,6 @@
 #include "cluster/cluster_safe_user_delete.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 #include <cstdint>
@@ -152,12 +153,20 @@ int main() {
         directory /
         "storage_projection_sync_state.json";
 
+    const fs::path transition_state_path =
+        directory /
+        "storage_projection_transition_journal.json";
+
 
     pqnas::UsersRegistry users;
 
     pqnas::cluster::
         StorageUserProjectionSyncStateStore
             state_store;
+
+    pqnas::cluster::
+        StorageUserProjectionTransitionStore
+            transition_store;
 
     const auto transition_mutex =
         std::make_shared<std::mutex>();
@@ -175,6 +184,17 @@ int main() {
             &error
         ),
         "empty confirmed projection state loads: " +
+            error
+    );
+
+    error.clear();
+
+    expect(
+        transition_store.load(
+            transition_state_path.string(),
+            &error
+        ),
+        "empty pending projection journal loads: " +
             error
     );
 
@@ -300,6 +320,7 @@ int main() {
                 erase_user_persisted_cluster_safe(
                     users,
                     state_store,
+                    transition_store,
                     transition_mutex,
                     users_path.string(),
                     initial.fingerprint,
@@ -390,6 +411,7 @@ int main() {
                 erase_user_persisted_cluster_safe(
                     users,
                     state_store,
+                    transition_store,
                     transition_mutex,
                     users_path.string(),
                     initial.fingerprint,
@@ -449,6 +471,94 @@ int main() {
 
 
     // ---------------------------------------------------------------------
+    // RT-009 deletion guard:
+    //
+    // Even with confirmed state absent, a durable pending transition proves a
+    // Storage Node may already have accepted authorization. Physical deletion
+    // remains blocked until the pending journal is durably cleared.
+    // ---------------------------------------------------------------------
+
+    pqnas::cluster::
+        StorageUserProjectionTransitionRecord
+            pending_transition;
+
+    if (unplaced.has_value()) {
+        pending_transition.fingerprint =
+            initial.fingerprint;
+
+        pending_transition.home_node =
+            "storage-02";
+
+        pending_transition.revision =
+            unplaced->storage_projection_revision;
+    }
+
+    error.clear();
+
+    expect(
+        transition_store.mark_pending(
+            pending_transition,
+            &error
+        ) ==
+            pqnas::cluster::
+                StorageUserProjectionSyncStateStoreResult::
+                    Applied,
+        "pending Storage authorization persists: " +
+            error
+    );
+
+    {
+        bool erased = true;
+        bool placement_blocked = true;
+        bool cluster_revoke_pending = false;
+
+        error.clear();
+
+        const bool ok =
+            pqnas::cluster::
+                erase_user_persisted_cluster_safe(
+                    users,
+                    state_store,
+                    transition_store,
+                    transition_mutex,
+                    users_path.string(),
+                    initial.fingerprint,
+                    &erased,
+                    &placement_blocked,
+                    &cluster_revoke_pending,
+                    &error
+                );
+
+        expect(
+            ok &&
+            !erased &&
+            !placement_blocked &&
+            cluster_revoke_pending &&
+            users.exists(
+                initial.fingerprint
+            ),
+            "pending Storage authorization blocks physical deletion"
+        );
+    }
+
+    bool pending_expectation_matched = false;
+
+    error.clear();
+
+    expect(
+        transition_store.erase_if_current(
+            initial.fingerprint,
+            pending_transition.home_node,
+            pending_transition.revision,
+            &pending_expectation_matched,
+            &error
+        ) &&
+        pending_expectation_matched,
+        "successful pending recovery clears transition journal: " +
+            error
+    );
+
+    // ---------------------------------------------------------------------
     // RT-004 case 3:
     //
     // User is unplaced and no confirmed Storage authorization remains.
@@ -467,6 +577,7 @@ int main() {
                 erase_user_persisted_cluster_safe(
                     users,
                     state_store,
+                    transition_store,
                     transition_mutex,
                     users_path.string(),
                     initial.fingerprint,

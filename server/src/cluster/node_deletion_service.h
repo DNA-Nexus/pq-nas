@@ -12,6 +12,7 @@ class NodeEnrollmentRegistry;
 class NodeRegistry;
 class NodeTlsTrustStore;
 class StorageUserProjectionSyncStateStore;
+class StorageUserProjectionTransitionStore;
 
 enum class NodeDeletionServiceResult {
     Ok,
@@ -69,6 +70,10 @@ struct NodeDeletionServiceConfig {
         projection_sync_state_store =
             nullptr;
 
+    StorageUserProjectionTransitionStore*
+        projection_transition_store =
+            nullptr;
+
     // Security: this is the same transition boundary used by projection
     // reconciliation and cluster-safe user deletion.
     std::shared_ptr<std::mutex>
@@ -83,8 +88,9 @@ public:
 
     // Security: the caller must hold the shared Director lifecycle/
     // placement coordination mutex for the complete operation. This service
-    // then acquires projection_transition_mutex before confirmed-state
-    // preflight and keeps it through the final NodeRegistry commit.
+    // then acquires projection_transition_mutex before confirmed/pending
+    // projection-state preflight and keeps it through the final NodeRegistry
+    // commit.
     //
     // Lock order is therefore lifecycle/placement -> projection transition.
     //

@@ -1,6 +1,7 @@
 #include "cluster/storage_projection_startup_consistency.h"
 
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 
@@ -9,7 +10,8 @@ namespace pqnas::cluster {
 StorageProjectionStartupConsistencyResult
 check_storage_projection_startup_consistency(
     const pqnas::UsersRegistry& users,
-    const StorageUserProjectionSyncStateStore& state_store
+    const StorageUserProjectionSyncStateStore& state_store,
+    const StorageUserProjectionTransitionStore& transition_store
 ) {
     StorageProjectionStartupConsistencyResult result;
 
@@ -18,6 +20,9 @@ check_storage_projection_startup_consistency(
 
     const auto confirmed_states =
         state_store.snapshot();
+
+    const auto pending_states =
+        transition_store.snapshot();
 
     for (const auto& confirmed :
          confirmed_states) {
@@ -46,8 +51,35 @@ check_storage_projection_startup_consistency(
         }
     }
 
+    for (const auto& pending :
+         pending_states) {
+        const auto user_iterator =
+            user_snapshot.find(
+                pending.fingerprint
+            );
+
+        // Orphaned pending state is handled fail-closed by reconciliation.
+        // Here we reject users.json rollback below authorization knowledge
+        // that may identify a Node which already accepted the projection.
+        if (user_iterator ==
+            user_snapshot.end()) {
+            continue;
+        }
+
+        ++result.pending_states_checked;
+
+        if (pending.revision >
+            user_iterator->second
+                .storage_projection_revision) {
+            // Security: RT-009 journal knowledge may be authorization-bearing
+            // even when confirmed state still points at an older Node.
+            ++result.pending_revision_ahead;
+        }
+    }
+
     result.ok =
-        result.confirmed_revision_ahead == 0;
+        result.confirmed_revision_ahead == 0 &&
+        result.pending_revision_ahead == 0;
 
     return result;
 }

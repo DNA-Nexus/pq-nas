@@ -1378,9 +1378,9 @@ class InstallState:
         default_factory=ClusterInstallConfig
     )
 
-    # Security: one-shot operator acknowledgement for creating an empty
-    # Director confirmed-sync snapshot. Never infer this permission from a
-    # missing file, an upgrade flag, or the presence of installed binaries.
+    # Security: one-shot operator acknowledgement for creating missing
+    # Director confirmed/pending projection authorization state. Never infer
+    # this permission from an upgrade flag or installed binaries.
     director_projection_sync_state_bootstrap_approved: bool = False
 
     # Security: short-lived plaintext storage only. This buffer is never
@@ -4015,13 +4015,16 @@ class ConfirmScreen(Screen):
             )
             message += (
                 "\n[b]DIRECTOR CONTROL-PLANE WARNING[/b]\n\n"
-                "An empty Director projection sync-state will need to be "
-                "created. This is safe only when intentionally initializing "
-                "a new Director control plane.\n\n"
-                "If this server previously acted as a Director, STOP and "
-                "restore storage_projection_sync_state.json from backup. "
-                "Resetting it can forget the last Storage Node known to hold "
-                "a user's authorization.\n"
+                "Missing Director projection authorization-state files will "
+                "need to be created. This is safe only when intentionally "
+                "initializing or explicitly upgrading this Director control "
+                "plane.\n\n"
+                "If this server previously acted as a Director and these "
+                "files should exist, STOP and restore them from backup:\n"
+                "  storage_projection_sync_state.json\n"
+                "  storage_projection_transition_journal.json\n\n"
+                "Resetting either file can forget a Storage Node that is "
+                "confirmed or may already have accepted authorization.\n"
             )
         else:
             self.required = base_required
@@ -4722,7 +4725,7 @@ class ExecuteScreen(Screen):
             create_pqnas_layout(mp)
 
             self.logw.write(
-                "Checking Director projection sync-state …"
+                "Checking Director projection authorization state …"
             )
             director_state_owner_uid, director_state_owner_gid = (
                 service_owner_ids("pqnas")
@@ -4745,7 +4748,7 @@ class ExecuteScreen(Screen):
                 st.director_projection_sync_state_bootstrap_approved = False
 
             self.logw.write(
-                "[*] Director projection sync-state: "
+                "[*] Director projection authorization state: "
                 f"{director_projection_state_action}"
             )
 

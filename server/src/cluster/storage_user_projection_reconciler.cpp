@@ -2,6 +2,7 @@
 
 #include "cluster/storage_user_projection_builder.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 #include <algorithm>
@@ -73,10 +74,9 @@ StorageUserProjection unplaced_user_tombstone(
 }
 
 
-bool persist_confirmed_state(
-    StorageUserProjectionSyncStateStore* store,
-    const StorageUserProjection& projection,
-    StorageUserProjectionReconcileResult* result
+StorageUserProjectionSyncState
+projection_state_from_projection(
+    const StorageUserProjection& projection
 ) {
     StorageUserProjectionSyncState state;
 
@@ -88,6 +88,129 @@ bool persist_confirmed_state(
 
     state.revision =
         projection.revision;
+
+    return state;
+}
+
+
+bool persist_pending_transition(
+    StorageUserProjectionTransitionStore* store,
+    const StorageUserProjection& projection,
+    StorageUserProjectionReconcileResult* result
+) {
+    if (!store || !result) {
+        if (result) {
+            ++result->state_conflicts;
+            ++result->failed;
+        }
+
+        return false;
+    }
+
+    const StorageUserProjectionTransitionRecord
+        record =
+            projection_state_from_projection(
+                projection
+            );
+
+    std::string persistence_error;
+
+    const auto persisted =
+        store->mark_pending(
+            record,
+            &persistence_error
+        );
+
+    persistence_error.clear();
+
+    switch (persisted) {
+        case StorageUserProjectionSyncStateStoreResult::
+                Applied:
+        case StorageUserProjectionSyncStateStoreResult::
+                Unchanged:
+            return true;
+
+        case StorageUserProjectionSyncStateStoreResult::
+                PersistFailed:
+            ++result->persist_failures;
+            ++result->failed;
+            return false;
+
+        case StorageUserProjectionSyncStateStoreResult::
+                Stale:
+            ++result->stale_states;
+            ++result->failed;
+            return false;
+
+        case StorageUserProjectionSyncStateStoreResult::
+                Conflict:
+        case StorageUserProjectionSyncStateStoreResult::
+                InvalidInput:
+            ++result->state_conflicts;
+            ++result->failed;
+            return false;
+    }
+
+    ++result->state_conflicts;
+    ++result->failed;
+    return false;
+}
+
+
+bool erase_pending_transition(
+    StorageUserProjectionTransitionStore* store,
+    const StorageUserProjectionTransitionRecord& record,
+    StorageUserProjectionReconcileResult* result
+) {
+    if (!store || !result) {
+        if (result) {
+            ++result->state_conflicts;
+            ++result->failed;
+        }
+
+        return false;
+    }
+
+    bool expectation_matched = false;
+    std::string persistence_error;
+
+    if (!store->erase_if_current(
+            record.fingerprint,
+            record.home_node,
+            record.revision,
+            &expectation_matched,
+            &persistence_error)) {
+        persistence_error.clear();
+
+        ++result->persist_failures;
+        ++result->failed;
+        return false;
+    }
+
+    persistence_error.clear();
+
+    if (!expectation_matched) {
+        // Security: an unexpected journal replacement must not be erased or
+        // treated as completion of this authorization transition.
+        ++result->state_conflicts;
+        ++result->failed;
+        return false;
+    }
+
+    return true;
+}
+
+
+bool persist_confirmed_state(
+    StorageUserProjectionSyncStateStore* store,
+    const StorageUserProjection& projection,
+    StorageUserProjectionReconcileResult* result
+) {
+    const StorageUserProjectionSyncState
+        state =
+            projection_state_from_projection(
+                projection
+            );
 
     std::string persistence_error;
 
@@ -237,6 +360,7 @@ StorageUserProjectionReconciler::reconcile_once() const {
 
     if (!config_.users ||
         !config_.state_store ||
+        !config_.transition_store ||
         !config_.sync_projection) {
         result.failed = 1;
         return result;
@@ -271,11 +395,29 @@ StorageUserProjectionReconciler::reconcile_once() const {
         return result;
     }
 
+    durability_error.clear();
+
+    // Security: pending transition knowledge is authorization state too.
+    // Never perform another Storage write until its visible snapshot is
+    // known durable.
+    if (!config_.transition_store->ensure_durable(
+            &durability_error)) {
+        durability_error.clear();
+
+        ++result.persist_failures;
+        ++result.failed;
+
+        return result;
+    }
+
     const auto users =
         config_.users->snapshot();
 
     const auto states =
         config_.state_store->snapshot();
+
+    const auto transitions =
+        config_.transition_store->snapshot();
 
     std::unordered_set<std::string>
         current_fingerprints;
@@ -320,6 +462,18 @@ StorageUserProjectionReconciler::reconcile_once() const {
         }
     }
 
+    // Security: an orphaned pending transition can identify a Storage
+    // Node that may still hold authorization. Never silently forget it.
+    for (const auto& transition :
+         transitions) {
+        if (current_fingerprints.find(
+                transition.fingerprint) ==
+            current_fingerprints.end()) {
+            ++result.orphaned_states;
+            ++result.failed;
+        }
+    }
+
     for (const std::string& fingerprint :
          fingerprints) {
         ++result.users_seen;
@@ -342,6 +496,196 @@ StorageUserProjectionReconciler::reconcile_once() const {
             config_.state_store->get(
                 fingerprint
             );
+
+        const auto pending =
+            config_.transition_store->get(
+                fingerprint
+            );
+
+        if (pending.has_value()) {
+            // A confirmed state at least as new as this pending record proves
+            // that the same Node is already represented durably. The journal
+            // can be cleared without another authorization write.
+            if (confirmed.has_value() &&
+                confirmed->home_node ==
+                    pending->home_node &&
+                confirmed->revision >=
+                    pending->revision) {
+                if (!erase_pending_transition(
+                        config_.transition_store,
+                        *pending,
+                        &result)) {
+                    continue;
+                }
+            } else if (
+                pending->revision >
+                    user.storage_projection_revision
+            ) {
+                // Security: Director state is older than possibly-authorized
+                // journal knowledge. Never roll the Node backwards.
+                ++result.stale_states;
+                ++result.failed;
+                continue;
+            } else if (
+                !user.home_node.empty() &&
+                user.home_node ==
+                    pending->home_node
+            ) {
+                // The pending Node is still authoritative. Retry the live
+                // projection idempotently, durably confirm it, then clear
+                // the write-ahead journal.
+                StorageUserProjection recovered;
+                std::string build_error;
+
+                if (!build_storage_user_projection(
+                        user,
+                        &recovered,
+                        &build_error)) {
+                    build_error.clear();
+
+                    ++result.failed;
+                    continue;
+                }
+
+                // Security: pending recovery must preserve the same rollback
+                // and equal-revision conflict invariants as normal
+                // reconciliation before any authorization reaches Storage.
+                if (confirmed.has_value() &&
+                    confirmed->revision >
+                        recovered.revision) {
+                    ++result.stale_states;
+                    ++result.failed;
+                    continue;
+                }
+
+                if (confirmed.has_value() &&
+                    confirmed->revision ==
+                        recovered.revision &&
+                    confirmed->home_node !=
+                        recovered.home_node) {
+                    // Security: the Director has two different targets for
+                    // one revision. Never authorize either interpretation
+                    // further until the durable state is repaired.
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    continue;
+                }
+
+                StorageUserProjectionSyncResult
+                    recovered_result;
+
+                try {
+                    recovered_result =
+                        config_.sync_projection(
+                            recovered
+                        );
+                } catch (...) {
+                    ++result.failed;
+                    continue;
+                }
+
+                if (!sync_succeeded(
+                        recovered_result.code)) {
+                    ++result.failed;
+                    continue;
+                }
+
+                if (!persist_confirmed_state(
+                        config_.state_store,
+                        recovered,
+                        &result)) {
+                    continue;
+                }
+
+                if (!erase_pending_transition(
+                        config_.transition_store,
+                        *pending,
+                        &result)) {
+                    continue;
+                }
+
+                if (confirmed.has_value() &&
+                    confirmed->home_node !=
+                        recovered.home_node) {
+                    emit_reconcile_audit_best_effort(
+                        config_,
+                        "cluster.storage_projection.moved",
+                        fingerprint,
+                        confirmed->revision,
+                        recovered.revision,
+                        confirmed->home_node,
+                        recovered.home_node
+                    );
+
+                    ++result.moved;
+                } else {
+                    emit_reconcile_audit_best_effort(
+                        config_,
+                        "cluster.storage_projection.synced",
+                        fingerprint,
+                        confirmed.has_value()
+                            ? confirmed->revision
+                            : 0,
+                        recovered.revision,
+                        confirmed.has_value()
+                            ? confirmed->home_node
+                            : "",
+                        recovered.home_node
+                    );
+
+                    ++result.synced_current;
+                }
+
+                continue;
+            } else if (
+                pending->revision ==
+                    user.storage_projection_revision
+            ) {
+                // Same revision cannot safely mean two different targets or
+                // both live authorization and a disabling tombstone.
+                ++result.state_conflicts;
+                ++result.failed;
+                continue;
+            } else {
+                // Director state advanced beyond an intermediate pending Node.
+                // Revoke that possibly-authorized Node first with the newer
+                // authoritative revision, then forget the journal record.
+                const StorageUserProjection
+                    pending_tombstone =
+                        unplaced_user_tombstone(
+                            user,
+                            pending->home_node
+                        );
+
+                StorageUserProjectionSyncResult
+                    pending_revoke_result;
+
+                try {
+                    pending_revoke_result =
+                        config_.sync_projection(
+                            pending_tombstone
+                        );
+                } catch (...) {
+                    ++result.failed;
+                    continue;
+                }
+
+                if (!sync_succeeded(
+                        pending_revoke_result.code)) {
+                    ++result.failed;
+                    continue;
+                }
+
+                if (!erase_pending_transition(
+                        config_.transition_store,
+                        *pending,
+                        &result)) {
+                    continue;
+                }
+
+                // Continue with ordinary confirmed-state reconciliation.
+            }
+        }
 
         if (user.home_node.empty()) {
             if (!confirmed.has_value()) {
@@ -452,6 +796,15 @@ StorageUserProjectionReconciler::reconcile_once() const {
         }
 
         if (!confirmed.has_value()) {
+            // RT009: establish durable knowledge of the new target before the
+            // Node can receive usable authorization.
+            if (!persist_pending_transition(
+                    config_.transition_store,
+                    current,
+                    &result)) {
+                continue;
+            }
+
             StorageUserProjectionSyncResult
                 sync_result;
 
@@ -467,27 +820,43 @@ StorageUserProjectionReconciler::reconcile_once() const {
 
             if (!sync_succeeded(
                     sync_result.code)) {
+                // Keep pending state. The request may have reached Storage
+                // even when the response was lost.
                 ++result.failed;
                 continue;
             }
 
-            if (persist_confirmed_state(
+            if (!persist_confirmed_state(
                     config_.state_store,
                     current,
                     &result)) {
-                emit_reconcile_audit_best_effort(
-                    config_,
-                    "cluster.storage_projection.synced",
-                    fingerprint,
-                    0,
-                    current.revision,
-                    "",
-                    current.home_node
-                );
-
-                ++result.synced_current;
+                // Keep pending state so restart recovery remembers this Node.
+                continue;
             }
 
+            const auto pending_current =
+                projection_state_from_projection(
+                    current
+                );
+
+            if (!erase_pending_transition(
+                    config_.transition_store,
+                    pending_current,
+                    &result)) {
+                continue;
+            }
+
+            emit_reconcile_audit_best_effort(
+                config_,
+                "cluster.storage_projection.synced",
+                fingerprint,
+                0,
+                current.revision,
+                "",
+                current.home_node
+            );
+
+            ++result.synced_current;
             continue;
         }
 
@@ -554,6 +923,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 continue;
             }
 
+            // RT009: the previous Node has accepted its tombstone. Persist B
+            // before B can receive authorization, so B survives a Director
+            // crash or confirmed-state persistence failure.
+            if (!persist_pending_transition(
+                    config_.transition_store,
+                    current,
+                    &result)) {
+                continue;
+            }
+
             StorageUserProjectionSyncResult
                 current_result;
 
@@ -569,27 +948,43 @@ StorageUserProjectionReconciler::reconcile_once() const {
 
             if (!sync_succeeded(
                     current_result.code)) {
+                // Keep pending B: transport failure cannot prove that B did
+                // not accept the authorization.
                 ++result.failed;
                 continue;
             }
 
-            if (persist_confirmed_state(
+            if (!persist_confirmed_state(
                     config_.state_store,
                     current,
                     &result)) {
-                emit_reconcile_audit_best_effort(
-                    config_,
-                    "cluster.storage_projection.moved",
-                    fingerprint,
-                    confirmed->revision,
-                    current.revision,
-                    confirmed->home_node,
-                    current.home_node
-                );
-
-                ++result.moved;
+                // Keep pending B for restart recovery.
+                continue;
             }
 
+            const auto pending_current =
+                projection_state_from_projection(
+                    current
+                );
+
+            if (!erase_pending_transition(
+                    config_.transition_store,
+                    pending_current,
+                    &result)) {
+                continue;
+            }
+
+            emit_reconcile_audit_best_effort(
+                config_,
+                "cluster.storage_projection.moved",
+                fingerprint,
+                confirmed->revision,
+                current.revision,
+                confirmed->home_node,
+                current.home_node
+            );
+
+            ++result.moved;
             continue;
         }
 
