@@ -5,6 +5,7 @@
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_enrollment_token.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <filesystem>
 #include <iostream>
@@ -194,6 +195,22 @@ int main() {
         "load credential registry: " + error
     );
 
+    pqnas::cluster::NodeTlsTrustStore
+        tls_trust_store;
+
+    error.clear();
+
+    expect(
+        tls_trust_store.load(
+            (
+                directory /
+                "node_tls_trust"
+            ).string(),
+            &error
+        ),
+        "load TLS trust store: " + error
+    );
+
     pqnas::cluster::NodeDeletionServiceConfig
         config;
 
@@ -202,6 +219,8 @@ int main() {
         &enrollment_registry;
     config.credential_registry =
         &credential_registry;
+    config.tls_trust_store =
+        &tls_trust_store;
 
     pqnas::cluster::NodeDeletionService
         service(config);
@@ -218,6 +237,20 @@ int main() {
                 &error
             ),
             "create deletion node: " + error
+        );
+
+        error.clear();
+
+        expect(
+            tls_trust_store.bind_if_absent(
+                "node-01",
+                "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=",
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "create deletion TLS trust: " +
+                error
         );
 
         const std::string credential(
@@ -262,6 +295,7 @@ int main() {
             result.ok() &&
             result.revoked_pending_enrollments == 1 &&
             result.credential_removed &&
+            result.tls_trust_removed &&
             result.node_removed,
             "complete node deletion result"
         );
@@ -271,6 +305,20 @@ int main() {
                 "node-01"
             ).has_value(),
             "deleted node must leave NodeRegistry"
+        );
+
+        std::string persisted_tls_pin;
+        error.clear();
+
+        expect(
+            tls_trust_store.get(
+                "node-01",
+                &persisted_tls_pin,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::NotFound,
+            "deleted node TLS trust must be absent"
         );
 
         bool credential_present = true;

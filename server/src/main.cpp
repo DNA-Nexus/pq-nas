@@ -136,6 +136,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_tls_trust_store.h"
+#include "cluster/node_tls_https_client.h"
 #include "cluster/node_credential_rotation_service.h"
 #include "cluster/node_credential_rotation_https.h"
 #include "cluster/node_deletion_service.h"
@@ -9591,6 +9592,9 @@ int main()
     director_node_deletion_service_config.credential_registry =
         &director_node_credential_registry;
 
+    director_node_deletion_service_config.tls_trust_store =
+        &director_node_tls_trust_store;
+
     pqnas::cluster::NodeDeletionService
         director_node_deletion_service(
             director_node_deletion_service_config
@@ -11784,6 +11788,50 @@ v5.app_pair_build_qr_uri =
 
         admin_cluster_node_context.registry =
             &director_node_registry;
+
+        admin_cluster_node_context.get_node_tls_trust =
+            [&director_node_tls_trust_store](
+                const std::string& node_id,
+                std::string* pin,
+                std::string* error
+            ) {
+                return
+                    director_node_tls_trust_store.get(
+                        node_id,
+                        pin,
+                        error
+                    );
+            };
+
+        admin_cluster_node_context.bind_node_tls_trust =
+            [&director_node_tls_trust_store](
+                const std::string& node_id,
+                const std::string& pin,
+                std::string* error
+            ) {
+                return
+                    director_node_tls_trust_store
+                        .bind_if_absent(
+                            node_id,
+                            pin,
+                            error
+                        );
+            };
+
+        admin_cluster_node_context.verify_node_tls_endpoint =
+            [](
+                const std::string& api_base_url,
+                const std::string& pin,
+                std::string* error
+            ) {
+                return
+                    pqnas::cluster::
+                        verify_pinned_node_https_endpoint(
+                            api_base_url,
+                            pin,
+                            error
+                        );
+            };
 
         admin_cluster_node_context.placement_mutex =
             cluster_placement_mutex;

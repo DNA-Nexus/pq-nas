@@ -236,6 +236,82 @@
       "curl": "curl -k -i -sS -X PATCH \"$BASE/api/v4/admin/cluster/nodes\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\",\"api_base_url\":\"https://node-01.example\",\"enabled\":true}'"
     },
     {
+      "id": "admin.cluster.nodes.credential_rotation",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/nodes/credential/rotation",
+      "title": "Rotate cluster node credential",
+      "purpose": "Rotate a Storage Node cluster bearer credential using the prepare, Director commit and finalize lifecycle.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "429 rate_limited",
+        "502 upstream_error/finalize_pending",
+        "503 service_unavailable",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "credential",
+        "rotation",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/nodes/credential/rotation\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.nodes.tls_trust_migration",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/nodes/tls-trust/migration",
+      "title": "Migrate cluster node TLS trust",
+      "purpose": "Verify a legacy Storage Node HTTPS endpoint with normal CA and hostname verification plus its exact SPKI pin, then establish the immutable first TLS trust binding and update the Node API URL.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01",
+          "api_base_url": "https://node-01.internal",
+          "tls_spki_sha256_pin": "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g="
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "502 bad_gateway",
+        "503 service_unavailable",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "tls",
+        "trust",
+        "migration",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/nodes/tls-trust/migration\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\",\"api_base_url\":\"https://node-01.internal\",\"tls_spki_sha256_pin\":\"sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=\"}'"
+    },
+    {
       "id": "admin.cluster.nodes.delete",
       "category": "Admin Cluster",
       "risk": "destructive",
@@ -395,6 +471,42 @@
         "home-node"
       ],
       "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/users/home-node\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"node_id\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.users.home_node_unassign",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "DELETE",
+      "path": "/api/v4/admin/cluster/users/home-node",
+      "title": "Unassign user home node",
+      "purpose": "Remove a user's realized cluster home-node placement only when the expected current home node still matches.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_placement.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "expected_home_node": "node-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "home-node",
+        "unassign",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X DELETE \"$BASE/api/v4/admin/cluster/users/home-node\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"expected_home_node\":\"node-01\"}'"
     },
     {
       "id": "admin.cluster.users.placement_policy",

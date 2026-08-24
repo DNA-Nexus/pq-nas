@@ -24,4 +24,18 @@ make_pinned_node_https_client(
     std::string* error
 );
 
+// Verifies a candidate Storage HTTPS endpoint without sending bearer material.
+//
+// Security:
+// - normal CA verification remains enabled
+// - hostname verification remains enabled
+// - the exact canonical SPKI pin must match
+// - redirects are disabled
+// - no cluster credential is attached to the probe request
+bool verify_pinned_node_https_endpoint(
+    const std::string& api_base_url,
+    const std::string& expected_spki_sha256_pin,
+    std::string* error
+);
+
 } // namespace pqnas::cluster

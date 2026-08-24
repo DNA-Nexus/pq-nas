@@ -4,6 +4,7 @@
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_registry.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <utility>
 #include <vector>
@@ -41,6 +42,10 @@ const char* node_deletion_service_result_code(
             return "node_deletion_credential_cleanup_failed";
 
         case NodeDeletionServiceResult::
+                TlsTrustCleanupFailed:
+            return "node_deletion_tls_trust_cleanup_failed";
+
+        case NodeDeletionServiceResult::
                 RegistryCleanupFailed:
             return "node_deletion_registry_cleanup_failed";
     }
@@ -58,7 +63,8 @@ bool NodeDeletionService::config_valid()
     return
         config_.node_registry &&
         config_.enrollment_registry &&
-        config_.credential_registry;
+        config_.credential_registry &&
+        config_.tls_trust_store;
 }
 
 NodeDeletionResult
@@ -175,10 +181,34 @@ NodeDeletionService::erase_unassigned_node_locked(
         return output;
     }
 
+    std::string tls_trust_error;
+
+    const NodeTlsTrustStoreResult
+        tls_trust_result =
+            config_.tls_trust_store->erase(
+                node_id,
+                &tls_trust_error
+            );
+
+    if (tls_trust_result ==
+        NodeTlsTrustStoreResult::Ok) {
+        output.tls_trust_removed = true;
+    } else if (
+        tls_trust_result !=
+            NodeTlsTrustStoreResult::NotFound) {
+        // Security: a deleted Node ID must not retain reusable TLS identity
+        // state that could interfere with or impersonate a later enrollment.
+        output.result =
+            NodeDeletionServiceResult::
+                TlsTrustCleanupFailed;
+
+        return output;
+    }
+
     std::string registry_error;
 
-    // Security: NodeRegistry is the final commit boundary. Everything capable
-    // of authenticating the deleted Node has already been revoked before this
+    // Security: NodeRegistry is the final commit boundary. Every reusable
+    // bootstrap, bearer and TLS identity binding has been revoked before this
     // trusted configuration entry disappears.
     if (!config_.node_registry->erase(
             node_id,

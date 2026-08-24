@@ -55,6 +55,15 @@ public:
         std::string* error
     );
 
+    // Removes one node TLS identity as part of coordinated node deletion.
+    //
+    // Security: absence is considered durable only after the trust directory
+    // has been fsynced. This API must not be used for ordinary TLS key rotation.
+    NodeTlsTrustStoreResult erase(
+        const std::string& node_id,
+        std::string* error
+    );
+
 private:
     mutable std::mutex mutex_;
     std::filesystem::path directory_;

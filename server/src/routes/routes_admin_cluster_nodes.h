@@ -2,6 +2,7 @@
 
 #include "cluster/node_deletion_service.h"
 #include "cluster/node_credential_rotation_service.h"
+#include "cluster/node_tls_trust_store.h"
 
 #include <cstddef>
 #include <functional>
@@ -41,6 +42,28 @@ inline constexpr std::size_t
 
 struct AdminClusterNodeRoutesContext {
     NodeRegistry* registry = nullptr;
+
+    // Security: legacy RT014 migration verifies the candidate endpoint before
+    // establishing the immutable first TLS identity binding.
+    std::function<NodeTlsTrustStoreResult(
+        const std::string&,
+        std::string*,
+        std::string*
+    )> get_node_tls_trust;
+
+    std::function<NodeTlsTrustStoreResult(
+        const std::string&,
+        const std::string&,
+        std::string*
+    )> bind_node_tls_trust;
+
+    // Security: this callback performs network I/O and must never be invoked
+    // while placement/lifecycle locks are held.
+    std::function<bool(
+        const std::string&,
+        const std::string&,
+        std::string*
+    )> verify_node_tls_endpoint;
 
     // Shared with UserPlacementService to prevent placement from racing node
     // disable or deletion.
@@ -113,6 +136,12 @@ void handle_admin_cluster_nodes_create(
 );
 
 void handle_admin_cluster_nodes_update(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminClusterNodeRoutesContext& context
+);
+
+void handle_admin_cluster_node_tls_trust_migration(
     const httplib::Request& req,
     httplib::Response& res,
     const AdminClusterNodeRoutesContext& context

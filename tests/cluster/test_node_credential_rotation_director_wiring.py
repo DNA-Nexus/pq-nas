@@ -105,8 +105,8 @@ require(
     "query_rotation_in_progress(" in route and
     route.count(
         "if (rotation_busy) {"
-    ) == 2,
-    "UPDATE and DELETE both fail closed on active rotation",
+    ) == 3,
+    "UPDATE, TLS migration and DELETE fail closed on active rotation",
 )
 
 require(
