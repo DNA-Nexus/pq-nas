@@ -1,6 +1,7 @@
 #include "routes/routes_internal_storage_user_projection.h"
 
 #include "cluster/internal_auth.h"
+#include "cluster/storage_user_projection_audit.h"
 #include "cluster/storage_user_projection_store.h"
 #include "httplib.h"
 
@@ -184,6 +185,55 @@ json projection_json(
     };
 }
 
+json audit_request_json(
+    const pqnas::cluster::StorageUserProjection& projection
+) {
+    std::string digest;
+    std::string error;
+
+    const bool digest_ok =
+        pqnas::cluster::
+            storage_user_projection_digest_v1(
+                projection,
+                &digest,
+                &error
+            );
+
+    expect(
+        digest_ok,
+        "audit request digest generated: " +
+            error
+    );
+
+    return json{
+        {"version", 1},
+        {"node_id", "storage-01"},
+        {"range_start", ""},
+        {"range_end", ""},
+        {
+            "expected",
+            json::array(
+                {
+                    json{
+                        {
+                            "fingerprint",
+                            projection.fingerprint
+                        },
+                        {
+                            "revision",
+                            projection.revision
+                        },
+                        {
+                            "digest",
+                            digest
+                        }
+                    }
+                }
+            )
+        }
+    };
+}
+
 } // namespace
 
 int main() {
@@ -264,6 +314,9 @@ int main() {
     int rate_limit_calls = 0;
     bool allow_rate_limit = true;
 
+    int audit_rate_limit_calls = 0;
+    bool allow_audit_rate_limit = true;
+
     pqnas::cluster::
         InternalStorageUserProjectionRoutesContext
             context;
@@ -299,6 +352,32 @@ int main() {
             if (!allow_rate_limit) {
                 if (retry_after_seconds) {
                     *retry_after_seconds = 7;
+                }
+
+                return false;
+            }
+
+            if (retry_after_seconds) {
+                *retry_after_seconds = 0;
+            }
+
+            return true;
+        };
+
+    context.consume_audit_rate_limit_slot =
+        [&](const std::string& remote_address,
+            long* retry_after_seconds) {
+            ++audit_rate_limit_calls;
+
+            expect(
+                remote_address ==
+                    "192.0.2.50",
+                "audit rate limiter receives transport peer"
+            );
+
+            if (!allow_audit_rate_limit) {
+                if (retry_after_seconds) {
+                    *retry_after_seconds = 11;
                 }
 
                 return false;
@@ -919,6 +998,395 @@ int main() {
             stored->revision == 2 &&
             stored->quota_bytes == 2048,
             "stale projection cannot roll back stored metadata"
+        );
+    }
+
+    // RT-008: audit readback is authenticated, separately rate-limited and
+    // read-only. The existing mutation tests above leave fingerprint at rev 2.
+    const auto audit_projection =
+        store.get(
+            fingerprint
+        );
+
+    expect(
+        audit_projection.has_value(),
+        "audit route has stored projection fixture"
+    );
+
+    if (audit_projection) {
+        const json valid_audit_body =
+            audit_request_json(
+                *audit_projection
+            );
+
+        const int mutation_rate_before_audit =
+            rate_limit_calls;
+
+        {
+            const int audit_rate_before =
+                audit_rate_limit_calls;
+
+            auto request =
+                make_request(
+                    "",
+                    "application/json",
+                    valid_audit_body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 401,
+                "audit missing authorization returns 401"
+            );
+
+            expect(
+                audit_rate_limit_calls ==
+                    audit_rate_before,
+                "unauthorized audit does not consume audit rate limit"
+            );
+        }
+
+        {
+            allow_audit_rate_limit = false;
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    valid_audit_body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 429,
+                "audit rate limited request returns 429"
+            );
+
+            expect(
+                response_header(
+                    response,
+                    "Retry-After"
+                ) == "11",
+                "audit rate limited response advertises retry delay"
+            );
+
+            allow_audit_rate_limit = true;
+        }
+
+        {
+            json body =
+                valid_audit_body;
+
+            body["node_id"] =
+                "storage-02";
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 409 &&
+                response.body.find(
+                    "wrong_node"
+                ) != std::string::npos,
+                "audit manifest for another node is rejected"
+            );
+        }
+
+        {
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    std::string(
+                        pqnas::cluster::
+                            kInternalStorageUserProjectionAuditMaxRequestBytes +
+                            1,
+                        'x'
+                    )
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 413,
+                "oversized audit request returns 413 before parsing"
+            );
+        }
+
+        {
+            json body =
+                valid_audit_body;
+
+            body["extra"] = true;
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 400,
+                "audit request with unknown top-level field is rejected"
+            );
+        }
+
+        {
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json; charset=utf-8",
+                    valid_audit_body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            const json result =
+                response_json(
+                    response
+                );
+
+            expect(
+                response.status == 200 &&
+                result.is_object() &&
+                result.value(
+                    "version",
+                    0
+                ) == 1 &&
+                result.value(
+                    "ok",
+                    false
+                ) &&
+                result.value(
+                    "node_id",
+                    ""
+                ) == "storage-01" &&
+                result.value(
+                    "complete",
+                    false
+                ) &&
+                result.value(
+                    "matched",
+                    0
+                ) == 1 &&
+                result["mismatches"].is_array() &&
+                result["mismatches"].empty(),
+                "matching projection returns complete authenticated proof"
+            );
+
+            expect(
+                response.body.find(
+                    "root_rel"
+                ) == std::string::npos &&
+                response.body.find(
+                    "quota_bytes"
+                ) == std::string::npos &&
+                response.body.find(
+                    "pool_01"
+                ) == std::string::npos,
+                "audit response does not expose projection storage metadata"
+            );
+
+            const auto after =
+                store.get(
+                    fingerprint
+                );
+
+            expect(
+                after.has_value() &&
+                after->revision ==
+                    audit_projection->revision &&
+                after->quota_bytes ==
+                    audit_projection->quota_bytes,
+                "successful audit is read-only"
+            );
+        }
+
+        {
+            json body =
+                valid_audit_body;
+
+            body["expected"][0]["digest"] =
+                std::string(
+                    pqnas::cluster::
+                        kStorageUserProjectionDigestHexChars,
+                    '0'
+                );
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            const json result =
+                response_json(
+                    response
+                );
+
+            expect(
+                response.status == 200 &&
+                result.is_object() &&
+                result.value(
+                    "complete",
+                    false
+                ) &&
+                result["mismatches"].is_array() &&
+                result["mismatches"].size() == 1 &&
+                result["mismatches"][0].value(
+                    "kind",
+                    ""
+                ) == "conflict" &&
+                result["mismatches"][0].value(
+                    "fingerprint",
+                    ""
+                ) == fingerprint &&
+                result["mismatches"][0].value(
+                    "expected_revision",
+                    std::uint64_t{0}
+                ) == audit_projection->revision &&
+                result["mismatches"][0].value(
+                    "actual_revision",
+                    std::uint64_t{0}
+                ) == audit_projection->revision,
+                "same-revision audit digest mismatch is surfaced as conflict"
+            );
+        }
+
+        {
+            json body =
+                valid_audit_body;
+
+            body["expected"].push_back(
+                body["expected"][0]
+            );
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 400,
+                "duplicate or unsorted audit expected identities fail closed"
+            );
+        }
+
+        {
+            const auto saved_audit_limiter =
+                context.consume_audit_rate_limit_slot;
+
+            context.consume_audit_rate_limit_slot =
+                [](const std::string&, long*) -> bool {
+                    throw 1;
+                };
+
+            auto request =
+                make_request(
+                    "Bearer " + token,
+                    "application/json",
+                    valid_audit_body.dump()
+                );
+
+            httplib::Response response;
+
+            pqnas::cluster::
+                handle_internal_storage_user_projection_audit_request(
+                    request,
+                    response,
+                    context
+                );
+
+            expect(
+                response.status == 503 &&
+                response.body.find(
+                    "audit_unavailable"
+                ) != std::string::npos,
+                "audit limiter failure fails closed"
+            );
+
+            context.consume_audit_rate_limit_slot =
+                saved_audit_limiter;
+        }
+
+        expect(
+            rate_limit_calls ==
+                mutation_rate_before_audit,
+            "audit traffic never consumes mutation rate-limit slots"
         );
     }
 

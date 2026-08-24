@@ -8,6 +8,9 @@ from production_translation_unit import (
 
 main = Path("server/src/main.cpp").read_text()
 cmake = Path("CMakeLists.txt").read_text()
+projection_route = Path(
+    "server/src/routes/routes_internal_storage_user_projection.cpp"
+).read_text()
 
 # Security: negative production-wiring assertions must inspect the
 # implementation .inc files compiled into main.cpp as well as the
@@ -69,6 +72,12 @@ require(
 require(
     "register_internal_storage_user_projection_routes(" in main,
     "projection sync route is registered",
+)
+
+require(
+    '"/internal/storage/user-projection/audit"' in projection_route and
+    "handle_internal_storage_user_projection_audit_request(" in projection_route,
+    "RT-008 projection audit endpoint is registered in the production route module",
 )
 
 # Security architecture invariant:
@@ -152,6 +161,13 @@ require(
     "        pqnas_cluster_identity_validation\n"
     "        pqnas_storage_path_validation" in cmake,
     "projection store explicitly depends on path validation",
+)
+
+require(
+    "pqnas_internal_storage_user_projection_routes PUBLIC\n"
+    "        pqnas_storage_user_projection_store\n"
+    "        pqnas_storage_user_projection_audit" in cmake,
+    "projection route explicitly links RT-008 audit primitives",
 )
 
 require(

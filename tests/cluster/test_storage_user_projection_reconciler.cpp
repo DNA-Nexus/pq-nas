@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -156,9 +157,147 @@ sync_success(
     return result;
 }
 
+std::string fingerprint_for_index(
+    std::size_t value
+) {
+    static constexpr char hex[] =
+        "0123456789abcdef";
+
+    std::string fingerprint(
+        128,
+        '0'
+    );
+
+    std::size_t position =
+        fingerprint.size();
+
+    do {
+        --position;
+
+        fingerprint[position] =
+            hex[value & 0x0fU];
+
+        value >>= 4U;
+    } while (value != 0 &&
+             position != 0);
+
+    return fingerprint;
+}
+
+pqnas::cluster::
+StorageUserProjectionAuditClientResult
+audit_match(
+    const pqnas::cluster::
+        StorageUserProjectionAuditRequest& request
+) {
+    pqnas::cluster::
+        StorageUserProjectionAuditClientResult
+            result;
+
+    result.code =
+        pqnas::cluster::
+            StorageUserProjectionAuditClientCode::Ok;
+
+    result.http_status = 200;
+    result.result.complete = true;
+    result.result.matched =
+        request.expected.size();
+
+    return result;
+}
+
 } // namespace
 
 int main() {
+    // RT-008 range planner: 513 expected identities become 512 + 1 with
+    // contiguous lexical boundaries. Zero identities still audit all Storage.
+    {
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjectionAuditExpected
+        > expected;
+
+        expected.reserve(
+            pqnas::cluster::
+                kStorageUserProjectionAuditMaxExpected +
+            1
+        );
+
+        for (std::size_t index = 0;
+             index <
+                pqnas::cluster::
+                    kStorageUserProjectionAuditMaxExpected +
+                    1;
+             ++index) {
+            pqnas::cluster::
+                StorageUserProjectionAuditExpected
+                    entry;
+
+            entry.fingerprint =
+                fingerprint_for_index(
+                    index + 1
+                );
+
+            entry.revision = 7;
+
+            entry.digest_hex =
+                std::string(
+                    pqnas::cluster::
+                        kStorageUserProjectionDigestHexChars,
+                    'a'
+                );
+
+            expected.push_back(
+                std::move(entry)
+            );
+        }
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjectionAuditRequest
+        > requests;
+
+        expect(
+            pqnas::cluster::
+                build_storage_user_projection_reconcile_audit_requests(
+                    "storage-01",
+                    expected,
+                    &requests
+                ) &&
+            requests.size() == 2 &&
+            requests[0].range_start.empty() &&
+            requests[0].range_end ==
+                expected[
+                    pqnas::cluster::
+                        kStorageUserProjectionAuditMaxExpected
+                ].fingerprint &&
+            requests[0].expected.size() ==
+                pqnas::cluster::
+                    kStorageUserProjectionAuditMaxExpected &&
+            requests[1].range_start ==
+                requests[0].range_end &&
+            requests[1].range_end.empty() &&
+            requests[1].expected.size() == 1,
+            "RT-008 range planner partitions 513 identities as contiguous 512 + 1"
+        );
+
+        requests.clear();
+
+        expect(
+            pqnas::cluster::
+                build_storage_user_projection_reconcile_audit_requests(
+                    "storage-empty",
+                    {},
+                    &requests
+                ) &&
+            requests.size() == 1 &&
+            requests[0].range_start.empty() &&
+            requests[0].range_end.empty() &&
+            requests[0].expected.empty(),
+            "RT-008 zero-user node receives one full-namespace audit"
+        );
+    }
+
     const fs::path directory =
         make_test_directory();
 
@@ -372,20 +511,330 @@ int main() {
         );
     }
 
-    // No Director mutation means no network traffic.
+    // RT-008 rolling-upgrade fallback: without audit capability, equal
+    // confirmed/current state is verified by an idempotent Storage POST.
     {
         sent.clear();
 
         const auto result =
             reconciler.reconcile_once();
 
+        const auto current_user =
+            users.get(
+                placed.fingerprint
+            );
+
+        expect(
+            result.ok &&
+            result.already_synced == 1 &&
+            result.no_placement == 1 &&
+            sent.size() == 1 &&
+            current_user.has_value() &&
+            sent[0].home_node ==
+                "storage-01" &&
+            sent[0].revision ==
+                current_user->
+                    storage_projection_revision &&
+            audits.size() == 1,
+            "legacy equal-confirmed revision is verified by idempotent Storage POST"
+        );
+    }
+
+    // RT-008 audit-capable Nodes prove equal/current state by full range
+    // readback. A zero-user Node is still checked with an empty full range.
+    {
+        auto audit_config =
+            config;
+
+        audit_config.audit_emit = {};
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjectionAuditRequest
+        > proof_requests;
+
+        audit_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01",
+                    "storage-empty"
+                };
+            };
+
+        audit_config.audit_projection_range =
+            [&](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                proof_requests.push_back(
+                    request
+                );
+
+                return audit_match(
+                    request
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                audit_reconciler(
+                    audit_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            audit_reconciler.reconcile_once();
+
         expect(
             result.ok &&
             result.already_synced == 1 &&
             result.no_placement == 1 &&
             sent.empty() &&
-            audits.size() == 1,
-            "already-confirmed revision performs no network write or audit"
+            proof_requests.size() == 2 &&
+            proof_requests[0].node_id ==
+                "storage-01" &&
+            proof_requests[0].range_start.empty() &&
+            proof_requests[0].range_end.empty() &&
+            proof_requests[0].expected.size() == 1 &&
+            proof_requests[1].node_id ==
+                "storage-empty" &&
+            proof_requests[1].range_start.empty() &&
+            proof_requests[1].range_end.empty() &&
+            proof_requests[1].expected.empty(),
+            "audit-capable equal state requires current full-range Storage proof"
+        );
+    }
+
+    // Original RT-008 regression: Director says A@rev is confirmed, but
+    // Storage lost the projection. Missing readback replays the exact same
+    // current projection and only then reports convergence.
+    {
+        auto missing_config =
+            config;
+
+        missing_config.audit_emit = {};
+
+        missing_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01"
+                };
+            };
+
+        missing_config.audit_projection_range =
+            [&](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                auto result =
+                    audit_match(
+                        request
+                    );
+
+                expect(
+                    request.expected.size() == 1,
+                    "RT-008 missing proof carries one expected projection"
+                );
+
+                result.result.matched = 0;
+
+                pqnas::cluster::
+                    StorageUserProjectionAuditMismatch
+                        mismatch;
+
+                mismatch.code =
+                    pqnas::cluster::
+                        StorageUserProjectionAuditMismatchCode::
+                            Missing;
+
+                mismatch.fingerprint =
+                    request.expected[0].fingerprint;
+
+                mismatch.expected_revision =
+                    request.expected[0].revision;
+
+                mismatch.actual_revision = 0;
+
+                result.result.mismatches.push_back(
+                    std::move(mismatch)
+                );
+
+                return result;
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                missing_reconciler(
+                    missing_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            missing_reconciler.reconcile_once();
+
+        const auto current_user =
+            users.get(
+                placed.fingerprint
+            );
+
+        expect(
+            result.ok &&
+            result.already_synced == 0 &&
+            result.synced_current == 1 &&
+            sent.size() == 1 &&
+            current_user.has_value() &&
+            sent[0].fingerprint ==
+                placed.fingerprint &&
+            sent[0].home_node ==
+                "storage-01" &&
+            sent[0].revision ==
+                current_user->
+                    storage_projection_revision,
+            "RT-008 missing Storage projection is replayed before convergence"
+        );
+    }
+
+    // Equal-revision content disagreement is never overwritten automatically.
+    {
+        auto conflict_config =
+            config;
+
+        conflict_config.audit_emit = {};
+
+        conflict_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01"
+                };
+            };
+
+        conflict_config.audit_projection_range =
+            [](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                auto result =
+                    audit_match(
+                        request
+                    );
+
+                result.result.matched = 0;
+
+                pqnas::cluster::
+                    StorageUserProjectionAuditMismatch
+                        mismatch;
+
+                mismatch.code =
+                    pqnas::cluster::
+                        StorageUserProjectionAuditMismatchCode::
+                            Conflict;
+
+                mismatch.fingerprint =
+                    request.expected[0].fingerprint;
+
+                mismatch.expected_revision =
+                    request.expected[0].revision;
+
+                mismatch.actual_revision =
+                    request.expected[0].revision;
+
+                result.result.mismatches.push_back(
+                    std::move(mismatch)
+                );
+
+                return result;
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                conflict_reconciler(
+                    conflict_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            conflict_reconciler.reconcile_once();
+
+        expect(
+            !result.ok &&
+            result.state_conflicts == 1 &&
+            result.already_synced == 0 &&
+            sent.empty(),
+            "RT-008 equal-revision audit conflict fails closed without repair"
+        );
+    }
+
+    // A Storage authorization unknown to current Director users is an orphan
+    // signal. Never invent stored_revision+1 or perform destructive repair.
+    {
+        auto orphan_audit_config =
+            config;
+
+        orphan_audit_config.audit_emit = {};
+
+        orphan_audit_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01",
+                    "storage-empty"
+                };
+            };
+
+        orphan_audit_config.audit_projection_range =
+            [](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                if (request.node_id ==
+                    "storage-01") {
+                    return audit_match(
+                        request
+                    );
+                }
+
+                auto result =
+                    audit_match(
+                        request
+                    );
+
+                pqnas::cluster::
+                    StorageUserProjectionAuditMismatch
+                        mismatch;
+
+                mismatch.code =
+                    pqnas::cluster::
+                        StorageUserProjectionAuditMismatchCode::
+                            UnexpectedAuthorization;
+
+                mismatch.fingerprint =
+                    std::string(
+                        128,
+                        'c'
+                    );
+
+                mismatch.expected_revision = 0;
+                mismatch.actual_revision = 9;
+
+                result.result.mismatches.push_back(
+                    std::move(mismatch)
+                );
+
+                return result;
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                orphan_audit_reconciler(
+                    orphan_audit_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            orphan_audit_reconciler.
+                reconcile_once();
+
+        expect(
+            !result.ok &&
+            result.orphaned_states == 1 &&
+            result.already_synced == 0 &&
+            sent.empty(),
+            "RT-008 unexpected orphan authorization fails closed without mutation"
         );
     }
 

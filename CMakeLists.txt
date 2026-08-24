@@ -3161,6 +3161,65 @@ add_custom_target(run_test_storage_user_projection_store
 )
 
 # -----------------------------------------------------------------------------
+# Storage user projection audit primitives (RT-008)
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_audit STATIC
+        server/src/cluster/storage_user_projection_audit.cpp
+        server/src/cluster/storage_user_projection_audit.h
+)
+
+target_include_directories(pqnas_storage_user_projection_audit PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_audit
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_audit PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_path_validation
+        OpenSSL::Crypto
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage user projection audit primitives
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_audit
+        tests/cluster/test_storage_user_projection_audit.cpp
+)
+
+target_include_directories(test_storage_user_projection_audit PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_audit
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_audit PRIVATE
+        pqnas_storage_user_projection_audit
+)
+
+set_target_properties(test_storage_user_projection_audit PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_audit
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_audit"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_audit
+)
+
+# -----------------------------------------------------------------------------
 # Storage pool runtime registry
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_pool_runtime STATIC
@@ -3895,6 +3954,7 @@ endif()
 
 target_link_libraries(pqnas_internal_storage_user_projection_routes PUBLIC
         pqnas_storage_user_projection_store
+        pqnas_storage_user_projection_audit
 )
 
 
@@ -4181,6 +4241,33 @@ target_link_libraries(pqnas_storage_user_projection_sync_client PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Director -> Storage user projection audit client (RT-008)
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_audit_client STATIC
+        server/src/cluster/storage_user_projection_audit_client.cpp
+        server/src/cluster/storage_user_projection_audit_client.h
+)
+
+target_include_directories(pqnas_storage_user_projection_audit_client PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_audit_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_audit_client PUBLIC
+        pqnas_storage_user_projection_audit
+        pqnas_node_credential_registry
+        pqnas_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
 # Cluster Node TLS SPKI identity
 # -----------------------------------------------------------------------------
 add_library(pqnas_node_tls_identity STATIC
@@ -4376,6 +4463,14 @@ target_link_libraries(
         pqnas_node_tls_trust_store
 )
 
+# RT-008 audit client follows the same trust-before-bearer rule as projection
+# synchronization. Keep this dependency explicit.
+target_link_libraries(
+        pqnas_storage_user_projection_audit_client
+        PUBLIC
+        pqnas_node_tls_trust_store
+)
+
 
 # Heartbeat trust lookup is mandatory and the test target must depend on the
 # actual trust-store target rather than an unresolved library-name string.
@@ -4533,6 +4628,44 @@ target_link_libraries(pqnas_storage_user_projection_sync_https PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Director -> Storage user projection audit HTTPS transport (RT-008)
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_audit_https STATIC
+        server/src/cluster/storage_user_projection_audit_https.cpp
+        server/src/cluster/storage_user_projection_audit_https.h
+)
+
+target_include_directories(pqnas_storage_user_projection_audit_https PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_user_projection_audit_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_storage_user_projection_audit_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_audit_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_audit_https PUBLIC
+        pqnas_storage_user_projection_audit
+        pqnas_node_tls_https_client
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Director -> Storage projection synchronization client
 # -----------------------------------------------------------------------------
 add_executable(test_storage_user_projection_sync_client
@@ -4573,6 +4706,50 @@ add_custom_target(run_test_storage_user_projection_sync_client
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_client"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_projection_sync_client
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director -> Storage projection audit client
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_audit_client
+        tests/cluster/test_storage_user_projection_audit_client.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_user_projection_audit_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_user_projection_audit_client PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_audit_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_audit_client PRIVATE
+        pqnas_storage_user_projection_audit_client
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_user_projection_audit_client PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_audit_client
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_audit_client"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_audit_client
 )
 
 
@@ -4690,6 +4867,56 @@ add_custom_target(run_test_storage_user_projection_sync_https
         COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_sync_https"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_storage_user_projection_sync_https
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: projection audit HTTPS protocol parser
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_audit_https
+        tests/cluster/test_storage_user_projection_audit_https.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_user_projection_audit_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_definitions(
+        test_storage_user_projection_audit_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_compile_options(test_storage_user_projection_audit_https PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_audit_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_audit_https PRIVATE
+        pqnas_storage_user_projection_audit_https
+        ${SODIUM_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+set_target_properties(test_storage_user_projection_audit_https PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_audit_https
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_audit_https"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_audit_https
 )
 
 
@@ -5042,6 +5269,7 @@ endif()
 target_link_libraries(pqnas_storage_user_projection_reconciler PUBLIC
         pqnas_storage_user_projection_builder
         pqnas_storage_user_projection_sync_state_store
+        pqnas_storage_user_projection_audit
 )
 
 
